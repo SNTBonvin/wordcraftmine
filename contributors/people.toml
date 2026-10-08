@@ -79,3 +79,8 @@ display_name = "manucarcor"
 [people.webdevtodayjason]
 display_name = "Jason Brashear"
 sync_github_name = false
+
+[people.switch87]
+real_name = "Gert Pellin"
+display_name = "Gert Pellin"
+sync_github_name = false
