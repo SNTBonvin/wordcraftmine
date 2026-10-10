@@ -14,7 +14,7 @@ agent control. This page is the summary; the assessment is
 
 | Number | Value | Kind |
 |---|---|---|
-| Ribbon/menu catalog coverage | **402 / 434 (92.6%)** | measured (`cargo xtask parity` → [`docs/parity-checklist.md`](docs/parity-checklist.md)) |
+| Ribbon/menu catalog coverage | **404 / 434 (93.1%)** | measured (`cargo xtask parity` → [`docs/parity-checklist.md`](docs/parity-checklist.md)) |
 | **Feature breadth** (weighted, incl. dialog options, styles, languages beyond the ribbon) | **~80%** | estimated |
 | **Ready for real work** (full target) | **~60%** (55–63%) | estimated, additive weighted sum over the dimensions |
 | **Mainstream practitioner** | **~55%** | estimated: weekly-work depth × discounts for interaction (×0.93), stability (×0.90), file exchange (×0.90) |
@@ -154,6 +154,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-10 | trivial | Progress: Drawing Canvas (#344): insert, shapes/pictures/text boxes inside, Fit/Expand/Scale, DOCX `wpc:wpc`, turns and flips as a whole; catalog 404/434 |
 | 2026-10-11 | trivial | Progress log: Customize Ribbon and the Quick Access Toolbar (#379) |
 | 2026-10-11 | trivial | Progress log: Customize Keyboard (#368) |
 | 2026-10-11 | trivial | Word's common keyboard shortcuts (#330): 125 of ~250 |
