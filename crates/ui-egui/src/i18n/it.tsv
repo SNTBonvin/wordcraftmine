@@ -2459,3 +2459,10 @@ preview	Title	Esempio
 	Automatic ({region})	Automatico ({region})
 	Search	Cerca
 	Title Bar	Barra del titolo
+	WordCraft {version} is available.	WordCraft {version} è disponibile.
+	Download	Scarica
+	Open the release page in your browser	Apri la pagina della versione nel browser
+	Skip this version	Salta questa versione
+	Dismiss	Chiudi
+	Check for updates	Verifica aggiornamenti
+	Once a day, ask GitHub whether a newer WordCraft release is out and show a notice. Nothing else is sent.	Una volta al giorno, chiede a GitHub se è uscita una versione più recente di WordCraft e mostra un avviso. Non viene inviato nient'altro.

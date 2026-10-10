@@ -73,6 +73,7 @@ pub mod table_pen;
 pub mod table_resize;
 pub mod table_ruler;
 pub mod theme;
+pub mod update;
 pub mod widgets;
 pub mod window_geometry;
 pub mod wordart_menus;
@@ -147,6 +148,10 @@ pub struct Services {
     /// `xdg-mime`. `None` (web, macOS) hides the button; macOS shows how to do it in Finder
     /// instead. An error means nothing changed.
     pub make_default_app: Option<Box<dyn Fn() -> Result<DefaultApp, String>>>,
+    /// Desktop: fetch the latest-release JSON for the "new version available" notice (#201),
+    /// called on a background thread at most once a day. `None` (the web, tests, packagers who
+    /// turn it off) means no check and no Options checkbox.
+    pub check_update: Option<update::Fetch>,
 }
 
 /// What [`Services::make_default_app`] did.
@@ -253,6 +258,12 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
+    /// File › Options › Check for updates (desktop): look for a newer release once a day (#201).
+    pub check_updates: bool,
+    /// When the last update check started (Unix seconds; 0 = never).
+    pub update_checked_at: u64,
+    /// The release version the user chose to skip (`Skip this version`), e.g. `0.5.0`.
+    pub skipped_update: String,
 }
 
 /// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
@@ -302,6 +313,9 @@ impl Default for UiState {
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
+            check_updates: true,
+            update_checked_at: 0,
+            skipped_update: String::new(),
         }
     }
 }
@@ -435,6 +449,8 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// The daily check for a newer release and its notice (#201).
+    pub update: update::UpdateCheck,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -518,6 +534,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            update: update::UpdateCheck::default(),
         }
     }
 
@@ -1364,6 +1381,7 @@ impl WordApp {
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
+        update::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
         self.drain_inbox();
@@ -1519,6 +1537,7 @@ impl WordApp {
         } else {
             chrome::title_bar(self, ui);
             ribbon::show(self, ui);
+            update::bar(self, ui);
             chrome::status_bar(self, ui);
             panes::show(self, ui);
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
