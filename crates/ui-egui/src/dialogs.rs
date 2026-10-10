@@ -314,6 +314,14 @@ pub enum Dialog {
     NoteOptions {
         form: Box<crate::dialogs_notes::NoteForm>,
     },
+    /// View › Templates › Templates and Add-ins (#377).
+    Templates {
+        form: Box<crate::dialogs_templates::TemplatesForm>,
+    },
+    /// Templates and Add-ins › Organizer: copy, delete and rename styles (#377).
+    Organizer {
+        form: Box<crate::dialogs_templates::OrganizerForm>,
+    },
 }
 
 /// The Table Properties dialog's fields. Lengths are in the interface unit
@@ -735,6 +743,8 @@ impl Dialog {
             Dialog::CustomizeRibbon { .. } => "customizeRibbon",
             Dialog::Enclose { .. } => "enclose",
             Dialog::NoteOptions { .. } => "noteOptions",
+            Dialog::Templates { .. } => "templates",
+            Dialog::Organizer { .. } => "organizer",
         }
     }
 
@@ -949,6 +959,8 @@ impl Dialog {
                 Dialog::CustomizeRibbon { form: Box::new(crate::dialogs_ribbon::RibbonForm::read(app, crate::dialogs_ribbon::Page::QuickAccess)) }
             }
             "noteOptions" => Dialog::NoteOptions { form: Box::new(crate::dialogs_notes::NoteForm::read(app)) },
+            "templates" => Dialog::Templates { form: Box::new(crate::dialogs_templates::TemplatesForm::read(app)) },
+            "organizer" => Dialog::Organizer { form: Box::new(crate::dialogs_templates::OrganizerForm::read(app, None)) },
             _ => return None,
         })
     }
@@ -1115,6 +1127,8 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::CustomizeRibbon { .. } => "Customize Ribbon",
         Dialog::Enclose { .. } => "Enclose Characters",
         Dialog::NoteOptions { .. } => "Footnote and Endnote",
+        Dialog::Templates { .. } => "Templates and Add-ins",
+        Dialog::Organizer { .. } => "Organizer",
     };
     let id = egui::Id::new(("dialog", title));
     let shown = place_dialog(ctx, id, egui::Window::new(tl!(title)).id(id).collapsible(false).resizable(false)).open(&mut open).show(ctx, |ui| {
@@ -2133,6 +2147,8 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             cancel
         }
         Dialog::NoteOptions { form } => crate::dialogs_notes::note_options(app, ui, form),
+        Dialog::Templates { form } => crate::dialogs_templates::templates(app, ui, form),
+        Dialog::Organizer { form } => crate::dialogs_templates::organizer(app, ui, form),
         Dialog::FindRecipient { text, message } => {
             ui.horizontal(|ui| {
                 ui.label(tl!("Find:"));

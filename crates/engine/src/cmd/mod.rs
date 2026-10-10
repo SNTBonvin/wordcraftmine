@@ -31,6 +31,7 @@ pub mod speech;
 pub mod table;
 pub mod table_draw;
 pub mod table_style;
+pub mod templates;
 pub mod text;
 pub mod tools;
 pub mod view;
@@ -73,6 +74,7 @@ pub fn registry() -> Registry {
     v.extend(draw::specs());
     v.extend(canvas::specs());
     v.extend(tools::specs());
+    v.extend(templates::specs());
     v.extend(speech::specs());
     Registry::new(v)
 }
