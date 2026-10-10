@@ -1322,6 +1322,12 @@
 	Rotate Left 90°	Girar 90° para a esquerda
 	Flip Vertical	Inverter verticalmente
 	Flip Horizontal	Inverter horizontalmente
+	Move Paragraph Up	Mover parágrafo para cima
+	Move Paragraph Down	Mover parágrafo para baixo
+	Promote	Promover
+	Demote	Rebaixar
+	Go Back	Voltar
+	Toggle Unicode Character	Alternar caractere Unicode
 	Formatted	Formatado
 	Interface size:	Tamanho da interface:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Aumenta ou diminui a faixa de opções, os menus e as caixas de diálogo, além da escala de exibição do sistema. O zoom do documento é separado.

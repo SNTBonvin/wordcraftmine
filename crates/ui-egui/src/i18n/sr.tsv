@@ -1324,6 +1324,12 @@
 	Rotate Left 90°	Ротирај улево за 90°
 	Flip Vertical	Окрени вертикално
 	Flip Horizontal	Окрени хоризонтално
+	Move Paragraph Up	Помери пасус нагоре
+	Move Paragraph Down	Помери пасус надоле
+	Promote	Подигни ниво
+	Demote	Спусти ниво
+	Go Back	Врати се назад
+	Toggle Unicode Character	Пребаци Unicode знак
 	Formatted	Форматирано
 	Interface size:	Величина интерфејса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.

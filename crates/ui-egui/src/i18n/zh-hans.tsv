@@ -1321,6 +1321,12 @@
 	Rotate Left 90°	向左旋转 90°
 	Flip Vertical	垂直翻转
 	Flip Horizontal	水平翻转
+	Move Paragraph Up	上移段落
+	Move Paragraph Down	下移段落
+	Promote	升级
+	Demote	降级
+	Go Back	返回上次编辑位置
+	Toggle Unicode Character	切换 Unicode 字符
 	Formatted	已设置格式
 	Interface size:	界面大小：
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	在系统显示缩放的基础上放大或缩小功能区、菜单和对话框。文档缩放单独设置。
