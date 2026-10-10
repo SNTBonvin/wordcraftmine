@@ -6,7 +6,7 @@ How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mo
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
 own (`AGENTS.md`: no Microsoft iconography, ever).
 
-**Dimension: ~65% (estimated), 61–94 h to full** (the sum of the rows below; dialog depth is counted here, not under features).
+**Dimension: ~65% (estimated), 63–98 h to full** (the sum of the rows below; dialog depth is counted here, not under features).
 
 | Area | WordCraft | Word | Parity | Hours |
 |---|---|---|---|---|
@@ -30,6 +30,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251), still one per row after One Page or Page Width (#768) | ✅ | ✅ | 85% | — |
 | Selection: word/sentence/paragraph clicks, dragging after a double-click/triple-click/Ctrl+click extends by whole words/paragraphs/sentences (#549), Shift extend, F8 extend mode, column (Alt+drag, #237), selection bar in the left margin (click a line, double-click a paragraph, triple-click or Ctrl+click everything, drag by lines, Shift+click extends; #856) | ✅ Missing: the selection bar in the right margin for right-to-left paragraphs, beside table rows, and Word's right-pointing arrow cursor (egui has none; the plain arrow shows) | ✅ | 92% | 1 |
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251) | ✅ | ✅ | 85% | — |
+| Windows (View › Window): Switch Windows, Arrange All, View Side by Side, Synchronous Scrolling (#322) across WordCraft windows, one process each; New Window and Split are placeholders; Wayland ignores placement and may only flash for focus | partial | ✅ | 60% | 2–4 |
 | Touchpad smooth/inertial scroll | ✅ (#252) | ✅ | 90% | — |
 | Reading Mode | Existing Read Mode ribbon button opens a read-only, viewport-column layout with animated horizontal paging, transient width/text/spacing controls, heading navigation (Navigation pane) and resize anchoring; print/export layout unchanged | reading-optimized view and navigation | 75% | 1–2 |
 | Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ (the language is the caret's; a click sets the proofing language) | ✅ | 85% | — |
@@ -108,6 +109,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Interface size setting in File › Options › General (80–200 %), kept between runs and applied on top of the system's display scale; `ui.interfaceSize` for agents (#475) |
 | 2026-10-11 | trivial | Font list ends with Add Font… (TTF, OTF, TTC, WOFF, WOFF2; also by dropping the file); added fonts are listed at once and kept between runs (#582) |
 | 2026-10-11 | trivial | Font box (ribbon and mini toolbar): typing lists the matching fonts (prefix first, then any part of the name); Up/Down, Enter or a click picks one, Escape cancels (#359) |
+| 2026-10-11 | trivial | View › Window across WordCraft windows: Switch Windows, Arrange All, View Side by Side, Synchronous Scrolling (#322) |
 | 2026-10-11 | trivial | Templates and Add-ins (template path, Attach…, automatically update document styles) and Organizer (copy styles from another file, delete, rename) dialogs (#377); styles update from the template only when the user asks (OK with the box ticked, or Update Styles), never on open; the three Modal dialogs rows merged into one |
 | 2026-10-11 | trivial | Field codes (#339): View › Field Codes (Alt+F9), Toggle Field Codes (Shift+F9), a field-code popup (double-click, right-click › Edit Field…; Ctrl+F9 opens the Field dialog), unlink/lock/unlock and next/previous field keys; field items in the context menu |
 | 2026-10-10 | trivial | Tabs dialog (Paragraph › Tabs…, double-click a ruler tab) and Borders and Shading with Borders, Page Border and Shading tabs (#320) |
