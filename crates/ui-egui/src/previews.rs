@@ -64,14 +64,18 @@ impl Previews {
                     return None;
                 }
                 let ppp = ui.ctx().pixels_per_point();
+                // Rendered taller than the row and cut back to the drawn text: faces with tall
+                // line metrics (Arabic, CJK) put their baseline well below a Latin face's, and a
+                // fixed 20 pt strip showed only the top of their names.
                 let img = snippet(
                     &Document::new(),
                     Paragraph::with_text(name, CharProps { font: Some(name.to_string()), size: Some(13.0), ..Default::default() }),
                     240.0,
-                    20.0,
+                    FONT_PREVIEW_RENDER_H,
                     ppp,
                     2.0,
                 )?;
+                let img = center_rows_on_ink(&img, (FONT_PREVIEW_H * ppp).round() as usize);
                 let h = ui.ctx().load_texture(&key, img, egui::TextureOptions::LINEAR);
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(&key), h.clone()));
                 Some(h)
@@ -181,6 +185,30 @@ fn math_image(nodes: &wordcraft_doc::math::Arg, display: bool, pt: f32, w: f32, 
     let img = wordcraft_render::render_area(&d, page, 0.0, mid - h / 2.0, w, h, ppp, &opts);
     let px = img.to_straight();
     Some(egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &px))
+}
+
+/// Height of a font-menu entry's picture, in points.
+const FONT_PREVIEW_H: f32 = 22.0;
+/// Height the entry is first rendered at, tall enough for any face's first line at 13 pt.
+const FONT_PREVIEW_RENDER_H: f32 = 56.0;
+
+/// `img` cut to `rows` pixel rows centred on what is drawn in it (the rows that differ from the
+/// top-left background pixel). An image that is already that short, or blank, keeps its top rows.
+fn center_rows_on_ink(img: &egui::ColorImage, rows: usize) -> egui::ColorImage {
+    let [w, h] = img.size;
+    let rows = rows.clamp(1, h.max(1));
+    if w == 0 || h <= rows {
+        return img.clone();
+    }
+    let background = img.pixels.first().copied().unwrap_or_default();
+    let inked =
+        |y: usize| img.pixels.get(y.saturating_mul(w)..y.saturating_add(1).saturating_mul(w)).is_some_and(|row| row.iter().any(|p| *p != background));
+    let top = (0..h).find(|y| inked(*y)).unwrap_or(0);
+    let bottom = (0..h).rev().find(|y| inked(*y)).unwrap_or(top);
+    let middle = top.saturating_add(bottom).saturating_add(1) / 2;
+    let start = middle.saturating_sub(rows / 2).min(h.saturating_sub(rows));
+    let pixels = img.pixels.get(start.saturating_mul(w)..start.saturating_add(rows).saturating_mul(w)).unwrap_or_default().to_vec();
+    egui::ColorImage::new([w, rows], pixels)
 }
 
 /// Lay out `para` (with `base`'s styles) in a `w`×`h` pt box and rasterise it.
@@ -406,6 +434,48 @@ pub fn table_style_tile(ui: &mut Ui, app: &mut WordApp, style: &str) -> Response
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_preview_rows_are_centred_on_the_drawn_text() {
+        let ink = egui::Color32::BLACK;
+        let paper = egui::Color32::WHITE;
+        // Ink low in a tall picture, as a face with a deep baseline draws it.
+        let mut img = egui::ColorImage::filled([4, 40], paper);
+        for y in 28..34 {
+            img.pixels[y * 4 + 1] = ink;
+        }
+        let cut = center_rows_on_ink(&img, 10);
+        assert_eq!(cut.size, [4, 10]);
+        let rows: Vec<usize> = (0..10).filter(|y| cut.pixels[y * 4 + 1] == ink).collect();
+        assert_eq!(rows, [2, 3, 4, 5, 6, 7], "all six inked rows, with equal space above and below");
+        // Blank, short, empty and oversized requests never panic.
+        assert_eq!(center_rows_on_ink(&egui::ColorImage::filled([4, 40], paper), 10).size, [4, 10]);
+        assert_eq!(center_rows_on_ink(&img, 400).size, [4, 40]);
+        assert_eq!(center_rows_on_ink(&img, 0).size, [4, 1]);
+        assert_eq!(center_rows_on_ink(&egui::ColorImage::filled([0, 0], paper), 10).size, [0, 0]);
+    }
+
+    /// Every loaded face's name fits its font-menu row: faces with tall line metrics (the
+    /// craft-fonts Arabic and Japanese faces) were cut off at the bottom.
+    #[test]
+    fn font_preview_shows_the_whole_name_in_every_loaded_face() {
+        let ppp = 2.0;
+        let rows = (FONT_PREVIEW_H * ppp).round() as usize;
+        for family in wordcraft_fonts::FontDb::with_font_dirs(Vec::new()).families() {
+            let para = Paragraph::with_text(&family, CharProps { font: Some(family.clone()), size: Some(13.0), ..Default::default() });
+            let tall = snippet(&Document::new(), para, 240.0, FONT_PREVIEW_RENDER_H, ppp, 2.0).unwrap();
+            let img = center_rows_on_ink(&tall, rows);
+            let [w, h] = img.size;
+            assert_eq!(h, rows, "{family}");
+            let background = img.pixels[0];
+            let inked = |y: usize| img.pixels[y * w..(y + 1) * w].iter().any(|p| *p != background);
+            assert!((0..h).any(inked), "{family}: the name is drawn");
+            assert!(!inked(0) && !inked(h - 1), "{family}: the name touches the edge of its row");
+            // Nothing of the name is left outside the cut.
+            let all = (0..tall.size[1]).filter(|y| tall.pixels[y * w..(y + 1) * w].iter().any(|p| *p != tall.pixels[0])).count();
+            assert_eq!((0..h).filter(|y| inked(*y)).count(), all, "{family}: part of the name is cut off");
+        }
+    }
 
     #[test]
     fn font_menu_previews_render_defer_and_reuse_without_deadlocking() {

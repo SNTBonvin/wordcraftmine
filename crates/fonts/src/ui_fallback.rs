@@ -75,6 +75,36 @@ pub fn system_cjk_ui_font(hans: bool) -> Option<SystemUiFont> {
     find_ui_font(&crate::system_font_dirs(), &candidates(hans), probe(hans), hans)
 }
 
+/// Arabic font files to look for, relative to a font folder, best first.
+fn arabic_candidates() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["segoeui.ttf", "tahoma.ttf", "arial.ttf"]
+    } else if cfg!(target_os = "macos") {
+        &["SFArabic.ttf", "GeezaPro.ttc", "Supplemental/GeezaPro.ttc", "Supplemental/Arial Unicode.ttf", "Supplemental/Arial.ttf"]
+    } else {
+        &[
+            "noto/NotoSansArabic-Regular.ttf",
+            "truetype/noto/NotoSansArabic-Regular.ttf",
+            "google-noto/NotoSansArabic-Regular.ttf",
+            "google-noto-sans-arabic-vf-fonts/NotoSansArabic[wght].ttf",
+            "noto/NotoNaskhArabic-Regular.ttf",
+            "truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "google-noto/NotoNaskhArabic-Regular.ttf",
+            "vazirmatn/Vazirmatn-Regular.ttf",
+            "truetype/dejavu/DejaVuSans.ttf",
+            "dejavu/DejaVuSans.ttf",
+            "TTF/DejaVuSans.ttf",
+        ]
+    }
+}
+
+/// An installed font with Arabic letters, for an Arabic interface in a build whose craft-fonts
+/// input has no Arabic face. Reads at most one font file per candidate; never panics on damaged
+/// files.
+pub fn system_arabic_ui_font() -> Option<SystemUiFont> {
+    find_ui_font(&crate::system_font_dirs(), arabic_candidates(), 'ع', false)
+}
+
 /// The first of `names` (tried in order, each in every folder of `dirs`) that is a font file
 /// with a face mapping `probe`.
 pub(crate) fn find_ui_font(dirs: &[std::path::PathBuf], names: &[&str], probe: char, hans: bool) -> Option<SystemUiFont> {
@@ -85,7 +115,7 @@ pub(crate) fn find_ui_font(dirs: &[std::path::PathBuf], names: &[&str], probe: c
         }
         let bytes = std::fs::read(&path).ok()?;
         let (index, family) = pick_face(&bytes, probe, hans)?;
-        log::debug!("interface CJK fallback: {family} ({})", path.display());
+        log::debug!("interface font fallback: {family} ({})", path.display());
         Some(SystemUiFont { family, bytes, index })
     })
 }
@@ -150,6 +180,9 @@ mod tests {
         // No candidate maps a CJK character: nothing is chosen.
         assert!(find_ui_font(std::slice::from_ref(&dir), &names, '页', true).is_none());
         assert!(pick_face(b"OTT", 'A', false).is_none());
+        // The bundled Latin face has no Arabic letters, so it is never taken for an Arabic interface.
+        assert!(find_ui_font(std::slice::from_ref(&dir), &names, 'ع', false).is_none());
+        assert!(!arabic_candidates().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

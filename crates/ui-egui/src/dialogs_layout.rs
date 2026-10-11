@@ -82,7 +82,7 @@ fn buttons(ui: &mut Ui, ok: &str, ok_enabled: bool) -> (bool, bool) {
     let mut r = (false, false);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             if ui.button(tl!("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 r.1 = true;
             }
@@ -163,15 +163,15 @@ impl LineNumbersForm {
 }
 
 fn line_numbers_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LineNumbersForm) -> bool {
-    ui.checkbox(&mut f.on, tl!("Add line numbering"));
+    crate::rtl::checkbox(ui, &mut f.on, tl!("Add line numbering"));
     ui.add_enabled_ui(f.on, |ui| {
-        egui::Grid::new("lnum").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+        crate::rtl::grid(ui, egui::Grid::new("lnum").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
             ui.label(tl!("Start at:"));
             ui.add(egui::DragValue::new(&mut f.start).range(1..=32_767));
             ui.end_row();
             ui.label(tl!("From text:"));
             ui.horizontal(|ui| {
-                ui.checkbox(&mut f.auto_distance, tl!("Auto"));
+                crate::rtl::checkbox(ui, &mut f.auto_distance, tl!("Auto"));
                 ui.add_enabled(
                     !f.auto_distance,
                     egui::DragValue::new(&mut f.distance)
@@ -188,7 +188,7 @@ fn line_numbers_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LineNumbersForm) -> b
         });
         heading(ui, "Numbering:");
         for (v, l) in [("restartPage", "Restart Each Page"), ("restartSection", "Restart Each Section"), ("continuous", "Continuous")] {
-            ui.radio_value(&mut f.restart, v.to_string(), tl!(l));
+            crate::rtl::radio_value(ui, &mut f.restart, v.to_string(), tl!(l));
         }
     });
     let (ok, cancel) = buttons(ui, "OK", true);
@@ -229,9 +229,9 @@ impl HyphenationForm {
 }
 
 fn hyphenation_ui(app: &mut WordApp, ui: &mut Ui, f: &mut HyphenationForm) -> bool {
-    ui.checkbox(&mut f.auto, tl!("Automatically hyphenate document"));
-    ui.checkbox(&mut f.caps, tl!("Hyphenate words in CAPS"));
-    egui::Grid::new("hyph").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+    crate::rtl::checkbox(ui, &mut f.auto, tl!("Automatically hyphenate document"));
+    crate::rtl::checkbox(ui, &mut f.caps, tl!("Hyphenate words in CAPS"));
+    crate::rtl::grid(ui, egui::Grid::new("hyph").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
         ui.label(tl!("Hyphenation zone:"));
         ui.add(egui::DragValue::new(&mut f.zone).speed(0.01).range(0.0..=22.0 * 72.0 / unit().pt_per_unit()).suffix(unit().suffix()).max_decimals(2));
         ui.end_row();
@@ -355,7 +355,7 @@ fn manual_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ManualForm) -> bool {
     ui.add_space(8.0);
     let mut close = false;
     ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             if ui.button(tl!("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 close = true;
             }
@@ -454,8 +454,8 @@ fn language_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LanguageForm) -> bool {
         });
     });
     ui.add_space(4.0);
-    ui.checkbox(&mut f.no_proof, tl!("Do not check spelling or grammar"));
-    ui.checkbox(&mut f.detect, tl!("Detect language automatically"));
+    crate::rtl::checkbox(ui, &mut f.no_proof, tl!("Do not check spelling or grammar"));
+    crate::rtl::checkbox(ui, &mut f.detect, tl!("Detect language automatically"));
     ui.add_space(4.0);
     let set_default = ui.button(tl!("Set As Default")).clicked();
     if set_default && run(app, "review.language", json!({"lang": f.lang, "default": true, "detect": f.detect})) {
@@ -501,7 +501,7 @@ fn envelopes_ui(app: &mut WordApp, ui: &mut Ui, f: &mut EnvelopeForm) -> bool {
     ui.add(egui::TextEdit::multiline(&mut f.delivery).desired_rows(4).desired_width(340.0));
     ui.horizontal(|ui| {
         ui.label(tl!("Return address:"));
-        ui.checkbox(&mut f.omit_return, tl!("Omit"));
+        crate::rtl::checkbox(ui, &mut f.omit_return, tl!("Omit"));
     });
     ui.add_enabled(!f.omit_return, egui::TextEdit::multiline(&mut f.ret).desired_rows(3).desired_width(340.0));
     ui.horizontal(|ui| {
@@ -517,7 +517,7 @@ fn envelopes_ui(app: &mut WordApp, ui: &mut Ui, f: &mut EnvelopeForm) -> bool {
     ui.add_space(8.0);
     let (mut add, mut new, mut cancel) = (false, false, false);
     ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             cancel = ui.button(tl!("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             new = ui.add_enabled(ready, egui::Button::new(tl!("New Document"))).clicked();
             add = ui
@@ -600,7 +600,7 @@ fn product_label(i: usize) -> String {
 fn labels_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LabelsForm) -> bool {
     let has_recipients = !app.session.merge.rows.is_empty();
     if has_recipients {
-        ui.checkbox(&mut f.recipients, tl!("One label per recipient"));
+        crate::rtl::checkbox(ui, &mut f.recipients, tl!("One label per recipient"));
     }
     ui.add_enabled_ui(!(has_recipients && f.recipients && !f.single), |ui| {
         ui.label(tl!("Address:"));
@@ -616,9 +616,9 @@ fn labels_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LabelsForm) -> bool {
     });
     let (rows, cols) = LABEL_PRODUCTS.get(f.product).map_or((1, 1), |p| (p.rows, p.cols));
     heading(ui, "Print");
-    ui.radio_value(&mut f.single, false, tl!("Full page of the same label"));
+    crate::rtl::radio_value(ui, &mut f.single, false, tl!("Full page of the same label"));
     ui.horizontal(|ui| {
-        ui.radio_value(&mut f.single, true, tl!("Single label"));
+        crate::rtl::radio_value(ui, &mut f.single, true, tl!("Single label"));
         ui.add_enabled_ui(f.single, |ui| {
             ui.label(tl!("Row:"));
             ui.add(egui::DragValue::new(&mut f.row).range(1..=rows));

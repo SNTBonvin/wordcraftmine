@@ -171,7 +171,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
         ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
     };
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("Click level to modify:"));
             for i in 0..LEVELS {
                 if ui.selectable_label(f.level == i, format!("{}", i + 1)).clicked() {
@@ -179,7 +179,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
                 }
             }
         });
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Preview")).small().weak());
             preview(ui, f);
         });
@@ -188,7 +188,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
     let styles = f.styles.clone();
     let Some(l) = f.levels.get_mut(i) else { return true };
     heading(ui, "Number format");
-    egui::Grid::new("mll_number").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("mll_number").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
         ui.label(tl!("Enter formatting for number:"));
         ui.text_edit_singleline(&mut l.text);
         ui.end_row();
@@ -224,7 +224,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
         ui.add(egui::DragValue::new(&mut l.start).range(0..=32_767));
         ui.end_row();
         if i > 0 {
-            ui.checkbox(&mut l.restart, tl!("Restart list after:"));
+            crate::rtl::checkbox(ui, &mut l.restart, tl!("Restart list after:"));
             ui.add_enabled_ui(l.restart, |ui| {
                 let shown = crate::i18n::fmt(tl!("Level {n}"), &[("n", &l.restart_after.clamp(1, i as u8).to_string())]);
                 egui::ComboBox::from_id_salt("mll_restart").selected_text(shown).show_ui(ui, |ui| {
@@ -247,20 +247,20 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
         ui.label(tl!("Font:"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut l.font).desired_width(110.0));
-            ui.checkbox(&mut l.bold, tl!("Bold"));
-            ui.checkbox(&mut l.italic, tl!("Italic"));
+            crate::rtl::checkbox(ui, &mut l.bold, tl!("Bold"));
+            crate::rtl::checkbox(ui, &mut l.italic, tl!("Italic"));
         });
         ui.end_row();
         ui.label("");
-        ui.checkbox(&mut l.legal, tl!("Legal style numbering"));
+        crate::rtl::checkbox(ui, &mut l.legal, tl!("Legal style numbering"));
         ui.end_row();
     });
     heading(ui, "Position");
-    egui::Grid::new("mll_position").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("mll_position").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
         ui.label(tl!("Number alignment:"));
         ui.horizontal(|ui| {
             for (v, s) in [("left", "Left"), ("center", "Center"), ("right", "Right")] {
-                ui.radio_value(&mut l.align, v.to_string(), tl!(s));
+                crate::rtl::radio_value(ui, &mut l.align, v.to_string(), tl!(s));
             }
         });
         ui.end_row();
@@ -436,14 +436,16 @@ fn color(ui: &mut Ui, theme: &[wordcraft_doc::Rgb], value: &mut String, none_lab
         ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
         let label = if c.is_some() { value.clone() } else { tl!(none_label).to_string() };
         ui.menu_button(label, |ui| {
-            if ui.button(tl!(none_label)).clicked() {
-                value.clear();
-                ui.close();
-            }
-            if let Some(hex) = crate::widgets::color_grid(ui, theme) {
-                *value = hex;
-                ui.close();
-            }
+            crate::rtl::root(ui, |ui| {
+                if ui.button(tl!(none_label)).clicked() {
+                    value.clear();
+                    ui.close();
+                }
+                if let Some(hex) = crate::widgets::color_grid(ui, theme) {
+                    *value = hex;
+                    ui.close();
+                }
+            })
         });
     });
 }
@@ -456,12 +458,12 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
     };
     heading(ui, "Show");
-    egui::Grid::new("tco_show").num_columns(2).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
-        ui.checkbox(&mut f.comments, tl!("Comments"));
-        ui.checkbox(&mut f.ink, tl!("Ink"));
+    crate::rtl::grid(ui, egui::Grid::new("tco_show").num_columns(2).spacing(vec2(16.0, 4.0)), |ui| {
+        crate::rtl::checkbox(ui, &mut f.comments, tl!("Comments"));
+        crate::rtl::checkbox(ui, &mut f.ink, tl!("Ink"));
         ui.end_row();
-        ui.checkbox(&mut f.insertions_deletions, tl!("Insertions and Deletions"));
-        ui.checkbox(&mut f.formatting, tl!("Formatting"));
+        crate::rtl::checkbox(ui, &mut f.insertions_deletions, tl!("Insertions and Deletions"));
+        crate::rtl::checkbox(ui, &mut f.formatting, tl!("Formatting"));
         ui.end_row();
     });
     heading(ui, "Balloons");
@@ -470,10 +472,10 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         ("inline", "Show all revisions inline"),
         ("commentsAndFormatting", "Show only comments and formatting in balloons"),
     ] {
-        ui.radio_value(&mut f.balloons, v.to_string(), tl!(l));
+        crate::rtl::radio_value(ui, &mut f.balloons, v.to_string(), tl!(l));
     }
     heading(ui, "Advanced");
-    egui::Grid::new("tco_advanced").num_columns(3).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("tco_advanced").num_columns(3).spacing(vec2(10.0, 6.0)), |ui| {
         ui.label(tl!("Insertions:"));
         choice(
             ui,
@@ -519,7 +521,7 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         ui.end_row();
     });
     ui.add_space(4.0);
-    ui.checkbox(&mut f.track_formatting, tl!("Track formatting"));
+    crate::rtl::checkbox(ui, &mut f.track_formatting, tl!("Track formatting"));
     let (ok, cancel) = buttons(ui, tl!("OK"));
     if ok && let Err(e) = app.run("review.trackingOptions", f.params()) {
         app.status(e);

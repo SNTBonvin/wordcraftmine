@@ -732,7 +732,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
         app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
     }
-    resp.context_menu(|ui| context_menu(app, ui));
+    crate::rtl::context_menu(&resp, |ui| context_menu(app, ui));
     // Stand down while the context menu owns the pointer so the two never double up;
     // `context_menu_opened` also covers the click that dismisses the menu.
     app.canvas.context_menu_open = resp.context_menu_opened();
@@ -1593,7 +1593,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     let item = |ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: serde_json::Value| {
         let sc = crate::widgets::shortcut_text(app, id);
         let on = crate::widgets::enabled(app, id);
-        if ui.add_enabled(on, egui::Button::new(tl!(label)).shortcut_text(sc)).clicked() {
+        if ui.add_enabled(on, crate::rtl::menu_item(ui, tl!(label), &sc, 0.0)).clicked() {
             let _ = app.run(id, params);
             ui.close();
         }
@@ -1633,17 +1633,19 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     ui.separator();
     if let Some(syn) = app.canvas.context_synonyms.clone().and_then(|v| v.as_array().cloned()).filter(|a| !a.is_empty()) {
         ui.menu_button(tl!("Synonyms"), |ui| {
-            for w in syn.iter().filter_map(|x| x.as_str()) {
-                if ui.button(w).clicked() {
-                    let _ = app.run("select.word", json!({}));
-                    let (a, b) = app.session.sel.ordered();
-                    let trimmed = app.session.doc.para_at(&a).and_then(|p| p.text.get(a.off..b.off)).map(|t| t.trim_end().len()).unwrap_or(0);
-                    let end = wordcraft_doc::Pos { off: a.off + trimmed, ..b };
-                    app.session.sel = wordcraft_engine::Selection { anchor: a, focus: end };
-                    let _ = app.run("text.insert", json!({"text": w, "raw": true}));
-                    ui.close();
+            crate::rtl::root(ui, |ui| {
+                for w in syn.iter().filter_map(|x| x.as_str()) {
+                    if ui.button(w).clicked() {
+                        let _ = app.run("select.word", json!({}));
+                        let (a, b) = app.session.sel.ordered();
+                        let trimmed = app.session.doc.para_at(&a).and_then(|p| p.text.get(a.off..b.off)).map(|t| t.trim_end().len()).unwrap_or(0);
+                        let end = wordcraft_doc::Pos { off: a.off + trimmed, ..b };
+                        app.session.sel = wordcraft_engine::Selection { anchor: a, focus: end };
+                        let _ = app.run("text.insert", json!({"text": w, "raw": true}));
+                        ui.close();
+                    }
                 }
-            }
+            })
         });
     }
     item(ui, app, "Font…", "ui.dialog", json!({"name": "font"}));
@@ -1669,15 +1671,19 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     if app.session.sel.focus.path.cell().is_some() {
         ui.separator();
         ui.menu_button(tl!("Insert"), |ui| {
-            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
-            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
-            item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
-            item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
+            crate::rtl::root(ui, |ui| {
+                item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
+                item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
+                item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
+                item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
+            })
         });
         ui.menu_button(tl!("Delete"), |ui| {
-            item(ui, app, "Delete Rows", "table.deleteRow", json!({}));
-            item(ui, app, "Delete Columns", "table.deleteColumn", json!({}));
-            item(ui, app, "Delete Table", "table.deleteTable", json!({}));
+            crate::rtl::root(ui, |ui| {
+                item(ui, app, "Delete Rows", "table.deleteRow", json!({}));
+                item(ui, app, "Delete Columns", "table.deleteColumn", json!({}));
+                item(ui, app, "Delete Table", "table.deleteTable", json!({}));
+            })
         });
         item(ui, app, "Merge Cells", "table.merge", json!({}));
     }

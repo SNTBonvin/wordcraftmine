@@ -24,6 +24,8 @@ log = { workspace = true }
 image = { workspace = true }
 # The system's preferred interface languages (#8). Native: OS APIs; wasm: none (English).
 sys-locale = "0.3"
+# Display order for a right-to-left interface language (Arabic): egui lays words out left to right.
+unicode-bidi = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # The browser clock (`SystemTime::now()`/`Instant::now()` panic on wasm32).

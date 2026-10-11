@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Arabic interface added and mirrored right to left; grids inside dialogs keep their column order; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -18,8 +18,8 @@ other ~18 languages Word ships, plus native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **12 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr` and Russian `ru`. Catalogs have 1,305–1,450 entries
+- **13 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru` and Arabic `ar`. Catalogs have 1,305–1,998 entries
   each. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
@@ -43,7 +43,7 @@ shared items below.
 | Simplified Chinese (Mandarin) | zh-hans | 929 entries; 98% of extracted, ~95% of visible | most; newer panes English | CJK ✅, IME ✅; Windows UI font fixed (#248); no vertical text | no | partial | 3–5 |
 | Spanish | es | ~930; 98% / ~95% | most | Latin ✅ | no | partial | 1–2 |
 | Hindi | hi | 0 | ❌ | Devanagari shaping via HarfRust, untested; no hyphenation | no | none | 4–6 |
-| Arabic | ar | 0 | ❌ | shaping, joining, lam-alef, bidi ✅ (#207); no kashida; **no mirrored UI** | no | none | 6–8 |
+| Arabic | ar | 1,998 entries; every key of the Russian catalog (the full interface audit) | most; long wrapped notes break at the wrong end | shaping, joining, lam-alef, bidi ✅ (#207); no kashida; interface text reads right to left and the **window is mirrored**; grid forms inside dialogs keep their column order | no | partial | 2–3 plus the grid forms below |
 | French | fr | 0 | ❌ | Latin ✅ | no | none | 3–4 |
 | Portuguese | pt-br (pt-PT none) | ~930; 98% / ~95% (pt-BR) | most | Latin ✅ | no | partial | 2–4 (pt-BR finish + pt-PT) |
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
@@ -51,6 +51,22 @@ shared items below.
 | German | de | 0 (PR #203 open) | ❌ | Latin ✅ | no | none | 1–2 |
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
+
+Arabic (`ar`, every `ar-*` system locale, `{"value":"ar"}`) is written in typing order in
+`ar.tsv` and put into display order when the catalog loads (`crates/ui-egui/src/bidi.rs`): egui
+joins the letters of a word but lays words out left to right. Placeholders, keyboard shortcuts
+and caption colons stay in place, ribbon locations read from the right, and command search matches
+a query of several Arabic words word by word. The Arabic face is Noto Sans Arabic from craft-fonts
+(kept in the web build too); a native build without it uses an installed Arabic font.
+The window is mirrored (`crates/ui-egui/src/rtl.rs`): the title bar, tabs, ribbon groups and their
+buttons, status bar, File page, dialogs' rows and buttons, menus, check boxes and radio buttons run
+from the right, and the side panes swap sides. The document area is not mirrored: its direction
+belongs to the document. The same
+face is the document fallback for Arabic text, so Arabic typed or opened in the browser, which
+has no system fonts, is drawn and exported instead of showing boxes. Not done:
+grid forms inside dialogs (egui's `Grid` cannot run right to left, so a label stays to the left of
+its field, with the block set against the right edge), text fields' own alignment, labels that wrap
+onto a second line, Arabic-Indic digits, and Arabic proofing.
 
 Other shipped languages: **7** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
 Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`) and Russian (`ru`), all partial.
@@ -67,7 +83,7 @@ proofing is not included; terminology and checks: [`localization-tr.md`](localiz
 | Item | Hours | Notes |
 |---|---|---|
 | Wrap the remaining English literals in `tl!` and translate them in every catalog | 4–6 | Makes the six partial languages full except script items |
-| Mirrored (right-to-left) interface for Arabic and Hebrew | 15–25 | Ribbon, panes, dialogs, rulers |
+| Mirrored (right-to-left) interface for Arabic and Hebrew | 4–8 left | Done for Arabic (`rtl.rs`): title bar, ribbon, panes, status bar, File page, dialogs, menus. Left: grid forms inside dialogs (needs a grid of our own), wrapped right-to-left labels, text-field alignment |
 | Vertical text, ruby, document grid (Chinese, Japanese, Korean) | counted in [layout-parity.md](layout-parity.md) | |
 | Proofing dictionaries, grammar and hyphenation for the 11 non-English key languages | 25–45 | Open dictionaries only (licence check per dictionary); issues #25, #40, #100 |
 | Native-speaker review of every catalog | human | None reviewed yet |
@@ -76,6 +92,7 @@ proofing is not included; terminology and checks: [`localization-tr.md`](localiz
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Arabic interface catalog (1,998 entries) shown in right-to-left reading order, `ar-*` locales, saved preference, word-by-word command search, Arabic face in web builds; the window is mirrored right to left (grid forms inside dialogs keep their column order) |
 | 2026-10-10 | minor | Russian interface (#300; 1,524 entries, built-in style names shown translated; covers everything the interface audit finds) |
 | 2026-10-11 | minor | Turkish interface catalog (1,307 entries), locale selection, saved preference, Turkish casing in command search and font coverage checks; catalog sizes re-counted |
 | 2026-10-11 | trivial | English spelling (#520): our supplement `assets/spelling/en-extra.txt` adds ~220 common modern words the Moby list lacks ("desktop", "download", "email"…) |

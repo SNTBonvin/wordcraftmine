@@ -11,53 +11,53 @@ use crate::theme::{Tokens, regular, semibold};
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     if app.session.view.nav_pane {
-        egui::Panel::left("nav_pane")
+        crate::rtl::start_panel("nav_pane")
             .default_size(260.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| nav(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| nav(app, ui)));
     }
     if app.session.view.clipboard_pane {
-        egui::Panel::left("clipboard_pane")
+        crate::rtl::start_panel("clipboard_pane")
             .default_size(250.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| clipboard(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| clipboard(app, ui)));
     }
     if app.session.view.styles_pane {
-        egui::Panel::right("styles_pane")
+        crate::rtl::end_panel("styles_pane")
             .default_size(250.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| styles(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| styles(app, ui)));
     }
     if app.session.view.style_inspector {
-        egui::Panel::right("style_inspector")
+        crate::rtl::end_panel("style_inspector")
             .default_size(240.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| inspector(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| inspector(app, ui)));
     }
     if app.session.view.accessibility_pane {
-        egui::Panel::right("accessibility_pane")
+        crate::rtl::end_panel("accessibility_pane")
             .default_size(280.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| crate::a11y_pane::accessibility(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| crate::a11y_pane::accessibility(app, ui)));
     }
     if app.session.view.alt_text_pane {
-        egui::Panel::right("alt_text_pane")
+        crate::rtl::end_panel("alt_text_pane")
             .default_size(260.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| crate::a11y_pane::alt_text(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| crate::a11y_pane::alt_text(app, ui)));
     }
     if app.session.view.comments_pane {
-        egui::Panel::right("comments_pane")
+        crate::rtl::end_panel("comments_pane")
             .default_size(290.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| comments(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| comments(app, ui)));
     }
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn header(ui: &mut Ui, title: &str) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             // Drawn, not the "✕" character: the interface fonts have no glyph for it.
             if crate::widgets::icon_button(ui, "close", tl!("Close")).clicked() {
                 close = true;
@@ -202,7 +202,7 @@ fn clipboard(app: &mut WordApp, ui: &mut Ui) {
                     let _ = app.run("edit.pasteClipboardItem", json!({"index": i}));
                     app.canvas.want_focus = true;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.with_layout(crate::rtl::far_side(ui, egui::Align::Min), |ui| {
                     if ui.small_button(tl!("Delete")).clicked() {
                         let _ = app.run("edit.deleteClipboardItem", json!({"index": i}));
                     }
@@ -260,14 +260,14 @@ fn styles(app: &mut WordApp, ui: &mut Ui) {
         for (id, name, is_char) in list {
             ui.horizontal(|ui| {
                 let r = ui.selectable_label(id == cur, &name);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(if is_char { "a" } else { "¶" }).weak());
                 });
                 if r.clicked() {
                     let _ = app.run("para.style", json!({"style": id}));
                     app.canvas.want_focus = true;
                 }
-                r.context_menu(|ui| {
+                crate::rtl::context_menu(&r, |ui| {
                     if ui.button(tl!("Modify…")).clicked() {
                         app.dialog = crate::dialogs::Dialog::modify_style(app, &id);
                         ui.close();
@@ -516,7 +516,7 @@ fn level_row(ui: &mut Ui, t: &Tokens, caption: &str, value: &str, dim: bool, tip
             let text = egui::RichText::new(value).font(regular(12.5)).color(if dim { t.text_disabled } else { t.text });
             ui.add(egui::Label::new(text).wrap());
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Min), |ui| {
             let (r, resp) = ui.allocate_exact_size(vec2(22.0, 20.0), egui::Sense::click());
             let enabled = !disabled;
             if enabled && resp.hovered() {

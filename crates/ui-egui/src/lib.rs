@@ -15,6 +15,7 @@ macro_rules! tl {
 
 pub mod a11y_pane;
 pub mod backstage;
+pub mod bidi;
 pub mod canvas;
 pub mod chrome;
 pub mod control;
@@ -43,6 +44,7 @@ pub mod paste_picture;
 pub mod previews;
 pub mod read_aloud;
 pub mod ribbon;
+pub mod rtl;
 pub mod scroll;
 pub mod table_pen;
 pub mod theme;
@@ -844,8 +846,9 @@ impl WordApp {
         i18n::set_current(lang);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
         // An installed CJK font is read only once CJK text is shown (#241): never for an English
-        // interface that doesn't open the language list.
-        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
+        // interface that doesn't open the language list. An Arabic interface asks the same way for
+        // an installed Arabic font when none is embedded.
+        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk() || lang.rtl();
         if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
             theme::install_fonts_with(ctx, lang.prefers_hans(), system_cjk);
             self.fonts_hans = lang.prefers_hans();

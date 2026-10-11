@@ -31,7 +31,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Interface size (File › Options › General, 80–200 %, on top of the system display scale; `ui.interfaceSize`) (#475) | ✅ | system display scaling only | 100% | — |
 | Platform conventions (macOS menus/traffic lights #255, Windows title bar, Linux CSD on Wayland #78) | partial | native | 70% | 3–5 |
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on, document canvas exposure untested | full | 25% | 10–15 |
-| Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
+| Right-to-left (mirrored) interface | 🟡 Arabic: title bar, ribbon, panes, status bar, File page, dialogs and menus mirrored; grid forms inside dialogs keep their column order | ✅ (Arabic, Hebrew Word) | 80% | in localization |
 
 ## Revision history
 

@@ -62,7 +62,7 @@ fn buttons(ui: &mut Ui, ok: &str, cancel: &str, ok_enabled: bool) -> (bool, bool
     let mut r = (false, false);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             if ui.button(tl!(cancel)).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 r.1 = true;
             }
@@ -357,15 +357,15 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
             f.set_count(n);
         }
         ui.add_space(16.0);
-        ui.checkbox(&mut f.separator, tl!("Line between"));
+        crate::rtl::checkbox(ui, &mut f.separator, tl!("Line between"));
     });
     ui.add_space(6.0);
     ui.label(egui::RichText::new(tl!("Width and spacing")).font(semibold(12.5)));
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             let mut changed = None;
             egui::ScrollArea::vertical().id_salt("columns_widths").max_height(130.0).show(ui, |ui| {
-                egui::Grid::new("columns_grid").num_columns(3).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+                crate::rtl::grid(ui, egui::Grid::new("columns_grid").num_columns(3).spacing(vec2(12.0, 4.0)), |ui| {
                     ui.label(tl!("Col #:"));
                     ui.label(tl!("Width:"));
                     ui.label(tl!("Spacing:"));
@@ -406,7 +406,7 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
             }
         });
         ui.add_space(8.0);
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("Preview"));
             columns_preview(ui, f, &t);
         });
@@ -818,7 +818,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
         ui.horizontal(|ui| {
             let name = f.selected.map(|c| format!("U+{:04X}", c as u32)).unwrap_or_default();
             ui.label(egui::RichText::new(name).font(semibold(12.0)));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
                 ui.label(tl!("from Unicode (hex)"));
                 let resp = ui.add(egui::TextEdit::singleline(&mut f.code).desired_width(70.0).font(egui::TextStyle::Monospace));
                 if resp.changed() {
@@ -857,7 +857,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
 fn special_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm, insert: &mut Option<(Value, String, String)>, t: &Tokens) -> bool {
     let mut double = false;
     egui::ScrollArea::vertical().id_salt("special_chars").max_height(CELL * GRID_ROWS as f32 + 60.0).auto_shrink([false, false]).show(ui, |ui| {
-        egui::Grid::new("special_grid").num_columns(3).striped(true).spacing(vec2(14.0, 4.0)).show(ui, |ui| {
+        crate::rtl::grid(ui, egui::Grid::new("special_grid").num_columns(3).striped(true).spacing(vec2(14.0, 4.0)), |ui| {
             ui.label(egui::RichText::new(tl!("Character")).font(semibold(12.0)));
             ui.label("");
             ui.label(egui::RichText::new(tl!("Shortcut key:")).font(semibold(12.0)));
@@ -1098,7 +1098,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
     ui.set_width(620.0);
     ui.horizontal_top(|ui| {
         // Left: category and field names.
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.set_width(200.0);
             ui.label(egui::RichText::new(tl!("Pick a field from the list")).font(semibold(12.5)));
             ui.label(tl!("Categories:"));
@@ -1125,7 +1125,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
         });
         ui.add_space(14.0);
         // Right: the field's options, or its code.
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Field properties")).font(semibold(12.5)));
             if let Some((_, _, desc)) = FIELDS.iter().find(|(n, _, _)| *n == f.name) {
                 ui.label(egui::RichText::new(format!("{} {}", tl!("Description:"), tl!(desc))).small().color(t.text_dim));
@@ -1138,7 +1138,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
             } else {
                 field_options(ui, f, &t);
                 ui.add_space(4.0);
-                ui.checkbox(&mut f.preserve, tl!("Preserve formatting during updates"));
+                crate::rtl::checkbox(ui, &mut f.preserve, tl!("Preserve formatting during updates"));
             }
         });
     });

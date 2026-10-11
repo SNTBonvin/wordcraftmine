@@ -145,7 +145,7 @@ pub fn customize_keyboard(app: &mut WordApp, ui: &mut Ui, f: &mut KeyboardForm) 
     cats.push((ALL.to_string(), tl!("All Commands").to_string()));
     let cmds: Vec<(String, String)> = commands(app, &f.category).into_iter().map(|(id, l)| (id.to_string(), l)).collect();
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("Categories:"));
             if let Some(c) = list(ui, "kb_categories", vec2(left, 170.0), &cats, &f.category) {
                 f.category = c;
@@ -153,7 +153,7 @@ pub fn customize_keyboard(app: &mut WordApp, ui: &mut Ui, f: &mut KeyboardForm) 
                 f.current.clear();
             }
         });
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("Commands:"));
             if let Some(c) = list(ui, "kb_commands", vec2(right, 170.0), &cmds, &f.command) {
                 f.command = c;
@@ -169,14 +169,14 @@ pub fn customize_keyboard(app: &mut WordApp, ui: &mut Ui, f: &mut KeyboardForm) 
     }
     let mut close = false;
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("Keys for this command:"));
             let rows: Vec<(String, String)> = keys.iter().map(|k| (k.clone(), key_text(k))).collect();
             if let Some(k) = list(ui, "kb_current", vec2(left, 70.0), &rows, &f.current) {
                 f.current = k;
             }
         });
-        ui.vertical(|ui| {
+        crate::rtl::vertical(ui, |ui| {
             ui.label(tl!("New shortcut:"));
             close = capture(ui, f);
             ui.add_space(4.0);
@@ -223,7 +223,7 @@ pub fn customize_keyboard(app: &mut WordApp, ui: &mut Ui, f: &mut KeyboardForm) 
         if ui.add_enabled(!app.session.keymap.is_empty(), egui::Button::new(tl!("Reset All…"))).clicked() {
             f.confirm_reset = true;
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
             if ui.button(tl!("Close")).clicked() {
                 close = true;
             }

@@ -614,3 +614,108 @@ fn bundled_interface_fonts_cover_turkish_without_system_fallbacks() {
     }
     assert!(!lang("tr").uses_cjk());
 }
+
+#[test]
+fn arabic_locales_and_saved_preference_work_without_changing_the_document() {
+    let ar = lang("ar");
+    for tag in ["ar", "ar-MA", "ar_EG.UTF-8", "AR-sa", "ar_DZ@variant", "ar-Arab-AE"] {
+        assert_eq!(lang_from_tag(tag), Some(ar), "{tag}");
+    }
+    assert_eq!(first_supported(["fr-FR", "ar-MA", "en-US"]), Some(ar));
+    assert_eq!(normalize_pref("AR"), Some("ar"));
+    assert_eq!(ar.name(), "العربية");
+    assert!(ar.rtl());
+    assert!(Lang::all().filter(|l| l.rtl()).eq([ar]), "Arabic is the only right-to-left language");
+    assert!(!ar.uses_cjk());
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "AR"})).unwrap();
+    assert_eq!(result["effective"], "ar");
+    assert_eq!(app.ui.language, "ar");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "ar" && l["name"] == "العربية"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), ar);
+    assert!(app.run("ui.language", serde_json::json!({"value": "ar-unknown"})).is_err());
+    assert_eq!(app.ui.language, "ar", "invalid preferences must keep the saved language");
+}
+
+#[test]
+fn arabic_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| (e.context, e.source)).collect::<HashSet<_>>();
+    // Russian carries every key the interface audit finds; Arabic has them all.
+    assert_eq!(keys(lang("ar").0.source), keys(lang("ru").0.source));
+    let (entries, errors) = parse_entries(lang("ar").0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+    // The file is in typing order: a `\n` label keeps its line count, and nothing is pre-reversed.
+    for e in &entries {
+        assert_eq!(e.source.matches('\n').count(), e.translation.matches('\n').count(), "{:?}", e.source);
+    }
+    let ar = lang("ar");
+    for (source, expected) in
+        [("Home", "الرئيسية"), ("Font", "الخط"), ("Save", "حفظ"), ("WordCraft", "WordCraft"), ("unknown future label", "unknown future label")]
+    {
+        assert_eq!(tr(ar, source), expected);
+    }
+}
+
+/// Lookups return Arabic in display order: egui draws the words left to right as given, and joins
+/// the letters of each word itself.
+#[test]
+fn arabic_lookups_are_in_display_order() {
+    let ar = lang("ar");
+    // "جدول المحتويات" as typed: the second word ends up on the left.
+    assert_eq!(tr(ar, "Table of Contents"), "المحتويات جدول");
+    assert_eq!(tr(ar, "Track Changes"), "التغييرات تعقب");
+    // A trailing ellipsis ends the phrase on the left.
+    assert_eq!(tr(ar, "Paste Special…"), "…خاص لصق");
+    // Latin names keep their own direction inside the phrase.
+    assert_eq!(tr(ar, "About WordCraft"), "WordCraft حول");
+    // A caption's colon ends it, on the left: the mirrored interface puts the widget there.
+    assert_eq!(tr(ar, "Password:"), ":المرور كلمة");
+    // Each line of a two-line ribbon label is its own line.
+    assert_eq!(tr(ar, "Table of\nContents"), "جدول\nالمحتويات");
+    // Placeholders survive and are filled in place; inserted text is never reordered.
+    assert_eq!(fmt(tr(ar, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "9 من 3 الصفحة");
+    assert_eq!(fmt(tr(ar, "Exported {path}"), &[("path", "draft-{words}.docx")]), "draft-{words}.docx إلى التصدير تم");
+    for count in [0, 1, 2, 5, 11, 100] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(ar, "{words} words"), &[("words", &words)]), format!("{count} :الكلمات عدد"));
+    }
+    // The preview context is put into display order too.
+    assert_eq!(trc(ar, "preview", "Title"), "العنوان");
+    set_current(ar);
+    // A ribbon location reads from the right: tab first, then the group.
+    assert_eq!(location("Home › Font"), "الخط ‹ الرئيسية");
+    // A query typed in reading order finds a label whose words are stored in display order.
+    assert!(label_matches(&lowercase(t("Table of Contents")), "جدول المحتويات"));
+    assert!(label_matches(&lowercase(t("Table of Contents")), "المحتويات"));
+    assert!(!label_matches(&lowercase(t("Table of Contents")), "جدول الصفحات"));
+    set_current(Lang::EN);
+    // Left-to-right languages keep plain substring matching.
+    assert!(!label_matches("table of contents", "contents table"));
+    assert!(label_matches("table of contents", "of cont"));
+}
+
+/// With a craft-fonts Arabic face, every Arabic label has glyphs in the interface families.
+#[test]
+fn arabic_labels_have_glyphs_when_an_arabic_face_is_built_in() {
+    if wordcraft_fonts::ui_arabic_fonts().is_empty() {
+        eprintln!("skipped: built without a craft-fonts Arabic face (set CRAFT_FONTS_DIR to a checkout)");
+        return;
+    }
+    let ar = lang("ar");
+    let (entries, _) = parse_entries(ar.0.source);
+    let labels: std::collections::BTreeSet<char> =
+        entries.iter().flat_map(|e| e.translation.chars()).chain(ar.name().chars()).filter(|c| ('\u{0600}'..='\u{06FF}').contains(c)).collect();
+    assert!(labels.len() > 30, "the catalog is written in Arabic script");
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::theme::font_definitions(false, false));
+    ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+    for id in [egui::FontId::proportional(13.0), crate::theme::medium(13.0), crate::theme::semibold(17.0)] {
+        let missing: Vec<char> = labels.iter().copied().filter(|c| !ctx.fonts_mut(|f| f.has_glyphs(&id, &c.to_string()))).collect();
+        assert!(missing.is_empty(), "{id:?} lacks Arabic label glyphs {missing:?}");
+    }
+}
