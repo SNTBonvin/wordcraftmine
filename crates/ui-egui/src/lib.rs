@@ -41,6 +41,7 @@ pub mod ribbon;
 pub mod scroll;
 pub mod table_pen;
 pub mod theme;
+pub mod theme_favorites;
 pub mod widgets;
 pub mod window_geometry;
 pub mod zotero;
@@ -99,6 +100,9 @@ pub struct UiState {
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
+    /// Starred fixed themes (`light`, `dark`), offered by a right-click on View › Interface Theme.
+    #[serde(deserialize_with = "theme_favorites::deserialize")]
+    pub favorite_themes: Vec<String>,
     /// Interface size in percent (#475): scales the whole interface on top of the system's
     /// display scale. Junk or out-of-range saved values read as 100 % or are clamped to 80–200 %.
     pub interface_size: theme::InterfaceSize,
@@ -140,6 +144,7 @@ impl Default for UiState {
             recent: Vec::new(),
             recent_symbols: Vec::new(),
             theme: theme::Appearance::default(),
+            favorite_themes: Vec::new(),
             interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
@@ -622,6 +627,16 @@ impl WordApp {
                     }
                 }
                 json!({"theme": self.ui.theme.code(), "dark": self.ui_is_dark()})
+            }
+            "ui.themeFavorites" => {
+                // The starred themes, replaced as a whole; no `themes` reads them.
+                if let Some(v) = p.get("themes") {
+                    match theme_favorites::validate(v) {
+                        Ok(favorites) => self.ui.favorite_themes = favorites,
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+                json!({"themes": self.ui.favorite_themes})
             }
             "ui.interfaceSize" => {
                 // Interface size in percent, 80–200 (clamped); no value reads it. Document zoom is

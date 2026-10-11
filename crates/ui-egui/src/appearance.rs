@@ -88,10 +88,17 @@ fn card(ui: &mut Ui, app: &mut WordApp, t: &Tokens, title: &str, active: bool, t
             preview(ui, shown == Appearance::Dark, ui.available_width());
             ui.add_space(4.0);
             for a in themes {
-                // Picking a card's theme shows it now (one theme per card today).
-                if ui.radio(app.ui.theme == *a, tl!(a.label())).clicked() {
-                    let _ = app.run("ui.theme", json!({"value": a.code()}));
-                }
+                let row = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 24.0));
+                let hovered = ui.ctx().pointer_hover_pos().is_some_and(|p| row.contains(p));
+                ui.horizontal(|ui| {
+                    // Picking a card's theme shows it now (one theme per card today).
+                    if ui.radio(app.ui.theme == *a, tl!(a.label())).clicked() {
+                        let _ = app.run("ui.theme", json!({"value": a.code()}));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        crate::theme_favorites::star_button(ui, app, *a, hovered);
+                    });
+                });
             }
         });
 }

@@ -203,7 +203,7 @@ pub fn menu_button(
     tip: &str,
     big_btn: bool,
     menu: impl FnOnce(&mut Ui, &mut WordApp),
-) {
+) -> egui::Response {
     let (label, tip) = (label.map(|l| tl!(l)), tl!(tip));
     let t = Tokens::get(ui.ctx());
     let resp = if big_btn {
@@ -242,6 +242,7 @@ pub fn menu_button(
         ui.set_min_width(200.0);
         menu(ui, app);
     });
+    resp
 }
 
 /// A ribbon group: content, a centred label below and a divider on the right.
