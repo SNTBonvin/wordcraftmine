@@ -2026,6 +2026,12 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.head(11.3, 3.5, 75.0, a);
             pen.acc(&[(13.5, 8.5), (13.5, 14.5)]);
         }
+        // A page with a title band and a style letter: the document's template.
+        "documentTemplate" => {
+            pen.page_h(2.5, 1.0, 14.0);
+            pen.block(4.5, 4.0, 9.5, 5.75, 0.5, a);
+            pen.glyph_a(8.0, 13.0, 4.75, c, c);
+        }
         "addins" => {
             pen.panel(1.5, 1.5, 6.5, 6.5, 1.0);
             pen.panel(9.5, 1.5, 14.5, 6.5, 1.0);
@@ -2382,6 +2388,7 @@ pub const NAMES: &[&str] = &[
     "ccDate",
     "ccRepeat",
     "designMode",
+    "documentTemplate",
 ];
 
 /// Names that are deliberately the same drawing as another (aliases of one command or one idea).

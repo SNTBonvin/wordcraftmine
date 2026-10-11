@@ -327,6 +327,37 @@ fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str
     }
 }
 
+/// Word's text wrapping styles in menu order: label, model value, `arrange.wrap` parameter.
+pub(crate) const WRAP_STYLES: [(&str, wordcraft_doc::para::Wrap, &str); 7] = {
+    use wordcraft_doc::para::Wrap;
+    [
+        ("In Line with Text", Wrap::Inline, "inline"),
+        ("Square", Wrap::Square, "square"),
+        ("Tight", Wrap::Tight, "tight"),
+        ("Through", Wrap::Through, "through"),
+        ("Top and Bottom", Wrap::TopAndBottom, "topAndBottom"),
+        ("Behind Text", Wrap::BehindText, "behindText"),
+        ("In Front of Text", Wrap::InFrontOfText, "inFrontOfText"),
+    ]
+};
+
+/// The Wrap Text menu for the selected picture, shape or text box: the seven styles (the
+/// current one checked), then Move with Text / Fix Position on Page for a floating one. The
+/// canvas context menu shows it; the ribbon's Wrap Text button can share it.
+pub(crate) fn wrap_text_items(ui: &mut Ui, app: &mut WordApp) {
+    use wordcraft_engine::cmd::objects::{moves_with_text, selected};
+    let state = selected(&app.session).and_then(|(_, o)| o.frame().map(|(_, _, f)| (f.wrap, moves_with_text(f))));
+    let wrap = state.map(|(w, _)| w);
+    for (label, w, v) in WRAP_STYLES {
+        mi_check(ui, app, label, wrap == Some(w), "arrange.wrap", json!({"wrap": v}));
+    }
+    ui.separator();
+    // An inline object is neither: it's part of the text.
+    let with_text = state.filter(|(w, _)| *w != wordcraft_doc::para::Wrap::Inline).map(|(_, m)| m);
+    mi_check(ui, app, "Move with Text", with_text == Some(true), "arrange.moveWithText", json!({"value": true}));
+    mi_check(ui, app, "Fix Position on Page", with_text == Some(false), "arrange.moveWithText", json!({"value": false}));
+}
+
 fn home(app: &mut WordApp, ui: &mut Ui) {
     let st = app.session.run("format.state", &json!({})).unwrap_or_default();
     let flag = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
@@ -948,6 +979,16 @@ fn design(app: &mut WordApp, ui: &mut Ui) {
 
 fn layout(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Page Setup", Some("ui.dialog"), app, |ui, app| {
+        // Text Direction works on what the caret is in: table cells, a text box, else the section.
+        let dir = wordcraft_engine::cmd::page::text_direction_at(&app.session);
+        menu_button(ui, app, "textDirection", Some("Text\nDirection"), "Text Direction", true, |ui, app| {
+            use wordcraft_doc::props::TextDirection;
+            for (label, d) in
+                [("Horizontal", TextDirection::Horizontal), ("Rotate all text 90°", TextDirection::Down), ("Rotate all text 270°", TextDirection::Up)]
+            {
+                mi_check(ui, app, label, dir == d, "layout.textDirection", json!({"value": d.ooxml()}));
+            }
+        });
         menu_button(ui, app, "margins", Some("Margins"), "Margins", true, |ui, app| {
             for (l, k) in [
                 ("Normal  1\" all", "normal"),
@@ -1018,12 +1059,15 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             ui.label("");
             ui.label(egui::RichText::new(tl!("Spacing")).small().strong());
             ui.end_row();
-            let mut l = rp.indent_left / 72.0;
+            // Indents in the File › Options unit.
+            let u = crate::options::unit();
+            let k = u.pt_per_unit();
+            let mut l = rp.indent_left / k;
             let mut b = rp.space_before;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Left:")).small());
-                if ui.add(egui::DragValue::new(&mut l).speed(0.05).range(-11.0..=22.0).suffix("\"").max_decimals(2)).changed() {
-                    let _ = app.run("para.indents", json!({"left": l * 72.0}));
+                if ui.add(egui::DragValue::new(&mut l).speed(3.6 / k).range(-792.0 / k..=1584.0 / k).suffix(u.suffix()).max_decimals(2)).changed() {
+                    let _ = app.run("para.indents", json!({"left": l * k}));
                 }
             });
             ui.label("");
@@ -1034,12 +1078,12 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
                 }
             });
             ui.end_row();
-            let mut r = rp.indent_right / 72.0;
+            let mut r = rp.indent_right / k;
             let mut a = rp.space_after;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Right:")).small());
-                if ui.add(egui::DragValue::new(&mut r).speed(0.05).range(-11.0..=22.0).suffix("\"").max_decimals(2)).changed() {
-                    let _ = app.run("para.indents", json!({"right": r * 72.0}));
+                if ui.add(egui::DragValue::new(&mut r).speed(3.6 / k).range(-792.0 / k..=1584.0 / k).suffix(u.suffix()).max_decimals(2)).changed() {
+                    let _ = app.run("para.indents", json!({"right": r * k}));
                 }
             });
             ui.label("");
@@ -1475,6 +1519,9 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);
+    });
+    group(ui, "Templates", None, app, |ui, app| {
+        big(ui, app, "documentTemplate", "Templates", "tools.templates", json!({}), false);
     });
 }
 
@@ -1971,7 +2018,7 @@ fn cell_size_boxes(ui: &mut Ui, app: &mut WordApp) {
         }
         _ => None,
     });
-    let unit = wordcraft_geom::Unit::default();
+    let unit = crate::options::unit();
     let k = unit.pt_per_unit();
     let h0 = row.height.or(laid.map(|x| x.h)).unwrap_or(0.0);
     let w0 = laid.map(|x| x.w).or(stored_w).unwrap_or(0.0);
