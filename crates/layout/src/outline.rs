@@ -174,6 +174,7 @@ pub(crate) fn symbol_items(pl: &Arc<ParaLayout>, x: f32, y: f32, level: u8, chil
         freeform: None,
         effects: Default::default(),
         spin: Default::default(),
+        extra: Default::default(),
     };
     let white = Border { style: BorderStyle::Single, width: 1.1, color: Some(Rgb(0xFF, 0xFF, 0xFF)), space: 0.0 };
     if level >= BODY {
