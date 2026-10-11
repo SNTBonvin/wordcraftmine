@@ -22,7 +22,7 @@ fn system_locales_map_to_languages() {
     assert_eq!(lang_from_tag("en-GB"), Some(Lang::EN));
     assert_eq!(lang_from_tag("C"), Some(Lang::EN));
     assert_eq!(lang_from_tag("POSIX"), Some(Lang::EN));
-    assert_eq!(lang_from_tag("fr-FR"), None);
+    assert_eq!(lang_from_tag("fr-FR"), Some(lang("fr")));
     assert_eq!(lang_from_tag(""), None);
     assert_eq!(lang_from_tag("_"), None);
     assert_eq!(lang_from_tag("sr"), Some(lang("sr")), "Cyrillic is the default script");
@@ -35,9 +35,9 @@ fn system_locales_map_to_languages() {
 #[test]
 fn the_first_supported_preferred_language_wins() {
     // Windows and macOS list several preferred languages in order.
-    assert_eq!(first_supported(["fr-FR", "zh-Hant-TW", "en-US"]), Some(lang("zh-hant")));
+    assert_eq!(first_supported(["it-IT", "zh-Hant-TW", "en-US"]), Some(lang("zh-hant")));
     assert_eq!(first_supported(["en-US", "ja-JP"]), Some(Lang::EN));
-    assert_eq!(first_supported(["fr-FR", "de-DE"]), None);
+    assert_eq!(first_supported(["it-IT", "de-DE"]), None);
     assert_eq!(first_supported([]), None);
 }
 
@@ -165,7 +165,7 @@ fn ukrainian_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["uk", "uk-UA", "UK_ua.UTF-8", "uk-Cyrl-UA", "uk_UA.UTF-8@euro"] {
         assert_eq!(lang_from_tag(tag), Some(uk), "{tag}");
     }
-    assert_eq!(first_supported(["fr-FR", "uk-UA", "en-US"]), Some(uk));
+    assert_eq!(first_supported(["it-IT", "uk-UA", "en-US"]), Some(uk));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
     let result = app.run("ui.language", serde_json::json!({"value": "UK"})).unwrap();
@@ -272,7 +272,7 @@ fn serbian_locales_resolve_by_script() {
     for tag in ["sr-Latn", "sr-Latn-RS", "sr-latn-me"] {
         assert_eq!(lang_from_tag(tag), Some(lat), "{tag}");
     }
-    assert_eq!(first_supported(["fr-FR", "sr-Latn-RS", "en-US"]), Some(lat));
+    assert_eq!(first_supported(["it-IT", "sr-Latn-RS", "en-US"]), Some(lat));
     assert_eq!(tr(cyr, "File"), "Фајл");
     assert_eq!(tr(lat, "File"), "Fajl");
 }
@@ -286,7 +286,7 @@ fn brazilian_portuguese_locales_and_saved_preference_work_without_changing_the_d
     // European Portuguese and a bare `pt` have no catalog yet, so they follow the fallback.
     assert_eq!(lang_from_tag("pt-PT"), None);
     assert_eq!(lang_from_tag("pt"), None);
-    assert_eq!(first_supported(["fr-FR", "pt-BR", "en-US"]), Some(pt));
+    assert_eq!(first_supported(["it-IT", "pt-BR", "en-US"]), Some(pt));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
     let result = app.run("ui.language", serde_json::json!({"value": "PT-BR"})).unwrap();
@@ -400,7 +400,7 @@ fn russian_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["ru", "ru-RU", "ru_RU.UTF-8", "RU-ru", "ru_UA.UTF-8", "ru-Cyrl-RU"] {
         assert_eq!(lang_from_tag(tag), Some(ru), "{tag}");
     }
-    assert_eq!(first_supported(["fr-FR", "ru-RU", "en-US"]), Some(ru));
+    assert_eq!(first_supported(["it-IT", "ru-RU", "en-US"]), Some(ru));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
     let result = app.run("ui.language", serde_json::json!({"value": "RU"})).unwrap();
@@ -519,7 +519,7 @@ fn estonian_locales_and_saved_preference_keep_document_content() {
     for tag in ["et", "et-EE", "ET_ee.UTF-8", "et-Latn-EE", "et_EE.UTF-8@euro"] {
         assert_eq!(lang_from_tag(tag), Some(et), "{tag}");
     }
-    assert_eq!(first_supported(["fr-FR", "et-EE", "en-US"]), Some(et));
+    assert_eq!(first_supported(["it-IT", "et-EE", "en-US"]), Some(et));
     assert_eq!(normalize_pref("ET"), Some("et"));
     assert_eq!(et.name(), "Eesti");
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
@@ -570,7 +570,7 @@ fn turkish_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["tr", "tr-TR", "TR_tr.UTF-8", "tr-CY", "tr-Latn-TR", "tr_TR.UTF-8@euro"] {
         assert_eq!(lang_from_tag(tag), Some(tr), "{tag}");
     }
-    assert_eq!(first_supported(["fr-FR", "tr-TR", "en-US"]), Some(tr));
+    assert_eq!(first_supported(["it-IT", "tr-TR", "en-US"]), Some(tr));
     assert_eq!(normalize_pref("TR"), Some("tr"));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
