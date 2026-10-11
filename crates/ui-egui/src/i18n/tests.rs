@@ -646,3 +646,69 @@ fn bundled_interface_fonts_cover_turkish_without_system_fallbacks() {
     }
     assert!(!lang("tr").uses_cjk());
 }
+
+#[test]
+fn polish_locales_and_saved_preference_work_without_changing_the_document() {
+    let pl = lang("pl");
+    for tag in ["pl", "pl-PL", "pl_PL", "pl_PL.UTF-8", "PL_pl.UTF-8", "pl-Latn-PL", "pl_PL.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(pl), "{tag}");
+    }
+    assert_eq!(first_supported(["fr-FR", "pl-PL", "en-US"]), Some(pl));
+    assert_eq!(normalize_pref("PL"), Some("pl"));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "PL"})).unwrap();
+    assert_eq!(result["effective"], "pl");
+    assert_eq!(app.ui.language, "pl");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "pl" && l["name"] == "Polski"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), pl);
+    assert_eq!(pl.name(), "Polski");
+}
+
+#[test]
+fn polish_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| (e.context, e.source)).collect::<HashSet<_>>();
+    let pl_keys = keys(lang("pl").0.source);
+    assert_eq!(pl_keys, keys(lang("ru").0.source));
+    assert!(keys(lang("es").0.source).is_subset(&pl_keys));
+    assert!(keys(lang("zh-hans").0.source).is_subset(&pl_keys));
+    let pl = lang("pl");
+    assert_eq!(tr(pl, "Home"), "Start");
+    assert_eq!(tr(pl, "Font"), "Czcionka");
+    assert_eq!(tr(pl, "Review"), "Recenzja");
+    assert_eq!(tr(pl, "Save"), "Zapisz");
+    assert_eq!(tr(pl, "Copy"), "Kopiuj");
+    assert_eq!(tr(pl, "Paste"), "Wklej");
+    assert_eq!(tr(pl, "Undo"), "Cofnij");
+    assert_eq!(tr(pl, "Insert Table"), "Wstaw tabelę");
+    assert!(tr(pl, "Type a command, e.g. \"insert table\"").contains("wstaw tabelę"));
+    assert_eq!(tr(pl, "unknown future label"), "unknown future label");
+    assert_eq!(fmt(tr(pl, "Exported {path}"), &[("path", "szkic-{words}.docx")]), "Wyeksportowano: szkic-{words}.docx");
+    for count in [0, 1, 2, 5, 11, 12, 21, 22, 25, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(pl, "{words} words"), &[("words", &words)]), format!("Słów: {count}"));
+        assert_eq!(fmt(tr(pl, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("Słów: {count}; zaznaczono: 1"));
+    }
+}
+
+#[test]
+fn bundled_interface_fonts_cover_polish_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("pl").0.source);
+    assert!(errors.is_empty());
+    let extra = "ĄąĆćĘęŁłŃńÓóŚśŹźŻż";
+    let chars: std::collections::HashSet<char> =
+        entries.iter().flat_map(|e| e.translation.chars()).filter(|c| ('\u{00C0}'..='\u{017F}').contains(c)).chain(extra.chars()).collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("pl").uses_cjk());
+}
