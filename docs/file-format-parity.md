@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Restrict Editing: Word's legacy protection hash verified, unsupported forms refused, #412; previously trivial: Restrict Editing protection, locked styles and exception ranges read and written, #412; import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -54,16 +54,18 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Tracked insertions and deletions (`w:ins`/`w:del`), paragraph-mark revisions | ✅ | ✅ | #125, #244 |
 | Formatting revisions (`w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:numberingChange`) | ✅ | ✅ | #41: kept on open and save, schema order (change element last); changes inside `styles.xml` are dropped. RTF/ODT ignore them |
 | Move tracking (`w:moveFrom`/`w:moveTo`, `w:moveFromRangeStart/End`, `w:moveToRangeStart/End`), moved paragraph marks | ✅ | ✅ | #400: both ends linked by the range name; ranges rewritten around each moved stretch (ids renumbered); a move missing an end or a range end opens as a plain deletion/insertion. RTF/ODT/PDF export the result (moved-away text hidden like deletions) |
+| Restrict Editing (`w:documentProtection` edit/formatting/enforcement and password hash, `w:locked` styles, `w:permStart`/`w:permEnd` exceptions) | ✅ | ✅ | #412: SHA-512 hash with salt and spin count written; Word's legacy `w:cryptAlgorithmSid`/`w:hash` form (SHA-1/-256/-384/-512, ECMA-376 Part 4 §14.8.1) is kept and verified; MD2/MD4/MD5, `w:algIdExt` and other unsupported forms are refused, never unlocked; `w:colFirst`/`w:colLast` table-column ranges read as plain ranges |
 | Fields (`w:fldChar`, `w:fldSimple`), TOC, cross-references, `ADDIN` citations | ✅ | ✅ | Field codes Word supports but we don't evaluate keep their cached result. `EQ \o` (overstrike, enclosed characters) is drawn; enclosed characters are written as Word stores them, their style in the code's run sizes (#297) |
-| Content controls (`w:sdt`) | 🟡 | ❌ | Content kept, the control (type, binding, placeholder, lock) dropped |
+| Content controls (`w:sdt`) | ✅ | ✅ | Block, inline, row and cell level, nested; title, tag, id, lock, placeholder, temporary, rich/plain text, `w14:checkbox`, combo box, drop-down list, date, picture, building block gallery, `w15` repeating sections; other `w:sdtPr` children (data binding, appearance) kept verbatim (#381). A TOC's control is rebuilt by the TOC |
 | Legacy form fields (`w:ffData`), check boxes, drop-downs | ❌ | ❌ | |
 | DrawingML pictures inline and anchored (`wp:anchor`), wrap square/tight/through/top-bottom | ✅ | ✅ | Tight/through read and written with their `wp:wrapPolygon` (and `edited`); without one, a shape's outline is written (a picture's rectangle). `wrapText` (both sides, left, right, largest) read and written for square, tight and through |
-| DrawingML shapes and text boxes (`wps:`) | ✅ | ✅ | Preset geometries subset; rotation and flips (`a:xfrm` `rot`/`flipH`/`flipV`, pictures and groups too, #332), the effect extent covering the rotated bounds; `wps:bodyPr` `vert` and `anchor`, linked text boxes (`wps:txbx/@id`, `wps:linkedTxbx` `id`/`seq`, #369) |
+| WordArt text effects (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`, `w14:reflection` in `w:rPr`) | ✅ | ✅ | Solid, gradient (linear) and no fill, outline colour/width, shadow, glow, reflection (#416); `w14:scene3d`/`w14:props3d` dropped |
+| DrawingML shapes and text boxes (`wps:`) | ✅ | ✅ | Preset geometries subset; rotation and flips (`a:xfrm` `rot`/`flipH`/`flipV`, pictures and groups too, #332), the effect extent covering the rotated bounds; `wps:bodyPr` `vert` and `anchor`, linked text boxes (`wps:txbx/@id`, `wps:linkedTxbx` `id`/`seq`, #369); text warps (`a:prstTxWarp` with adjust values, all 41 presets kept; unknown ones dropped), connectors (`straightConnector1`, `bentConnector2`–`5`, `curvedConnector2`–`5` read; 3-segment forms written) with glued ends (`wps:cNvCnPr` `a:stCxn`/`a:endCxn`; the glued shapes keep their drawing ids) and arrowheads (`a:headEnd`/`a:tailEnd`, drawn as triangles) (#416) |
 | Freeform shapes (`a:custGeom`: `a:moveTo`, `a:lnTo`, Bézier curves flattened) and WordCraft ink | ✅ | ✅ | Ink is written as a freeform `wps:wsp` in a `wp:anchor` (round caps, alpha for highlighter) and recognised again by its drawing name (#307). It is saved as a custom-geometry shape, not as Word's own ink (InkML in `w14:contentPart`), so Word shows WordCraft ink as a freeform shape it can move and recolour but not erase with its ink eraser; arcs drawn straight |
 | Group shapes (`wpg:`), drawing canvas (`wpc:`) | ✅ | ✅ | Groups (#267) and canvases (#344) with pictures, shapes and text boxes; nested groups flattened. The canvas schema has no transform, so a turned or flipped canvas keeps its turn in our own `wpc:extLst` extension (`urn:wordcraft:canvas-xfrm`; Word shows it unturned). Legacy VML canvases (`v:group editas="canvas"`) aren't read as canvases |
 | VML (`w:pict`, `v:shape`, `v:textbox`) | 🟡 | ❌ | Pictures and text boxes, best effort (#242) |
 | Alt text of drawings (`wp:docPr`/`cNvPr` `descr` and `title`, decorative mark `adec:decorative` from [MS-ODRAWXML]) and tables (`w:tblCaption`, `w:tblDescription`) | ✅ | ✅ | Pictures, shapes, text boxes, groups and their members, charts and SmartArt; OLE objects get theirs written into the kept XML (#386) |
-| Charts (`c:chart`), SmartArt (`dgm`) | ✅ | ✅ | Drawn from the chart's cached data and SmartArt's stored drawing (#292); not editable. Saved back as read, with every part they reach (chart, embedded workbook, colours and style; diagram data, layout, quick style, colours and drawing) and their content types; a moved or resized one keeps its new frame, and a pasted copy gets its own parts (#319) |
+| Charts (`c:chart`), SmartArt (`dgm`) | ✅ | ✅ | Drawn from the chart's cached data and SmartArt's stored drawing (#292), with data labels (`c:showVal`). Charts made in WordCraft (Insert › Chart, #409) are written as a `c:chartSpace` part with their data as literals (`c:strLit`/`c:numLit`, no embedded workbook, so Word shows them and offers to create a workbook on Edit Data) and read back as editable; a chart part holding anything more (any chart from Word, or one re-saved by Word) stays read-only. Saved back as read, with every part they reach (chart, embedded workbook, colours and style; diagram data, layout, quick style, colours and drawing) and their content types; a moved or resized one keeps its new frame, and a pasted copy gets its own parts (#319) |
 | OLE objects (`w:object`: embedded or linked files, ActiveX) | 🟡 | ✅ | Shown as their picture (VML or DrawingML); saved back whole with the embedding and picture parts, at the size, rotation and flips set in WordCraft (#319, #332). Can't be opened or edited |
 | Word ink (`w14:contentPart`, InkML), 3D models | ❌ | ❌ | Dropped on read, not preserved on save |
 | Equations (OMML `m:oMath`) | ✅ | ✅ | #191; manual breaks (`m:brk`) and the settings' `m:mathPr` wrapping options (#326) |
@@ -79,15 +81,20 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 1. A **real-world DOCX corpus** opened, rendered and round-tripped, compared page by page with
    Word (local only: Word output can't be committed; keep a manifest and our own renders).
-2. **Preserve what we can't render**: ink, group shapes and content controls survive a round trip
+2. **Preserve what we can't render**: ink and drawing canvases survive a round trip
    (keep the parts and the run). Charts, SmartArt and OLE objects do (#292, #319).
-3. Formatting revisions and content controls read and written.
+3. Move tracking (`w:moveFrom`/`w:moveTo`) read and written (formatting revisions: #41; content controls: #381).
 4. Encrypted `.docx` opens with a password.
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Restrict Editing: Word's legacy password hash (`w:cryptAlgorithmSid`, `w:hash`, `w:salt`, `w:cryptSpinCount`) verified per ECMA-376 Part 4 §14.8.1; unsupported hash forms refused (#412) |
+| 2026-10-11 | trivial | Restrict Editing: `w:documentProtection` (edit, formatting, password hash), `w:locked` styles and `w:permStart`/`w:permEnd` exceptions read and written (#412) |
+| 2026-10-11 | trivial | WordArt text effects (`w14:` run properties), text warps (`a:prstTxWarp`) and connectors with glued ends read and written (#416) |
+| 2026-10-11 | trivial | Content controls read and written with their properties and nesting (#381) |
+| 2026-10-11 | trivial | Charts made in WordCraft written as chart parts and read back as editable (#409) |
 | 2026-10-11 | trivial | Hyphenation zone, words in capitals and consecutive-hyphen limit read and written (#407) |
 | 2026-10-11 | trivial | Alt text, titles and the decorative mark for every drawing, table captions and descriptions round-trip (#386) |
 | 2026-10-11 | trivial | Document grid (`w:docGrid`) and paragraph `w:snapToGrid` read and written (#391) |
