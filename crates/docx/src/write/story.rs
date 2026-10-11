@@ -579,6 +579,38 @@ impl Writer<'_> {
                 w.close("w:r");
                 self.rev_close(w, props);
             }
+            InlineObject::Ruby { base, ruby, align, size, raise, base_size, lang, props: ruby_props } => {
+                // ECMA-376 §17.3.3.25: a run holding w:ruby (properties, ruby text, base text).
+                let t = if self.is_del(props) { "w:delText" } else { "w:t" };
+                let fin = |v: f32, d: f32| if v.is_finite() { v } else { d };
+                let hps = |v: f32, min: f32| n(wordcraft_geom::to_half_points(v.clamp(min, 1584.0)));
+                let size = fin(*size, 5.0).clamp(1.0, 1584.0);
+                let base_size = if base_size.is_finite() && *base_size > 0.0 { *base_size } else { props.size.unwrap_or(10.5) };
+                self.rev_open(w, props);
+                w.open("w:r", &[]);
+                rpr(w, props);
+                w.open("w:ruby", &[]);
+                w.open("w:rubyPr", &[]);
+                w.val("w:rubyAlign", align.ooxml());
+                w.val("w:hps", &hps(size, 1.0));
+                w.val("w:hpsRaise", &hps(fin(*raise, 0.0), 0.0));
+                w.val("w:hpsBaseText", &hps(fin(base_size, 10.5), 1.0));
+                w.val("w:lid", if lang.is_empty() { "ja-JP" } else { lang });
+                w.close("w:rubyPr");
+                let mut rt_props = props.clone().overlaid(ruby_props);
+                rt_props.size = Some(size);
+                for (tag, p, text) in [("w:rt", &rt_props, ruby), ("w:rubyBase", props, base)] {
+                    w.open(tag, &[]);
+                    w.open("w:r", &[]);
+                    rpr(w, p);
+                    w.leaf(t, &[("xml:space", "preserve")], text);
+                    w.close("w:r");
+                    w.close(tag);
+                }
+                w.close("w:ruby");
+                w.close("w:r");
+                self.rev_close(w, props);
+            }
             InlineObject::Opaque { format, xml, text } => {
                 if format == "docx" && crate::xml::parse(xml.as_bytes()).is_ok() {
                     w.raw(xml);
@@ -599,6 +631,12 @@ impl Writer<'_> {
             // A TOC heading's field opens in the first entry and closes after the last (see `toc_span`).
             self.toc_hold_end = false;
             self.toc_field = Some((instr.to_string(), locked, props.clone()));
+            return;
+        }
+        if let Some(e) = wordcraft_doc::eq::Enclosure::parse(instr) {
+            self.rev_open(w, props);
+            self.enclosure(w, &e, locked, props);
+            self.rev_close(w, props);
             return;
         }
         let del = self.is_del(props);
@@ -638,6 +676,52 @@ impl Writer<'_> {
         }
         run(w, &|w| w.empty("w:fldChar", &[("w:fldCharType", "end")]));
         self.rev_close(w, props);
+    }
+
+    /// Enclosed characters as Word stores them: an `eq \o\ac(○,字)` field with no result, whose
+    /// code is split so the symbol and the text get their own sizes: "shrink text" makes the text
+    /// smaller (raised to sit in the middle), "enlarge symbol" makes the symbol bigger (lowered).
+    fn enclosure(&self, w: &mut W, e: &wordcraft_doc::eq::Enclosure, locked: bool, props: &CharProps) {
+        use wordcraft_doc::eq::EncloseStyle;
+        let del = self.is_del(props);
+        let tag = if del { "w:delInstrText" } else { "w:instrText" };
+        let base = props.size.unwrap_or_else(|| self.doc.styles.resolve_char(None, props).size).clamp(1.0, 1638.0);
+        let half = |pt: f32| (pt * 2.0).round() / 2.0;
+        let (mut sym, mut txt) = (props.clone(), props.clone());
+        match e.style {
+            EncloseStyle::Shrink => {
+                txt.size = Some(half(base * 0.7).max(1.0));
+                txt.position = Some(half(base * 0.1));
+            }
+            EncloseStyle::Enlarge => {
+                sym.size = Some(half(base * 1.5));
+                sym.position = Some(-half(base * 0.2));
+            }
+        }
+        let run = |w: &mut W, p: &CharProps, f: &dyn Fn(&mut W)| {
+            w.open("w:r", &[]);
+            rpr(w, p);
+            f(w);
+            w.close("w:r");
+        };
+        run(w, props, &|w| {
+            if locked {
+                w.empty("w:fldChar", &[("w:fldCharType", "begin"), ("w:fldLock", "1")])
+            } else {
+                w.empty("w:fldChar", &[("w:fldCharType", "begin")])
+            }
+        });
+        let code = e.word_instr();
+        // `eq \o\ac(` + symbol, `,`, the text, `)`.
+        let open = code.find('(').map(|i| i + 1).unwrap_or(0);
+        let comma = open + e.shape.symbol().len_utf8();
+        let (head, rest) = code.split_at(comma.min(code.len()));
+        let text = rest.get(1..rest.len().saturating_sub(1)).unwrap_or("");
+        run(w, &sym, &|w| w.leaf(tag, &[("xml:space", "preserve")], &format!(" {head}")));
+        run(w, props, &|w| w.leaf(tag, &[("xml:space", "preserve")], ","));
+        run(w, &txt, &|w| w.leaf(tag, &[("xml:space", "preserve")], text));
+        run(w, props, &|w| w.leaf(tag, &[("xml:space", "preserve")], ")"));
+        run(w, props, &|w| w.empty("w:fldChar", &[("w:fldCharType", "end")]));
     }
 
     /// A field's begin, instruction and separate runs.
