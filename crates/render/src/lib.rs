@@ -520,20 +520,39 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.set_stroke(st);
             line(ctx, 0.0);
         }
-        Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, .. } => {
+        Draw::Glyphs {
+            face,
+            size,
+            glyphs,
+            color: c,
+            alpha,
+            synth_bold,
+            synth_italic,
+            outline,
+            shadow,
+            ..
+        } => {
             let db = FontDb::global();
             let k = *size as f64 / face.upem.max(1.0);
-            ctx.set_paint(color(opts.ink(*c), *alpha));
             let skew = if *synth_italic { Affine::new([1.0, 0.0, -0.21, 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
-            // Outline strokes, in font units: synthetic bold, then on-screen stem darkening (a
-            // stroke grows the outline by half its width on each side). Darkening is skipped for
-            // translucent text, where the stroke overlapping the fill would show as a darker rim.
+            // Word-ish drop shadow: soft grey offset under the fill.
+            let shadow_off = (*size as f64) * 0.06;
+            // Outline strokes, in font units: OOXML hollow outline, else synthetic bold, then
+            // on-screen stem darkening (a stroke grows the outline by half its width on each side).
+            // Darkening is skipped for translucent text, where the stroke overlapping the fill
+            // would show as a darker rim.
             let px_per_pt = view.determinant().abs().sqrt();
             let darken_px = if opts.text_darkening && *alpha >= 1.0 { stem_darkening(*size as f64 * px_per_pt) } else { 0.0 };
             let darken = if darken_px > 0.0 && k * px_per_pt > 0.0 { 2.0 * darken_px / (k * px_per_pt) } else { 0.0 };
-            let outline_stroke = if *synth_bold { face.upem * 0.03 } else { 0.0 } + darken;
+            // Constant ~1.25pt visual stroke for hollow outline (fraction-of-em gets too thick at
+            // 36–72pt and fills the glyph).
+            let outline_stroke = if *outline {
+                1.25 * face.upem / (*size as f64).max(1.0)
+            } else {
+                (if *synth_bold { face.upem * 0.03 } else { 0.0 }) + darken
+            };
             if outline_stroke > 0.0 {
-                let join = if darken > 0.0 { kurbo::Join::Round } else { kurbo::Join::Miter };
+                let join = if !*outline && darken > 0.0 { kurbo::Join::Round } else { kurbo::Join::Miter };
                 ctx.set_stroke(kurbo::Stroke::new(outline_stroke).with_join(join));
             }
             for (gid, x, y) in glyphs {
@@ -547,10 +566,26 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
                 if o.elements().is_empty() {
                     continue;
                 }
+                if *shadow {
+                    ctx.set_paint(color(opts.ink(Rgb(0x40, 0x40, 0x40)), (*alpha * 0.45).clamp(0.0, 1.0)));
+                    ctx.set_transform(
+                        view * Affine::translate((gx + shadow_off, gy + shadow_off)) * skew * Affine::scale(k),
+                    );
+                    ctx.fill_path(&o);
+                }
                 ctx.set_transform(view * Affine::translate((gx, gy)) * skew * Affine::scale(k));
-                ctx.fill_path(&o);
-                if outline_stroke > 0.0 {
+                if *outline {
+                    // Hollow outline: white fill + coloured stroke (readable on white paper).
+                    ctx.set_paint(color(opts.ink(Rgb(0xFF, 0xFF, 0xFF)), *alpha));
+                    ctx.fill_path(&o);
+                    ctx.set_paint(color(opts.ink(*c), *alpha));
                     ctx.stroke_path(&o);
+                } else {
+                    ctx.set_paint(color(opts.ink(*c), *alpha));
+                    ctx.fill_path(&o);
+                    if outline_stroke > 0.0 {
+                        ctx.stroke_path(&o);
+                    }
                 }
             }
         }
@@ -954,6 +989,61 @@ mod tests {
         assert!(b as f64 > a as f64 * 1.08 && (b as f64) < a as f64 * 1.6, "plain {a}, darkened {b}");
         // Off by default: exports and thumbnails are untouched.
         assert!(!RenderOptions::default().text_darkening);
+    }
+
+    #[test]
+    fn outline_and_shadow_paint() {
+        use wordcraft_doc::Pos;
+        use wordcraft_layout::display::{page_display, DisplayOptions, Draw};
+        let mk = |outline: bool, shadow: bool| {
+            let mut d = Document::from_text("Oo");
+            d.format_range(&Pos::body(0, 0), &Pos::body(0, 2), &|c| {
+                c.size = Some(48.0);
+                if outline {
+                    c.outline = Some(true);
+                }
+                if shadow {
+                    c.shadow = Some(true);
+                }
+            })
+            .unwrap();
+            d
+        };
+        let band = |img: &Rendered| {
+            (140..280)
+                .flat_map(|x| (140..220).map(move |y| (x, y)))
+                .filter(|(x, y)| img.pixel(*x, *y)[0] < 128)
+                .count()
+        };
+        let render = |d: &Document| {
+            render_page(
+                d,
+                &layout(d, &mut LayoutCache::new(), &LayoutOptions::default()).pages[0],
+                2.0,
+                &RenderOptions::default(),
+            )
+        };
+        let solid = mk(false, false);
+        let outlined = mk(true, false);
+        let shadowed = mk(false, true);
+        let items = page_display(
+            &outlined,
+            &layout(&outlined, &mut LayoutCache::new(), &LayoutOptions::default()).pages[0],
+            &DisplayOptions::default(),
+        );
+        assert!(items.iter().any(|i| matches!(i, Draw::Glyphs { outline: true, .. })));
+        let solid_dark = band(&render(&solid));
+        let outline_dark = band(&render(&outlined));
+        let shadow_dark = band(&render(&shadowed));
+        assert!(solid_dark > 80, "solid dark {solid_dark}");
+        assert!(
+            outline_dark > 15 && outline_dark < solid_dark,
+            "hollow outline dark {outline_dark} vs solid {solid_dark}"
+        );
+        assert!(
+            shadow_dark > solid_dark,
+            "shadow adds dark pixels: {shadow_dark} vs solid {solid_dark}"
+        );
     }
 
     #[test]

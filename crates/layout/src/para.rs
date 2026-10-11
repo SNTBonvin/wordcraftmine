@@ -395,6 +395,7 @@ impl<'a> Builder<'a> {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             (face.id(), small, &rc.font, rc.size.to_bits(), rc.bold, rc.italic, rc.color, rc.highlight, rc.shading).hash(&mut h);
             (rc.underline_color, rc.strike, rc.double_strike, &rc.link, rc.ins, rc.del, rc.hidden).hash(&mut h);
+            (rc.outline, rc.shadow).hash(&mut h);
             h.finish()
         };
         let bucket = self.style_index.entry(key).or_default();
