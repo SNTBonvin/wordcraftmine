@@ -1318,7 +1318,7 @@ impl WordApp {
     /// one window): install this app's again before it draws its next frame.
     pub fn context_changed(&mut self) {
         self.styled = false;
-        self.applied_dark = None;
+        self.applied_theme = None;
         self.fonts_frames = 0;
     }
 
