@@ -4,7 +4,7 @@ use std::io::Write;
 
 use wordcraft_doc::para::{Anchor, FloatAlign, NoteKind, ShapeKind, Wrap};
 use wordcraft_doc::props::{Align, Border, BorderStyle, Rgb, TextColor, VMerge};
-use wordcraft_doc::{Block, Document, InlineObject, Paragraph};
+use wordcraft_doc::{Block, Document, InlineObject, Paragraph, RevisionKind};
 
 const W_NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office""#;
 
@@ -96,7 +96,9 @@ fn hyperlink_runs_and_wrappers() {
     let bytes = docx(body, &[("rId5", "hyperlink", "https://example.org/")], &[]);
     let d = wordcraft_docx::read(&bytes).unwrap();
     let p = paras(&d);
-    assert_eq!(p[0].text, "siteXABC\u{F04A}\u{2011}\u{AD}\n\u{C}\u{E} e&T");
+    // The content control around "C" is kept (zero-width markers in the text).
+    assert_eq!(p[0].plain_text(), "siteXABC\u{F04A}\u{2011}\u{AD}\n\u{C}\u{E} e&T");
+    assert!(matches!(p[0].objects.first(), Some(InlineObject::ControlStart { .. })));
     assert_eq!(p[0].props_of_char(0).link.as_deref(), Some("https://example.org/"));
     assert_eq!(p[0].props_of_char(0).style.as_deref(), Some("Hyperlink"));
     assert_eq!(p[0].props_of_char(4).link.as_deref(), Some("https://example.org/#frag"));
@@ -104,7 +106,7 @@ fn hyperlink_runs_and_wrappers() {
     assert_eq!(p[0].props_of_char(sym_off).font.as_deref(), Some("Wingdings"));
     let t = p[0].props_of_char(p[0].text.len() - 1);
     assert_eq!((t.bold, t.italic, t.caps, t.strike, t.color), (Some(false), Some(false), Some(false), Some(true), Some(TextColor::Auto)));
-    assert_eq!(p[1].text, "in block sdt");
+    assert_eq!(p[1].plain_text(), "in block sdt");
 }
 
 #[test]
@@ -1082,6 +1084,49 @@ fn formatting_revisions_round_trip() {
     assert_eq!(again.revisions, d.revisions);
 }
 
+/// Issue #400: moved text (ECMA-376 §17.13.5.21–28). `w:moveFrom` / `w:moveTo` inside named
+/// move ranges are the two ends of one move, paragraph marks included; the ranges are written
+/// back around them. A move missing an end, or whose range never ends, is a plain deletion and
+/// insertion.
+#[test]
+fn move_revisions_round_trip() {
+    let body = r#"
+<w:p><w:pPr><w:rPr><w:moveTo w:id="1" w:author="Ana" w:date="2026-10-03T00:00:00Z"/></w:rPr></w:pPr><w:moveToRangeStart w:id="2" w:name="move1" w:author="Ana" w:date="2026-10-03T00:00:00Z"/><w:moveTo w:id="3" w:author="Ana" w:date="2026-10-03T00:00:00Z"><w:r><w:t>Moved here.</w:t></w:r></w:moveTo></w:p>
+<w:moveToRangeEnd w:id="2"/>
+<w:p><w:r><w:t xml:space="preserve">Stays. </w:t></w:r><w:moveFromRangeStart w:id="4" w:name="move1" w:author="Ana" w:date="2026-10-03T00:00:00Z"/><w:moveFrom w:id="5" w:author="Ana" w:date="2026-10-03T00:00:00Z"><w:r><w:t>Moved here.</w:t></w:r></w:moveFrom><w:moveFromRangeEnd w:id="4"/></w:p>
+<w:p><w:moveFromRangeStart w:id="6" w:name="lonely" w:author="Bo"/><w:moveFrom w:id="7" w:author="Bo"><w:r><w:t>No destination</w:t></w:r></w:moveFrom><w:moveFromRangeEnd w:id="6"/><w:moveToRangeStart w:id="8" w:name="open" w:author="Bo"/><w:moveTo w:id="9" w:author="Bo"><w:r><w:t>never ends</w:t></w:r></w:moveTo><w:moveTo w:id="10" w:author="Cy"><w:r><w:t>no range</w:t></w:r></w:moveTo><w:moveFromRangeEnd w:id="404"/></w:p>"#;
+    let check = |d: &Document| {
+        let p = paras(d);
+        let name = |r: Option<u32>| d.move_name(r).map(str::to_string);
+        assert_eq!(name(p[0].mark.ins).as_deref(), Some("move1"), "a moved paragraph mark");
+        let to = p[0].runs[0].props.ins;
+        assert_eq!((name(to).as_deref(), d.revisions[to.unwrap() as usize].kind), (Some("move1"), RevisionKind::Insert));
+        let from = p[1].run_ranges().find(|(_, c)| c.del.is_some()).map(|(_, c)| c.del).unwrap();
+        assert_eq!((name(from).as_deref(), d.revisions[from.unwrap() as usize].kind), (Some("move1"), RevisionKind::Delete));
+        assert_eq!(d.revisions[from.unwrap() as usize].author, "Ana");
+        // Hostile ends: each is a plain revision, still tracked.
+        for (r, c) in p[2].run_ranges() {
+            assert!(c.ins.or(c.del).is_some(), "{r:?} keeps its revision");
+            assert_eq!(name(c.ins.or(c.del)), None, "{r:?} is no move");
+        }
+    };
+    let d = read_body(body);
+    check(&d);
+    let out = wordcraft_docx::write(&d).unwrap();
+    let xml = text(&unzip(&out), "word/document.xml");
+    assert_eq!(attr_values(&xml, "w:moveFromRangeStart", "w:name"), ["move1"]);
+    assert_eq!(attr_values(&xml, "w:moveToRangeStart", "w:name"), ["move1"]);
+    assert_eq!(attr_values(&xml, "w:moveToRangeStart", "w:author"), ["Ana"]);
+    assert_eq!(attr_values(&xml, "w:moveToRangeStart", "w:id"), attr_values(&xml, "w:moveToRangeEnd", "w:id"));
+    assert_eq!(attr_values(&xml, "w:moveFromRangeStart", "w:id"), attr_values(&xml, "w:moveFromRangeEnd", "w:id"));
+    assert!(xml.contains("<w:moveFrom ") && !xml.contains("<w:delText xml:space=\"preserve\">Moved"), "moved-away text stays in w:t");
+    // The range around the moved paragraph includes its mark: it ends in the next paragraph.
+    let to_start = xml.find("<w:moveToRangeStart").unwrap();
+    let to_end = xml.find("<w:moveToRangeEnd").unwrap();
+    assert!(xml[to_start..to_end].contains("</w:p>"), "{xml}");
+    check(&wordcraft_docx::read(&out).unwrap());
+}
+
 /// A document's own footnote separators and continuation notice are kept (ECMA-376 §17.11), and
 /// written back as Word numbers them: -1, 0 and 1, the notes after them.
 #[test]
@@ -1128,4 +1173,67 @@ fn note_separators_and_continuation_notice_round_trip() {
     let settings = part("word/settings.xml");
     assert!(settings.contains(r#"<w:footnote w:id="-1"/><w:footnote w:id="0"/><w:footnote w:id="1"/>"#), "{settings}");
     check(&wordcraft_docx::read(&out).unwrap());
+}
+
+/// #464: a bookmark whose end follows the document's final table keeps its end (it goes into
+/// the table's last cell) and is saved as a matched pair.
+#[test]
+fn bookmark_around_final_table_keeps_its_end() {
+    let body = r#"<w:bookmarkStart w:id="7" w:name="TableRange"/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:bookmarkEnd w:id="7"/><w:sectPr/>"#;
+    let d = read_body(body);
+    let marks = |d: &Document| {
+        let Block::Table(t) = &*d.body[0] else { panic!("{:?}", d.body[0]) };
+        t.rows[0].cells[0].blocks[0].as_para().unwrap().objects.clone()
+    };
+    let want = vec![InlineObject::BookmarkStart { name: "TableRange".into() }, InlineObject::BookmarkEnd { name: "TableRange".into() }];
+    assert_eq!(marks(&d), want);
+    let again = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(marks(&again), want);
+    assert_eq!(again.bookmarks().len(), 1);
+}
+
+/// #465: a field whose cached result is an embedded picture (`INCLUDEPICTURE`, simple, complex or
+/// locked) keeps the picture through reading and saving; the linked file is never read.
+#[test]
+fn includepicture_keeps_its_embedded_picture() {
+    let png: &[u8] = b"\x89PNG\r\n\x1a\nstand-in";
+    let pic = r#"<w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdPic"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
+    let cases = [
+        (format!(r#"<w:fldSimple w:instr="INCLUDEPICTURE &quot;picture.png&quot;">{pic}</w:fldSimple>"#), false),
+        (format!(r#"<w:fldSimple w:instr="INCLUDEPICTURE &quot;picture.png&quot;" w:fldLock="1">{pic}</w:fldSimple>"#), true),
+        (
+            format!(
+                r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> INCLUDEPICTURE "picture.png" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>{pic}<w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+            ),
+            false,
+        ),
+    ];
+    for (field, locked) in cases {
+        let bytes = docx(&format!("<w:p>{field}</w:p><w:sectPr/>"), &[("rIdPic", "image", "media/picture.png")], &[]);
+        let bytes = {
+            // `docx` takes text parts; add the picture bytes as a binary part.
+            let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+            let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+            for i in 0..z.len() {
+                let mut f = z.by_index(i).unwrap();
+                let mut v = Vec::new();
+                std::io::Read::read_to_end(&mut f, &mut v).unwrap();
+                entries.push((f.name().to_string(), v));
+            }
+            entries.push(("word/media/picture.png".into(), png.to_vec()));
+            zip(&entries.iter().map(|(n, v)| (n.as_str(), v.as_slice())).collect::<Vec<_>>())
+        };
+        let check = |d: &Document| {
+            let p = paras(d);
+            let objs = &p[0].objects;
+            assert_eq!(objs.len(), 3, "{objs:?}");
+            assert_eq!(objs[0], InlineObject::FieldStart { instr: "INCLUDEPICTURE \"picture.png\"".into(), locked });
+            let InlineObject::Image { media, .. } = &objs[1] else { panic!("{objs:?}") };
+            assert_eq!(d.media.get(media).unwrap().as_slice(), png);
+            assert_eq!(objs[2], InlineObject::FieldEnd);
+        };
+        let d = wordcraft_docx::read(&bytes).unwrap();
+        check(&d);
+        check(&wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap());
+    }
 }

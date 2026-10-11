@@ -121,6 +121,15 @@ pub enum Draw {
         rect: Rect,
         items: Vec<Draw>,
     },
+    /// Text drawn from its outlines with WordArt effects (and bent, in a warped text box):
+    /// `path` in page coordinates, painted as [`crate::wordart::art_layers`] says. `color` is the
+    /// run's own colour, the fill when the effects set none.
+    Art {
+        path: BezPath,
+        fx: Box<wordcraft_doc::wordart::TextEffects>,
+        color: Rgb,
+        alpha: f32,
+    },
     /// A formatting-mark label (a section break's name) in the UI's mark colour, left edge at
     /// `x`, drawn with the same face as [`Draw::Mark`]. Screen only, like every mark.
     MarkText {
@@ -143,10 +152,40 @@ impl Draw {
     }
 }
 
+/// Formatting marks shown even while Show/Hide ¶ is off (File › Options › Display, "Always show
+/// these formatting marks"). Show/Hide ¶ on shows them all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct FormattingMarks {
+    /// Tab characters (→).
+    pub tabs: bool,
+    /// Spaces (·).
+    pub spaces: bool,
+    /// Paragraph marks (¶), line breaks, page, column and section breaks.
+    pub paragraphs: bool,
+    /// Hidden text (shown with its dotted underline instead of left out).
+    pub hidden: bool,
+}
+
+impl FormattingMarks {
+    pub const ALL: FormattingMarks = FormattingMarks { tabs: true, spaces: true, paragraphs: true, hidden: true };
+
+    /// The marks on screen: all of them with Show/Hide ¶ on, else the chosen ones.
+    pub fn shown(self, show_all: bool) -> FormattingMarks {
+        if show_all { FormattingMarks::ALL } else { self }
+    }
+
+    pub fn any(self) -> bool {
+        self.tabs || self.spaces || self.paragraphs || self.hidden
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DisplayOptions {
-    /// Show formatting marks (¶).
+    /// Show formatting marks (¶): Show/Hide ¶, every mark.
     pub marks: bool,
+    /// Marks shown while `marks` is off (File › Options › Display).
+    pub always: FormattingMarks,
     /// Dim headers/footers (editing the body) or the body (editing a header/footer).
     pub dim_header: bool,
     pub dim_body: bool,
@@ -164,6 +203,7 @@ impl Default for DisplayOptions {
     fn default() -> Self {
         DisplayOptions {
             marks: false,
+            always: FormattingMarks::default(),
             dim_header: true,
             dim_body: false,
             markup: true,
@@ -295,6 +335,9 @@ impl MarkupOptions {
     }
 }
 
+/// Colour of moved text (both ends of a tracked move).
+pub const MOVE_COLOR: Rgb = Rgb(0x1A, 0x7F, 0x37);
+
 /// Colour for revisions by author index.
 pub fn revision_color(i: u32) -> Rgb {
     const C: [Rgb; 6] =
@@ -317,19 +360,94 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
     let mut out = Vec::new();
     let ha = if opts.dim_header { 0.45 } else { 1.0 };
     let ba = if opts.dim_body { 0.45 } else { 1.0 };
-    for it in &page.header {
-        item(doc, it, opts, ha, &mut out);
-    }
-    for it in &page.footer {
-        item(doc, it, opts, ha, &mut out);
-    }
-    for it in &page.items {
-        item(doc, it, opts, ba, &mut out);
+    for (items, a) in [(&page.header, ha), (&page.footer, ha), (&page.items, ba)] {
+        let warps = warped_boxes(doc, items);
+        let mut done: Vec<u32> = Vec::new();
+        for it in items.iter() {
+            match it {
+                Placed::Lines { story: StoryRef::Part(id), .. } if warps.iter().any(|(w, ..)| w == id) => {
+                    // A warped text box's lines are drawn together, bent, where its first one is.
+                    if done.contains(id) {
+                        continue;
+                    }
+                    done.push(*id);
+                    if let Some((_, rect, warp)) = warps.iter().find(|(w, ..)| w == id) {
+                        let lines: Vec<&Placed> =
+                            items.iter().filter(|i| matches!(i, Placed::Lines { story: StoryRef::Part(s), .. } if s == id)).collect();
+                        warped_text(doc, &lines, *rect, warp, opts, a, &mut out);
+                    }
+                }
+                _ => item(doc, it, opts, a, &mut out),
+            }
+        }
     }
     if opts.markup && (opts.revisions.insertions_deletions || opts.revisions.formatting) && opts.revisions.changed_lines != ChangeBar::None {
         change_bars(doc, page, &opts.revisions, ba, &mut out);
     }
     out
+}
+
+/// The text boxes among `items` whose text is warped (Text Effects › Transform, drawn bent): their
+/// story, frame and warp. Empty, without a walk of the document, when none is.
+fn warped_boxes(doc: &Document, items: &[Placed]) -> Vec<(u32, Rect, wordcraft_doc::wordart::TextWarp)> {
+    items
+        .iter()
+        .filter_map(|it| {
+            let Placed::Object { rect, story, path, off, text_box: Some(id), .. } = it else { return None };
+            match doc.para(*story, path)?.object_at(*off)? {
+                InlineObject::Shape { extra, .. } => extra.warp.clone().filter(|w| !w.is_plain()).map(|w| (*id, *rect, w)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The text of a warped text box at `rect`: its lines' letters as outlines bent by `warp`, the
+/// box's text stretched over the frame inside its margins (as WordArt is). Underlines, marks and
+/// other decorations are left out; a warp that is drawn flat leaves the text as it is.
+fn warped_text(
+    doc: &Document,
+    lines: &[&Placed],
+    rect: Rect,
+    warp: &wordcraft_doc::wordart::TextWarp,
+    opts: &DisplayOptions,
+    alpha: f32,
+    out: &mut Vec<Draw>,
+) {
+    let mut raw = Vec::new();
+    for it in lines {
+        item(doc, it, opts, alpha, &mut raw);
+    }
+    // The letters: runs with effects as they are, plain runs from their glyphs.
+    let mut arts: Vec<(BezPath, Box<wordcraft_doc::wordart::TextEffects>, Rgb, f32)> = Vec::new();
+    let mut hidden = Vec::new();
+    for d in &raw {
+        match d {
+            Draw::Art { path, fx, color, alpha } => arts.push((path.clone(), fx.clone(), *color, *alpha)),
+            Draw::Glyphs { face, size, glyphs, color, alpha, synth_italic, .. } => {
+                if *alpha > 0.0 {
+                    arts.push((crate::wordart::glyph_path(face, *size, glyphs, *synth_italic), Box::default(), *color, *alpha));
+                }
+                let mut g = d.clone();
+                if let Draw::Glyphs { alpha, .. } = &mut g {
+                    *alpha = 0.0;
+                }
+                hidden.push(g);
+            }
+            _ => {}
+        }
+    }
+    let src = arts.iter().filter_map(|(p, ..)| crate::wordart::path_box(p)).reduce(|a, b| a.union(b));
+    let inset = Rect::new(rect.x + 7.2, rect.y + 3.6, (rect.w - 14.4).max(1.0), (rect.h - 7.2).max(1.0));
+    let fitted = src.and_then(|b| crate::wordart::Warp::new(warp, inset, (b.height() / b.width().max(1e-3)) as f32).map(|w| (b, w)));
+    let Some((src, w)) = fitted else {
+        out.extend(raw);
+        return;
+    };
+    for (path, fx, color, alpha) in arts {
+        out.push(Draw::Art { path: crate::wordart::warp_path(&path, src, &w), fx, color, alpha });
+    }
+    out.extend(hidden);
 }
 
 /// The automatic colour of the bars beside changed lines.
@@ -419,9 +537,10 @@ fn item_in(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, outer
         Placed::Image { rect, media, crop, spin, .. } => {
             spun(*spin, *rect, vec![Draw::Image { rect: *rect, media: media.clone(), crop: *crop, alpha }], out)
         }
-        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin } => {
+        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin, extra } => {
             let mut items = Vec::new();
-            shape_draws(*rect, *kind, *fill, *stroke, *stroke_width, effects_in(*effects, spin.within(outer)), freeform.as_deref(), opts, &mut items);
+            let fx = effects_in(*effects, spin.within(outer));
+            shape_draws(*rect, *kind, *fill, *stroke, *stroke_width, fx, freeform.as_deref(), extra, opts, &mut items);
             spun(*spin, *rect, items, out)
         }
         Placed::Graphic { rect, graphic, spin, .. } => spun(*spin, *rect, graphic_draws(doc, graphic, *rect, alpha), out),
@@ -646,13 +765,18 @@ fn lines(
             let del = rc.del.filter(|_| shown);
             let ins = rc.ins.filter(|_| shown && del.is_none());
             let author = |r: u32| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0));
+            // Moved text: green, double strikethrough where it was, double underline where it went.
+            let moved_to = doc.move_name(ins).is_some();
+            let moved_from = del.is_some() && doc.move_name(del).is_some();
             let color = match (ins, del) {
+                (_, Some(_)) if moved_from => MOVE_COLOR,
+                (Some(_), _) if moved_to => MOVE_COLOR,
                 (Some(r), _) => m.insert_color.unwrap_or_else(|| author(r)),
                 (None, Some(r)) => m.delete_color.unwrap_or_else(|| author(r)),
                 _ => text_color(&rc.color, rc.shading.or(rc.highlight)),
             };
-            let ins_mark = ins.map(|_| m.insert_mark);
-            let del_mark = del.map(|_| m.delete_mark);
+            let ins_mark = ins.map(|_| if moved_to { InsertMark::DoubleUnderline } else { m.insert_mark });
+            let del_mark = del.map(|_| if moved_from { DeleteMark::DoubleStrikethrough } else { m.delete_mark });
             if del_mark == Some(DeleteMark::Caret) {
                 // A caret where the text was, instead of the text.
                 if let Some(cx) = line.cl_left(run_start).map(|c| x + c) {
@@ -688,13 +812,20 @@ fn lines(
                     g.0 = gid;
                 }
             }
+            // WordArt effects draw the letters from their outlines; the glyphs stay, invisible,
+            // for the PDF's text.
+            let art = rc.text_effects.as_ref().filter(|_| ins.is_none() && del.is_none() && !glyphs.is_empty());
+            if let Some(fx) = art {
+                let path = crate::wordart::glyph_path(&st.face, st.size, &glyphs, st.synth_italic);
+                out.push(Draw::Art { path, fx: fx.clone(), color, alpha });
+            }
             if !glyphs.is_empty() {
                 out.push(Draw::Glyphs {
                     face: st.face,
                     size: st.size,
                     glyphs,
                     color,
-                    alpha,
+                    alpha: if art.is_some() { 0.0 } else { alpha },
                     synth_bold: st.synth_bold || ins_mark == Some(InsertMark::Bold),
                     synth_italic: st.synth_italic || ins_mark == Some(InsertMark::Italic),
                     text,
@@ -875,7 +1006,8 @@ fn lines(
             }
         }
         // Formatting marks.
-        if opts.marks {
+        let marks = opts.always.shown(opts.marks);
+        if marks.any() {
             let msize = pl.styles.first().map(|s| s.size).unwrap_or(11.0);
             for k in line.c0..line.c1 {
                 let Some(c) = pl.clusters.get(k) else { continue };
@@ -884,14 +1016,14 @@ fn lines(
                 let size = pl.styles.get(c.style as usize).map(|s| s.size).unwrap_or(msize);
                 let arrow = if line.rtl { '←' } else { '→' };
                 match c.kind {
-                    ClKind::Space => {
+                    ClKind::Space if marks.spaces => {
                         out.push(Draw::Mark { x: (cx + nx) / 2.0 - size * 0.12, baseline: base - size * 0.08, size, ch: '·', color: None })
                     }
-                    ClKind::Tab => {
+                    ClKind::Tab if marks.tabs => {
                         out.push(Draw::Mark { x: cx + ((nx - cx) / 2.0 - size * 0.3).max(0.0), baseline: base, size, ch: arrow, color: None })
                     }
-                    ClKind::LineBreak => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
-                    ClKind::PageBreak | ClKind::ColumnBreak => {
+                    ClKind::LineBreak if marks.paragraphs => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
+                    ClKind::PageBreak | ClKind::ColumnBreak if marks.paragraphs => {
                         let label = if c.kind == ClKind::PageBreak { '⤓' } else { '⇥' };
                         out.push(Draw::Line {
                             x0: cx + 2.0,
@@ -908,7 +1040,7 @@ fn lines(
                     _ => {}
                 }
             }
-            if line.end == LineEnd::Para {
+            if line.end == LineEnd::Para && marks.paragraphs {
                 // The mark follows the line's visual end, past every glyph, even where the
                 // logically last text runs against the paragraph's direction.
                 let ex = x + line.visual_end_x();
@@ -918,6 +1050,7 @@ fn lines(
                 // A tracked (inserted or deleted) paragraph mark is drawn in its author's colour.
                 let m = &opts.revisions;
                 let color = para.filter(|_| opts.markup && m.insertions_deletions).and_then(|p| match (p.mark.ins, p.mark.del) {
+                    (ins, del) if doc.move_name(del).is_some() || (del.is_none() && doc.move_name(ins).is_some()) => Some(MOVE_COLOR),
                     (_, Some(r)) => Some(
                         m.delete_color
                             .unwrap_or_else(|| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0))),
@@ -1119,9 +1252,14 @@ fn shape_draws(
     stroke_width: f32,
     effects: wordcraft_doc::effects::ShapeEffects,
     freeform: Option<&wordcraft_doc::freeform::Freeform>,
+    extra: &wordcraft_doc::connector::ShapeExtra,
     opts: &DisplayOptions,
     out: &mut Vec<Draw>,
 ) {
+    if kind.is_open() {
+        line_draws(rect, kind, stroke, stroke_width, effects, extra, out);
+        return;
+    }
     let Some(f) = freeform.filter(|_| kind == ShapeKind::Freeform) else {
         out.push(Draw::Shape { rect, kind, fill, stroke, stroke_width, effects });
         return;
@@ -1149,6 +1287,52 @@ fn shape_draws(
             segs.push(PathSeg::Close);
         }
         out.push(Draw::Path { segs, fill: if closed { fill } else { None }, stroke, stroke_width: width });
+    }
+}
+
+/// A line or connector at `rect` (its unflipped frame: flips are the frame's turn), with its
+/// arrowheads.
+fn line_draws(
+    rect: Rect,
+    kind: ShapeKind,
+    stroke: Option<Rgb>,
+    stroke_width: f32,
+    effects: wordcraft_doc::effects::ShapeEffects,
+    extra: &wordcraft_doc::connector::ShapeExtra,
+    out: &mut Vec<Draw>,
+) {
+    use wordcraft_doc::connector::{connector_segs, end_direction};
+    match connector_segs(kind, rect.w, rect.h) {
+        Some(segs) => {
+            let segs = segs
+                .into_iter()
+                .map(|s| match s {
+                    PathSeg::Move(x, y) => PathSeg::Move(rect.x + x, rect.y + y),
+                    PathSeg::Line(x, y) => PathSeg::Line(rect.x + x, rect.y + y),
+                    PathSeg::Cubic(a, b, c, d, e, f) => PathSeg::Cubic(rect.x + a, rect.y + b, rect.x + c, rect.y + d, rect.x + e, rect.y + f),
+                    PathSeg::Close => PathSeg::Close,
+                })
+                .collect();
+            out.push(Draw::Path { segs, fill: None, stroke, stroke_width });
+        }
+        None => out.push(Draw::Shape { rect, kind, fill: None, stroke, stroke_width, effects }),
+    }
+    let Some(color) = stroke else { return };
+    // Our line runs from the bottom-left corner to the top-right; connectors from the top-left
+    // to the bottom-right.
+    let (start, end) =
+        if kind == ShapeKind::Line { ((rect.x, rect.bottom()), (rect.right(), rect.y)) } else { ((rect.x, rect.y), (rect.right(), rect.bottom())) };
+    let width = if stroke_width.is_finite() { stroke_width.clamp(0.25, 200.0) } else { 0.75 };
+    let len = (width * 3.5).max(7.0);
+    for (on, tip, at_end) in [(extra.arrow_start, start, false), (extra.arrow_end, end, true)] {
+        if !on {
+            continue;
+        }
+        let (dx, dy) = end_direction(kind, rect.w, rect.h, at_end);
+        let (bx, by) = (tip.0 - dx * len, tip.1 - dy * len);
+        let (nx, ny) = (-dy * len * 0.45, dx * len * 0.45);
+        let segs = vec![PathSeg::Move(tip.0, tip.1), PathSeg::Line(bx + nx, by + ny), PathSeg::Line(bx - nx, by - ny), PathSeg::Close];
+        out.push(Draw::Path { segs, fill: Some(color), stroke: None, stroke_width: 0.0 });
     }
 }
 
@@ -1251,10 +1435,10 @@ fn object_draws(o: &InlineObject, rect: Rect, outer: Spin, alpha: f32, opts: &Di
     let own = o.frame().map(|(_, _, f)| f.spin()).unwrap_or_default();
     match o {
         InlineObject::Image { media, crop, .. } => spun(own, rect, vec![Draw::Image { rect, media: media.clone(), crop: *crop, alpha }], out),
-        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, freeform, .. } => {
+        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, freeform, extra, .. } => {
             let effects = effects_in(*effects, own.within(outer));
             let mut items = Vec::new();
-            shape_draws(rect, *kind, *fill, *stroke, *stroke_width, effects, freeform.as_deref(), opts, &mut items);
+            shape_draws(rect, *kind, *fill, *stroke, *stroke_width, effects, freeform.as_deref(), extra, opts, &mut items);
             spun(own, rect, items, out)
         }
         InlineObject::Group { .. } => {

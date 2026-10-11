@@ -6,20 +6,20 @@ How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mo
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
 own (`AGENTS.md`: no Microsoft iconography, ever).
 
-**Dimension: ~65% (estimated), 65–100 h to full** (the sum of the rows below; dialog depth is counted here, not under features).
+**Dimension: ~65% (estimated), 61–94 h to full** (the sum of the rows below; dialog depth is counted here, not under features).
 
 | Area | WordCraft | Word | Parity | Hours |
 |---|---|---|---|---|
-| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation; ribbon overflow (#43, #129). Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); missing: Lasso, Add Pen, Ink to Shape/Math, Ink Replay | Same plus Draw | 85% | (Draw in features) |
+| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation; ribbon overflow (#43, #129). Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
 | Keytips (Alt / ⌃⌥ letters) | ✅ (#43) | ✅ | 85% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43) | ✅ | 80% | 1–2 |
 | Quick Access Toolbar | AutoSave, then the user's commands (Save, Undo, Redo by default); add, remove and reorder from its … menu (common commands, More Commands…), right-click on any ribbon button, or Customize Ribbon; saved per user (#379, #376). Not shown below the ribbon | customizable | 90% | 0.5 |
 | Customize Ribbon / Customize Keyboard | Customize Keyboard (#368): categories, a command's keys, press a combination to see which command uses it, Assign / Remove / Reset All; custom keys override built-ins, removed built-ins do nothing, saved per user; `tools.customizeKeyboard` for agents. Customize Ribbon (#379): show, hide and reorder tabs, custom tabs and custom groups (on any tab) holding any commands, rename, remove, Reset; right-click on the ribbon; saved per user; `tools.customizeRibbon` for agents. Built-in tabs can't be renamed; no import/export file | ✅ | 85% | 1–2 |
 | Keyboard shortcuts | **125** commands bound in `CommandSpec::key`, 144 key combinations (measured on Linux/Windows); styles, spacing, symbols, fields, views, mail merge (#330); field keys Alt+F9, Shift+F9, Ctrl+Shift+F9, Ctrl+F11, Ctrl+Shift+F11, F11, Shift+F11 (#339); Alt+Shift+arrows (move paragraphs, promote/demote), Shift+F5 Go Back and Alt+X (#343). Missing: en dash on the numeric keypad | ~250 default shortcuts | ~70% | 2–4 |
-| Modal dialogs | **38** (`Dialog` enum: Font, Enclose Characters, Paragraph, Tabs, Borders and Shading, Find, Go To, Insert Table, Table Properties, Page Setup, Link, Bookmark, Word Count, Zoom, Watermark, New Style, Modify Style, Manage Styles, Table Style, Commands, Icons, Paste Special, About, Save Changes, Password, Encrypt with Password, Define New Multilevel List, Track Changes Options; Columns, Symbol with Special Characters, Field (#321); Field code (#339); mail merge Recipients, Insert Merge Field, Find Recipient, Rules, Match Fields, Check for Errors) plus panes and menus for the rest | ~100 (Caption, Index, TOC options, Citation, Compare, Protect, Language, Hyphenation, Line Numbers, Envelopes, Labels, AutoCorrect, Options panes…) | ~40% | 20–30 |
-| Task panes (Navigation, Styles, Comments, Reviewing, Format Picture/Shape, Thesaurus, Accessibility, Clipboard, Selection) | Navigation, Styles, Comments, Thesaurus, Accessibility, Read Aloud, Zotero; Style Inspector (#236); Clipboard pane (#264) open | all | 70% | 4–6 |
-| Context menus (right-click) | text, spelling suggestions, fields (Update Field, Edit Field…, Toggle Field Codes, #339); objects and tables partial | rich per context | 55% | 3–5 |
-| Backstage (Home, New, Open, Info, Save As, Print, Share, Export, Options) | Home and New separate (#254), Info properties kept (#268) | | 68% | 4–6 |
+| Modal dialogs | **52** (`Dialog` enum: Font, Enclose Characters, Paragraph, Tabs, Borders and Shading, Find, Go To, Insert Table, Table Properties, Page Setup, Link, Bookmark, Word Count, Zoom, Watermark, New Style, Modify Style, Manage Styles, Table Style, Commands, Icons, Compare and Combine, AutoCorrect Options, Paste Special, About, Save Changes, Password, Encrypt with Password, Define New Multilevel List, Track Changes Options; Columns, Symbol with Special Characters, Field (#321); Field code (#339); mail merge Recipients, Insert Merge Field, Find Recipient, Rules, Match Fields, Check for Errors; Caption with New Label and Numbering, Index, Mark Index Entry, Custom Table of Contents with Options and TOC styles, Source Manager, Create/Edit Source (#402); Line Numbers, Hyphenation with Manual Hyphenation, Language, Envelopes, Labels (#407)) plus panes and menus for the rest | ~100 (Options panes…) | ~45% | 11–19 |
+| Task panes (Navigation, Styles, Comments, Reviewing, Format Picture/Shape, Thesaurus, Accessibility, Clipboard, Selection) | Navigation, Styles, Comments, Thesaurus, Restrict Editing, Accessibility (grouped findings, jump-to, fixes) and Alt Text (#386), Read Aloud, Zotero; Style Inspector (#236); Clipboard pane (#264) open | all | 70% | 4–6 |
+| Context menus (right-click) | text, spelling suggestions, fields (Update Field, Edit Field…, Toggle Field Codes, #339); right-click selects a picture, shape or text box and offers Wrap Text (styles, Move with Text / Fix Position on Page, #513); tables partial | rich per context | 60% | 3–5 |
+| Backstage (Home, New, Open, Info, Save As, Print, Share, Export, Options) | Home and New separate (#254), Info properties kept (#268), Options in Word's panes with working settings (#485) | | 68% | 4–6 |
 | Rulers: indents, tabs, margins, table columns | indents draggable (one undo, #62); tabs; table column drag pending (#49) | ✅ | 70% | 2–3 |
 | On-canvas objects: select, drag, resize handles, nudge | ✅ tested (#228) | ✅ | 75% | — |
 | Rotation handle, crop handles on canvas, alignment guides, smart guides | rotation handle (Shift: 15° steps), turned frames resize along their axes (#332); crop handles and guides missing | ✅ | 25% | 3–5 |
@@ -31,7 +31,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Interface themes (light, dark, system #249, follows OS changes live #311), dark page separate from the interface theme (#194, #312) | ✅ | ✅ | 90% | — |
 | Interface size (File › Options › General, 80–200 %, on top of the system display scale; `ui.interfaceSize`) (#475) | ✅ | system display scaling only | 100% | — |
 | Platform conventions (macOS menus/traffic lights #255, Windows title bar, Linux CSD on Wayland #78) | partial | native | 70% | 3–5 |
-| Screen readers (VoiceOver, Narrator, Orca) | AccessKit on, document canvas exposure untested | full | 25% | 10–15 |
+| Screen readers (VoiceOver, Narrator, Orca) | AccessKit on; the document canvas describes paragraphs, headings (level), list items, tables, links, pictures (alt text) and the caret and selection, for the pages on screen (#488); not yet tried with real screen readers | full | 50% | 5–8 |
 | Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
 
 ## Revision history
@@ -39,6 +39,14 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | Reading Mode: viewport-height horizontal columns, animated paging, transient display controls, Outline navigation and responsive anchored resizing |
+| 2026-10-11 | trivial | File › Options as panes (General, Display, Proofing, Save, Language, Accessibility, Advanced, Agents), every setting wired; `file.options` headless (#485) |
+| 2026-10-11 | trivial | Right-click on a picture, shape or text box selects it and offers Wrap Text: the seven wrapping styles (current one checked), Move with Text and Fix Position on Page (`arrange.moveWithText`) (#513) |
+| 2026-10-11 | trivial | Paragraph dialog: Mirror indents (Inside/Outside labels), Don't add space between paragraphs of the same style, Formatting exceptions (Suppress line numbers, Don't hyphenate) (#512) |
+| 2026-10-11 | trivial | Screen readers: the document canvas exposes paragraphs, headings, lists, tables, links, pictures and the caret through AccessKit (#488); 25% → 50% |
+| 2026-10-11 | trivial | Compare / Combine Documents (original and revised document, label changes with, comparison settings, word or character level, show changes in) and AutoCorrect Options (replacement list, capitalization, exceptions, AutoFormat As You Type, Math AutoCorrect) dialogs; Restrict Editing pane (formatting and editing restrictions, exceptions for everyone, password); modal dialog rows merged into one (#412) |
+| 2026-10-11 | trivial | Line Numbers, Hyphenation (with Manual Hyphenation), Language, Envelopes and Labels dialogs (#407); the three duplicated modal-dialog rows merged into one |
+| 2026-10-11 | trivial | Accessibility pane (errors/warnings/tips, jump-to, fixes) and Alt Text pane, opened from Picture/Shape Format › Accessibility and right-click › View Alt Text… (#386) |
+| 2026-10-11 | trivial | References dialogs: Caption (New/Delete Label, Numbering with chapter numbers), Index and Mark Index Entry (Mark All), Custom Table of Contents (Options, TOC styles via Modify Style), Source Manager and Create/Edit Source; modal dialog count 34 (#402) |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
 | 2026-10-11 | trivial | Customize Keyboard dialog (Tools › Customize Keyboard, File › Options › Keyboard shortcuts): custom keys override built-ins and persist (#368) |
 | 2026-10-11 | minor | Keyboard shortcuts 101 → 125 commands (#330): Reset Paragraph/Character Formatting, symbols, DATE/TIME/PAGE fields, view switches, Word Count, mail merge, F4 Repeat now reachable |
@@ -60,3 +68,4 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-10 | minor | Merged main: Style Inspector, Column Selection, zoom buttons, inertial scrolling, File Info landed |
 | 2026-10-10 | major | First version: ribbon, dialog, shortcut and interaction inventory |
 | 2026-10-10 | trivial | Draw tab tools and Review › Hide Ink (#307) |
+| 2026-10-11 | trivial | Draw: Lasso, Add Pen gallery, Ink to Shape and Ink Replay (#395) |
