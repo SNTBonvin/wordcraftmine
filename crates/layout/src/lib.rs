@@ -14,9 +14,11 @@ pub mod fields;
 pub mod hit;
 pub mod kinsoku;
 pub mod math;
+pub mod outline;
 pub mod para;
 mod table;
 mod textbox;
+mod vertical;
 pub mod wordart;
 
 use std::collections::{HashMap, HashSet};
@@ -43,8 +45,10 @@ pub enum ViewMode {
     Print,
     /// One page as wide as the window, no page breaks.
     Web,
-    /// Draft/Outline: like web, page breaks shown as rules.
+    /// Draft: like web, page breaks shown as rules.
     Draft,
+    /// Outline: like draft, the body as an outline of its headings ([`outline`]).
+    Outline,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -55,11 +59,29 @@ pub struct LayoutOptions {
     pub show_hidden: bool,
     /// Final text ("No Markup"): tracked deletions take no space and draw nothing.
     pub hide_deleted: bool,
-    /// Check spelling and grammar (squiggles).
+    /// Check spelling as you type (squiggles).
     pub proofing: bool,
     /// Show field codes (`{ PAGE }`, shaded) instead of field results (View › Field Codes, Alt+F9).
     /// A field whose own `code` flag is set shows the other one.
     pub field_codes: bool,
+    /// Outline view: what's collapsed and shown (used when `view` is [`ViewMode::Outline`]).
+    pub outline: Option<outline::OutlineView>,
+    /// What the spelling check skips, and whether grammar is marked too (File › Options › Proofing).
+    pub proof: ProofOptions,
+}
+
+/// File › Options › Proofing choices that change the squiggles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ProofOptions {
+    /// Mark grammar errors as you type.
+    pub grammar: bool,
+    pub spelling: wordcraft_proof::Options,
+}
+
+impl Default for ProofOptions {
+    fn default() -> Self {
+        ProofOptions { grammar: true, spelling: wordcraft_proof::Options::default() }
+    }
 }
 
 /// Something placed on a page (page coordinates, points, y down).
@@ -357,14 +379,18 @@ fn hash_of<T: Hash>(t: &T) -> u64 {
 
 fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
     let s = serde_json::to_string(&(&doc.styles, &doc.numbering, doc.settings.default_tab, &doc.settings.footnote_format)).unwrap_or_default();
+    // Outline view lays paragraphs out changed (no indents; plain without text formatting).
+    let outline = (opts.view == ViewMode::Outline).then(|| opts.outline.as_ref().is_some_and(|o| o.plain));
     hash_of(&(
         s,
         opts.show_hidden,
         opts.hide_deleted,
         opts.proofing,
         opts.field_codes,
-        wordcraft_proof::user_dictionary().len(),
+        opts.proof,
+        wordcraft_proof::dictionary_generation(),
         hyphenation_key(doc),
+        outline,
     ))
 }
 
@@ -381,6 +407,55 @@ fn has_page_fields(p: &Paragraph) -> bool {
         }
         _ => false,
     })
+}
+
+/// Does `p` show a page total, which depends on how many pages the document has?
+fn has_total_fields(p: &Paragraph) -> bool {
+    p.objects.iter().any(|o| match o {
+        InlineObject::Field { instr, .. } => matches!(fields::field_name(instr).as_str(), "NUMPAGES" | "SECTIONPAGES"),
+        _ => false,
+    })
+}
+
+/// Page totals: of the document, and of each section (by index).
+#[derive(Clone, Debug, PartialEq)]
+struct Totals {
+    pages: u32,
+    sections: Vec<u32>,
+}
+
+impl Totals {
+    /// What a first pass assumes: one page.
+    fn first_guess(sections: usize) -> Totals {
+        Totals { pages: 1, sections: vec![1; sections] }
+    }
+    /// The totals of laid-out `pages` (a section without a page of its own counts one, as in
+    /// headers and footers).
+    fn of(pages: &[Page], sections: usize) -> Totals {
+        let mut per = vec![0u32; sections];
+        for p in pages {
+            if let Some(n) = per.get_mut(p.section) {
+                *n = n.saturating_add(1);
+            }
+        }
+        for n in &mut per {
+            *n = (*n).max(1);
+        }
+        Totals { pages: u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1), sections: per }
+    }
+    fn section(&self, si: usize) -> u32 {
+        self.sections.get(si).copied().unwrap_or(1)
+    }
+}
+
+/// The most extra layout passes for page totals in the body: a total that changes the page
+/// count (its digits pushing text to another page) is tried again, this many times at most.
+const MAX_TOTAL_PASSES: usize = 3;
+
+/// A layout pass: finished, or to be done again with the page totals it found.
+enum Pass {
+    Done(DocLayout),
+    Again(Totals),
 }
 
 /// Walk state while paginating.
@@ -400,6 +475,11 @@ struct Ctx<'a> {
     chains: textbox::Chains,
     /// The current section's document grid (body text only: none for headers and footers).
     grid: para::Grid,
+    /// Whether body text (or its notes) laid out so far shows a page total (`NUMPAGES`,
+    /// `SECTIONPAGES`), which is only known once the whole body is paginated.
+    uses_totals: bool,
+    /// Whether to note `uses_totals` now (off while laying out headers and footers).
+    track_totals: bool,
 }
 
 impl Ctx<'_> {
@@ -442,7 +522,7 @@ impl Ctx<'_> {
             field_codes: false,
             hide_deleted: false,
             table: None,
-            proofing: false,
+            proofing: None,
             exclusions: &[],
             eq_number: 0,
             grid: para::Grid::default(),
@@ -471,6 +551,9 @@ impl Ctx<'_> {
         label: Option<(String, Level)>,
     ) -> Arc<ParaLayout> {
         let page = if has_page_fields(p) { Some(self.fields.page_key()) } else { None };
+        if self.track_totals && !self.uses_totals && has_total_fields(p) {
+            self.uses_totals = true;
+        }
         // Automatic equation numbers count through the document.
         let eq_here: u32 = p
             .objects
@@ -509,7 +592,7 @@ impl Ctx<'_> {
             field_codes: self.opts.field_codes,
             hide_deleted: self.opts.hide_deleted,
             table,
-            proofing: self.opts.proofing,
+            proofing: self.opts.proofing.then_some(self.opts.proof),
             exclusions,
             eq_number,
             grid: self.grid,
@@ -1389,28 +1472,50 @@ const MAX_NOTE_PASSES: usize = 3;
 /// Lay out the whole document.
 pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
     let t0 = now_ms();
-    let mut pages = HashMap::new();
-    let mut l = layout_pass(doc, cache, opts, &pages);
+    // Page totals shown in the body (`NUMPAGES`, `SECTIONPAGES`) are known only after
+    // paginating: lay out again with the totals found until they hold (bounded). Footnotes
+    // numbered again on each page likewise settle over a few more passes.
     let per_page = opts.view == ViewMode::Print
         && doc.sections().iter().any(|(_, s)| doc.note_options(s, false).num_restart == wordcraft_doc::section::NoteRestart::EachPage);
-    if per_page {
-        // Number each page's footnotes from where the pass before placed them, until they stay.
-        for _ in 1..MAX_NOTE_PASSES {
-            let placed = footnote_pages(doc, &l.pages);
-            if placed == pages {
-                break;
+    let mut note_pages = HashMap::new();
+    let mut note_passes = 1;
+    let mut totals = Totals::first_guess(doc.sections().len());
+    let mut passes = 0;
+    let mut l = loop {
+        match layout_pass(doc, cache, opts, &note_pages, &totals, passes < MAX_TOTAL_PASSES) {
+            Pass::Again(t) => {
+                totals = t;
+                passes += 1;
             }
-            pages = placed;
-            l = layout_pass(doc, cache, opts, &pages);
+            Pass::Done(l) => {
+                if per_page && note_passes < MAX_NOTE_PASSES {
+                    // Number each page's footnotes from where the pass before placed them, until they stay.
+                    let placed = footnote_pages(doc, &l.pages);
+                    if placed != note_pages {
+                        note_pages = placed;
+                        note_passes += 1;
+                        continue;
+                    }
+                }
+                break l;
+            }
         }
-    }
+    };
     l.ms = now_ms() - t0;
     l
 }
 
-/// One layout pass, numbering footnotes restarted on each page by `note_pages` ([`note_info`]).
-fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, note_pages: &HashMap<u32, usize>) -> DocLayout {
-    let t0 = now_ms();
+/// One layout pass, numbering footnotes restarted on each page by `note_pages` ([`note_info`]),
+/// with `totals` assumed for the page totals in the body. With `may_repeat`, a pass whose body
+/// shows totals that turn out different asks to be done again.
+fn layout_pass(
+    doc: &Document,
+    cache: &mut LayoutCache,
+    opts: &LayoutOptions,
+    note_pages: &HashMap<u32, usize>,
+    totals: &Totals,
+    may_repeat: bool,
+) -> Pass {
     let env = env_hash(doc, opts);
     if env != cache.env {
         cache.paras.clear();
@@ -1430,8 +1535,8 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         counters: Counters::default(),
         fields: FieldCtx {
             page: 1,
-            pages: 1,
-            section_pages: 1,
+            pages: totals.pages,
+            section_pages: totals.section(0),
             section: 1,
             notes: Arc::new(notes),
             title: doc.core.title.as_str().into(),
@@ -1444,9 +1549,12 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         boxes: wordcraft_doc::BoxBudget::default(),
         chains: Default::default(),
         grid: para::Grid::default(),
+        uses_totals: false,
+        track_totals: true,
     };
     let sections = doc.sections();
     let web = opts.view != ViewMode::Print;
+    let outline = (opts.view == ViewMode::Outline).then(|| OutlinePass::new(doc, opts.outline.clone().unwrap_or_default()));
     let default_sect = SectionProps::default();
     let mut web_sect;
     let first_sect = match sections.first() {
@@ -1510,8 +1618,24 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
     // Text boxes laid out in balancing attempts that were thrown away.
     let mut boxes_discarded = 0usize;
     let mut block = 0usize;
+    // Vertical sections are laid out on their pages turned on their side (see `vertical`).
+    let turned: Vec<Option<SectionProps>> = sections
+        .iter()
+        .map(|(_, s)| {
+            (!web && s.text_direction.is_turned()).then(|| {
+                let top = body_top_for(&mut ctx, s, s.headers.default);
+                vertical::unturned_sect(s, top)
+            })
+        })
+        .collect();
+    let mut prev_turn = TextDirection::Horizontal;
     for (si, (end, sect)) in sections.iter().enumerate() {
-        let sect: &SectionProps = if web { sect_ref } else { sect };
+        let turn = if web { TextDirection::Horizontal } else { sect.text_direction };
+        let sect: &SectionProps = match turned.get(si) {
+            Some(Some(t)) => t,
+            _ if web => sect_ref,
+            _ => sect,
+        };
         pb.sect = sect;
         pb.sect_idx = si;
         ctx.grid = para::Grid::default();
@@ -1520,12 +1644,14 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         if !web && !doc.footnote_separators.is_empty() {
             pb.seps = NoteSeps::new(&mut ctx, &doc.footnote_separators, sect.text_width());
         }
+        ctx.fields.section = u32::try_from(si).unwrap_or(u32::MAX).saturating_add(1);
+        ctx.fields.section_pages = totals.section(si);
         // Headers and footers left out are linked to the previous section's, and take its room.
         let (heads, feet) = (linked(&sections, si, |s| s.headers), linked(&sections, si, |s| s.footers));
-        let body_top = if web { sect.margin_top } else { body_top_for(&mut ctx, sect, heads.default) };
-        let first_top = if web || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, heads.first) };
-        let foot_top = if web { f32::MAX } else { foot_top_for(&mut ctx, sect, feet.default) };
-        let first_foot = if web || !sect.title_page { foot_top } else { foot_top_for(&mut ctx, sect, feet.first) };
+        let body_top = if web || turn.is_turned() { sect.margin_top } else { body_top_for(&mut ctx, sect, heads.default) };
+        let first_top = if web || turn.is_turned() || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, heads.first) };
+        let foot_top = if web || turn.is_turned() { f32::MAX } else { foot_top_for(&mut ctx, sect, feet.default) };
+        let first_foot = if web || turn.is_turned() || !sect.title_page { foot_top } else { foot_top_for(&mut ctx, sect, feet.first) };
         ctx.grid = para::Grid::of(doc, sect);
         let restart = sect.page_num_start;
         if sect.line_numbers.as_ref().is_some_and(|l| l.restart == wordcraft_doc::section::LineNumberRestart::Section) {
@@ -1534,7 +1660,8 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         let start = if si == 0 { SectionStart::NextPage } else { sect.start };
         if web && si > 0 {
             // one long page
-        } else if pb.pages.is_empty() || start != SectionStart::Continuous {
+        } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
+            // A page holds text running one way: a section turning the other way starts a page.
             if let Some(n) = restart {
                 pb.number = n.saturating_sub(1);
             }
@@ -1555,6 +1682,7 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
             pb.y = pb.top;
             pb.max_y = pb.top;
         }
+        prev_turn = turn;
         pb.foot_top = foot_top;
         let last = (*end).min(doc.body.len().saturating_sub(1));
         // Newspaper columns are balanced on the section's last page when the next section starts
@@ -1569,9 +1697,11 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         while block <= last {
             let Some(b) = doc.body.get(block) else { break };
             let before = balance.then(|| (pb.pages.len(), Snap::take(&mut pb, &ctx)));
-            match &**b {
-                Block::Para(p) => place_para(&mut ctx, &mut pb, p, block, body_top),
-                Block::Table(t) => place_table(&mut ctx, &mut pb, t, block, body_top),
+            match (&**b, &outline) {
+                (Block::Para(p), Some(o)) => place_outline_para(&mut ctx, &mut pb, p, block, o),
+                (Block::Table(_), Some(o)) if o.hidden.get(block).copied().unwrap_or(false) => {}
+                (Block::Para(p), None) => place_para(&mut ctx, &mut pb, p, block, body_top),
+                (Block::Table(t), _) => place_table(&mut ctx, &mut pb, t, block, body_top),
             }
             if let Some((pages, snap)) = before
                 && pb.pages.len() != pages
@@ -1614,6 +1744,13 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
     }
     pb.carry.clear();
     let mut pages = pb.pages;
+    for p in &mut pages {
+        if let Some((_, s)) = sections.get(p.section)
+            && !web
+        {
+            vertical::turn_page(p, s.text_direction, s);
+        }
+    }
     if web && let Some(p) = pages.first_mut() {
         let bottom = p
             .items
@@ -1623,7 +1760,14 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         p.h = bottom + 36.0;
     }
     ctx.grid = para::Grid::default();
+    if !web && ctx.uses_totals && may_repeat {
+        let found = Totals::of(&pages, sections.len());
+        if found != *totals {
+            return Pass::Again(found);
+        }
+    }
     if !web {
+        ctx.track_totals = false;
         headers_footers(&mut ctx, &mut pages, &sections);
         if doc.settings.mirror_margins {
             mirror_even_pages(&mut pages, &sections);
@@ -1643,7 +1787,7 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
             }
         }
     }
-    DocLayout { pages, index, ms: now_ms() - t0, text_boxes: ctx.boxes.total().saturating_sub(boxes_discarded) }
+    Pass::Done(DocLayout { pages, index, ms: 0.0, text_boxes: ctx.boxes.total().saturating_sub(boxes_discarded) })
 }
 
 /// Pagination state saved before a block, to lay the blocks from there out again (balancing
@@ -1883,7 +2027,9 @@ fn body_top_for(ctx: &mut Ctx, sect: &SectionProps, header: Option<u32>) -> f32 
     let blocks = part.blocks.clone();
     // Placed as `headers_footers` draws it, so page-relative floats wrap the same way.
     let frame = PageFrame { sect, origin: (sect.margin_left + sect.gutter, sect.header) };
+    let track = std::mem::replace(&mut ctx.track_totals, false);
     let h = layout_box(ctx, StoryRef::Part(id), &blocks, &[], sect.text_width(), None, 0, Some(frame)).height;
+    ctx.track_totals = track;
     // Word starts the body right below a header that reaches past the top margin, no gap.
     sect.margin_top.max(sect.header + h)
 }
@@ -2361,7 +2507,9 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
             // Relative, so a bottom moved down for notes continuing on the next page stays put.
             pb.bottom -= pb.notes_h() - before;
         }
-        let x = pb.col_x();
+        // Mirror indents: on an even (left-hand) page the inside indent is on the right, so the
+        // paragraph's lines (broken for the same width) move over by the indents' difference.
+        let x = pb.col_x() + mirror_shift(&pl.rp, pb.number, pb.web);
         let y = pb.y + lead;
         // Notes that no longer fit below the text (a long one, or the rest of one continued from
         // the page before) get what's left under it and continue on the next page.
@@ -2384,7 +2532,7 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
         let (behind, front) = place_objects(ctx, StoryRef::Body, &[block as u32], p, &pl, (l0, l1), (x, y), &at, &float_rects, 0);
         items.extend(front);
         // Line numbers in the left margin.
-        if let Some(ln) = pb.sect.line_numbers.clone().filter(|_| !pb.web && pl.rp.style != "Header" && p.props.suppress_line_numbers != Some(true))
+        if let Some(ln) = pb.sect.line_numbers.clone().filter(|_| !pb.web && pl.rp.style != "Header" && !pl.rp.suppress_line_numbers)
             && let Some(first) = pl.lines.get(l0)
         {
             for li in l0..l1 {
@@ -2439,6 +2587,72 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after));
 }
 
+/// The outline of the body for an Outline view pass.
+struct OutlinePass {
+    view: outline::OutlineView,
+    levels: Vec<u8>,
+    hidden: Vec<bool>,
+}
+
+impl OutlinePass {
+    fn new(doc: &Document, view: outline::OutlineView) -> Self {
+        let levels = outline::levels(doc);
+        let hidden = outline::hidden(&levels, &view);
+        OutlinePass { view, levels, hidden }
+    }
+}
+
+/// A body paragraph in Outline view (one long sheet: no page or column breaks, no floats
+/// wrapping): indented by its level behind its symbol; hidden when collapsed or deeper than Show
+/// Level; body text cut to its first line with Show First Line Only.
+fn place_outline_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, o: &OutlinePass) {
+    // List numbers count the hidden paragraphs too.
+    let label = ctx.next_label(p);
+    if o.hidden.get(block).copied().unwrap_or(false) {
+        return;
+    }
+    let level = o.levels.get(block).copied().unwrap_or(outline::BODY);
+    let indent = outline::indent(&o.levels, block);
+    let x = pb.col_x() + indent + outline::SYMBOL_W;
+    let width = (pb.col_w() - indent - outline::SYMBOL_W).max(72.0);
+    let q = outline::outline_para(ctx.doc, p, o.view.plain);
+    ctx.fields.page = pb.number;
+    let pl = ctx.para_labelled(&q, width, None, &[], label);
+    pb.y += pl.rp.space_before.max(0.0);
+    let n = pl.lines.len();
+    let l1 = if o.view.first_line_only && level >= outline::BODY { n.min(1) } else { n };
+    let y = pb.y + pl.lines.first().map(|f| f.top.max(0.0)).unwrap_or(0.0);
+    let mut items = Vec::new();
+    push_para(&mut items, StoryRef::Body, &[block as u32], &pl, 0, l1, x, y, width);
+    let at = ObjFrame { page: Some(PageFrame { sect: pb.sect, origin: (0.0, 0.0) }), col: (x, width), para_y: y, table_chr: None };
+    let (behind, front) = place_objects(ctx, StoryRef::Body, &[block as u32], &q, &pl, (0, l1), (x, y), &at, &HashMap::new(), 0);
+    items.extend(front);
+    let children = level < outline::BODY && outline::has_children(&o.levels, block);
+    // Collapsed, or with something under it hidden by Show Level: the wavy line says so.
+    let collapsed = children && o.hidden.get(block + 1).copied().unwrap_or(false);
+    items.extend(outline::symbol_items(&pl, x, y, level, children, collapsed));
+    if let Some(pg) = pb.page() {
+        for (i, it) in behind.into_iter().enumerate() {
+            pg.items.insert(i.min(pg.items.len()), it);
+        }
+        pg.items.extend(items);
+    }
+    if let (Some(f), Some(l)) = (pl.lines.first(), l1.checked_sub(1).and_then(|k| pl.lines.get(k))) {
+        pb.y = y + (l.top + l.height - f.top);
+    }
+    pb.y += pl.rp.space_after.max(0.0);
+}
+
+/// How far a paragraph with mirrored indents (`w:mirrorIndents`) moves right on page `number`:
+/// its left and right indents are the inside and outside ones, which swap sides on even pages.
+fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: bool) -> f32 {
+    if !rp.mirror_indents || web || !number.is_multiple_of(2) {
+        return 0.0;
+    }
+    let (left, right) = rp.visual_indents();
+    right - left
+}
+
 /// Height of the first line of the block after `block` (for keep-with-next).
 fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
     match ctx.doc.body.get(block + 1).map(|b| &**b) {
@@ -2454,7 +2668,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
                 field_codes: ctx.opts.field_codes,
                 hide_deleted: ctx.opts.hide_deleted,
                 table: None,
-                proofing: false,
+                proofing: None,
                 exclusions: &[],
                 eq_number: ctx.eq_count,
                 grid: ctx.grid,
@@ -2516,6 +2730,7 @@ fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, bl
             match split {
                 Some((a, b)) => {
                     place(pb, &a);
+                    table_notes(ctx, pb, &a.items);
                     rest = Some(b);
                 }
                 // Like Word, a row that does not fit on an empty page, or under the header rows
@@ -2534,8 +2749,37 @@ fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, bl
             }
             fresh = true;
         }
-        place(pb, rest.as_ref().unwrap_or(row));
+        let last = rest.as_ref().unwrap_or(row);
+        place(pb, last);
+        table_notes(ctx, pb, &last.items);
     }
+}
+
+/// Footnotes referenced in the cell lines of a placed table row (or part of one) go to the
+/// bottom of the page, like those of body paragraphs; notes that don't fit there continue on
+/// the next page (see [`PageBuilder::flush_notes`]).
+fn table_notes(ctx: &mut Ctx, pb: &mut PageBuilder, items: &[Placed]) {
+    if pb.web {
+        return;
+    }
+    let mut ids: Vec<u32> = Vec::new();
+    for it in items {
+        let Placed::Lines { story: StoryRef::Body, para, l0, l1, .. } = it else { continue };
+        let (Some(a), Some(b)) = (para.lines.get(*l0), para.lines.get(l1.saturating_sub(1))) else { continue };
+        for (ci, id) in &para.notes {
+            if *ci >= a.c0 && *ci < b.c1 && !ids.contains(id) && !pb.notes.iter().any(|n| n.id == *id) {
+                ids.push(*id);
+            }
+        }
+    }
+    let before = pb.notes_h();
+    for id in ids {
+        let Some(part) = ctx.doc.parts.get(&id).filter(|p| p.kind == wordcraft_doc::PartKind::Footnote) else { continue };
+        let blocks = part.blocks.clone();
+        let BoxLayout { items, height: h, .. } = layout_box(ctx, StoryRef::Part(id), &blocks, &[], pb.sect.text_width(), None, 0, None);
+        pb.notes.push(NoteBox { id, items, h, cont: false });
+    }
+    pb.bottom -= pb.notes_h() - before;
 }
 
 /// Place floating table `tl` (`w:tblpPr`): at its own position, which takes no room in the text
@@ -2741,3 +2985,5 @@ mod tests_grid;
 mod tests_pages;
 #[cfg(test)]
 mod tests_textbox;
+#[cfg(test)]
+mod tests_vertical;

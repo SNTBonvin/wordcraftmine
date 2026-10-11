@@ -105,6 +105,7 @@ fn every_char_prop_round_trips() {
         rtl: Some(false),
         cs: Some(true),
         font_cs: Some("B Nazanin".into()),
+        font_ea: Some("宋体".into()),
         size_cs: Some(13.0),
         bold_cs: Some(false),
         italic_cs: Some(true),
@@ -139,6 +140,7 @@ fn every_para_prop_round_trips() {
         space_after: Some(12.0),
         line_spacing: Some(LineSpacing::Multiple(1.5)),
         contextual_spacing: Some(true),
+        mirror_indents: Some(true),
         keep_next: Some(true),
         keep_lines: Some(false),
         page_break_before: Some(true),
@@ -1135,6 +1137,38 @@ fn compatibility_mode_round_trips() {
         d.settings.compat_mode = mode;
         assert_eq!(rt(&d).settings.compat_mode, mode);
     }
+}
+
+/// Tools › Templates and Add-ins: the attached template (an external relationship of the settings
+/// part) and "Automatically update document styles" (`w:linkStyles`) round-trip, written in the
+/// schema's order (after `w:mirrorMargins`, before `w:trackRevisions`).
+#[test]
+fn attached_template_and_link_styles_round_trip() {
+    let mut d = Document::new();
+    d.settings.attached_template = Some("file:///C:/Templates/Report & Co.dotx".into());
+    d.settings.link_styles = true;
+    d.settings.mirror_margins = true;
+    d.settings.track_changes = true;
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/settings.xml").unwrap(), &mut xml).unwrap();
+    let at = |tag: &str| xml.find(tag).unwrap_or_else(|| panic!("{tag} missing: {xml}"));
+    assert!(at("<w:mirrorMargins") < at("<w:attachedTemplate"));
+    assert!(at("<w:attachedTemplate") < at("<w:linkStyles"));
+    assert!(at("<w:linkStyles") < at("<w:trackRevisions"));
+    let mut rels = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/_rels/settings.xml.rels").unwrap(), &mut rels).unwrap();
+    assert!(rels.contains("relationships/attachedTemplate") && rels.contains("TargetMode=\"External\""), "{rels}");
+
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    assert_eq!(r.settings.attached_template.as_deref(), Some("file:///C:/Templates/Report & Co.dotx"));
+    assert!(r.settings.link_styles);
+
+    // Detached: neither element nor relationship is written.
+    let plain = rt(&Document::new());
+    assert_eq!(plain.settings.attached_template, None);
+    assert!(!plain.settings.link_styles);
 }
 
 #[test]

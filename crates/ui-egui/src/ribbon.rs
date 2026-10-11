@@ -47,6 +47,10 @@ pub fn contextual_tabs(s: &wordcraft_engine::Session) -> Vec<&'static str> {
     if s.math.is_some() {
         tabs.push("Equation");
     }
+    // Outline view (drawn first, next to File, as Word does).
+    if s.view.mode == wordcraft_layout::ViewMode::Outline {
+        tabs.push("Outlining");
+    }
     tabs
 }
 
@@ -73,14 +77,27 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     {
         app.ui.tab = prev;
     }
+    // Outline view brings up the Outlining tab; closing it goes back.
+    if app.session.view.mode == wordcraft_layout::ViewMode::Outline {
+        if app.outline_prev_tab.is_none() {
+            app.outline_prev_tab = Some(app.ui.tab.clone());
+            app.ui.tab = "Outlining".into();
+        }
+    } else if let Some(prev) = app.outline_prev_tab.take()
+        && app.ui.tab == "Outlining"
+    {
+        app.ui.tab = prev;
+    }
     // The tabs shown: File, the user's tabs in their order (Customize Ribbon, #379), then the
-    // contextual ones. A contextual tab (Table, Picture Format) may be stored while the selection
-    // moved away, and a tab may have been hidden.
+    // contextual ones (the Outlining tab right after File). A contextual tab (Table, Picture
+    // Format) may be stored while the selection moved away, and a tab may have been hidden.
     let user_tabs = app.session.ribbon.tabs().into_owned();
     let mut tabs: Vec<(String, bool)> = vec![("File".to_string(), false)];
     tabs.extend(user_tabs.iter().filter(|e| !e.hidden).map(|e| (e.name.clone(), e.custom)));
     for ct in contextual_tabs(&app.session) {
-        if !tabs.iter().any(|(n, _)| n == ct) {
+        if ct == "Outlining" {
+            tabs.insert(1.min(tabs.len()), (ct.to_string(), false));
+        } else if !tabs.iter().any(|(n, _)| n == ct) {
             tabs.push((ct.to_string(), false));
         }
     }
@@ -210,6 +227,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "Equation" if app.session.math.is_some() => crate::equation_tab::show(app, ui),
                         "Picture Format" => picture_format(app, ui),
                         "Shape Format" => shape_format(app, ui),
+                        "Outlining" => outlining(app, ui),
                         "Chart Design" => chart_design(app, ui),
                         _ => home(app, ui),
                     }
@@ -327,6 +345,37 @@ fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str
     }
 }
 
+/// Word's text wrapping styles in menu order: label, model value, `arrange.wrap` parameter.
+pub(crate) const WRAP_STYLES: [(&str, wordcraft_doc::para::Wrap, &str); 7] = {
+    use wordcraft_doc::para::Wrap;
+    [
+        ("In Line with Text", Wrap::Inline, "inline"),
+        ("Square", Wrap::Square, "square"),
+        ("Tight", Wrap::Tight, "tight"),
+        ("Through", Wrap::Through, "through"),
+        ("Top and Bottom", Wrap::TopAndBottom, "topAndBottom"),
+        ("Behind Text", Wrap::BehindText, "behindText"),
+        ("In Front of Text", Wrap::InFrontOfText, "inFrontOfText"),
+    ]
+};
+
+/// The Wrap Text menu for the selected picture, shape or text box: the seven styles (the
+/// current one checked), then Move with Text / Fix Position on Page for a floating one. The
+/// canvas context menu shows it; the ribbon's Wrap Text button can share it.
+pub(crate) fn wrap_text_items(ui: &mut Ui, app: &mut WordApp) {
+    use wordcraft_engine::cmd::objects::{moves_with_text, selected};
+    let state = selected(&app.session).and_then(|(_, o)| o.frame().map(|(_, _, f)| (f.wrap, moves_with_text(f))));
+    let wrap = state.map(|(w, _)| w);
+    for (label, w, v) in WRAP_STYLES {
+        mi_check(ui, app, label, wrap == Some(w), "arrange.wrap", json!({"wrap": v}));
+    }
+    ui.separator();
+    // An inline object is neither: it's part of the text.
+    let with_text = state.filter(|(w, _)| *w != wordcraft_doc::para::Wrap::Inline).map(|(_, m)| m);
+    mi_check(ui, app, "Move with Text", with_text == Some(true), "arrange.moveWithText", json!({"value": true}));
+    mi_check(ui, app, "Fix Position on Page", with_text == Some(false), "arrange.moveWithText", json!({"value": false}));
+}
+
 fn home(app: &mut WordApp, ui: &mut Ui) {
     let st = app.session.run("format.state", &json!({})).unwrap_or_default();
     let flag = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
@@ -351,9 +400,11 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
         stack(ui, |ui| {
             crate::widgets::row(ui, |ui| {
                 let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
+                let font = app.previews.font_shown(&font);
                 let fams = app.previews.families();
                 let prev = app.previews.font_preview_fn();
                 if let Some(f) = font_combo(ui, "font", 150.0, &font, &fams, Some(&*prev)) {
+                    let f = app.previews.font_stored(&f);
                     let _ = app.run("format.font", json!({"name": f}));
                 }
                 let size = st
@@ -935,6 +986,16 @@ fn design(app: &mut WordApp, ui: &mut Ui) {
 
 fn layout(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Page Setup", Some("ui.dialog"), app, |ui, app| {
+        // Text Direction works on what the caret is in: table cells, a text box, else the section.
+        let dir = wordcraft_engine::cmd::page::text_direction_at(&app.session);
+        menu_button(ui, app, "textDirection", Some("Text\nDirection"), "Text Direction", true, |ui, app| {
+            use wordcraft_doc::props::TextDirection;
+            for (label, d) in
+                [("Horizontal", TextDirection::Horizontal), ("Rotate all text 90°", TextDirection::Down), ("Rotate all text 270°", TextDirection::Up)]
+            {
+                mi_check(ui, app, label, dir == d, "layout.textDirection", json!({"value": d.ooxml()}));
+            }
+        });
         menu_button(ui, app, "margins", Some("Margins"), "Margins", true, |ui, app| {
             for (l, k) in [
                 ("Normal  1\" all", "normal"),
@@ -1005,12 +1066,15 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             ui.label("");
             ui.label(egui::RichText::new(tl!("Spacing")).small().strong());
             ui.end_row();
-            let mut l = rp.indent_left / 72.0;
+            // Indents in the File › Options unit.
+            let u = crate::options::unit();
+            let k = u.pt_per_unit();
+            let mut l = rp.indent_left / k;
             let mut b = rp.space_before;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Left:")).small());
-                if ui.add(egui::DragValue::new(&mut l).speed(0.05).range(-11.0..=22.0).suffix("\"").max_decimals(2)).changed() {
-                    let _ = app.run("para.indents", json!({"left": l * 72.0}));
+                if ui.add(egui::DragValue::new(&mut l).speed(3.6 / k).range(-792.0 / k..=1584.0 / k).suffix(u.suffix()).max_decimals(2)).changed() {
+                    let _ = app.run("para.indents", json!({"left": l * k}));
                 }
             });
             ui.label("");
@@ -1021,12 +1085,12 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
                 }
             });
             ui.end_row();
-            let mut r = rp.indent_right / 72.0;
+            let mut r = rp.indent_right / k;
             let mut a = rp.space_after;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Right:")).small());
-                if ui.add(egui::DragValue::new(&mut r).speed(0.05).range(-11.0..=22.0).suffix("\"").max_decimals(2)).changed() {
-                    let _ = app.run("para.indents", json!({"right": r * 72.0}));
+                if ui.add(egui::DragValue::new(&mut r).speed(3.6 / k).range(-792.0 / k..=1584.0 / k).suffix(u.suffix()).max_decimals(2)).changed() {
+                    let _ = app.run("para.indents", json!({"right": r * k}));
                 }
             });
             ui.label("");
@@ -1462,6 +1526,67 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);
+    });
+    group(ui, "Templates", None, app, |ui, app| {
+        big(ui, app, "documentTemplate", "Templates", "tools.templates", json!({}), false);
+    });
+}
+
+/// The Outlining tab (Outline view): outline levels, moving, expanding and collapsing, what is
+/// shown, and closing the view.
+fn outlining(app: &mut WordApp, ui: &mut Ui) {
+    use wordcraft_engine::layout::outline::{BODY, para_level};
+    let o = app.session.view.outline.clone();
+    let level = app.session.doc.para_at(&app.session.sel.focus).map(|p| para_level(&app.session.doc, p)).unwrap_or(BODY);
+    let name = |l: u8| if l >= BODY { tl!("Body Text").to_string() } else { crate::i18n::fmt(tl!("Level {n}"), &[("n", &l.to_string())]) };
+    group(ui, "Outline Tools", None, app, |ui, app| {
+        stack(ui, |ui| {
+            crate::widgets::row(ui, |ui| {
+                small(ui, app, "outlineTop", None, "Promote to Heading 1", "outline.promoteToHeading1", json!({}), false);
+                small(ui, app, "outlinePromote", None, "Promote", "outline.promote", json!({}), false);
+                let levels: Vec<String> = (1..=BODY).map(name).collect();
+                if let Some(v) = combo(ui, "outlineLevel", 100.0, &name(level), &levels, None)
+                    && let Some(i) = levels.iter().position(|x| *x == v)
+                {
+                    let l = if i + 1 >= usize::from(BODY) { json!("body") } else { json!(i + 1) };
+                    let _ = app.run("outline.level", json!({ "level": l }));
+                }
+                small(ui, app, "outlineDemote", None, "Demote", "outline.demote", json!({}), false);
+                small(ui, app, "outlineBody", None, "Demote to Body Text", "outline.demoteToBody", json!({}), false);
+            });
+            ui.add_space(3.0);
+            crate::widgets::row(ui, |ui| {
+                small(ui, app, "outlineUp", None, "Move Up", "outline.moveUp", json!({}), false);
+                small(ui, app, "outlineDown", None, "Move Down", "outline.moveDown", json!({}), false);
+                small(ui, app, "outlineExpand", None, "Expand", "outline.expand", json!({}), false);
+                small(ui, app, "outlineCollapse", None, "Collapse", "outline.collapse", json!({}), false);
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new(tl!("Show Level")).size(11.5));
+                let mut shown: Vec<String> = vec![tl!("All Levels").to_string()];
+                shown.extend((1..BODY).map(name));
+                let current = shown.get(usize::from(o.show_level)).cloned().unwrap_or_default();
+                if let Some(v) = combo(ui, "outlineShowLevel", 90.0, &current, &shown, None)
+                    && let Some(i) = shown.iter().position(|x| *x == v)
+                {
+                    let l = if i == 0 { json!("all") } else { json!(i) };
+                    let _ = app.run("outline.showLevel", json!({ "level": l }));
+                }
+            });
+            ui.add_space(3.0);
+            crate::widgets::row(ui, |ui| {
+                let mut f = !o.hide_formatting;
+                if ui.checkbox(&mut f, tl!("Show Text Formatting")).changed() {
+                    let _ = app.run("outline.showFormatting", json!({ "value": f }));
+                }
+                let mut first = o.first_line_only;
+                if ui.checkbox(&mut first, tl!("Show First Line Only")).changed() {
+                    let _ = app.run("outline.firstLineOnly", json!({ "value": first }));
+                }
+            });
+        });
+    });
+    group(ui, "Close", None, app, |ui, app| {
+        big(ui, app, "closeOutline", "Close Outline\nView", "outline.close", json!({}), false);
     });
 }
 
@@ -1948,7 +2073,7 @@ fn cell_size_boxes(ui: &mut Ui, app: &mut WordApp) {
         }
         _ => None,
     });
-    let unit = wordcraft_geom::Unit::default();
+    let unit = crate::options::unit();
     let k = unit.pt_per_unit();
     let h0 = row.height.or(laid.map(|x| x.h)).unwrap_or(0.0);
     let w0 = laid.map(|x| x.w).or(stored_w).unwrap_or(0.0);

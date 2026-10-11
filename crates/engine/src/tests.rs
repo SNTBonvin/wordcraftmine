@@ -3133,6 +3133,76 @@ fn enclose_characters_make_an_eq_field_and_come_back_out() {
     assert_eq!(field(&s), Some(("eq \\o\\ac(△,A)".to_string(), "A".to_string())));
 }
 
+#[test]
+fn replace_all_splits_paragraphs_at_a_paragraph_mark_in_the_replacement() {
+    // Issue #423: untracked Replace All left `\r` in the paragraph instead of splitting it.
+    for with in ["A\rB", "A\u{2029}B"] {
+        let mut s = s();
+        run(&mut s, "text.insert", json!({"text": "cat cat"}));
+        run(&mut s, "edit.replaceAll", json!({"text": "cat", "with": with}));
+        assert_eq!(body_texts(&s), ["A", "B A", "B"], "{with:?}");
+    }
+    // A line feed stays a line break.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "cat"}));
+    run(&mut s, "edit.replaceAll", json!({"text": "cat", "with": "A\nB"}));
+    assert_eq!(body_texts(&s), ["A\nB"]);
+}
+
+/// A one-row table converted from tab-separated `text`.
+fn table_from(text: &str) -> Session {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": text}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "table.fromText", json!({}));
+    s
+}
+
+fn table_texts(s: &Session) -> Vec<Vec<String>> {
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).expect("a table");
+    t.rows.iter().map(|r| r.cells.iter().map(|c| c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect()).collect()).collect()
+}
+
+#[test]
+fn delete_columns_deletes_every_selected_column() {
+    // Issue #431: only the selection's focus column went.
+    let cell = |r: u32, c: u32, off: usize| json!({"story": "body", "path": [0, r, c, 0], "off": off});
+    for (anchor, focus) in [(cell(0, 0, 0), cell(1, 1, 1)), (cell(1, 1, 1), cell(0, 0, 0))] {
+        let mut s = table_from("Left\tMiddle\tRight\nA\tB\tC");
+        run(&mut s, "select.range", json!({"anchor": anchor, "focus": focus}));
+        run(&mut s, "table.deleteColumn", json!({}));
+        assert_eq!(table_texts(&s), [["Right"], ["C"]]);
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(table_texts(&s), [["Left", "Middle", "Right"], ["A", "B", "C"]]);
+    }
+    // A caret deletes its own column only.
+    let mut s = table_from("Left\tMiddle\tRight");
+    run(&mut s, "caret.set", json!({"pos": cell(0, 1, 0)}));
+    run(&mut s, "table.deleteColumn", json!({}));
+    assert_eq!(table_texts(&s), [["Left", "Right"]]);
+}
+
+#[test]
+fn split_cells_leaves_the_other_rows_alone() {
+    // Issue #432: splitting a cell inserted a grid column with a new cell in every row.
+    let spans = |s: &Session| -> Vec<Vec<usize>> {
+        let t = s.doc.body.iter().find_map(|b| b.as_table()).expect("a table");
+        t.rows.iter().map(|r| r.cells.iter().map(wordcraft_doc::Cell::span).collect()).collect()
+    };
+    let mut s = table_from("Left\nA");
+    let width: f32 = s.doc.body.iter().find_map(|b| b.as_table()).unwrap().total_width();
+    run(&mut s, "table.split", json!({"columns": 2}));
+    assert_eq!(table_texts(&s), [vec!["Left", ""], vec!["A"]]);
+    assert_eq!(spans(&s), [vec![1, 1], vec![2]]);
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert!((t.total_width() - width).abs() < 0.1, "{:?}", t.grid);
+    assert!((t.grid[0] - width / 2.0).abs() < 0.1, "{:?}", t.grid);
+    let mut s = table_from("Left\tMiddle\tRight\nA\tB\tC");
+    run(&mut s, "table.split", json!({"columns": 2}));
+    assert_eq!(table_texts(&s), [vec!["Left", "", "Middle", "Right"], vec!["A", "B", "C"]]);
+    assert_eq!(spans(&s), [vec![1, 1, 1, 1], vec![2, 1, 1]]);
+}
+
 /// #385: note options for the whole document or one section, and converting notes, which undoes
 /// in one step.
 #[test]
@@ -3182,4 +3252,121 @@ fn note_options_per_section_and_convert_notes() {
     assert_eq!(kinds(&s), vec![NoteKind::Footnote, NoteKind::Footnote]);
     assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
     assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
+}
+
+/// Outline view of: Heading 1 "One", body "a", Heading 2 "Two", body "b", Heading 1 "Three", body "c".
+fn outline_doc() -> Session {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "One\na\nTwo\nb\nThree\nc"}));
+    for (i, style) in [(0, "Heading1"), (2, "Heading2"), (4, "Heading1")] {
+        s.sel = crate::Selection::caret(Pos::body(i, 0));
+        run(&mut s, "para.style", json!({"style": style}));
+    }
+    run(&mut s, "view.outline", json!({}));
+    s
+}
+
+fn outline_shown(s: &mut Session) -> Vec<u64> {
+    let st = run(s, "outline.state", json!({}));
+    st["shown"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect()
+}
+
+/// The body blocks the outline layout draws.
+fn laid_out_blocks(s: &mut Session) -> Vec<u32> {
+    let l = s.layout();
+    let mut v: Vec<u32> = l.pages[0]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            wordcraft_layout::Placed::Lines { story: StoryRef::Body, path, .. } => path.0.first().copied(),
+            _ => None,
+        })
+        .collect();
+    v.dedup();
+    v
+}
+
+#[test]
+fn outline_level_changes_are_undoable() {
+    let mut s = outline_doc();
+    let level = |s: &mut Session, i: usize| run(s, "outline.state", json!({}))["levels"][i].as_u64().unwrap();
+    s.sel = crate::Selection::caret(Pos::body(1, 0));
+    run(&mut s, "outline.level", json!({"level": 3}));
+    assert_eq!(level(&mut s, 1), 3);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(level(&mut s, 1), 10, "body text again");
+    s.sel = crate::Selection::caret(Pos::body(2, 0));
+    run(&mut s, "outline.promoteToHeading1", json!({}));
+    assert_eq!(level(&mut s, 2), 1);
+    run(&mut s, "outline.demoteToBody", json!({}));
+    assert_eq!(level(&mut s, 2), 10);
+    assert!(s.run("outline.level", &json!({"level": 12})).is_err());
+    assert!(s.run("outline.level", &json!({})).is_err());
+    // Every outline command survives junk parameters in Outline view.
+    for spec in cmd::registry().all().iter().filter(|c| c.id.starts_with("outline.")) {
+        for j in [json!(null), json!({"block": 99999, "level": "x", "value": 5}), json!({"block": -1, "level": 0})] {
+            let mut s = outline_doc();
+            let _ = s.run(spec.id, &j);
+            let _ = s.layout();
+        }
+    }
+}
+
+#[test]
+fn outline_show_level_filters_paragraphs() {
+    let mut s = outline_doc();
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    run(&mut s, "outline.showLevel", json!({"level": 1}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 4]);
+    run(&mut s, "outline.showLevel2", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 2, 4]);
+    run(&mut s, "outline.showAll", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    // Word's keys, and only in Outline view.
+    let reg = cmd::registry();
+    assert_eq!(reg.by_shortcut("Alt+Shift+1").map(|c| c.id), Some("outline.showLevel1"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+A").map(|c| c.id), Some("outline.showAll"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+=").map(|c| c.id), Some("outline.expand"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+-").map(|c| c.id), Some("outline.collapse"));
+    run(&mut s, "outline.close", json!({}));
+    assert!(s.run("outline.showLevel1", &json!({})).is_err());
+}
+
+#[test]
+fn outline_collapse_hides_descendants_and_expand_restores() {
+    let mut s = outline_doc();
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    // The deepest open level closes first, then the heading itself.
+    run(&mut s, "outline.collapse", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 4, 5]);
+    run(&mut s, "outline.collapse", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 4, 5]);
+    // A caret moving into the collapsed text goes on to the next shown paragraph.
+    run(&mut s, "caret.end", json!({}));
+    run(&mut s, "caret.right", json!({}));
+    assert_eq!(s.sel.focus, Pos::body(4, 0));
+    // Moving "Three" and "c" up passes "One" with everything collapsed under it, in one undo step.
+    s.sel = crate::Selection { anchor: Pos::body(4, 0), focus: Pos::body(5, 1) };
+    run(&mut s, "outline.moveUp", json!({}));
+    assert_eq!(text(&s), "Three\nc\nOne\na\nTwo\nb");
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2], "the collapsed heading moved and stays collapsed");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(text(&s), "One\na\nTwo\nb\nThree\nc");
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    // Expand opens one level at a time; double-clicking the symbol (toggle) opens it all.
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "outline.expand", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 4, 5]);
+    run(&mut s, "outline.expand", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    run(&mut s, "outline.toggle", json!({"block": 0}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    run(&mut s, "outline.toggle", json!({"block": 0}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    // Clicking a symbol selects the heading with what is under it.
+    run(&mut s, "outline.selectSubtree", json!({"block": 0}));
+    assert_eq!(s.selected_text(), "One\na\nTwo\nb");
 }
