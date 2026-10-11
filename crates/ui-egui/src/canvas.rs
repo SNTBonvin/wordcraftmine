@@ -746,7 +746,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         rulers(app, ui, h, v, &rects, &layout, geo.scale);
     }
     if let Some(sel) = app.canvas.mini_anchor {
-        crate::mini_toolbar::show(app, ui.ctx(), sel, area);
+        let _ = crate::mini_toolbar::show(app, ui.ctx(), sel, area);
     }
 }
 
