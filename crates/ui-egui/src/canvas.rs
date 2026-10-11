@@ -521,12 +521,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.read_target_page = None;
     }
     let layout = app.session.layout();
-    if let Some(anchor) = reflow_anchor {
-        if let Some(page) = reading_anchor_page(&layout, &anchor) {
-            let step = app.session.view.read_width * app.session.view.read_zoom.clamp(0.75, 1.5) * PX_PER_PT + GAP;
-            app.canvas.read_target_page = None;
-            app.canvas.scroll_request = Some(vec2(page as f32 * step, 0.0));
-        }
+    if let Some(anchor) = reflow_anchor
+        && let Some(page) = reading_anchor_page(&layout, &anchor)
+    {
+        let step = app.session.view.read_width * app.session.view.read_zoom.clamp(0.75, 1.5) * PX_PER_PT + GAP;
+        app.canvas.read_target_page = None;
+        app.canvas.scroll_request = Some(vec2(page as f32 * step, 0.0));
     }
     // View › Switch Modes: dark paper, inverted document colours, a white caret.
     let dark_page = app.session.view.dark_mode;
@@ -1985,7 +1985,7 @@ mod tests {
             pos = next;
         }
         assert_eq!(pos, goal);
-        assert_eq!(reading_animation_step(500.0, goal, 0.1).is_finite(), true);
+        assert!(reading_animation_step(500.0, goal, 0.1).is_finite());
     }
 
     #[test]
@@ -2002,7 +2002,7 @@ mod tests {
         assert_eq!(read_wheel_turns(&[ev(egui::MouseWheelUnit::Point, -20.0)], true, &mut partial), 0);
         assert_eq!(read_wheel_turns(&[ev(egui::MouseWheelUnit::Point, -20.0)], true, &mut partial), 1);
         assert_eq!(read_wheel_turns(&[ev(egui::MouseWheelUnit::Line, -1.0)], false, &mut partial), 0);
-        let (rects, size) = place_read_pages(&vec![(240.0, 500.0); 10], 1.0, vec2(1100.0, 600.0));
+        let (rects, size) = place_read_pages(&[(240.0, 500.0); 10], 1.0, vec2(1100.0, 600.0));
         let last_left = rects.last().unwrap().left();
         assert!((size.x - 1100.0 - (last_left - GAP)).abs() < 1.0, "last column aligns against the pane");
         assert!(reading_size(vec2(1440.0, 750.0), PX_PER_PT, Some(612.0)).0 <= 612.0);

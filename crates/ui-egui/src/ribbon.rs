@@ -73,7 +73,7 @@ fn reading_toolbar(app: &mut WordApp, ui: &mut Ui, t: Tokens) {
                     }
                 });
                 ui.separator();
-                if ui.button(tl!("Headings")).clicked() {
+                if ui.button(tl!("Outline")).clicked() {
                     let _ = app.run("view.outline", json!({}));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
