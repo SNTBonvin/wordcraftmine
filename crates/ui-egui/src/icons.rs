@@ -141,6 +141,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.text(8.0, 9.0, 13.0, "A", c, false);
             pen.fill(&[(10.0, 15.0), (14.0, 11.0), (18.0, 15.0), (14.0, 19.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
         }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(10.0, 5.0, 7.5, "abc", a, false);
+            pen.text(10.0, 13.5, 12.5, "A", c, false);
+        }
         "highlight" => {
             pen.fill(&[(5.0, 12.0), (11.0, 4.0), (14.0, 7.0), (8.0, 15.0)], c);
             pen.line(&[(5.0, 12.0), (3.5, 15.0), (8.0, 15.0)]);
@@ -1127,6 +1132,19 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fill(&[(3.0, 6.0), (7.0, 3.5), (13.0, 3.5), (17.0, 6.0), (17.5, 14.0), (13.5, 16.5), (6.5, 16.5), (2.5, 14.0)], a);
             pen.fcircle(7.5, 10.5, 1.5, Color32::WHITE);
             pen.fcircle(12.5, 10.5, 1.5, Color32::WHITE);
+        }
+        // Open: a folder with its flap lifted.
+        "open" => {
+            pen.closed(&[(2.5, 5.0), (7.5, 5.0), (9.0, 6.5), (15.5, 6.5), (15.5, 9.0)], c);
+            pen.line(&[(2.5, 5.0), (2.5, 16.0)]);
+            pen.closed(&[(2.5, 16.0), (5.0, 9.0), (18.0, 9.0), (15.5, 16.0)], a);
+        }
+        // Print: a printer with a sheet coming out.
+        "print" => {
+            pen.rect(6.0, 2.5, 14.0, 7.0, c);
+            pen.rect(2.5, 7.0, 17.5, 14.0, c);
+            pen.closed(&[(6.0, 11.5), (14.0, 11.5), (14.0, 17.5), (6.0, 17.5)], a);
+            pen.fcircle(15.0, 9.5, 0.8, c);
         }
         "help" => {
             pen.circle(10.0, 10.0, 7.0, c);

@@ -367,7 +367,7 @@ impl Writer<'_> {
                     None => super::math::write_equation(w, linear, *display, math),
                 }
             }
-            InlineObject::Field { instr, result, locked } => self.field(w, instr, result, *locked, props),
+            InlineObject::Field { instr, result, locked, .. } => self.field(w, instr, result, *locked, props),
             InlineObject::FieldStart { instr, locked } => {
                 self.rev_open(w, props);
                 self.field_start(w, instr, *locked, props);
@@ -478,9 +478,15 @@ impl Writer<'_> {
                 // Ink is told apart by its name (and its pen), which reading looks for.
                 let name = shape_name(*kind, freeform.as_deref(), &docpr);
                 // The effect extent leaves room for the shadow and glow.
-                let mut float = *float;
+                let mut float = float.clone();
                 for (e, fx) in float.effect.iter_mut().zip(effects.extent()) {
                     *e = wordcraft_geom::finite(*e).max(fx);
+                }
+                // Tight and Through wrapping need a polygon: the shape's outline unless it has one.
+                if matches!(float.wrap, Wrap::Tight | Wrap::Through) && float.wrap_polygon.is_none() {
+                    float.wrap_polygon = wordcraft_doc::wrap::shape_outline(*kind, *sw, *sh)
+                        .and_then(|pts| wordcraft_doc::wrap::WrapPolygon::from_unit(false, &pts))
+                        .map(std::sync::Arc::new);
                 }
                 let float = &float;
                 self.drawing_open(w, float, *sw, *sh, &docpr, &name, "");
@@ -538,6 +544,38 @@ impl Writer<'_> {
                 w.close("a:graphic");
                 w.close(if float.wrap == Wrap::Inline { "wp:inline" } else { "wp:anchor" });
                 w.close("w:drawing");
+                w.close("w:r");
+                self.rev_close(w, props);
+            }
+            InlineObject::Ruby { base, ruby, align, size, raise, base_size, lang, props: ruby_props } => {
+                // ECMA-376 §17.3.3.25: a run holding w:ruby (properties, ruby text, base text).
+                let t = if self.is_del(props) { "w:delText" } else { "w:t" };
+                let fin = |v: f32, d: f32| if v.is_finite() { v } else { d };
+                let hps = |v: f32, min: f32| n(wordcraft_geom::to_half_points(v.clamp(min, 1584.0)));
+                let size = fin(*size, 5.0).clamp(1.0, 1584.0);
+                let base_size = if base_size.is_finite() && *base_size > 0.0 { *base_size } else { props.size.unwrap_or(10.5) };
+                self.rev_open(w, props);
+                w.open("w:r", &[]);
+                rpr(w, props);
+                w.open("w:ruby", &[]);
+                w.open("w:rubyPr", &[]);
+                w.val("w:rubyAlign", align.ooxml());
+                w.val("w:hps", &hps(size, 1.0));
+                w.val("w:hpsRaise", &hps(fin(*raise, 0.0), 0.0));
+                w.val("w:hpsBaseText", &hps(fin(base_size, 10.5), 1.0));
+                w.val("w:lid", if lang.is_empty() { "ja-JP" } else { lang });
+                w.close("w:rubyPr");
+                let mut rt_props = props.clone().overlaid(ruby_props);
+                rt_props.size = Some(size);
+                for (tag, p, text) in [("w:rt", &rt_props, ruby), ("w:rubyBase", props, base)] {
+                    w.open(tag, &[]);
+                    w.open("w:r", &[]);
+                    rpr(w, p);
+                    w.leaf(t, &[("xml:space", "preserve")], text);
+                    w.close("w:r");
+                    w.close(tag);
+                }
+                w.close("w:ruby");
                 w.close("w:r");
                 self.rev_close(w, props);
             }
@@ -803,14 +841,20 @@ impl Writer<'_> {
         w.empty("wp:effectExtent", &[("l", &el), ("t", &et), ("r", &er), ("b", &eb)]);
         match float.wrap {
             Wrap::Inline => {}
-            Wrap::Square => w.empty("wp:wrapSquare", &[("wrapText", "bothSides")]),
+            Wrap::Square => w.empty("wp:wrapSquare", &[("wrapText", float.wrap_text.ooxml())]),
             Wrap::Tight | Wrap::Through => {
                 let tag = if float.wrap == Wrap::Tight { "wp:wrapTight" } else { "wp:wrapThrough" };
-                w.open(tag, &[("wrapText", "bothSides")]);
-                w.open("wp:wrapPolygon", &[("edited", "0")]);
-                w.empty("wp:start", &[("x", "0"), ("y", "0")]);
-                for (x, y) in [("0", "21600"), ("21600", "21600"), ("21600", "0"), ("0", "0")] {
-                    w.empty("wp:lineTo", &[("x", x), ("y", y)]);
+                w.open(tag, &[("wrapText", float.wrap_text.ooxml())]);
+                // The object's own polygon, or its rectangle (the schema requires one).
+                let s = wordcraft_doc::wrap::WRAP_SPACE;
+                let (edited, pts) = match float.wrap_polygon.as_deref() {
+                    Some(p) if p.points.len() >= 3 => (p.edited, p.points.clone()),
+                    _ => (false, vec![[0, 0], [0, s], [s, s], [s, 0]]),
+                };
+                w.open("wp:wrapPolygon", &[("edited", if edited { "1" } else { "0" })]);
+                // Closed: back to the start.
+                for (i, [x, y]) in pts.iter().chain(pts.first()).enumerate() {
+                    w.empty(if i == 0 { "wp:start" } else { "wp:lineTo" }, &[("x", &x.to_string()), ("y", &y.to_string())]);
                 }
                 w.close("wp:wrapPolygon");
                 w.close(tag);
