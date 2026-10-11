@@ -270,6 +270,12 @@ fn the_worker_checks_in_the_background_and_backs_off_when_limited() {
     let d2 = w.recv_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(d2.result, Err(LtError::RateLimited));
     assert_eq!(*calls.lock().unwrap(), ["a text", "slow down"]);
+    // The worker wakes the UI right after sending each result, so the second wake can land just
+    // after the result was received (seen on the FreeBSD runner): wait for it, bounded.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while *woken.lock().unwrap() < 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert_eq!(*woken.lock().unwrap(), 2);
     assert_eq!(w.try_recv(), Ok(None));
 }
