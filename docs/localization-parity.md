@@ -48,7 +48,7 @@ shared items below.
 | Portuguese | pt-br (pt-PT none) | ~930; 98% / ~95% (pt-BR) | most | Latin ✅ | no | partial | 2–4 (pt-BR finish + pt-PT) |
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
 | Japanese | ja | ~930; 98% / ~95% | most | CJK ✅, IME ✅; no vertical text, ruby or document grid | no | partial | 3–5 |
-| German | de | 0 (PR #203 open) | ❌ | Latin ✅ | no | none | 1–2 |
+| German | de | 1,440 (full catalog; PR #203 predates it) | most | Latin ✅ | no | partial | 1–2 (native review) |
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
@@ -61,6 +61,9 @@ Turkish works the same way (`tr-TR` and `tr-CY` system locales, `{"value":"tr"}`
 entries. Command search folds the Turkish dotted and dotless I (`italik` finds İtalik, `YAZI TİPİ`
 finds Yazı Tipi) while English labels and ASCII command ids keep their usual matching. Turkish
 proofing is not included; terminology and checks: [`localization-tr.md`](localization-tr.md).
+German (`de-DE`, `de-AT`, `de-CH` system locales, `{"value":"de"}`) covers all 1,440 entries with
+count-neutral wording instead of plurals; German proofing is not included; terminology and checks:
+[`localization-de.md`](localization-de.md).
 
 ## Shared work (not in the per-language hours)
 
@@ -76,6 +79,7 @@ proofing is not included; terminology and checks: [`localization-tr.md`](localiz
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | German interface catalog (1,440 entries), locale selection, saved preference and font coverage checks |
 | 2026-10-10 | minor | Russian interface (#300; 1,524 entries, built-in style names shown translated; covers everything the interface audit finds) |
 | 2026-10-11 | minor | Turkish interface catalog (1,307 entries), locale selection, saved preference, Turkish casing in command search and font coverage checks; catalog sizes re-counted |
 | 2026-10-11 | trivial | English spelling (#520): our supplement `assets/spelling/en-extra.txt` adds ~220 common modern words the Moby list lacks ("desktop", "download", "email"…) |
