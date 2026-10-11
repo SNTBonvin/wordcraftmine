@@ -281,7 +281,8 @@ impl WordApp {
             want_system_cjk: false,
             fonts_frames: 0,
             applied_theme: None,
-            desktop_theme: desktop_theme::DesktopTheme::start(),
+            // Inert until the app binary calls `watch_desktop_theme`.
+            desktop_theme: desktop_theme::DesktopTheme::default(),
             desktop_dark: None,
             frame_ms: 0.0,
             sent_title: String::new(),
@@ -590,6 +591,14 @@ impl WordApp {
         if req.get("close").is_some() {
             self.quit_requested = true;
         }
+    }
+
+    /// Follow the desktop's light/dark choice while the app runs (Linux, where winit reports no
+    /// system theme; see [`desktop_theme`]). The desktop app calls this once at start-up; unit
+    /// tests and `ui_shot` don't, so what they draw doesn't depend on the host's desktop theme.
+    pub fn watch_desktop_theme(&mut self, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        self.desktop_theme = desktop_theme::DesktopTheme::start(move || ctx.request_repaint());
     }
 
     /// Whether the interface theme setting currently resolves to dark (`System` asks the OS).
