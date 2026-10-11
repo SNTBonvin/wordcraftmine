@@ -15,6 +15,7 @@ pub mod equation;
 pub mod fields;
 pub mod file;
 pub mod fmt_revisions;
+pub mod font;
 pub mod format;
 pub mod index;
 pub mod ink_shape;
@@ -59,6 +60,7 @@ pub fn registry() -> Registry {
     v.extend(edit::specs());
     v.extend(paste::specs());
     v.extend(format::specs());
+    v.extend(font::specs());
     v.extend(phonetic::specs());
     v.extend(para::specs());
     v.extend(lists::specs());
