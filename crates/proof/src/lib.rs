@@ -124,6 +124,30 @@ fn known_core(w: &str) -> bool {
     false
 }
 
+/// Does this BCP 47 language tag use the English proofing dictionary?
+/// `None` (and empty tags) mean the document default, which is en-US.
+/// Anything that is not English has no dictionary yet (#100): callers skip
+/// proofing those runs instead of flagging every word.
+pub fn is_english_lang(lang: Option<&str>) -> bool {
+    match lang {
+        None => true,
+        Some(l) => {
+            let l = l.trim();
+            l.is_empty() || l.split(['-', '_']).next().is_some_and(|p| p.eq_ignore_ascii_case("en"))
+        }
+    }
+}
+
+/// Is `word` spelled correctly in the run's proofing language? Non-English
+/// runs have no dictionary, so every word counts as correct (graceful
+/// fallback: no red underlines for languages we cannot check).
+pub fn is_correct_for(word: &str, lang: Option<&str>) -> bool {
+    if !is_english_lang(lang) {
+        return true;
+    }
+    is_correct(word)
+}
+
 /// Is `word` spelled correctly? Numbers, single letters, ALL-CAPS acronyms, URLs and words with
 /// digits are accepted.
 pub fn is_correct(word: &str) -> bool {
@@ -472,6 +496,29 @@ mod tests {
         assert!(is_correct("zxqwordcrafty"));
     }
 
+    /// #100: language tags split English (proofed) from the rest (skipped).
+    #[test]
+    fn english_lang_tags() {
+        for l in [None, Some(""), Some("en"), Some("en-US"), Some("en-GB"), Some("EN-us"), Some("en_US")] {
+            assert!(is_english_lang(l), "{l:?}");
+        }
+        for l in [Some("lt-LT"), Some("fr-FR"), Some("de"), Some("uk"), Some("es"), Some("-US"), Some("e")] {
+            assert!(!is_english_lang(l), "{l:?}");
+        }
+    }
+
+    /// #100: non-English runs are never flagged (no dictionary yet); English still is.
+    #[test]
+    fn non_english_words_are_not_flagged() {
+        for w in ["ąžuolas", "élève", "über", "labas", "bonjour"] {
+            assert!(is_correct_for(w, Some("lt-LT")), "{w}");
+            assert!(is_correct_for(w, Some("fr-FR")), "{w}");
+        }
+        assert!(!is_correct_for("helo", Some("en-US")), "English typos still flagged");
+        assert!(!is_correct_for("helo", None), "default language still proofed");
+        assert!(is_correct_for("hello", Some("en-US")));
+    }
+
     #[test]
     fn hyphenation() {
         let l = hyphen::Limits::default();
@@ -484,6 +531,8 @@ mod tests {
             let _ = check_spelling(&s);
             let _ = check_grammar(&s);
             let _ = suggest(&s, 3);
+            let _ = is_english_lang(Some(&s));
+            let _ = is_correct_for(&s, Some(&s));
             let _ = hyphen::hyphen_points(&s, &hyphen::Limits::default());
         }
     }

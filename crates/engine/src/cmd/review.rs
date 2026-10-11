@@ -630,7 +630,15 @@ fn para_issues(s: &Session, story: StoryRef, path: &wordcraft_doc::Path) -> Vec<
     v.extend(wordcraft_proof::check_grammar(&text));
     v.sort_by_key(|i| i.start);
     v.into_iter()
-        .filter(|i| !p.run_ranges().any(|(r, c)| r.start < i.end && i.start < r.end && (c.no_proof == Some(true) || c.link.is_some())))
+        // Runs Word would not proof are skipped: "do not check", links, and runs
+        // in a language we have no dictionary for (#100: English only).
+        .filter(|i| {
+            !p.run_ranges().any(|(r, c)| {
+                r.start < i.end
+                    && i.start < r.end
+                    && (c.no_proof == Some(true) || c.link.is_some() || !wordcraft_proof::is_english_lang(c.lang.as_deref()))
+            })
+        })
         .map(|i| (Pos { story, path: path.clone(), off: i.start }, Pos { story, path: path.clone(), off: i.end }, i))
         .collect()
 }
