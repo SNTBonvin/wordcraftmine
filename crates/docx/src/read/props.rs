@@ -7,7 +7,8 @@ use wordcraft_doc::props::{
     TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
 use wordcraft_doc::section::{
-    Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, NumFormat, SectionProps, SectionStart,
+    Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, NotePos, NoteProps, NoteRestart, NumFormat,
+    SectionProps, SectionStart,
 };
 
 use crate::units::{int, measure, on_off, tw, u32_of};
@@ -489,6 +490,8 @@ pub fn sectpr(e: &El) -> (SectionProps, Vec<HfRef>) {
                 }
                 s.columns = c;
             }
+            "w:footnotePr" => s.footnote_pr = note_pr(k, true),
+            "w:endnotePr" => s.endnote_pr = note_pr(k, true),
             "w:titlePg" => s.title_page = on_off(k),
             "w:bidi" => s.rtl = on_off(k),
             "w:pgNumType" => {
@@ -538,6 +541,18 @@ pub fn sectpr(e: &El) -> (SectionProps, Vec<HfRef>) {
         }
     }
     (s, refs)
+}
+
+/// `w:footnotePr` / `w:endnotePr` (ECMA-376 §17.11): placement, number format (only kept when
+/// `fmt`: the document's goes to its own setting), start and restart. A start out of range is
+/// clamped; unknown values are left unset.
+pub fn note_pr(e: &El, fmt: bool) -> NoteProps {
+    NoteProps {
+        pos: e.child_val("w:pos").and_then(NotePos::from_ooxml),
+        num_fmt: if fmt { e.child_val("w:numFmt").map(NumFormat::from_ooxml) } else { None },
+        num_start: e.child_val("w:numStart").and_then(int).map(|v| v.clamp(1, wordcraft_doc::section::MAX_NOTE_START as i64) as u32),
+        num_restart: e.child_val("w:numRestart").and_then(NoteRestart::from_ooxml),
+    }
 }
 
 /// `w:tblpPr`: a floating table's anchors, offsets or alignments and distances from text.
