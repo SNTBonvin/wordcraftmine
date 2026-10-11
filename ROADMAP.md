@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (Reading Mode smooth snap animation, viewport anchor and resize performance landed; previously: Reading toolbar, column snap and Outline navigation landed; previously: Reading Mode reflow and horizontal navigation landed; previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (Reading Mode completed; previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 WordCraft aims for complete parity with Microsoft Word, then goes further on speed, openness and
 agent control. This page is the summary; the assessment is
@@ -131,9 +131,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
-| 2026-10-12 | Reading Mode responsiveness: smooth animated column turns, preservation of the first visible character across resizing and reflow, deferred pagination during continuous resizes and reduced work for offscreen columns |
-| 2026-10-12 | Reading Mode follow-up: replaces editing ribbon with transient column-width, text-size and line-spacing controls; wheel/touchpad turns whole columns; Outline preserves layout and heading navigation aligns the selected column beside the pane |
-| 2026-10-12 | Reading Mode: text reflows into 3–5 viewport-height columns, mouse/touchpad wheel moves horizontally, page controls, keyboard page turns and exit back to Print Layout; document page setup unchanged |
+| 2026-10-12 | Reading Mode: existing View ribbon button now opens a read-only, viewport-column layout with animated horizontal paging, transient display controls, Outline navigation and resize anchoring; document layout and export unchanged |
 | 2026-10-11 | Footnote and Endnote dialog from the References › Footnotes launcher: options per section or document (below text, end of section, number format, start at, restart each section or page), custom marks, convert footnotes ↔ endnotes; kept in DOCX (#385) |
 | 2026-10-11 | Shape Format › Text: text direction, Align Text and linked text boxes (Create Link / Break Link), read and written in DOCX (#369) |
 | 2026-10-11 | Mail-merge recipients from Excel (.xlsx/.xlsm) and OpenDocument (.ods) spreadsheets, with Select Table to pick the sheet (#334) |
@@ -163,9 +161,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-12 | trivial | Progress log: Reading Mode animation, stable resize anchor and debounced repagination |
-| 2026-10-12 | trivial | Progress log: Reading toolbar and navigation refinements |
-| 2026-10-12 | trivial | Progress log: Reading Mode horizontal reflow and navigation |
+| 2026-10-12 | trivial | Progress log: Reading Mode implementation |
 | 2026-10-11 | trivial | Progress log: text direction, Align Text and linked text boxes (#369) |
 | 2026-10-10 | trivial | Progress: Drawing Canvas (#344): insert, shapes/pictures/text boxes inside, Fit/Expand/Scale, DOCX `wpc:wpc`, turns and flips as a whole; catalog 404/434 |
 | 2026-10-11 | trivial | Progress log: mail-merge recipients from .xlsx/.xlsm/.ods (#334) |
