@@ -902,7 +902,7 @@ type SepBox = (Vec<Placed>, f32);
 
 /// The document's own footnote or endnote separators and continuation notice, laid out (`None`:
 /// the defaults).
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct NoteSeps {
     sep: Option<SepBox>,
     cont: Option<SepBox>,
