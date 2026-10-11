@@ -59,7 +59,7 @@ impl eframe::App for App {
             {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.0.quit_requested = false;
-                schedule_macos_terminate(&self.0);
+                schedule_macos_terminate(&self.0, self.2.as_ref());
             }
             #[cfg(not(target_os = "macos"))]
             if self.0.quit_requested {
@@ -86,11 +86,11 @@ impl eframe::App for App {
 ///
 /// Called when the window is closing. Doing it on the next turn lets the close
 /// button's display cycle finish while the window still exists; `terminate:`
-/// then ends the process. Preferences are written first, because a fallback
-/// [`std::process::exit`] skips `on_exit`. A second close while a quit is
-/// already scheduled is ignored.
+/// then ends the process. Preferences are written and the control key file is
+/// removed first, as `on_exit` does, because a fallback [`std::process::exit`]
+/// skips `on_exit`. A second close while a quit is already scheduled is ignored.
 #[cfg(target_os = "macos")]
-fn schedule_macos_terminate(app: &WordApp) {
+fn schedule_macos_terminate(app: &WordApp, key_file: Option<&control_server::KeyFile>) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static QUIT: AtomicBool = AtomicBool::new(false);
     if QUIT.swap(true, Ordering::Relaxed) {
@@ -98,6 +98,9 @@ fn schedule_macos_terminate(app: &WordApp) {
     }
     log::info!("window close: quitting");
     save_prefs(app);
+    if let Some(key_file) = key_file {
+        key_file.remove();
+    }
     dispatch2::DispatchQueue::main().exec_async(|| {
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             objc2_app_kit::NSApplication::sharedApplication(mtm).terminate(None);
