@@ -1002,6 +1002,66 @@ impl FontDb {
         order.into_iter().find(|f| f.covers(c)).cloned()
     }
 
+    /// One fallback face for a run's East Asian characters: the first face in the fallback order
+    /// that covers **every** given character, so a whole run draws in a single CJK face instead of
+    /// mixing faces character by character (a bundled Japanese Mincho for JIS-covered ideographs
+    /// beside a Simplified-Chinese sans for the rest). Like [`Self::fallback_for`], a system font
+    /// is loaded lazily the first time no loaded face covers a character. `None` when no single
+    /// face covers them all, and the caller keeps the per-character fallback.
+    pub fn fallback_for_east_asian(&self, chars: &[char], exclude: u32, bold: bool, italic: bool) -> Option<Arc<FontFace>> {
+        if chars.is_empty() {
+            return None;
+        }
+        let mut base = self.loaded_covering(chars, exclude);
+        #[cfg(not(target_arch = "wasm32"))]
+        if base.is_none() {
+            // A character no loaded face covers: load a system font for it, then retry (the run's
+            // other characters may already be covered by loaded faces).
+            for c in chars {
+                if self.read_faces().iter().any(|f| f.id != exclude && f.covers(*c)) {
+                    continue;
+                }
+                if self.system_fallback(*c)
+                    && let Some(f) = self.loaded_covering(chars, exclude)
+                {
+                    base = Some(f);
+                    break;
+                }
+            }
+        }
+        let base = base?;
+        if !bold && !italic {
+            return Some(base);
+        }
+        let style = match (bold, italic) {
+            (true, true) => "Bold Italic",
+            (true, false) => "Bold",
+            _ => "Italic",
+        };
+        let styled = self.face(&base.family, style);
+        Some(if styled.family.eq_ignore_ascii_case(&base.family) && chars.iter().all(|c| styled.covers(*c)) && styled.id != exclude {
+            styled
+        } else {
+            base
+        })
+    }
+
+    /// The first face in the fallback order that covers every char.
+    fn loaded_covering(&self, chars: &[char], exclude: u32) -> Option<Arc<FontFace>> {
+        let faces = self.read_faces();
+        let mut order: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.id != exclude).collect();
+        let rtl = chars.iter().any(|c| crate::is_rtl(*c) || arabic_block(*c));
+        let rank = |f: &FontFace| {
+            if rtl {
+                RTL_FALLBACKS.iter().position(|n| f.family.eq_ignore_ascii_case(n)).unwrap_or(RTL_FALLBACKS.len())
+            } else {
+                0
+            }
+        };
+        order.sort_by_key(|f| (rank(f), !f.family.eq_ignore_ascii_case(FALLBACK_FAMILY), f.italic, (f.weight - 400.0).abs() as i32));
+        order.into_iter().find(|f| chars.iter().all(|c| f.covers(*c))).cloned()
+    }
+
     /// Load a system font covering `c` (preferred fallback families first, then any cataloged
     /// file under 40 MB). Returns true if one was loaded. Misses are remembered.
     #[cfg(not(target_arch = "wasm32"))]
