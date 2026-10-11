@@ -22,6 +22,8 @@ pub struct PropCtx {
     pub minor_font: String,
     /// Style id renames (e.g. a localized default paragraph style id → `Normal`).
     pub alias: HashMap<String, String>,
+    /// The theme's colours (for WordArt effects in theme colours).
+    pub theme: Vec<Rgb>,
 }
 
 impl PropCtx {
@@ -62,6 +64,9 @@ impl PropCtx {
                     // The complex-script font (Persian, Arabic, Hebrew text). A `w:cstheme` font is
                     // left to inherit: the theme's per-script fonts aren't read.
                     c.font_cs = k.attr("w:cs").filter(|f| !f.is_empty() && f.len() < 256).map(str::to_string);
+                    // The East Asian font (Chinese, Japanese, Korean text). A `w:eastAsiaTheme` font
+                    // is left to inherit, like `w:cstheme`.
+                    c.font_ea = k.attr("w:eastAsia").filter(|f| !f.is_empty() && f.len() < 256).map(str::to_string);
                 }
                 "w:b" => c.bold = Some(on_off(k)),
                 "w:bCs" => c.bold_cs = Some(on_off(k)),
@@ -113,6 +118,13 @@ impl PropCtx {
                 "w:lang" => {
                     c.lang = k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
                     c.lang_bidi = k.attr("w:bidi").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
+                }
+                n if n.starts_with("w14:") => {
+                    let fx = c.text_effects.get_or_insert_with(Default::default);
+                    super::wordart::read(k, &self.theme, fx);
+                    if fx.is_empty() {
+                        c.text_effects = None;
+                    }
                 }
                 _ => {}
             }

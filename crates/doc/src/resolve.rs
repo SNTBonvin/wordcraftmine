@@ -36,6 +36,9 @@ pub struct ResolvedChar {
     pub shadow: bool,
     pub emboss: bool,
     pub engrave: bool,
+    /// WordArt text effects (sanitized; `None` when there are none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_effects: Option<Box<crate::wordart::TextEffects>>,
     pub link: Option<String>,
     pub ins: Option<u32>,
     pub del: Option<u32>,
@@ -49,6 +52,9 @@ pub struct ResolvedChar {
     pub cs: bool,
     /// Complex-script font, size, bold and italic (Arabic, Persian, Hebrew… text).
     pub font_cs: String,
+    /// East Asian font (Chinese, Japanese and Korean text), when one is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_ea: Option<String>,
     pub size_cs: f32,
     pub bold_cs: bool,
     pub italic_cs: bool,
@@ -80,6 +86,7 @@ impl ResolvedChar {
             shadow: c.shadow.unwrap_or(false),
             emboss: c.emboss.unwrap_or(false),
             engrave: c.engrave.unwrap_or(false),
+            text_effects: c.text_effects.as_deref().map(crate::wordart::TextEffects::sanitized).filter(|t| !t.is_empty()).map(Box::new),
             link: c.link.clone(),
             ins: c.ins,
             del: c.del,
@@ -89,6 +96,7 @@ impl ResolvedChar {
             rtl: c.rtl.unwrap_or(false),
             cs: c.cs.unwrap_or(false),
             font_cs: c.font_cs.clone().or_else(|| c.font.clone()).unwrap_or_else(|| crate::styles::BODY_FONT.to_string()),
+            font_ea: c.font_ea.clone(),
             size_cs: c.size_cs.or(c.size).unwrap_or(11.0).clamp(1.0, 1638.0),
             bold_cs: c.bold_cs.or(c.bold).unwrap_or(false),
             italic_cs: c.italic_cs.or(c.italic).unwrap_or(false),
