@@ -742,6 +742,33 @@ fn section_breaks_show_with_formatting_marks() {
 }
 
 #[test]
+fn sections_land_on_the_side_their_break_and_numbering_ask_for() {
+    use wordcraft_doc::section::{SectionProps, SectionStart};
+    // "One" ends the first section on page 1; the second section starts as `start`.
+    let pages = |start: SectionStart, restart: Option<u32>, even_odd: bool| -> Vec<(usize, u32)> {
+        let mut d = Document::from_text("One\nTwo");
+        d.para_mut(wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(0)).unwrap().section = Some(Box::new(SectionProps::default()));
+        d.last_section.start = start;
+        d.last_section.page_num_start = restart;
+        d.settings.even_odd_headers = even_odd;
+        lay(&d).pages.iter().map(|p| (p.section, p.number)).collect()
+    };
+    // An odd-page break after page 1 leaves page 2 blank; the blank page ends the first section.
+    assert_eq!(pages(SectionStart::OddPage, None, false), [(0, 1), (0, 2), (1, 3)]);
+    assert_eq!(pages(SectionStart::EvenPage, None, false), [(0, 1), (1, 2)]);
+    // Restarting at 1 needs no blank page unless both sides print; at 2 it takes the next number.
+    assert_eq!(pages(SectionStart::OddPage, Some(1), false), [(0, 1), (1, 1)]);
+    assert_eq!(pages(SectionStart::OddPage, Some(2), false), [(0, 1), (1, 3)]);
+    assert_eq!(pages(SectionStart::OddPage, Some(1), true), [(0, 1), (0, 2), (1, 1)]);
+    // With different odd and even headers, a next-page break restarting at 1 starts on an odd
+    // sheet (Word's output for docxide-pdf's bush_fires_act_comparison).
+    assert_eq!(pages(SectionStart::NextPage, Some(1), true), [(0, 1), (0, 2), (1, 1)]);
+    assert_eq!(pages(SectionStart::NextPage, Some(2), true), [(0, 1), (1, 2)]);
+    assert_eq!(pages(SectionStart::NextPage, Some(1), false), [(0, 1), (1, 1)]);
+    assert_eq!(pages(SectionStart::NextPage, None, true), [(0, 1), (1, 2)]);
+}
+
+#[test]
 fn paragraph_marks_sit_past_text_running_the_other_way() {
     // A left-to-right paragraph ending in Hebrew, and a right-to-left one ending in Latin: the
     // logically last letters are at the wrong edge, but the ¶ still goes past every glyph.

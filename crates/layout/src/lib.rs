@@ -1531,18 +1531,28 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         if web && si > 0 {
             // one long page
         } else if pb.pages.is_empty() || start != SectionStart::Continuous {
+            let s = &doc.settings;
+            let (filler, restart) = section_side(start, restart, pb.number, pb.pages.len(), s.even_odd_headers, s.mirror_margins);
+            // The blank page that puts the section on the right side ends the previous section.
+            if filler
+                && !web
+                && let Some((_, prev)) = si.checked_sub(1).and_then(|k| sections.get(k))
+            {
+                pb.sect = prev;
+                pb.sect_idx = si - 1;
+                let (ph, pf) = (linked(&sections, si - 1, |s| s.headers), linked(&sections, si - 1, |s| s.footers));
+                let top = body_top_for(&mut ctx, prev, ph.default);
+                pb.foot_top = foot_top_for(&mut ctx, prev, pf.default);
+                pb.new_page(block, top);
+                pb.sect = sect;
+                pb.sect_idx = si;
+            }
             if let Some(n) = restart {
                 pb.number = n.saturating_sub(1);
             }
             pb.foot_top = first_foot;
             pb.new_page(block, first_top);
             pb.foot_top = foot_top;
-            if !web && matches!(start, SectionStart::EvenPage | SectionStart::OddPage) {
-                let want_even = start == SectionStart::EvenPage;
-                if pb.number.is_multiple_of(2) != want_even {
-                    pb.new_page(block, body_top);
-                }
-            }
         } else {
             // Continuous: new column layout below the current text (its tallest column).
             pb.cols = sect.column_boxes();
@@ -1870,6 +1880,33 @@ fn item_bottom(y: f32, para: &ParaLayout, l0: usize, l1: usize) -> Option<f32> {
     let f = para.lines.get(l0)?;
     let l = para.lines.get(l1.checked_sub(1)?)?;
     Some(y + l.top + l.height - f.top)
+}
+
+/// Whether a section that starts on a new page needs a blank page first so it lands on the right
+/// side, and the page number it restarts at. `last` is the number of the page before it and
+/// `pages` how many pages there are so far.
+/// - An odd- or even-page break counts on from the previous section's numbers. A section that
+///   restarts its numbering gets no blank page unless the document prints both sides (different
+///   odd and even headers, or mirror margins); a restart at the wrong parity takes the next number.
+/// - With different odd and even headers, a next-page break that restarts the numbers at an odd
+///   (even) number starts on an odd (even) sheet.
+///
+/// (Word's output for docxide-pdf's fixtures: bush_fires_act_comparison has a blank page 2.)
+fn section_side(start: SectionStart, restart: Option<u32>, last: u32, pages: usize, even_odd: bool, mirror: bool) -> (bool, Option<u32>) {
+    match start {
+        SectionStart::OddPage | SectionStart::EvenPage => {
+            let want_odd = start == SectionStart::OddPage;
+            let continuing_odd = last.saturating_add(1) % 2 == 1;
+            let filler = pages > 0 && continuing_odd != want_odd && (restart.is_none() || even_odd || mirror);
+            let restart = restart.map(|n| if (n % 2 == 1) == want_odd { n } else { n.saturating_add(1) });
+            (filler, restart)
+        }
+        SectionStart::NextPage => {
+            let filler = even_odd && pages > 0 && restart.is_some_and(|n| (n % 2 == 1) != ((pages + 1) % 2 == 1));
+            (filler, restart)
+        }
+        SectionStart::Continuous | SectionStart::NextColumn => (false, restart),
+    }
 }
 
 /// Where body text starts: the top margin, or below the header if it's taller.
