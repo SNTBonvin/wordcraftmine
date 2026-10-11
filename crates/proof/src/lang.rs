@@ -10,7 +10,7 @@ pub enum ProofLang {
     /// no language at all (WordCraft's default editing language is US English, like Word's).
     #[default]
     En,
-    /// Polish (`pl`, `pl-PL`): the SJP.PL dictionary, the Polish grammar rules and the Polish
+    /// Polish (`pl`, `pl-PL`): the installed Hunspell dictionary (when there is one), the Polish grammar rules and the Polish
     /// hyphenation patterns.
     Pl,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without

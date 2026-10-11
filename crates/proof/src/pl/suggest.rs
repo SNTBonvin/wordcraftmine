@@ -189,7 +189,7 @@ fn weighted_distance(a: &[char], b: &[char], related: &dyn Fn(char, char) -> boo
 
 /// Spelling suggestions for a Polish word, best first, at most `max`, in the word's letter case.
 pub fn suggest(word: &str, max: usize) -> Vec<String> {
-    suggest_in(super::dictionary(), word, max)
+    suggest_in(&super::dictionary(), word, max)
 }
 
 /// [`suggest`] against a given dictionary.
@@ -370,6 +370,7 @@ mod tests {
 
     #[test]
     fn polish_misspellings_get_the_right_suggestion() {
+        crate::pl::test_dict::install();
         has("żeka", "rzeka");
         has("kturzy", "którzy");
         has("napewno", "na pewno");
@@ -390,6 +391,7 @@ mod tests {
 
     #[test]
     fn the_likeliest_fix_comes_first() {
+        crate::pl::test_dict::install();
         assert_eq!(suggest("kturzy", 3).first().map(String::as_str), Some("którzy"));
         assert_eq!(suggest("zolw", 3).first().map(String::as_str), Some("żółw"));
         assert_eq!(suggest("napewno", 3).first().map(String::as_str), Some("na pewno"));
@@ -398,6 +400,7 @@ mod tests {
 
     #[test]
     fn edge_cases_stay_empty_or_bounded() {
+        crate::pl::test_dict::install();
         assert!(suggest("", 5).is_empty());
         assert!(suggest("kot", 0).is_empty());
         assert!(suggest(&"a".repeat(41), 5).is_empty());
@@ -420,6 +423,7 @@ mod tests {
 
     #[test]
     fn suggestions_are_fast_enough() {
+        crate::pl::test_dict::install();
         // Warm the dictionary, then time a worst case (a long word nothing near): the scan round.
         let _ = suggest("kot", 1);
         let t = std::time::Instant::now();

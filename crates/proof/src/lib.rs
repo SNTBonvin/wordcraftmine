@@ -7,10 +7,11 @@
 //!   `download`…), with inflections (`-s`, `-es`, `-ed`, `-ing`, `-ly`, `'s`…), a user dictionary and ignore lists;
 //!   suggestions by edit distance. Grammar checks that are cheap and reliable: repeated words,
 //!   `a`/`an`, capital letter after a sentence end, spaces before punctuation, doubled spaces.
-//! - **Polish** ([`ProofLang::Pl`], module [`pl`]): spelling against the SJP.PL dictionary
-//!   (Apache-2.0 option; ~350k stems with Hunspell-style affix rules, ~4.5 million forms, read by
-//!   [`affix`]), suggestions tuned for Polish (diacritics, `ż`/`rz`, `u`/`ó`, missing spaces),
-//!   and Polish grammar rules with Polish messages.
+//! - **Polish** ([`ProofLang::Pl`], module [`pl`]): spelling against the Hunspell `pl_PL`
+//!   dictionary installed on the system ([`hunspell`]; not bundled, so without it Polish has no
+//!   spelling marks), read by the affix engine ([`affix`]), suggestions tuned for Polish
+//!   (diacritics, `ż`/`rz`, `u`/`ó`, missing spaces), and Polish grammar rules with Polish
+//!   messages.
 //! - **Other languages** ([`ProofLang::Other`]): no spelling or grammar marks, like Word without
 //!   the language's proofing tools.
 //! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns (English, Polish), heuristic.
@@ -20,6 +21,7 @@
 
 pub mod affix;
 pub mod dict;
+pub mod hunspell;
 pub mod hyphen;
 pub mod lang;
 pub mod patterns;
@@ -601,6 +603,7 @@ mod tests {
 
     #[test]
     fn each_language_uses_its_own_tools() {
+        pl::test_dict::install();
         let pl = "Zażółć gęślą jaźń, chrząszcz brzmi w trzcinie.";
         assert!(check_spelling_in(pl, ProofLang::Pl).is_empty(), "{:?}", check_spelling_in(pl, ProofLang::Pl));
         assert!(check_spelling_in(pl, ProofLang::En).len() >= 3, "Polish words are English misspellings");
@@ -620,6 +623,7 @@ mod tests {
 
     #[test]
     fn mixed_language_paragraphs_check_each_run_in_its_language() {
+        pl::test_dict::install();
         // A Polish paragraph quoting English: English spelling and rules inside the quote only.
         let t = "Napisał „the quick brown fox is is here” i poszedł spać, bo żeka wylała.";
         let (a, b) = (t.find("the").unwrap(), t.find('”').unwrap());

@@ -3017,11 +3017,20 @@ fn note_options_per_section_and_convert_notes() {
     assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
 }
 
+/// A tiny synthetic Polish Hunspell dictionary (written for these tests). Real dictionaries are
+/// installed on the system, never bundled; every Polish test installs this same one.
+fn polish_test_dictionary() {
+    let aff = "SET UTF-8\nTRY aioeznrwcyszżtkpdmłjlubąęgh\nMAP 2\nMAP oó\nMAP zż\nREP 2\nREP ż rz\nREP rz ż\n";
+    let dic = "12\npłynie\nrzeka\na\nto\nwiem\nże\ntak\nw\nogóle\nzażółć\ngęślą\njaźń\n";
+    wordcraft_proof::pl::install_dictionary(aff, dic).unwrap();
+}
+
 /// Review › Language and the proofing commands work in Polish end to end: the language makes
 /// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
 /// suggestions come from it, and a suggestion fixes the text.
 #[test]
 fn polish_proofing_through_the_review_commands() {
+    polish_test_dictionary();
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "Płynie żeka, a wogóle to wiem że tak."}));
     // English by default: the Polish words are English misspellings.
@@ -3057,6 +3066,7 @@ fn polish_proofing_through_the_review_commands() {
 /// no parameters keep the old meaning (US English), and `default` needs a language.
 #[test]
 fn review_language_validates_tags_and_marks_text_unchecked() {
+    polish_test_dictionary();
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "Hello wrold"}));
     run(&mut s, "select.all", json!({}));
@@ -3084,6 +3094,7 @@ fn review_language_validates_tags_and_marks_text_unchecked() {
 /// a document with changes never does, and templates stay English.
 #[test]
 fn new_documents_follow_the_editing_language() {
+    polish_test_dictionary();
     let mut s = s();
     s.set_editing_language(Some("pl-PL"));
     assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "the untouched blank document switches");
@@ -3110,6 +3121,7 @@ fn new_documents_follow_the_editing_language() {
 /// English run (`w:lang`) come back, and so does the proofing.
 #[test]
 fn proofing_languages_survive_a_docx_round_trip() {
+    polish_test_dictionary();
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "Płynie żeka. Hello wrold."}));
     run(&mut s, "select.all", json!({}));

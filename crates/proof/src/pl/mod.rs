@@ -1,9 +1,10 @@
 //! Polish proofing.
 //!
-//! - **Spelling** against the SJP.PL dictionary ([`dictionary`]): ~350k stems with Hunspell-style
-//!   affix rules (~4.5 million forms), bundled as `assets/proofing/pl.dic` (under 1 MB, decoded on
-//!   first use, ~10 MB in memory). Capitalized stems are names (`Warszawa`); a sentence may start
-//!   with any word and headings may be in capitals. Hyphenated compounds are checked part by part
+//! - **Spelling** against the SJP.PL Hunspell dictionary installed on the system
+//!   ([`dictionary`], found by [`crate::hunspell`]: `pl_PL.aff`/`pl_PL.dic` from the OS, a
+//!   package manager or LibreOffice; it isn't bundled). Without it Polish text gets no spelling
+//!   marks. Capitalized stems are names (`Warszawa`); a sentence may start with any word and
+//!   headings may be in capitals. Hyphenated compounds are checked part by part
 //!   (`biało-czerwony`), foreign names inflected with an apostrophe are accepted
 //!   (`Kennedy'ego`), and the user dictionary applies as in English.
 //! - **Suggestions** tuned for Polish ([`suggest()`]): missing diacritics first (`zolw` → `żółw`), then
@@ -13,25 +14,62 @@
 
 pub mod grammar;
 mod suggest;
+#[cfg(test)]
+pub(crate) mod test_dict;
 
-use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
 
 use crate::affix::AffixDict;
 
 pub use suggest::suggest;
 
-static PL_DIC: &[u8] = include_bytes!("../../../../assets/proofing/pl.dic");
+/// The Polish dictionary: `None` until first use, then the installed one (or an empty one).
+static DICT: RwLock<Option<Arc<AffixDict>>> = RwLock::new(None);
 
-/// The bundled SJP.PL dictionary (decoded on first use; empty, with an error logged, if the
-/// bundled data were unreadable).
-pub fn dictionary() -> &'static AffixDict {
-    static D: OnceLock<AffixDict> = OnceLock::new();
-    D.get_or_init(|| {
-        AffixDict::from_bytes(PL_DIC).unwrap_or_else(|e| {
-            log::error!("Polish dictionary: {e}");
-            AffixDict::default()
-        })
+/// File names of a Polish Hunspell dictionary.
+const NAMES: &[&str] = &["pl_PL", "pl-PL", "pl"];
+
+/// The Polish dictionary: the installed Hunspell `pl_PL` (read on first use), one given with
+/// [`install_dictionary`], or an empty one when none is available (Polish spelling is off then;
+/// see [`has_dictionary`]).
+pub fn dictionary() -> Arc<AffixDict> {
+    if let Some(d) = DICT.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        return d.clone();
+    }
+    let loaded = Arc::new(load_installed());
+    let mut slot = DICT.write().unwrap_or_else(|e| e.into_inner());
+    // Another thread (or an install) may have filled it meanwhile: that one wins.
+    slot.get_or_insert(loaded).clone()
+}
+
+fn load_installed() -> AffixDict {
+    let Some((aff, dic)) = crate::hunspell::find(NAMES) else {
+        log::info!("Polish spelling: no Hunspell pl_PL dictionary installed");
+        return AffixDict::default();
+    };
+    crate::hunspell::load(&aff, &dic).unwrap_or_else(|e| {
+        log::warn!("Polish spelling: {e}");
+        AffixDict::default()
     })
+}
+
+/// Use this Polish dictionary from now on (Hunspell `.aff` and `.dic` text, decoded to UTF-8),
+/// for example one the user picked. On error the current dictionary stays.
+pub fn install_dictionary(aff: &str, dic: &str) -> Result<(), String> {
+    let d = AffixDict::from_hunspell(aff, dic, &[])?;
+    *DICT.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d));
+    Ok(())
+}
+
+/// Forget the loaded dictionary, so the next check looks for an installed one again (after
+/// [`crate::hunspell::set_dictionary_dir`] or a dictionary was installed).
+pub fn reload_dictionary() {
+    *DICT.write().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Is a Polish dictionary available (spelling is checked)?
+pub fn has_dictionary() -> bool {
+    !dictionary().is_empty()
 }
 
 /// Endings Polish adds after an apostrophe to foreign names whose last letter isn't pronounced
@@ -44,8 +82,17 @@ fn is_latin_letter(c: char) -> bool {
 }
 
 /// Is `word` spelled correctly in Polish? Numbers, single letters, short words in capitals
-/// (acronyms: `PKO`, `ZUS`), words with digits and words in other scripts are accepted.
+/// (acronyms: `PKO`, `ZUS`), words with digits and words in other scripts are accepted, and so
+/// is every word when no Polish dictionary is installed.
 pub fn is_correct(word: &str) -> bool {
+    is_correct_with(&dictionary(), word)
+}
+
+/// [`is_correct`] against a given dictionary (an empty one accepts everything).
+pub fn is_correct_with(d: &AffixDict, word: &str) -> bool {
+    if d.is_empty() {
+        return true; // no Polish dictionary installed: no spelling marks
+    }
     let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'' && c != '’');
     let w = w.trim_matches(['\'', '’']);
     let n = w.chars().count();
@@ -60,15 +107,15 @@ pub fn is_correct(word: &str) -> bool {
     }
     let w = w.replace('’', "'");
     if w.contains('-') {
-        return w.split('-').all(|p| p.chars().count() <= 1 || known(p));
+        return w.split('-').all(|p| p.chars().count() <= 1 || known(d, p));
     }
-    known(&w)
+    known(d, &w)
 }
 
 /// Is one word (no hyphens) in the dictionary, the user dictionary, or a foreign name with a
 /// Polish ending after an apostrophe?
-fn known(w: &str) -> bool {
-    if dictionary().check(w) || crate::in_user_dictionary(&w.to_lowercase()) {
+fn known(d: &AffixDict, w: &str) -> bool {
+    if d.check(w) || crate::in_user_dictionary(&w.to_lowercase()) {
         return true;
     }
     if let Some((stem, ending)) = w.split_once('\'') {
@@ -82,16 +129,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dictionary_loads() {
+    fn test_dictionary_loads() {
+        test_dict::install();
         let d = dictionary();
-        assert!(d.len() > 300_000, "{}", d.len());
-        assert!(d.rule_count() > 7_000, "{}", d.rule_count());
-        assert!(d.comments().iter().any(|c| c.contains("Apache")), "{:?}", d.comments());
+        assert!(has_dictionary());
+        assert!(d.len() > 50, "{}", d.len());
+        assert_eq!(d.rule_count(), 5, "the test dictionary's affix rules");
         assert!(!d.rep().is_empty() && !d.map().is_empty() && !d.try_chars().is_empty());
     }
 
     #[test]
+    fn without_a_dictionary_nothing_is_flagged_and_nothing_suggested() {
+        let none = AffixDict::default();
+        for w in ["żeka", "kturzy", "xqzv", ""] {
+            assert!(is_correct_with(&none, w), "{w}");
+        }
+        assert!(suggest::suggest_in(&none, "żeka", 5).is_empty());
+        assert!(install_dictionary("FLAG long\n", "1\nkot\n").is_err(), "unsupported files are refused");
+    }
+
+    #[test]
     fn polish_words_are_correct() {
+        test_dict::install();
         for w in [
             "źdźbło",
             "gżegżółka",
@@ -129,6 +188,7 @@ mod tests {
 
     #[test]
     fn misspellings_are_flagged() {
+        test_dict::install();
         for w in ["żeka", "kturzy", "napewno", "wogóle", "zolw", "chuśtawka", "bżoza", "warszawa", "niewiem", "pszyjaciel", "Kennedy'xyz"] {
             assert!(!is_correct(w), "{w}");
         }
@@ -136,6 +196,7 @@ mod tests {
 
     #[test]
     fn user_dictionary_applies() {
+        test_dict::install();
         assert!(!is_correct("zxqpolskisłowo"));
         crate::add_word("Zxqpolskisłowo");
         assert!(is_correct("zxqpolskisłowo"));

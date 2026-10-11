@@ -322,7 +322,7 @@ Bundled fonts, icons, images and other assets keep their own open licenses; each
 with its author, source and license in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 The English spelling dictionary and hyphenation come from Grady Ward's public-domain Moby
-Hyphenator II word list. Polish spelling uses the SJP.PL dictionary (sjp.pl, Apache-2.0 option) and
+Hyphenator II word list. Polish spelling reads the Hunspell `pl_PL` dictionary installed on the system (not bundled) and
 Polish hyphenation the TeX patterns by Hanna Kołodziejska, Bogusław Jackowski and Marek Ryćko (MIT
 option). The sample documents and templates are original text written for WordCraft.
 

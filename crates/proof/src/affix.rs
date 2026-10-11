@@ -1,4 +1,4 @@
-//! Hunspell-style affix dictionaries — the subset the SJP.PL Polish dictionary uses.
+//! Hunspell-style affix dictionaries — the subset the SJP.PL Polish dictionary (`pl_PL`) uses.
 //!
 //! A word is correct when it is a stem, a stem with one suffix, a stem with one prefix, or a stem
 //! with a prefix and a suffix that both allow cross products; each rule applies only to stems
@@ -6,9 +6,10 @@
 //! inflected languages store millions of forms this way in a few hundred thousand stems: the
 //! Polish dictionary's ~350k stems and ~7,500 rules accept ~4.5 million forms.
 //!
-//! The rules and stems come from a Hunspell `.aff`/`.dic` pair ([`AffixDict::from_hunspell`]) and
-//! are bundled in WordCraft's compact format ([`AffixDict::to_bytes`]): the rules as text lines and
-//! the stems front-coded, raw-deflated together (the Polish file is under 1 MB).
+//! The rules and stems come from a Hunspell `.aff`/`.dic` pair ([`AffixDict::from_hunspell`]),
+//! read at runtime from the dictionaries installed on the system ([`crate::hunspell`]). They can
+//! also be stored in WordCraft's compact format ([`AffixDict::to_bytes`]): the rules as text
+//! lines and the stems front-coded, raw-deflated together (the Polish dictionary is under 1 MB).
 //!
 //! Supported: one-character flags (at most 64 distinct), `PFX`/`SFX` with strip, append and
 //! condition (`.`, letters, `[abc]`, `[^abc]`), cross products, and the suggestion tables `TRY`,
