@@ -1638,6 +1638,29 @@ mod tests {
         assert!(rects[1].left() > rects[0].right());
         assert!((rects[0].height() - (a.canvas.canvas_rect.unwrap().height() - 36.0)).abs() < 2.0);
         let initial_width = a.session.view.read_width;
+        // A simple mouse click in a later visible column must neither pull that column
+        // to the leading edge nor select text under the stationary, held pointer.
+        let click = a.canvas.page_rects[2].center();
+        assert!(a.canvas.canvas_rect.unwrap().contains(click));
+        let initial_scroll = a.canvas.scroll_offset.x;
+        let button =
+            |pressed| egui::Event::PointerButton { pos: click, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        frame(&mut a, vec![egui::Event::PointerMoved(click), button(true)], screen);
+        assert_eq!(a.session.layout().caret_on(&a.session.sel.focus, a.session.page_hint).unwrap().page, 2);
+        frame(&mut a, vec![], screen); // mouse is still held at the same coordinates
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5, "click must not scroll a later column to the left");
+        assert!(a.session.sel.is_collapsed(), "stationary click must not create a selection");
+        frame(&mut a, vec![button(false)], screen);
+        frame(&mut a, vec![], screen);
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5);
+        assert!(a.session.sel.is_collapsed());
+        // An explicit caret move outside the visible columns must still reveal its destination.
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 5000)})).unwrap();
+        frame(&mut a, vec![], screen);
+        assert!(a.canvas.scroll_offset.x > initial_scroll + a.session.view.read_width * a.canvas.scale);
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 0)})).unwrap();
+        frame(&mut a, vec![], screen);
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5);
         let over = a.canvas.canvas_rect.unwrap().center();
         frame(&mut a, vec![egui::Event::PointerMoved(over)], screen);
         frame(

@@ -594,11 +594,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         }
         app.canvas.nav_to_caret = false;
     } else if app.canvas.scroll_to_caret && app.session.view.read_mode && app.canvas.scroll_request.is_none() {
-        app.canvas.read_target_page = None;
         if let Some(c) = caret
             && let Some(pr) = geo.rects.get(c.page)
         {
-            app.canvas.scroll_request = Some(vec2((pr.left() - GAP).max(0.0), 0.0));
+            // Ordinary caret-follow only reveals an offscreen position, as in Print Layout.
+            // A click in a visible column must not align that whole column to the left.
+            let x = pr.left() + c.x * geo.scale;
+            let left = app.canvas.scroll_offset.x;
+            if x < left || x > left + area.width() {
+                app.canvas.read_target_page = None;
+                app.canvas.scroll_request = Some(vec2((pr.left() - GAP).max(0.0), 0.0));
+            }
         }
     } else if app.canvas.scroll_to_caret
         && let Some(c) = caret
