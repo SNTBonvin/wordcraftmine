@@ -3,6 +3,7 @@
 mod embed;
 mod math;
 mod props;
+mod sdt;
 mod story;
 mod wordart;
 
@@ -94,6 +95,8 @@ pub(crate) struct Writer<'d> {
     toc_begin_here: bool,
     /// Close the open TOC field at the end of the paragraph being written.
     toc_end_here: bool,
+    /// Byte offsets of the content control markers the next paragraph writes inline.
+    inline_controls: Vec<usize>,
     /// Media keys actually referenced by a written drawing.
     used_media: std::collections::BTreeSet<String>,
     /// Bounds writing text boxes inside text boxes (as layout shows them).
@@ -145,6 +148,7 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
         toc_field: None,
         toc_begin_here: false,
         toc_end_here: false,
+        inline_controls: Vec::new(),
         used_media: Default::default(),
         boxes: wordcraft_doc::BoxBudget::default(),
         embeds: embed::EmbedWriter::new(doc),
@@ -861,6 +865,16 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool) -> Vec<u8> {
     w.val("w:defaultTabStop", &crate::units::twips(s.default_tab.clamp(1.0, 1584.0)));
     if s.auto_hyphenation {
         w.empty("w:autoHyphenation", &[]);
+    }
+    // Schema order: consecutiveHyphenLimit, hyphenationZone, doNotHyphenateCaps.
+    if s.consecutive_hyphen_limit > 0 {
+        w.val("w:consecutiveHyphenLimit", &s.consecutive_hyphen_limit.min(32_767).to_string());
+    }
+    if s.hyphenation_zone.is_finite() && (s.hyphenation_zone - wordcraft_doc::DEFAULT_HYPHENATION_ZONE).abs() > 0.01 {
+        w.val("w:hyphenationZone", &crate::units::twips(s.hyphenation_zone.clamp(0.0, 1584.0)));
+    }
+    if !s.hyphenate_caps {
+        w.empty("w:doNotHyphenateCaps", &[]);
     }
     if s.even_odd_headers {
         w.empty("w:evenAndOddHeaders", &[]);

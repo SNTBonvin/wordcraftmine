@@ -331,6 +331,17 @@ View|Window|Switch Windows|view.switchWindows
 View|Macros|Macros|tools.macros
 View|Macros|Record Macro|tools.recordMacro
 View|SharePoint|Properties|file.properties
+Developer|Controls|Rich Text Content Control|developer.richText
+Developer|Controls|Plain Text Content Control|developer.plainText
+Developer|Controls|Picture Content Control|developer.picture
+Developer|Controls|Building Block Gallery Content Control|developer.buildingBlock
+Developer|Controls|Check Box Content Control|developer.checkBox
+Developer|Controls|Combo Box Content Control|developer.comboBox
+Developer|Controls|Drop-Down List Content Control|developer.dropDown
+Developer|Controls|Date Picker Content Control|developer.datePicker
+Developer|Controls|Repeating Section Content Control|developer.repeatingSection
+Developer|Controls|Design Mode|developer.designMode
+Developer|Controls|Properties|developer.properties
 Table Design|Table Style Options|Table Style Options|table.look
 Table Design|Table Styles|Table Styles|table.style
 Table Design|Table Styles|New Table Style|table.newStyle
@@ -408,6 +419,11 @@ Shape Format|Accessibility|Alt Text|object.altText
 Picture Format|Size|Crop|picture.crop
 Picture Format|Size|Size|picture.size
 Picture Format|Size|Rotation|arrange.rotation
+Chart Design|Type|Change Chart Type|chart.type
+Chart Design|Data|Edit Data|chart.editData
+Chart Design|Chart Layouts|Chart Title|chart.title
+Chart Design|Chart Layouts|Legend|chart.legend
+Chart Design|Chart Layouts|Data Labels|chart.dataLabels
 Shape Format|Shape Styles|Shape Fill|shape.fill
 Shape Format|Shape Styles|Shape Outline|shape.outline
 Shape Format|Shape Styles|Shape Effects|shape.effects

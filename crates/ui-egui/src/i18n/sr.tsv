@@ -1433,6 +1433,39 @@
 	Lines per page:	Редова по страници:
 	Moved from	Премештено одавде
 	Moved to	Премештено овде
+	Developer	Програмер
+	Controls	Контроле
+	Rich Text Content Control	Контрола садржаја за обогаћени текст
+	Plain Text Content Control	Контрола садржаја за обичан текст
+	Picture Content Control	Контрола садржаја за слику
+	Building Block Gallery Content Control	Контрола садржаја за галерију градивних блокова
+	Check Box Content Control	Контрола садржаја за поље за потврду
+	Combo Box Content Control	Контрола садржаја за комбиновано поље
+	Drop-Down List Content Control	Контрола садржаја за падајућу листу
+	Date Picker Content Control	Контрола садржаја за бирање датума
+	Repeating Section Content Control	Контрола садржаја за одељак који се понавља
+	Design Mode	Режим дизајна
+	Content Control at Selection	Контрола садржаја на избору
+	Toggle Check Box	Промени поље за потврду
+	Choose List Item	Изабери ставку листе
+	Set Date	Постави датум
+	Remove Content Control	Уклони контролу садржаја
+	Content Control Properties	Својства контроле садржаја
+	Title	Наслов
+	Tag	Ознака
+	Placeholder text	Текст чувара места
+	Can't be deleted	Не може да се избрише
+	Contents can't be edited	Садржај не може да се уређује
+	Remove the control once edited	Уклони контролу после уређивања
+	Allow line breaks	Дозволи преломе реда
+	Date format	Формат датума
+	Checked symbol	Симбол за потврђено
+	Unchecked symbol	Симбол за непотврђено
+	List entries	Ставке листе
+	Display text	Приказани текст
+	Value	Вредност
+	Today	Данас
+	Put the caret in a content control first.	Прво поставите курсор у контролу садржаја.
 	Right-to-Left Table	Табела са десна на лево
 	Right-to-Left Section	Одељак са десна на лево
 	Table direction:	Смер табеле:
@@ -1460,6 +1493,37 @@
 	Enlarge symbol	Увећај симбол
 	Enclosure	Оквир
 	Circle	Круг
+	Change Chart Type	Промени тип графикона
+	Chart Design	Дизајн графикона
+	Type	Тип
+	Edit Data	Уреди податке
+	Chart Title	Наслов графикона
+	Chart Layouts	Распореди графикона
+	Add Chart Element	Додај елемент графикона
+	Legend	Легенда
+	Data Labels	Ознаке података
+	Above Chart	Изнад графикона
+	Insert Chart	Уметни графикон
+	Clustered Column	Груписане колоне
+	Stacked Column	Наслагане колоне
+	Clustered Bar	Груписане траке
+	Stacked Bar	Наслагане траке
+	Area	Површински
+	Pie	Кружни
+	Doughnut	Прстенасти
+	Scatter	Распршени
+	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) није број.
+	Category {n}	Категорија {n}
+	Series {n}	Серија {n}
+	Type the categories down the side and a column of values per series.	Унесите категорије са стране и по једну колону вредности за сваку серију.
+	Categories	Категорије
+	Series name	Назив серије
+	Remove series	Уклони серију
+	Remove row	Уклони ред
+	Add Row	Додај ред
+	Add Series	Додај серију
+	Edit\nData	Уреди\nподатке
+	Change\nChart Type	Промени тип\nграфикона
 	Align Text	Поравнај текст
 	Create Link	Направи везу
 	Break Link	Прекини везу
@@ -1568,9 +1632,7 @@
 	Tab leader:	Попуна табулатора:
 	Table of Contents Options	Опције садржаја
 	Table of Contents Styles	Стилови садржаја
-	Tag	Ознака
 	This page	Ова страница
-	Title	Наслов
 	Type:	Врста:
 	URL	URL
 	Volume	Том
@@ -1628,3 +1690,66 @@
 	Soft Glow	Меки сјај
 	Accent with Reflection	Истицање са одразом
 	Warm Gradient with Outline	Топли градијент са контуром
+	Add line numbering	Додај бројеве редова
+	Add to Document	Додај у документ
+	Address labels	Адресне налепнице
+	Arabic	Арапски
+	Auto	Аутоматски
+	Automatically hyphenate document	Аутоматски дели речи у документу
+	Chinese (Simplified)	Кинески (поједностављени)
+	Chinese (Traditional)	Кинески (традиционални)
+	Column:	Колона:
+	Count by:	Корак:
+	Czech	Чешки
+	Danish	Дански
+	Delivery address:	Адреса примаоца:
+	Detect language automatically	Аутоматски препознај језик
+	Do not check spelling or grammar	Не проверавај правопис ни граматику
+	Dutch	Холандски
+	English (United Kingdom)	Енглески (Уједињено Краљевство)
+	Envelope size:	Величина коверте:
+	Estonian	Естонски
+	Finnish	Фински
+	French (France)	Француски (Француска)
+	From text:	Од текста:
+	Full page of the same label	Цела страница исте налепнице
+	German (Germany)	Немачки (Немачка)
+	Greek	Грчки
+	Hebrew	Хебрејски
+	Hyphenate at:	Подели на:
+	Hyphenate words in CAPS	Дели речи написане ВЕЛИКИМ СЛОВИМА
+	Hyphenation Options…	Опције дељења речи…
+	Hyphenation zone:	Зона дељења речи:
+	Italian	Италијански
+	Japanese	Јапански
+	Korean	Корејски
+	Limit consecutive hyphens to:	Највише узастопних цртица:
+	Line Numbering Options…	Опције бројева редова…
+	Manual Hyphenation	Ручно дељење речи
+	Manual hyphenation is complete.	Ручно дељење речи је завршено.
+	Manual…	Ручно…
+	Mark selected text as:	Означи изабрани текст као:
+	New Document	Нови документ
+	No limit	Без ограничења
+	Norwegian (Bokmål)	Норвешки (букмол)
+	Numbering:	Нумерисање:
+	Omit	Изостави
+	One label per recipient	Једна налепница по примаоцу
+	Polish	Пољски
+	Portuguese (Brazil)	Португалски (Бразил)
+	Portuguese (Portugal)	Португалски (Португалија)
+	Return address labels	Налепнице са адресом пошиљаоца
+	Return address:	Адреса пошиљаоца:
+	Row:	Ред:
+	Russian	Руски
+	Serbian (Cyrillic)	Српски (ћирилица)
+	Serbian (Latin)	Српски (латиница)
+	Set As Default	Постави као подразумевано
+	Shipping labels	Налепнице за пошиљке
+	Single label	Једна налепница
+	Spanish (Mexico)	Шпански (Мексико)
+	Spanish (Spain)	Шпански (Шпанија)
+	Swedish	Шведски
+	Turkish	Турски
+	Ukrainian	Украјински
+	{language} is now the document's default language.	{language} је сада подразумевани језик документа.
