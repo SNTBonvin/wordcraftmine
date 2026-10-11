@@ -1,6 +1,6 @@
 # Typing parity with Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (undo grouping after a selection, Undo of Bold at the caret, #419, #424; previously minor: Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; text typed next to a hyperlink stays outside it, #413) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-12 · **Change:** trivial (proofing: ellipses are not sentence boundaries; previously minor: undo grouping after a selection and Undo of Bold at the caret, #419, #424) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 What Word does when you type, observed black-box (same keystrokes typed into Word and
 WordCraft, results read back paragraph by paragraph) and pinned by tests in
@@ -55,8 +55,10 @@ Windows/Linux keys are given first, macOS second.
 Applied when a word is finished by a space, punctuation **or Enter** (`enter_finishes_a_word_for_autocorrect`):
 
 - First letter of a sentence (paragraph or list item start, after `. ! ?`) is capitalised; not
-  after abbreviations (`e.g.`, `Dr.`, …) or initials (`J.`), and not for mixed-case words
-  (`iPhone`) or single-letter labels (`a.`). `teh`→`the`, `i`→`I`, `(c)`→`©`, `(tm)`→`™`,
+  after abbreviations (`e.g.`, `Dr.`, …), initials (`J.`) or ellipses (`...`, `…`), and not
+  for mixed-case words (`iPhone`) or single-letter labels (`a.`). Grammar suggestions follow the
+  same ellipsis rule (`proof::tests::ellipses_do_not_start_sentences`).
+  `teh`→`the`, `i`→`I`, `(c)`→`©`, `(tm)`→`™`,
   `wait...`→`wait…`, smart quotes (`autocorrect_as_you_type`).
 - `1/2 1/4 3/4` → `½ ¼ ¾`; `1st 22nd 13th` get superscript suffixes (`ordinals_become_superscript`).
 - `word -- word` → en dash, `word - word` → en dash, `word--word` → em dash (`dashes`).
@@ -104,6 +106,7 @@ Applied when a word is finished by a space, punctuation **or Enter** (`enter_fin
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | Proofing no longer suggests sentence capitalization after `...` or `…` |
 | 2026-10-11 | minor | Undo rows: a selection ends the typing group (#419); Undo of Bold at the caret restores unbolded typing (#424) |
 | 2026-10-11 | minor | Names of days capitalised; AutoCorrect Options (user entries, deleted built-ins, exceptions, every AutoCorrect/AutoFormat switch) change typing (#412) |
 | 2026-10-11 | minor | Editing keys: Move Paragraph Up/Down, Promote/Demote, Go Back (Shift+F5), Alt+X (#343) |
