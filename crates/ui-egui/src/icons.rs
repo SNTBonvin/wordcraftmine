@@ -726,11 +726,15 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.head(10.75, 10.75, 120.0, a);
         }
         "select" => {
-            pen.line(&[(1.5, 4.0), (1.5, 1.5), (4.0, 1.5)]);
-            pen.line(&[(7.0, 1.5), (9.0, 1.5)]);
-            pen.line(&[(1.5, 7.0), (1.5, 9.0)]);
-            pen.fill(&[(6.0, 6.0), (14.5, 9.5), (10.25, 10.25)], a);
-            pen.fill(&[(6.0, 6.0), (10.25, 10.25), (9.5, 14.5)], a);
+            // A dashed selection square; the arrow covers its far corner, clear of every dash.
+            pen.line(&[(1.5, 3.25), (1.5, 1.5), (3.25, 1.5)]);
+            pen.line(&[(10.75, 1.5), (12.5, 1.5), (12.5, 3.25)]);
+            pen.line(&[(1.5, 10.75), (1.5, 12.5), (3.25, 12.5)]);
+            for (x0, y0, x1, y1) in [(6.25, 1.5, 7.75, 1.5), (1.5, 6.25, 1.5, 7.75), (6.25, 12.5, 7.75, 12.5), (12.5, 6.25, 12.5, 7.75)] {
+                pen.line(&[(x0, y0), (x1, y1)]);
+            }
+            pen.fill(&[(7.75, 7.75), (14.5, 10.5), (11.0, 11.0)], a);
+            pen.fill(&[(7.75, 7.75), (11.0, 11.0), (10.5, 14.5)], a);
         }
         "dictate" => {
             pen.panel(6.0, 1.5, 10.0, 9.0, 2.0);
@@ -943,7 +947,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         "eraser" => {
             pen.fill(&[(1.5, 9.5), (4.75, 6.25), (10.25, 11.75), (8.5, 13.5), (5.5, 13.5)], pen.a.gamma_multiply(0.5));
             pen.poly(&[(1.5, 9.5), (8.0, 3.0), (13.5, 8.5), (8.5, 13.5), (5.5, 13.5)], c);
-            pen.line(&[(4.75, 6.25), (10.75, 12.25)]);
+            pen.line(&[(4.75, 6.25), (10.25, 11.75)]);
             pen.line(&[(11.5, 14.5), (14.5, 14.5)]);
         }
         // Ink thickness: three strokes, thin to thick; the thickest in the accent.
@@ -1726,9 +1730,12 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.line(&[(8.0, 7.5), (8.0, 14.5)]);
         }
         "toText" => {
+            // The table turns into lines of text: an arrow from the table down to the lines.
             pen.table(1.5, 1.5, 7.0);
-            pen.arrow(10.0, 9.5, 11.75, 11.25, a);
-            pen.rows(1.5, 14.5, &[13.75]);
+            pen.path(&[(10.25, 4.5), (12.75, 4.5), (12.75, 8.0)], a);
+            pen.head(12.75, 8.0, 90.0, a);
+            pen.rows(1.5, 14.5, &[10.75]);
+            pen.rows(1.5, 10.0, &[13.75]);
         }
         "formula" => {
             pen.arc(8.5, 4.0, 2.0, 0.0, -180.0, c);
