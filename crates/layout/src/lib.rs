@@ -16,6 +16,7 @@ pub mod kinsoku;
 pub mod math;
 pub mod para;
 mod table;
+mod textbox;
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -118,6 +119,14 @@ pub enum Placed {
         off: usize,
         spin: Spin,
     },
+    /// `items` clipped to `rect`: a floating Drawing Canvas's members, kept inside its frame.
+    /// `rect` is the unturned frame and `items` sit in it; `spin` turns the clipped whole about
+    /// the frame's centre.
+    Clip {
+        rect: Rect,
+        spin: Spin,
+        items: Vec<Placed>,
+    },
     /// A table cell's area (for hit testing and cell selection).
     Cell {
         rect: Rect,
@@ -165,6 +174,13 @@ impl Placed {
                 origin.x += dx;
                 origin.y += dy;
             }
+            Placed::Clip { rect, items, .. } => {
+                rect.x += dx;
+                rect.y += dy;
+                for it in items {
+                    it.translate(dx, dy);
+                }
+            }
             Placed::Rule { x0, y0, x1, y1, .. } => {
                 *x0 += dx;
                 *x1 += dx;
@@ -211,6 +227,12 @@ impl Placed {
             Placed::Object { rect, origin, .. } => {
                 *rect = turn_rect(turn, x, y, *rect);
                 (origin.x, origin.y) = turn_point(turn, x, y, origin.x, origin.y);
+            }
+            Placed::Clip { rect, items, .. } => {
+                *rect = turn_rect(turn, x, y, *rect);
+                for it in items {
+                    it.turn(turn, x, y);
+                }
             }
             Placed::Rule { x0, y0, x1, y1, .. } => {
                 (*x0, *y0) = turn_point(turn, x, y, *x0, *y0);
@@ -363,6 +385,8 @@ struct Ctx<'a> {
     eq_count: u32,
     /// Bounds laying out text boxes inside text boxes, for the whole layout.
     boxes: wordcraft_doc::BoxBudget,
+    /// Linked text boxes (Create Link).
+    chains: textbox::Chains,
 }
 
 impl Ctx<'_> {
@@ -770,6 +794,7 @@ fn fit_box(items: Vec<Placed>, height: f32) -> Vec<Placed> {
             Placed::Image { rect, .. }
             | Placed::Shape { rect, .. }
             | Placed::Graphic { rect, .. }
+            | Placed::Clip { rect, .. }
             | Placed::Cell { rect, .. }
             | Placed::Object { rect, .. }
                 if rect.y < limit =>
@@ -850,6 +875,8 @@ struct PageBuilder<'a> {
     line_no: u32,
     /// Index of the first body item of the current page (vertical alignment shifts from here).
     page_items_start: usize,
+    /// The document's own footnote separators, laid out for the section's text width.
+    seps: NoteSeps,
     /// Per page: how many items were inserted at the front of its list (behind the text), so a
     /// [`Snap`] can take them out again.
     behind: Vec<usize>,
@@ -867,6 +894,74 @@ struct PageBuilder<'a> {
 
 /// Gap above the footnote separator and its length.
 const NOTE_SEP: f32 = 12.0;
+/// Length of the default (short) note separator line.
+pub(crate) const NOTE_SEP_W: f32 = 144.0;
+/// The story of text drawn on a page that belongs to no story of the document (line numbers,
+/// note separators and continuation notices): not hit by clicks.
+pub const DECOR_STORY: StoryRef = StoryRef::Part(u32::MAX);
+
+/// A note separator or continuation notice laid out from y = 0 (its items and height).
+type SepBox = (Vec<Placed>, f32);
+
+/// The document's own footnote or endnote separators and continuation notice, laid out (`None`:
+/// the defaults).
+#[derive(Clone, Default)]
+struct NoteSeps {
+    sep: Option<SepBox>,
+    cont: Option<SepBox>,
+    notice: Option<SepBox>,
+}
+
+impl NoteSeps {
+    /// Lay out `seps` `width` wide.
+    fn new(ctx: &mut Ctx, seps: &wordcraft_doc::NoteSeparators, width: f32) -> NoteSeps {
+        let mut lay = |blocks: &Option<Blocks>| blocks.as_ref().map(|b| sep_box(ctx, b, width));
+        NoteSeps { sep: lay(&seps.separator), cont: lay(&seps.continuation_separator), notice: lay(&seps.continuation_notice) }
+    }
+    /// Height of the separator above a page's notes (`cont`: the continuation separator, when the
+    /// first is continued from the page before).
+    fn sep_h(&self, cont: bool) -> f32 {
+        let own = if cont { &self.cont } else { &self.sep };
+        own.as_ref().map_or(NOTE_SEP, |s| s.1)
+    }
+    /// Height of the notice below a note that continues on the next page.
+    fn notice_h(&self) -> f32 {
+        self.notice.as_ref().map_or(0.0, |s| s.1)
+    }
+}
+
+/// A note separator or continuation notice story (`blocks`) laid out `width` wide.
+fn sep_box(ctx: &mut Ctx, blocks: &Blocks, width: f32) -> SepBox {
+    let bl = layout_box(ctx, DECOR_STORY, blocks, &[], width, None, 0, None);
+    let mut items = bl.items;
+    items.extend(separator_rules(blocks, &items));
+    (items, bl.height)
+}
+
+/// The lines drawn by the note separators (see [`InlineObject::note_separator`]) in a separator
+/// story's laid-out `items` (`blocks` its paragraphs): across each one's place in its line, half
+/// way down the line.
+fn separator_rules(blocks: &Blocks, items: &[Placed]) -> Vec<Placed> {
+    let mut rules = Vec::new();
+    for it in items {
+        let Placed::Lines { para, path, l0, l1, x, y, turn: TextDirection::Horizontal, .. } = it else { continue };
+        let [i] = path.0.as_slice() else { continue };
+        let Some(Block::Para(p)) = blocks.get(*i as usize).map(|b| &**b) else { continue };
+        let Some(first) = para.lines.get(*l0) else { continue };
+        for line in para.lines.get(*l0..*l1).unwrap_or(&[]) {
+            for k in line.c0..line.c1 {
+                let Some(para::ClKind::Object(oi)) = para.clusters.get(k).map(|c| c.kind) else { continue };
+                if p.objects.get(oi).and_then(InlineObject::as_note_separator).is_none() {
+                    continue;
+                }
+                let (Some(a), Some(b)) = (line.cl_left(k), line.cl_right(k)) else { continue };
+                let ry = y + line.top - first.top + line.height / 2.0;
+                rules.push(Placed::Rule { x0: x + a.min(b), y0: ry, x1: x + a.max(b), y1: ry, border: Border::single(0.5) });
+            }
+        }
+    }
+    rules
+}
 /// The most pages added after the body for footnotes still continuing.
 const MAX_NOTE_PAGES: usize = 10_000;
 
@@ -892,6 +987,7 @@ fn v_span(it: &Placed) -> (f32, f32) {
         | Placed::Image { rect, .. }
         | Placed::Shape { rect, .. }
         | Placed::Graphic { rect, .. }
+        | Placed::Clip { rect, .. }
         | Placed::Cell { rect, .. }
         | Placed::Object { rect, .. } => (rect.y, rect.y + rect.h),
         Placed::Rule { y0, y1, .. } => (y0.min(*y1), y0.max(*y1)),
@@ -996,7 +1092,10 @@ impl NoteBox {
 impl PageBuilder<'_> {
     /// Space footnotes take at the bottom of the page.
     fn notes_h(&self) -> f32 {
-        if self.notes.is_empty() { 0.0 } else { NOTE_SEP + self.notes.iter().map(|n| n.h).sum::<f32>() }
+        match self.notes.first() {
+            None => 0.0,
+            Some(first) => self.seps.sep_h(first.cont) + self.notes.iter().map(|n| n.h).sum::<f32>(),
+        }
     }
     /// The lowest bottom of the body text and tables on the current page.
     fn body_floor(&self) -> f32 {
@@ -1021,11 +1120,13 @@ impl PageBuilder<'_> {
         let area = self.bottom.max(self.body_floor());
         let fits = total <= self.orig_bottom - area + 0.01;
         let top = if fits { self.orig_bottom - total } else { area };
-        let mut y = top + NOTE_SEP;
         let notes = std::mem::take(&mut self.notes);
-        // A page that starts with a continued note gets the full-width continuation separator.
+        // A page that starts with a continued note gets the continuation separator.
         let cont = notes.first().is_some_and(|n| n.cont);
+        let mut y = top + self.seps.sep_h(cont);
         let mut placed = Vec::new();
+        // Where the continuation notice goes, below a note that continues on the next page.
+        let mut notice_y = None;
         let mut rest = notes.into_iter();
         while let Some(n) = rest.next() {
             let room = self.orig_bottom - y;
@@ -1035,13 +1136,16 @@ impl PageBuilder<'_> {
                 placed.push((n, ny));
                 continue;
             }
-            // Split at the last line that fits. The page's first note always leaves something
-            // here (its first line, or all of it if it can't be split), so continuing ends.
+            // Split at the last line that fits with the notice below it. The page's first note
+            // always leaves something here (its first line, or all of it if it can't be split),
+            // so continuing ends.
             let first = placed.is_empty();
             let cuts = n.cuts();
+            let room = room - self.seps.notice_h();
             match cuts.iter().rev().find(|&&c| c <= room + 0.01).or(cuts.first().filter(|_| first)).copied() {
                 Some(c) => {
                     let (head, tail) = n.split(c);
+                    notice_y = Some(y + head.h);
                     placed.push((head, y));
                     self.carry.push(tail);
                 }
@@ -1052,14 +1156,28 @@ impl PageBuilder<'_> {
             break;
         }
         if let Some(pg) = self.pages.last_mut() {
-            let len = if cont { self.sect.text_width() } else { 144.0 };
-            let sy = top + NOTE_SEP / 2.0;
-            pg.items.push(Placed::Rule { x0: x, y0: sy, x1: x + len, y1: sy, border: Border::single(0.5) });
+            match if cont { &self.seps.cont } else { &self.seps.sep } {
+                Some((items, _)) => pg.items.extend(items.iter().cloned().map(|mut it| {
+                    it.translate(x, top);
+                    it
+                })),
+                None => {
+                    let len = if cont { self.sect.text_width() } else { NOTE_SEP_W };
+                    let sy = top + NOTE_SEP / 2.0;
+                    pg.items.push(Placed::Rule { x0: x, y0: sy, x1: x + len, y1: sy, border: Border::single(0.5) });
+                }
+            }
             for (n, ny) in placed {
                 for mut it in n.items {
                     it.translate(x, ny);
                     pg.items.push(it);
                 }
+            }
+            if let (Some(ny), Some((items, _))) = (notice_y, &self.seps.notice) {
+                pg.items.extend(items.iter().cloned().map(|mut it| {
+                    it.translate(x, ny);
+                    it
+                }));
             }
         }
     }
@@ -1112,8 +1230,10 @@ impl PageBuilder<'_> {
             if s.columns.separator && s.columns.count > 1 {
                 let cols = s.column_boxes();
                 for w in cols.windows(2) {
-                    if let [(ax, aw), (bx, _)] = w {
-                        let x = s.margin_left + s.gutter + (ax + aw + bx) / 2.0;
+                    if let [(ax, aw), (bx, bw)] = w {
+                        // Midway across the space between neighbours (leftwards in an RTL section).
+                        let mid = if bx >= ax { (ax + aw + bx) / 2.0 } else { (bx + bw + ax) / 2.0 };
+                        let x = s.margin_left + s.gutter + mid;
                         decor.push(Placed::Rule { x0: x, y0: body_top, x1: x, y1: s.page_h - s.margin_bottom, border: Border::single(0.5) });
                     }
                 }
@@ -1213,6 +1333,7 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
         numbers: HashMap::new(),
         eq_count: 0,
         boxes: wordcraft_doc::BoxBudget::default(),
+        chains: Default::default(),
     };
     let sections = doc.sections();
     let web = opts.view != ViewMode::Print;
@@ -1253,6 +1374,7 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
         float_tables: Vec::new(),
         line_no: 0,
         page_items_start: 0,
+        seps: NoteSeps::default(),
         behind: Vec::new(),
         max_y: 0.0,
         content_bottom: 0.0,
@@ -1266,6 +1388,9 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
         let sect: &SectionProps = if web { sect_ref } else { sect };
         pb.sect = sect;
         pb.sect_idx = si;
+        if !web && !doc.footnote_separators.is_empty() {
+            pb.seps = NoteSeps::new(&mut ctx, &doc.footnote_separators, sect.text_width());
+        }
         let body_top = if web { sect.margin_top } else { body_top_for(&mut ctx, sect, sect.headers.default) };
         let first_top = if web || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, sect.headers.first) };
         let restart = sect.page_num_start;
@@ -1338,18 +1463,25 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
         ids.into_iter().map(|(_, id)| id).collect()
     };
     if !endnotes.is_empty() && !web {
-        pb.y += 12.0;
-        let (x, ry) = (pb.col_x(), pb.y);
-        if let Some(pg) = pb.page() {
-            pg.items.push(Placed::Rule {
-                x0: x,
-                y0: ry,
-                x1: x + 144.0,
-                y1: ry,
-                border: Border { style: wordcraft_doc::props::BorderStyle::Single, width: 0.5, color: None, space: 0.0 },
-            });
+        // The document's own endnote separator, else a short line.
+        let width = pb.col_w();
+        if let Some((items, h)) = doc.endnote_separators.separator.as_ref().map(|b| sep_box(&mut ctx, b, width)) {
+            let (x, y) = (pb.col_x(), pb.y);
+            if let Some(pg) = pb.page() {
+                pg.items.extend(items.into_iter().map(|mut it| {
+                    it.translate(x, y);
+                    it
+                }));
+            }
+            pb.y += h;
+        } else {
+            pb.y += 12.0;
+            let (x, ry) = (pb.col_x(), pb.y);
+            if let Some(pg) = pb.page() {
+                pg.items.push(Placed::Rule { x0: x, y0: ry, x1: x + NOTE_SEP_W, y1: ry, border: Border::single(0.5) });
+            }
+            pb.y += 8.0;
         }
-        pb.y += 8.0;
         for id in endnotes {
             let Some(part) = doc.parts.get(&id) else { continue };
             let blocks = part.blocks.clone();
@@ -1701,7 +1833,31 @@ fn float_items(o: &InlineObject, rect: Rect, outer: (Spin, Point), story: StoryR
         }
         InlineObject::Group { .. } => {
             let centre = Point::new(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
-            group_members(o, rect).into_iter().flat_map(|(r, c)| float_items(c, r, (spin, centre), story, path, off)).collect()
+            match o.canvas_style() {
+                // A Drawing Canvas: its background and outline, then its members clipped to its
+                // frame, all turned together: the members sit in the unturned frame and the clip
+                // carries the turn (drawn as the turn around the clip).
+                Some(c) => {
+                    let members = group_members(o, rect)
+                        .into_iter()
+                        .flat_map(|(r, m)| float_items(m, r, (Spin::default(), centre), story, path, off))
+                        .collect();
+                    vec![
+                        Placed::Shape {
+                            rect,
+                            kind: wordcraft_doc::para::ShapeKind::Rectangle,
+                            fill: c.fill,
+                            stroke: c.stroke,
+                            stroke_width: c.stroke_width,
+                            effects: Default::default(),
+                            freeform: None,
+                            spin,
+                        },
+                        Placed::Clip { rect, spin, items: members },
+                    ]
+                }
+                None => group_members(o, rect).into_iter().flat_map(|(r, c)| float_items(c, r, (spin, centre), story, path, off)).collect(),
+            }
         }
         _ => Vec::new(),
     }
@@ -1818,13 +1974,15 @@ fn place_objects(
                 }
                 _ => None,
             };
+            // A box linked from another shows (and edits) that box's story.
+            let shown = text_box.map(|id| textbox::shown_story(ctx, id));
             front.push(Placed::Object {
                 rect,
                 spin: float.spin(),
                 story,
                 path: Path(path.to_vec()),
                 off: c.start,
-                text_box,
+                text_box: shown,
                 wrap: float.wrap,
                 origin: Point::new(at.col.0, at.para_y),
             });
@@ -1844,18 +2002,9 @@ fn place_objects(
                 _ => text_box.map(|id| (id, rect)).into_iter().collect(),
             };
             for (id, rect) in boxes {
-                if !ctx.boxes.enter(id) {
-                    continue;
-                }
-                let blocks = ctx.doc.parts.get(&id).map(|p| p.blocks.clone()).unwrap_or_default();
-                let inner = layout_box(ctx, StoryRef::Part(id), &blocks, &[], (rect.w - 2.0 * BOX_INSET_X).max(12.0), None, depth + 1, None).items;
-                ctx.boxes.leave();
+                let items = textbox::box_items(ctx, id, rect, depth);
                 let layer = if float.wrap == Wrap::BehindText { &mut behind } else { &mut front };
-                // Text that doesn't fit inside the margins is hidden, as in Word.
-                for mut it in fit_box(inner, rect.h - 2.0 * BOX_INSET_Y) {
-                    it.translate(rect.x + BOX_INSET_X, rect.y + BOX_INSET_Y);
-                    layer.push(it);
-                }
+                layer.extend(items);
             }
         }
     }
@@ -1956,10 +2105,10 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
                 }
             }
             let extra: f32 = line_notes.iter().map(|n| n.h).sum::<f32>()
-                + if pb.notes.is_empty() && new_notes.is_empty() && !line_notes.is_empty() { NOTE_SEP } else { 0.0 };
+                + if pb.notes.is_empty() && new_notes.is_empty() && !line_notes.is_empty() { pb.seps.sep_h(false) } else { 0.0 };
             let limit = pb.bottom
                 - new_notes.iter().map(|n| n.h).sum::<f32>()
-                - if pb.notes.is_empty() && !new_notes.is_empty() { NOTE_SEP } else { 0.0 }
+                - if pb.notes.is_empty() && !new_notes.is_empty() { pb.seps.sep_h(false) } else { 0.0 }
                 - extra;
             let bottom = pb.y + lead + (l.top + l.height - first.top);
             // Notes too long for the rest of the page continue on the next one: the line still
@@ -1968,7 +2117,8 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
             let split = bottom > limit + 0.01
                 && line_notes.split_last().is_some_and(|(last, others)| {
                     let before: f32 = pb.notes.iter().chain(&new_notes).chain(others).map(|n| n.h).sum();
-                    pb.body_floor().max(bottom) + NOTE_SEP + before + last.first_piece() <= pb.orig_bottom + 0.01
+                    let sep = pb.seps.sep_h(pb.notes.first().is_some_and(|n| n.cont));
+                    pb.body_floor().max(bottom) + sep + before + last.first_piece() + pb.seps.notice_h() <= pb.orig_bottom + 0.01
                 });
             if bottom > limit + 0.01 && l1 > l0 && !split {
                 break;
@@ -2062,7 +2212,7 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
                 let dist = if ln.distance > 0.0 { ln.distance } else { 18.0 };
                 let ly = y + (line.top - first.top) + (line.baseline - line.top) - num.lines.first().map(|l| l.baseline).unwrap_or(10.0);
                 items.push(Placed::Lines {
-                    story: StoryRef::Part(u32::MAX),
+                    story: DECOR_STORY,
                     path: Path(vec![]),
                     para: num.clone(),
                     l0: 0,
@@ -2373,3 +2523,5 @@ pub fn now_ms() -> f64 {
 mod tests;
 #[cfg(test)]
 mod tests_bidi;
+#[cfg(test)]
+mod tests_textbox;

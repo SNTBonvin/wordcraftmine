@@ -19,7 +19,7 @@ use wordcraft_doc::para::OBJ;
 use wordcraft_doc::props::Rgb;
 use wordcraft_doc::section::NumFormat;
 use wordcraft_doc::styles::{Style, StyleKind, StyleSheet, TableStyleParts};
-use wordcraft_doc::{Block, Blocks, Comment, Document, InlineObject, PartKind, Revision, RevisionKind};
+use wordcraft_doc::{Block, Blocks, Comment, Document, InlineObject, Paragraph, PartKind, Revision, RevisionKind, para_block};
 
 use crate::DocxError;
 use crate::package::{ContentTypes, EMBEDDED_PARTS, EmbeddedManifest, MAX_VBA_RELATED, Package, Rels, VBA_PROJECT_PART, VBA_RELATED, rel_is, rt};
@@ -46,6 +46,9 @@ pub(crate) struct Reader<'p> {
     /// The note being read (kind, part id): its `w:footnoteRef` / `w:endnoteRef` mark is a
     /// reference to itself.
     current_note: Option<(NoteKind, u32)>,
+    /// Reading a footnote or endnote separator or continuation notice (where the `w:separator`
+    /// and `w:continuationSeparator` run elements belong).
+    in_note_sep: bool,
     pub comment_map: HashMap<String, u32>,
     pub comments_ended: HashSet<u32>,
     pub bookmarks: HashMap<String, String>,
@@ -61,6 +64,9 @@ pub(crate) struct Reader<'p> {
     content_types: Option<ContentTypes>,
     /// Parts kept for charts, diagrams and OLE objects (see `embed`).
     embedded: EmbeddedManifest,
+    /// Linked text boxes as read: (`wps:txbx/@id` or `wps:linkedTxbx/@id`, `seq` (0 for the box
+    /// holding the text), text box part). See [`link_text_boxes`].
+    pub txbx_links: Vec<(u32, u32, u32)>,
 }
 
 /// The package path that internal relationship `id` points at, if it has type `kind` (an `rt`
@@ -103,6 +109,7 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         footnotes: HashMap::new(),
         endnotes: HashMap::new(),
         current_note: None,
+        in_note_sep: false,
         comment_map: HashMap::new(),
         comments_ended: HashSet::new(),
         bookmarks: HashMap::new(),
@@ -112,6 +119,7 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         main: main.clone(),
         content_types: None,
         embedded: EmbeddedManifest::default(),
+        txbx_links: Vec::new(),
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
     r.pc.minor_font = r.doc.settings.minor_font.clone();
@@ -183,9 +191,32 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         let manifest = r.embedded.to_bytes();
         r.doc.passthrough.insert(EMBEDDED_PARTS.into(), Arc::new(manifest));
     }
+    let links = std::mem::take(&mut r.txbx_links);
+    link_text_boxes(&mut r.doc, links);
     let mut doc = r.doc;
     doc.ensure_nonempty();
     Ok(doc)
+}
+
+/// Link the text boxes read as (id, seq, part) into chains (see [`Reader::txbx_links`]): each
+/// id's boxes in `seq` order after the box holding the text. A repeated seq, a chain without its
+/// first box or more than [`wordcraft_doc::MAX_LINKED_BOXES`] boxes: the extra boxes stay apart.
+fn link_text_boxes(doc: &mut Document, mut links: Vec<(u32, u32, u32)>) {
+    links.sort_by_key(|l| (l.0, l.1));
+    links.dedup_by_key(|l| (l.0, l.1));
+    for group in links.chunk_by(|a, b| a.0 == b.0) {
+        if group.first().is_none_or(|l| l.1 != 0) {
+            continue;
+        }
+        let chain: Vec<u32> = group.iter().take(wordcraft_doc::MAX_LINKED_BOXES).map(|l| l.2).collect();
+        for pair in chain.windows(2) {
+            if let [a, b] = pair
+                && let Some(p) = doc.parts.get_mut(a)
+            {
+                p.body.next = Some(*b);
+            }
+        }
+    }
 }
 
 /// Word starts a TOC field in the first entry; the engine keeps it at the end of the TOC heading
@@ -717,8 +748,13 @@ impl Reader<'_> {
         let rels = self.pkg.rels(path);
         let tag = if foot { "w:footnote" } else { "w:endnote" };
         for n in root.children(tag) {
-            if n.attr("w:type").is_some_and(|t| t != "normal") {
-                continue;
+            match n.attr("w:type") {
+                None | Some("normal") => {}
+                Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
+                    self.read_note_sep(n, &rels, foot, t);
+                    continue;
+                }
+                Some(_) => continue,
             }
             let Some(fid) = n.attr("w:id").and_then(int) else { continue };
             if self.doc.parts.len() >= MAX_PARTS {
@@ -745,6 +781,36 @@ impl Reader<'_> {
             }
         }
         Ok(())
+    }
+
+    /// A document's own separator, continuation separator or continuation notice (`kind`, the
+    /// note's `w:type`) for its footnotes or endnotes. The first of each kind counts.
+    fn read_note_sep(&mut self, n: &El, rels: &Rels, foot: bool, kind: &str) {
+        let seps = if foot { &self.doc.footnote_separators } else { &self.doc.endnote_separators };
+        let taken = match kind {
+            "separator" => seps.separator.is_some(),
+            "continuationSeparator" => seps.continuation_separator.is_some(),
+            _ => seps.continuation_notice.is_some(),
+        };
+        if taken {
+            return;
+        }
+        let mut sc = StoryCtx::default();
+        let mut blocks = Blocks::new();
+        self.in_note_sep = true;
+        self.read_blocks(&mut sc, n, rels, &mut blocks, 0);
+        self.flush_pending(&mut sc, &mut blocks);
+        self.in_note_sep = false;
+        if blocks.is_empty() {
+            blocks.push(para_block(Paragraph::new()));
+        }
+        let seps = if foot { &mut self.doc.footnote_separators } else { &mut self.doc.endnote_separators };
+        let slot = match kind {
+            "separator" => &mut seps.separator,
+            "continuationSeparator" => &mut seps.continuation_separator,
+            _ => &mut seps.continuation_notice,
+        };
+        *slot = Some(blocks);
     }
 
     fn read_comments(&mut self, path: &str, ext: Option<&str>) -> Result<(), DocxError> {

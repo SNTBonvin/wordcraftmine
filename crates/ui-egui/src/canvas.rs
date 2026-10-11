@@ -76,6 +76,8 @@ pub struct CanvasState {
     /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
     /// isn't typed. The next key press clears it.
     pub(crate) swallow_text: bool,
+    /// Create Link is waiting for a click on the text box to link to: the linking box's object.
+    pub(crate) link_from: Option<wordcraft_doc::Pos>,
 }
 
 impl CanvasState {
@@ -124,6 +126,7 @@ impl Default for CanvasState {
             balloon_rects: Vec::new(),
             table_tool: None,
             table_stroke: None,
+            link_from: None,
         }
     }
 }
@@ -284,6 +287,7 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
                     (std::sync::Arc::as_ptr(graphic) as usize, rect.x.to_bits(), rect.y.to_bits(), rect.w.to_bits(), rect.h.to_bits()).hash(&mut h);
                     format!("{spin:?}").hash(&mut h)
                 }
+                Placed::Clip { rect, spin, items } => format!("{rect:?}{spin:?}{items:?}").hash(&mut h),
                 Placed::Cell { .. } | Placed::Object { .. } => {}
             }
         }

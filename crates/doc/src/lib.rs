@@ -221,12 +221,60 @@ pub enum PartKind {
     TextBox,
 }
 
+/// A document's own separators and continuation notice for its footnotes or its endnotes
+/// (ECMA-376 §17.11: the `w:footnote`/`w:endnote` entries of type `separator`,
+/// `continuationSeparator` and `continuationNotice`). `None` = the default: a short line above
+/// the notes, a line across the column above notes continued from the page before, no notice.
+/// The lines themselves are [`InlineObject::note_separator`] objects in the paragraphs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NoteSeparators {
+    /// Above the notes on a page.
+    pub separator: Option<Blocks>,
+    /// Above the rest of a note continued from the page before.
+    pub continuation_separator: Option<Blocks>,
+    /// Below the part of a note that continues on the next page.
+    pub continuation_notice: Option<Blocks>,
+}
+
+impl NoteSeparators {
+    /// No separator of the document's own: the defaults apply.
+    pub fn is_empty(&self) -> bool {
+        self.separator.is_none() && self.continuation_separator.is_none() && self.continuation_notice.is_none()
+    }
+}
+
 /// A secondary story.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Part {
     pub kind: PartKind,
     pub blocks: Blocks,
+    /// A text box's text direction, alignment and link (unused by other parts).
+    #[serde(default, skip_serializing_if = "TextBody::is_default")]
+    pub body: TextBody,
 }
+
+/// How a text box shows its text (Shape Format › Text): which way it runs, where it sits between
+/// the box's top and bottom, and the box its overflow continues in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TextBody {
+    pub vert: props::TextVert,
+    pub anchor: props::VAlign,
+    /// Create Link: the text box (another `TextBox` part, shown by its own shape) the text
+    /// continues in when it doesn't fit this one. The linked box shows the rest of this box's
+    /// story; its own blocks are unused. See [`Document::text_box_chains`].
+    pub next: Option<u32>,
+}
+
+impl TextBody {
+    pub fn is_default(&self) -> bool {
+        *self == TextBody::default()
+    }
+}
+
+/// Most boxes one chain of linked text boxes runs through (hostile files).
+pub const MAX_LINKED_BOXES: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -423,6 +471,12 @@ pub struct Document {
     pub sources: Vec<Source>,
     /// Custom document properties, in file order.
     pub custom_props: Vec<CustomProp>,
+    /// The document's own footnote separators and continuation notice.
+    #[serde(skip_serializing_if = "NoteSeparators::is_empty")]
+    pub footnote_separators: NoteSeparators,
+    /// The document's own endnote separators and continuation notice.
+    #[serde(skip_serializing_if = "NoteSeparators::is_empty")]
+    pub endnote_separators: NoteSeparators,
     /// Embedded media (images) by key.
     #[serde(skip)]
     pub media: BTreeMap<String, Arc<Vec<u8>>>,
@@ -452,6 +506,8 @@ impl Document {
             core: CoreProps::default(),
             sources: Vec::new(),
             custom_props: Vec::new(),
+            footnote_separators: NoteSeparators::default(),
+            endnote_separators: NoteSeparators::default(),
             media: BTreeMap::new(),
             passthrough: BTreeMap::new(),
         }
@@ -686,7 +742,7 @@ impl Document {
     /// Allocate a new part id and insert the part.
     pub fn add_part(&mut self, kind: PartKind, blocks: Blocks) -> u32 {
         let id = self.parts.keys().next_back().map(|k| k + 1).unwrap_or(1);
-        let mut part = Part { kind, blocks };
+        let mut part = Part { kind, blocks, body: TextBody::default() };
         if part.blocks.is_empty() {
             part.blocks.push(para_block(Paragraph::new()));
         }
@@ -726,7 +782,87 @@ impl Document {
         let live = self.reachable(roots, &|o| o.text_boxes().into_iter().map(|id| (id, &[PartKind::TextBox][..])).collect());
         let before = self.parts.len();
         self.parts.retain(|id, p| p.kind != PartKind::TextBox || live.contains(&StoryRef::Part(*id)));
-        before - self.parts.len()
+        let gone = before - self.parts.len();
+        if gone > 0 {
+            // A link to a box that went ends the chain there (its id may be reused).
+            let ids: std::collections::BTreeSet<u32> = self.parts.keys().copied().collect();
+            for p in self.parts.values_mut() {
+                if p.body.next.is_some_and(|n| !ids.contains(&n)) {
+                    p.body.next = None;
+                }
+            }
+        }
+        gone
+    }
+
+    /// The chains of linked text boxes (Create Link), each in order from the box holding the
+    /// text: every chain has two or more boxes. A link to a part that isn't a text box, a box
+    /// already linked from another, or links running in a circle are ignored (those boxes show
+    /// their own text); a chain stops after [`MAX_LINKED_BOXES`].
+    pub fn text_box_chains(&self) -> Vec<Vec<u32>> {
+        let is_box = |id: u32| self.parts.get(&id).is_some_and(|p| p.kind == PartKind::TextBox);
+        // Who links to whom: the first box (by id) to link to a box wins.
+        let mut prev: BTreeMap<u32, u32> = BTreeMap::new();
+        for (id, p) in &self.parts {
+            if p.kind != PartKind::TextBox {
+                continue;
+            }
+            if let Some(n) = p.body.next.filter(|n| *n != *id && is_box(*n)) {
+                prev.entry(n).or_insert(*id);
+            }
+        }
+        let next = |id: u32| self.parts.get(&id).and_then(|p| p.body.next).filter(|n| prev.get(n) == Some(&id));
+        let mut out = Vec::new();
+        for (id, p) in &self.parts {
+            if p.kind != PartKind::TextBox || prev.contains_key(id) || next(*id).is_none() {
+                continue;
+            }
+            let mut chain = vec![*id];
+            let mut at = *id;
+            while let Some(n) = next(at) {
+                if chain.len() >= MAX_LINKED_BOXES || chain.contains(&n) {
+                    break;
+                }
+                chain.push(n);
+                at = n;
+            }
+            out.push(chain);
+        }
+        out
+    }
+
+    /// The chain (see [`Document::text_box_chains`]) text box `part` belongs to, if linked.
+    pub fn text_box_chain(&self, part: u32) -> Option<Vec<u32>> {
+        self.text_box_chains().into_iter().find(|c| c.contains(&part))
+    }
+
+    /// The size (width, height) of the shapes showing text boxes `ids`, in any story (a group
+    /// member's as the group stretches it).
+    pub fn text_box_sizes(&self, ids: &std::collections::BTreeSet<u32>) -> BTreeMap<u32, (f32, f32)> {
+        let mut out = BTreeMap::new();
+        let stories = std::iter::once(&self.body).chain(self.parts.values().map(|p| &p.blocks));
+        for blocks in stories {
+            for b in blocks {
+                edit::each_para(b, 0, &mut |p| {
+                    for o in &p.objects {
+                        match o {
+                            InlineObject::Shape { story: Some(id), w, h, .. } if ids.contains(id) => {
+                                out.entry(*id).or_insert((*w, *h));
+                            }
+                            InlineObject::Group { w, h, .. } => {
+                                for (r, c) in o.group_rects(0.0, 0.0, *w, *h) {
+                                    if let Some(id) = c.text_box().filter(|id| ids.contains(id)) {
+                                        out.entry(id).or_insert((r[2], r[3]));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+        }
+        out
     }
 
     /// Every inline object in reading order: the body's, with each text box's objects where the

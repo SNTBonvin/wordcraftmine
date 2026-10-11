@@ -529,29 +529,52 @@ impl Writer<'_> {
                 w.close("w:r");
                 self.rev_close(w, props);
             }
-            InlineObject::Group { w: gw, h: gh, float, ch_w, ch_h, children } => {
+            InlineObject::Group { w: gw, h: gh, float, ch_w, ch_h, children, canvas } => {
                 self.rev_open(w, props);
                 w.open("w:r", &[]);
                 self.rpr(w, props);
                 w.open("w:drawing", &[]);
                 let docpr = self.next_docpr();
-                let name = format!("Group {docpr}");
+                let name = format!("{} {docpr}", if canvas.is_some() { "Canvas" } else { "Group" });
                 self.drawing_open(w, float, *gw, *gh, &docpr, &name, "");
                 w.empty("wp:cNvGraphicFramePr", &[]);
                 w.open("a:graphic", &[]);
-                w.open("a:graphicData", &[("uri", "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup")]);
-                // ECMA-376 §20.1.7.6 (`a:xfrm` of a group): the members' space `a:chOff`/`a:chExt`
-                // maps onto the group's `a:off`/`a:ext`.
-                w.open("wpg:wgp", &[]);
-                w.empty("wpg:cNvGrpSpPr", &[]);
-                w.open("wpg:grpSpPr", &[]);
-                w.open("a:xfrm", &spin_attrs(float.spin()).iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
-                w.empty("a:off", &[("x", "0"), ("y", "0")]);
-                w.empty("a:ext", &[("cx", &emu(gw.max(0.0))), ("cy", &emu(gh.max(0.0)))]);
-                w.empty("a:chOff", &[("x", "0"), ("y", "0")]);
-                w.empty("a:chExt", &[("cx", &emu(ch_w.max(0.0))), ("cy", &emu(ch_h.max(0.0)))]);
-                w.close("a:xfrm");
-                w.close("wpg:grpSpPr");
+                let outer = match canvas {
+                    Some(c) => {
+                        // A Drawing Canvas: its background (`wpc:bg`) and outline (`wpc:whole`), then
+                        // its members, at offsets in the canvas's own (unscaled) space.
+                        w.open("a:graphicData", &[("uri", "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas")]);
+                        w.open("wpc:wpc", &[]);
+                        w.open("wpc:bg", &[]);
+                        solid_fill(w, c.fill);
+                        w.close("wpc:bg");
+                        w.open("wpc:whole", &[]);
+                        match c.stroke {
+                            Some(_) => w.open("a:ln", &[("w", &emu(c.stroke_width.clamp(0.0, 100.0)))]),
+                            None => w.open("a:ln", &[]),
+                        }
+                        solid_fill(w, c.stroke);
+                        w.close("a:ln");
+                        w.close("wpc:whole");
+                        "wpc:wpc"
+                    }
+                    None => {
+                        w.open("a:graphicData", &[("uri", "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup")]);
+                        // ECMA-376 §20.1.7.6 (`a:xfrm` of a group): the members' space `a:chOff`/`a:chExt`
+                        // maps onto the group's `a:off`/`a:ext`.
+                        w.open("wpg:wgp", &[]);
+                        w.empty("wpg:cNvGrpSpPr", &[]);
+                        w.open("wpg:grpSpPr", &[]);
+                        w.open("a:xfrm", &spin_attrs(float.spin()).iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+                        w.empty("a:off", &[("x", "0"), ("y", "0")]);
+                        w.empty("a:ext", &[("cx", &emu(gw.max(0.0))), ("cy", &emu(gh.max(0.0)))]);
+                        w.empty("a:chOff", &[("x", "0"), ("y", "0")]);
+                        w.empty("a:chExt", &[("cx", &emu(ch_w.max(0.0))), ("cy", &emu(ch_h.max(0.0)))]);
+                        w.close("a:xfrm");
+                        w.close("wpg:grpSpPr");
+                        "wpg:wgp"
+                    }
+                };
                 for c in children.iter().take(wordcraft_doc::para::MAX_GROUP_CHILDREN) {
                     let at = (c.x, c.y);
                     match &c.obj {
@@ -567,7 +590,16 @@ impl Writer<'_> {
                         _ => {}
                     }
                 }
-                w.close("wpg:wgp");
+                if canvas.is_some() && float.spin() != wordcraft_geom::Spin::default() {
+                    // The canvas schema has no transform of its own: keep its turn in our
+                    // extension (Word draws it unturned, as it can't turn a canvas).
+                    w.open("wpc:extLst", &[]);
+                    w.open("a:ext", &[("uri", crate::CANVAS_SPIN_EXT)]);
+                    xfrm_spin_only(w, float.spin());
+                    w.close("a:ext");
+                    w.close("wpc:extLst");
+                }
+                w.close(outer);
                 w.close("a:graphicData");
                 w.close("a:graphic");
                 w.close(if float.wrap == Wrap::Inline { "wp:inline" } else { "wp:anchor" });
@@ -845,12 +877,20 @@ impl Writer<'_> {
         }
         effect_list(w, effects);
         w.close("wps:spPr");
-        // Its text, within the same bounds layout shows boxes inside boxes with.
-        if let Some(id) = *story
-            && let Some(part) = self.doc.parts.get(&id).filter(|p| p.kind == wordcraft_doc::PartKind::TextBox)
+        // Its text, within the same bounds layout shows boxes inside boxes with. A box linked
+        // from another (Create Link) shows the rest of that box's text: it names the chain and
+        // its place in it instead.
+        let part = (*story).and_then(|id| self.doc.parts.get(&id).filter(|p| p.kind == wordcraft_doc::PartKind::TextBox).map(|p| (id, p)));
+        let link = part.and_then(|(id, _)| self.txbx_links.get(&id).copied());
+        if let Some((n, seq)) = link.filter(|(_, seq)| *seq > 0) {
+            w.empty("wps:linkedTxbx", &[("id", &n.to_string()), ("seq", &seq.to_string())]);
+        } else if let Some((id, part)) = part
             && self.boxes.enter(id)
         {
-            w.open("wps:txbx", &[]);
+            match link {
+                Some((n, _)) => w.open("wps:txbx", &[("id", &n.to_string())]),
+                None => w.open("wps:txbx", &[]),
+            }
             w.open("w:txbxContent", &[]);
             let blocks = part.blocks.clone();
             self.blocks(w, &blocks, rels, false, depth + 1);
@@ -858,7 +898,16 @@ impl Writer<'_> {
             w.close("wps:txbx");
             self.boxes.leave();
         }
-        w.empty("wps:bodyPr", &[]);
+        // Text direction and alignment, when not the defaults.
+        let body = part.map(|(_, p)| p.body).unwrap_or_default();
+        let mut attrs: Vec<(&str, &str)> = Vec::new();
+        if body.vert != wordcraft_doc::props::TextVert::Horz {
+            attrs.push(("vert", body.vert.ooxml()));
+        }
+        if body.anchor != wordcraft_doc::props::VAlign::Top {
+            attrs.push(("anchor", wordcraft_doc::props::anchor_ooxml(body.anchor)));
+        }
+        w.empty("wps:bodyPr", &attrs);
         w.close("wps:wsp");
     }
 
@@ -1205,6 +1254,11 @@ fn xfrm(w: &mut W, (x, y): (f32, f32), cw: f32, ch: f32, spin: wordcraft_geom::S
     w.close("a:xfrm");
 }
 
+/// An `a:xfrm` holding only a rotation and flips.
+fn xfrm_spin_only(w: &mut W, spin: wordcraft_geom::Spin) {
+    w.empty("a:xfrm", &spin_attrs(spin).iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+}
+
 /// The `a:xfrm` attributes of a rotation and flips (ECMA-376 §20.1.7.6: `rot` in 60000ths of a
 /// degree, clockwise), none for an unturned object.
 pub(super) fn spin_attrs(spin: wordcraft_geom::Spin) -> Vec<(&'static str, String)> {
@@ -1270,4 +1324,16 @@ fn toc_span(bl: &Blocks) -> Option<(usize, usize)> {
         })
         .count();
     (entries > 0).then_some((start, start + entries))
+}
+
+/// A DrawingML `a:solidFill` in `c`, or `a:noFill`.
+fn solid_fill(w: &mut W, c: Option<wordcraft_doc::props::Rgb>) {
+    match c {
+        Some(c) => {
+            w.open("a:solidFill", &[]);
+            w.empty("a:srgbClr", &[("val", &c.hex())]);
+            w.close("a:solidFill");
+        }
+        None => w.empty("a:noFill", &[]),
+    }
 }

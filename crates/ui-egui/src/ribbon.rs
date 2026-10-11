@@ -14,9 +14,12 @@ pub fn has_picture_selected(s: &wordcraft_engine::Session) -> bool {
     matches!(wordcraft_engine::cmd::objects::selected(s), Some((_, wordcraft_doc::para::InlineObject::Image { .. })))
 }
 
-/// Whether the selection is a shape or text box (so Shape Format is shown).
+/// Whether the selection is a shape, text box or Drawing Canvas (so Shape Format is shown).
 pub fn has_shape_selected(s: &wordcraft_engine::Session) -> bool {
-    matches!(wordcraft_engine::cmd::objects::selected(s), Some((_, wordcraft_doc::para::InlineObject::Shape { .. })))
+    match wordcraft_engine::cmd::objects::selected(s) {
+        Some((_, o)) => matches!(o, wordcraft_doc::para::InlineObject::Shape { .. }) || o.is_canvas(),
+        None => false,
+    }
 }
 
 /// Contextual tabs for the current selection (pure, tested).
@@ -610,6 +613,8 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
             ] {
                 mi(ui, app, l, "insert.shape", json!({"kind": k}));
             }
+            ui.separator();
+            mi(ui, app, "New Drawing Canvas", "insert.canvas", json!({}));
         });
         stack(ui, |ui| {
             small(ui, app, "icons", Some("Icons"), "Icons", "insert.icon", json!({}), false);
@@ -1341,6 +1346,20 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
             });
         });
     });
+    if wordcraft_engine::cmd::canvas::selected_canvas(&app.session).is_some() {
+        group(ui, "Drawing Canvas", None, app, |ui, app| {
+            menu_button(ui, app, "canvas", Some("Drawing\nCanvas"), "Drawing Canvas", true, |ui, app| {
+                mi(ui, app, "Fit", "canvas.fit", json!({}));
+                mi(ui, app, "Expand", "canvas.expand", json!({}));
+                ui.menu_button(tl!("Scale Drawing"), |ui| {
+                    for pct in [50, 75, 125, 150, 200] {
+                        mi(ui, app, &format!("{pct}%"), "canvas.scale", json!({"factor": pct as f32 / 100.0}));
+                    }
+                });
+            });
+        });
+    }
+    shape_text_group(app, ui);
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
         wrap_menu(ui, app);
@@ -1368,6 +1387,39 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
             });
             ui.add_space(2.0);
             crate::widgets::row(ui, |ui| rotation_field(ui, app));
+        });
+    });
+}
+
+/// Shape Format › Text: the text box's Text Direction and Align Text, and Create Link (Break Link
+/// once it is linked to another box).
+fn shape_text_group(app: &mut WordApp, ui: &mut Ui) {
+    use wordcraft_doc::props::{TextVert, VAlign};
+    let target = wordcraft_engine::cmd::objects::text_box_target(&app.session);
+    let body = target.and_then(|(_, id)| app.session.doc.parts.get(&id).map(|p| p.body)).unwrap_or_default();
+    group(ui, "Text", None, app, |ui, app| {
+        stack(ui, |ui| {
+            menu_button(ui, app, "textDirection", Some("Text Direction"), "Text Direction", false, |ui, app| {
+                for (label, vert) in [
+                    ("Horizontal", TextVert::Horz),
+                    ("Rotate all text 90°", TextVert::Vert),
+                    ("Rotate all text 270°", TextVert::Vert270),
+                    ("Stacked", TextVert::Stacked),
+                ] {
+                    mi_check(ui, app, label, body.vert == vert, "shape.textDirection", json!({"dir": vert.ooxml()}));
+                }
+            });
+            menu_button(ui, app, "alignText", Some("Align Text"), "Align Text", false, |ui, app| {
+                for (label, anchor) in [("Top", VAlign::Top), ("Middle", VAlign::Center), ("Bottom", VAlign::Bottom)] {
+                    mi_check(ui, app, label, body.anchor == anchor, "shape.alignText", json!({"anchor": wordcraft_doc::props::anchor_ooxml(anchor)}));
+                }
+            });
+            if body.next.is_some() {
+                small(ui, app, "textBoxUnlink", Some("Break Link"), "Break Link", "shape.breakLink", json!({}), false);
+            } else {
+                let waiting = app.canvas.link_from.is_some();
+                small(ui, app, "textBoxLink", Some("Create Link"), "Create Link", "ui.linkTextBox", json!({}), waiting);
+            }
         });
     });
 }
