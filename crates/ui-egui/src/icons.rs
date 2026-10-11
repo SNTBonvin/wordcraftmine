@@ -1893,6 +1893,18 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.bubble(1.25, 1.25, 6.5, c, false);
             pen.bubble(8.25, 8.25, 6.5, a, true);
         }
+        // Open: a folder with its flap lifted.
+        "open" => {
+            pen.line(&[(1.5, 13.5), (1.5, 2.5), (6.0, 2.5), (7.5, 4.0), (12.5, 4.0), (12.5, 7.0)]);
+            pen.acc(&[(1.5, 13.5), (4.0, 7.0), (14.5, 7.0), (12.0, 13.5), (1.5, 13.5)]);
+        }
+        // Print: a printer with a sheet coming out.
+        "print" => {
+            pen.rect(4.0, 1.5, 12.0, 5.5, 0.5);
+            pen.rect(1.5, 5.5, 14.5, 11.5, 1.0);
+            pen.acc(&[(4.0, 9.0), (4.0, 14.5), (12.0, 14.5), (12.0, 9.0)]);
+            pen.dot(12.0, 7.5, 0.6, c);
+        }
         "help" => {
             pen.disc(8.0, 8.0, 6.5);
             pen.arc(8.0, 6.3, 2.0, 190.0, 400.0, a);
@@ -2171,6 +2183,8 @@ pub const NAMES: &[&str] = &[
     "drawTable",
     "borderPainter",
     "save",
+    "open",
+    "print",
     "undo",
     "redo",
     "share",
