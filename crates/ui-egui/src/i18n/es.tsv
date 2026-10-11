@@ -166,9 +166,8 @@
 	Calendar	Calendario
 	Cancel	Cancelar
 	Capitalize Each Word	Mayúscula inicial en cada palabra
-	Caption	Leyenda
 	Captions	Leyendas
-	Category	Categorías
+	Category	Categoría
 	Cell Margins	Márgenes de celda
 	Cell Size	Tamaño de celda
 	Cell\nMargins	Márgenes de\ncelda
@@ -395,7 +394,6 @@
 	Heading 1	Título 1
 	Heading 2	Título 2
 	Heading 3	Título 3
-	Heading {n}	Título {n}
 	Headings	Títulos
 	Heart	Corazón
 	Help	Ayuda
@@ -448,7 +446,7 @@
 	Insert\nCitation	Insertar\ncita
 	Insert\nFootnote	Insertar nota\nal pie
 	Intense Emphasis	Énfasis intenso
-	Intense Quote	Cita Intensa
+	Intense Quote	Cita intensa
 	Intense Reference	Referencia intensa
 	Inside Borders	Bordes interiores
 	Inspect Document	Inspeccionar documento
@@ -461,10 +459,10 @@
 	Keep Lines Together	Mantener líneas juntas
 	Keep Text Only	Mantener solo el texto
 	Keep lines together	Mantener líneas juntas
-	Keywords	Palabras Clave
 	Keep with Next	Mantener con el siguiente
 	Keep with next	Mantener con el siguiente
 	Keeps the fonts and formatting of the copied text.	Conserva las fuentes y el formato del texto copiado.
+	Keywords	Palabras clave
 	Labels	Etiquetas
 	Landscape	Horizontal
 	Language	Idioma
@@ -820,9 +818,6 @@
 	Strong	Fuerte
 	Studio cover	Portada de Studio
 	Studio handbook (sample)	Manual de Studio (ejemplo)
-	Subtitle	Subtítulo
-	Subtle Emphasis	Énfasis sutil
-	Subtle Reference	Referencia sutil
 	Style	Estilo
 	Style Inspector	Inspector de estilos
 	Style Set	Conjunto de estilos
@@ -832,6 +827,9 @@
 	Styles Pane	Panel de estilos
 	Subject	Asunto
 	Subscript	Subíndice
+	Subtitle	Subtítulo
+	Subtle Emphasis	Énfasis sutil
+	Subtle Reference	Referencia sutil
 	Superscript	Superíndice
 	Switch Modes	Cambiar de modo
 	Switch\nModes	Cambiar\nde modo
@@ -850,8 +848,6 @@
 	Table Styles	Estilos de tabla
 	Table of Authorities	Tabla de autoridades
 	Table of Contents	Tabla de contenido
-	TOC Heading	Título de tabla de contenido
-	TOC {n}	Tabla de contenido {n}
 	Table of\nContents	Tabla de\ncontenido
 	Tables	Tablas
 	Tabs	Tabulaciones
@@ -879,7 +875,8 @@
 	Thick	Gruesa
 	Three	Tres
 	Tight	Ajustado
-	Title	Titulo
+	TOC Heading	Título de tabla de contenido
+	TOC {n}	Tabla de contenido {n}
 	Top Border	Borde superior
 	Top Margin	Margen superior
 	Top of Page	Parte superior de la página
@@ -1220,8 +1217,8 @@
 	Hide Codes	Ocultar códigos
 	Index and Tables	Índices y tablas
 	Line between	Línea entre columnas
-	List Paragraph	Párrafo de lista
 	Links and References	Vínculos y referencias
+	List Paragraph	Párrafo de lista
 	Mail Merge	Combinar correspondencia
 	More Columns…	Más columnas…
 	More Symbols…	Más símbolos…

@@ -509,7 +509,7 @@ fn spanish_built_in_style_names_are_translated() {
         ("Footnote Text", "Texto de nota al pie"),
         ("Hyperlink", "Hipervínculo"),
         ("Intense Emphasis", "Énfasis intenso"),
-        ("Intense Quote", "Cita destacada"),
+        ("Intense Quote", "Cita intensa"),
         ("Intense Reference", "Referencia intensa"),
         ("List Paragraph", "Párrafo de lista"),
         ("Quote", "Cita"),
