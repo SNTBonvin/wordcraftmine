@@ -38,6 +38,8 @@ pub(crate) enum AfterPick {
     /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
     /// Organizer (#377).
     ForDialog,
+    /// Put the picked document into the Compare dialog (original or revised, #412).
+    ComparePath { revised: bool },
 }
 
 /// What to do once Save As has written the document.
@@ -135,6 +137,11 @@ impl WordApp {
             AfterPick::Recipients => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 self.load_recipients(json!({"path": path}))
+            }
+            AfterPick::ComparePath { revised } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                crate::dialogs_review::set_compare_path(self, revised, path);
+                Ok(json!({"picked": true}))
             }
             AfterPick::Export { ext } => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
