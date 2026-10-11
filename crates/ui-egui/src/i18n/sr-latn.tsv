@@ -11,9 +11,12 @@
 # translated UI was consulted or copied; add entries the same way.
 # Product, format and technology names (WordCraft, PDF, Markdown, MCP …) stay in Latin letters.
 
+	(no style)	(bez stila)
 	(no suggestions)	(nema predloga)
+	(picture or object)	(slika ili objekat)
 	1.5 Line Spacing	Proređenost 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Besplatan, otvoreni obrađivač teksta napisan od nule u Rust-u.\nDeo Crafting Apps paketa tima ArtCraft.
+	A password is required to open this document.	Za otvaranje ovog dokumenta potrebna je lozinka.
 	About	O programu
 	About WordCraft	O WordCraft-u
 	Accept	Prihvati
@@ -23,7 +26,11 @@
 	Add	Dodaj
 	Add a comment	Dodaj komentar
 	Add a Table	Dodaj tabelu
+	Add Object to Selection	Dodaj objekat u izbor
 	Add Space Before Paragraph	Dodaj razmak pre pasusa
+	Add space between Asian and Latin text	Dodaj razmak između azijskog i latiničnog teksta
+	Add space between Asian text and numbers	Dodaj razmak između azijskog teksta i brojeva
+	Add tab stop at:	Dodaj tabulator na:
 	Add Text	Dodaj tekst
 	Add to Dictionary	Dodaj u rečnik
 	Add to Style Gallery	Dodaj u galeriju stilova
@@ -37,12 +44,19 @@
 	Align	Poravnanje
 	Align Left	Levo poravnanje
 	Align Right	Desno poravnanje
+	Aligned at:	Poravnato na:
 	Alignment	Poravnanje
 	All Borders	Sve ivice
 	All Caps	Sva velika slova
 	All caps	Sva velika slova
 	All Markup	Sve izmene
+	Allow hanging punctuation	Dozvoli viseću interpunkciju
+	Allow Latin text to wrap in the middle of a word	Dozvoli prelom latiničnog teksta usred reči
+	Alphabetical	Abecedno
 	Alt Text	Alternativni tekst
+	Anyone can open this document. Encrypt it with a password to keep it private.	Svako može da otvori ovaj dokument. Šifrujte ga lozinkom da bi ostao privatan.
+	Anyone who opens the document will need this password.	Svakome ko otvori dokument biće potrebna ova lozinka.
+	Apply Asian line-breaking rules (kinsoku)	Primeni azijska pravila preloma redova (kinsoku)
 	Apply Character Style	Primeni stil znakova
 	Apply Style	Primeni stil
 	Apply Styles	Izaberi i primeni stilove
@@ -50,6 +64,8 @@
 	Arrange\nAll	Rasporedi\nsve
 	Arrow	Strelica
 	Artistic Effects	Umetnički efekti
+	As Recommended	Kao što je preporučeno
+	Asian Typography	Azijska tipografija
 	Author	Autor
 	AutoCorrect Options	Opcije automatske ispravke
 	AutoFit	Automatsko uklapanje
@@ -63,14 +79,103 @@
 	AutoSave	Automatsko čuvanje
 	AutoSave documents you have saved in WordCraft	Automatski čuvaj dokumente koje ste već sačuvali u WordCraft-u
 	AutoSave failed: {error}. Save the document to turn AutoSave back on.	Automatsko čuvanje neuspelo: {error}. Sačuvajte dokument da biste ga ponovo uključili.
+	Balloons	Oblačići
 	Bottom Margin	Donja margina
+	Click a border between two cells to merge them. Esc stops.	Kliknite ivicu između dve ćelije da ih spojite. Esc završava.
+	Based on: {style}	Zasnovan na: {style}
+	Built-in style	Ugrađeni stil
+	Built-in styles can't be deleted.	Ugrađeni stilovi ne mogu da se obrišu.
+	Bullet	Oznaka
+	By author	Po autoru
+	Change Password…	Promeni lozinku…
+	Changed lines:	Izmenjeni redovi:
+	Character style	Stil znakova
+	Click an item to paste it.	Kliknite na stavku da biste je nalepili.
+	Click level to modify:	Kliknite nivo koji menjate:
+	Clipboard Items	Stavke ostave
+	Clipboard Pane	Okno ostave
+	Color only	Samo boja
+	Color: {color}	Boja: {color}
+	Compress punctuation at the start of a line	Sažmi interpunkciju na početku reda
+	Confirm password:	Potvrdite lozinku:
 	Dark page (white text on black)	Tamna stranica (beo tekst na crnom)
+	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	Prevucite pravougaonik da nacrtate tabelu ili liniju preko ćelija da ih podelite. Esc završava.
+	Draw Table	Nacrtaj tabelu
+	Define New Multilevel List	Definiši novu višenivosku listu
+	Define New Multilevel List…	Definiši novu višenivosku listu…
+	Deletions:	Brisanja:
 	Edit Comment	Uredi komentar
+	Enter formatting for number:	Oblik broja:
+	Follow number with:	Posle broja:
+	Formatting	Oblikovanje
+	Include level number from:	Uključi broj nivoa:
+	Ink	Mastilo
+	Insertions and Deletions	Umetanja i brisanja
+	Insertions:	Umetanja:
+	Left border	Leva ivica
 	Left Margin	Leva margina
+	Legal style numbering	Pravno numerisanje
+	Link level to style:	Poveži nivo sa stilom:
+	List Definition	Definicija liste
+	Nothing	Ništa
+	Number alignment:	Poravnanje broja:
+	Number format	Format broja
+	Number style for this level:	Stil broja za ovaj nivo:
+	Outside border	Spoljna ivica
 	Reopen	Ponovo otvori
+	Restart list after:	Ponovo počni listu posle:
+	Right border	Desna ivica
 	Right Margin	Desna margina
+	Delete Clipboard Item	Obriši stavku iz ostave
+	Delete Table Style	Obriši stil tabele
+	Encrypt with Password…	Šifruj lozinkom…
+	Font: {font}	Font: {font}
+	Glow	Sjaj
+	Glow Colors	Boje sjaja
+	Hide from style lists	Sakrij sa lista stilova
+	Indents and Spacing	Uvlačenja i razmaci
+	Keep the password somewhere safe: without it nobody, WordCraft included, can open the document. Leave both boxes empty to remove the password.	Čuvajte lozinku na sigurnom mestu: bez nje niko, pa ni WordCraft, ne može da otvori dokument. Ostavite oba polja prazna da biste uklonili lozinku.
+	Line breaking	Prelom redova
+	Linked style (paragraph and character)	Povezani stil (pasus i znakovi)
+	Manage Styles	Upravljanje stilovima
+	Manage Styles…	Upravljanje stilovima…
+	No Glow	Bez sjaja
+	No Shadow	Bez senke
+	No Soft Edges	Bez mekih ivica
+	Nothing collected yet. Items you copy or cut appear here.	Još ništa nije prikupljeno. Ovde se pojavljuje ono što kopirate ili isečete.
+	Offset: Bottom	Pomak: dole
+	Offset: Bottom Left	Pomak: dole levo
+	Offset: Bottom Right	Pomak: dole desno
+	Offset: Center	Pomak: centar
+	Offset: Left	Pomak: levo
+	Offset: Right	Pomak: desno
+	Offset: Top	Pomak: gore
+	Offset: Top Left	Pomak: gore levo
+	Offset: Top Right	Pomak: gore desno
+	Paragraph style	Stil pasusa
+	Password	Lozinka
+	Password:	Lozinka:
+	Paste All	Nalepi sve
+	Paste Clipboard Item	Nalepi stavku iz ostave
+	Preview	Pregled
+	Remove Password	Ukloni lozinku
+	Shadow, glow and soft edges	Senka, sjaj i meke ivice
+	Shape Effects	Efekti oblika
+	Show all revisions inline	Prikaži sve izmene u tekstu
+	Base text:	Osnovni tekst:
+	Distribute letters	Rasporedi slova
+	Distribute spacing	Rasporedi razmak
+	Offset (pt):	Pomak (pt):
+	Phonetic Guide	Fonetski vodič
+	Remove	Ukloni
+	Right (vertical)	Desno (vertikalno)
+	Ruby text:	Rubi tekst:
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	Prikaži dokumente sa invertovanim bojama, kao kod Prikaz › Promeni režim. Čuvanje, štampanje i PDF nisu pogođeni.
 	AutoSave saves every change to the file (needs a saved document)	Automatsko čuvanje upisuje svaku izmenu u fajl (dokument mora biti već sačuvan)
+	AutoSave isn't available in the browser: it can't write to your files. Save downloads a copy.	Automatsko čuvanje nije dostupno u pregledaču: ne može da upisuje u vaše fajlove. Čuvanje preuzima kopiju.
+	AutoSave only keeps .docx, .odt and .rtf files; {name} can't keep all formatting. Save as .docx to turn on AutoSave.	Automatsko čuvanje čuva samo .docx, .odt i .rtf fajlove; {name} ne može da zadrži svo formatiranje. Sačuvajte kao .docx da biste uključili automatsko čuvanje.
+	Save the document to turn on AutoSave	Sačuvajte dokument da biste uključili automatsko čuvanje
+	Save the document to turn on AutoSave (a file you have only opened isn't rewritten until you save it)	Sačuvajte dokument da biste uključili automatsko čuvanje (fajl koji ste samo otvorili ne prepisuje se dok ga ne sačuvate)
 	AutoText	Automatski tekst
 	Backspace	Backspace
 	Banded Columns	Trakaste kolone
@@ -90,6 +195,29 @@
 	Border Painter	Kopiranje ivica
 	Border\nPainter	Kopiranje\nivica
 	Borders	Ivice
+	Tab stop position:	Položaj tabulatora:
+	Default tab stops:	Podrazumevani tabulatori:
+	Tab stops to be cleared:	Tabulatori za brisanje:
+	All	Svi
+	Decimal	Decimalni
+	Bar	Linija
+	Leader	Popuna
+	Set	Postavi
+	Page Border	Ivica strane
+	Apply to:	Primeni na:
+	Whole document	Ceo dokument
+	This section	Ovaj odeljak
+	Fill	Ispuna
+	Setting:	Vrsta:
+	3-D	3D
+	Custom	Prilagođeno
+	Style:	Stil:
+	Dot dash	Tačka-crta
+	Triple	Trostruko
+	Between	Između pasusa
+	Borders and Shading	Ivice i senčenje
+	Tabs…	Tabulatori…
+	Borders and Shading…	Ivice i senčenje…
 	Bottom Border	Donja ivica
 	Bottom of Page	Dno strane
 	Bottom:	Dole:
@@ -467,6 +595,16 @@
 	Open	Otvori
 	OpenDocument Text (*.odt)	OpenDocument tekst (*.odt)
 	Optional Hyphen	Opcionalna crtica
+	Copyright Sign	Znak autorskog prava
+	Ellipsis	Tri tačke
+	Em Dash	Duga crta
+	Insert Date Field	Umetni polje datuma
+	Insert Page Field	Umetni polje strane
+	Insert Time Field	Umetni polje vremena
+	Registered Sign	Znak registrovanog žiga
+	Reset Character Formatting	Poništi formatiranje znakova
+	Reset Paragraph Formatting	Poništi formatiranje pasusa
+	Trademark Sign	Znak žiga
 	Options	Opcije
 	Orientation	Orijentacija
 	Outline	Kontura
@@ -642,8 +780,12 @@
 	Show	Prikaži
 	Show all formatting marks	Prikaži sve znake formatiranja
 	Show Comments	Prikaži komentare
+	Show in the Styles gallery	Prikaži u galeriji stilova
 	Show Markup	Prikaži izmene
 	Show Notes	Prikaži napomene
+	Show only comments and formatting in balloons	Prikaži samo komentare i oblikovanje u oblačićima
+	Show or Hide Style	Prikaži ili sakrij stil
+	Show revisions in balloons	Prikaži izmene u oblačićima
 	Show rulers	Prikaži lenjire
 	Show the community button in the title bar	Prikaži dugme zajednice u traci naslova
 	Show/Hide ¶	Prikaži/sakrij ¶
@@ -655,13 +797,19 @@
 	Single	Jednostruko
 	Single Spacing	Jednostruko proređenje
 	Size	Veličina papira
+	Size (pt):	Veličina (pt):
 	Size:	Veličina:
 	Small Caps	Kapitelke
 	Small caps	kapitelke
 	SmartArt	SmartArt
+	Soft Edges	Meke ivice
 	Sort	Sortiraj
+	Sort order:	Redosled sortiranja:
 	Source code: github.com/storytold/wordcraft	Izvorni kod: github.com/storytold/wordcraft
+	Space	Razmak
+	Space after: {pt} pt	Razmak posle: {pt} pt
 	Space before/after:	Razmak pre/posle:
+	Space before: {pt} pt	Razmak pre: {pt} pt
 	Spacing	Razmak
 	Spacing (pt):	Razmak (pt):
 	Speech	Govor
@@ -674,6 +822,7 @@
 	Spreadsheet Table	Tabela proračunske table
 	Standard Colors	Standardne boje
 	Star	Zvezda
+	Start at:	Počni od:
 	Start Mail Merge	Pokreni spajanje dokumenata
 	Start Mail\nMerge	Pokreni\nspajanje dokumenata
 	Statistics	Statistika
@@ -684,7 +833,7 @@
 	Style	Stil
 	Style based on:	Stil zasnovan na:
 	Style Set	Skup stilova
-	Style: APA	Stil: APA
+	Style: {style}	Stil: {style}
 	Styles	Stilovi
 	Styles Pane	Okno stilova
 	Subscript	Indeks dole
@@ -695,6 +844,7 @@
 	Symbols	Simboli
 	Synonyms	Sinonimi
 	Tab	Tab
+	Tab character	Znak tabulatora
 	Table	Tabela
 	Table Column Width	Širina kolone tabele
 	Table Design	Dizajn tabele
@@ -704,6 +854,7 @@
 	Table of\nContents	Sadržaj
 	Table Properties	Svojstva tabele
 	Table Row Height	Visina reda tabele
+	Table style	Stil tabele
 	Table Style Options	Opcije stila tabele
 	Table Styles	Stilovi tabele
 	Tables	Tabele
@@ -716,13 +867,18 @@
 	Text Effects and Typography	Efekti teksta i tipografija
 	Text from File	Tekst iz fajla
 	Text Highlight Color	Boja isticanja teksta
+	Text indent at:	Uvlačenje teksta na:
 	Text to display:	Tekst za prikaz:
 	Text Wrapping	Prelamanje teksta
 	Text:	Tekst:
 	Text\nBox	Okvir\nza tekst
 	Text\nDirection	Smer\nteksta
 	That format doesn't keep everything, so the document is still open. Save it as a Word document (.docx) to go on.	Taj format ne čuva sve, pa je dokument i dalje otvoren. Sačuvajte ga kao Word dokument (.docx) da biste nastavili.
+	That password isn't right. Check it (passwords are case-sensitive) and try again.	Lozinka nije ispravna. Proverite je (lozinke razlikuju velika i mala slova) i pokušajte ponovo.
+	The document will be saved with a password. Save it to protect it.	Dokument će biti sačuvan sa lozinkom. Sačuvajte ga da biste ga zaštitili.
 	The new style takes the formatting of the current paragraph.	Novi stil preuzima formatiranje trenutnog pasusa.
+	The password is removed. Save the document to keep the change.	Lozinka je uklonjena. Sačuvajte dokument da biste zadržali izmenu.
+	The passwords don't match.	Lozinke se ne podudaraju.
 	Theme Colors	Boje teme
 	Theme Fonts	Fontovi teme
 	Theme List	Lista tema
@@ -737,7 +893,9 @@
 	Top:	Gore:
 	Total Row	Red ukupno
 	Track Changes	Praćenje izmena
+	Track Changes Options	Opcije praćenja izmena
 	Track Changes: On	Praćenje izmena: uključeno
+	Track formatting	Prati oblikovanje
 	Tracking	Praćenje
 	Translate	Prevedi
 	Transparency	Transparentnost
@@ -749,6 +907,7 @@
 	Underline Words Only	Podvuci samo reči
 	Undo	Opozovi
 	Undo {action}	Opozovi {action}
+	Ungroup	Razgrupisanje
 	Up	Gore
 	Update Field	Ažuriraj polje
 	Update Index	Ažuriraj indeks
@@ -774,6 +933,7 @@
 	Web Layout	Veb raspored
 	Web page (*.html)	Veb strana (*.html)
 	Web\nLayout	Veb\nraspored
+	Weight	Debljina
 	Whole page	Cela strana
 	Whole words	Samo cele reči
 	Wide	Široko
@@ -798,8 +958,9 @@
 	Zoom Out	Umanji
 	{group} settings	Podešavanja za {group}
 	{key}+Click to follow link	{key}+klik za otvaranje veze
-	➕ New comment	➕ Novi komentar
-	📂  Browse…	📂  Potraži…
+	{name} is protected with a password.	{name} je zaštićen lozinkom.
+	{size} pt	{size} pt
+	Browse…	Potraži…
 	{words} words	{words} reči
 	{selected} of {words} words	{selected} od {words} reči
 	Direction:	Smer:
@@ -1011,7 +1172,24 @@
 	Type at least one recipient.	Unesite bar jednog primaoca.
 	Type the recipients, or load them from a file.	Unesite primaoce ili ih učitajte iz fajla.
 	Use an Existing List…	Koristi postojeću listu…
+	Choose the sheet that holds the recipients.	Izaberite list na kome su primaoci.
+	First row of data contains column headers	Prvi red podataka sadrži zaglavlja kolona
 	A file dialog is already open.	Dijalog za fajlove je već otvoren.
+	Height:	Visina:
+	Width:	Širina:
+	Row	Red
+	Cell	Ćelija
+	Preferred width:	Željena širina:
+	Alignment:	Poravnanje:
+	Indent from left:	Uvlačenje sleva:
+	Specify height:	Zadaj visinu:
+	Exactly	Tačno
+	At least	Najmanje
+	Allow row to break across pages	Dozvoli prelom reda između stranica
+	Repeat as header row on each page	Ponovi kao red zaglavlja na svakoj stranici
+	Vertical alignment:	Vertikalno poravnanje:
+	Top	Gore
+	Bottom	Dole
 	Alt text	Alternativni tekst
 	Alt:	Alt. tekst:
 	W:	Š:
@@ -1020,5 +1198,228 @@
 	Reset Crop	Poništi isecanje
 	Insert a new equation (Alt+=)	Umetni novu jednačinu (Alt+=)
 	Leave the equation (Esc)	Napusti jednačinu (Esc)
-	Preview	Pregled
 	getartcraft.com/apps/wordcraft	getartcraft.com/apps/wordcraft
+	Draw Ink	Crtaj mastilom
+	Erase Ink	Obriši mastilo
+	Hide Ink	Sakrij mastilo
+	Hide\nInk	Sakrij\nmastilo
+	Pens	Pera
+	Thickness	Debljina
+
+# Interface text routed through translation (#313)
+	Align Top Left	Poravnaj gore levo
+	Align Top Center	Poravnaj gore po sredini
+	Align Top Right	Poravnaj gore desno
+	Align Center Left	Poravnaj u sredini levo
+	Align Center	Poravnaj po sredini
+	Align Center Right	Poravnaj u sredini desno
+	Align Bottom Left	Poravnaj dole levo
+	Align Bottom Center	Poravnaj dole po sredini
+	Align Bottom Right	Poravnaj dole desno
+	{contributors} contributors · {commits} commits	Saradnika: {contributors} · commit-ova: {commits}
+	{cols}×{rows} Table	Tabela {cols}×{rows}
+	AaBbYyZz	AaBbYyZz ČčĐđ
+	pt	pt
+	Document1	Dokument1
+	Username	Korisničko ime
+	Display name	Ime za prikaz
+	Real name	Pravo ime
+	Name	Ime
+	PRs	PR-ovi
+	Commits	Commit-ovi
+	First	Prvi
+	Last	Zadnji
+	Model	Model
+	Version	Verzija
+	% of all commits	% svih commit-ova
+	Lines +/−	Redovi +/−
+	Craft	Zanat
+	Studio	Studio
+	Atelier	Atelje
+	Darkroom	Mračna komora
+	Gallery	Galerija
+	Sketchbook	Blok za skice
+	Change Picture…	Promeni sliku…
+	Font…	Font…
+	Paragraph…	Pasus…
+	Link…	Veza…
+	Size and Crop…	Veličina i isecanje…
+	Insert Columns to the Left	Umetni kolone levo
+	Insert Columns to the Right	Umetni kolone desno
+	Insert Rows Above	Umetni redove iznad
+	Insert Rows Below	Umetni redove ispod
+	Mon	Pon
+	Tue	Uto
+	Wed	Sre
+	Sum	Zbir
+	North	Sever
+	South	Jug
+	West	Zapad
+	Total	Ukupno
+
+# Table Layout › Draw (#308)
+	Draw\nTable	Nacrtaj\ntabelu
+# Columns, Symbol and Field dialogs (#321).
+	(All)	(Sve)
+	(none)	(nema)
+	(normal text)	(običan tekst)
+	1/4 Em Space	Razmak od 1/4 em
+	A mail merge field	Polje za spajanje pošte
+	A numbered sequence (figures, tables…)	Numerisani niz (slike, tabele…)
+	A table of contents	Sadržaj
+	Categories:	Kategorije:
+	Character	Znak
+	Character code:	Kod znaka:
+	Col #:	Kolona br.:
+	Copyright	Znak autorskog prava
+	Date and Time	Datum i vreme
+	Date formats:	Formati datuma:
+	Description:	Opis:
+	Document Information	Informacije o dokumentu
+	Double Closing Quote	Zatvoreni dvostruki navodnik
+	Double Opening Quote	Otvoreni dvostruki navodnik
+	En Dash	Srednja crta
+	Em Space	Em razmak
+	En Space	En razmak
+	Equal column width	Jednaka širina kolona
+	Field Codes	Kodovi polja
+	Field code:	Kod polja:
+	Field codes:	Kodovi polja:
+	Field name:	Naziv polja:
+	Field names:	Nazivi polja:
+	Field properties	Svojstva polja
+	Field…	Polje…
+	Format:	Format:
+	Hide Codes	Sakrij kodove
+	Index and Tables	Indeksi i tabele
+	Line between	Linija između kolona
+	Links and References	Veze i reference
+	Mail Merge	Spajanje pošte
+	More Columns…	Još kolona…
+	More Symbols…	Još simbola…
+	No-Width Non Break	Nedeljivi znak nulte širine
+	No-Width Optional Break	Opcioni prelom nulte širine
+	Paragraph Mark	Znak pasusa
+	Pick a field from the list	Izaberite polje
+	Preserve formatting during updates	Sačuvaj oblikovanje pri ažuriranju
+	Presets	Unapred zadato
+	Recently used symbols:	Nedavno korišćeni simboli:
+	Registered	Registrovani žig
+	Section Mark	Znak paragrafa
+	Sequence name:	Naziv niza:
+	Shortcut key:	Prečica na tastaturi:
+	Single Closing Quote	Zatvoreni jednostruki navodnik
+	Single Opening Quote	Otvoreni jednostruki navodnik
+	Spacing:	Razmak:
+	Special Characters	Specijalni znakovi
+	Subset:	Podskup:
+	The time right now	Trenutno vreme
+	When this document was first created	Datum kada je dokument napravljen
+	When this document was most recently printed	Datum kada je dokument poslednji put odštampan
+	When this document was most recently saved	Datum kada je dokument poslednji put sačuvan
+	The document has no bookmarks yet.	Dokument još nema obeleživače.
+	Who the document properties name as author	Autor dokumenta
+	Name of the file this document is saved as	Ime datoteke dokumenta
+	Title from the document properties	Naslov dokumenta
+	How many pages the whole document has	Broj stranica u dokumentu
+	How many pages this section has	Broj stranica u odeljku
+	Number of the page the field sits on	Broj trenutne stranice
+	Number of the section the field sits in	Broj trenutnog odeljka
+	How many words the document holds	Broj reči u dokumentu
+	Page on which a bookmarked passage falls	Broj stranice obeleživača
+	Copy of the text a bookmark marks	Tekst obeleživača
+	This field has no options.	Ovo polje nema opcija.
+	This font has no characters to show.	Ovaj font nema znakove za prikaz.
+	This point forward	Od ovog mesta nadalje
+	The date it is today	Današnji datum
+	Trademark	Žig
+	Type the field's name and its switches, for example PAGE \\* roman.	Unesite naziv polja i njegove prekidače, na primer PAGE \\* roman.
+	Width and spacing	Širina i razmak
+	from Unicode (hex)	iz Unicode (heks.)
+	Rotation	Rotacija
+	Rotation:	Rotacija:
+	Rotate Right 90°	Rotiraj udesno za 90°
+	Rotate Left 90°	Rotiraj ulevo za 90°
+	Flip Vertical	Okreni vertikalno
+	Flip Horizontal	Okreni horizontalno
+	Move Paragraph Up	Pomeri pasus nagore
+	Move Paragraph Down	Pomeri pasus nadole
+	Promote	Podigni nivo
+	Demote	Spusti nivo
+	Go Back	Vrati se nazad
+	Toggle Unicode Character	Prebaci Unicode znak
+	Toggle Field Codes	Uključi/isključi kodove polja
+	Edit Field Code	Uredi kod polja
+	Unlink Fields	Raskini vezu polja
+	Lock Fields	Zaključaj polja
+	Unlock Fields	Otključaj polja
+	Next Field	Sledeće polje
+	Previous Field	Prethodno polje
+	Selected Fields	Izabrana polja
+	Edit Field…	Uredi polje…
+	Formatted	Formatirano
+	Interface size:	Veličina interfejsa:
+	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Povećava ili smanjuje traku, menije i dijaloge, povrh skaliranja ekrana u sistemu. Zumiranje dokumenta je zasebno.
+	In Line with Text	U ravni sa tekstom
+	Square	Kvadratno
+	Through	Kroz
+	Top and Bottom	Iznad i ispod
+	Behind Text	Iza teksta
+	In Front of Text	Ispred teksta
+	Wrap Text Sides	Strane preloma teksta
+	Both Sides	Obe strane
+	Left Only	Samo levo
+	Right Only	Samo desno
+	Largest Only	Samo šira strana
+	Customize Keyboard	Prilagođavanje tastature
+	Choose a command	Izaberite komandu
+	Choose a shortcut	Izaberite prečicu
+	All Commands	Sve komande
+	Commands:	Komande:
+	Keys for this command:	Tasteri za ovu komandu:
+	New shortcut:	Nova prečica:
+	Now used by {command}	Sada koristi: {command}
+	Not used by any command	Nijedna komanda je ne koristi
+	Remove every custom shortcut and restore the built-in keys?	Ukloniti sve prilagođene prečice i vratiti ugrađene tastere?
+	Assign	Dodeli
+	Reset All…	Resetuj sve…
+	Press a key combination	Pritisnite kombinaciju tastera
+	Customize	Prilagođavanje
+	Keyboard shortcuts:	Prečice na tastaturi:
+	Customize…	Prilagodi…
+	Customize Ribbon	Prilagodi traku
+	Add to Quick Access Toolbar	Dodaj na traku sa alatkama za brzi pristup
+	Remove from Quick Access Toolbar	Ukloni sa trake sa alatkama za brzi pristup
+	Customize the Ribbon…	Prilagodi traku…
+	Customize Quick Access Toolbar…	Prilagodi traku sa alatkama za brzi pristup…
+	More Commands…	Još komandi…
+	Ribbon	Traka
+	(Custom)	(Prilagođeno)
+	Remove every custom tab and group and show all tabs again?	Ukloniti sve prilagođene kartice i grupe i ponovo prikazati sve kartice?
+	Put the default commands back on the Quick Access Toolbar?	Vratiti podrazumevane komande na traku sa alatkama za brzi pristup?
+	Reset…	Resetuj…
+	Add >>	Dodaj >>
+	<< Remove	<< Ukloni
+	Pick a custom group (New Group makes one)	Izaberite prilagođenu grupu (Nova grupa pravi jednu)
+	Ribbon tabs	Kartice trake
+	New Tab	Nova kartica
+	New Group	Nova grupa
+	Rename…	Preimenuj…
+	Ribbon and Quick Access Toolbar:	Traka i traka sa alatkama za brzi pristup:
+	Arrows	Strelice
+	Communication	Komunikacija
+	Office	Kancelarija
+	People	Ljudi
+	Nature	Priroda
+	Weather	Vreme
+	Technology	Tehnologija
+	Transport	Prevoz
+	Icon Color	Boja ikonice
+	Search icons	Pretraži ikonice
+	No icons match your search.	Nijedna ikonica ne odgovara pretrazi.
+	Recolor a one-color picture, such as an icon	Promeni boju jednobojne slike, kao što je ikonica
+	Enclose Characters	Uokviri znakove
+	Shrink text	Smanji tekst
+	Enlarge symbol	Uvećaj simbol
+	Enclosure	Okvir
+	Circle	Krug

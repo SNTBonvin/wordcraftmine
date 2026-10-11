@@ -65,6 +65,9 @@ pub struct ViewState {
     #[serde(default)]
     pub style_inspector: bool,
     pub comments_pane: bool,
+    /// The Clipboard pane (Home › Clipboard): items collected by Copy and Cut.
+    #[serde(default)]
+    pub clipboard_pane: bool,
     pub multi_page: bool,
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
@@ -74,6 +77,15 @@ pub struct ViewState {
     pub track_changes_pane: bool,
     /// Check spelling and grammar as you type.
     pub proofing: bool,
+    /// Review › Hide Ink: ink strokes aren't shown on screen (they stay in the document).
+    #[serde(default)]
+    pub hide_ink: bool,
+    /// Draw tab: the tool dragging on the page uses, and each pen's colour and thickness.
+    #[serde(default)]
+    pub draw: crate::cmd::draw::DrawState,
+    /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
+    #[serde(default)]
+    pub field_codes: bool,
 }
 
 fn on() -> bool {
@@ -95,6 +107,7 @@ impl Default for ViewState {
             styles_pane: false,
             style_inspector: false,
             comments_pane: false,
+            clipboard_pane: false,
             multi_page: false,
             fit: String::new(),
             web_width: 800.0,
@@ -102,6 +115,9 @@ impl Default for ViewState {
             show_markup: true,
             track_changes_pane: false,
             proofing: true,
+            hide_ink: false,
+            draw: Default::default(),
+            field_codes: false,
         }
     }
 }
@@ -183,6 +199,8 @@ pub struct Session {
     pub clipboard: Option<Fragment>,
     /// Plain text mirror of the clipboard (for the system clipboard).
     pub clipboard_text: String,
+    /// Items collected by Copy and Cut this session, for the Clipboard pane.
+    pub clip_history: crate::cmd::edit::ClipHistory,
     pub find: FindState,
     /// Page x the caret tries to keep on Up/Down.
     pub goal_x: Option<f32>,
@@ -235,17 +253,36 @@ pub struct Session {
     pub read_aloud: crate::speech::ReadAloud,
     /// Preferences the front end saves between runs.
     pub prefs: Prefs,
+    /// Custom keyboard shortcuts (`tools.customizeKeyboard`); the front end saves them too.
+    pub keymap: crate::KeyMap,
+    /// Custom ribbon and Quick Access Toolbar (`tools.customizeRibbon`); the front end saves it too.
+    pub ribbon: crate::RibbonLayout,
     /// Editing inside an equation: which one and the caret in it.
     pub math: Option<MathEdit>,
     /// Equations are typed in LaTeX rather than the linear format.
     pub math_latex: bool,
     /// Text typed into equations is normal (non-math) text.
     pub math_normal_text: bool,
+    /// The password Word documents are saved with (File › Info › Protect Document › Encrypt with
+    /// Password, `file.encrypt`); `None` saves them unencrypted. Kept from a password-protected
+    /// file that was opened, cleared when the document is replaced.
+    pub password: Option<crate::io::Password>,
+    /// More pictures and shapes selected along with the one the selection holds (Shift+click),
+    /// for Group. Cleared by any edit or selection change other than adding to it.
+    pub also_selected: Vec<Pos>,
     /// Column (block) selection, if one was made (see [`Session::column_segments`]).
     pub column: Option<ColumnBlock>,
     /// Column selection mode (Ctrl+Shift+F8): caret movement extends the block.
     pub column_mode: bool,
+    /// Where the last edits happened, oldest first (at most [`EDIT_MARKS`]), for Go Back
+    /// (Shift+F5). Positions aren't mapped through later edits; they're clamped when used.
+    edit_marks: Vec<Pos>,
+    /// How many Go Back presses since the last edit (which place comes next).
+    go_back_step: usize,
 }
+
+/// The number of edit locations Go Back cycles through (Word: four).
+const EDIT_MARKS: usize = 4;
 
 /// The equation being edited.
 #[derive(Clone, Debug, PartialEq)]
@@ -262,11 +299,14 @@ pub struct MathEdit {
 pub struct Prefs {
     /// Word Count includes text boxes, footnotes and endnotes (Word's default).
     pub count_notes: bool,
+    /// Track Changes Options: what markup shows and how revisions are drawn (per user, as in
+    /// Word).
+    pub markup: wordcraft_layout::display::MarkupOptions,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { count_notes: true }
+        Prefs { count_notes: true, markup: Default::default() }
     }
 }
 
@@ -285,6 +325,7 @@ impl Session {
             dirty: false,
             clipboard: None,
             clipboard_text: String::new(),
+            clip_history: Default::default(),
             find: FindState::default(),
             goal_x: None,
             page_hint: 0,
@@ -316,11 +357,49 @@ impl Session {
             math: None,
             math_latex: false,
             math_normal_text: false,
+            also_selected: Vec::new(),
             prefs: Prefs::default(),
+            keymap: crate::KeyMap::default(),
+            ribbon: crate::RibbonLayout::default(),
             read_aloud: Default::default(),
+            password: None,
             column: None,
             column_mode: false,
+            edit_marks: Vec::new(),
+            go_back_step: 0,
         }
+    }
+
+    /// Remember the caret as the place of an edit, for Go Back. Edits in the same paragraph as
+    /// the last one (typing on) update that place rather than adding one.
+    fn note_edit(&mut self) {
+        let at = self.sel.focus.clone();
+        match self.edit_marks.last_mut() {
+            Some(last) if last.story == at.story && last.path == at.path => *last = at,
+            _ => {
+                self.edit_marks.push(at);
+                if self.edit_marks.len() > EDIT_MARKS {
+                    self.edit_marks.remove(0);
+                }
+            }
+        }
+        self.go_back_step = 0;
+    }
+
+    /// Go Back (Shift+F5): the next of the last edit places, most recent first, cycling; a place
+    /// the caret is already at is skipped. `None` before any edit.
+    pub fn go_back(&mut self) -> Option<Pos> {
+        let n = self.edit_marks.len();
+        for _ in 0..n {
+            let i = n - 1 - self.go_back_step % n;
+            self.go_back_step = self.go_back_step.wrapping_add(1);
+            let Some(p) = self.edit_marks.get(i) else { continue };
+            let p = self.doc.clamp(p);
+            if p != self.sel.focus || n == 1 {
+                return Some(p);
+            }
+        }
+        self.edit_marks.last().map(|p| self.doc.clamp(p))
     }
 
     /// The line pieces of the current column selection, if there is one (the selection hasn't
@@ -369,8 +448,9 @@ impl Session {
             view: self.view.mode,
             web_width: ww,
             show_hidden: self.view.marks,
-            hide_deleted: !self.view.show_markup,
+            hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
             proofing: self.view.proofing,
+            field_codes: self.view.field_codes,
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
         self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing));
@@ -378,7 +458,8 @@ impl Session {
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
     pub fn export_layout(&self) -> Arc<DocLayout> {
-        let opts = LayoutOptions { view: ViewMode::Print, web_width: 0.0, show_hidden: false, hide_deleted: false, proofing: false };
+        let opts =
+            LayoutOptions { view: ViewMode::Print, web_width: 0.0, show_hidden: false, hide_deleted: false, proofing: false, field_codes: false };
         Arc::new(wordcraft_layout::layout(&self.doc, &mut LayoutCache::new(), &opts))
     }
 
@@ -480,10 +561,14 @@ impl Session {
         self.document_id = self.document_id.wrapping_add(1);
         self.doc = doc;
         self.doc.ensure_nonempty();
+        self.password = None;
         self.sel = Selection::caret(self.doc.start_of(StoryRef::Body));
         self.pending = None;
+        self.also_selected.clear();
         self.column = None;
         self.column_mode = false;
+        self.edit_marks.clear();
+        self.go_back_step = 0;
         self.reset_history();
         self.touch();
         self.dirty = false;
@@ -516,6 +601,7 @@ impl Session {
             dirty,
             clipboard: _,
             clipboard_text: _,
+            clip_history: _,
             find: _,
             goal_x: _,
             page_hint: _,
@@ -546,13 +632,21 @@ impl Session {
             document_id: _,
             read_aloud: _,
             prefs: _,
+            keymap: _,
+            ribbon: _,
             // Equation editing mode, like `view`: not part of the document or its history.
             math: _,
             math_latex: _,
             math_normal_text: _,
+            // The save password, like the file path: not an edit to the document.
+            password: _,
+            also_selected: _,
             // Column selection, like `sel`'s shape: valid only while `sel` matches it.
             column: _,
             column_mode: _,
+            // Go Back's places, like the caret history: not part of the document.
+            edit_marks: _,
+            go_back_step: _,
         } = self;
         let head = if history.len() + SNAPSHOT_HEAD > MAX_UNDO { history.iter().take(SNAPSHOT_HEAD).cloned().collect() } else { Vec::new() };
         EditSnapshot {
@@ -581,6 +675,7 @@ impl Session {
         self.undo_evicted = evicted;
         self.doc = doc;
         self.sel = sel;
+        self.also_selected.clear();
         self.history.truncate(history_len);
         self.redo = redo;
         self.typing_open = typing_open;
@@ -679,6 +774,7 @@ impl Session {
         } else if spec.id.starts_with("caret.") {
             self.typing_open = false;
         }
+        let sel_before = self.sel.clone();
         let run = spec.run;
         let mutates = spec.mutates;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cmd::column::dispatch(self, id, mutates, run, params)));
@@ -692,11 +788,22 @@ impl Session {
         match &result {
             Ok(_) => {
                 if spec.mutates {
+                    // Formatting changed while tracking becomes a formatting revision.
+                    if let Some((before, ..)) = &before_doc {
+                        crate::cmd::fmt_revisions::record(self, id, before);
+                    }
                     self.touch();
                     self.doc.ensure_nonempty();
                     self.doc.prune_text_boxes();
                 }
                 self.clamp_selection();
+                if spec.mutates && !matches!(id, "edit.undo" | "edit.redo") {
+                    self.note_edit();
+                }
+                // Extra selected objects last until something else is edited or selected.
+                if !matches!(id, "select.addObject" | "arrange.ungroup") && (spec.mutates || self.sel != sel_before) {
+                    self.also_selected.clear();
+                }
             }
             Err(e) => {
                 if let Some((d, s, h, r, t, ev, c)) = before_doc {
@@ -729,7 +836,12 @@ impl Session {
             return p.clone();
         }
         let f = &self.sel.focus;
-        self.doc.para_at(f).map(|p| p.props_at(f.off).clone()).unwrap_or_default()
+        let Some(p) = self.doc.para_at(f) else { return CharProps::default() };
+        let props = p.props_at(f.off);
+        // As in Word, text typed at either end of a hyperlink isn't part of it; only typing
+        // inside the link extends it.
+        let inside_link = props.link.is_some() && f.off > 0 && f.off < p.len() && p.props_of_char(f.off).link == props.link;
+        if props.link.is_some() && !inside_link { props.unlinked() } else { props.clone() }
     }
 
     /// Words in the document, as the status bar shows them (see [`Prefs::count_notes`]).

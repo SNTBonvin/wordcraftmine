@@ -39,6 +39,8 @@ pub struct ResolvedChar {
     pub link: Option<String>,
     pub ins: Option<u32>,
     pub del: Option<u32>,
+    /// The revision of a tracked formatting change (`w:rPrChange`) of the run.
+    pub fmt: Option<u32>,
     pub no_proof: bool,
     pub lang: Option<String>,
     /// Right-to-left run (`w:rtl`).
@@ -81,6 +83,7 @@ impl ResolvedChar {
             link: c.link.clone(),
             ins: c.ins,
             del: c.del,
+            fmt: c.fmt_change.as_ref().map(|f| f.rev),
             no_proof: c.no_proof.unwrap_or(false),
             lang: c.lang.clone(),
             rtl: c.rtl.unwrap_or(false),
@@ -141,6 +144,14 @@ pub struct ResolvedPara {
     pub bidi: bool,
     pub drop_cap: u8,
     pub suppress_hyphens: bool,
+    /// Asian typography (see `ParaProps`): East Asian line-breaking rules.
+    pub kinsoku: bool,
+    /// Latin words wrap whole (`false`: they may break at any character).
+    pub word_wrap: bool,
+    pub overflow_punct: bool,
+    pub top_line_punct: bool,
+    pub auto_space_de: bool,
+    pub auto_space_dn: bool,
 }
 
 const MAX_INDENT: f32 = 1584.0; // 22"
@@ -186,6 +197,12 @@ impl ResolvedPara {
             bidi: p.bidi.unwrap_or(false),
             drop_cap: p.drop_cap.unwrap_or(0).min(10),
             suppress_hyphens: p.suppress_hyphens.unwrap_or(false),
+            kinsoku: p.kinsoku.unwrap_or(true),
+            word_wrap: p.word_wrap.unwrap_or(true),
+            overflow_punct: p.overflow_punct.unwrap_or(true),
+            top_line_punct: p.top_line_punct.unwrap_or(false),
+            auto_space_de: p.auto_space_de.unwrap_or(true),
+            auto_space_dn: p.auto_space_dn.unwrap_or(true),
         }
     }
 }

@@ -76,6 +76,7 @@ Home|Font|Enclose Characters|format.enclose
 Home|Paragraph|Bullets|para.bullets
 Home|Paragraph|Numbering|para.numbering
 Home|Paragraph|Multilevel List|para.multilevel
+Home|Paragraph|Define New Multilevel List|list.define
 Home|Paragraph|Change List Level|para.listLevel
 Home|Paragraph|Restart Numbering|para.restartNumbering
 Home|Paragraph|Define New Bullet|para.defineBullet
@@ -285,6 +286,7 @@ Review|Tracking|Track Changes|review.trackChanges
 Review|Tracking|Display for Review|review.markup
 Review|Tracking|Show Markup|review.showMarkup
 Review|Tracking|Reviewing Pane|review.changes
+Review|Tracking|Track Changes Options|review.trackingOptions
 Review|Changes|Accept|review.accept
 Review|Changes|Reject|review.reject
 Review|Changes|Accept All|review.acceptAll
@@ -329,6 +331,7 @@ Table Design|Table Style Options|Table Style Options|table.look
 Table Design|Table Styles|Table Styles|table.style
 Table Design|Table Styles|New Table Style|table.newStyle
 Table Design|Table Styles|Modify Table Style|table.modifyStyle
+Table Design|Table Styles|Delete Table Style|table.deleteStyle
 Table Design|Table Styles|Shading|table.shading
 Table Design|Borders|Borders|table.borders
 Table Design|Borders|Border Painter|table.borderPainter
@@ -397,6 +400,7 @@ Picture Format|Picture Styles|Picture Border|picture.border
 Picture Format|Accessibility|Alt Text|picture.altText
 Picture Format|Size|Crop|picture.crop
 Picture Format|Size|Size|picture.size
+Picture Format|Size|Rotation|arrange.rotation
 Shape Format|Shape Styles|Shape Fill|shape.fill
 Shape Format|Shape Styles|Shape Outline|shape.outline
 Shape Format|Shape Styles|Shape Effects|shape.effects
@@ -417,6 +421,11 @@ Editing|Keyboard|Backspace|text.backspace
 Editing|Keyboard|Delete|text.delete
 Editing|Keyboard|Delete Previous Word|text.deleteWordBack
 Editing|Keyboard|Delete Next Word|text.deleteWordForward
+Editing|Keyboard|Move Paragraph Up|para.moveUp
+Editing|Keyboard|Move Paragraph Down|para.moveDown
+Editing|Keyboard|Promote|para.promote
+Editing|Keyboard|Demote|para.demote
+Editing|Keyboard|Toggle Unicode Character|text.toggleUnicode
 Editing|Navigation|Word Left|caret.wordLeft
 Editing|Navigation|Word Right|caret.wordRight
 Editing|Navigation|Line Start|caret.home
@@ -427,11 +436,20 @@ Editing|Navigation|Document Start|caret.docStart
 Editing|Navigation|Document End|caret.docEnd
 Editing|Navigation|Page Up|caret.pageUp
 Editing|Navigation|Page Down|caret.pageDown
+Editing|Navigation|Go Back|edit.goBack
 Editing|Selection|Select Word|select.word
 Editing|Selection|Select Sentence|select.sentence
 Editing|Selection|Select Paragraph|select.paragraph
 Editing|Selection|Extend Selection (F8)|select.extend
 Editing|Selection|Column Selection|select.column
+Editing|Fields|Show Field Codes|view.fieldCodes
+Editing|Fields|Toggle Field Codes|fields.toggleCode
+Editing|Fields|Edit Field Code|fields.setCode
+Editing|Fields|Unlink Fields|fields.unlink
+Editing|Fields|Lock Fields|fields.lock
+Editing|Fields|Unlock Fields|fields.unlock
+Editing|Fields|Next Field|fields.next
+Editing|Fields|Previous Field|fields.previous
 Tools|Proofing|AutoCorrect Options|tools.autocorrect
 Tools|Proofing|Set Proofing Language|review.language
 Tools|Customize|Customize Ribbon|tools.customizeRibbon
@@ -502,6 +520,6 @@ mod tests {
         let p = parity(&reg);
         let pct = p["percent"].as_f64().unwrap();
         // The floor only ever rises.
-        assert!(pct >= 89.0, "parity {pct}%");
+        assert!(pct >= 90.4, "parity {pct}%");
     }
 }

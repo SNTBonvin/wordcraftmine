@@ -315,6 +315,37 @@ pub struct CharProps {
     /// Tracked deletion: index into `Document::revisions`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub del: Option<u32>,
+    /// Tracked formatting change (`w:rPrChange`): the formatting before it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fmt_change: Option<Box<PropChange<CharProps>>>,
+}
+
+/// A tracked formatting change (ECMA-376 §17.13.5: `w:rPrChange`, `w:pPrChange`,
+/// `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:sectPrChange`): the properties as they
+/// were before the change, and the revision (author, date) that made it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropChange<T> {
+    /// Index into `Document::revisions`.
+    pub rev: u32,
+    /// The properties before the change (formatting only: no revision or link marks).
+    pub old: T,
+}
+
+impl<T> PropChange<T> {
+    pub fn boxed(rev: u32, old: T) -> Option<Box<PropChange<T>>> {
+        Some(Box::new(PropChange { rev, old }))
+    }
+}
+
+/// A tracked change of a paragraph's list numbering (`w:numberingChange`, kept for round trip):
+/// `original` is the number as it was shown before the change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NumChange {
+    /// Index into `Document::revisions`.
+    pub rev: u32,
+    pub original: String,
 }
 
 macro_rules! overlay_fields {
@@ -323,7 +354,32 @@ macro_rules! overlay_fields {
     };
 }
 
+macro_rules! drop_same_fields {
+    ($dst:ident, $base:ident; $($f:ident),*) => {
+        $( if $dst.$f == $base.$f { $dst.$f = None; } )*
+    };
+}
+
 impl CharProps {
+    /// The same formatting outside a hyperlink: no link target, and no "Hyperlink" character
+    /// style that came with it. What a paragraph mark or text typed next to a link gets.
+    pub fn unlinked(&self) -> CharProps {
+        let mut c = self.clone();
+        if c.link.take().is_some() && c.style.as_deref() == Some("Hyperlink") {
+            c.style = None;
+        }
+        c
+    }
+
+    /// The fields of `self` that differ from `base` (equal ones unset): what `self` adds when
+    /// overlaid on `base`.
+    pub fn minus(mut self, base: &CharProps) -> CharProps {
+        drop_same_fields!(self, base; style, font, size, bold, italic, underline, underline_color, strike, double_strike, color, highlight,
+            shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, no_proof, rtl,
+            cs, font_cs, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del);
+        self
+    }
+
     /// Apply every `Some` field of `patch` on top of `self`.
     ///
     /// Size, bold and italic come in pairs with their complex-script values (Word's own buttons
@@ -334,7 +390,7 @@ impl CharProps {
     pub fn overlay(&mut self, patch: &CharProps) {
         overlay_fields!(self, patch; style, font, size, bold, italic, underline, underline_color, strike, double_strike, color, highlight,
             shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, no_proof, rtl,
-            cs, font_cs, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del);
+            cs, font_cs, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del, fmt_change);
         if patch.size.is_some() && patch.size_cs.is_none() {
             self.size_cs = None;
         }
@@ -355,7 +411,11 @@ impl CharProps {
     /// Clear direct formatting but keep what isn't "formatting" (links, revisions, character style
     /// is cleared too, as Word's Clear Formatting does).
     pub fn cleared(&self) -> CharProps {
-        CharProps { link: self.link.clone(), ins: self.ins, del: self.del, ..Default::default() }
+        CharProps { link: self.link.clone(), ins: self.ins, del: self.del, fmt_change: self.fmt_change.clone(), ..Default::default() }
+    }
+    /// Just the formatting: without the link, revision marks and tracked formatting change.
+    pub fn formatting(&self) -> CharProps {
+        CharProps { link: None, ins: None, del: None, fmt_change: None, ..self.clone() }
     }
 }
 
@@ -622,13 +682,40 @@ pub struct ParaProps {
     /// Drop cap: lines to drop (0 = none) — applies to the first character(s).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drop_cap: Option<u8>,
+    /// Asian typography (`w:kinsoku`): East Asian line-breaking rules — no line starts with
+    /// closing punctuation such as 、。」 or ends with opening punctuation such as 「（.
+    /// Unset = on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kinsoku: Option<bool>,
+    /// `w:wordWrap`: Latin words wrap whole; `false` lets them break at any character (Word's
+    /// "Allow Latin text to wrap in the middle of a word"). Unset = on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub word_wrap: Option<bool>,
+    /// `w:overflowPunct`: punctuation may hang past the line end. Unset = on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overflow_punct: Option<bool>,
+    /// `w:topLinePunct`: compress punctuation at the start of a line. Unset = off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_line_punct: Option<bool>,
+    /// `w:autoSpaceDE`: automatic space between Asian and Latin text. Unset = on.
+    #[serde(rename = "autoSpaceDE", skip_serializing_if = "Option::is_none")]
+    pub auto_space_de: Option<bool>,
+    /// `w:autoSpaceDN`: automatic space between Asian text and numbers. Unset = on.
+    #[serde(rename = "autoSpaceDN", skip_serializing_if = "Option::is_none")]
+    pub auto_space_dn: Option<bool>,
+    /// Tracked change of the list numbering (`w:numberingChange`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_change: Option<Box<NumChange>>,
+    /// Tracked formatting change (`w:pPrChange`): the paragraph properties before it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fmt_change: Option<Box<PropChange<ParaProps>>>,
 }
 
 impl ParaProps {
     pub fn overlay(&mut self, patch: &ParaProps) {
         overlay_fields!(self, patch; style, align, indent_left, indent_right, indent_first, space_before, space_after, line_spacing,
             contextual_spacing, keep_next, keep_lines, page_break_before, widow_control, outline_level, numbering, tabs, shading, borders,
-            suppress_hyphens, suppress_line_numbers, bidi, drop_cap);
+            suppress_hyphens, suppress_line_numbers, bidi, drop_cap, kinsoku, word_wrap, overflow_punct, top_line_punct, auto_space_de, auto_space_dn);
     }
     pub fn overlaid(mut self, patch: &ParaProps) -> ParaProps {
         self.overlay(patch);
@@ -636,6 +723,10 @@ impl ParaProps {
     }
     pub fn is_empty(&self) -> bool {
         *self == ParaProps::default()
+    }
+    /// Just the formatting: without the tracked changes.
+    pub fn formatting(&self) -> ParaProps {
+        ParaProps { num_change: None, fmt_change: None, ..self.clone() }
     }
 }
 
@@ -718,6 +809,9 @@ pub struct TableProps {
     /// Floating placement (`w:tblpPr`); `None` for a table in the text flow.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub float: Option<TableFloat>,
+    /// Tracked formatting change (`w:tblPrChange`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fmt_change: Option<Box<PropChange<TableProps>>>,
 }
 
 /// Where a floating table sits; the text after it wraps around it.
@@ -783,6 +877,9 @@ pub struct RowProps {
     pub header: bool,
     /// Don't let the row break across pages.
     pub cant_split: bool,
+    /// Tracked formatting change (`w:trPrChange`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fmt_change: Option<Box<PropChange<RowProps>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -815,6 +912,9 @@ pub struct CellProps {
     /// Which way the cell's text runs.
     pub text_direction: TextDirection,
     pub no_wrap: bool,
+    /// Tracked formatting change (`w:tcPrChange`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fmt_change: Option<Box<PropChange<CellProps>>>,
 }
 
 #[cfg(test)]

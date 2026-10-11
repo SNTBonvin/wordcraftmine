@@ -23,6 +23,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let mac = app.integrated_titlebar;
     egui::Panel::left("backstage_nav")
         .exact_size(200.0)
+        // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
+        .resizable(false)
         .frame(egui::Frame::NONE.fill(APP_COLOR).inner_margin(egui::Margin { left: 0, right: 0, top: if mac { 0 } else { 12 }, bottom: 12 }))
         .show(ui, |ui| {
             let back = if mac {
@@ -257,7 +259,7 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
 
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Open");
-    if ui.button(egui::RichText::new(tl!("📂  Browse…")).font(medium(14.0))).clicked() {
+    if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
         let _ = app.run("ui.openFileDialog", json!({}));
     }
     ui.add_space(18.0);
@@ -300,6 +302,24 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
         if focused != app.info_editing.map(|(f, _)| f) {
             app.info_editing = None;
         }
+        // Protect Document › Encrypt with Password (#55).
+        ui.add_space(18.0);
+        ui.label(egui::RichText::new(tl!("Protect Document")).font(semibold(15.0)));
+        let encrypted = info.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false);
+        ui.label(if encrypted {
+            tl!("A password is required to open this document.")
+        } else {
+            tl!("Anyone can open this document. Encrypt it with a password to keep it private.")
+        });
+        ui.horizontal(|ui| {
+            let label = if encrypted { tl!("Change Password…") } else { tl!("Encrypt with Password…") };
+            if ui.button(egui::RichText::new(label).font(medium(13.5))).clicked() {
+                let _ = app.run("file.encrypt", json!({}));
+            }
+            if encrypted && ui.button(egui::RichText::new(tl!("Remove Password")).font(medium(13.5))).clicked() {
+                let _ = app.run("file.encrypt", json!({"password": null}));
+            }
+        });
         let ui = &mut cols[1];
         ui.label(egui::RichText::new(tl!("Statistics")).font(semibold(15.0)));
         for (l, k) in [("Pages", "pages"), ("Words", "words"), ("Paragraphs", "paragraphs"), ("Sections", "sections"), ("Comments", "comments")] {
@@ -357,7 +377,17 @@ fn options_page(app: &mut WordApp, ui: &mut Ui) {
         }
     });
     theme_picker(app, ui);
-    ui.checkbox(&mut app.autosave, tl!("AutoSave documents you have saved in WordCraft"));
+    interface_size_picker(app, ui);
+    // The browser can't write to the user's files, so AutoSave can't be turned on there (#176).
+    let browser = app.autosave_block() == Some(crate::AutoSaveBlock::Browser);
+    let mut autosave = app.autosave && !browser;
+    let r = ui.add_enabled(!browser, egui::Checkbox::new(&mut autosave, tl!("AutoSave documents you have saved in WordCraft")));
+    if browser {
+        r.on_disabled_hover_text(crate::AutoSaveBlock::Browser.reason());
+    } else if r.changed() {
+        app.autosave = autosave;
+        app.session.autosave = autosave;
+    }
     let mut dark_page = app.session.view.dark_mode;
     if ui
         .checkbox(&mut dark_page, tl!("Dark page (white text on black)"))
@@ -378,6 +408,20 @@ fn options_page(app: &mut WordApp, ui: &mut Ui) {
         let _ = app.run("view.ruler", json!({"value": ruler}));
     }
     ui.add_space(10.0);
+    ui.label(egui::RichText::new(tl!("Customize")).font(semibold(15.0)));
+    ui.horizontal(|ui| {
+        ui.label(tl!("Keyboard shortcuts:"));
+        if ui.button(tl!("Customize…")).clicked() {
+            let _ = app.run("tools.customizeKeyboard", json!({}));
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tl!("Ribbon and Quick Access Toolbar:"));
+        if ui.button(tl!("Customize…")).clicked() {
+            let _ = app.run("tools.customizeRibbon", json!({}));
+        }
+    });
+    ui.add_space(10.0);
     ui.label(egui::RichText::new(tl!("Agents")).font(semibold(15.0)));
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
 }
@@ -395,6 +439,29 @@ fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// File ▸ Options ▸ Interface size: 80–200 %, on top of the system's display scale (#475).
+fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
+    use crate::theme::InterfaceSize;
+    let current = app.ui.interface_size.percent();
+    ui.horizontal(|ui| {
+        ui.label(tl!("Interface size:"));
+        egui::ComboBox::from_id_salt("interface_size").selected_text(format!("{current}%")).width(220.0).show_ui(ui, |ui| {
+            for pct in InterfaceSize::PRESETS {
+                if ui.selectable_label(current == pct, format!("{pct}%")).clicked() {
+                    let _ = app.run("ui.interfaceSize", json!({"percent": pct}));
+                }
+            }
+        });
+    });
+    ui.label(
+        egui::RichText::new(tl!(
+            "Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate."
+        ))
+        .small()
+        .weak(),
+    );
 }
 
 /// File ▸ Options ▸ Interface language: follow the system (the default) or pick one (#8).

@@ -32,6 +32,31 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"text"?: string}"#)
             .key("Mod+Shift+Alt+V"),
         CommandSpec::new("edit.pasteMerge", "Paste: Merge Formatting", "Home › Clipboard › Paste", paste_text).params(r#"{"text"?: string}"#),
+        CommandSpec::new("edit.clipboardPane", "Clipboard Pane", "Home › Clipboard", |s, v| {
+            let on = p::bool(v, "value").unwrap_or(!s.view.clipboard_pane);
+            s.view.clipboard_pane = on;
+            Ok(json!({"value": on, "count": s.clip_history.len()}))
+        })
+        .params(r#"{"value"?: bool}"#)
+        .pure(),
+        CommandSpec::new("edit.clipboardItems", "Clipboard Items", "Home › Clipboard › Clipboard Pane", |s, _| Ok(s.clip_history.describe())).pure(),
+        CommandSpec::new("edit.pasteClipboardItem", "Paste Clipboard Item", "Home › Clipboard › Clipboard Pane", paste_clip_item)
+            .params(r#"{"index": n (0 = newest)}"#)
+            .when(has_clips),
+        CommandSpec::new("edit.pasteAllClipboard", "Paste All", "Home › Clipboard › Clipboard Pane", paste_all_clips).when(has_clips),
+        CommandSpec::new("edit.deleteClipboardItem", "Delete Clipboard Item", "Home › Clipboard › Clipboard Pane", |s, v| {
+            let i = clip_index(s, v)?;
+            s.clip_history.items.remove(i);
+            Ok(s.clip_history.describe())
+        })
+        .params(r#"{"index": n (0 = newest)}"#)
+        .when(has_clips)
+        .pure(),
+        CommandSpec::new("edit.clearClipboard", "Clear All", "Home › Clipboard › Clipboard Pane", |s, _| {
+            s.clip_history.items.clear();
+            Ok(s.clip_history.describe())
+        })
+        .pure(),
         CommandSpec::new("edit.find", "Find", "Home › Editing", find)
             .key("Mod+F")
             .params(r#"{"text": string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool}"#)
@@ -39,8 +64,11 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("edit.advancedFind", "Advanced Find", "Home › Editing › Find", advanced_find)
             .params(r#"{"text"?: string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool, "in"?: "main|selection", "highlight"?: bool}"#)
             .pure(),
-        CommandSpec::new("edit.findNext", "Find Next", "Home › Editing › Find", |s, _| step(s, 1)).key("Mod+G / F3").pure(),
-        CommandSpec::new("edit.findPrevious", "Find Previous", "Home › Editing › Find", |s, _| step(s, -1)).key("Mod+Shift+G").pure(),
+        CommandSpec::new("edit.findNext", "Find Next", "Home › Editing › Find", |s, _| step(s, 1)).key("Mod+G / F3 / Mod+PageDown").pure(),
+        CommandSpec::new("edit.findPrevious", "Find Previous", "Home › Editing › Find", |s, _| step(s, -1))
+            // Elsewhere Ctrl+Shift+G is Word Count; Ctrl+Page Up/Down browse the find results.
+            .key(super::mac_or("Mod+Shift+G / Mod+PageUp", "Mod+PageUp"))
+            .pure(),
         CommandSpec::new("edit.replace", "Replace", "Home › Editing", replace).key("Mod+H").params(r#"{"text": string, "with": string}"#),
         CommandSpec::new("edit.replaceAll", "Replace All", "Home › Editing › Replace", replace_all)
             .params(r#"{"text": string, "with": string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool}"#),
@@ -48,6 +76,14 @@ pub fn specs() -> Vec<CommandSpec> {
             .key("Mod+Alt+G / F5")
             .params(r#"{"page"?: n, "bookmark"?: string, "paragraph"?: n}"#)
             .pure(),
+        CommandSpec::new("edit.goBack", "Go Back", "Navigation", |s, _| {
+            let p = s.go_back().ok_or_else(|| CmdError::Failed("no edits to go back to yet".into()))?;
+            s.sel = Selection::caret(p);
+            s.goal_x = None;
+            sel_result(s)
+        })
+        .key("Shift+F5")
+        .pure(),
         CommandSpec::new("edit.formatPainter", "Format Painter", "Home › Clipboard", painter).params(r#"{"sticky"?: bool}"#).pure(),
         CommandSpec::new("edit.copyFormat", "Copy Formatting", "Home › Clipboard", |s, _| {
             painter_pick(s);
@@ -66,6 +102,7 @@ fn copy(s: &mut Session, _: &Value) -> CmdResult {
     }
     let f = s.doc.copy_range(&a, &b);
     s.clipboard_text = f.plain_text();
+    s.clip_history.push(&f, &s.clipboard_text);
     s.clipboard = Some(f);
     Ok(json!({"text": s.clipboard_text}))
 }
@@ -86,6 +123,140 @@ fn paste(s: &mut Session, v: &Value) -> CmdResult {
     };
     super::paste::insert(s, frag)?;
     sel_result(s)
+}
+
+/// Most items the Clipboard pane keeps.
+pub const CLIP_MAX_ITEMS: usize = 24;
+/// A copy bigger than this (estimated) is not collected (it still reaches the clipboard).
+const CLIP_ITEM_BYTES: usize = 4 << 20;
+/// All collected items together stay under this; the oldest go first.
+const CLIP_TOTAL_BYTES: usize = 24 << 20;
+/// Characters of preview per item.
+const CLIP_PREVIEW_CHARS: usize = 120;
+
+/// One item collected by Copy or Cut.
+#[derive(Clone, Debug)]
+pub struct ClipItem {
+    pub fragment: Fragment,
+    /// Its plain text.
+    pub text: String,
+    /// Rough memory use.
+    bytes: usize,
+}
+
+impl ClipItem {
+    /// One line of the item's text for a list: whitespace runs become one space, objects drop out.
+    pub fn preview(&self) -> String {
+        let words = self.text.split(|c: char| c.is_whitespace() || c == wordcraft_doc::para::OBJ).filter(|w| !w.is_empty());
+        let mut out = String::new();
+        let mut n = 0;
+        for w in words {
+            if !out.is_empty() {
+                out.push(' ');
+                n += 1;
+            }
+            for c in w.chars() {
+                if n >= CLIP_PREVIEW_CHARS {
+                    out.push('…');
+                    return out;
+                }
+                out.push(c);
+                n += 1;
+            }
+        }
+        out
+    }
+}
+
+/// Items collected by Copy and Cut during the session, newest first: the Clipboard pane
+/// (Home › Clipboard). At most [`CLIP_MAX_ITEMS`]; oversized copies are skipped.
+#[derive(Clone, Debug, Default)]
+pub struct ClipHistory {
+    items: Vec<ClipItem>,
+}
+
+impl ClipHistory {
+    pub fn items(&self) -> &[ClipItem] {
+        &self.items
+    }
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    fn push(&mut self, f: &Fragment, text: &str) {
+        // Text plus per-paragraph overhead; pictures are references into the document.
+        let paras = text.matches('\n').count().saturating_add(f.blocks.len()).saturating_add(f.parts.len()).saturating_add(1);
+        let bytes = text.len().saturating_mul(2).saturating_add(paras.saturating_mul(256));
+        if bytes > CLIP_ITEM_BYTES || f.blocks.is_empty() {
+            return;
+        }
+        // Copying the same thing again doesn't add a second item.
+        if self.items.first().is_some_and(|i| i.text == text && i.fragment == *f) {
+            return;
+        }
+        self.items.insert(0, ClipItem { fragment: f.clone(), text: text.to_string(), bytes });
+        self.items.truncate(CLIP_MAX_ITEMS);
+        while self.items.len() > 1 && self.items.iter().map(|i| i.bytes).sum::<usize>() > CLIP_TOTAL_BYTES {
+            self.items.pop();
+        }
+    }
+
+    /// The items for agents and the pane, newest first.
+    fn describe(&self) -> Value {
+        Value::Array(
+            self.items
+                .iter()
+                .enumerate()
+                .map(|(i, it)| {
+                    json!({
+                        "index": i,
+                        "preview": it.preview(),
+                        "chars": it.text.chars().count(),
+                        "objects": it.text.matches(wordcraft_doc::para::OBJ).count(),
+                    })
+                })
+                .collect(),
+        )
+    }
+}
+
+fn has_clips(s: &Session) -> Option<&'static str> {
+    if s.clip_history.is_empty() { Some("the Clipboard pane is empty") } else { None }
+}
+
+fn clip_index(s: &Session, v: &Value) -> Result<usize, CmdError> {
+    let i = p::u64(v, "index").ok_or_else(|| CmdError::Params("`index` (number, 0 = newest) is required".into()))?;
+    usize::try_from(i)
+        .ok()
+        .filter(|i| *i < s.clip_history.len())
+        .ok_or_else(|| CmdError::Params(format!("no clipboard item {i} (there are {})", s.clip_history.len())))
+}
+
+/// Paste a collected item through the normal paste path. The clipboard itself stays as it was.
+fn paste_clip(s: &mut Session, f: Fragment) -> CmdResult {
+    let saved = s.clipboard.replace(f);
+    let r = paste(s, &json!({}));
+    s.clipboard = saved;
+    r
+}
+
+fn paste_clip_item(s: &mut Session, v: &Value) -> CmdResult {
+    let i = clip_index(s, v)?;
+    let f = s.clip_history.items.get(i).map(|x| x.fragment.clone()).ok_or_else(|| CmdError::Params("no such clipboard item".into()))?;
+    paste_clip(s, f)
+}
+
+/// Every collected item, in the order they were copied (one undo step).
+fn paste_all_clips(s: &mut Session, _: &Value) -> CmdResult {
+    let all: Vec<Fragment> = s.clip_history.items.iter().rev().map(|x| x.fragment.clone()).collect();
+    let mut r = sel_result(s)?;
+    for f in all {
+        r = paste_clip(s, f)?;
+    }
+    Ok(r)
 }
 
 fn paste_text(s: &mut Session, v: &Value) -> CmdResult {

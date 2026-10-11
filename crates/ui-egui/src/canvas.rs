@@ -46,6 +46,10 @@ pub struct CanvasState {
     pub mini_anchor: Option<Rect>,
     /// A picture, shape or text box being dragged by its frame.
     pub(crate) obj_drag: Option<crate::objects::ObjectDrag>,
+    /// An ink stroke being drawn with a pen (Draw tab).
+    pub(crate) ink: Option<crate::ink::InkDrag>,
+    /// The eraser is down: whether it has erased anything in this drag yet.
+    pub(crate) erasing: Option<bool>,
     /// Wheel/touchpad scrolling (smooth notches, touchpad momentum).
     pub(crate) wheel: crate::scroll::CanvasScroll,
     /// The scroll offset and its maximum at the end of last frame.
@@ -63,6 +67,15 @@ pub struct CanvasState {
     balloon_h: f32,
     /// Screen rects of the comment balloons last frame (for the control channel and tests).
     pub balloon_rects: Vec<(u32, Rect)>,
+    /// A paste event arrived since the last Mod+V release (see `keys::canvas_events`).
+    pub(crate) pasted: bool,
+    /// Draw Table or Eraser is on (`table_pen`): presses draw instead of moving the caret.
+    pub table_tool: Option<crate::table_pen::TableTool>,
+    /// The Draw Table stroke (or eraser press) in progress.
+    pub(crate) table_stroke: Option<crate::table_pen::PenStroke>,
+    /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
+    /// isn't typed. The next key press clears it.
+    pub(crate) swallow_text: bool,
 }
 
 impl CanvasState {
@@ -94,8 +107,12 @@ impl Default for CanvasState {
             context_issue: None,
             context_synonyms: None,
             obj_drag: None,
+            ink: None,
+            erasing: None,
             context_menu_open: false,
             mini_anchor: None,
+            pasted: false,
+            swallow_text: false,
             wheel: Default::default(),
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
@@ -105,6 +122,8 @@ impl Default for CanvasState {
             balloon_reply: false,
             balloon_h: 0.0,
             balloon_rects: Vec::new(),
+            table_tool: None,
+            table_stroke: None,
         }
     }
 }
@@ -130,7 +149,12 @@ pub fn markup_width(app: &WordApp) -> f32 {
     let v = &app.session.view;
     // Word shows comments either in balloons (contextual) or in the Comments pane (list).
     let on = v.show_markup && !v.comments_pane && !v.read_mode && !v.multi_page && v.mode == wordcraft_layout::ViewMode::Print;
-    if on && !app.session.doc.comments.is_empty() { 216.0 } else { 0.0 }
+    // Track Changes Options: comments and formatting hidden, or every revision inline, leave
+    // no markup area.
+    let m = &app.session.prefs.markup;
+    let on = on && m.balloons != wordcraft_layout::display::BalloonMode::Inline;
+    let comments = m.comments && !app.session.doc.comments.is_empty();
+    if on && (comments || (m.formatting && wordcraft_engine::cmd::review::has_format_changes(&app.session.doc))) { 216.0 } else { 0.0 }
 }
 
 /// A page dimension (points) safe to lay out: finite, at least 1 pt, at most `cap`.
@@ -237,7 +261,8 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
     let v = &app.session.view;
-    (v.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER).hash(&mut h);
+    (v.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink).hash(&mut h);
+    app.session.prefs.markup.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
@@ -250,10 +275,14 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
                 }
                 Placed::Fill { rect, color } => format!("{rect:?}{color:?}").hash(&mut h),
                 Placed::Rule { x0, y0, x1, y1, border } => format!("{x0}{y0}{x1}{y1}{border:?}").hash(&mut h),
-                Placed::Image { rect, media, .. } => format!("{rect:?}{media}").hash(&mut h),
-                Placed::Shape { rect, kind, fill, stroke, .. } => format!("{rect:?}{kind:?}{fill:?}{stroke:?}").hash(&mut h),
-                Placed::Graphic { rect, graphic, .. } => {
-                    (std::sync::Arc::as_ptr(graphic) as usize, rect.x.to_bits(), rect.y.to_bits(), rect.w.to_bits(), rect.h.to_bits()).hash(&mut h)
+                Placed::Image { rect, media, spin, .. } => format!("{rect:?}{media}{spin:?}").hash(&mut h),
+                Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin } => {
+                    format!("{rect:?}{kind:?}{fill:?}{stroke:?}{stroke_width}{effects:?}{spin:?}").hash(&mut h);
+                    freeform.as_ref().map(|f| std::sync::Arc::as_ptr(f) as usize).hash(&mut h);
+                }
+                Placed::Graphic { rect, graphic, spin, .. } => {
+                    (std::sync::Arc::as_ptr(graphic) as usize, rect.x.to_bits(), rect.y.to_bits(), rect.w.to_bits(), rect.h.to_bits()).hash(&mut h);
+                    format!("{spin:?}").hash(&mut h)
                 }
                 Placed::Cell { .. } | Placed::Object { .. } => {}
             }
@@ -273,7 +302,7 @@ fn texel_aligned_rect(layout: Rect, texture_px: egui::Vec2, ppp: f32) -> Rect {
     Rect::from_min_size(pos2(snap(layout.min.x), snap(layout.min.y)), texture_px / ppp)
 }
 
-fn page_screen_scale(rect: Rect, page: &Page, fallback: f32) -> f32 {
+pub(crate) fn page_screen_scale(rect: Rect, page: &Page, fallback: f32) -> f32 {
     if page.w > 0.0 { rect.width() / page.w } else { fallback }
 }
 
@@ -425,6 +454,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 opts.display.marks = app.session.view.marks;
                 opts.display.placeholders = true;
                 opts.display.markup = app.session.view.show_markup;
+                opts.display.hide_ink = app.session.view.hide_ink;
+                opts.display.revisions = app.session.prefs.markup.clone();
                 opts.dark = dark_page;
                 opts.dark_paper = dark_paper;
                 opts.display.dim_header = !dim_body;
@@ -622,6 +653,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
         }
         crate::objects::paint(app, &painter, &t, &layout, &rects, geo.scale);
+        crate::ink::paint(app, &painter, &rects, &layout, geo.scale);
+        crate::table_pen::paint(app, &painter, &t, &layout, &rects, geo.scale);
         (resp, rects)
     });
     app.canvas.scroll_offset = out.state.offset;
@@ -642,7 +675,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         });
     }
     app.canvas.focused = resp.has_focus();
-    mouse(app, ui, &resp, &rects, &layout, geo.scale);
+    // Draw Table / Eraser own the mouse while on (no caret moves); else the usual editing.
+    if !crate::table_pen::pointer(app, ui, &resp, &rects, &layout, geo.scale) {
+        mouse(app, ui, &resp, &rects, &layout, geo.scale);
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
     if resp.secondary_clicked()
@@ -677,10 +713,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     // Stand down while the context menu owns the pointer so the two never double up;
     // `context_menu_opened` also covers the click that dismisses the menu.
     app.canvas.context_menu_open = resp.context_menu_opened();
-    if resp.hovered() || app.canvas.obj_drag.is_some() {
+    if let Some(c) = crate::ink::cursor(app).filter(|_| resp.hovered() || app.canvas.ink.is_some()) {
+        ui.ctx().set_cursor_icon(c);
+    } else if resp.hovered() || app.canvas.obj_drag.is_some() {
         let over_object = ui.input(|i| i.pointer.latest_pos()).and_then(|p| crate::objects::cursor(app, &layout, &rects, geo.scale, p));
         ui.ctx().set_cursor_icon(over_object.unwrap_or(egui::CursorIcon::Text));
     }
+    crate::table_pen::cursor(app, ui, &resp);
     // While "Save changes?" is up, keys answer it rather than edit the document behind it.
     if app.canvas.focused && !matches!(app.dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })) {
         crate::keys::canvas_events(app, ui.ctx());
@@ -716,15 +755,25 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
             replies.entry(p).or_default().push(*id);
         }
     }
-    // (page, anchor x, anchor y, id) for each anchored, unresolved-or-not comment.
-    let mut by_page: HashMap<usize, Vec<(f32, f32, u32, Pos)>> = HashMap::new();
-    for (id, pos) in wordcraft_engine::cmd::review::comment_list(&app.session) {
+    // (page, anchor x, anchor y, item) for each anchored, unresolved-or-not comment, and each
+    // tracked formatting change (Word's default shows those in balloons too).
+    let mut by_page: HashMap<usize, Vec<(f32, f32, Balloon, Pos)>> = HashMap::new();
+    let m = &app.session.prefs.markup;
+    let comments = if m.comments { wordcraft_engine::cmd::review::comment_list(&app.session) } else { Vec::new() };
+    for (id, pos) in comments {
         let Some(pos) = pos else { continue };
         if app.session.doc.comments.get(&id).is_some_and(is_reply) {
             continue;
         }
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
-        by_page.entry(c.page).or_default().push((c.x, c.top + c.height, id, pos));
+        by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Comment(id), pos));
+    }
+    let formats = if m.formatting { wordcraft_engine::cmd::review::format_changes(&app.session) } else { Vec::new() };
+    for (pos, author, props) in formats.into_iter().take(500) {
+        let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
+        let what = crate::panes::describe_props(&props).join(", ");
+        let text = if what.is_empty() { tl!("Formatted").to_string() } else { format!("{}: {what}", tl!("Formatted")) };
+        by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Format(author, text), pos));
     }
     let palette = [t.blue, Color32::from_rgb(0xB0, 0x3A, 0x2E), Color32::from_rgb(0x2E, 0x7D, 0x32), Color32::from_rgb(0x8E, 0x44, 0xAD), t.orange];
     let mut authors: Vec<String> = Vec::new();
@@ -751,7 +800,38 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
         let x0 = pr.max.x + 10.0;
         let w = (mw * page_scale - 20.0).max(60.0);
         let mut next_y = pr.min.y;
-        for (ax, ay, id, pos) in list.iter() {
+        for (ax, ay, item, pos) in list.iter() {
+            let id = match item {
+                Balloon::Comment(id) => id,
+                Balloon::Format(author, text) => {
+                    // A read-only card: who formatted, and how.
+                    let author = author_name(author);
+                    let ai = authors.iter().position(|a| *a == author).unwrap_or_else(|| {
+                        authors.push(author.clone());
+                        authors.len() - 1
+                    });
+                    let color = palette.get(ai % palette.len()).copied().unwrap_or(t.blue);
+                    let fs = (11.0 * page_scale / PX_PER_PT).clamp(8.0, 16.0);
+                    let anchor = pos2(pr.min.x + ax * page_scale, pr.min.y + ay * page_scale);
+                    let top = (anchor.y - 12.0).max(next_y);
+                    let head = painter.layout(author, semibold(fs), t.text, w - 16.0);
+                    let body = painter.layout(text.clone(), regular(fs), t.text_dim, w - 16.0);
+                    let card = Rect::from_min_size(pos2(x0, top), vec2(w, head.size().y + body.size().y + 16.0));
+                    next_y = card.max.y + 6.0;
+                    if !card.intersects(clip) {
+                        continue;
+                    }
+                    let lead = Stroke::new(1.0, color.linear_multiply(0.7));
+                    dashed(painter, anchor, pos2(pr.max.x, anchor.y), lead);
+                    painter.line_segment([pos2(pr.max.x, anchor.y), pos2(x0, top + 10.0)], lead);
+                    card_shapes(painter, &t, card, color, false, None);
+                    let y = card.min.y + 6.0;
+                    let hh = head.size().y;
+                    painter.galley(pos2(card.min.x + 10.0, y), head, t.text);
+                    painter.galley(pos2(card.min.x + 10.0, y + hh + 4.0), body, t.text_dim);
+                    continue;
+                }
+            };
             let Some(c) = app.session.doc.comments.get(id) else { continue };
             let resolved = c.resolved;
             let author = author_name(&c.author);
@@ -824,6 +904,13 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
         select_balloon(app, ui.ctx(), id);
         app.session.sel = wordcraft_engine::Selection::caret(p);
     }
+}
+
+/// What a balloon in the markup area shows.
+enum Balloon {
+    Comment(u32),
+    /// A tracked formatting change: its author and "Formatted: …".
+    Format(String, String),
 }
 
 fn author_name(a: &str) -> String {
@@ -960,6 +1047,10 @@ pub fn nearest_page(rects: &[Rect], p: Pos2) -> Option<usize> {
 }
 
 fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layout: &DocLayout, scale: f32) {
+    // A pen or the eraser (Draw tab) owns the pointer.
+    if crate::ink::pointer(app, ui, resp, rects, layout, scale) {
+        return;
+    }
     let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
     // An object drag follows the pointer anywhere until it's released.
     let object_pointer = pointer.or_else(|| app.canvas.obj_drag.as_ref().and_then(|_| ui.input(|i| i.pointer.latest_pos())));
@@ -994,6 +1085,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             if let Some(pos) = layout.hit(page, x, y, StoryRef::Body) {
                 app.session.sel = wordcraft_engine::Selection::caret(pos);
             }
+            return;
+        }
+        // Double-click a field showing its code: edit the code.
+        if let Some(pos) = layout.hit(page, x, y, story)
+            && let Some(field) = field_showing_code(app, &pos)
+        {
+            app.session.sel = wordcraft_engine::Selection::caret(field);
+            let _ = app.run("fields.setCode", json!({}));
             return;
         }
         let _ = app.run("select.word", json!({}));
@@ -1036,7 +1135,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         let Some(pos) = layout.hit(page, x, y, story) else { return };
         // Ctrl/⌘+click follows a hyperlink.
         if mods.command
-            && let Some(link) = app.session.doc.para_at(&pos).and_then(|pp| pp.props_of_char(pos.off).link.clone())
+            && let Some(link) = link_under(app, layout, page, x, y, &pos)
         {
             if let Some(name) = link.strip_prefix('#') {
                 let _ = app.run("edit.goto", json!({"bookmark": name}));
@@ -1096,7 +1195,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     if resp.hovered()
         && !app.canvas.dragging
         && let Some(pos) = layout.hit(page, x, y, story)
-        && let Some(link) = app.session.doc.para_at(&pos).and_then(|pp| pp.props_of_char(pos.off).link.clone())
+        && let Some(link) = link_under(app, layout, page, x, y, &pos)
     {
         let key = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" };
         let tip = format!("{link}\n{}", crate::i18n::fmt(tl!("{key}+Click to follow link"), &[("key", key)]));
@@ -1205,11 +1304,18 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             t.ruler,
             Stroke::new(1.0, c),
         ));
-        for tab in &rp.tabs {
+        let mut open_tabs = false;
+        for (i, tab) in rp.tabs.iter().enumerate() {
             let tx = sx(tab.pos);
             let foot = if rtl { -4.0 } else { 4.0 };
             hp.line_segment([pos2(tx, bar.max.y - 6.0), pos2(tx, bar.max.y - 1.0)], Stroke::new(1.5, t.text));
             hp.line_segment([pos2(tx, bar.max.y - 1.0), pos2(tx + foot, bar.max.y - 1.0)], Stroke::new(1.5, t.text));
+            // Double-clicking a tab marker opens the Tabs dialog (#320).
+            let zone = Rect::from_center_size(pos2(tx, bar.max.y - 4.0), vec2(8.0, 9.0));
+            open_tabs |= ui.interact(zone, ui.id().with(("ruler_tab", i)), Sense::click()).double_clicked();
+        }
+        if open_tabs {
+            let _ = app.run("para.tabs", json!({}));
         }
         // Dragging the left-indent marker.
         let id = ui.id().with("ruler_left");
@@ -1457,7 +1563,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     let item = |ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: serde_json::Value| {
         let sc = crate::widgets::shortcut_text(app, id);
         let on = crate::widgets::enabled(app, id);
-        if ui.add_enabled(on, egui::Button::new(label).shortcut_text(sc)).clicked() {
+        if ui.add_enabled(on, egui::Button::new(tl!(label)).shortcut_text(sc)).clicked() {
             let _ = app.run(id, params);
             ui.close();
         }
@@ -1514,6 +1620,12 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
+    if !wordcraft_engine::cmd::fields::selected(&app.session).is_empty() {
+        ui.separator();
+        item(ui, app, tl!("Update Field"), "references.updateFields", json!({}));
+        item(ui, app, tl!("Edit Field…"), "fields.setCode", json!({}));
+        item(ui, app, tl!("Toggle Field Codes"), "fields.toggleCode", json!({}));
+    }
     if crate::ribbon::has_picture_selected(&app.session) {
         ui.separator();
         item(ui, app, "Change Picture…", "ui.changePicture", json!({}));
@@ -1537,10 +1649,38 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     }
 }
 
+/// The simple field at or just before `pos` when it shows its code (View › Field Codes, or its
+/// own toggle): where it is.
+fn field_showing_code(app: &WordApp, pos: &wordcraft_doc::Pos) -> Option<wordcraft_doc::Pos> {
+    let para = app.session.doc.para_at(pos)?;
+    let width = wordcraft_doc::para::OBJ.len_utf8();
+    [Some(pos.off), pos.off.checked_sub(width)].into_iter().flatten().find_map(|off| match para.object_at(off) {
+        Some(wordcraft_doc::para::InlineObject::Field { code, .. }) if *code != app.session.view.field_codes => {
+            Some(wordcraft_doc::Pos { off, ..pos.clone() })
+        }
+        _ => None,
+    })
+}
+
 /// Render options for page rasters shown on screen: on macOS, text is darkened the way the system
 /// draws it, so a page looks as it does in other Mac apps (exports never are).
 pub(crate) fn screen_render_options() -> wordcraft_render::RenderOptions {
     wordcraft_render::RenderOptions { text_darkening: cfg!(target_os = "macos"), ..Default::default() }
+}
+
+/// The hyperlink under the pointer at (x, y) on `page`, where `pos` is the caret position the
+/// point hits. The hit snaps to the nearest text, so the link only counts when the point is on
+/// the linked character itself, not beside, above or below it (issue #413).
+fn link_under(app: &WordApp, layout: &DocLayout, page: usize, x: f32, y: f32, pos: &Pos) -> Option<String> {
+    let doc = &app.session.doc;
+    let para = doc.para_at(pos)?;
+    let at = wordcraft_geom::Point::new(x, y);
+    // The caret falls between characters: the one under the point is on either side of it.
+    [(pos.off, para.next_boundary(pos.off)), (para.prev_boundary(pos.off), pos.off)].into_iter().filter(|(a, b)| a < b).find_map(|(a, b)| {
+        let link = para.props_of_char(a).link.clone()?;
+        let (from, to) = (Pos { off: a, ..pos.clone() }, Pos { off: b, ..pos.clone() });
+        layout.selection_rects(doc, &from, &to, page).into_iter().any(|(pi, r)| pi == page && r.contains(at)).then_some(link)
+    })
 }
 
 /// Whether Ctrl/⌘+click may hand a document's hyperlink to the system: web and email links only,

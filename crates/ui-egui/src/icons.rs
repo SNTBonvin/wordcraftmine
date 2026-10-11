@@ -120,6 +120,10 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rect(3.0, 3.0, 17.0, 17.0, a);
             pen.text(10.0, 6.0, 9.0, "A", c, false);
         }
+        "enclose" => {
+            pen.circle(10.0, 10.5, 7.5, a);
+            pen.text(10.0, 10.5, 9.0, "A", c, false);
+        }
         "subscript" => {
             pen.text(8.0, 9.0, 13.0, "x", c, false);
             pen.text(15.0, 14.5, 8.0, "2", a, true);
@@ -140,6 +144,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "clear" => {
             pen.text(8.0, 9.0, 13.0, "A", c, false);
             pen.fill(&[(10.0, 15.0), (14.0, 11.0), (18.0, 15.0), (14.0, 19.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
+        }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(10.0, 5.0, 7.5, "abc", a, false);
+            pen.text(10.0, 13.5, 12.5, "A", c, false);
         }
         "highlight" => {
             pen.fill(&[(5.0, 12.0), (11.0, 4.0), (14.0, 7.0), (8.0, 15.0)], c);
@@ -290,6 +299,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 18.0), (4.0, 13.0), (16.0, 13.0), (16.0, 18.0)]);
             pen.line_c(&[(2.0, 10.0), (18.0, 10.0)], a);
         }
+        "drawTable" => {
+            pen.rect(2.5, 3.0, 14.0, 14.5, c);
+            pen.line(&[(2.5, 8.5), (14.0, 8.5)]);
+            pen.line(&[(8.0, 3.0), (8.0, 14.5)]);
+            pen.line(&[(9.5, 18.0), (17.0, 10.5), (18.5, 12.0), (11.0, 19.5), (9.0, 19.8), (9.5, 18.0)]);
+            pen.fill(&[(17.0, 10.5), (18.0, 9.5), (19.5, 11.0), (18.5, 12.0)], a);
+        }
         "table" => {
             pen.frect(3.0, 3.0, 17.0, 7.0, a);
             pen.rect(3.0, 3.0, 17.0, 17.0, c);
@@ -311,6 +327,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "shapes" => {
             pen.rect(3.0, 3.0, 11.0, 11.0, c);
             pen.fcircle(13.0, 13.0, 4.5, a);
+        }
+        // Shape Effects: a square casting a soft shadow down and to the right.
+        "shapeEffects" => {
+            for (k, alpha) in [(2.0, 30), (1.0, 50), (0.0, 80)] {
+                pen.frect(7.0 - k, 7.0 - k, 18.0 + k, 18.0 + k, Color32::from_rgba_unmultiplied(0, 0, 0, alpha));
+            }
+            pen.frect(3.0, 3.0, 14.0, 14.0, a);
+            pen.rect(3.0, 3.0, 14.0, 14.0, c);
         }
         "icons" => {
             pen.circle(10.0, 10.0, 7.5, c);
@@ -447,6 +471,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "eraser" => {
             pen.closed(&[(3.0, 13.0), (11.0, 5.0), (17.0, 11.0), (11.0, 17.0), (7.0, 17.0)], c);
             pen.fill(&[(3.0, 13.0), (7.0, 9.0), (13.0, 15.0), (11.0, 17.0), (7.0, 17.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
+        }
+        // Ink thickness: three strokes, thin to thick.
+        "thickness" => {
+            pen.frect(3.0, 4.5, 17.0, 5.5, c);
+            pen.frect(3.0, 9.0, 17.0, 11.0, c);
+            pen.frect(3.0, 14.0, 17.0, 17.0, a);
         }
         "lasso" => {
             pen.closed(&[(4.0, 7.0), (9.0, 3.0), (16.0, 5.0), (16.0, 11.0), (10.0, 13.0), (4.0, 11.0)], c);
@@ -1107,6 +1137,19 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fcircle(7.5, 10.5, 1.5, Color32::WHITE);
             pen.fcircle(12.5, 10.5, 1.5, Color32::WHITE);
         }
+        // Open: a folder with its flap lifted.
+        "open" => {
+            pen.closed(&[(2.5, 5.0), (7.5, 5.0), (9.0, 6.5), (15.5, 6.5), (15.5, 9.0)], c);
+            pen.line(&[(2.5, 5.0), (2.5, 16.0)]);
+            pen.closed(&[(2.5, 16.0), (5.0, 9.0), (18.0, 9.0), (15.5, 16.0)], a);
+        }
+        // Print: a printer with a sheet coming out.
+        "print" => {
+            pen.rect(6.0, 2.5, 14.0, 7.0, c);
+            pen.rect(2.5, 7.0, 17.5, 14.0, c);
+            pen.closed(&[(6.0, 11.5), (14.0, 11.5), (14.0, 17.5), (6.0, 17.5)], a);
+            pen.fcircle(15.0, 9.5, 0.8, c);
+        }
         "help" => {
             pen.circle(10.0, 10.0, 7.0, c);
             pen.text(10.0, 10.0, 10.0, "?", a, true);
@@ -1127,5 +1170,28 @@ trait ThenLines {
 impl ThenLines for () {
     fn then_lines(self, pen: &Pen, x0: f32, x1: f32, ys: &[f32]) {
         pen.lines(x0, x1, ys);
+    }
+}
+
+/// Draw an Insert › Icons library icon into `r` in `c`, from the same path data the inserted
+/// picture is rendered from (`wordcraft_render::icon_lib`).
+pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c: Color32) {
+    use wordcraft_render::icon_lib::{GRID, STROKE};
+    let s = r.width().min(r.height()) / GRID;
+    let o = r.center() - vec2(GRID / 2.0 * s, GRID / 2.0 * s);
+    let stroke = Stroke::new(STROKE * s, c);
+    for piece in icon.pieces() {
+        let pts: Vec<Pos2> = piece.points.iter().map(|q| pos2(o.x + q[0] * s, o.y + q[1] * s)).collect();
+        if piece.fill {
+            p.add(Shape::convex_polygon(pts, c, Stroke::NONE));
+        } else if piece.closed {
+            p.add(Shape::closed_line(pts, stroke));
+        } else {
+            // Round caps, as on the inserted picture.
+            for end in [pts.first(), pts.last()].into_iter().flatten() {
+                p.circle_filled(*end, stroke.width / 2.0, c);
+            }
+            p.add(Shape::line(pts, stroke));
+        }
     }
 }

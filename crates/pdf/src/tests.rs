@@ -51,7 +51,15 @@ fn sample() -> Document {
     let n = ip.len();
     ip.insert_object(
         n,
-        InlineObject::Image { media: key, w: 80.0, h: 40.0, alt: "gradient".into(), float: Default::default(), crop: [0.1, 0.0, 0.0, 0.0] },
+        InlineObject::Image {
+            media: key,
+            w: 80.0,
+            h: 40.0,
+            alt: "gradient".into(),
+            float: Default::default(),
+            crop: [0.1, 0.0, 0.0, 0.0],
+            ole: None,
+        },
         &CharProps::default(),
     )
     .unwrap();
@@ -186,13 +194,14 @@ fn hostile_documents_export() {
             alt: String::new(),
             float: Default::default(),
             crop: [f32::NAN; 4],
+            ole: None,
         },
         &CharProps::default(),
     )
     .unwrap();
     p.insert_object(
         0,
-        InlineObject::Image { media: "missing".into(), w: 10.0, h: 10.0, alt: String::new(), float: Default::default(), crop: [0.0; 4] },
+        InlineObject::Image { media: "missing".into(), w: 10.0, h: 10.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
         &CharProps::default(),
     )
     .unwrap();
@@ -405,7 +414,7 @@ fn fields_put_their_shown_text_in_the_text_layer() {
     // characters, are what copying, search and screen readers get.
     let mut d = Document::new();
     let mut f = Paragraph::with_text("Page  of ", CharProps::default());
-    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: String::new(), locked: false };
+    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: String::new(), locked: false, code: false };
     f.insert_object(5, field("PAGE"), &CharProps::default()).unwrap();
     let n = f.len();
     f.insert_object(n, field("NUMPAGES"), &CharProps::default()).unwrap();
@@ -529,7 +538,7 @@ fn field_results_are_extractable_text() {
     let mut p = Paragraph::with_text("See  for details.", CharProps::default());
     p.insert_object(
         4,
-        InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: "Section 3.01".into(), locked: false },
+        InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: "Section 3.01".into(), locked: false, code: false },
         &CharProps::default(),
     )
     .unwrap();
@@ -550,7 +559,8 @@ fn field_result_ligatures_extract_all_their_letters() {
     assert!(wordcraft_fonts::shape(&face, result, &[], |c| c).len() < result.chars().count(), "the result has ligatures");
     let mut d = Document::new();
     let mut p = Paragraph::with_text("See  here.", font.clone());
-    p.insert_object(4, InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: result.into(), locked: false }, &font).unwrap();
+    p.insert_object(4, InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: result.into(), locked: false, code: false }, &font)
+        .unwrap();
     d.body = vec![para_block(p)];
     let text = extract_text(&export(&d, &PdfOptions::default()).unwrap()).concat();
     assert!(squash(&text).contains("See the first office here."), "{text:?}");
@@ -645,7 +655,7 @@ fn metafile_pictures_are_drawn_as_vector_paths() {
     let n = p.len();
     p.insert_object(
         n,
-        InlineObject::Image { media, w: 70.0, h: 70.0, alt: "red".into(), float: Default::default(), crop: [0.0; 4] },
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: "red".into(), float: Default::default(), crop: [0.0; 4], ole: None },
         &CharProps::default(),
     )
     .unwrap();
@@ -690,7 +700,7 @@ fn metafile_strokes_use_round_caps_and_joins() {
     let n = p.len();
     p.insert_object(
         n,
-        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4] },
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
         &CharProps::default(),
     )
     .unwrap();
@@ -721,7 +731,7 @@ fn metafile_fill_items_carry_no_stroke_state() {
     let n = p.len();
     p.insert_object(
         n,
-        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4] },
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
         &CharProps::default(),
     )
     .unwrap();
@@ -745,7 +755,7 @@ fn cosmetic_metafile_pens_are_thin_but_visible() {
     let n = p.len();
     p.insert_object(
         n,
-        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4] },
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
         &CharProps::default(),
     )
     .unwrap();
