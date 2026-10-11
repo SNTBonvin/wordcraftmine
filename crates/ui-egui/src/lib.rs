@@ -21,8 +21,8 @@ pub mod content_controls;
 pub mod control;
 pub mod credits;
 pub mod dialogs;
-pub mod dialogs_controls;
 pub mod dialogs_chart;
+pub mod dialogs_controls;
 pub mod dialogs_insert;
 pub mod dialogs_keyboard;
 pub mod dialogs_layout;
@@ -52,6 +52,7 @@ pub mod table_pen;
 pub mod theme;
 pub mod widgets;
 pub mod window_geometry;
+pub mod wordart_menus;
 pub mod zotero;
 
 use serde::{Deserialize, Serialize};
