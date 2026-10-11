@@ -166,6 +166,12 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     }
     let events = ctx.input(|i| i.events.clone());
     for e in events {
+        // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
+        match &e {
+            egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,
+            egui::Event::Text(_) if std::mem::take(&mut app.canvas.swallow_text) => continue,
+            _ => {}
+        }
         if let egui::Event::Paste(t) = &e {
             app.canvas.pasted = true;
             // Copied picture files arrive as their paths: insert the pictures (#45).
@@ -189,7 +195,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
             match &e {
                 egui::Event::Text(t) => {
                     let m = ctx.input(|i| i.modifiers);
-                    if !(m.command || (m.ctrl && !cfg!(target_os = "macos"))) && !t.is_empty() && t.chars().all(|c| !c.is_control()) {
+                    if !(m.command || t.is_empty() || (m.ctrl && !cfg!(target_os = "macos"))) && t.chars().all(|c| !c.is_control()) {
                         let _ = app.run("equation.type", json!({"text": t}));
                     }
                     continue;
@@ -278,7 +284,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("insert.closeHeader", json!({}));
                     continue;
                 }
-                dispatch(app, key, modifiers);
+                app.canvas.swallow_text = dispatch(app, key, modifiers) && modifiers.alt;
             }
             _ => {}
         }
