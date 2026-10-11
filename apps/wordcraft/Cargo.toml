@@ -32,6 +32,12 @@ winresource = "0.1"
 # workspace forbids) behind a safe API. Pinned exactly: review the diff before bumping.
 fmv-macos-events = "=0.1.0"
 
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# The interface theme's "Use system setting": the desktop's light/dark choice from the XDG desktop
+# portal (desktop_theme.rs). Already in Cargo.lock through accesskit; pinned to that version so
+# nothing is built twice.
+zbus = { version = "=5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rfd = { workspace = true }
 # Waits for an `rfd::AsyncFileDialog` on a background thread (the dialogs don't block the UI, #94);

@@ -5015,6 +5015,7 @@ dependencies = [
  "wordcraft-doc",
  "wordcraft-engine",
  "wordcraft-ui-egui",
+ "zbus",
 ]
 
 [[package]]

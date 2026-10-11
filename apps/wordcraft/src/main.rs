@@ -12,6 +12,7 @@
 #[cfg(target_os = "macos")]
 mod apple_events;
 mod control_server;
+mod desktop_theme;
 mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
@@ -26,20 +27,21 @@ use wordcraft_ui_egui::{
 };
 
 /// The app, the restored window geometry until the first frame has checked it, the control
-/// server's key file (removed on exit), the file dialogs the app asked for and, on macOS, the
-/// documents opened from Finder.
+/// server's key file (removed on exit), the file dialogs the app asked for, the desktop's
+/// light/dark choice (where winit reports none) and, on macOS, the documents opened from Finder.
 struct App(
     WordApp,
     Option<WindowGeometry>,
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
+    desktop_theme::DesktopTheme,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
 );
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        apple_events::poll(&self.4, &mut self.0, ctx);
+        apple_events::poll(&self.5, &mut self.0, ctx);
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -56,6 +58,7 @@ impl eframe::App for App {
         }
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        desktop_theme::follow_desktop(raw, self.4.current());
         self.0.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -242,11 +245,14 @@ fn main() -> eframe::Result {
                     log::warn!("{f}: {e}");
                 }
             }
+            let ctx = cc.egui_ctx.clone();
+            let desktop_theme = desktop_theme::DesktopTheme::start(move || ctx.request_repaint());
             Ok(Box::new(App(
                 app,
                 restored,
                 key_file,
                 dialogs,
+                desktop_theme,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
             )))
