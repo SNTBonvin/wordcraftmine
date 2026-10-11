@@ -1608,6 +1608,120 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
+    if let Some((_, o)) = wordcraft_engine::cmd::objects::selected(&app.session)
+        && o.is_drawing()
+    {
+        ui.separator();
+        let cur_wrap = o.float().map(|f| f.wrap).unwrap_or(wordcraft_doc::para::Wrap::Inline);
+        let cur_side = o.float().map(|f| f.wrap_side).unwrap_or(wordcraft_doc::para::WrapSide::BothSides);
+        ui.menu_button(tl!("Wrap Text"), |ui| {
+            let mut mi_wrap = |ui: &mut Ui, label: &str, icon: &str, wrap_mode: wordcraft_doc::para::Wrap, name: &str| {
+                let checked = cur_wrap == wrap_mode;
+                let t = crate::theme::Tokens::get(ui.ctx());
+                let (rect, resp) = ui.allocate_exact_size(vec2(190.0, 22.0), Sense::click());
+                if resp.hovered() {
+                    ui.painter().rect_filled(rect, 3.0, t.hover);
+                }
+                if checked {
+                    ui.painter().rect_filled(rect, 3.0, t.checked);
+                }
+                let mark = if checked { "✓" } else { "" };
+                ui.painter().text(
+                    pos2(rect.min.x + 6.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    mark,
+                    crate::theme::regular(11.0),
+                    t.accent_text,
+                );
+                let icon_r = Rect::from_center_size(pos2(rect.min.x + 20.0, rect.center().y), vec2(14.0, 14.0));
+                crate::icons::paint(ui.painter(), icon_r, icon, t.text, t.accent);
+                ui.painter().text(
+                    pos2(rect.min.x + 34.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    tl!(label),
+                    crate::theme::regular(11.5),
+                    t.text,
+                );
+                if resp.clicked() {
+                    let _ = app.run("arrange.wrap", json!({"wrap": name}));
+                    ui.close();
+                }
+            };
+            mi_wrap(ui, "In Line with Text", "wrapInline", wordcraft_doc::para::Wrap::Inline, "inline");
+            ui.separator();
+            mi_wrap(ui, "Square", "wrapSquare", wordcraft_doc::para::Wrap::Square, "square");
+            mi_wrap(ui, "Tight", "wrapTight", wordcraft_doc::para::Wrap::Tight, "tight");
+            mi_wrap(ui, "Through", "wrapThrough", wordcraft_doc::para::Wrap::Through, "through");
+            mi_wrap(ui, "Top and Bottom", "wrapTopBottom", wordcraft_doc::para::Wrap::TopAndBottom, "topAndBottom");
+            mi_wrap(ui, "Behind Text", "wrapBehind", wordcraft_doc::para::Wrap::BehindText, "behindText");
+            mi_wrap(ui, "In Front of Text", "wrapInFront", wordcraft_doc::para::Wrap::InFrontOfText, "inFrontOfText");
+            if cur_wrap != wordcraft_doc::para::Wrap::Inline && cur_wrap != wordcraft_doc::para::Wrap::TopAndBottom {
+                ui.separator();
+                ui.label(egui::RichText::new(tl!("Wrap Text Sides:")).small().weak());
+                let mut mi_side = |ui: &mut Ui, label: &str, icon: &str, side_mode: wordcraft_doc::para::WrapSide, name: &str| {
+                    let checked = cur_side == side_mode;
+                    let t = crate::theme::Tokens::get(ui.ctx());
+                    let (rect, resp) = ui.allocate_exact_size(vec2(190.0, 22.0), Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, 3.0, t.hover);
+                    }
+                    if checked {
+                        ui.painter().rect_filled(rect, 3.0, t.checked);
+                    }
+                    let mark = if checked { "✓" } else { "" };
+                    ui.painter().text(
+                        pos2(rect.min.x + 6.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        mark,
+                        crate::theme::regular(11.0),
+                        t.accent_text,
+                    );
+                    let icon_r = Rect::from_center_size(pos2(rect.min.x + 20.0, rect.center().y), vec2(14.0, 14.0));
+                    crate::icons::paint(ui.painter(), icon_r, icon, t.text, t.accent);
+                    ui.painter().text(
+                        pos2(rect.min.x + 34.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        tl!(label),
+                        crate::theme::regular(11.5),
+                        t.text,
+                    );
+                    if resp.clicked() {
+                        let _ = app.run("arrange.wrap", json!({"side": name}));
+                        ui.close();
+                    }
+                };
+                mi_side(ui, "Both Sides", "wrapBothSides", wordcraft_doc::para::WrapSide::BothSides, "bothSides");
+                mi_side(ui, "Left Only", "wrapLeftOnly", wordcraft_doc::para::WrapSide::Left, "left");
+                mi_side(ui, "Right Only", "wrapRightOnly", wordcraft_doc::para::WrapSide::Right, "right");
+                mi_side(ui, "Largest Only", "wrapLargestOnly", wordcraft_doc::para::WrapSide::Largest, "largest");
+            }
+        });
+        if crate::ribbon::has_shape_selected(&app.session) {
+            let theme = app.session.doc.settings.theme_colors.clone();
+            ui.menu_button(tl!("Shape Fill"), |ui| {
+                if ui.button(tl!("No Fill")).clicked() {
+                    let _ = app.run("shape.fill", json!({"color": null}));
+                    ui.close();
+                }
+                ui.separator();
+                if let Some(hex) = crate::widgets::color_grid(ui, &theme) {
+                    let _ = app.run("shape.fill", json!({"color": hex}));
+                    ui.close();
+                }
+            });
+            ui.menu_button(tl!("Shape Outline"), |ui| {
+                if ui.button(tl!("No Outline")).clicked() {
+                    let _ = app.run("shape.outline", json!({"color": null}));
+                    ui.close();
+                }
+                ui.separator();
+                if let Some(hex) = crate::widgets::color_grid(ui, &theme) {
+                    let _ = app.run("shape.outline", json!({"color": hex}));
+                    ui.close();
+                }
+            });
+        }
+    }
     if crate::ribbon::has_picture_selected(&app.session) {
         ui.separator();
         item(ui, app, "Change Picture…", "ui.changePicture", json!({}));

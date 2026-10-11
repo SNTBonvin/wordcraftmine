@@ -21,7 +21,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use wordcraft_doc::numbering::{Counters, Level};
-use wordcraft_doc::para::{Anchor, Float, FloatAlign, InlineObject, Wrap};
+use wordcraft_doc::para::{Anchor, Float, FloatAlign, InlineObject, Wrap, WrapSide};
 use wordcraft_doc::props::{Border, CharProps, Rgb, TableFloat, TextDirection};
 use wordcraft_doc::section::{SectionProps, SectionStart};
 use wordcraft_doc::{Block, Blocks, Document, Paragraph, Path, StoryRef};
@@ -562,7 +562,7 @@ fn layout_box(
                         continue;
                     }
                     let r = float_rect(frame, (0.0, width), y, w, h, float);
-                    excl.extend(wrap_area(r, float));
+                    excl.extend(wrap_area(r, float, Some((0.0, width))));
                     floats.insert(oi, r);
                 }
                 let rel = rel_exclusions(&excl, 0.0, y);
@@ -1382,15 +1382,48 @@ fn align_in((start, extent): (f32, f32), offset: f32, size: f32, align: Option<F
 /// The area text keeps clear of around a floating object at `r` (its rectangle grown by the
 /// distances from text), and whether text may only go above and below it. `None` when text
 /// flows over or under the object.
-fn wrap_area(r: Rect, float: &Float) -> Option<(Rect, bool)> {
+fn wrap_area(r: Rect, float: &Float, col: Option<(f32, f32)>) -> Option<(Rect, bool)> {
     if matches!(float.wrap, Wrap::Inline | Wrap::BehindText | Wrap::InFrontOfText) {
         return None;
     }
     let d = |v: f32| if v.is_finite() { v.clamp(0.0, 1584.0) } else { 0.0 };
-    let (side, top, bottom) = (d(float.dist), d(float.dist_top), d(float.dist_bottom));
+    let (left_dist, right_dist, top, bottom) = (d(float.dist_left()), d(float.dist_right()), d(float.dist_top), d(float.dist_bottom));
     // A rotated object keeps text clear of its rotated bounds.
     let r = float.spin().bounds(r);
-    Some((Rect::new(r.x - side, r.y - top, r.w + side * 2.0, r.h + top + bottom), float.wrap == Wrap::TopAndBottom))
+    let mut rx = r.x - left_dist;
+    let mut rw = r.w + left_dist + right_dist;
+    let ry = r.y - top;
+    let rh = r.h + top + bottom;
+
+    if float.wrap != Wrap::TopAndBottom
+        && let Some((col_x, col_w)) = col
+    {
+        let col_right = col_x + col_w;
+        match float.wrap_side {
+            WrapSide::BothSides => {}
+            WrapSide::Left => {
+                rw = (col_right - rx).max(rw);
+            }
+            WrapSide::Right => {
+                let orig_right = rx + rw;
+                rx = rx.min(col_x);
+                rw = (orig_right - rx).max(rw);
+            }
+            WrapSide::Largest => {
+                let left_room = (rx - col_x).max(0.0);
+                let right_room = (col_right - (rx + rw)).max(0.0);
+                if left_room >= right_room {
+                    rw = (col_right - rx).max(rw);
+                } else {
+                    let orig_right = rx + rw;
+                    rx = rx.min(col_x);
+                    rw = (orig_right - rx).max(rw);
+                }
+            }
+        }
+    }
+
+    Some((Rect::new(rx, ry, rw, rh), float.wrap == Wrap::TopAndBottom))
 }
 
 /// Wrap areas relative to a paragraph whose column starts at `x0` and whose top is `y0`.
@@ -1475,7 +1508,7 @@ fn anchor_floats(
             }
             let r = float_rect(Some(frame), (col_x, width), y0, w, h, float);
             rects.insert(oi, r);
-            if let Some(area) = wrap_area(r, float) {
+            if let Some(area) = wrap_area(r, float, Some((col_x, width))) {
                 pb.excl.push(area);
             }
         }

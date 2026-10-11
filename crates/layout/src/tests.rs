@@ -2119,14 +2119,35 @@ fn floats_in_headers_and_table_cells_are_drawn() {
 
 #[test]
 fn wrap_area_uses_each_distance() {
-    use wordcraft_doc::para::{Float, Wrap};
+    use wordcraft_doc::para::{Float, Wrap, WrapSide};
     let f = Float { wrap: Wrap::Square, dist: 9.0, dist_top: 0.0, dist_bottom: 4.0, ..Default::default() };
-    let (r, tb) = wrap_area(Rect::new(10.0, 20.0, 100.0, 50.0), &f).unwrap();
+    let (r, tb) = wrap_area(Rect::new(10.0, 20.0, 100.0, 50.0), &f, None).unwrap();
     assert_eq!((r.x, r.y, r.w, r.h, tb), (1.0, 20.0, 118.0, 54.0, false));
     let hostile = Float { wrap: Wrap::TopAndBottom, dist: f32::NAN, dist_top: -5.0, dist_bottom: f32::INFINITY, ..Default::default() };
-    let (r, tb) = wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &hostile).unwrap();
+    let (r, tb) = wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &hostile, None).unwrap();
     assert!(r.w.is_finite() && r.h.is_finite() && tb, "{r:?}");
-    assert!(wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &Float { wrap: Wrap::BehindText, ..Default::default() }).is_none());
+    assert!(wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &Float { wrap: Wrap::BehindText, ..Default::default() }, None).is_none());
+
+    // Distinct left and right distances.
+    let f_lr = Float { wrap: Wrap::Square, dist: 5.0, dist_right: Some(15.0), ..Default::default() };
+    let (r, _) = wrap_area(Rect::new(50.0, 10.0, 100.0, 50.0), &f_lr, None).unwrap();
+    assert_eq!((r.x, r.w), (45.0, 120.0));
+
+    // WrapSide::Left excludes to the right column margin.
+    let f_left = Float { wrap: Wrap::Square, wrap_side: WrapSide::Left, ..Default::default() };
+    let (r, _) = wrap_area(Rect::new(100.0, 0.0, 100.0, 50.0), &f_left, Some((0.0, 400.0))).unwrap();
+    assert_eq!((r.x, r.right()), (100.0, 400.0));
+
+    // WrapSide::Right excludes to the left column margin.
+    let f_right = Float { wrap: Wrap::Square, wrap_side: WrapSide::Right, ..Default::default() };
+    let (r, _) = wrap_area(Rect::new(100.0, 0.0, 100.0, 50.0), &f_right, Some((0.0, 400.0))).unwrap();
+    assert_eq!((r.x, r.right()), (0.0, 200.0));
+
+    // WrapSide::Largest picks whichever side has more room.
+    let f_largest = Float { wrap: Wrap::Square, wrap_side: WrapSide::Largest, ..Default::default() };
+    // Object at 50..150 in a 400 wide column: left has 50pt, right has 250pt room -> right wins, left is excluded.
+    let (r, _) = wrap_area(Rect::new(50.0, 0.0, 100.0, 50.0), &f_largest, Some((0.0, 400.0))).unwrap();
+    assert_eq!((r.x, r.right()), (0.0, 150.0));
 }
 
 #[test]

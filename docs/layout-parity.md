@@ -37,7 +37,7 @@ font can't match Word's metrics.
 | Floating tables (`w:tblpPr`) | 🟡 | #137; overlap rules untested | 2–3 |
 | Nested tables | 🟡 | render; polish missing | 2–4 |
 | Floating pictures/shapes placement (relative to page/margin/column/paragraph/line/character) | ✅ | #136 | — |
-| Text wrap: square, top-and-bottom, behind, in front | ✅ | 2026-10-06 | — |
+| Text wrap: square, top-and-bottom, behind, in front, wrap sides (both sides, left, right, largest) and distances | ✅ | 2026-10-11 | — |
 | Text wrap: tight, through (contour, wrap polygon) | ❌ | laid out as square | 6–10 |
 | Text boxes, overflow, linked text boxes | 🟡 | #46; linked text boxes missing | 3–5 |
 | Rotated objects and text | 🟡 | #332: pictures, shapes, charts and groups drawn turned and flipped about their centre (screen and PDF); square wrap and inline lines keep clear of the rotated bounds; hit testing on the turned shape. Text in a rotated text box stays upright | 2–3 |
@@ -68,6 +68,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Text wrap sides (both sides, left only, right only, largest only) and distances; ribbon dropdown and context menu |
 | 2026-10-11 | trivial | Group and Ungroup keep turned members' orientation and placement (#441, #443); Size resizes a group (#442); the eraser hits turned ink where it is drawn (#445) |
 | 2026-10-10 | trivial | Long footnotes continue onto the next page with a continuation separator (#352) |
 | 2026-10-10 | trivial | Rotated and flipped objects laid out and drawn (#332) |

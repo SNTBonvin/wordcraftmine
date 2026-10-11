@@ -407,7 +407,71 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
         }
         ShapeKind::Ellipse => ellipse(&mut pb, cx, cy, r.w / 2.0, r.h / 2.0),
         ShapeKind::Triangle => poly(&mut pb, &[(cx, y0), (x1, y1), (x0, y1)]),
+        ShapeKind::RightTriangle => poly(&mut pb, &[(x0, y0), (x1, y1), (x0, y1)]),
         ShapeKind::Diamond => poly(&mut pb, &[(cx, y0), (x1, cy), (cx, y1), (x0, cy)]),
+        ShapeKind::Parallelogram => {
+            let w = r.w;
+            poly(&mut pb, &[(x0 + w * 0.25, y0), (x1, y0), (x1 - w * 0.25, y1), (x0, y1)])
+        }
+        ShapeKind::Trapezoid => {
+            let w = r.w;
+            poly(&mut pb, &[(x0 + w * 0.2, y0), (x1 - w * 0.2, y0), (x1, y1), (x0, y1)])
+        }
+        ShapeKind::Pentagon => {
+            let (w, h) = (r.w, r.h);
+            poly(&mut pb, &[(cx, y0), (x1, y0 + h * 0.38), (x0 + w * 0.81, y1), (x0 + w * 0.19, y1), (x0, y0 + h * 0.38)])
+        }
+        ShapeKind::Hexagon => {
+            let w = r.w;
+            poly(&mut pb, &[(x0 + w * 0.25, y0), (x1 - w * 0.25, y0), (x1, cy), (x1 - w * 0.25, y1), (x0 + w * 0.25, y1), (x0, cy)])
+        }
+        ShapeKind::Octagon => {
+            let (w, h) = (r.w, r.h);
+            poly(
+                &mut pb,
+                &[
+                    (x0 + w * 0.29, y0),
+                    (x1 - w * 0.29, y0),
+                    (x1, y0 + h * 0.29),
+                    (x1, y1 - h * 0.29),
+                    (x1 - w * 0.29, y1),
+                    (x0 + w * 0.29, y1),
+                    (x0, y1 - h * 0.29),
+                    (x0, y0 + h * 0.29),
+                ],
+            )
+        }
+        ShapeKind::Cross => {
+            let (w, h) = (r.w, r.h);
+            let (px0, px1, px2, px3) = (x0, cx - w * 0.15, cx + w * 0.15, x1);
+            let (py0, py1, py2, py3) = (y0, cy - h * 0.15, cy + h * 0.15, y1);
+            poly(
+                &mut pb,
+                &[
+                    (px1, py0),
+                    (px2, py0),
+                    (px2, py1),
+                    (px3, py1),
+                    (px3, py2),
+                    (px2, py2),
+                    (px2, py3),
+                    (px1, py3),
+                    (px1, py2),
+                    (px0, py2),
+                    (px0, py1),
+                    (px1, py1),
+                ],
+            )
+        }
+        ShapeKind::Cloud => {
+            let (w, h) = (r.w, r.h);
+            pb.move_to(x0 + w * 0.2, y1 - h * 0.15);
+            pb.cubic_to(x0, y1 - h * 0.15, x0, cy, x0 + w * 0.15, cy - h * 0.1);
+            pb.cubic_to(x0 + w * 0.1, y0 + h * 0.1, cx - w * 0.15, y0, cx, y0 + h * 0.15);
+            pb.cubic_to(cx + w * 0.15, y0, x1 - w * 0.1, y0 + h * 0.1, x1 - w * 0.15, cy - h * 0.1);
+            pb.cubic_to(x1, cy, x1, y1 - h * 0.15, x1 - w * 0.2, y1 - h * 0.15);
+            pb.close();
+        }
         ShapeKind::Line => {
             pb.move_to(x0, y1);
             pb.line_to(x1, y0);
@@ -424,6 +488,51 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
                     (x1 - h * 0.5, y1),
                     (x1 - h * 0.5, cy + h * 0.2),
                     (x0, cy + h * 0.2),
+                ],
+            )
+        }
+        ShapeKind::LeftArrow => {
+            let h = r.h;
+            poly(
+                &mut pb,
+                &[
+                    (x0, cy),
+                    (x0 + h * 0.5, y0),
+                    (x0 + h * 0.5, cy - h * 0.2),
+                    (x1, cy - h * 0.2),
+                    (x1, cy + h * 0.2),
+                    (x0 + h * 0.5, cy + h * 0.2),
+                    (x0 + h * 0.5, y1),
+                ],
+            )
+        }
+        ShapeKind::UpArrow => {
+            let w = r.w;
+            poly(
+                &mut pb,
+                &[
+                    (cx, y0),
+                    (x1, y0 + w * 0.5),
+                    (cx + w * 0.2, y0 + w * 0.5),
+                    (cx + w * 0.2, y1),
+                    (cx - w * 0.2, y1),
+                    (cx - w * 0.2, y0 + w * 0.5),
+                    (x0, y0 + w * 0.5),
+                ],
+            )
+        }
+        ShapeKind::DownArrow => {
+            let w = r.w;
+            poly(
+                &mut pb,
+                &[
+                    (cx - w * 0.2, y0),
+                    (cx + w * 0.2, y0),
+                    (cx + w * 0.2, y1 - w * 0.5),
+                    (x1, y1 - w * 0.5),
+                    (cx, y1),
+                    (x0, y1 - w * 0.5),
+                    (cx - w * 0.2, y1 - w * 0.5),
                 ],
             )
         }
