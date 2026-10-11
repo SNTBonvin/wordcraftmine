@@ -1659,10 +1659,12 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.dot(8.0, 4.75, 1.0, a);
         }
         "properties" => {
-            pen.line(&[(1.5, 5.0), (14.5, 5.0)]);
-            pen.line(&[(1.5, 11.0), (14.5, 11.0)]);
-            pen.disc(5.0, 5.0, 2.0);
-            pen.disc(11.0, 11.0, 2.0);
+            // Two sliders: each track stops at its knob, so the knobs read as whole circles.
+            for (x, y) in [(5.0, 5.0), (11.0, 11.0)] {
+                pen.inner(&[(1.0, y), (x - 2.0, y)]);
+                pen.inner(&[(x + 2.0, y), (15.0, y)]);
+                pen.disc(x, y, 2.0);
+            }
         }
         // Table tools
         "insertAbove" => {
