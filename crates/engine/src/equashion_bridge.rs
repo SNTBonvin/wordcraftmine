@@ -19,10 +19,15 @@ pub fn to_editor(linear: &str, display: bool, math: &Math) -> eq::Math {
 }
 
 /// The editor's tree as a document equation and its display flag, or `None` when its OMML
-/// does not read back as an equation (it always should). The source OMML is not kept: the
-/// tree is the equation from here on.
+/// does not read back as an equation (it always should).
 pub fn from_editor(m: &eq::Math) -> Option<(Math, bool)> {
-    let (mut math, display) = equation_from_omml(&eq::to_omml(m))?;
+    omml_equation(&eq::to_omml(m))
+}
+
+/// An OMML fragment (from the editor or the clipboard) as a new document equation and its
+/// display flag. The source OMML is not kept: the tree is the equation from here on.
+pub fn omml_equation(xml: &str) -> Option<(Math, bool)> {
+    let (mut math, display) = equation_from_omml(xml)?;
     math.omml.clear();
     default_lim_locs(&mut math.nodes, 0);
     Some((math, display))
