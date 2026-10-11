@@ -1,0 +1,153 @@
+# Pull request quality contract for WordCraft. Keep the aggregate job name stable:
+# repository rulesets should require "PR CI" rather than individual matrix jobs.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check assets and crate layers
+        run: |
+          cargo --locked xtask assets
+          cargo --locked xtask layers
+
+  native:
+    name: Native Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+      CRAFT_FONTS_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out craft-fonts
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          repository: storytold/craft-fonts
+          ref: 8dcdacd5153e64560d109541a47d806f26f048c0
+          path: craft-fonts
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            cmake pkg-config libasound2-dev libfontconfig1-dev libfreetype6-dev libgtk-3-dev \
+            libx11-dev libxcb1-dev libxkbcommon-dev libxrandr-dev libxi-dev \
+            libxcursor-dev libwayland-dev libgl1-mesa-dev libvulkan-dev
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Record validation inputs
+        run: |
+          rustc --version
+          cargo --version
+          echo "craft-fonts revision: $(git -C craft-fonts rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+      CRAFT_FONTS_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out craft-fonts
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          repository: storytold/craft-fonts
+          ref: 8dcdacd5153e64560d109541a47d806f26f048c0
+          path: craft-fonts
+      - name: Install Rust stable and WebAssembly target
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: Check wasm-safe workspace crates
+        run: cargo xtask wasm
+
+  pr-ci:
+    name: PR CI
+    if: always()
+    needs: [static, native, wasm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      STATIC_RESULT: ${{ needs.static.result }}
+      NATIVE_RESULT: ${{ needs.native.result }}
+      WASM_RESULT: ${{ needs.wasm.result }}
+    steps:
+      - name: Require every applicable check
+        shell: bash
+        run: |
+          failed=0
+          {
+            echo '## PR CI results'
+            for name in static native wasm; do
+              case "$name" in
+                static) result="${STATIC_RESULT:-}" ;;
+                native) result="${NATIVE_RESULT:-}" ;;
+                wasm) result="${WASM_RESULT:-}" ;;
+              esac
+              case "$result" in
+                success)
+                  echo "- ✅ $name: success"
+                  ;;
+                failure|cancelled|skipped)
+                  echo "- ❌ $name: $result"
+                  failed=1
+                  ;;
+                "")
+                  echo "- ❌ $name: missing result"
+                  failed=1
+                  ;;
+                *)
+                  echo "- ❌ $name: unexpected result '$result'"
+                  failed=1
+                  ;;
+              esac
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
