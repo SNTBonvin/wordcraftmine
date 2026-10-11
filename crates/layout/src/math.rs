@@ -108,6 +108,8 @@ pub struct Slot {
 /// A laid-out equation.
 #[derive(Clone, Debug, Default)]
 pub struct MathLayout {
+    /// The font size it was laid out at, points.
+    pub size: f32,
     pub width: f32,
     /// Extent above and below the baseline, points.
     pub ascent: f32,
@@ -261,7 +263,7 @@ pub fn layout_equation_legacy(
             s.d = em * 0.25;
         }
     }
-    MathLayout { width: b.w.max(0.0), ascent: b.a.max(0.0), descent: b.d.max(0.0), items: b.items, slots }
+    MathLayout { size: base, width: b.w.max(0.0), ascent: b.a.max(0.0), descent: b.d.max(0.0), items: b.items, slots }
 }
 
 /// Layout style: script level (0 = text size, 1 = script, 2 = script-script), display or inline,
@@ -2388,6 +2390,7 @@ fn via_equashion(math: &wordcraft_doc::math::Math, linear: &str, rc: &ResolvedCh
     let mut prims = Vec::new();
     equashion_layout::emit(&b, 0.0, 0.0, equashion_layout::Rgb::BLACK, &mut prims);
     let l = MathLayout {
+        size,
         width: b.width() as f32,
         ascent: b.ascent() as f32,
         descent: b.descent() as f32,

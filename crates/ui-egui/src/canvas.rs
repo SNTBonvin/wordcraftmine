@@ -88,6 +88,9 @@ pub struct CanvasState {
     pub context_menu_at: Option<Pos2>,
     /// Screen rect of the selection's first line, for the floating mini toolbar.
     pub mini_anchor: Option<Rect>,
+    /// The equation being edited, as drawn this frame: screen x of its left edge, screen y of its
+    /// baseline, its font size in screen points, and its layout size (the editor overlays it).
+    pub equation_screen: Option<(f32, f32, f32)>,
     /// A picture, shape or text box being dragged by its frame.
     pub(crate) obj_drag: Option<crate::objects::ObjectDrag>,
     /// An ink stroke being drawn with a pen (Draw tab).
@@ -191,6 +194,7 @@ impl Default for CanvasState {
             context_menu_from_keys: false,
             context_menu_at: None,
             mini_anchor: None,
+            equation_screen: None,
             pasted: false,
             swallow_text: false,
             wheel: Default::default(),
@@ -1110,17 +1114,23 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let focused = resp.has_focus() || app.canvas.focused;
         // Editing an equation: shade it and draw the caret inside it.
         let mut math_caret = false;
+        app.canvas.equation_screen = None;
         if let Some(m) = app.session.math.clone()
             && let Some((pi, ex, base, ml)) = layout.equation_geom(&m.at, app.session.page_hint)
             && let Some(pr) = rects.get(pi)
         {
             math_caret = true;
             let s = geo.scale;
+            app.canvas.equation_screen = Some((pr.min.x + ex * s, pr.min.y + base * s, ml.size * s));
             let zone = Rect::from_min_max(
                 pos2(pr.min.x + ex * s - 2.0, pr.min.y + (base - ml.ascent) * s - 2.0),
                 pos2(pr.min.x + (ex + ml.width) * s + 2.0, pr.min.y + (base + ml.descent) * s + 2.0),
             );
-            painter.rect_filled(zone, 2.0, Color32::from_black_alpha(16));
+            // The equation editor draws the caret over equaSHion's layout (which has no slots of
+            // the document tree) and shows no box.
+            if !ml.slots.is_empty() {
+                painter.rect_filled(zone, 2.0, Color32::from_black_alpha(16));
+            }
             if let Some(slot) = ml.slot(&m.pos.path, m.pos.off) {
                 let x = (pr.min.x + (ex + slot.x) * s).round() + 0.5;
                 let y0 = pr.min.y + (base - slot.y - slot.a) * s;
