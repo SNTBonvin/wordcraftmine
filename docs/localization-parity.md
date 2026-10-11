@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (German interface catalog, #203; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -18,15 +18,15 @@ other ~18 languages Word ships, plus native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **10 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), and Estonian `et` (1,161 entries). Catalogs have ~1,100–1,160 entries
-  each. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
-  label and ribbon location is translated in every language.
+- **11 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et` and German `de` (#203). Catalogs have 1,307–1,309
+  entries each. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab,
+  command label and ribbon location is translated in every language.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
   catalog covers **661 (98%)**. Some newer dialog and pane strings (Equation tab tooltips, Zotero,
   Read Aloud, Backstage greetings) aren't wrapped in `tl!` yet, so they show in English in every
   language: the true share of visible strings is **~93–95%** (estimated).
-- Pending PRs: German (#203), Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20).
+- Pending PRs: Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20).
 - **Proofing: English only** (one dictionary, rule-based grammar, English hyphenation patterns).
 - Document scripts: shaping via HarfRust (HarfBuzz port) for every script; bidi (UAX #9) and Arabic
   shaping tested (#207); IME on all desktop platforms (winit fixes pending, #155–#164).
@@ -48,7 +48,7 @@ shared items below.
 | Portuguese | pt-br (pt-PT none) | ~930; 98% / ~95% (pt-BR) | most | Latin ✅ | no | partial | 2–4 (pt-BR finish + pt-PT) |
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
 | Japanese | ja | ~930; 98% / ~95% | most | CJK ✅, IME ✅; no vertical text, ruby or document grid | no | partial | 3–5 |
-| German | de | 0 (PR #203 open) | ❌ | Latin ✅ | no | none | 1–2 |
+| German | de | 1,307 entries; same key set as zh-hans (#203); 98% of extracted, ~95% of visible | most | Latin ✅ | no | partial | 1–2 |
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
@@ -72,6 +72,7 @@ Estonian spelling, grammar, dates and document templates are not added by the in
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | German interface catalog (#203): 1,307 entries covering the full zh-hans key set; locale, saved-preference and bundled-font tests; no German proofing |
 | 2026-10-10 | minor | Estonian interface catalog, locale selection, saved preference and font coverage checks |
 | 2026-10-10 | minor | Serbian (Cyrillic and Latin) interface merged (#250) |
 | 2026-10-10 | major | First version: twelve-language table, catalog coverage measured, Word's 30 UI languages and 120 proofing tools listed |
