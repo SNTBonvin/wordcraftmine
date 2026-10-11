@@ -45,6 +45,9 @@ fn autoformat(s: &mut Session, text: &str) -> Option<String> {
         return None;
     }
     let c = text.chars().next()?;
+    if !s.prefs.autocorrect.enabled || !s.prefs.autocorrect.smart_quotes {
+        return None;
+    }
     let f = &s.sel.focus;
     let para = s.doc.para_at(f)?;
     let before = para.text.get(..f.off)?;
@@ -70,11 +73,11 @@ fn insert(s: &mut Session, v: &Value) -> CmdResult {
     let f = s.sel.focus.clone();
     let typed = s.doc.para_at(&f).cloned().map(|p| (p, s.sel.clone()));
     // A list label ("a. ") becomes a list before AutoCorrect could capitalise it.
-    let listed = text == " " && list_autoformat(s)?;
+    let listed = text == " " && s.prefs.autocorrect.enabled && list_autoformat(s)?;
     if !listed {
         super::tools::autocorrect(s)?;
     }
-    if text == " " && !listed {
+    if text == " " && !listed && s.prefs.autocorrect.enabled && s.prefs.autocorrect.dashes {
         dash_autoformat(s)?;
     }
     if let Some((para, sel)) = typed
@@ -109,6 +112,10 @@ fn list_autoformat(s: &mut Session) -> Result<bool, CmdError> {
         "I. " => ListKind::Outline,
         _ => return Ok(false),
     };
+    let ac = &s.prefs.autocorrect;
+    if !(if kind.is_bullet() { ac.bullets } else { ac.numbering }) {
+        return Ok(false);
+    }
     // Bullets join an existing bullet list; typing "1. " always starts numbering again at 1,
     // as in Word.
     let found = if kind.is_bullet() { s.doc.numbering.find_kind(kind) } else { None };
@@ -166,7 +173,8 @@ fn border_line_autoformat(s: &mut Session, at: &Pos) -> Result<bool, CmdError> {
     let Some(para) = s.doc.para_at(at) else { return Ok(false) };
     let text = para.text.as_str();
     let Some(c) = text.chars().next() else { return Ok(false) };
-    if !s.autocorrect_on
+    if !s.prefs.autocorrect.enabled
+        || !s.prefs.autocorrect.border_lines
         || at.off != text.len()
         || text.len() < 3
         || !text.chars().all(|x| x == c)
@@ -285,6 +293,11 @@ fn ins_char(s: &mut Session, c: char) -> CmdResult {
 }
 
 fn new_paragraph(s: &mut Session, _: &Value) -> CmdResult {
+    // Enter in a one-line plain text control (or a check box or list) does nothing, as in Word.
+    if super::controls::refuses_paragraph(s) {
+        return sel_result(s);
+    }
+    super::controls::prepare_edit(s)?;
     let mut at = delete_selection(s)?;
     if border_line_autoformat(s, &at)? {
         return sel_result(s);
@@ -366,7 +379,13 @@ fn back_tab(s: &mut Session, _: &Value) -> CmdResult {
     super::para::outdent(s, &Value::Null)
 }
 
-fn backspace(s: &mut Session, _: &Value) -> CmdResult {
+fn backspace(s: &mut Session, v: &Value) -> CmdResult {
+    let r = backspace_inner(s, v)?;
+    super::controls::restore_placeholder(s)?;
+    Ok(r)
+}
+
+fn backspace_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
     if !s.sel.is_collapsed() {
@@ -435,7 +454,13 @@ fn backspace(s: &mut Session, _: &Value) -> CmdResult {
     sel_result(s)
 }
 
-fn delete(s: &mut Session, _: &Value) -> CmdResult {
+fn delete(s: &mut Session, v: &Value) -> CmdResult {
+    let r = delete_inner(s, v)?;
+    super::controls::restore_placeholder(s)?;
+    Ok(r)
+}
+
+fn delete_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
     if !s.sel.is_collapsed() {
@@ -494,6 +519,7 @@ fn delete_word_back(s: &mut Session, v: &Value) -> CmdResult {
     let a = Pos { off: para.word_start(f.off), ..f.clone() };
     s.sel = Selection { anchor: a, focus: f };
     delete_selection(s)?;
+    super::controls::restore_placeholder(s)?;
     sel_result(s)
 }
 
@@ -509,5 +535,6 @@ fn delete_word_fwd(s: &mut Session, v: &Value) -> CmdResult {
     let b = Pos { off: para.word_end(f.off), ..f.clone() };
     s.sel = Selection { anchor: f, focus: b };
     delete_selection(s)?;
+    super::controls::restore_placeholder(s)?;
     sel_result(s)
 }
