@@ -1,7 +1,7 @@
 //! [`Document`] → DOCX.
 
 mod embed;
-mod math;
+pub(crate) mod math;
 mod props;
 mod sdt;
 mod story;
