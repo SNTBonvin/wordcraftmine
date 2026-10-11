@@ -35,8 +35,8 @@ wordcraft-metafile = { path = "crates/metafile" }
 #   [patch."https://github.com/shuff57/equaSHion"]
 #   equashion-math = { path = "../equaSHion/crates/math" }
 #   equashion-egui = { path = "../equaSHion/crates/egui" }
-equashion-math = { git = "https://github.com/shuff57/equaSHion", rev = "97460920379aee268f49ad0919e450142643ae26" }
-equashion-egui = { git = "https://github.com/shuff57/equaSHion", rev = "97460920379aee268f49ad0919e450142643ae26" }
+equashion-math = { git = "https://github.com/shuff57/equaSHion", rev = "416393aaca6c72a3b044a4a3418b23dd9f2f820a" }
+equashion-egui = { git = "https://github.com/shuff57/equaSHion", rev = "416393aaca6c72a3b044a4a3418b23dd9f2f820a" }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }
