@@ -1604,6 +1604,14 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             }
         });
     }
+    if !app.session.selected_text().trim().is_empty() {
+        ui.menu_button(tl!("Grok"), |ui| {
+            item(ui, app, "Rewrite", "grok.rewrite", json!({}));
+            item(ui, app, "Continue", "grok.continue", json!({}));
+            item(ui, app, "Summarize", "grok.summarize", json!({}));
+        });
+        ui.separator();
+    }
     item(ui, app, "Font…", "ui.dialog", json!({"name": "font"}));
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
