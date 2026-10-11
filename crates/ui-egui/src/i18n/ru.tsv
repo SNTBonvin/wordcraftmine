@@ -1965,3 +1965,6 @@ preview	Title	Пример
 	Continuous numbering	Сквозная нумерация
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
+
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
