@@ -1445,6 +1445,13 @@
 	Rotate all text 90°	Pööra kogu teksti 90°
 	Stacked	Virnas
 	Show KeyTips (Alt or F10)	Näita klahvivihjeid (Alt või F10)
+	Document Grid	Dokumendi ruudustik
+	No grid	Ruudustikuta
+	Lines only	Ainult read
+	Lines and characters	Read ja märgid
+	Text snaps to characters	Tekst joondub märkide ruudustikku
+	Characters per line:	Märke reas:
+	Lines per page:	Ridu lehel:
 	Location	Asukoht
 	Endnotes	Lõpumärkused
 	Below text	Teksti all
