@@ -1,6 +1,6 @@
 # WordCraft parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (English spelling knows common modern words, #520; previously trivial: all 12 bibliography styles, #383; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (document canvas exposed to screen readers, #488; previously trivial: English spelling knows common modern words, #520; previously trivial: all 12 bibliography styles, #383; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 The authoritative assessment of how close WordCraft is to Microsoft Word. [`ROADMAP.md`](../ROADMAP.md)
 summarizes it; [`gaps.md`](gaps.md) itemizes every shortfall; the deep checklists are
@@ -75,7 +75,7 @@ full parity for the area.
 | Backstage, printing, options | 3 | 58% | 55% | 12–20 | New/Home pages (#254), save prompts (#151), web printing via the browser (#209). Desktop printing still goes through PDF; Options has a fraction of Word's panes. |
 | Right-to-left and complex scripts | 1 | 50% | 55% | 15–25 | UAX #9, Arabic shaping, RTL paragraphs (#207). No RTL sections/tables, kashida justification or mirrored UI; open bug reports (#215, #211, #199, #66, #63, #48, #19) need re-testing against #207. |
 | East Asian typography | 1 | 25% | not rated | 13–22 | IME input works (winit fixes pending, #155–#164). Ruby/Phonetic Guide with DOCX round trip (#288); document grid (lines per page, characters per line, #391). No vertical text, `w:eastAsianLayout`, enclose characters, Asian line-break options. |
-| Accessibility | 1 | 50% | not rated | 10–18 | AccessKit enabled in eframe. Alt Text pane for pictures, shapes, text boxes, groups, charts and tables with Mark as decorative, all round-tripping in DOCX (#386). The Accessibility pane groups errors, warnings and tips with jump-to and one-click fixes; rules for alt text, heading order, header rows, blank table rows/columns, merged cells, low contrast (WCAG ratio), floating objects and blank paragraphs. Screen-reader access to the document canvas is still untested (#18); no reading-order tools. |
+| Accessibility | 1 | 50% | not rated | 10–18 | AccessKit enabled in eframe. Alt Text pane for pictures, shapes, text boxes, groups, charts and tables with Mark as decorative, all round-tripping in DOCX (#386). The Accessibility pane groups errors, warnings and tips with jump-to and one-click fixes; rules for alt text, heading order, header rows, blank table rows/columns, merged cells, low contrast (WCAG ratio), floating objects and blank paragraphs. Screen-reader access to the document canvas is still untested (#18); no reading-order tools. The document canvas describes its text, headings, lists, tables, links, pictures and caret to screen readers through AccessKit (#488). |
 | Agent control (CLI, MCP, control channel, macro record/playback) | 0 | beyond Word | 100%+ | — | Every action is a command id usable from CLI, MCP and a keyed control port. Word has VBA and Office.js instead (see Ecosystem). |
 
 Weighted feature depth: **~68%** (Σ weight × parity / 100 over the table).
@@ -249,6 +249,7 @@ can be used without committing Word output.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Screen readers can read the document canvas (#488): Accessibility row updated; no percentage change |
 | 2026-10-11 | trivial | Accessibility 35% → 50%: Alt Text pane for every object and tables, decorative flag, deeper checker with an Accessibility pane (#386); weight 1, headline unchanged |
 | 2026-10-11 | trivial | References: Caption, Index, Mark Entry, Custom Table of Contents and Create/Edit Source dialogs, with the field switches they write honoured on update (#402); no percentage change |
 | 2026-10-11 | trivial | Move tracking (#400): Review row updated; no percentage change |
