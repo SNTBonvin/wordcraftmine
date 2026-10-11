@@ -106,6 +106,9 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
         (None, Some(b)) => w.empty("w:lang", &[("w:bidi", b)]),
         (None, None) => {}
     }
+    if let Some(fx) = &c.text_effects {
+        super::wordart::rpr_effects(w, fx);
+    }
 }
 
 /// Does `c` produce any `w:rPr` content (besides a tracked change)?
@@ -257,6 +260,7 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
     toggle(w, "w:autoSpaceDE", p.auto_space_de);
     toggle(w, "w:autoSpaceDN", p.auto_space_dn);
     toggle(w, "w:bidi", p.bidi);
+    toggle(w, "w:snapToGrid", p.snap_to_grid);
     if p.space_before.is_some() || p.space_after.is_some() || p.line_spacing.is_some() {
         let before = p.space_before.map(|v| twips(v.max(0.0)));
         let after = p.space_after.map(|v| twips(v.max(0.0)));
@@ -360,6 +364,9 @@ fn tblpr_inner(w: &mut W, t: &TableProps) {
     if let Some(f) = &t.float {
         table_float(w, f);
     }
+    if t.bidi_visual {
+        w.empty("w:bidiVisual", &[]);
+    }
     if let Some(p) = t.width_pct {
         w.empty("w:tblW", &[("w:w", &n(round(p.clamp(0.0, 1000.0) * 50.0))), ("w:type", "pct")]);
     } else if let Some(v) = t.width {
@@ -390,6 +397,9 @@ fn tblpr_inner(w: &mut W, t: &TableProps) {
     w.empty("w:tblLook", &refs);
     if let Some(c) = &t.caption {
         w.val("w:tblCaption", c);
+    }
+    if let Some(d) = &t.description {
+        w.val("w:tblDescription", d);
     }
 }
 

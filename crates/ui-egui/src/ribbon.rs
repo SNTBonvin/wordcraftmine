@@ -7,7 +7,7 @@ use crate::theme::{Tokens, medium, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, color_grid, combo, font_combo, group, menu_button, small, split};
 use crate::{WordApp, icons};
 
-pub const TABS: [&str; 12] = wordcraft_engine::ribbon::TABS;
+pub const TABS: [&str; 13] = wordcraft_engine::ribbon::TABS;
 
 /// True when the caret/selection touches a picture (#147).
 pub fn has_picture_selected(s: &wordcraft_engine::Session) -> bool {
@@ -22,6 +22,11 @@ pub fn has_shape_selected(s: &wordcraft_engine::Session) -> bool {
     }
 }
 
+/// Whether the selection is a chart WordCraft can edit (so Chart Design is shown).
+pub fn has_chart_selected(s: &wordcraft_engine::Session) -> bool {
+    wordcraft_engine::cmd::chart::selected_chart(s).is_some()
+}
+
 /// Contextual tabs for the current selection (pure, tested).
 pub fn contextual_tabs(s: &wordcraft_engine::Session) -> Vec<&'static str> {
     let mut tabs = Vec::new();
@@ -34,6 +39,9 @@ pub fn contextual_tabs(s: &wordcraft_engine::Session) -> Vec<&'static str> {
     }
     if has_shape_selected(s) {
         tabs.push("Shape Format");
+    }
+    if has_chart_selected(s) {
+        tabs.push("Chart Design");
     }
     // Editing an equation.
     if s.math.is_some() {
@@ -194,6 +202,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "Mailings" => mailings(app, ui),
                         "Review" => review(app, ui),
                         "View" => view(app, ui),
+                        "Developer" => developer(app, ui),
                         "Zotero" => zotero(app, ui),
                         "Help" => help(app, ui),
                         "Table Design" => table_design(app, ui),
@@ -201,6 +210,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "Equation" if app.session.math.is_some() => crate::equation_tab::show(app, ui),
                         "Picture Format" => picture_format(app, ui),
                         "Shape Format" => shape_format(app, ui),
+                        "Chart Design" => chart_design(app, ui),
                         _ => home(app, ui),
                     }
                     if let Some(e) = entry {
@@ -289,7 +299,7 @@ fn stack(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     });
 }
 
-fn mi(ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: Value) {
+pub(crate) fn mi(ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: Value) {
     mi_text(ui, app, tl!(label), id, params);
 }
 
@@ -396,6 +406,14 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 small(ui, app, "enclose", None, "Enclose Characters", "format.enclose", json!({}), false);
                 ui.add_space(4.0);
                 menu_button(ui, app, "effects", None, "Text Effects and Typography", false, |ui, app| {
+                    let theme = app.session.doc.settings.theme_colors.clone();
+                    crate::wordart_menus::style_gallery(ui, app, "format.textEffects");
+                    ui.separator();
+                    ui.menu_button(tl!("Text Fill"), |ui| crate::wordart_menus::fill_menu(ui, app, &theme));
+                    let outline = crate::wordart_menus::current_outline(app);
+                    ui.menu_button(tl!("Text Outline"), |ui| crate::wordart_menus::outline_menu(ui, app, &theme, outline));
+                    crate::wordart_menus::effects_menu(ui, app, &theme, false);
+                    ui.separator();
                     mi(ui, app, "Outline", "format.outline", json!({}));
                     mi(ui, app, "Shadow", "format.shadow", json!({}));
                     mi(ui, app, "Small Caps", "format.smallCaps", json!({}));
@@ -615,6 +633,17 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
             }
             ui.separator();
             mi(ui, app, "New Drawing Canvas", "insert.canvas", json!({}));
+            // Connectors: glue their ends to shapes by dragging them (shape.connect).
+            for (l, k, arrow) in [
+                ("Straight Connector", "straightConnector", "none"),
+                ("Straight Arrow Connector", "straightConnector", "end"),
+                ("Elbow Connector", "elbowConnector", "none"),
+                ("Elbow Arrow Connector", "elbowConnector", "end"),
+                ("Curved Connector", "curvedConnector", "none"),
+                ("Curved Arrow Connector", "curvedConnector", "end"),
+            ] {
+                mi(ui, app, l, "insert.shape", json!({"kind": k, "arrow": arrow}));
+            }
         });
         stack(ui, |ui| {
             small(ui, app, "icons", Some("Icons"), "Icons", "insert.icon", json!({}), false);
@@ -670,7 +699,9 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
                 }
                 mi(ui, app, "Field…", "ui.dialog", json!({"name": "field"}));
             });
-            small(ui, app, "wordArt", Some("WordArt"), "WordArt", "insert.wordArt", json!({}), false);
+            menu_button(ui, app, "wordArt", Some("WordArt"), "WordArt", false, |ui, app| {
+                crate::wordart_menus::style_gallery(ui, app, "insert.wordArt")
+            });
             small(ui, app, "dropCap", Some("Drop Cap"), "Drop Cap", "insert.dropCap", json!({}), false);
         });
         stack(ui, |ui| {
@@ -717,29 +748,46 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
 
 fn draw(app: &mut WordApp, ui: &mut Ui) {
     use wordcraft_doc::freeform::InkTool;
-    use wordcraft_engine::cmd::draw::DrawMode;
+    use wordcraft_engine::cmd::draw::{DrawMode, lasso_selection};
     let mode = app.session.view.draw.mode;
     // The pen the colour and thickness menus change: the one in use, else the pen.
     let tool = mode.pen().unwrap_or(InkTool::Pen);
-    let pen_id = |t: InkTool| match t {
-        InkTool::Pen => "draw.pen",
-        InkTool::Pencil => "draw.pencil",
-        InkTool::Highlighter => "draw.highlighter",
-    };
+    let set = app.session.view.draw.settings(tool);
+    // The gallery pen in use, if any: changing the colour or thickness changes it too.
+    let custom =
+        app.session.view.draw.pens.iter().position(|p| mode == DrawMode::Pen(p.kind) && p.color == set.color && (p.width - set.width).abs() < 0.01);
+    let lasso_on = lasso_selection(&app.session).is_some();
     group(ui, "Drawing Tools", None, app, |ui, app| {
         big_toggle(ui, app, "select", "Select", "draw.select", mode == DrawMode::Select);
-        big(ui, app, "lasso", "Lasso", "draw.lasso", json!({}), false);
+        big_toggle(ui, app, "lasso", "Lasso", "draw.lasso", mode == DrawMode::Lasso);
         big_toggle(ui, app, "eraser", "Eraser", "draw.eraser", mode == DrawMode::Eraser);
-        big_toggle(ui, app, "pen", "Pen", "draw.pen", mode == DrawMode::Pen(InkTool::Pen));
-        big_toggle(ui, app, "pencil", "Pencil", "draw.pencil", mode == DrawMode::Pen(InkTool::Pencil));
-        big_toggle(ui, app, "highlight", "Highlighter", "draw.highlighter", mode == DrawMode::Pen(InkTool::Highlighter));
-        let set = app.session.view.draw.settings(tool);
+        big_toggle(ui, app, "pen", "Pen", "draw.pen", mode == DrawMode::Pen(InkTool::Pen) && custom.is_none());
+        big_toggle(ui, app, "pencil", "Pencil", "draw.pencil", mode == DrawMode::Pen(InkTool::Pencil) && custom.is_none());
+        big_toggle(ui, app, "highlight", "Highlighter", "draw.highlighter", mode == DrawMode::Pen(InkTool::Highlighter) && custom.is_none());
+        // Pens added with Add Pen; right-click one to remove it.
+        let pens = app.session.view.draw.pens.clone();
+        for (i, pen) in pens.iter().enumerate() {
+            gallery_pen(ui, app, i, *pen, custom == Some(i));
+        }
+        menu_button(ui, app, "addPen", Some("Add\nPen"), "Add Pen", true, |ui, app| {
+            for (label, kind) in [("Pen", InkTool::Pen), ("Pencil", InkTool::Pencil), ("Highlighter", InkTool::Highlighter)] {
+                // A new pen starts as that kind's current colour and thickness.
+                let cur = app.session.view.draw.settings(kind);
+                mi(ui, app, label, "draw.addPen", json!({"kind": kind.name(), "color": cur.color.hex(), "width": cur.width}));
+            }
+        });
         stack(ui, |ui| {
             let sw = Some(crate::theme::c32(set.color));
-            split(ui, app, "fontcolor", "Color", pen_id(tool), json!({}), false, sw, |ui, app| {
+            split(ui, app, "fontcolor", "Color", pen_command(tool), json!({}), false, sw, |ui, app| {
                 let theme = app.session.doc.settings.theme_colors.clone();
                 if let Some(hex) = color_grid(ui, &theme) {
-                    let _ = app.run(pen_id(tool), json!({"color": hex}));
+                    // With ink lasso-selected the colour goes to the selection, else to the pen.
+                    if lasso_on {
+                        let _ = app.run("draw.lassoColor", json!({"color": hex}));
+                    } else {
+                        let _ = app.run(pen_command(tool), json!({"color": hex}));
+                        update_gallery_pen(app, custom, tool);
+                    }
                     ui.close();
                 }
             });
@@ -747,20 +795,80 @@ fn draw(app: &mut WordApp, ui: &mut Ui) {
                 let widths: &[f32] = if tool == InkTool::Highlighter { &[4.0, 8.0, 12.0, 18.0, 24.0] } else { &[0.5, 1.0, 1.5, 2.5, 3.5, 5.0] };
                 for w in widths {
                     let label = crate::i18n::fmt(tl!("{n} pt"), &[("n", &w.to_string())]);
-                    mi_check(ui, app, &label, (set.width - w).abs() < 0.01, pen_id(tool), json!({"width": w}));
+                    mi_check(ui, app, &label, (set.width - w).abs() < 0.01, pen_command(tool), json!({"width": w}));
                 }
+                update_gallery_pen(app, custom, tool);
             });
         });
     });
     group(ui, "Convert", None, app, |ui, app| {
-        big(ui, app, "inkToShape", "Ink to\nShape", "draw.inkToShape", json!({}), false);
+        let on = app.session.view.draw.ink_to_shape;
+        big_toggle(ui, app, "inkToShape", "Ink to\nShape", "draw.inkToShape", on);
         big(ui, app, "inkToMath", "Ink to\nMath", "draw.inkToMath", json!({}), false);
     });
     group(ui, "Insert", None, app, |ui, app| {
         big(ui, app, "canvas", "Drawing\nCanvas", "insert.canvas", json!({}), false);
     });
     group(ui, "Replay", None, app, |ui, app| {
-        big(ui, app, "replay", "Ink\nReplay", "draw.replay", json!({}), false);
+        let on = app.session.view.draw.replay;
+        big_toggle(ui, app, "replay", "Ink\nReplay", "draw.replay", on);
+    });
+}
+
+/// The command that picks up `tool`.
+fn pen_command(tool: wordcraft_doc::freeform::InkTool) -> &'static str {
+    use wordcraft_doc::freeform::InkTool;
+    match tool {
+        InkTool::Pen => "draw.pen",
+        InkTool::Pencil => "draw.pencil",
+        InkTool::Highlighter => "draw.highlighter",
+    }
+}
+
+/// After the colour or thickness menu changed `tool`'s settings, the gallery pen that was in use
+/// (`custom`) takes them too.
+fn update_gallery_pen(app: &mut WordApp, custom: Option<usize>, tool: wordcraft_doc::freeform::InkTool) {
+    let set = app.session.view.draw.settings(tool);
+    if let Some(p) = custom.and_then(|i| app.session.view.draw.pens.get_mut(i))
+        && p.kind == tool
+    {
+        p.color = set.color;
+        p.width = set.width;
+    }
+}
+
+/// A pen of the gallery: its kind's icon over a bar of its colour and thickness; a click picks it
+/// up, right-click offers Remove Pen.
+fn gallery_pen(ui: &mut Ui, app: &mut WordApp, i: usize, pen: wordcraft_engine::cmd::draw::CustomPen, active: bool) {
+    use wordcraft_doc::freeform::InkTool;
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(34.0, CONTENT_H), Sense::click());
+    crate::widgets::bg(ui, r, &resp, active, &t);
+    let icon = match pen.kind {
+        InkTool::Pen => "pen",
+        InkTool::Pencil => "pencil",
+        InkTool::Highlighter => "highlight",
+    };
+    let color = crate::theme::c32(pen.color);
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.min.y + 20.0), vec2(28.0, 28.0)), icon, t.icon, color);
+    let bar = (pen.width * 0.6).clamp(1.5, 8.0);
+    let y = r.min.y + 46.0;
+    ui.painter().line_segment([pos2(r.min.x + 6.0, y), pos2(r.max.x - 6.0, y)], Stroke::new(bar, color));
+    let kind = tl!(match pen.kind {
+        InkTool::Pen => "Pen",
+        InkTool::Pencil => "Pencil",
+        InkTool::Highlighter => "Highlighter",
+    });
+    let size = crate::i18n::fmt(tl!("{n} pt"), &[("n", &pen.width.to_string())]);
+    let resp = resp.on_hover_text(format!("{kind}: {size}, #{}", pen.color.hex()));
+    if resp.clicked() {
+        let _ = app.run(pen_command(pen.kind), json!({"color": pen.color.hex(), "width": pen.width}));
+    }
+    resp.context_menu(|ui| {
+        if ui.button(tl!("Remove Pen")).clicked() {
+            let _ = app.run("draw.removePen", json!({"index": i}));
+            ui.close();
+        }
     });
 }
 
@@ -876,11 +984,16 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
                 {
                     mi(ui, app, l, "layout.lineNumbers", json!({"value": v}));
                 }
+                ui.separator();
+                mi(ui, app, "Line Numbering Options…", "ui.dialog", json!({"name": "lineNumbers"}));
             });
             let hy = app.session.doc.settings.auto_hyphenation;
             menu_button(ui, app, "hyphenation", Some("Hyphenation"), "Hyphenation", false, |ui, app| {
                 mi(ui, app, if hy { "✓ Automatic" } else { "Automatic" }, "layout.hyphenation", json!({"value": true}));
                 mi(ui, app, if hy { "None" } else { "✓ None" }, "layout.hyphenation", json!({"value": false}));
+                mi(ui, app, "Manual…", "ui.dialog", json!({"name": "manualHyphenation"}));
+                ui.separator();
+                mi(ui, app, "Hyphenation Options…", "ui.dialog", json!({"name": "hyphenation"}));
             });
         });
     });
@@ -1012,6 +1125,8 @@ fn references(app: &mut WordApp, ui: &mut Ui) {
         menu_button(ui, app, "toc", Some("Table of\nContents"), "Table of Contents", true, |ui, app| {
             mi(ui, app, "Automatic Table 1 (3 levels)", "references.toc", json!({"levels": 3}));
             mi(ui, app, "Automatic Table 2 (2 levels)", "references.toc", json!({"levels": 2, "title": "Table of Contents"}));
+            ui.separator();
+            mi(ui, app, "Custom Table of Contents…", "ui.dialog", json!({"name": "toc"}));
             mi(ui, app, "Remove Table of Contents", "references.removeToc", json!({}));
         });
         stack(ui, |ui| {
@@ -1024,7 +1139,7 @@ fn references(app: &mut WordApp, ui: &mut Ui) {
             small(ui, app, "updateTable", Some("Update Table"), "Update Table", "references.updateToc", json!({}), false);
         });
     });
-    group(ui, "Footnotes", None, app, |ui, app| {
+    group(ui, "Footnotes", Some("references.noteOptions"), app, |ui, app| {
         big(ui, app, "footnote", "Insert\nFootnote", "references.footnote", json!({}), false);
         stack(ui, |ui| {
             small(ui, app, "endnote", Some("Insert Endnote"), "Insert Endnote", "references.endnote", json!({}), false);
@@ -1036,7 +1151,18 @@ fn references(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "researcher", "Researcher", "references.researcher", json!({}), false);
     });
     group(ui, "Citations & Bibliography", None, app, |ui, app| {
-        big(ui, app, "citation", "Insert\nCitation", "references.citation", json!({}), false);
+        // The document's sources to cite, then a new one (Create Source, #402).
+        menu_button(ui, app, "citation", Some("Insert\nCitation"), "Insert Citation", true, |ui, app| {
+            let sources: Vec<(String, String)> =
+                app.session.doc.sources.iter().map(|s| (s.tag.clone(), format!("{} — {}", s.author, s.title))).collect();
+            for (tag, label) in sources {
+                mi_text(ui, app, &label, "references.citation", json!({"tag": tag}));
+            }
+            if !app.session.doc.sources.is_empty() {
+                ui.separator();
+            }
+            mi(ui, app, "Add New Source…", "ui.dialog", json!({"name": "createSource"}));
+        });
         stack(ui, |ui| {
             small(ui, app, "sources", Some("Manage Sources"), "Manage Sources", "references.sources", json!({}), false);
             let current = app.session.bib_style.clone();
@@ -1231,6 +1357,44 @@ fn review(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+/// Developer › Controls: content controls.
+fn developer(app: &mut WordApp, ui: &mut Ui) {
+    let design = app.session.view.design_mode;
+    group(ui, "Controls", None, app, |ui, app| {
+        let rows: [[(&str, &str, &str); 3]; 3] = [
+            [
+                ("ccRichText", "Rich Text Content Control", "developer.richText"),
+                ("ccPlainText", "Plain Text Content Control", "developer.plainText"),
+                ("ccPicture", "Picture Content Control", "developer.picture"),
+            ],
+            [
+                ("ccGallery", "Building Block Gallery Content Control", "developer.buildingBlock"),
+                ("ccCheckBox", "Check Box Content Control", "developer.checkBox"),
+                ("ccComboBox", "Combo Box Content Control", "developer.comboBox"),
+            ],
+            [
+                ("ccDropDown", "Drop-Down List Content Control", "developer.dropDown"),
+                ("ccDate", "Date Picker Content Control", "developer.datePicker"),
+                ("ccRepeat", "Repeating Section Content Control", "developer.repeatingSection"),
+            ],
+        ];
+        stack(ui, |ui| {
+            for row in rows {
+                crate::widgets::row(ui, |ui| {
+                    for (icon, tip, id) in row {
+                        small(ui, app, icon, None, tip, id, json!({}), false);
+                    }
+                });
+                ui.add_space(3.0);
+            }
+        });
+        stack(ui, |ui| {
+            small(ui, app, "designMode", Some("Design Mode"), "Design Mode", "developer.designMode", json!({}), design);
+            small(ui, app, "properties", Some("Properties"), "Properties", "developer.properties", json!({}), false);
+        });
+    });
+}
+
 fn view(app: &mut WordApp, ui: &mut Ui) {
     let v = app.session.view.clone();
     group(ui, "Views", None, app, |ui, app| {
@@ -1311,6 +1475,59 @@ fn help(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+/// Chart Design: the selected chart's elements (title, legend, data labels), its data and type,
+/// and its size.
+fn chart_design(app: &mut WordApp, ui: &mut Ui) {
+    let Some(chart) = wordcraft_engine::cmd::chart::selected_chart(&app.session) else { return };
+    group(ui, "Chart Layouts", None, app, |ui, app| {
+        menu_button(ui, app, "chartTitle", Some("Chart Title"), "Chart Title", true, |ui, app| {
+            mi_check(ui, app, "None", chart.title.is_none(), "chart.title", json!({"text": null}));
+            let text = chart.title.clone().unwrap_or_else(|| tl!("Chart Title").to_string());
+            mi_check(ui, app, "Above Chart", chart.title.is_some(), "chart.title", json!({"text": text}));
+        });
+        menu_button(ui, app, "legend", Some("Legend"), "Legend", true, |ui, app| {
+            mi_check(ui, app, "None", chart.legend.is_none(), "chart.legend", json!({"pos": "none"}));
+            for (label, pos) in [
+                ("Right", wordcraft_doc::chart::LegendPos::Right),
+                ("Top", wordcraft_doc::chart::LegendPos::Top),
+                ("Left", wordcraft_doc::chart::LegendPos::Left),
+                ("Bottom", wordcraft_doc::chart::LegendPos::Bottom),
+            ] {
+                mi_check(ui, app, label, chart.legend == Some(pos), "chart.legend", json!({"pos": pos.id()}));
+            }
+        });
+        menu_button(ui, app, "dataLabels", Some("Data Labels"), "Data Labels", true, |ui, app| {
+            mi_check(ui, app, "None", !chart.data_labels, "chart.dataLabels", json!({"on": false}));
+            mi_check(ui, app, "Show", chart.data_labels, "chart.dataLabels", json!({"on": true}));
+        });
+    });
+    group(ui, "Data", None, app, |ui, app| {
+        big(ui, app, "chartData", "Edit\nData", "chart.editData", json!({}), false);
+    });
+    group(ui, "Type", None, app, |ui, app| {
+        big(ui, app, "changeChartType", "Change\nChart Type", "chart.type", json!({}), false);
+    });
+    group(ui, "Size", None, app, |ui, app| {
+        let (w0, h0) =
+            wordcraft_engine::cmd::objects::selected(&app.session).and_then(|(_, o)| o.frame().map(|(w, h, _)| (w, h))).unwrap_or((0.0, 0.0));
+        stack(ui, |ui| {
+            for (label, key, v0) in [("H:", "height", h0), ("W:", "width", w0)] {
+                crate::widgets::row(ui, |ui| {
+                    ui.label(egui::RichText::new(tl!(label)).small());
+                    let mut v = v0;
+                    let r = ui.add(egui::DragValue::new(&mut v).speed(1.0).range(36.0..=2000.0).suffix(" pt"));
+                    if r.changed() {
+                        if r.dragged() && !r.drag_started() {
+                            app.session.join_next_undo();
+                        }
+                        let _ = app.run("picture.size", json!({key: v, "lockAspect": false}));
+                    }
+                });
+            }
+        });
+    });
+}
+
 /// Shape Format: fill, outline and effects of the selected shape, and its arrangement.
 fn shape_format(app: &mut WordApp, ui: &mut Ui) {
     let (stroke, glow_size) = match wordcraft_engine::cmd::objects::selected(&app.session) {
@@ -1346,6 +1563,7 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
             });
         });
     });
+    alt_text_group(ui, app);
     if wordcraft_engine::cmd::canvas::selected_canvas(&app.session).is_some() {
         group(ui, "Drawing Canvas", None, app, |ui, app| {
             menu_button(ui, app, "canvas", Some("Drawing\nCanvas"), "Drawing Canvas", true, |ui, app| {
@@ -1359,6 +1577,22 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
             });
         });
     }
+    group(ui, "WordArt Styles", None, app, |ui, app| {
+        menu_button(ui, app, "wordArt", Some("Styles"), "WordArt Styles", true, |ui, app| {
+            crate::wordart_menus::style_gallery(ui, app, "wordArt.style")
+        });
+        stack(ui, |ui| {
+            menu_button(ui, app, "textFill", Some("Text Fill"), "Text Fill", false, |ui, app| crate::wordart_menus::fill_menu(ui, app, &theme));
+            let outline = crate::wordart_menus::current_outline(app);
+            menu_button(ui, app, "textOutline", Some("Text Outline"), "Text Outline", false, |ui, app| {
+                crate::wordart_menus::outline_menu(ui, app, &theme, outline)
+            });
+            menu_button(ui, app, "transform", Some("Text Effects"), "Text Effects", false, |ui, app| {
+                crate::wordart_menus::effects_menu(ui, app, &theme, true)
+            });
+        });
+    });
+    shape_text_group(app, ui);
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
         wrap_menu(ui, app);
@@ -1387,6 +1621,46 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
             ui.add_space(2.0);
             crate::widgets::row(ui, |ui| rotation_field(ui, app));
         });
+    });
+}
+
+/// Shape Format › Text: the text box's Text Direction and Align Text, and Create Link (Break Link
+/// once it is linked to another box).
+fn shape_text_group(app: &mut WordApp, ui: &mut Ui) {
+    use wordcraft_doc::props::{TextVert, VAlign};
+    let target = wordcraft_engine::cmd::objects::text_box_target(&app.session);
+    let body = target.and_then(|(_, id)| app.session.doc.parts.get(&id).map(|p| p.body)).unwrap_or_default();
+    group(ui, "Text", None, app, |ui, app| {
+        stack(ui, |ui| {
+            menu_button(ui, app, "textDirection", Some("Text Direction"), "Text Direction", false, |ui, app| {
+                for (label, vert) in [
+                    ("Horizontal", TextVert::Horz),
+                    ("Rotate all text 90°", TextVert::Vert),
+                    ("Rotate all text 270°", TextVert::Vert270),
+                    ("Stacked", TextVert::Stacked),
+                ] {
+                    mi_check(ui, app, label, body.vert == vert, "shape.textDirection", json!({"dir": vert.ooxml()}));
+                }
+            });
+            menu_button(ui, app, "alignText", Some("Align Text"), "Align Text", false, |ui, app| {
+                for (label, anchor) in [("Top", VAlign::Top), ("Middle", VAlign::Center), ("Bottom", VAlign::Bottom)] {
+                    mi_check(ui, app, label, body.anchor == anchor, "shape.alignText", json!({"anchor": wordcraft_doc::props::anchor_ooxml(anchor)}));
+                }
+            });
+            if body.next.is_some() {
+                small(ui, app, "textBoxUnlink", Some("Break Link"), "Break Link", "shape.breakLink", json!({}), false);
+            } else {
+                let waiting = app.canvas.link_from.is_some();
+                small(ui, app, "textBoxLink", Some("Create Link"), "Create Link", "ui.linkTextBox", json!({}), waiting);
+            }
+        });
+    });
+}
+
+/// Picture/Shape Format › Accessibility: Alt Text opens the Alt Text pane.
+fn alt_text_group(ui: &mut Ui, app: &mut WordApp) {
+    group(ui, "Accessibility", None, app, |ui, app| {
+        big(ui, app, "altText", "Alt\nText", "view.altTextPane", json!({"value": true}), false);
     });
 }
 
@@ -1478,6 +1752,7 @@ fn picture_format(app: &mut WordApp, ui: &mut Ui) {
             }
         });
     });
+    alt_text_group(ui, app);
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
         wrap_menu(ui, app);
@@ -1822,6 +2097,24 @@ mod tests {
         s.run("select.collapse", &json!({"end": true})).unwrap();
         s.run("text.insert", &json!({"text": "x"})).unwrap();
         assert!(!contextual_tabs(&s).contains(&"Shape Format"));
+    }
+
+    #[test]
+    fn chart_design_tab_appears_when_chart_selected_and_buttons_open_dialogs() {
+        let mut app = crate::WordApp::new(Session::new(wordcraft_doc::Document::new()), Default::default());
+        // Insert › Chart without a type opens the gallery; choosing inserts.
+        let _ = app.run("insert.chart", json!({}));
+        assert_eq!(app.dialog.as_ref().map(crate::dialogs::Dialog::name), Some("insertChart"));
+        app.dialog = None;
+        app.run("insert.chart", json!({"type": "doughnut"})).unwrap();
+        assert!(contextual_tabs(&app.session).contains(&"Chart Design"));
+        let _ = app.run("chart.editData", json!({}));
+        assert_eq!(app.dialog.as_ref().map(crate::dialogs::Dialog::name), Some("chartData"));
+        let _ = app.run("chart.type", json!({}));
+        assert_eq!(app.dialog.as_ref().map(crate::dialogs::Dialog::name), Some("changeChartType"));
+        app.session.run("select.collapse", &json!({"end": true})).unwrap();
+        app.session.run("text.insert", &json!({"text": "x"})).unwrap();
+        assert!(!contextual_tabs(&app.session).contains(&"Chart Design"));
     }
 
     #[test]

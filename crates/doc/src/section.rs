@@ -213,6 +213,96 @@ fn capitalize(s: &str) -> String {
     out
 }
 
+/// Where footnotes or endnotes are placed (ECMA-376 §17.18.33/§17.18.20, `ST_FtnPos`/`ST_EdnPos`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NotePos {
+    /// Footnotes: at the bottom of the page.
+    #[default]
+    PageBottom,
+    /// Footnotes: right below the page's last line of text.
+    BeneathText,
+    /// Endnotes: at the end of each section.
+    SectEnd,
+    /// Endnotes: at the end of the document.
+    DocEnd,
+}
+
+impl NotePos {
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            NotePos::PageBottom => "pageBottom",
+            NotePos::BeneathText => "beneathText",
+            NotePos::SectEnd => "sectEnd",
+            NotePos::DocEnd => "docEnd",
+        }
+    }
+    pub fn from_ooxml(s: &str) -> Option<NotePos> {
+        [NotePos::PageBottom, NotePos::BeneathText, NotePos::SectEnd, NotePos::DocEnd].into_iter().find(|p| p.ooxml() == s)
+    }
+}
+
+/// When note numbering starts again (ECMA-376 §17.18.66, `ST_RestartNumber`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteRestart {
+    #[default]
+    Continuous,
+    EachSect,
+    EachPage,
+}
+
+impl NoteRestart {
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            NoteRestart::Continuous => "continuous",
+            NoteRestart::EachSect => "eachSect",
+            NoteRestart::EachPage => "eachPage",
+        }
+    }
+    pub fn from_ooxml(s: &str) -> Option<NoteRestart> {
+        [NoteRestart::Continuous, NoteRestart::EachSect, NoteRestart::EachPage].into_iter().find(|r| r.ooxml() == s)
+    }
+}
+
+/// The highest note number "start at" takes (Word's own limit is lower; this keeps hostile files
+/// from overflowing the counters).
+pub const MAX_NOTE_START: u32 = 32_767;
+
+/// Footnote or endnote options as a document or a section states them (ECMA-376 §17.11.11 and
+/// §17.11.4, `w:footnotePr` / `w:endnotePr`): unset fields come from the level above (a
+/// section's from the document's, the document's from Word's defaults). The document's number
+/// format is `Settings::footnote_format` / `endnote_format`, so its `num_fmt` stays unset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NoteProps {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos: Option<NotePos>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_fmt: Option<NumFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_start: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_restart: Option<NoteRestart>,
+}
+
+impl NoteProps {
+    pub fn is_empty(&self) -> bool {
+        *self == NoteProps::default()
+    }
+}
+
+/// Footnote or endnote options in effect for a section (see [`crate::Document::note_options`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteOptions {
+    pub pos: NotePos,
+    pub num_fmt: NumFormat,
+    /// 1..=[`MAX_NOTE_START`].
+    pub num_start: u32,
+    pub num_restart: NoteRestart,
+}
+
 /// Header/footer story ids (in `Document::parts`) for a section.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -266,6 +356,79 @@ pub enum LineNumberRestart {
     Continuous,
 }
 
+/// Document grid kind (`w:docGrid/@w:type`, ECMA-376 §17.6.5, §17.18.14).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DocGridType {
+    /// No grid.
+    #[default]
+    Default,
+    /// Line grid only: line heights snap to the line pitch.
+    Lines,
+    /// Line and character grid: East Asian characters advance by the character pitch.
+    LinesAndChars,
+    /// Line grid, and all text snaps to the character grid.
+    SnapToChars,
+}
+
+impl DocGridType {
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            DocGridType::Default => "default",
+            DocGridType::Lines => "lines",
+            DocGridType::LinesAndChars => "linesAndChars",
+            DocGridType::SnapToChars => "snapToChars",
+        }
+    }
+    pub fn from_ooxml(s: &str) -> Option<DocGridType> {
+        [DocGridType::Default, DocGridType::Lines, DocGridType::LinesAndChars, DocGridType::SnapToChars].into_iter().find(|t| t.ooxml() == s)
+    }
+}
+
+/// Smallest and largest line or character pitch the layout uses, points.
+pub const MIN_GRID_PITCH: f32 = 1.0;
+pub const MAX_GRID_PITCH: f32 = 1584.0;
+/// `w:charSpace` bound (4096ths of a point): ±1584 pt.
+pub const MAX_CHAR_SPACE: i32 = 1584 * 4096;
+
+/// The document grid (`w:docGrid`): lines per page and characters per line, as pitches.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DocGrid {
+    #[serde(rename = "type")]
+    pub kind: DocGridType,
+    /// Distance between grid lines, points (`w:linePitch`, twips in the file).
+    pub line_pitch: f32,
+    /// Added to the default font size to give the character pitch, 4096ths of a point
+    /// (`w:charSpace`).
+    pub char_space: i32,
+}
+
+impl Default for DocGrid {
+    /// Word's grid for a new document: no grid, an 18 pt pitch kept for when one is turned on.
+    fn default() -> Self {
+        DocGrid { kind: DocGridType::Default, line_pitch: 18.0, char_space: 0 }
+    }
+}
+
+impl DocGrid {
+    /// The line pitch, clamped to something layout can use.
+    pub fn line_pitch(&self) -> f32 {
+        if self.line_pitch.is_finite() { self.line_pitch.clamp(MIN_GRID_PITCH, MAX_GRID_PITCH) } else { 18.0 }
+    }
+    /// The character pitch for a document whose default font is `font_size` points.
+    pub fn char_pitch(&self, font_size: f32) -> f32 {
+        let size = if font_size.is_finite() { font_size.clamp(MIN_GRID_PITCH, MAX_GRID_PITCH) } else { 10.5 };
+        (size + self.char_space.clamp(-MAX_CHAR_SPACE, MAX_CHAR_SPACE) as f32 / 4096.0).clamp(MIN_GRID_PITCH, MAX_GRID_PITCH)
+    }
+    /// The `w:charSpace` that gives `pitch` with the default font at `font_size` points.
+    pub fn char_space_for(pitch: f32, font_size: f32) -> i32 {
+        let pitch = if pitch.is_finite() { pitch.clamp(MIN_GRID_PITCH, MAX_GRID_PITCH) } else { font_size };
+        let size = if font_size.is_finite() { font_size.clamp(MIN_GRID_PITCH, MAX_GRID_PITCH) } else { 10.5 };
+        (((pitch - size) * 4096.0).round() as i32).clamp(-MAX_CHAR_SPACE, MAX_CHAR_SPACE)
+    }
+}
+
 /// Page setup and section-level settings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -299,6 +462,13 @@ pub struct SectionProps {
     /// Tracked change of the section's properties (`w:sectPrChange`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fmt_change: Option<Box<crate::props::PropChange<SectionProps>>>,
+    /// Document grid (`w:docGrid`); `None` when the file has none (no grid).
+    pub doc_grid: Option<DocGrid>,
+    /// The section's own footnote and endnote options (unset: the document's).
+    #[serde(skip_serializing_if = "NoteProps::is_empty")]
+    pub footnote_pr: NoteProps,
+    #[serde(skip_serializing_if = "NoteProps::is_empty")]
+    pub endnote_pr: NoteProps,
 }
 
 impl Default for SectionProps {
@@ -327,6 +497,9 @@ impl Default for SectionProps {
             page_borders: None,
             rtl: false,
             fmt_change: None,
+            doc_grid: None,
+            footnote_pr: NoteProps::default(),
+            endnote_pr: NoteProps::default(),
         }
     }
 }
@@ -359,14 +532,34 @@ impl SectionProps {
             self.margin_top = r;
         }
     }
-    /// Column (x offset from the text area's left, width) for each column.
+    /// The line grid's pitch, points, when the section has a line grid (any grid but "no grid").
+    pub fn grid_line_pitch(&self) -> Option<f32> {
+        self.doc_grid.filter(|g| g.kind != DocGridType::Default).map(|g| g.line_pitch())
+    }
+    /// The character grid's pitch, points, when the section has one (`linesAndChars`,
+    /// `snapToChars`); `font_size` is the default font size (Normal style).
+    pub fn grid_char_pitch(&self, font_size: f32) -> Option<f32> {
+        self.doc_grid.filter(|g| matches!(g.kind, DocGridType::LinesAndChars | DocGridType::SnapToChars)).map(|g| g.char_pitch(font_size))
+    }
+    /// Lines per page the line pitch gives (at least 1).
+    pub fn grid_lines_per_page(&self) -> u32 {
+        let pitch = self.doc_grid.unwrap_or_default().line_pitch();
+        ((self.text_height() / pitch + 0.001).floor() as u32).max(1)
+    }
+    /// Characters per line the character pitch gives (at least 1).
+    pub fn grid_chars_per_line(&self, font_size: f32) -> u32 {
+        let pitch = self.doc_grid.unwrap_or_default().char_pitch(font_size);
+        ((self.text_width() / pitch + 0.001).floor() as u32).max(1)
+    }
+    /// Column (x offset from the text area's left, width) for each column, in reading order:
+    /// in a right-to-left section (`rtl`, `w:bidi`) the first column stands at the right edge
+    /// and the columns (with the space after each) run leftwards.
     pub fn column_boxes(&self) -> Vec<(f32, f32)> {
         let tw = self.text_width();
         let n = self.columns.count.clamp(1, 45) as usize;
-        if !self.columns.widths.is_empty() && self.columns.widths.len() == n {
+        let boxes: Vec<(f32, f32)> = if !self.columns.widths.is_empty() && self.columns.widths.len() == n {
             let mut x = 0.0;
-            return self
-                .columns
+            self.columns
                 .widths
                 .iter()
                 .map(|(w, sp)| {
@@ -374,11 +567,13 @@ impl SectionProps {
                     x += w + sp;
                     b
                 })
-                .collect();
-        }
-        let space = self.columns.space.max(0.0);
-        let w = ((tw - space * (n as f32 - 1.0)) / n as f32).max(18.0);
-        (0..n).map(|i| (i as f32 * (w + space), w)).collect()
+                .collect()
+        } else {
+            let space = self.columns.space.max(0.0);
+            let w = ((tw - space * (n as f32 - 1.0)) / n as f32).max(18.0);
+            (0..n).map(|i| (i as f32 * (w + space), w)).collect()
+        };
+        if self.rtl { boxes.into_iter().map(|(x, w)| (tw - x - w, w)).collect() } else { boxes }
     }
 }
 
@@ -414,11 +609,40 @@ mod tests {
     }
 
     #[test]
+    fn grid_pitches_are_clamped() {
+        let mut s = SectionProps::default();
+        assert_eq!(s.grid_line_pitch(), None);
+        s.doc_grid = Some(DocGrid { kind: DocGridType::Lines, line_pitch: 0.0, char_space: i32::MIN });
+        assert_eq!(s.grid_line_pitch(), Some(MIN_GRID_PITCH));
+        assert_eq!(s.grid_char_pitch(10.5), None);
+        s.doc_grid = Some(DocGrid { kind: DocGridType::LinesAndChars, line_pitch: f32::NAN, char_space: i32::MIN });
+        assert_eq!(s.grid_line_pitch(), Some(18.0));
+        assert_eq!(s.grid_char_pitch(10.5), Some(MIN_GRID_PITCH));
+        // 648 pt of text height at an 18 pt pitch: 36 lines; 468 pt / 13 pt = 36 characters.
+        s.doc_grid = Some(DocGrid { kind: DocGridType::LinesAndChars, line_pitch: 18.0, char_space: DocGrid::char_space_for(13.0, 10.5) });
+        assert_eq!(s.grid_lines_per_page(), 36);
+        assert_eq!(s.grid_chars_per_line(10.5), 36);
+    }
+
+    #[test]
     fn columns_split() {
         let s = SectionProps { columns: Columns { count: 2, space: 36.0, ..Default::default() }, ..Default::default() };
         let b = s.column_boxes();
         assert_eq!(b.len(), 2);
         assert_eq!(b[0], (0.0, 216.0));
         assert_eq!(b[1], (252.0, 216.0));
+    }
+
+    #[test]
+    fn rtl_columns_run_right_to_left() {
+        let s = SectionProps { rtl: true, columns: Columns { count: 2, space: 36.0, ..Default::default() }, ..Default::default() };
+        assert_eq!(s.column_boxes(), vec![(252.0, 216.0), (0.0, 216.0)]);
+        let s = SectionProps {
+            rtl: true,
+            columns: Columns { count: 2, widths: vec![(100.0, 20.0), (200.0, 0.0)], ..Default::default() },
+            ..Default::default()
+        };
+        // Text width 468: the first column hugs the right edge, the second sits 20pt to its left.
+        assert_eq!(s.column_boxes(), vec![(368.0, 100.0), (148.0, 200.0)]);
     }
 }

@@ -36,6 +36,9 @@ pub struct ResolvedChar {
     pub shadow: bool,
     pub emboss: bool,
     pub engrave: bool,
+    /// WordArt text effects (sanitized; `None` when there are none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_effects: Option<Box<crate::wordart::TextEffects>>,
     pub link: Option<String>,
     pub ins: Option<u32>,
     pub del: Option<u32>,
@@ -80,6 +83,7 @@ impl ResolvedChar {
             shadow: c.shadow.unwrap_or(false),
             emboss: c.emboss.unwrap_or(false),
             engrave: c.engrave.unwrap_or(false),
+            text_effects: c.text_effects.as_deref().map(crate::wordart::TextEffects::sanitized).filter(|t| !t.is_empty()).map(Box::new),
             link: c.link.clone(),
             ins: c.ins,
             del: c.del,
@@ -152,6 +156,8 @@ pub struct ResolvedPara {
     pub top_line_punct: bool,
     pub auto_space_de: bool,
     pub auto_space_dn: bool,
+    /// Lines snap to the document grid, when the section has one.
+    pub snap_to_grid: bool,
 }
 
 const MAX_INDENT: f32 = 1584.0; // 22"
@@ -203,6 +209,7 @@ impl ResolvedPara {
             top_line_punct: p.top_line_punct.unwrap_or(false),
             auto_space_de: p.auto_space_de.unwrap_or(true),
             auto_space_dn: p.auto_space_dn.unwrap_or(true),
+            snap_to_grid: p.snap_to_grid.unwrap_or(true),
         }
     }
 }

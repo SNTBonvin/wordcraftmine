@@ -3,7 +3,9 @@
 mod embed;
 mod math;
 mod props;
+mod sdt;
 mod story;
+mod wordart;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -68,7 +70,11 @@ pub(crate) struct Writer<'d> {
     media_files: BTreeMap<String, String>,
     bookmarks: HashMap<String, u32>,
     next_rev_id: u32,
+    /// Move ranges open in the output: (revision, range `w:id`, destination?).
+    open_moves: Vec<(u32, String, bool)>,
     docpr: u32,
+    /// Shapes' own drawing ids written so far (connectors refer to them).
+    shape_ids: std::collections::HashSet<u32>,
     z: u32,
     /// Note part id → file note id, in first-reference order.
     footnotes: Vec<u32>,
@@ -89,12 +95,17 @@ pub(crate) struct Writer<'d> {
     toc_begin_here: bool,
     /// Close the open TOC field at the end of the paragraph being written.
     toc_end_here: bool,
+    /// Byte offsets of the content control markers the next paragraph writes inline.
+    inline_controls: Vec<usize>,
     /// Media keys actually referenced by a written drawing.
     used_media: std::collections::BTreeSet<String>,
     /// Bounds writing text boxes inside text boxes (as layout shows them).
     boxes: wordcraft_doc::BoxBudget,
     /// Charts, diagrams and OLE objects kept from a file: the parts they need.
     embeds: embed::EmbedWriter<'d>,
+    /// Linked text boxes: part id → (`wps:txbx`/`wps:linkedTxbx` id, seq; 0 for the box holding
+    /// the text).
+    txbx_links: HashMap<u32, (u32, u32)>,
 }
 
 const CT_WML: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.";
@@ -122,7 +133,10 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
         media_files: BTreeMap::new(),
         bookmarks: HashMap::new(),
         next_rev_id: 0,
-        docpr: 0,
+        open_moves: Vec::new(),
+        // Fresh drawing ids start past the shapes' own (connectors refer to those).
+        docpr: doc.next_shape_id().saturating_sub(1),
+        shape_ids: std::collections::HashSet::new(),
         z: 251_658_240,
         footnotes: Vec::new(),
         endnotes: Vec::new(),
@@ -134,9 +148,16 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
         toc_field: None,
         toc_begin_here: false,
         toc_end_here: false,
+        inline_controls: Vec::new(),
         used_media: Default::default(),
         boxes: wordcraft_doc::BoxBudget::default(),
         embeds: embed::EmbedWriter::new(doc),
+        txbx_links: doc
+            .text_box_chains()
+            .iter()
+            .enumerate()
+            .flat_map(|(n, c)| c.iter().enumerate().map(move |(seq, id)| (*id, (n as u32 + 1, seq as u32))))
+            .collect(),
     };
     wr.assign_media();
     wr.embeds.reserve_media(wr.media_files.values());
@@ -506,8 +527,13 @@ impl Writer<'_> {
     }
 
     fn next_docpr(&mut self) -> String {
-        self.docpr += 1;
+        self.docpr = self.docpr.saturating_add(1);
         self.docpr.to_string()
+    }
+
+    /// The drawing id of a shape: its own (once; a copy gets a fresh one), else a fresh one.
+    fn shape_docpr(&mut self, own: u32) -> String {
+        if own != 0 && self.shape_ids.insert(own) { own.to_string() } else { self.next_docpr() }
     }
 
     fn bookmark_id(&mut self, name: &str) -> String {
@@ -650,6 +676,9 @@ fn style_xml(w: &mut W, st: &Style) {
     }
     if st.quick {
         w.empty("w:qFormat", &[]);
+    }
+    if st.locked {
+        w.empty("w:locked", &[]);
     }
     if !st.para.is_empty() && st.kind != StyleKind::Character {
         w.open("w:pPr", &[]);
@@ -834,11 +863,35 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool) -> Vec<u8> {
         w.empty("w:trackRevisions", &[]);
     }
     if let Some(p) = &s.protection {
-        w.empty("w:documentProtection", &[("w:edit", p), ("w:enforcement", "1")]);
+        let mut a: Vec<(&str, &str)> = Vec::new();
+        if p != "none" {
+            a.push(("w:edit", p));
+        }
+        if s.protect_formatting {
+            a.push(("w:formatting", "1"));
+        }
+        a.push(("w:enforcement", "1"));
+        // Only the hash attributes the reader keeps, each once.
+        for name in crate::read::PROTECTION_HASH_ATTRS {
+            if let Some((_, v)) = s.protect_hash.iter().find(|(k, _)| k == name) {
+                a.push((name, v));
+            }
+        }
+        w.empty("w:documentProtection", &a);
     }
     w.val("w:defaultTabStop", &crate::units::twips(s.default_tab.clamp(1.0, 1584.0)));
     if s.auto_hyphenation {
         w.empty("w:autoHyphenation", &[]);
+    }
+    // Schema order: consecutiveHyphenLimit, hyphenationZone, doNotHyphenateCaps.
+    if s.consecutive_hyphen_limit > 0 {
+        w.val("w:consecutiveHyphenLimit", &s.consecutive_hyphen_limit.min(32_767).to_string());
+    }
+    if s.hyphenation_zone.is_finite() && (s.hyphenation_zone - wordcraft_doc::DEFAULT_HYPHENATION_ZONE).abs() > 0.01 {
+        w.val("w:hyphenationZone", &crate::units::twips(s.hyphenation_zone.clamp(0.0, 1584.0)));
+    }
+    if !s.hyphenate_caps {
+        w.empty("w:doNotHyphenateCaps", &[]);
     }
     if s.even_odd_headers {
         w.empty("w:evenAndOddHeaders", &[]);
@@ -849,11 +902,12 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool) -> Vec<u8> {
         }
     }
     w.val("w:characterSpacingControl", "doNotCompress");
-    for (tag, fmt, used, el) in
-        [("w:footnotePr", s.footnote_format, footnotes, "w:footnote"), ("w:endnotePr", s.endnote_format, endnotes, "w:endnote")]
-    {
+    for (tag, fmt, pr, used, el) in [
+        ("w:footnotePr", s.footnote_format, &s.footnote_pr, footnotes, "w:footnote"),
+        ("w:endnotePr", s.endnote_format, &s.endnote_pr, endnotes, "w:endnote"),
+    ] {
         w.open(tag, &[]);
-        w.val("w:numFmt", fmt.ooxml());
+        story::note_pr_inner(&mut w, &wordcraft_doc::section::NoteProps { num_fmt: Some(fmt), ..*pr });
         if used {
             w.empty(el, &[("w:id", "-1")]);
             w.empty(el, &[("w:id", "0")]);
