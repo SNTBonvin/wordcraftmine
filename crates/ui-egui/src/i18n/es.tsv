@@ -1509,6 +1509,39 @@
 	Lines per page:	Líneas por página:
 	Moved from	Movido desde
 	Moved to	Movido a
+	Developer	Programador
+	Controls	Controles
+	Rich Text Content Control	Control de contenido de texto enriquecido
+	Plain Text Content Control	Control de contenido de texto sin formato
+	Picture Content Control	Control de contenido de imagen
+	Building Block Gallery Content Control	Control de contenido de galería de bloques de creación
+	Check Box Content Control	Control de contenido de casilla
+	Combo Box Content Control	Control de contenido de cuadro combinado
+	Drop-Down List Content Control	Control de contenido de lista desplegable
+	Date Picker Content Control	Control de contenido de selector de fecha
+	Repeating Section Content Control	Control de contenido de sección repetida
+	Design Mode	Modo Diseño
+	Content Control at Selection	Control de contenido en la selección
+	Toggle Check Box	Alternar casilla
+	Choose List Item	Elegir elemento de la lista
+	Set Date	Establecer fecha
+	Remove Content Control	Quitar control de contenido
+	Content Control Properties	Propiedades del control de contenido
+	Title	Título
+	Tag	Etiqueta
+	Placeholder text	Texto del marcador de posición
+	Can't be deleted	No se puede eliminar
+	Contents can't be edited	El contenido no se puede editar
+	Remove the control once edited	Quitar el control al editarlo
+	Allow line breaks	Permitir saltos de línea
+	Date format	Formato de fecha
+	Checked symbol	Símbolo marcado
+	Unchecked symbol	Símbolo sin marcar
+	List entries	Entradas de la lista
+	Display text	Texto mostrado
+	Value	Valor
+	Today	Hoy
+	Put the caret in a content control first.	Coloque primero el cursor en un control de contenido.
 	Right-to-Left Table	Tabla de derecha a izquierda
 	Right-to-Left Section	Sección de derecha a izquierda
 	Table direction:	Dirección de la tabla:
@@ -1536,6 +1569,37 @@
 	Enlarge symbol	Agrandar símbolo
 	Enclosure	Contorno
 	Circle	Círculo
+	Change Chart Type	Cambiar tipo de gráfico
+	Chart Design	Diseño de gráfico
+	Type	Tipo
+	Edit Data	Editar datos
+	Chart Title	Título del gráfico
+	Chart Layouts	Diseños de gráfico
+	Add Chart Element	Agregar elemento de gráfico
+	Legend	Leyenda
+	Data Labels	Etiquetas de datos
+	Above Chart	Encima del gráfico
+	Insert Chart	Insertar gráfico
+	Clustered Column	Columnas agrupadas
+	Stacked Column	Columnas apiladas
+	Clustered Bar	Barras agrupadas
+	Stacked Bar	Barras apiladas
+	Area	Área
+	Pie	Circular
+	Doughnut	Anillo
+	Scatter	Dispersión
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) no es un número.
+	Category {n}	Categoría {n}
+	Series {n}	Serie {n}
+	Type the categories down the side and a column of values per series.	Escribe las categorías en el lateral y una columna de valores por serie.
+	Categories	Categorías
+	Series name	Nombre de la serie
+	Remove series	Quitar serie
+	Remove row	Quitar fila
+	Add Row	Agregar fila
+	Add Series	Agregar serie
+	Edit\nData	Editar\ndatos
+	Change\nChart Type	Cambiar tipo\nde gráfico
 	Align Text	Alinear texto
 	Create Link	Crear vínculo
 	Break Link	Romper vínculo
@@ -1644,9 +1708,7 @@
 	Tab leader:	Carácter de relleno:
 	Table of Contents Options	Opciones de tabla de contenido
 	Table of Contents Styles	Estilos de tabla de contenido
-	Tag	Etiqueta
 	This page	Esta página
-	Title	Título
 	Type:	Tipo:
 	URL	URL
 	Volume	Volumen

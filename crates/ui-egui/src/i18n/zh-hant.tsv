@@ -1494,6 +1494,39 @@
 	Lines per page:	每頁行數：
 	Moved from	移動自
 	Moved to	移動到
+	Developer	開發人員
+	Controls	控制項
+	Rich Text Content Control	RTF 文字內容控制項
+	Plain Text Content Control	純文字內容控制項
+	Picture Content Control	圖片內容控制項
+	Building Block Gallery Content Control	建置組塊庫內容控制項
+	Check Box Content Control	核取方塊內容控制項
+	Combo Box Content Control	下拉式方塊內容控制項
+	Drop-Down List Content Control	下拉式清單內容控制項
+	Date Picker Content Control	日期選擇器內容控制項
+	Repeating Section Content Control	重複區段內容控制項
+	Design Mode	設計模式
+	Content Control at Selection	選取範圍的內容控制項
+	Toggle Check Box	切換核取方塊
+	Choose List Item	選擇清單項目
+	Set Date	設定日期
+	Remove Content Control	移除內容控制項
+	Content Control Properties	內容控制項屬性
+	Title	標題
+	Tag	標籤
+	Placeholder text	預留位置文字
+	Can't be deleted	無法刪除
+	Contents can't be edited	無法編輯內容
+	Remove the control once edited	編輯後移除控制項
+	Allow line breaks	允許換行
+	Date format	日期格式
+	Checked symbol	已勾選符號
+	Unchecked symbol	未勾選符號
+	List entries	清單項目
+	Display text	顯示文字
+	Value	值
+	Today	今天
+	Put the caret in a content control first.	請先將游標放在內容控制項中。
 	Right-to-Left Table	從右至左表格
 	Right-to-Left Section	從右至左節
 	Table direction:	表格方向：
@@ -1521,6 +1554,37 @@
 	Enlarge symbol	放大符號
 	Enclosure	圍繞符號
 	Circle	圓形
+	Change Chart Type	變更圖表類型
+	Chart Design	圖表設計
+	Type	類型
+	Edit Data	編輯資料
+	Chart Title	圖表標題
+	Chart Layouts	圖表版面配置
+	Add Chart Element	新增圖表項目
+	Legend	圖例
+	Data Labels	資料標籤
+	Above Chart	圖表上方
+	Insert Chart	插入圖表
+	Clustered Column	群組直條圖
+	Stacked Column	堆疊直條圖
+	Clustered Bar	群組橫條圖
+	Stacked Bar	堆疊橫條圖
+	Area	區域圖
+	Pie	圓形圖
+	Doughnut	環圈圖
+	Scatter	散佈圖
+	“{text}” ({row}, {series}) isn't a number.	「{text}」（{row}，{series}）不是數字。
+	Category {n}	類別 {n}
+	Series {n}	數列 {n}
+	Type the categories down the side and a column of values per series.	在左側輸入類別，每個數列輸入一欄數值。
+	Categories	類別
+	Series name	數列名稱
+	Remove series	移除數列
+	Remove row	移除列
+	Add Row	新增列
+	Add Series	新增數列
+	Edit\nData	編輯\n資料
+	Change\nChart Type	變更\n圖表類型
 	Align Text	對齊文字
 	Create Link	建立連結
 	Break Link	中斷連結
@@ -1629,9 +1693,7 @@
 	Tab leader:	定位點前置字元：
 	Table of Contents Options	目錄選項
 	Table of Contents Styles	目錄樣式
-	Tag	標記名
 	This page	目前頁面
-	Title	標題
 	Type:	類型：
 	URL	URL
 	Volume	卷

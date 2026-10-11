@@ -1,12 +1,13 @@
 //! DOCX → [`Document`].
 
-mod chart;
+pub(crate) mod chart;
 mod diagram;
 mod drawing_color;
 mod embed;
 mod freeform;
 mod math;
 mod props;
+mod sdt;
 mod story;
 
 use std::collections::{BTreeMap, HashMap, HashSet};

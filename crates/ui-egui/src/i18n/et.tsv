@@ -1509,6 +1509,37 @@
 	Size (pt):	Suurus (pt):
 	Moved from	Teisaldatud kohast
 	Moved to	Teisaldatud kohta
+	Change Chart Type	Muuda diagrammi tüüpi
+	Chart Design	Diagrammi kujundus
+	Type	Tüüp
+	Edit Data	Redigeeri andmeid
+	Chart Title	Diagrammi pealkiri
+	Chart Layouts	Diagrammi paigutused
+	Add Chart Element	Lisa diagrammi element
+	Legend	Legend
+	Data Labels	Andmesildid
+	Above Chart	Diagrammi kohal
+	Insert Chart	Lisa diagramm
+	Clustered Column	Rühmitatud tulbad
+	Stacked Column	Virnastatud tulbad
+	Clustered Bar	Rühmitatud ribad
+	Stacked Bar	Virnastatud ribad
+	Area	Pind
+	Pie	Sektor
+	Doughnut	Rõngas
+	Scatter	Hajuvus
+	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) ei ole arv.
+	Category {n}	Kategooria {n}
+	Series {n}	Sari {n}
+	Type the categories down the side and a column of values per series.	Sisesta kategooriad külje peale ja iga sarja jaoks väärtuste veerg.
+	Categories	Kategooriad
+	Series name	Sarja nimi
+	Remove series	Eemalda sari
+	Remove row	Eemalda rida
+	Add Row	Lisa rida
+	Add Series	Lisa sari
+	Edit\nData	Redigeeri\nandmeid
+	Change\nChart Type	Muuda\ndiagrammi tüüpi
 	Align Text	Joonda tekst
 	Break Link	Katkesta link
 	Click the empty text box the text should continue in (Esc cancels)	Klõpsa tühjal tekstiväljal, kus tekst peaks jätkuma (Esc tühistab)
@@ -1662,6 +1693,37 @@
 	Rewind	Keri algusesse
 	Forward	Edasi
 	Stroke {n} of {total}	Joon {n}/{total}
+	Developer	Arendaja
+	Controls	Juhtelemendid
+	Rich Text Content Control	Vormindatud teksti sisujuhtelement
+	Plain Text Content Control	Lihtteksti sisujuhtelement
+	Picture Content Control	Pildi sisujuhtelement
+	Building Block Gallery Content Control	Ehitusplokkide galerii sisujuhtelement
+	Check Box Content Control	Märkeruudu sisujuhtelement
+	Combo Box Content Control	Liitboksi sisujuhtelement
+	Drop-Down List Content Control	Ripploendi sisujuhtelement
+	Date Picker Content Control	Kuupäevavalija sisujuhtelement
+	Repeating Section Content Control	Korduva jaotise sisujuhtelement
+	Design Mode	Kujundusrežiim
+	Content Control at Selection	Valiku sisujuhtelement
+	Toggle Check Box	Lülita märkeruutu
+	Choose List Item	Vali loendi üksus
+	Set Date	Määra kuupäev
+	Remove Content Control	Eemalda sisujuhtelement
+	Content Control Properties	Sisujuhtelemendi atribuudid
+	Placeholder text	Kohatäite tekst
+	Can't be deleted	Ei saa kustutada
+	Contents can't be edited	Sisu ei saa redigeerida
+	Remove the control once edited	Eemalda juhtelement pärast redigeerimist
+	Allow line breaks	Luba reavahetused
+	Date format	Kuupäeva vorming
+	Checked symbol	Märgitud sümbol
+	Unchecked symbol	Märkimata sümbol
+	List entries	Loendi kirjed
+	Display text	Kuvatav tekst
+	Value	Väärtus
+	Today	Täna
+	Put the caret in a content control first.	Pange kursor esmalt sisujuhtelementi.
 	Add line numbering	Lisa reanummerdus
 	Add to Document	Lisa dokumenti
 	Address labels	Aadressisildid

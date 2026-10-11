@@ -1505,6 +1505,39 @@
 	Lines per page:	每页行数：
 	Moved from	移动自
 	Moved to	移动到
+	Developer	开发工具
+	Controls	控件
+	Rich Text Content Control	格式文本内容控件
+	Plain Text Content Control	纯文本内容控件
+	Picture Content Control	图片内容控件
+	Building Block Gallery Content Control	构建基块库内容控件
+	Check Box Content Control	复选框内容控件
+	Combo Box Content Control	组合框内容控件
+	Drop-Down List Content Control	下拉列表内容控件
+	Date Picker Content Control	日期选取器内容控件
+	Repeating Section Content Control	重复节内容控件
+	Design Mode	设计模式
+	Content Control at Selection	所选位置的内容控件
+	Toggle Check Box	切换复选框
+	Choose List Item	选择列表项
+	Set Date	设置日期
+	Remove Content Control	删除内容控件
+	Content Control Properties	内容控件属性
+	Title	标题
+	Tag	标记
+	Placeholder text	占位符文本
+	Can't be deleted	无法删除
+	Contents can't be edited	无法编辑内容
+	Remove the control once edited	编辑后删除控件
+	Allow line breaks	允许换行
+	Date format	日期格式
+	Checked symbol	选中符号
+	Unchecked symbol	未选中符号
+	List entries	列表项
+	Display text	显示文本
+	Value	值
+	Today	今天
+	Put the caret in a content control first.	请先将光标放在内容控件中。
 	Right-to-Left Table	从右向左表格
 	Right-to-Left Section	从右向左节
 	Table direction:	表格方向：
@@ -1532,6 +1565,37 @@
 	Enlarge symbol	增大圈号
 	Enclosure	圈号
 	Circle	圆形
+	Change Chart Type	更改图表类型
+	Chart Design	图表设计
+	Type	类型
+	Edit Data	编辑数据
+	Chart Title	图表标题
+	Chart Layouts	图表布局
+	Add Chart Element	添加图表元素
+	Legend	图例
+	Data Labels	数据标签
+	Above Chart	图表上方
+	Insert Chart	插入图表
+	Clustered Column	簇状柱形图
+	Stacked Column	堆积柱形图
+	Clustered Bar	簇状条形图
+	Stacked Bar	堆积条形图
+	Area	面积图
+	Pie	饼图
+	Doughnut	圆环图
+	Scatter	散点图
+	“{text}” ({row}, {series}) isn't a number.	“{text}”（{row}，{series}）不是数字。
+	Category {n}	类别 {n}
+	Series {n}	系列 {n}
+	Type the categories down the side and a column of values per series.	在左侧输入类别，每个系列输入一列数值。
+	Categories	类别
+	Series name	系列名称
+	Remove series	删除系列
+	Remove row	删除行
+	Add Row	添加行
+	Add Series	添加系列
+	Edit\nData	编辑\n数据
+	Change\nChart Type	更改\n图表类型
 	Align Text	对齐文本
 	Create Link	创建链接
 	Break Link	断开链接
@@ -1640,9 +1704,7 @@
 	Tab leader:	制表符前导符：
 	Table of Contents Options	目录选项
 	Table of Contents Styles	目录样式
-	Tag	标记名
 	This page	当前页
-	Title	标题
 	Type:	类型：
 	URL	URL
 	Volume	卷
