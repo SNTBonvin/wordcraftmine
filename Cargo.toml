@@ -37,6 +37,8 @@ wordcraft-metafile = { path = "crates/metafile" }
 #   equashion-egui = { path = "../equaSHion/crates/egui" }
 equashion-math = { git = "https://github.com/shuff57/equaSHion", rev = "416393aaca6c72a3b044a4a3418b23dd9f2f820a" }
 equashion-egui = { git = "https://github.com/shuff57/equaSHion", rev = "416393aaca6c72a3b044a4a3418b23dd9f2f820a" }
+# The equation layout: what the editor draws with, so a page shows what was typed.
+equashion-layout = { git = "https://github.com/shuff57/equaSHion", rev = "416393aaca6c72a3b044a4a3418b23dd9f2f820a", features = ["extra-fonts"] }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }
