@@ -1435,6 +1435,37 @@
 	Size (pt):	Suurus (pt):
 	Moved from	Teisaldatud kohast
 	Moved to	Teisaldatud kohta
+	Change Chart Type	Muuda diagrammi tüüpi
+	Chart Design	Diagrammi kujundus
+	Type	Tüüp
+	Edit Data	Redigeeri andmeid
+	Chart Title	Diagrammi pealkiri
+	Chart Layouts	Diagrammi paigutused
+	Add Chart Element	Lisa diagrammi element
+	Legend	Legend
+	Data Labels	Andmesildid
+	Above Chart	Diagrammi kohal
+	Insert Chart	Lisa diagramm
+	Clustered Column	Rühmitatud tulbad
+	Stacked Column	Virnastatud tulbad
+	Clustered Bar	Rühmitatud ribad
+	Stacked Bar	Virnastatud ribad
+	Area	Pind
+	Pie	Sektor
+	Doughnut	Rõngas
+	Scatter	Hajuvus
+	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) ei ole arv.
+	Category {n}	Kategooria {n}
+	Series {n}	Sari {n}
+	Type the categories down the side and a column of values per series.	Sisesta kategooriad külje peale ja iga sarja jaoks väärtuste veerg.
+	Categories	Kategooriad
+	Series name	Sarja nimi
+	Remove series	Eemalda sari
+	Remove row	Eemalda rida
+	Add Row	Lisa rida
+	Add Series	Lisa sari
+	Edit\nData	Redigeeri\nandmeid
+	Change\nChart Type	Muuda\ndiagrammi tüüpi
 	Align Text	Joonda tekst
 	Break Link	Katkesta link
 	Click the empty text box the text should continue in (Esc cancels)	Klõpsa tühjal tekstiväljal, kus tekst peaks jätkuma (Esc tühistab)
@@ -1619,3 +1650,66 @@
 	Value	Väärtus
 	Today	Täna
 	Put the caret in a content control first.	Pange kursor esmalt sisujuhtelementi.
+	Add line numbering	Lisa reanummerdus
+	Add to Document	Lisa dokumenti
+	Address labels	Aadressisildid
+	Arabic	Araabia
+	Auto	Automaatne
+	Automatically hyphenate document	Poolita dokumenti automaatselt
+	Chinese (Simplified)	Hiina (lihtsustatud)
+	Chinese (Traditional)	Hiina (traditsiooniline)
+	Column:	Veerg:
+	Count by:	Samm:
+	Czech	Tšehhi
+	Danish	Taani
+	Delivery address:	Saaja aadress:
+	Detect language automatically	Tuvasta keel automaatselt
+	Do not check spelling or grammar	Ära kontrolli õigekirja ega grammatikat
+	Dutch	Hollandi
+	English (United Kingdom)	Inglise (Ühendkuningriik)
+	Envelope size:	Ümbriku suurus:
+	Estonian	Eesti
+	Finnish	Soome
+	French (France)	Prantsuse (Prantsusmaa)
+	From text:	Tekstist:
+	Full page of the same label	Terve leht sama silti
+	German (Germany)	Saksa (Saksamaa)
+	Greek	Kreeka
+	Hebrew	Heebrea
+	Hyphenate at:	Poolita kohast:
+	Hyphenate words in CAPS	Poolita SUURTÄHTEDES sõnu
+	Hyphenation Options…	Poolitussätted…
+	Hyphenation zone:	Poolitusala:
+	Italian	Itaalia
+	Japanese	Jaapani
+	Korean	Korea
+	Limit consecutive hyphens to:	Järjestikuseid poolitusi kuni:
+	Line Numbering Options…	Reanummerduse sätted…
+	Manual Hyphenation	Käsitsi poolitamine
+	Manual hyphenation is complete.	Käsitsi poolitamine on lõpetatud.
+	Manual…	Käsitsi…
+	Mark selected text as:	Märgi valitud tekst keeleks:
+	New Document	Uus dokument
+	No limit	Piiranguta
+	Norwegian (Bokmål)	Norra (bokmål)
+	Numbering:	Nummerdus:
+	Omit	Jäta välja
+	One label per recipient	Üks silt saaja kohta
+	Polish	Poola
+	Portuguese (Brazil)	Portugali (Brasiilia)
+	Portuguese (Portugal)	Portugali (Portugal)
+	Return address labels	Saatja aadressi sildid
+	Return address:	Saatja aadress:
+	Row:	Rida:
+	Russian	Vene
+	Serbian (Cyrillic)	Serbia (kirillitsa)
+	Serbian (Latin)	Serbia (ladina)
+	Set As Default	Määra vaikeväärtuseks
+	Shipping labels	Saatmissildid
+	Single label	Üks silt
+	Spanish (Mexico)	Hispaania (Mehhiko)
+	Spanish (Spain)	Hispaania (Hispaania)
+	Swedish	Rootsi
+	Turkish	Türgi
+	Ukrainian	Ukraina
+	{language} is now the document's default language.	{language} on nüüd dokumendi vaikekeel.

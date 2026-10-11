@@ -1491,6 +1491,37 @@
 	Enlarge symbol	Збільшити символ
 	Enclosure	Обведення
 	Circle	Коло
+	Change Chart Type	Змінити тип діаграми
+	Chart Design	Конструктор діаграми
+	Type	Тип
+	Edit Data	Редагувати дані
+	Chart Title	Назва діаграми
+	Chart Layouts	Макети діаграми
+	Add Chart Element	Додати елемент діаграми
+	Legend	Легенда
+	Data Labels	Підписи даних
+	Above Chart	Над діаграмою
+	Insert Chart	Вставити діаграму
+	Clustered Column	Стовпці з групуванням
+	Stacked Column	Стовпці з накопиченням
+	Clustered Bar	Смуги з групуванням
+	Stacked Bar	Смуги з накопиченням
+	Area	Області
+	Pie	Кругова
+	Doughnut	Кільцева
+	Scatter	Точкова
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) — не число.
+	Category {n}	Категорія {n}
+	Series {n}	Ряд {n}
+	Type the categories down the side and a column of values per series.	Введіть категорії збоку та стовпець значень для кожного ряду.
+	Categories	Категорії
+	Series name	Назва ряду
+	Remove series	Видалити ряд
+	Remove row	Видалити рядок
+	Add Row	Додати рядок
+	Add Series	Додати ряд
+	Edit\nData	Редагувати\nдані
+	Change\nChart Type	Змінити тип\nдіаграми
 	Align Text	Вирівняти текст
 	Create Link	Створити зв'язок
 	Break Link	Розірвати зв'язок
@@ -1621,3 +1652,66 @@
 	Rewind	На початок
 	Forward	Вперед
 	Stroke {n} of {total}	Штрих {n} з {total}
+	Add line numbering	Додати нумерацію рядків
+	Add to Document	Додати до документа
+	Address labels	Адресні етикетки
+	Arabic	Арабська
+	Auto	Авто
+	Automatically hyphenate document	Автоматично переносити слова в документі
+	Chinese (Simplified)	Китайська (спрощена)
+	Chinese (Traditional)	Китайська (традиційна)
+	Column:	Стовпець:
+	Count by:	Крок:
+	Czech	Чеська
+	Danish	Данська
+	Delivery address:	Адреса одержувача:
+	Detect language automatically	Визначати мову автоматично
+	Do not check spelling or grammar	Не перевіряти правопис і граматику
+	Dutch	Нідерландська
+	English (United Kingdom)	Англійська (Велика Британія)
+	Envelope size:	Розмір конверта:
+	Estonian	Естонська
+	Finnish	Фінська
+	French (France)	Французька (Франція)
+	From text:	Від тексту:
+	Full page of the same label	Ціла сторінка однакових етикеток
+	German (Germany)	Німецька (Німеччина)
+	Greek	Грецька
+	Hebrew	Іврит
+	Hyphenate at:	Перенести після:
+	Hyphenate words in CAPS	Переносити слова з ВЕЛИКИХ ЛІТЕР
+	Hyphenation Options…	Параметри перенесення слів…
+	Hyphenation zone:	Зона перенесення:
+	Italian	Італійська
+	Japanese	Японська
+	Korean	Корейська
+	Limit consecutive hyphens to:	Обмежити кількість переносів поспіль:
+	Line Numbering Options…	Параметри нумерації рядків…
+	Manual Hyphenation	Ручне перенесення слів
+	Manual hyphenation is complete.	Ручне перенесення слів завершено.
+	Manual…	Вручну…
+	Mark selected text as:	Позначити виділений текст як:
+	New Document	Новий документ
+	No limit	Без обмеження
+	Norwegian (Bokmål)	Норвезька (букмол)
+	Numbering:	Нумерація:
+	Omit	Пропустити
+	One label per recipient	Одна етикетка на одержувача
+	Polish	Польська
+	Portuguese (Brazil)	Португальська (Бразилія)
+	Portuguese (Portugal)	Португальська (Португалія)
+	Return address labels	Етикетки зі зворотною адресою
+	Return address:	Зворотна адреса:
+	Row:	Рядок:
+	Russian	Російська
+	Serbian (Cyrillic)	Сербська (кирилиця)
+	Serbian (Latin)	Сербська (латиниця)
+	Set As Default	Зробити типовою
+	Shipping labels	Етикетки для відправлень
+	Single label	Одна етикетка
+	Spanish (Mexico)	Іспанська (Мексика)
+	Spanish (Spain)	Іспанська (Іспанія)
+	Swedish	Шведська
+	Turkish	Турецька
+	Ukrainian	Українська
+	{language} is now the document's default language.	{language} тепер типова мова документа.

@@ -3,6 +3,7 @@
 pub mod accessibility;
 pub mod canvas;
 pub mod caret;
+pub mod chart;
 pub mod citations;
 pub mod column;
 pub mod controls;
@@ -71,6 +72,7 @@ pub fn registry() -> Registry {
     v.extend(citations::specs());
     v.extend(index::specs());
     v.extend(objects::specs());
+    v.extend(chart::specs());
     v.extend(draw::specs());
     v.extend(canvas::specs());
     v.extend(tools::specs());

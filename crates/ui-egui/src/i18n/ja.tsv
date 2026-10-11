@@ -1479,6 +1479,37 @@
 	Enlarge symbol	記号を拡大
 	Enclosure	囲い
 	Circle	円
+	Change Chart Type	グラフの種類の変更
+	Chart Design	グラフのデザイン
+	Type	種類
+	Edit Data	データの編集
+	Chart Title	グラフ タイトル
+	Chart Layouts	グラフのレイアウト
+	Add Chart Element	グラフ要素の追加
+	Legend	凡例
+	Data Labels	データ ラベル
+	Above Chart	グラフの上
+	Insert Chart	グラフの挿入
+	Clustered Column	集合縦棒
+	Stacked Column	積み上げ縦棒
+	Clustered Bar	集合横棒
+	Stacked Bar	積み上げ横棒
+	Area	面
+	Pie	円
+	Doughnut	ドーナツ
+	Scatter	散布図
+	“{text}” ({row}, {series}) isn't a number.	「{text}」（{row}、{series}）は数値ではありません。
+	Category {n}	カテゴリ {n}
+	Series {n}	系列 {n}
+	Type the categories down the side and a column of values per series.	左端の列にカテゴリを、系列ごとに 1 列ずつ値を入力します。
+	Categories	カテゴリ
+	Series name	系列名
+	Remove series	系列を削除
+	Remove row	行を削除
+	Add Row	行の追加
+	Add Series	系列の追加
+	Edit\nData	データの\n編集
+	Change\nChart Type	グラフの種類\nの変更
 	Align Text	文字の配置
 	Create Link	リンクの作成
 	Break Link	リンクの解除
@@ -1609,3 +1640,66 @@
 	Rewind	巻き戻し
 	Forward	早送り
 	Stroke {n} of {total}	ストローク {n}/{total}
+	Add line numbering	行番号を追加する
+	Add to Document	文書に追加
+	Address labels	宛名ラベル
+	Arabic	アラビア語
+	Auto	自動
+	Automatically hyphenate document	文書を自動的にハイフネーションする
+	Chinese (Simplified)	中国語（簡体字）
+	Chinese (Traditional)	中国語（繁体字）
+	Column:	列:
+	Count by:	増分:
+	Czech	チェコ語
+	Danish	デンマーク語
+	Delivery address:	宛先:
+	Detect language automatically	言語を自動的に検出する
+	Do not check spelling or grammar	スペルチェックと文章校正を行わない
+	Dutch	オランダ語
+	English (United Kingdom)	英語（英国）
+	Envelope size:	封筒サイズ:
+	Estonian	エストニア語
+	Finnish	フィンランド語
+	French (France)	フランス語（フランス）
+	From text:	本文からの距離:
+	Full page of the same label	同じラベルで 1 ページ全体
+	German (Germany)	ドイツ語（ドイツ）
+	Greek	ギリシャ語
+	Hebrew	ヘブライ語
+	Hyphenate at:	ハイフネーション位置:
+	Hyphenate words in CAPS	大文字の単語をハイフネーションする
+	Hyphenation Options…	ハイフネーションのオプション…
+	Hyphenation zone:	ハイフネーション領域:
+	Italian	イタリア語
+	Japanese	日本語
+	Korean	韓国語
+	Limit consecutive hyphens to:	連続するハイフンの上限:
+	Line Numbering Options…	行番号のオプション…
+	Manual Hyphenation	手動ハイフネーション
+	Manual hyphenation is complete.	手動ハイフネーションが完了しました。
+	Manual…	手動…
+	Mark selected text as:	選択した文字列の言語:
+	New Document	新規文書
+	No limit	制限なし
+	Norwegian (Bokmål)	ノルウェー語（ブークモール）
+	Numbering:	番号の付け方:
+	Omit	省略
+	One label per recipient	宛先ごとに 1 枚のラベル
+	Polish	ポーランド語
+	Portuguese (Brazil)	ポルトガル語（ブラジル）
+	Portuguese (Portugal)	ポルトガル語（ポルトガル）
+	Return address labels	差出人ラベル
+	Return address:	差出人住所:
+	Row:	行:
+	Russian	ロシア語
+	Serbian (Cyrillic)	セルビア語（キリル文字）
+	Serbian (Latin)	セルビア語（ラテン文字）
+	Set As Default	既定に設定
+	Shipping labels	配送ラベル
+	Single label	1 枚のラベル
+	Spanish (Mexico)	スペイン語（メキシコ）
+	Spanish (Spain)	スペイン語（スペイン）
+	Swedish	スウェーデン語
+	Turkish	トルコ語
+	Ukrainian	ウクライナ語
+	{language} is now the document's default language.	{language} がこの文書の既定の言語になりました。

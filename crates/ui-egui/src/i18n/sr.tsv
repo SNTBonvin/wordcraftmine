@@ -1493,6 +1493,37 @@
 	Enlarge symbol	Увећај симбол
 	Enclosure	Оквир
 	Circle	Круг
+	Change Chart Type	Промени тип графикона
+	Chart Design	Дизајн графикона
+	Type	Тип
+	Edit Data	Уреди податке
+	Chart Title	Наслов графикона
+	Chart Layouts	Распореди графикона
+	Add Chart Element	Додај елемент графикона
+	Legend	Легенда
+	Data Labels	Ознаке података
+	Above Chart	Изнад графикона
+	Insert Chart	Уметни графикон
+	Clustered Column	Груписане колоне
+	Stacked Column	Наслагане колоне
+	Clustered Bar	Груписане траке
+	Stacked Bar	Наслагане траке
+	Area	Површински
+	Pie	Кружни
+	Doughnut	Прстенасти
+	Scatter	Распршени
+	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) није број.
+	Category {n}	Категорија {n}
+	Series {n}	Серија {n}
+	Type the categories down the side and a column of values per series.	Унесите категорије са стране и по једну колону вредности за сваку серију.
+	Categories	Категорије
+	Series name	Назив серије
+	Remove series	Уклони серију
+	Remove row	Уклони ред
+	Add Row	Додај ред
+	Add Series	Додај серију
+	Edit\nData	Уреди\nподатке
+	Change\nChart Type	Промени тип\nграфикона
 	Align Text	Поравнај текст
 	Create Link	Направи везу
 	Break Link	Прекини везу
@@ -1623,3 +1654,66 @@
 	Rewind	На почетак
 	Forward	Напред
 	Stroke {n} of {total}	Потез {n} од {total}
+	Add line numbering	Додај бројеве редова
+	Add to Document	Додај у документ
+	Address labels	Адресне налепнице
+	Arabic	Арапски
+	Auto	Аутоматски
+	Automatically hyphenate document	Аутоматски дели речи у документу
+	Chinese (Simplified)	Кинески (поједностављени)
+	Chinese (Traditional)	Кинески (традиционални)
+	Column:	Колона:
+	Count by:	Корак:
+	Czech	Чешки
+	Danish	Дански
+	Delivery address:	Адреса примаоца:
+	Detect language automatically	Аутоматски препознај језик
+	Do not check spelling or grammar	Не проверавај правопис ни граматику
+	Dutch	Холандски
+	English (United Kingdom)	Енглески (Уједињено Краљевство)
+	Envelope size:	Величина коверте:
+	Estonian	Естонски
+	Finnish	Фински
+	French (France)	Француски (Француска)
+	From text:	Од текста:
+	Full page of the same label	Цела страница исте налепнице
+	German (Germany)	Немачки (Немачка)
+	Greek	Грчки
+	Hebrew	Хебрејски
+	Hyphenate at:	Подели на:
+	Hyphenate words in CAPS	Дели речи написане ВЕЛИКИМ СЛОВИМА
+	Hyphenation Options…	Опције дељења речи…
+	Hyphenation zone:	Зона дељења речи:
+	Italian	Италијански
+	Japanese	Јапански
+	Korean	Корејски
+	Limit consecutive hyphens to:	Највише узастопних цртица:
+	Line Numbering Options…	Опције бројева редова…
+	Manual Hyphenation	Ручно дељење речи
+	Manual hyphenation is complete.	Ручно дељење речи је завршено.
+	Manual…	Ручно…
+	Mark selected text as:	Означи изабрани текст као:
+	New Document	Нови документ
+	No limit	Без ограничења
+	Norwegian (Bokmål)	Норвешки (букмол)
+	Numbering:	Нумерисање:
+	Omit	Изостави
+	One label per recipient	Једна налепница по примаоцу
+	Polish	Пољски
+	Portuguese (Brazil)	Португалски (Бразил)
+	Portuguese (Portugal)	Португалски (Португалија)
+	Return address labels	Налепнице са адресом пошиљаоца
+	Return address:	Адреса пошиљаоца:
+	Row:	Ред:
+	Russian	Руски
+	Serbian (Cyrillic)	Српски (ћирилица)
+	Serbian (Latin)	Српски (латиница)
+	Set As Default	Постави као подразумевано
+	Shipping labels	Налепнице за пошиљке
+	Single label	Једна налепница
+	Spanish (Mexico)	Шпански (Мексико)
+	Spanish (Spain)	Шпански (Шпанија)
+	Swedish	Шведски
+	Turkish	Турски
+	Ukrainian	Украјински
+	{language} is now the document's default language.	{language} је сада подразумевани језик документа.

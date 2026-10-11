@@ -1597,6 +1597,37 @@
 	Search icons	Simgelerde ara
 	No icons match your search.	Aramanızla eşleşen simge yok.
 	Recolor a one-color picture, such as an icon	Simge gibi tek renkli bir resmi yeniden renklendir
+	Change Chart Type	Grafik Türünü Değiştir
+	Chart Design	Grafik Tasarımı
+	Type	Tür
+	Edit Data	Verileri Düzenle
+	Chart Title	Grafik Başlığı
+	Chart Layouts	Grafik Düzenleri
+	Add Chart Element	Grafik Öğesi Ekle
+	Legend	Gösterge
+	Data Labels	Veri Etiketleri
+	Above Chart	Grafiğin Üstünde
+	Insert Chart	Grafik Ekle
+	Clustered Column	Kümelenmiş Sütun
+	Stacked Column	Yığılmış Sütun
+	Clustered Bar	Kümelenmiş Çubuk
+	Stacked Bar	Yığılmış Çubuk
+	Area	Alan
+	Pie	Pasta
+	Doughnut	Halka
+	Scatter	Dağılım
+	“{text}” ({row}, {series}) isn't a number.	“{text}” ({row}, {series}) bir sayı değil.
+	Category {n}	Kategori {n}
+	Series {n}	Seri {n}
+	Type the categories down the side and a column of values per series.	Kategorileri yan tarafa, her seri için bir değer sütunu yazın.
+	Categories	Kategoriler
+	Series name	Seri adı
+	Remove series	Seriyi kaldır
+	Remove row	Satırı kaldır
+	Add Row	Satır Ekle
+	Add Series	Seri Ekle
+	Edit\nData	Verileri\nDüzenle
+	Change\nChart Type	Grafik Türünü\nDeğiştir
 	Align Text	Metni Hizala
 	Create Link	Bağlantı Oluştur
 	Break Link	Bağlantıyı Kes
@@ -1618,3 +1649,66 @@
 	Continuous numbering	Sürekli numaralandırma
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
+	Add line numbering	Satır numaralandırma ekle
+	Add to Document	Belgeye Ekle
+	Address labels	Adres etiketleri
+	Arabic	Arapça
+	Auto	Otomatik
+	Automatically hyphenate document	Belgede otomatik heceleme yap
+	Chinese (Simplified)	Çince (Basitleştirilmiş)
+	Chinese (Traditional)	Çince (Geleneksel)
+	Column:	Sütun:
+	Count by:	Artış:
+	Czech	Çekçe
+	Danish	Danca
+	Delivery address:	Teslimat adresi:
+	Detect language automatically	Dili otomatik algıla
+	Do not check spelling or grammar	Yazım ve dil bilgisini denetleme
+	Dutch	Felemenkçe
+	English (United Kingdom)	İngilizce (Birleşik Krallık)
+	Envelope size:	Zarf boyutu:
+	Estonian	Estonca
+	Finnish	Fince
+	French (France)	Fransızca (Fransa)
+	From text:	Metinden:
+	Full page of the same label	Aynı etiketten tam sayfa
+	German (Germany)	Almanca (Almanya)
+	Greek	Yunanca
+	Hebrew	İbranice
+	Hyphenate at:	Hecele:
+	Hyphenate words in CAPS	BÜYÜK HARFLİ sözcükleri hecele
+	Hyphenation Options…	Heceleme Seçenekleri…
+	Hyphenation zone:	Heceleme bölgesi:
+	Italian	İtalyanca
+	Japanese	Japonca
+	Korean	Korece
+	Limit consecutive hyphens to:	Ardışık tireleri şununla sınırla:
+	Line Numbering Options…	Satır Numaralandırma Seçenekleri…
+	Manual Hyphenation	El ile Heceleme
+	Manual hyphenation is complete.	El ile heceleme tamamlandı.
+	Manual…	El ile…
+	Mark selected text as:	Seçili metni şu olarak işaretle:
+	New Document	Yeni Belge
+	No limit	Sınır yok
+	Norwegian (Bokmål)	Norveççe (Bokmål)
+	Numbering:	Numaralandırma:
+	Omit	Atla
+	One label per recipient	Alıcı başına bir etiket
+	Polish	Lehçe
+	Portuguese (Brazil)	Portekizce (Brezilya)
+	Portuguese (Portugal)	Portekizce (Portekiz)
+	Return address labels	Gönderen adresi etiketleri
+	Return address:	Gönderen adresi:
+	Row:	Satır:
+	Russian	Rusça
+	Serbian (Cyrillic)	Sırpça (Kiril)
+	Serbian (Latin)	Sırpça (Latin)
+	Set As Default	Varsayılan Olarak Ayarla
+	Shipping labels	Kargo etiketleri
+	Single label	Tek etiket
+	Spanish (Mexico)	İspanyolca (Meksika)
+	Spanish (Spain)	İspanyolca (İspanya)
+	Swedish	İsveççe
+	Turkish	Türkçe
+	Ukrainian	Ukraynaca
+	{language} is now the document's default language.	{language} artık belgenin varsayılan dili.

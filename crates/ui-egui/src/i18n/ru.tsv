@@ -1975,6 +1975,37 @@ preview	Title	Пример
 	Search icons	Поиск значков
 	No icons match your search.	Нет значков, соответствующих поиску.
 	Recolor a one-color picture, such as an icon	Перекрасить одноцветный рисунок, например значок
+	Change Chart Type	Изменить тип диаграммы
+	Chart Design	Конструктор диаграмм
+	Type	Тип
+	Edit Data	Изменить данные
+	Chart Title	Название диаграммы
+	Chart Layouts	Макеты диаграмм
+	Add Chart Element	Добавить элемент диаграммы
+	Legend	Легенда
+	Data Labels	Подписи данных
+	Above Chart	Над диаграммой
+	Insert Chart	Вставка диаграммы
+	Clustered Column	Гистограмма с группировкой
+	Stacked Column	Гистограмма с накоплением
+	Clustered Bar	Линейчатая с группировкой
+	Stacked Bar	Линейчатая с накоплением
+	Area	С областями
+	Pie	Круговая
+	Doughnut	Кольцевая
+	Scatter	Точечная
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) — не число.
+	Category {n}	Категория {n}
+	Series {n}	Ряд {n}
+	Type the categories down the side and a column of values per series.	Введите категории по вертикали и столбец значений для каждого ряда.
+	Categories	Категории
+	Series name	Имя ряда
+	Remove series	Удалить ряд
+	Remove row	Удалить строку
+	Add Row	Добавить строку
+	Add Series	Добавить ряд
+	Edit\nData	Изменить\nданные
+	Change\nChart Type	Изменить\nтип диаграммы
 	Align Text	Выравнивание текста
 	Create Link	Создать связь
 	Break Link	Разорвать связь
@@ -1996,3 +2027,66 @@ preview	Title	Пример
 	Continuous numbering	Сквозная нумерация
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
+	Add line numbering	Добавить нумерацию строк
+	Add to Document	Добавить в документ
+	Address labels	Адресные наклейки
+	Arabic	Арабский
+	Auto	Авто
+	Automatically hyphenate document	Автоматически расставлять переносы в документе
+	Chinese (Simplified)	Китайский (упрощённый)
+	Chinese (Traditional)	Китайский (традиционный)
+	Column:	Столбец:
+	Count by:	Шаг:
+	Czech	Чешский
+	Danish	Датский
+	Delivery address:	Адрес получателя:
+	Detect language automatically	Определять язык автоматически
+	Do not check spelling or grammar	Не проверять орфографию и грамматику
+	Dutch	Нидерландский
+	English (United Kingdom)	Английский (Великобритания)
+	Envelope size:	Размер конверта:
+	Estonian	Эстонский
+	Finnish	Финский
+	French (France)	Французский (Франция)
+	From text:	От текста:
+	Full page of the same label	Целая страница одинаковых наклеек
+	German (Germany)	Немецкий (Германия)
+	Greek	Греческий
+	Hebrew	Иврит
+	Hyphenate at:	Переносить по:
+	Hyphenate words in CAPS	Переносить слова из ПРОПИСНЫХ букв
+	Hyphenation Options…	Параметры расстановки переносов…
+	Hyphenation zone:	Зона переноса слов:
+	Italian	Итальянский
+	Japanese	Японский
+	Korean	Корейский
+	Limit consecutive hyphens to:	Максимум последовательных переносов:
+	Line Numbering Options…	Параметры нумерации строк…
+	Manual Hyphenation	Расстановка переносов вручную
+	Manual hyphenation is complete.	Расстановка переносов вручную завершена.
+	Manual…	Вручную…
+	Mark selected text as:	Пометить выделенный текст как:
+	New Document	Новый документ
+	No limit	Без ограничения
+	Norwegian (Bokmål)	Норвежский (букмол)
+	Numbering:	Нумерация:
+	Omit	Пропустить
+	One label per recipient	Одна наклейка на получателя
+	Polish	Польский
+	Portuguese (Brazil)	Португальский (Бразилия)
+	Portuguese (Portugal)	Португальский (Португалия)
+	Return address labels	Наклейки с обратным адресом
+	Return address:	Обратный адрес:
+	Row:	Строка:
+	Russian	Русский
+	Serbian (Cyrillic)	Сербский (кириллица)
+	Serbian (Latin)	Сербский (латиница)
+	Set As Default	Использовать по умолчанию
+	Shipping labels	Транспортные наклейки
+	Single label	Одна наклейка
+	Spanish (Mexico)	Испанский (Мексика)
+	Spanish (Spain)	Испанский (Испания)
+	Swedish	Шведский
+	Turkish	Турецкий
+	Ukrainian	Украинский
+	{language} is now the document's default language.	{language} теперь язык документа по умолчанию.

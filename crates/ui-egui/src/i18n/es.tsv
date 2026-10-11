@@ -1495,6 +1495,37 @@
 	Enlarge symbol	Agrandar símbolo
 	Enclosure	Contorno
 	Circle	Círculo
+	Change Chart Type	Cambiar tipo de gráfico
+	Chart Design	Diseño de gráfico
+	Type	Tipo
+	Edit Data	Editar datos
+	Chart Title	Título del gráfico
+	Chart Layouts	Diseños de gráfico
+	Add Chart Element	Agregar elemento de gráfico
+	Legend	Leyenda
+	Data Labels	Etiquetas de datos
+	Above Chart	Encima del gráfico
+	Insert Chart	Insertar gráfico
+	Clustered Column	Columnas agrupadas
+	Stacked Column	Columnas apiladas
+	Clustered Bar	Barras agrupadas
+	Stacked Bar	Barras apiladas
+	Area	Área
+	Pie	Circular
+	Doughnut	Anillo
+	Scatter	Dispersión
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) no es un número.
+	Category {n}	Categoría {n}
+	Series {n}	Serie {n}
+	Type the categories down the side and a column of values per series.	Escribe las categorías en el lateral y una columna de valores por serie.
+	Categories	Categorías
+	Series name	Nombre de la serie
+	Remove series	Quitar serie
+	Remove row	Quitar fila
+	Add Row	Agregar fila
+	Add Series	Agregar serie
+	Edit\nData	Editar\ndatos
+	Change\nChart Type	Cambiar tipo\nde gráfico
 	Align Text	Alinear texto
 	Create Link	Crear vínculo
 	Break Link	Romper vínculo
@@ -1625,3 +1656,66 @@
 	Rewind	Rebobinar
 	Forward	Avanzar
 	Stroke {n} of {total}	Trazo {n} de {total}
+	Add line numbering	Agregar numeración de líneas
+	Add to Document	Agregar al documento
+	Address labels	Etiquetas de dirección
+	Arabic	Árabe
+	Auto	Auto
+	Automatically hyphenate document	Separar palabras automáticamente en el documento
+	Chinese (Simplified)	Chino (simplificado)
+	Chinese (Traditional)	Chino (tradicional)
+	Column:	Columna:
+	Count by:	Intervalo:
+	Czech	Checo
+	Danish	Danés
+	Delivery address:	Dirección del destinatario:
+	Detect language automatically	Detectar idioma automáticamente
+	Do not check spelling or grammar	No revisar la ortografía ni la gramática
+	Dutch	Neerlandés
+	English (United Kingdom)	Inglés (Reino Unido)
+	Envelope size:	Tamaño del sobre:
+	Estonian	Estonio
+	Finnish	Finés
+	French (France)	Francés (Francia)
+	From text:	Desde el texto:
+	Full page of the same label	Página completa de la misma etiqueta
+	German (Germany)	Alemán (Alemania)
+	Greek	Griego
+	Hebrew	Hebreo
+	Hyphenate at:	Separar en:
+	Hyphenate words in CAPS	Separar palabras en MAYÚSCULAS
+	Hyphenation Options…	Opciones de separación de palabras…
+	Hyphenation zone:	Zona de separación:
+	Italian	Italiano
+	Japanese	Japonés
+	Korean	Coreano
+	Limit consecutive hyphens to:	Limitar guiones consecutivos a:
+	Line Numbering Options…	Opciones de numeración de líneas…
+	Manual Hyphenation	Separación manual de palabras
+	Manual hyphenation is complete.	La separación manual de palabras ha terminado.
+	Manual…	Manual…
+	Mark selected text as:	Marcar el texto seleccionado como:
+	New Document	Documento nuevo
+	No limit	Sin límite
+	Norwegian (Bokmål)	Noruego (bokmål)
+	Numbering:	Numeración:
+	Omit	Omitir
+	One label per recipient	Una etiqueta por destinatario
+	Polish	Polaco
+	Portuguese (Brazil)	Portugués (Brasil)
+	Portuguese (Portugal)	Portugués (Portugal)
+	Return address labels	Etiquetas de remitente
+	Return address:	Dirección del remitente:
+	Row:	Fila:
+	Russian	Ruso
+	Serbian (Cyrillic)	Serbio (cirílico)
+	Serbian (Latin)	Serbio (latino)
+	Set As Default	Establecer como predeterminado
+	Shipping labels	Etiquetas de envío
+	Single label	Una sola etiqueta
+	Spanish (Mexico)	Español (México)
+	Spanish (Spain)	Español (España)
+	Swedish	Sueco
+	Turkish	Turco
+	Ukrainian	Ucraniano
+	{language} is now the document's default language.	{language} es ahora el idioma predeterminado del documento.
