@@ -31,6 +31,13 @@ fn has_floating(s: &Session) -> Option<&'static str> {
 /// Charts and diagrams are not written back on save yet, so their size, position and wrapping stay
 /// as imported: they can be selected and deleted, not moved, resized or arranged.
 const FROZEN: &str = "charts and diagrams can't be moved or resized yet";
+/// `has_movable` for Size: charts WordCraft can edit are drawn again at their new size.
+fn has_sizable(s: &Session) -> Option<&'static str> {
+    match selected(s) {
+        Some((_, InlineObject::Graphic { graphic, .. })) if graphic.chart.is_some() => None,
+        _ => has_movable(s),
+    }
+}
 /// `has_object` for the geometry commands: a chart or diagram is frozen.
 fn has_movable(s: &Session) -> Option<&'static str> {
     match selected(s) {
@@ -64,7 +71,7 @@ fn has_shape(s: &Session) -> Option<&'static str> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("picture.size", "Size", "Picture Format › Size", size).params(r#"{"width"?: pt, "height"?: pt, "lockAspect"?: bool, "scale"?: percent}"#).when(has_movable),
+        CommandSpec::new("picture.size", "Size", "Picture Format › Size", size).params(r#"{"width"?: pt, "height"?: pt, "lockAspect"?: bool, "scale"?: percent}"#).when(has_sizable),
         CommandSpec::new("picture.crop", "Crop", "Picture Format › Size", |s, v| {
             let c = [p::f32(v, "left"), p::f32(v, "top"), p::f32(v, "right"), p::f32(v, "bottom")].map(|x| x.unwrap_or(0.0).clamp(0.0, 0.45));
             with_obj(s, |o| {
@@ -75,16 +82,16 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"left"?, "top"?, "right"?, "bottom"? (fractions 0–0.45)}"#)
         .when(has_picture),
+        // Kept for scripts written before every object had alt text: `object.altText` on a picture.
         CommandSpec::new("picture.altText", "Alt Text", "Picture Format › Accessibility", |s, v| {
-            let t = p::req_str(v, "text")?.to_string();
-            with_obj(s, |o| {
-                if let InlineObject::Image { alt, .. } = o {
-                    *alt = t.clone();
-                }
-            })
+            p::req_str(v, "text")?;
+            alt_text(s, v)
         })
-        .params(r#"{"text": string}"#)
+        .params(r#"{"text": string, "title"?: string, "decorative"?: bool}"#)
         .when(has_picture),
+        CommandSpec::new("object.altText", "Alt Text", "Shape Format › Accessibility", alt_text)
+            .params(r#"{"text"?: string, "title"?: string, "decorative"?: bool} (the selected picture, shape, text box, group or chart)"#)
+            .when(has_object),
         CommandSpec::new("picture.corrections", "Corrections", "Picture Format › Adjust", |s, v| {
             let b = p::f32(v, "brightness").unwrap_or(0.0).clamp(-100.0, 100.0);
             let c = p::f32(v, "contrast").unwrap_or(0.0).clamp(-100.0, 100.0);
@@ -258,6 +265,9 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"side": "bothSides|left|right|largest"}  (the sides of the selected Square, Tight or Through object text flows on; largest: the wider side, line by line)"#)
         .when(has_movable),
+        CommandSpec::new("arrange.moveWithText", "Move with Text", "Layout › Arrange › Wrap Text", |s, v| move_with_text(s, p::bool(v, "value").unwrap_or(true)))
+            .params(r#"{"value": bool}  (true: Move with Text, the floating object's vertical position follows its paragraph; false: Fix Position on Page. It stays where it is)"#)
+            .when(has_floating),
         CommandSpec::new("arrange.position", "Position", "Layout › Arrange", |s, v| {
             let preset = p::str(v, "preset").unwrap_or("middleCenter").to_string();
             let (x, y) = (p::f32(v, "x"), p::f32(v, "y"));
@@ -759,6 +769,34 @@ fn unalign(s: &mut Session) -> Result<(), CmdError> {
     Ok(())
 }
 
+/// Whether a floating object moves with its text (Word's "Move with Text"): its vertical position
+/// follows its paragraph (as layout places any anchor but the page and its margins), rather than
+/// being fixed on the page ("Fix Position on Page").
+pub fn moves_with_text(f: &Float) -> bool {
+    use wordcraft_doc::para::Anchor;
+    !matches!(f.v_rel, Anchor::Page | Anchor::Margin | Anchor::TopMargin | Anchor::BottomMargin | Anchor::InsideMargin | Anchor::OutsideMargin)
+}
+
+/// Arrange › Wrap Text › Move with Text / Fix Position on Page: anchor the selected floating
+/// object's vertical position to its paragraph or to the page, keeping it where it is now.
+fn move_with_text(s: &mut Session, with_text: bool) -> CmdResult {
+    use wordcraft_doc::para::Anchor;
+    let (pos, obj) = selected(s).ok_or_else(|| CmdError::Disabled("no picture or shape selected".into()))?;
+    let Some((_, _, float)) = obj.frame() else { return Err(CmdError::Disabled("select a floating picture or shape first".into())) };
+    if moves_with_text(float) == with_text {
+        return Ok(json!({"object": serde_json::to_value(&obj).unwrap_or(Value::Null)}));
+    }
+    let hit = s.layout().object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the object isn't laid out".into()))?;
+    // Paragraph offsets start at the paragraph's top (the hit's origin), page offsets at the page's.
+    let y = if with_text { hit.rect.y - hit.origin.y } else { hit.rect.y };
+    let o = edit_float(s, &pos, |f| {
+        f.v_rel = if with_text { Anchor::Paragraph } else { Anchor::Page };
+        f.v_align = None;
+        f.y = y.clamp(-MAX_OFFSET, MAX_OFFSET);
+    })?;
+    Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
+}
+
 /// The top-level body paragraph under `y` on `page`: the last one starting at or above it (else
 /// the first starting on the page).
 pub(crate) fn anchor_paragraph(layout: &wordcraft_layout::DocLayout, page: usize, y: f32) -> Option<wordcraft_doc::Path> {
@@ -788,6 +826,27 @@ pub(crate) fn nearest_line(layout: &wordcraft_layout::DocLayout, page: usize, y:
 
 fn obj_size(o: &InlineObject) -> (f32, f32) {
     o.frame().map_or((0.0, 0.0), |(w, h, _)| (w, h))
+}
+
+/// Alt Text: the selected object's description, title and decorative mark, in one undo step.
+fn alt_text(s: &mut Session, v: &Value) -> CmdResult {
+    let (text, title, decorative) = (p::str(v, "text"), p::str(v, "title"), p::bool(v, "decorative"));
+    if text.is_none() && title.is_none() && decorative.is_none() {
+        return Err(CmdError::Params("`text`, `title` or `decorative` is required".into()));
+    }
+    with_obj(s, |o| {
+        if let Some(t) = text {
+            o.set_alt_text(t);
+        }
+        if let Some(f) = o.float_mut() {
+            if let Some(t) = title {
+                f.alt.title = wordcraft_doc::para::cap_alt(t);
+            }
+            if let Some(d) = decorative {
+                f.alt.decorative = d;
+            }
+        }
+    })
 }
 
 fn with_obj(s: &mut Session, f: impl Fn(&mut InlineObject)) -> CmdResult {
@@ -856,8 +915,13 @@ fn size(s: &mut Session, v: &Value) -> CmdResult {
         _ => {}
     }
     let (w, h) = (w.clamp(1.0, 4000.0), h.clamp(1.0, 4000.0));
-    // Any drawing: a group's members scale with its frame (its child space is kept).
-    with_obj(s, |o| o.set_size(w, h))
+    // Any drawing: a group's members scale with its frame (its child space is kept);
+    // a chart is redrawn at its new size.
+    let theme = s.doc.settings.theme_colors.clone();
+    with_obj(s, |o| {
+        o.set_size(w, h);
+        super::chart::redraw(o, &theme);
+    })
 }
 
 /// Apply an image operation to the selected picture's bitmap (stored as a new PNG).
@@ -1138,13 +1202,16 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
             let mut obj = obj.clone();
             obj.set_size(cw, ch);
             if let Some(f) = obj.float_mut() {
-                *f = Float::default();
+                // Each member keeps its own alt text.
+                let alt = std::mem::take(&mut f.alt);
+                *f = Float { alt, ..Float::default() };
                 f.set_spin(spin);
             }
             GroupChild { x: x - x0, y: y - y0, obj }
         })
         .collect();
-    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| f.clone()).unwrap_or_default();
+    // The group takes the first member's placement; its members keep their own alt text.
+    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| Float { alt: Default::default(), ..f.clone() }).unwrap_or_default();
     float.set_spin(Spin::default());
     let grouped = InlineObject::Group { w, h, float, ch_w: w, ch_h: h, children, canvas: None };
     // Take the members out, last first so the earlier positions hold, and put the group where
@@ -1195,7 +1262,9 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
             // Grown to its smallest size about its centre, so it stays centred where it was.
             let (x, y) = (x - (mw - cw) / 2.0, y - (mh - ch) / 2.0);
             if let Some(f) = c.float_mut() {
-                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), ..float.clone() };
+                // Each member keeps its own alt text; the group's placement is shared out.
+                let alt = std::mem::take(&mut f.alt);
+                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), alt, ..float.clone() };
                 f.set_spin(spin);
             }
             c
@@ -1369,6 +1438,35 @@ mod tests {
         s.run("select.collapse", &json!({"end": true})).unwrap();
         s.run("text.insert", &json!({"text": "x"})).unwrap();
         assert!(s.run("picture.crop", &json!({"left": 0.1})).is_err());
+    }
+
+    /// #513: Wrap Text › Fix Position on Page / Move with Text re-anchor a floating picture
+    /// vertically without moving it; one undo step each; an inline picture can't.
+    #[test]
+    fn move_with_text_and_fix_position_keep_the_picture_in_place() {
+        use wordcraft_doc::para::Anchor;
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("text.insert", &json!({"text": "First paragraph\nSecond"})).unwrap();
+        let data = super::super::insert::base64_encode(&png(20, 10));
+        s.run("insert.picture", &json!({"data": data, "width": 100})).unwrap();
+        assert!(s.run("arrange.moveWithText", &json!({"value": false})).is_err(), "inline: no anchoring");
+        s.run("arrange.wrap", &json!({"wrap": "square"})).unwrap();
+        let v_rel = |s: &Session| selected(s).unwrap().1.frame().unwrap().2.v_rel;
+        let with_text = |s: &Session| moves_with_text(selected(s).unwrap().1.frame().unwrap().2);
+        let rect = |s: &mut Session| {
+            let pos = selected(s).unwrap().0;
+            s.layout().object(&pos, 0).unwrap().rect
+        };
+        let before = rect(&mut s);
+        s.run("arrange.moveWithText", &json!({"value": false})).unwrap();
+        assert_eq!(v_rel(&s), Anchor::Page);
+        assert!(!with_text(&s));
+        assert!((rect(&mut s).y - before.y).abs() < 0.01, "it stays put");
+        s.run("arrange.moveWithText", &json!({"value": true})).unwrap();
+        assert!(with_text(&s));
+        assert!((rect(&mut s).y - before.y).abs() < 0.01, "it stays put");
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(v_rel(&s), Anchor::Page);
     }
 
     /// #332: Rotate and Flip turn the frame (an angle and mirroring), never the pixels; an exact
@@ -1637,5 +1735,39 @@ mod tests {
         assert_eq!(s.doc.text_box_chains(), vec![vec![a, b]]);
         s.run("edit.undo", &json!({})).unwrap();
         assert!(s.doc.text_box_chains().is_empty());
+    }
+
+    #[test]
+    fn shape_alt_text_and_decorative_are_one_undo_step_each() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.shape", &json!({"kind": "ellipse"})).unwrap();
+        s.run("object.altText", &json!({"text": "A green circle", "title": "Logo"})).unwrap();
+        let (_, o) = selected(&s).unwrap();
+        assert_eq!((o.alt_text(), o.frame().map(|f| f.2.alt.title.as_str()), o.is_decorative()), ("A green circle", Some("Logo"), false));
+        s.run("object.altText", &json!({"decorative": true})).unwrap();
+        assert!(selected(&s).unwrap().1.is_decorative());
+        s.run("edit.undo", &json!({})).unwrap();
+        let (_, o) = selected(&s).unwrap();
+        assert!(!o.is_decorative() && o.alt_text() == "A green circle");
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.alt_text(), "");
+        // Hostile input is capped, and nothing to set is an error.
+        s.run("object.altText", &json!({"text": "x".repeat(50_000)})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.alt_text().len(), wordcraft_doc::para::MAX_ALT_TEXT);
+        assert!(s.run("object.altText", &json!({})).is_err());
+        // A picture-only alias stays a picture-only alias.
+        assert!(s.run("picture.altText", &json!({"text": "no"})).is_err());
+    }
+
+    #[test]
+    fn table_alt_text_sets_title_and_description() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.table", &json!({"rows": 2, "cols": 2})).unwrap();
+        s.run("table.altText", &json!({"title": "Prices", "text": "Prices by year"})).unwrap();
+        let t = s.doc.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t.clone()) } else { None }).unwrap();
+        assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), Some("Prices by year")));
+        s.run("table.altText", &json!({"text": ""})).unwrap();
+        let t = s.doc.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t.clone()) } else { None }).unwrap();
+        assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), None));
     }
 }
