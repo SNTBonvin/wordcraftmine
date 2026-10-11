@@ -562,7 +562,7 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             }
         }
         Draw::Mark { x, baseline, size, ch, color: mark } => {
-            let face = wordcraft_fonts::word::resolve("Source Sans 3", false, false).face;
+            let face = wordcraft_fonts::word::resolve(wordcraft_fonts::DEFAULT_FAMILY, false, false).face;
             let gid = face.glyph_for(*ch);
             let face = if gid == 0 {
                 match FontDb::global().fallback_for(*ch, face.id()) {
@@ -580,7 +580,7 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.fill_path(&o);
         }
         Draw::MarkText { x, baseline, size, text } => {
-            let base_face = wordcraft_fonts::word::resolve("Source Sans 3", false, false).face;
+            let base_face = wordcraft_fonts::word::resolve(wordcraft_fonts::DEFAULT_FAMILY, false, false).face;
             ctx.set_paint(color(opts.ink(opts.mark_color), 0.9));
             let mut gx = *x as f64;
             for ch in text.chars() {

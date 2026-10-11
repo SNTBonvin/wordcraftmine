@@ -149,7 +149,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let mode = crate::widgets::icon_text_button(
                         ui,
                         "pencil",
-                        &format!("{} ▾", if track { tl!("Reviewing") } else { tl!("Editing") }),
+                        &format!("{} ▼", if track { tl!("Reviewing") } else { tl!("Editing") }),
                         regular(12.0),
                     );
                     egui::Popup::menu(&mode).show(|ui| {

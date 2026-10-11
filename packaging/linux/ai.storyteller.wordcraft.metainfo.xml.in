@@ -32,12 +32,6 @@
     <keyword>document</keyword>
     <keyword>writer</keyword>
   </keywords>
-  <screenshots>
-    <screenshot type="default">
-      <caption>The Open Studio Handbook sample with the Navigation pane</caption>
-      <image>https://raw.githubusercontent.com/storytold/wordcraft/main/docs/images/hero.png</image>
-    </screenshot>
-  </screenshots>
   <branding>
     <color type="primary" scheme_preference="light">#b9c7f5</color>
     <color type="primary" scheme_preference="dark">#2b47b5</color>

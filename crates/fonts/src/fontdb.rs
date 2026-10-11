@@ -13,7 +13,7 @@ use skrifa::string::StringId;
 use skrifa::{GlyphId, MetadataProvider};
 
 /// The family used when a requested family is unknown (the UI sans).
-pub const FALLBACK_FAMILY: &str = "Source Sans 3";
+pub const FALLBACK_FAMILY: &str = "Inter";
 
 /// The bundled fonts (OFL), as font file bytes. Japanese fonts are not bundled: they come from
 /// the optional craft-fonts build input ([`crate::japanese_document_fonts`]).
@@ -21,16 +21,34 @@ pub fn bundled() -> &'static [&'static [u8]] {
     BUNDLED
 }
 
+#[cfg(all(test, feature = "bundled-fonts-only"))]
+mod bundled_only_tests {
+    use super::FontDb;
+
+    #[test]
+    fn global_database_has_no_installed_font_source() {
+        let db = FontDb::global();
+        assert!(db.font_dirs.is_empty());
+        #[cfg(not(target_arch = "wasm32"))]
+        assert!(!db.sys.lock().unwrap_or_else(|e| e.into_inner()).enabled);
+    }
+
+    #[test]
+    fn optional_craft_fonts_cover_documents_without_adobe_faces() {
+        if crate::CRAFT_FONTS.is_empty() {
+            return;
+        }
+        assert!(!crate::CRAFT_FONTS.iter().any(|f| f.family.starts_with("Source ") || f.family == "Noto Sans CJK SC"));
+        let db = FontDb::global();
+        let latin = db.face(crate::DEFAULT_FAMILY, "Regular");
+        for ch in ['中', '日', 'ش', '한'] {
+            let face = db.fallback_for(ch, latin.id()).expect("an attributed craft font covers this script");
+            assert!(face.covers(ch));
+        }
+    }
+}
+
 static BUNDLED: &[&[u8]] = &[
-    include_bytes!("../../../assets/fonts/SourceSans3-Regular.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSans3-Semibold.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSans3-Bold.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSans3-It.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSerif4-Regular.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSerif4-It.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSerif4-Semibold.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSerif4-Bold.ttf"),
-    include_bytes!("../../../assets/fonts/SourceSerif4-BoldIt.ttf"),
     include_bytes!("../../../assets/fonts/Inter-Regular.ttf"),
     include_bytes!("../../../assets/fonts/Inter-Medium.ttf"),
     include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf"),
@@ -46,12 +64,12 @@ enum FontBytes {
 /// One loaded font face.
 pub struct FontFace {
     id: u32,
-    /// Typographic family name (e.g. "Source Sans 3").
+    /// Typographic family name (e.g. "Inter").
     pub family: String,
     /// Typographic style name (e.g. "Semibold", "Italic").
     pub style: String,
-    /// The family name Word lists and stores for the face (name ID 1 style, e.g. "Source Sans 3
-    /// Semibold"): the typographic family for Regular, Bold and Italic faces, the family plus the
+    /// The family name Word lists and stores for the face (name ID 1 style, e.g. "Inter
+    /// SemiBold"): the typographic family for Regular, Bold and Italic faces, the family plus the
     /// other style words for the rest. See [`legacy_family`].
     pub legacy_family: String,
     /// usWeightClass-style weight (400 = regular).
@@ -293,8 +311,6 @@ const SYSTEM_FALLBACKS: &[&str] = &[
     "Microsoft YaHei",
     "Yu Gothic",
     "Malgun Gothic",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK JP",
     "Arial Unicode MS",
     "Apple Symbols",
     "Segoe UI Symbol",
@@ -506,7 +522,7 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
     (0..count).filter_map(|i| skrifa::FontRef::from_index(data, i).ok().map(|f| font_faces(&f, i))).flatten().collect()
 }
 
-/// The compiled-in Source Sans 3 Regular, for a database that somehow has no faces at all.
+/// The compiled-in Inter Regular, for a database that somehow has no faces at all.
 pub(crate) fn last_resort_face() -> Arc<FontFace> {
     static FACE: std::sync::OnceLock<Arc<FontFace>> = std::sync::OnceLock::new();
     FACE.get_or_init(|| {
@@ -514,7 +530,7 @@ pub(crate) fn last_resort_face() -> Arc<FontFace> {
         // `last_resort_face_parses` test proves it on every run.
         #[allow(clippy::expect_used)]
         let face = make_face(FontBytes::Static(BUNDLED[0]), 0, FALLBACK_FAMILY.into(), "Regular".into(), FALLBACK_FAMILY.into(), Vec::new())
-            .expect("the compiled-in Source Sans 3 Regular parses");
+            .expect("the compiled-in Inter Regular parses");
         Arc::new(face)
     })
     .clone()
@@ -598,12 +614,12 @@ fn style_italic(style: &str) -> bool {
 }
 
 impl FontDb {
-    /// A database holding the bundled fonts, then the craft-fonts Japanese faces (Mincho first,
-    /// so they are the fallback for Japanese text after the requested and bundled fonts; empty
-    /// without `CRAFT_FONTS_DIR`), whose system font scan reads `font_dirs`.
+    /// A database holding the bundled fonts, then the craft-fonts faces (Japanese Mincho first;
+    /// empty without `CRAFT_FONTS_DIR`), whose system font scan reads `font_dirs`.
     pub fn with_font_dirs(font_dirs: Vec<std::path::PathBuf>) -> Self {
         let mut faces = Vec::new();
-        let craft = crate::japanese_document_fonts().into_iter().map(|f| f.bytes);
+        let craft =
+            crate::japanese_document_fonts().into_iter().chain(crate::CRAFT_FONTS.iter().filter(|f| !f.scripts.contains(&"Jpan"))).map(|f| f.bytes);
         for data in BUNDLED.iter().copied().chain(craft) {
             for f in enumerate_faces(data) {
                 if let Some(f) = make_face(FontBytes::Static(data), f.index, f.family, f.style, f.legacy, f.coords) {
@@ -640,12 +656,19 @@ impl FontDb {
         let _ = on;
     }
 
-    /// Process-wide database: the bundled fonts, then the installed system fonts, cataloged the
-    /// first time a lookup by family name needs them (or ahead of time by
-    /// [`FontDb::scan_in_background`]).
+    /// Process-wide database. With `bundled-fonts-only`, installed fonts are never scanned or
+    /// used for glyph fallback. Otherwise they are cataloged lazily on first lookup.
     pub fn global() -> &'static FontDb {
         static DB: std::sync::OnceLock<FontDb> = std::sync::OnceLock::new();
-        DB.get_or_init(|| FontDb::with_font_dirs(system_font_dirs()))
+        DB.get_or_init(|| {
+            if cfg!(feature = "bundled-fonts-only") {
+                let db = FontDb::with_font_dirs(Vec::new());
+                db.set_system_fallback(false);
+                db
+            } else {
+                FontDb::with_font_dirs(system_font_dirs())
+            }
+        })
     }
 
     fn read_faces(&self) -> std::sync::RwLockReadGuard<'_, Vec<Arc<FontFace>>> {
@@ -819,7 +842,7 @@ impl FontDb {
     }
 
     /// Resolve a family + style to a face, falling back to the closest style of the family, then to
-    /// Source Sans 3 Regular. `family` is a typographic family ("Roboto") or a face's legacy family
+    /// Inter Regular. `family` is a typographic family ("Roboto") or a face's legacy family
     /// name ("Roboto Light", whose styles are Light and Light Italic). Installed system fonts are
     /// found by name whatever ran before.
     pub fn face(&self, family: &str, style: &str) -> Arc<FontFace> {
@@ -1119,26 +1142,26 @@ mod tests {
         // Bundled static fonts whose name ID 1 differs from the typographic family (#219).
         let db = FontDb::with_font_dirs(vec![]);
         let families = db.families();
-        for name in ["Inter", "Inter Medium", "Inter SemiBold", "Source Sans 3 Semibold", "Source Serif 4 Semibold"] {
+        for name in ["Inter", "Inter Medium", "Inter SemiBold"] {
             assert!(families.iter().any(|f| f == name), "{name} in {families:?}");
             assert!(db.has_family(name));
         }
-        let semibold = db.face("Source Serif 4 Semibold", "Regular");
-        assert_eq!((semibold.family.as_str(), semibold.style.as_str()), ("Source Serif 4", "Semibold"));
+        let semibold = db.face("Inter SemiBold", "Regular");
+        assert_eq!((semibold.family.as_str(), semibold.style.as_str()), ("Inter", "SemiBold"));
         assert_eq!(db.face("inter medium", "Regular").style, "Medium");
         assert_eq!(db.face("Inter SemiBold", "Regular").style, "SemiBold");
         // Bold and italic choose within the faces the legacy name covers; the family's own Bold
         // isn't one of them.
-        assert_eq!(db.face("Source Serif 4 Semibold", "Bold").style, "Semibold");
-        assert_eq!(db.face("Source Serif 4 Semibold", "Italic").style, "Semibold");
-        assert_eq!(db.styles("Source Sans 3 Semibold"), ["Semibold"]);
+        assert_eq!(db.face("Inter SemiBold", "Bold").style, "SemiBold");
+        assert_eq!(db.face("Inter SemiBold", "Italic").style, "SemiBold");
+        assert_eq!(db.styles("Inter SemiBold"), ["SemiBold"]);
         // The typographic family is unchanged.
-        assert_eq!(db.face("Source Serif 4", "Bold").style, "Bold");
-        assert_eq!(db.face("Source Serif 4", "Regular").style, "Regular");
-        assert_eq!(db.face("Source Serif 4", "Regular").legacy_family, "Source Serif 4");
+        assert_eq!(db.face("Inter", "Bold").style, "SemiBold");
+        assert_eq!(db.face("Inter", "Regular").style, "Regular");
+        assert_eq!(db.face("Inter", "Regular").legacy_family, "Inter");
         // Not a name any face has.
-        assert!(!db.has_family("Source Serif 4 Light"));
-        assert_eq!(db.face("Source Serif 4 Light", "Regular").family, FALLBACK_FAMILY);
+        assert!(!db.has_family("Inter Light"));
+        assert_eq!(db.face("Inter Light", "Regular").family, FALLBACK_FAMILY);
     }
 
     #[test]

@@ -70,8 +70,8 @@ pub fn ui_cjk_fonts(prefer_hans: bool) -> Vec<&'static CraftFont> {
     if prefer_hans { zh.chain(ja).collect() } else { ja.chain(zh).collect() }
 }
 
-/// The bundled serif used when a document asks for nothing better.
-pub const DEFAULT_FAMILY: &str = "Source Serif 4";
+/// The bundled face used when a document asks for nothing better.
+pub const DEFAULT_FAMILY: &str = "Inter";
 
 /// One shaped glyph, in font units.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -232,9 +232,9 @@ mod tests {
         let db = FontDb::global();
         let fams = db.families();
         assert!(fams.iter().any(|f| f == DEFAULT_FAMILY), "{fams:?}");
-        assert!(fams.iter().any(|f| f == "Source Sans 3"));
+        assert!(fams.iter().any(|f| f == "JetBrains Mono"));
         let styles = db.styles(DEFAULT_FAMILY);
-        for s in ["Regular", "Italic", "Bold", "Semibold"] {
+        for s in ["Regular", "Medium", "SemiBold"] {
             assert!(styles.iter().any(|x| x == s), "{s} in {styles:?}");
         }
     }
@@ -310,7 +310,7 @@ mod tests {
     fn outlines_and_metrics() {
         let db = FontDb::global();
         let face = db.face(DEFAULT_FAMILY, "Bold");
-        assert_eq!(face.style, "Bold");
+        assert_eq!(face.style, "SemiBold");
         let o = db.outline(&face, face.glyph_for('O'));
         assert!(!o.elements().is_empty());
         assert!(face.ascent > 0.0 && face.descent > 0.0 && face.cap_height > face.x_height);

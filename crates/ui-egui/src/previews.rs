@@ -416,24 +416,24 @@ mod tests {
             let ctx = egui::Context::default();
             let preview = Previews::default().font_preview_fn();
             let budget_id = egui::Id::new("font_preview_budget");
-            let sans_id = egui::Id::new("font:Source Sans 3");
             let inter_id = egui::Id::new("font:Inter");
+            let mono_id = egui::Id::new("font:JetBrains Mono");
             ctx.data_mut(|d| d.insert_temp(budget_id, (1.0_f64, 11_u32)));
 
             for time in [1.0, 2.0, 3.0] {
                 let input = egui::RawInput { time: Some(time), ..Default::default() };
                 ctx.run_ui(input, |ui| {
-                    preview(ui, "Source Sans 3");
                     preview(ui, "Inter");
+                    preview(ui, "JetBrains Mono");
                 })
                 .drop_without_applying_deltas();
                 ctx.data(|d| {
-                    assert!(d.get_temp::<TextureHandle>(sans_id).is_some());
+                    assert!(d.get_temp::<TextureHandle>(inter_id).is_some());
                     if time == 1.0 {
-                        assert!(d.get_temp::<TextureHandle>(inter_id).is_none(), "over-budget entry should defer");
+                        assert!(d.get_temp::<TextureHandle>(mono_id).is_none(), "over-budget entry should defer");
                         assert_eq!(d.get_temp::<(f64, u32)>(budget_id), Some((1.0, 13)));
                     } else {
-                        assert!(d.get_temp::<TextureHandle>(inter_id).is_some(), "deferred entry should render next frame");
+                        assert!(d.get_temp::<TextureHandle>(mono_id).is_some(), "deferred entry should render next frame");
                         assert_eq!(d.get_temp::<(f64, u32)>(budget_id), Some((2.0, 1)), "cached entries should not consume budget");
                     }
                 });

@@ -132,7 +132,7 @@ fn big_button(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str,
     let mut y = r.min.y + 43.0;
     let lines: Vec<&str> = label.split('\n').collect();
     for (i, l) in lines.iter().enumerate() {
-        let txt = if menu && i + 1 == lines.len() { format!("{l} ▾") } else { (*l).to_string() };
+        let txt = if menu && i + 1 == lines.len() { format!("{l} ▼") } else { (*l).to_string() };
         ui.painter().text(pos2(r.center().x, y), Align2::CENTER_TOP, txt, regular(11.5), if on { t.text } else { t.text_disabled });
         y += 13.0;
     }
@@ -203,7 +203,7 @@ pub fn split(
     });
 }
 
-/// A button that only opens a menu (icon + label + ▾).
+/// A button that only opens a menu (icon + label + ▼).
 pub fn menu_button(
     ui: &mut Ui,
     app: &mut WordApp,
@@ -229,7 +229,7 @@ pub fn menu_button(
         let lines: Vec<&str> = label.unwrap_or("").split('\n').collect();
         let mut y = r.min.y + 43.0;
         for (i, l) in lines.iter().enumerate() {
-            let txt = if i + 1 == lines.len() { format!("{l} ▾") } else { (*l).to_string() };
+            let txt = if i + 1 == lines.len() { format!("{l} ▼") } else { (*l).to_string() };
             ui.painter().text(pos2(r.center().x, y), Align2::CENTER_TOP, txt, regular(11.5), t.text);
             y += 13.0;
         }

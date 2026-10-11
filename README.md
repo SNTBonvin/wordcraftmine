@@ -39,10 +39,8 @@
 
 <br>
 
-<p align="center">
-  <img src="docs/images/hero.png" alt="WordCraft with the Home tab of the ribbon open over a two-page document titled The Open Studio Handbook. The Navigation pane on the left lists the document's headings, the Styles gallery shows live previews of Normal, Heading 1, Title and Subtitle, and a word in the first paragraph is selected." width="100%">
-  <br><sub><b>The Open Studio Handbook</b>, WordCraft's built-in sample: the ribbon, live Styles gallery, rulers and the Navigation pane.</sub>
-</p>
+WordCraft includes **The Open Studio Handbook** sample document, a ribbon, live Styles gallery,
+rulers and a Navigation pane.
 
 > [!NOTE]
 > **ArtCraft is a community of artists from all walks of life.** Painters, photographers,
@@ -64,25 +62,12 @@
 
 ## A tour
 
-Every screenshot below is WordCraft itself, rendered offscreen by its own UI test harness
-(`cargo run -p wordcraft-ui-egui --example ui_shot`).
-
-<table>
-<tr>
-<td width="50%" valign="top"><img src="docs/images/review.png" alt="The Review tab with Track Changes on: the word forty is inserted in magenta and thirty struck through; three commented phrases are shaded and joined by dashed leader lines to comment balloons in a grey markup area to the right of the page" width="100%"><p align="center"><sub><b>Review.</b> Track changes, comment balloons in the margin, accept and reject, spelling and grammar as you type.</sub></p></td>
-<td width="50%" valign="top"><img src="docs/images/references.png" alt="The References tab with two pages side by side: a table of contents with dotted leaders and page numbers on page one, and a styled table, numbered list and hyperlink on page two" width="100%"><p align="center"><sub><b>References.</b> Tables of contents, footnotes, citations in APA, MLA, Chicago or IEEE, index and captions.</sub></p></td>
-</tr>
-<tr>
-<td width="50%" valign="top"><img src="docs/images/design.png" alt="The Design tab showing style-set previews; the document is set in a serif theme with plum headings underlined by thin rules and a pale diagonal DRAFT watermark behind the text" width="100%"><p align="center"><sub><b>Design.</b> Themes, style sets, paragraph spacing, watermarks, page colour and borders.</sub></p></td>
-<td width="50%" valign="top"><img src="docs/images/dark.png" alt="WordCraft in dark mode with the Insert tab open and formatting marks shown: pilcrows at paragraph ends and dots for spaces" width="100%"><p align="center"><sub><b>Dark mode</b> with formatting marks, and the Insert tab: tables, pictures, shapes, links, headers, footers, fields and symbols.</sub></p></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/images/layout.png" alt="The Layout tab at 80% zoom: the first paragraph opens with a three-line drop cap E, a dark blue circle sits beside the second section with its paragraph wrapping around it and hyphenating art-ist at the line end, every line is numbered in the left margin and a thin blue border surrounds the page" width="100%"><p align="center"><sub><b>Layout.</b> Drop caps, text wrapping around pictures and shapes, automatic hyphenation, line numbers and page borders.</sub></p></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/images/backstage.png" alt="The File tab start page with a Good morning greeting, thumbnails of the Blank document, Studio handbook, Letter, Résumé and Report templates, and a list of recent documents" width="100%"><p align="center"><sub><b>File.</b> Start from a template, open recent documents, edit properties, export to PDF and other formats.</sub></p></td>
-</tr>
-</table>
+- **Review:** Track changes, comment balloons, accept and reject, spelling and grammar as you type.
+- **References:** Tables of contents, footnotes, citations, index and captions.
+- **Design:** Themes, style sets, paragraph spacing, watermarks, page colour and borders.
+- **Insert and dark mode:** Tables, pictures, shapes, links, fields and formatting marks.
+- **Layout:** Drop caps, text wrapping, hyphenation, line numbers and page borders.
+- **File:** Templates, recent documents, properties and PDF export.
 
 ## Why WordCraft
 

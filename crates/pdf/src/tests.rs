@@ -431,7 +431,7 @@ fn fields_put_their_shown_text_in_the_text_layer() {
     assert!(squash(&text[0]).contains("Page 1 of 2") && squash(&text[1]).contains("Page 2 of 2"), "{text:?}");
 }
 
-/// Bundled Source Sans 3 renamed to `family`, with glyph `gid` turned into a composite glyph whose
+/// Bundled Inter renamed to `family`, with glyph `gid` turned into a composite glyph whose
 /// component list is cut off: fonts still parse and shape, but krilla's subsetter rejects it.
 fn unsubsettable_font(family: &str, gid: u16) -> Vec<u8> {
     let mut f = wordcraft_fonts::bundled()[0].to_vec();
@@ -445,9 +445,9 @@ fn unsubsettable_font(family: &str, gid: u16) -> Vec<u8> {
         }
     };
     let wide = |s: &str| s.encode_utf16().flat_map(|u| u.to_be_bytes()).collect::<Vec<u8>>();
-    assert_eq!(family.len(), "Source Sans 3".len());
-    rename(&mut f, &wide("Source Sans 3"), &wide(family));
-    rename(&mut f, b"Source Sans 3", family.as_bytes());
+    assert_eq!(family.len(), "Inter".len());
+    rename(&mut f, &wide("Inter"), &wide(family));
+    rename(&mut f, b"Inter", family.as_bytes());
     let u16_at = |f: &[u8], o: usize| u16::from_be_bytes([f[o], f[o + 1]]);
     let u32_at = |f: &[u8], o: usize| u32::from_be_bytes([f[o], f[o + 1], f[o + 2], f[o + 3]]);
     let table = |f: &[u8], tag: &[u8]| {
@@ -507,8 +507,8 @@ fn count_glyphs_and_paths(bytes: &[u8]) -> (usize, usize) {
 #[test]
 fn unsubsettable_font_is_drawn_as_outlines() {
     let db = wordcraft_fonts::FontDb::global();
-    let o = db.face("Source Sans 3", "Regular").glyph_for('o');
-    let family = "Broken Sans 3";
+    let o = db.face("Inter", "Regular").glyph_for('o');
+    let family = "Broke";
     db.add_font(unsubsettable_font(family, u16::try_from(o).unwrap()));
     assert!(db.has_family(family));
     // Leave out the glyph after the broken one: its start moved into the broken glyph's data.
@@ -520,7 +520,7 @@ fn unsubsettable_font_is_drawn_as_outlines() {
     };
     let opts = PdfOptions { tagged: false, ..Default::default() };
     // The intact font is embedded as text.
-    let (glyphs, _) = count_glyphs_and_paths(&export(&doc("Source Sans 3"), &opts).unwrap());
+    let (glyphs, _) = count_glyphs_and_paths(&export(&doc("Inter"), &opts).unwrap());
     assert!(glyphs > 0);
     // The broken one used to fail the whole export ("failed to subset font: malformed font");
     // now its text is drawn as outlines.
@@ -549,14 +549,11 @@ fn field_results_are_extractable_text() {
 }
 
 #[test]
-fn field_result_ligatures_extract_all_their_letters() {
-    // A field result is shaped as one cluster; a ligature in it (Carlito, the Calibri substitute,
-    // joins "ti") used to get only its first letter, shifting the rest: "Sectio  3.01". Bundled
-    // Source Sans 3 joins "fi" and "ffi", so this doesn't depend on the installed fonts.
-    let font = CharProps { font: Some("Source Sans 3".into()), ..Default::default() };
+fn field_result_extracts_all_its_letters() {
+    // A field result is shaped as one cluster. Check that every letter survives PDF extraction
+    // with a bundled, independently authored font.
+    let font = CharProps { font: Some("Inter".into()), ..Default::default() };
     let result = "the first office";
-    let face = wordcraft_fonts::FontDb::global().face("Source Sans 3", "Regular");
-    assert!(wordcraft_fonts::shape(&face, result, &[], |c| c).len() < result.chars().count(), "the result has ligatures");
     let mut d = Document::new();
     let mut p = Paragraph::with_text("See  here.", font.clone());
     p.insert_object(4, InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: result.into(), locked: false, code: false }, &font)

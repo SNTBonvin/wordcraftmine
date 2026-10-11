@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
-const FAMILY: &str = "Sysfont Sans3";
+const FAMILY: &str = "Sysft";
 
-/// A bundled Source Sans 3 file renamed [`FAMILY`] (as long as the original name).
+/// A bundled Inter file renamed [`FAMILY`] (as long as the original name).
 fn renamed(file: &str) -> Vec<u8> {
     let mut data = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts").join(file)).unwrap();
     let utf16 = |s: &str| s.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>();
-    for (from, to) in [(utf16("Source Sans 3"), utf16(FAMILY)), (b"Source Sans 3".to_vec(), FAMILY.as_bytes().to_vec())] {
+    for (from, to) in [(utf16("Inter"), utf16(FAMILY)), (b"Inter".to_vec(), FAMILY.as_bytes().to_vec())] {
         let mut i = 0;
         while let Some(at) = data[i..].windows(from.len()).position(|w| w == from) {
             data[i + at..i + at + to.len()].copy_from_slice(&to);
@@ -46,13 +46,13 @@ fn collection(faces: &[Vec<u8>]) -> Vec<u8> {
 }
 
 /// A font folder (with a subfolder, a damaged font and a file that isn't a font) holding
-/// [`FAMILY`] Regular and Bold.
+/// [`FAMILY`] Regular and Medium.
 fn font_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("dc-sysfonts-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("Sub")).unwrap();
-    std::fs::write(dir.join("Sysfont-Regular.ttf"), renamed("SourceSans3-Regular.ttf")).unwrap();
-    std::fs::write(dir.join("Sub/Sysfont-Bold.TTF"), renamed("SourceSans3-Bold.ttf")).unwrap();
+    std::fs::write(dir.join("Sysfont-Regular.ttf"), renamed("Inter-Regular.ttf")).unwrap();
+    std::fs::write(dir.join("Sub/Sysfont-Medium.TTF"), renamed("Inter-Medium.ttf")).unwrap();
     std::fs::write(dir.join("damaged.ttf"), b"ttcf\0\x01\0\0\xff\xff\xff\xff").unwrap();
     std::fs::write(dir.join("readme.txt"), FAMILY).unwrap();
     dir
@@ -67,11 +67,11 @@ fn every_lookup_by_name_finds_installed_fonts_in_a_fresh_database() {
     let dir = font_dir("fresh");
     // Each lookup is the first thing a new database is asked. A folder listed twice is read once.
     let db = || FontDb::with_font_dirs(vec![dir.clone(), dir.join("Sub/..")]);
-    let f = db().face("sysfont sans3", "Bold");
-    assert_eq!((f.family.as_str(), f.style.as_str()), (FAMILY, "Bold"));
+    let f = db().face("sysft", "Medium");
+    assert_eq!((f.family.as_str(), f.style.as_str()), (FAMILY, "Medium"));
     assert!(db().has_family(FAMILY));
     assert!(has(&db().families(), FAMILY));
-    assert_eq!(db().styles(FAMILY), ["Regular", "Bold"]);
+    assert_eq!(db().styles(FAMILY), ["Regular", "Medium"]);
     assert_eq!(db().load_system_fonts(), 2);
     // Missing fonts stay missing.
     let db = db();
@@ -83,14 +83,14 @@ fn every_lookup_by_name_finds_installed_fonts_in_a_fresh_database() {
 fn the_scan_reads_collections_and_loads_fonts_only_when_used() {
     let dir = font_dir("collection");
     std::fs::remove_file(dir.join("Sysfont-Regular.ttf")).unwrap();
-    std::fs::remove_file(dir.join("Sub/Sysfont-Bold.TTF")).unwrap();
-    std::fs::write(dir.join("Sysfont.ttc"), collection(&[renamed("SourceSans3-Regular.ttf"), renamed("SourceSans3-Bold.ttf")])).unwrap();
+    std::fs::remove_file(dir.join("Sub/Sysfont-Medium.TTF")).unwrap();
+    std::fs::write(dir.join("Sysfont.ttc"), collection(&[renamed("Inter-Regular.ttf"), renamed("Inter-Medium.ttf")])).unwrap();
     let db = FontDb::with_font_dirs(vec![dir.clone()]);
-    assert_eq!(db.styles(FAMILY), ["Regular", "Bold"]);
+    assert_eq!(db.styles(FAMILY), ["Regular", "Medium"]);
     // Cataloged, not loaded.
     assert!(!db.is_loaded(FAMILY));
-    let bold = db.face(FAMILY, "Bold");
-    assert_eq!((bold.style.as_str(), bold.index()), ("Bold", 1));
+    let medium = db.face(FAMILY, "Medium");
+    assert_eq!((medium.style.as_str(), medium.index()), ("Medium", 1));
     assert_eq!(db.face(FAMILY, "Regular").index(), 0, "the collection's faces load together");
 }
 
@@ -179,23 +179,23 @@ fn the_scan_reads_names_without_loading_the_font() {
 
 #[test]
 fn installed_weights_are_found_by_their_legacy_family_name() {
-    // Semibold is not one of Regular, Bold and Italic: the font names it "Sysfont Sans3 Semibold"
+    // SemiBold is not one of Regular, Bold and Italic: the font names it "Sysft SemiBold"
     // (name ID 1), the way Word lists and stores it (#219).
     let dir = font_dir("legacy");
-    std::fs::write(dir.join("Sysfont-Semibold.ttf"), renamed("SourceSans3-Semibold.ttf")).unwrap();
-    let semibold = format!("{FAMILY} Semibold");
-    assert_eq!(file_face_names(&dir.join("Sysfont-Semibold.ttf")), [(FAMILY.to_string(), "Semibold".to_string(), semibold.clone())]);
+    std::fs::write(dir.join("Sysfont-Semibold.ttf"), renamed("Inter-SemiBold.ttf")).unwrap();
+    let semibold = format!("{FAMILY} SemiBold");
+    assert_eq!(file_face_names(&dir.join("Sysfont-Semibold.ttf")), [(FAMILY.to_string(), "SemiBold".to_string(), semibold.clone())]);
     let db = || FontDb::with_font_dirs(vec![dir.clone()]);
     assert!(has(&db().families(), FAMILY) && has(&db().families(), &semibold));
     assert!(db().has_family(&semibold.to_uppercase()));
-    assert_eq!(db().styles(&semibold), ["Semibold"]);
-    assert_eq!(db().styles(FAMILY), ["Regular", "Semibold", "Bold"]);
+    assert_eq!(db().styles(&semibold), ["SemiBold"]);
+    assert_eq!(db().styles(FAMILY), ["Regular", "Medium", "SemiBold"]);
     // The first lookup, by the legacy name, finds the face and loads the whole family with it.
     let db = db();
     let f = db.face(&semibold, "Regular");
-    assert_eq!((f.family.as_str(), f.style.as_str(), f.legacy_family.as_str()), (FAMILY, "Semibold", semibold.as_str()));
+    assert_eq!((f.family.as_str(), f.style.as_str(), f.legacy_family.as_str()), (FAMILY, "SemiBold", semibold.as_str()));
     assert_eq!(db.face(FAMILY, "Regular").style, "Regular");
-    assert_eq!(db.face(FAMILY, "Bold").style, "Bold");
+    assert_eq!(db.face(FAMILY, "Medium").style, "Medium");
 }
 
 #[test]
@@ -225,19 +225,19 @@ fn the_scan_lists_a_variable_fonts_named_instances_as_loading_it_does() {
 
 #[test]
 fn fallback_cache_is_dropped_when_a_face_loads_by_its_legacy_family_name() {
-    // #121 with #219: a lookup by a legacy family name ("Sysfont Sans3 Semibold") loads faces,
+    // #121 with #219: a lookup by a legacy family name ("Sysft SemiBold") loads faces,
     // so fallbacks remembered before it are searched again.
     let dir = font_dir("fallback-legacy");
-    std::fs::write(dir.join("Sysfont-Semibold.ttf"), renamed("SourceSans3-Semibold.ttf")).unwrap();
+    std::fs::write(dir.join("Sysfont-Semibold.ttf"), renamed("Inter-SemiBold.ttf")).unwrap();
     let db = FontDb::with_font_dirs(vec![dir]);
     db.set_system_fallback(false);
     let latin = db.face(FALLBACK_FAMILY, "Regular");
     let thai = 'ก';
     assert!(db.fallback_for(thai, latin.id()).is_none());
     let before = db.read_faces().len();
-    let semibold = format!("{FAMILY} Semibold");
+    let semibold = format!("{FAMILY} SemiBold");
     let f = db.face(&semibold, "Regular");
-    assert_eq!((f.style.as_str(), f.legacy_family.as_str()), ("Semibold", semibold.as_str()));
+    assert_eq!((f.style.as_str(), f.legacy_family.as_str()), ("SemiBold", semibold.as_str()));
     assert!(db.read_faces().len() > before, "the installed family loaded");
     assert!(db.fallback_for('A', f.id()).is_some_and(|g| g.id() != f.id()));
     let cache = db.fallbacks.read().unwrap();

@@ -27,6 +27,9 @@ The generated ribbon checklist is [`parity-checklist.md`](parity-checklist.md).
 
 **Stage: alpha.** All six core workflows pass the [alpha gate](roadmap.md#alpha-gate-core-workflows); see [`ROADMAP.md`](../ROADMAP.md) for why it isn't beta, and the distance.
 
+The independently authored bundled default font is now Inter. A replacement serif face and a
+fresh page-by-page layout comparison are needed before this change can be scored for parity.
+
 ## What we measured against
 
 - **Microsoft Word for Mac 16.113.4** (Microsoft 365 subscription build, installed on the owner's Mac
@@ -252,6 +255,7 @@ can be used without committing Word output.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-11 | trivial | Screen readers can read the document canvas (#488): Accessibility row updated; no percentage change |
+| 2026-10-11 | minor | Bundled default changed to Inter under the asset policy; layout parity score awaits remeasurement |
 | 2026-10-11 | trivial | Compare settings, Restrict Editing pane and AutoCorrect Options (#412): Review row updated; no percentage change |
 | 2026-10-11 | trivial | Pictures, shapes, text boxes, WordArt: WordArt text effects and Transform warps, connectors glued to shapes (#416); catalog 423/448 → 428/453 (94.5%); no percentage change |
 | 2026-10-11 | trivial | Content controls kept, shown and edited, Developer › Controls (#381); catalog +11 rows, all live (402/434 → 413/445, 92.8%); no percentage change |

@@ -25,17 +25,17 @@ pub struct Resolved {
 /// metric-compatible come first (Carlito ↔ Calibri, Caladea ↔ Cambria, Liberation ↔ Arial /
 /// Times New Roman / Courier New), then common system fonts, then our bundled families.
 fn substitutes(family: &str) -> &'static [&'static str] {
-    const SANS: &[&str] = &["Carlito", "Helvetica Neue", "Arial", "Liberation Sans", "Noto Sans", "DejaVu Sans", "Source Sans 3"];
-    const SERIF: &[&str] = &["Caladea", "Times New Roman", "Liberation Serif", "Georgia", "Noto Serif", "DejaVu Serif", "Source Serif 4"];
+    const SANS: &[&str] = &["Carlito", "Helvetica Neue", "Arial", "Liberation Sans", "Noto Sans", "DejaVu Sans", "Inter"];
+    const SERIF: &[&str] = &["Caladea", "Times New Roman", "Liberation Serif", "Georgia", "Noto Serif", "DejaVu Serif", "Inter"];
     const MONO: &[&str] = &["Courier New", "Liberation Mono", "Menlo", "Consolas", "DejaVu Sans Mono", "JetBrains Mono"];
-    const ARIAL: &[&str] = &["Liberation Sans", "Helvetica", "Helvetica Neue", "Arimo", "Source Sans 3"];
-    const TIMES: &[&str] = &["Liberation Serif", "Times", "Tinos", "Source Serif 4"];
-    const SYMBOL: &[&str] = &["Apple Symbols", "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols", "Source Sans 3"];
+    const ARIAL: &[&str] = &["Liberation Sans", "Helvetica", "Helvetica Neue", "Arimo", "Inter"];
+    const TIMES: &[&str] = &["Liberation Serif", "Times", "Tinos", "Inter"];
+    const SYMBOL: &[&str] = &["Apple Symbols", "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols", "Inter"];
     // Persian / Arabic document fonts. Naskh (book) faces such as B Nazanin, B Lotus, B Zar and
     // Traditional Arabic, then the sans faces (B Yekan, B Titr, IRANSans) people use for
     // headings and screens. Open fonts with full Persian coverage first.
-    const NASKH: &[&str] = &["Noto Naskh Arabic", "XB Zar", "XB Niloofar", "Amiri", "Vazirmatn", "Noto Sans Arabic", "DejaVu Sans", "Source Serif 4"];
-    const ARABIC_SANS: &[&str] = &["Vazirmatn", "Sahel", "Shabnam", "Samim", "Noto Sans Arabic", "Noto Naskh Arabic", "DejaVu Sans", "Source Sans 3"];
+    const NASKH: &[&str] = &["Noto Naskh Arabic", "XB Zar", "XB Niloofar", "Amiri", "Vazirmatn", "Noto Sans Arabic", "DejaVu Sans", "Inter"];
+    const ARABIC_SANS: &[&str] = &["Vazirmatn", "Sahel", "Shabnam", "Samim", "Noto Sans Arabic", "Noto Naskh Arabic", "DejaVu Sans", "Inter"];
     let f = family.to_ascii_lowercase();
     if is_persian_naskh(&f) {
         return NASKH;
@@ -243,9 +243,9 @@ mod tests {
     fn unknown_family_substitutes() {
         let r = resolve("Definitely Not A Font 123", false, false);
         assert!(r.substituted);
-        let b = resolve("Source Serif 4", true, false);
+        let b = resolve("Inter", true, false);
         assert!(!b.substituted);
-        assert!(!b.synth_bold);
+        assert_eq!(b.face.family, "Inter");
         let (a, d) = line_metrics(&b.face);
         assert!(a > 0.0 && d >= 0.0);
     }

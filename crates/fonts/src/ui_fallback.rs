@@ -98,7 +98,6 @@ fn candidates(hans: bool) -> Vec<&'static str> {
                 "google-noto-cjk/NotoSansCJK-Regular.ttc",
                 "noto-cjk/NotoSansCJKsc-Regular.otf",
                 "opentype/noto/NotoSansCJKsc-Regular.otf",
-                "adobe-source-han-sans/SourceHanSansCN-Regular.otf",
                 "wenquanyi/wqy-microhei/wqy-microhei.ttc",
                 "truetype/wqy/wqy-microhei.ttc",
                 "wenquanyi/wqy-zenhei/wqy-zenhei.ttc",
@@ -205,7 +204,7 @@ mod tests {
     #[test]
     fn needs_system_cjk_when_an_embedded_face_lacks_an_interface_character() {
         // A face without CJK glyphs stands in for a craft-fonts face that lacks some (#486).
-        let latin = CraftFont { family: "Source Sans 3", style: "Regular", scripts: &["Hans"], bytes: crate::bundled()[0] };
+        let latin = CraftFont { family: "Inter", style: "Regular", scripts: &["Hans"], bytes: crate::bundled()[0] };
         assert_eq!(ui_uncovered_cjk(&["选项 Options", "選項：选项"], &[&latin]), ['选', '選', '項', '项', '：']);
         assert!(ui_needs_system_cjk(&["简体中文"], &[]));
         assert!(ui_needs_system_cjk(&["Save", "开"], &[&latin]));
@@ -237,7 +236,7 @@ mod tests {
         std::fs::write(dir.join("sub/good.ttf"), sans).unwrap();
         let names = ["missing.ttf", "Deng.ttf", "msyh.ttc", "sub/good.ttf"];
         let found = find_ui_font(std::slice::from_ref(&dir), &names, &['A'], true).unwrap();
-        assert_eq!((found.family.as_str(), found.index, found.bytes.len()), ("Source Sans 3", 0, sans.len()));
+        assert_eq!((found.family.as_str(), found.index, found.bytes.len()), ("Inter", 0, sans.len()));
         // No candidate maps a CJK character: nothing is chosen.
         assert!(find_ui_font(std::slice::from_ref(&dir), &names, &['页'], true).is_none());
         assert!(pick_face(b"OTT", &['A'], false).is_none());
@@ -247,11 +246,11 @@ mod tests {
         let dirs = with_asset_data(vec![dir.clone(), assets.clone()]);
         assert_eq!(dirs, [dir.clone(), assets.join("0a1b.asset/AssetData"), assets.clone()]);
         let found = find_ui_font(&dirs, &["PingFang.ttc"], &['A'], true).unwrap();
-        assert_eq!(found.family, "Source Sans 3");
+        assert_eq!(found.family, "Inter");
         assert!(find_ui_font(&dirs, &["Hidden.ttc"], &['A'], true).is_none());
         // No file maps every needed character: the one mapping the most is used.
         let found = find_ui_font(&dirs, &["sub/good.ttf", "PingFang.ttc"], &['A', '页'], true).unwrap();
-        assert_eq!(found.family, "Source Sans 3");
+        assert_eq!(found.family, "Inter");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

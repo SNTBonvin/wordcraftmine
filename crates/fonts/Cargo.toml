@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "WordCraft fonts: font database (bundled OFL + system), metrics, glyph outlines, shaping"
 
+[features]
+# Embedders can keep installed system fonts out of generated documents.
+bundled-fonts-only = []
+
 [lints]
 workspace = true
 

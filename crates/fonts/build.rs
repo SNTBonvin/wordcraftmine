@@ -55,6 +55,10 @@ fn craft_fonts(dir: &std::path::Path) -> Result<(String, Vec<String>), String> {
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
         };
+        // These families include Adobe-authored artwork and must never enter WordCraft builds.
+        if matches!(*family, "Source Sans 3" | "Source Serif 4" | "Source Han Sans" | "Source Han Serif" | "Noto Sans CJK SC") {
+            continue;
+        }
         if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {
             continue;
         }
