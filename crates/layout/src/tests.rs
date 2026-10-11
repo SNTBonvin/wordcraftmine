@@ -45,6 +45,28 @@ fn long_paragraph_wraps_and_paginates() {
 }
 
 #[test]
+fn reading_layout_reflows_into_viewport_height_pages_without_changing_print_layout() {
+    let d = Document::from_text(&"A moderately long sentence that should wrap across reading columns. ".repeat(250));
+    let opts = LayoutOptions { view: ViewMode::Read, web_width: 230.0, read_height: 390.0, ..Default::default() };
+    let read = layout(&d, &mut LayoutCache::new(), &opts);
+    assert!(read.pages.len() > 5, "reading column count: {}", read.pages.len());
+    assert!(read.pages.iter().all(|p| p.w == 230.0 && p.h == 390.0));
+    assert!(read.pages.iter().all(|p| p.body.w < p.w && p.body.h < p.h));
+    assert_eq!(
+        lines_of(&read),
+        lines_of(&layout(&d, &mut LayoutCache::new(), &LayoutOptions { view: ViewMode::Web, web_width: 230.0, ..Default::default() }))
+    );
+    let print = lay(&d);
+    assert_eq!(print.pages[0].w, d.sections()[0].1.page_w);
+    assert_eq!(print.pages[0].h, d.sections()[0].1.page_h);
+    // Window height changes page breaks, not the text, and a malformed dimension stays bounded.
+    let short = layout(&d, &mut LayoutCache::new(), &LayoutOptions { read_height: 260.0, ..opts.clone() });
+    assert!(short.pages.len() > read.pages.len());
+    let invalid = layout(&d, &mut LayoutCache::new(), &LayoutOptions { web_width: f32::NAN, read_height: f32::INFINITY, ..opts });
+    assert!(invalid.pages.iter().all(|p| p.w.is_finite() && p.h.is_finite()));
+}
+
+#[test]
 fn hit_and_caret_agree() {
     let d = Document::from_text("Hello world, this is WordCraft.\nSecond paragraph here.");
     let l = lay(&d);
@@ -861,7 +883,15 @@ fn web_view_is_one_page() {
     let l = layout(
         &d,
         &mut c,
-        &LayoutOptions { view: ViewMode::Web, web_width: 800.0, show_hidden: false, hide_deleted: false, proofing: false, field_codes: false },
+        &LayoutOptions {
+            view: ViewMode::Web,
+            web_width: 800.0,
+            read_height: 0.0,
+            show_hidden: false,
+            hide_deleted: false,
+            proofing: false,
+            field_codes: false,
+        },
     );
     assert_eq!(l.pages.len(), 1);
     assert!(l.pages[0].h > 800.0);

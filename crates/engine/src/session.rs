@@ -72,6 +72,11 @@ pub struct ViewState {
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
     pub web_width: f32,
+    /// Transient viewport metrics for reading pagination; never saved in a document or preferences.
+    #[serde(skip, default = "default_read_width")]
+    pub read_width: f32,
+    #[serde(skip, default = "default_read_height")]
+    pub read_height: f32,
     pub dark_mode: bool,
     pub show_markup: bool,
     pub track_changes_pane: bool,
@@ -90,6 +95,14 @@ pub struct ViewState {
 
 fn on() -> bool {
     true
+}
+
+fn default_read_width() -> f32 {
+    300.0
+}
+
+fn default_read_height() -> f32 {
+    500.0
 }
 
 impl Default for ViewState {
@@ -111,6 +124,8 @@ impl Default for ViewState {
             multi_page: false,
             fit: String::new(),
             web_width: 800.0,
+            read_width: default_read_width(),
+            read_height: default_read_height(),
             dark_mode: false,
             show_markup: true,
             track_changes_pane: false,
@@ -228,7 +243,7 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    layout: Option<(u64, f32, ViewMode, Arc<DocLayout>, bool)>,
+    layout: Option<(u64, f32, f32, ViewMode, Arc<DocLayout>, bool)>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -435,31 +450,42 @@ impl Session {
 
     /// The current layout (recomputed when the document or view changed).
     pub fn layout(&mut self) -> Arc<DocLayout> {
-        let ww = self.view.web_width;
-        if let Some((r, w, m, l, pf)) = &self.layout
+        let mode = if self.view.read_mode { ViewMode::Read } else { self.view.mode };
+        let width = if self.view.read_mode { self.view.read_width } else { self.view.web_width };
+        let height = if self.view.read_mode { self.view.read_height } else { 0.0 };
+        if let Some((r, w, h, m, l, pf)) = &self.layout
             && *r == self.rev
-            && (*w == ww || self.view.mode == ViewMode::Print)
-            && *m == self.view.mode
+            && (*w == width || mode == ViewMode::Print)
+            && *h == height
+            && *m == mode
             && *pf == self.view.proofing
         {
             return l.clone();
         }
         let opts = LayoutOptions {
-            view: self.view.mode,
-            web_width: ww,
+            view: mode,
+            web_width: width,
+            read_height: height,
             show_hidden: self.view.marks,
             hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
             proofing: self.view.proofing,
             field_codes: self.view.field_codes,
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing));
+        self.layout = Some((self.rev, width, height, mode, l.clone(), self.view.proofing));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
     pub fn export_layout(&self) -> Arc<DocLayout> {
-        let opts =
-            LayoutOptions { view: ViewMode::Print, web_width: 0.0, show_hidden: false, hide_deleted: false, proofing: false, field_codes: false };
+        let opts = LayoutOptions {
+            view: ViewMode::Print,
+            web_width: 0.0,
+            read_height: 0.0,
+            show_hidden: false,
+            hide_deleted: false,
+            proofing: false,
+            field_codes: false,
+        };
         Arc::new(wordcraft_layout::layout(&self.doc, &mut LayoutCache::new(), &opts))
     }
 

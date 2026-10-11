@@ -44,6 +44,8 @@ pub enum ViewMode {
     Web,
     /// Draft/Outline: like web, page breaks shown as rules.
     Draft,
+    /// Reading: reflow into viewport-height narrow pages, navigated horizontally.
+    Read,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -51,6 +53,8 @@ pub struct LayoutOptions {
     pub view: ViewMode,
     /// Width of the window in Web/Draft views, points.
     pub web_width: f32,
+    /// Page height in Reading Mode (document points).
+    pub read_height: f32,
     pub show_hidden: bool,
     /// Final text ("No Markup"): tracked deletions take no space and draw nothing.
     pub hide_deleted: bool,
@@ -1416,21 +1420,30 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         chains: Default::default(),
     };
     let sections = doc.sections();
-    let web = opts.view != ViewMode::Print;
+    let web = matches!(opts.view, ViewMode::Web | ViewMode::Draft);
+    let read = opts.view == ViewMode::Read;
+    let reflow = web || read;
     let default_sect = SectionProps::default();
     let mut web_sect;
     let first_sect = match sections.first() {
         Some((_, s)) => *s,
         None => &default_sect,
     };
-    let sect_ref = if web {
+    let sect_ref = if reflow {
         web_sect = first_sect.clone();
-        web_sect.page_w = opts.web_width.max(144.0);
+        web_sect.page_w = if opts.web_width.is_finite() { opts.web_width.clamp(144.0, 20_000.0) } else { 300.0 };
+        if read {
+            web_sect.page_h = if opts.read_height.is_finite() { opts.read_height.clamp(144.0, 20_000.0) } else { 500.0 };
+            web_sect.margin_bottom = 18.0;
+            web_sect.page_borders = None;
+            web_sect.line_numbers = None;
+        }
         web_sect.margin_left = 18.0;
         web_sect.margin_right = 18.0;
         web_sect.margin_top = 18.0;
         web_sect.gutter = 0.0;
         web_sect.columns = Default::default();
+        web_sect.valign = wordcraft_doc::props::VAlign::Top;
         &web_sect
     } else {
         first_sect
@@ -1480,7 +1493,7 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
     let mut boxes_discarded = 0usize;
     let mut block = 0usize;
     for (si, (end, sect)) in sections.iter().enumerate() {
-        let sect: &SectionProps = if web { sect_ref } else { sect };
+        let sect: &SectionProps = if reflow { sect_ref } else { sect };
         pb.sect = sect;
         pb.sect_idx = si;
         let (foot, end_opts) = (doc.note_options(sect, false), doc.note_options(sect, true));
@@ -1488,8 +1501,8 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
         if !web && !doc.footnote_separators.is_empty() {
             pb.seps = NoteSeps::new(&mut ctx, &doc.footnote_separators, sect.text_width());
         }
-        let body_top = if web { sect.margin_top } else { body_top_for(&mut ctx, sect, sect.headers.default) };
-        let first_top = if web || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, sect.headers.first) };
+        let body_top = if reflow { sect.margin_top } else { body_top_for(&mut ctx, sect, sect.headers.default) };
+        let first_top = if reflow || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, sect.headers.first) };
         let restart = sect.page_num_start;
         if sect.line_numbers.as_ref().is_some_and(|l| l.restart == wordcraft_doc::section::LineNumberRestart::Section) {
             pb.line_no = 0;
@@ -1582,7 +1595,7 @@ fn layout_pass(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions, no
             .fold(0.0f32, f32::max);
         p.h = bottom + 36.0;
     }
-    if !web {
+    if !reflow {
         headers_footers(&mut ctx, &mut pages, &sections);
     }
     // Evict paragraph layouts that weren't used this pass if the cache grew large.
