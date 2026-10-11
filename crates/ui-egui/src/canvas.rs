@@ -55,6 +55,8 @@ pub struct CanvasState {
     /// The scroll offset and its maximum at the end of last frame.
     pub(crate) scroll_offset: egui::Vec2,
     scroll_max: egui::Vec2,
+    /// Explicit page turn to apply on the next frame (reading navigation buttons/keys).
+    scroll_request: Option<egui::Vec2>,
     /// Pages per row last frame; when it changes the caret's page is scrolled back into view.
     pub cols: usize,
     /// The comment whose balloon is selected (its text is editable in place, like Word's).
@@ -118,6 +120,7 @@ impl Default for CanvasState {
             wheel: Default::default(),
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
+            scroll_request: None,
             cols: 1,
             balloon: None,
             balloon_focus: false,
@@ -208,6 +211,38 @@ fn place_pages(sizes: &[(f32, f32)], markup: f32, scale: f32, cols: usize, avail
     (rects, vec2(content_w, y.max(avail.y)))
 }
 
+/// Reading columns use readable text at the user's chosen zoom. The window holds roughly 3–5
+/// narrow, full-height columns, and a resize reflows the text, not just the paper scale.
+fn reading_size(avail: egui::Vec2, scale: f32) -> (f32, f32) {
+    let width = if avail.x.is_finite() { avail.x.max(0.0) } else { 0.0 };
+    let height = if avail.y.is_finite() { avail.y.max(0.0) } else { 0.0 };
+    let count = (width / 295.0).round().clamp(1.0, 5.0);
+    let px = ((width - (count + 1.0) * GAP) / count).max(192.0);
+    (px / scale, (height - 2.0 * GAP).max(192.0) / scale)
+}
+
+/// A single horizontal row of reflowed reading pages; no wrapping at the viewport edge.
+fn place_read_pages(sizes: &[(f32, f32)], scale: f32, avail: egui::Vec2) -> (Vec<Rect>, egui::Vec2) {
+    let mut x = GAP;
+    let mut rects = Vec::with_capacity(sizes.len());
+    for &(w, h) in sizes {
+        let w = sane_dim(w, 20_000.0) * scale;
+        let h = sane_dim(h, 20_000.0) * scale;
+        rects.push(Rect::from_min_size(pos2(x, GAP), vec2(w, h)));
+        x += w + GAP;
+    }
+    (rects, vec2(x.max(avail.x), avail.y.max(0.0)))
+}
+
+/// Turn one reading column left/right; normal editing keys keep their existing behaviour.
+pub(crate) fn turn_read_page(app: &mut WordApp, direction: f32) {
+    let step = app.session.view.read_width * app.canvas.scale + GAP;
+    if step.is_finite() && step > 0.0 {
+        let x = (app.canvas.scroll_offset.x + direction * step).clamp(0.0, app.canvas.scroll_max.x);
+        app.canvas.scroll_request = Some(vec2(x, 0.0));
+    }
+}
+
 pub fn geometry(app: &WordApp, l: &DocLayout, avail: egui::Vec2) -> Geometry {
     let v = &app.session.view;
     let markup = markup_width(app);
@@ -215,14 +250,16 @@ pub fn geometry(app: &WordApp, l: &DocLayout, avail: egui::Vec2) -> Geometry {
     let maxh = l.pages.iter().map(|p| sane_dim(p.h, 20_000.0)).fold(0.0f32, f32::max).max(72.0);
     let web = v.mode != wordcraft_layout::ViewMode::Print;
     let mut scale = v.zoom.clamp(0.1, 5.0) * PX_PER_PT;
+    if v.read_mode {
+        let sizes: Vec<(f32, f32)> = l.pages.iter().map(|p| (p.w, p.h)).collect();
+        let (rects, size) = place_read_pages(&sizes, scale, avail);
+        return Geometry { rects, size, scale, cols: sizes.len().max(1) };
+    }
     match v.fit.as_str() {
         "pageWidth" => scale = ((avail.x - 2.0 * GAP - 20.0) / maxw).clamp(0.1, 6.0),
         "onePage" => scale = ((avail.y - 2.0 * GAP) / maxh).min((avail.x - 2.0 * GAP) / maxw).clamp(0.05, 6.0),
         "multiplePages" => scale = ((avail.y - 2.0 * GAP) / maxh).min((avail.x - 3.0 * GAP) / (2.0 * maxw)).clamp(0.05, 6.0),
         _ => {}
-    }
-    if v.read_mode {
-        scale = ((avail.y - 2.0 * GAP) / maxh).min((avail.x - 3.0 * GAP) / (2.0 * maxw)).clamp(0.05, 6.0);
     }
     if web {
         scale = PX_PER_PT * v.zoom.clamp(0.1, 5.0);
@@ -230,18 +267,16 @@ pub fn geometry(app: &WordApp, l: &DocLayout, avail: egui::Vec2) -> Geometry {
     if !scale.is_finite() {
         scale = PX_PER_PT;
     }
-    // Pages flow side by side in Print Layout whenever more than one fits across (Read Mode is a
-    // two-page spread; One Page and Page Width show one page per row; Web Layout has no pages).
-    let (min_cols, auto) = if v.read_mode {
-        (2, false)
-    } else if web || v.fit == "onePage" || v.fit == "pageWidth" {
+    // Pages flow side by side in Print Layout whenever more than one fits across; One Page and
+    // Page Width show one per row, Web Layout has no pages. Reading Mode is handled above.
+    let (min_cols, auto) = if web || v.fit == "onePage" || v.fit == "pageWidth" {
         (1, false)
     } else if v.multi_page {
         (2, true)
     } else {
         (1, true)
     };
-    let cols = if v.read_mode { 2 } else { columns_for(avail.x, maxw * scale, l.pages.len(), min_cols, auto) };
+    let cols = columns_for(avail.x, maxw * scale, l.pages.len(), min_cols, auto);
     let sizes: Vec<(f32, f32)> = l.pages.iter().map(|p| (p.w, p.h)).collect();
     let (rects, size) = place_pages(&sizes, markup, scale, cols, avail);
     Geometry { rects, size, scale, cols }
@@ -348,12 +383,23 @@ fn drawing_grid_step(spacing: f32, scale: f32) -> f32 {
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    // Reading layout depends on the actual viewport dimensions. Set them before pagination so
+    // resize/zoom produces new columns without changing document section properties.
+    let full = ui.available_rect_before_wrap();
+    if app.session.view.read_mode {
+        let scale = app.session.view.zoom.clamp(0.1, 5.0) * PX_PER_PT;
+        let (w, h) = reading_size(full.size() - vec2(14.0, 0.0), scale);
+        if (app.session.view.read_width - w).abs() > 0.5 || (app.session.view.read_height - h).abs() > 0.5 {
+            app.canvas.scroll_to_caret = true;
+        }
+        app.session.view.read_width = w;
+        app.session.view.read_height = h;
+    }
     let layout = app.session.layout();
     // View › Switch Modes: dark paper, inverted document colours, a white caret.
     let dark_page = app.session.view.dark_mode;
     let caret_color = if dark_page { Color32::WHITE } else { t.caret };
     let dark_paper = wordcraft_render::DARK_PAPER;
-    let full = ui.available_rect_before_wrap();
     let show_ruler = app.session.view.ruler && app.session.view.mode == wordcraft_layout::ViewMode::Print && !app.session.view.read_mode;
     let (hruler, vruler, area) = if show_ruler {
         let h = Rect::from_min_max(pos2(full.min.x + RULER, full.min.y), pos2(full.max.x, full.min.y + RULER));
@@ -409,9 +455,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .id_salt("canvas_scroll")
         .auto_shrink([false, false])
         .scroll_source(egui::scroll_area::ScrollSource { mouse_wheel: false, ..Default::default() });
-    if delta != egui::Vec2::ZERO {
+    let delta = if app.session.view.read_mode { vec2(delta.x + delta.y, 0.0) } else { delta };
+    if delta != egui::Vec2::ZERO || app.canvas.scroll_request.is_some() {
         let before = app.canvas.scroll_offset;
-        let after = (before - delta).clamp(egui::Vec2::ZERO, app.canvas.scroll_max);
+        let after = app.canvas.scroll_request.take().unwrap_or(before - delta).clamp(egui::Vec2::ZERO, app.canvas.scroll_max);
         if after == before {
             app.canvas.wheel.hit_edge();
         }
@@ -734,6 +781,33 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     if let Some(sel) = app.canvas.mini_anchor {
         crate::mini_toolbar::show(app, ui.ctx(), sel, area);
+    }
+    if app.session.view.read_mode {
+        // Fixed navigation chrome, independent of the horizontally moving columns.
+        let step = app.session.view.read_width * app.canvas.scale + GAP;
+        let current = if step > 0.0 { (app.canvas.scroll_offset.x / step).round() as usize + 1 } else { 1 };
+        let total = layout.pages.len();
+        let footer = Rect::from_min_size(pos2(area.max.x - 260.0, area.max.y - 38.0), vec2(250.0, 32.0));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(footer), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(app.canvas.scroll_offset.x > 0.5, egui::Button::new("‹")).on_hover_text(tl!("Previous Page")).clicked() {
+                        turn_read_page(app, -1.0);
+                    }
+                    ui.label(format!("{} / {}", current.min(total.max(1)), total));
+                    if ui
+                        .add_enabled(app.canvas.scroll_offset.x + 0.5 < app.canvas.scroll_max.x, egui::Button::new("›"))
+                        .on_hover_text(tl!("Next Page"))
+                        .clicked()
+                    {
+                        turn_read_page(app, 1.0);
+                    }
+                    if ui.button(tl!("Edit Document")).clicked() {
+                        let _ = app.run("view.printLayout", json!({}));
+                    }
+                });
+            });
+        });
     }
 }
 

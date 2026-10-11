@@ -1467,6 +1467,69 @@ mod tests {
         assert!((a.canvas.scroll_offset.y - at - notch).abs() < 0.5, "a notch scrolls {notch}: {}", a.canvas.scroll_offset.y - at);
     }
 
+    /// Reading Mode: reflowed viewport-height columns, horizontal wheel/navigation, exit restores
+    /// Print Layout without editing or changing the document's page setup.
+    #[test]
+    fn reading_mode_columns_wheel_turns_and_escape() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.run("text.insert", json!({"text": "One readable paragraph in many narrow columns. ".repeat(300)})).unwrap();
+        let original = a.session.doc.settings.clone();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 740.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp, events: Vec<egui::Event>, screen| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { events, time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a, vec![], screen);
+        }
+        a.run("view.readMode", json!({})).unwrap();
+        for _ in 0..3 {
+            frame(&mut a, vec![], screen);
+        }
+        let rects = &a.canvas.page_rects;
+        assert!(rects.len() > 5, "reading should reflow: {}", rects.len());
+        assert_eq!(a.canvas.cols, rects.len(), "one unwrapped row");
+        assert!((rects[0].top() - rects[1].top()).abs() < 0.1);
+        assert!(rects[1].left() > rects[0].right());
+        assert!((rects[0].height() - (a.canvas.canvas_rect.unwrap().height() - 36.0)).abs() < 2.0);
+        let initial_width = a.session.view.read_width;
+        let over = a.canvas.canvas_rect.unwrap().center();
+        frame(&mut a, vec![egui::Event::PointerMoved(over)], screen);
+        frame(
+            &mut a,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -65.0),
+                phase: egui::TouchPhase::Start,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            screen,
+        );
+        assert!(a.canvas.scroll_offset.x >= 64.0, "vertical wheel becomes horizontal");
+        assert_eq!(a.canvas.scroll_offset.y, 0.0);
+        let x = a.canvas.scroll_offset.x;
+        canvas::turn_read_page(&mut a, 1.0);
+        frame(&mut a, vec![], screen);
+        assert!(a.canvas.scroll_offset.x > x);
+        // Resizing changes the content width (reflow), not the zoom or the print paper width.
+        let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(850.0, 740.0));
+        frame(&mut a, vec![], narrow);
+        assert_ne!(a.session.view.read_width, initial_width);
+        assert!((a.canvas.scale - canvas::PX_PER_PT).abs() < 0.01);
+        let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        frame(&mut a, vec![esc], narrow);
+        assert!(!a.session.view.read_mode);
+        assert_eq!(a.session.view.mode, wordcraft_layout::ViewMode::Print);
+        assert_eq!(a.session.doc.settings, original);
+    }
+
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
     #[test]
     fn zoomed_out_pages_sit_side_by_side_and_clicks_land_on_them() {
