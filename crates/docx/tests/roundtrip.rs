@@ -1540,3 +1540,36 @@ fn ruby_phonetic_guide_round_trips_as_w_ruby() {
     assert_eq!(q.objects, vec![ruby]);
     assert_eq!(q.props_of_char(5).bold, Some(true));
 }
+/// #354: the sides text wraps on (`@wrapText`) are read and written for Square, Tight and
+/// Through; both sides is the default.
+fn wrap_text_sides_round_trip() {
+    use wordcraft_doc::para::WrapText;
+    let mut d = Document::new();
+    let shape = |float| InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 80.0,
+        h: 40.0,
+        fill: Some(Rgb(1, 2, 3)),
+        stroke: None,
+        stroke_width: 0.0,
+        float,
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+    let sides =
+        [(Wrap::Square, WrapText::Left), (Wrap::Tight, WrapText::Right), (Wrap::Through, WrapText::Largest), (Wrap::Square, WrapText::BothSides)];
+    let mut p = Paragraph::with_text("wrapped ", CharProps::default());
+    for (wrap, side) in sides {
+        let end = p.len();
+        p.insert_object(end, shape(Float { wrap, wrap_text: side, v_rel: Anchor::Paragraph, ..Default::default() }), &CharProps::default()).unwrap();
+    d.body = vec![para_block(p)];
+    for tag in [
+        r#"<wp:wrapSquare wrapText="left"/>"#,
+        r#"<wp:wrapTight wrapText="right">"#,
+        r#"<wp:wrapThrough wrapText="largest">"#,
+        r#"<wp:wrapSquare wrapText="bothSides"/>"#,
+        assert!(xml.contains(tag), "{tag}: {xml}");
+    let got: Vec<_> = paras(&r)[0].objects.iter().filter_map(|o| o.frame().map(|(_, _, f)| (f.wrap, f.wrap_text))).collect();
+    assert_eq!(got, sides);
+    // A value outside the schema is no side (read as both sides).
+    assert_eq!(WrapText::from_ooxml("middle"), None);
