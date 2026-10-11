@@ -162,6 +162,7 @@
 	Cancel	Cancelar
 	Capitalize Each Word	Mayúscula inicial en cada palabra
 	Captions	Leyendas
+	Category	Categorías
 	Cell Margins	Márgenes de celda
 	Cell Size	Tamaño de celda
 	Cell\nMargins	Márgenes de\ncelda
@@ -443,6 +444,7 @@
 	Keep Lines Together	Mantener líneas juntas
 	Keep Text Only	Mantener solo el texto
 	Keep lines together	Mantener líneas juntas
+	Keywords	Palabras Clave
 	Keep with Next	Mantener con el siguiente
 	Keep with next	Mantener con el siguiente
 	Keeps the fonts and formatting of the copied text.	Conserva las fuentes y el formato del texto copiado.
@@ -805,6 +807,7 @@
 	Style: {style}	Estilo: {style}
 	Styles	Estilos
 	Styles Pane	Panel de estilos
+	Subject	Asunto
 	Subscript	Subíndice
 	Superscript	Superíndice
 	Switch Modes	Cambiar de modo
@@ -851,6 +854,7 @@
 	Thick	Gruesa
 	Three	Tres
 	Tight	Ajustado
+	Title	Titulo
 	Top Border	Borde superior
 	Top Margin	Margen superior
 	Top of Page	Parte superior de la página
