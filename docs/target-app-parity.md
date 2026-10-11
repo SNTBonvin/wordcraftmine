@@ -13,7 +13,7 @@ The generated ribbon checklist is [`parity-checklist.md`](parity-checklist.md).
 
 | Number | Value | Kind |
 |---|---|---|
-| Ribbon/menu catalog coverage | **428 / 450 (95.1%)** | **measured**: `cargo xtask parity` (re-derived this pass from `crates/engine/src/catalog.rs` against every `CommandSpec::new` id in the source; identical to the checked-in `parity-checklist.md`) |
+| Ribbon/menu catalog coverage | **441 / 463 (95.2%)** | **measured**: `cargo xtask parity` (re-derived this pass from `crates/engine/src/catalog.rs` against every `CommandSpec::new` id in the source; identical to the checked-in `parity-checklist.md`) |
 | Feature breadth (weighted, beyond the ribbon: dialog options, citation styles, proofing languages, chart types, UI languages) | **~80%** | estimated |
 | Feature depth (weighted by use, table below) | **~68%** | estimated |
 | **Ready for real work** (full target) | **~60%** (range 55–63%) | estimated: weighted sum over the dimension table ([By dimension](#by-dimension)) |
@@ -249,7 +249,7 @@ can be used without committing Word output.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | trivial | Outline view depth (#493): View row updated; catalog 423/448 → 436/461 (94.6%) with the Outlining tab rows |
+| 2026-10-11 | trivial | Outline view depth (#493): View row updated; catalog 428/450 → 441/463 (95.2%) with the Outlining tab rows |
 | 2026-10-11 | trivial | Move tracking (#400): Review row updated; no percentage change |
 | 2026-10-11 | trivial | Footnotes and endnotes: Footnote and Endnote dialog, options per section (position, format, start, restart each section/page), convert notes (#385); no percentage change |
 | 2026-10-11 | trivial | Pictures, shapes, text boxes: text direction, Align Text and linked text boxes (Create Link / Break Link), DOCX `bodyPr` `vert`/`anchor` and `wps:linkedTxbx` (#369); no percentage change |
