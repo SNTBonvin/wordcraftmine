@@ -445,6 +445,9 @@ struct Key {
     notes: u64,
     excl: u64,
     eq: u32,
+    /// The external checker's result shown in this paragraph ([`wordcraft_proof::external`]):
+    /// a new result redraws only its own paragraph.
+    proof: u64,
     grid: (u32, u32, u32, bool),
     hide_deleted: bool,
 }
@@ -686,6 +689,11 @@ impl Ctx<'_> {
             notes: if p.objects.iter().any(|o| matches!(o, InlineObject::NoteRef { .. })) { self.notes_hash } else { 0 },
             excl: if exclusions.is_empty() { 0 } else { hash_of(&format!("{exclusions:?}")) },
             eq: if eq_here > 0 { eq_number } else { 0 },
+            proof: if self.opts.proofing && !wordcraft_proof::external::is_empty() && !p.text.trim().is_empty() {
+                wordcraft_proof::external::stamp(&para::proof_text(p))
+            } else {
+                0
+            },
             grid: self.grid.key(),
             hide_deleted: self.hide_deleted,
         };
