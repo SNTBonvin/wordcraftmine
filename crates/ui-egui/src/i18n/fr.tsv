@@ -101,6 +101,7 @@
 	Number format	Format des numéros
 	Number style for this level:	Style de numéros pour ce niveau :
 	Outside border	Bordure extérieure
+	Overtype	Remplacement
 	Outside:	Extérieur :
 	Restart list after:	Redémarrer la liste après :
 	Right border	Bordure droite
@@ -1556,6 +1557,15 @@
 	Enlarge symbol	Agrandir le symbole
 	Enclosure	Encadrement
 	Circle	Cercle
+	Templates	Modèles
+	Templates and Add-ins	Modèles et compléments
+	Attach Template	Attacher un modèle
+	Detach Template	Détacher le modèle
+	Automatically Update Document Styles	Mettre à jour automatiquement les styles du document
+	Update Styles from Template	Mettre à jour les styles depuis le modèle
+	Organizer	Organiseur
+	Copy Styles	Copier les styles
+	Rename Style	Renommer le style
 	Change Chart Type	Modifier le type de graphique
 	Chart Design	Création de graphique
 	Type	Type
@@ -1717,6 +1727,7 @@
 	Rewind	Rembobiner
 	Forward	Avancer
 	Stroke {n} of {total}	Trait {n} sur {total}
+	Move with Text	Déplacer avec le texte
 	WordArt Styles	Styles WordArt
 	Text Fill	Remplissage du texte
 	Text Outline	Contour du texte
