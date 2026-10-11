@@ -114,3 +114,22 @@ fn complex_script_direct_properties_leave_latin_defaults_inherited() {
         assert_eq!((cs.size, cs.bold, cs.italic), (10.0, false, false));
     });
 }
+
+#[test]
+fn tracked_formatting_keeps_independent_complex_script_values() {
+    let defaults = r#"<w:szCs w:val="36"/><w:bCs/><w:iCs/>"#;
+    let run = r#"<w:sz w:val="24"/><w:b w:val="0"/><w:i w:val="0"/><w:rPrChange w:id="7" w:author="Synthetic Author" w:date="2026-10-11T00:00:00Z"><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/><w:b w:val="0"/><w:bCs w:val="0"/><w:i w:val="0"/><w:iCs w:val="0"/></w:rPr></w:rPrChange>"#;
+    check_generations(&package(run, defaults, "", ""), |d| {
+        let p = paragraph(d);
+        let c = &p.runs[0].props;
+        let current = d.styles.resolve_char(None, c).complex();
+        assert_eq!((current.size, current.bold, current.italic), (18.0, true, true));
+        let change = c.fmt_change.as_ref().unwrap();
+        assert_eq!((change.old.size_cs, change.old.bold_cs, change.old.italic_cs), (Some(10.0), Some(false), Some(false)));
+        let old = d.styles.resolve_char(None, &change.old).complex();
+        assert_eq!((old.size, old.bold, old.italic), (10.0, false, false));
+        let mut overlaid = wordcraft_doc::props::CharProps::default();
+        overlaid.overlay(c);
+        assert_eq!(overlaid.fmt_change, c.fmt_change);
+    });
+}

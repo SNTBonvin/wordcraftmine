@@ -91,6 +91,7 @@ fn every_char_prop_round_trips() {
         link: None,
         ins: None,
         del: None,
+        fmt_change: None,
     };
     let auto =
         CharProps { color: Some(TextColor::Auto), highlight: Some(Highlight::None), vert_align: Some(VertAlign::Subscript), ..Default::default() };
@@ -142,6 +143,8 @@ fn every_para_prop_round_trips() {
         top_line_punct: Some(true),
         auto_space_de: Some(false),
         auto_space_dn: Some(true),
+        num_change: None,
+        fmt_change: None,
     };
     let variants = [
         ParaProps { line_spacing: Some(LineSpacing::AtLeast(14.0)), indent_first: Some(24.0), align: Some(Align::Center), ..Default::default() },
@@ -231,7 +234,7 @@ fn tables_with_merges_round_trip() {
     t.props.look = TableLook { header_row: true, total_row: true, banded_rows: false, first_column: false, last_column: true, banded_columns: true };
     t.props.shading = Some(Rgb(1, 1, 1));
     t.props.caption = Some("Sales".into());
-    t.rows[0].props = RowProps { height: Some(20.0), height_rule: HeightRule::Exact, header: true, cant_split: true };
+    t.rows[0].props = RowProps { height: Some(20.0), height_rule: HeightRule::Exact, header: true, cant_split: true, fmt_change: None };
     t.rows[1].props = RowProps { height: Some(15.0), height_rule: HeightRule::AtLeast, ..Default::default() };
     t.merge(0, 0, 0, 1); // horizontal
     t.merge(1, 2, 2, 2); // vertical
@@ -689,6 +692,7 @@ fn toc_field_skips_nested_stories() {
             stroke_width: 0.0,
             float: Float::default(),
             story: Some(story),
+            freeform: None,
             effects: Default::default(),
         }
     };
@@ -811,6 +815,7 @@ fn shapes_textboxes_equations_dropcaps_round_trip() {
         stroke_width: 1.0,
         float: Float { wrap: Wrap::Square, h_rel: Anchor::Margin, v_rel: Anchor::Paragraph, x: 10.0, y: 20.0, dist: 0.0, ..Default::default() },
         story: Some(story),
+        freeform: None,
         effects: Default::default(),
     };
     let star = InlineObject::Shape {
@@ -822,6 +827,7 @@ fn shapes_textboxes_equations_dropcaps_round_trip() {
         stroke_width: 0.0,
         float: Float::default(),
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     let eq = InlineObject::Equation { linear: "x=(-b±√(b^2-4ac))/2a".into(), display: false, math: Default::default() };
@@ -880,6 +886,7 @@ fn groups_round_trip() {
         stroke_width: 0.0,
         float: Float::default(),
         story: None,
+        freeform: None,
         // A member's shape effects (#275) come back too.
         effects: wordcraft_doc::effects::ShapeEffects {
             shadow: Some(wordcraft_doc::effects::Shadow {
@@ -903,6 +910,7 @@ fn groups_round_trip() {
         stroke_width: 0.75,
         float: Float::default(),
         story: Some(story),
+        freeform: None,
         effects: Default::default(),
     };
     let float = Float { wrap: Wrap::Square, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 20.0, y: 10.0, dist: 9.0, ..Default::default() };
@@ -1138,6 +1146,7 @@ fn self_showing_text_box_saves_bounded() {
         stroke_width: 0.0,
         float: Float::default(),
         story: Some(id),
+        freeform: None,
         effects: Default::default(),
     };
     for _ in 0..30 {
@@ -1220,6 +1229,54 @@ fn list_level_overrides_round_trip() {
     assert_eq!(c.next_label(&back.numbering, restart, 1).unwrap().0, "1.01");
 }
 
+/// Ink strokes and freeform shapes are written as DrawingML custom geometry (`a:custGeom`,
+/// `a:moveTo`/`a:lnTo`) in floating drawings and read back with their points, pen and opacity.
+#[test]
+fn ink_and_freeforms_round_trip_as_custom_geometry() {
+    use wordcraft_doc::freeform::{FreePath, Freeform, InkTool};
+    let shape = |fill, stroke_width, wrap, f: Freeform| InlineObject::Shape {
+        kind: ShapeKind::Freeform,
+        w: f.w,
+        h: f.h,
+        fill,
+        stroke: Some(Rgb(0xC0, 0, 0)),
+        stroke_width,
+        float: Float { wrap, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 30.0, y: 12.0, ..Default::default() },
+        story: None,
+        freeform: Some(Arc::new(f)),
+        effects: Default::default(),
+    };
+    let pen = shape(None, 2.0, Wrap::InFrontOfText, Freeform::ink(InkTool::Pen, 60.0, 20.0, vec![[1.0, 1.0], [30.0, 19.0], [59.0, 4.0]]));
+    let marker = shape(None, 12.0, Wrap::BehindText, Freeform::ink(InkTool::Highlighter, 80.0, 12.0, vec![[6.0, 6.0], [74.0, 6.0]]));
+    let triangle = Freeform {
+        w: 40.0,
+        h: 40.0,
+        paths: vec![FreePath { pts: vec![[0.0, 40.0], [20.0, 0.0], [40.0, 40.0]], closed: true }],
+        ..Default::default()
+    };
+    let tri = shape(Some(Rgb(0, 0x80, 0)), 1.0, Wrap::Square, triangle);
+    let mut p = Paragraph::with_text("Inked", CharProps::default());
+    for o in [pen.clone(), marker, tri.clone()] {
+        p.insert_object(0, o, &CharProps::default()).unwrap();
+    }
+    let d = doc_with(vec![p]);
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert_eq!(xml.matches("<a:custGeom>").count(), 3, "{xml}");
+    assert!(xml.contains(r#"<a:path w="762000" h="254000" fill="none"><a:moveTo><a:pt x="12700" y="12700"/></a:moveTo><a:lnTo>"#), "{xml}");
+    assert!(xml.contains(r#"<a:alpha val="50000"/>"#) && xml.contains(r#"cap="rnd""#), "{xml}");
+    let r = rt(&d);
+    let objs = &paras(&r)[0].objects;
+    assert_eq!(objs.len(), 3);
+    // Written in reverse (each inserted at the start): the triangle, the highlighter, the pen.
+    assert_eq!(objs[0], tri, "a filled closed freeform comes back as it was");
+    let InlineObject::Shape { freeform: Some(m), float, stroke_width, .. } = &objs[1] else { panic!("{:?}", objs[1]) };
+    assert_eq!((m.ink, m.alpha, float.wrap, *stroke_width), (Some(InkTool::Highlighter), 0.5, Wrap::BehindText, 12.0));
+    assert_eq!(objs[2], pen, "the pen stroke comes back point for point");
+}
+
 /// Shape effects (#275): `a:effectLst` with an outer shadow, a glow and soft edges round-trips,
 /// and the effect extent leaves room for them.
 #[test]
@@ -1239,6 +1296,7 @@ fn shape_effects_round_trip() {
         stroke_width: 0.0,
         float: Float::default(),
         story: None,
+        freeform: None,
         effects,
     };
     let mut p = Paragraph::with_text("x", CharProps::default());
@@ -1313,6 +1371,7 @@ fn rotation_and_flips_round_trip() {
         stroke_width: 0.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     let square = Float { wrap: Wrap::Square, ..Default::default() };
@@ -1367,6 +1426,7 @@ fn rotated_group_and_shadow_rotation_round_trip() {
         stroke_width: 0.0,
         float: Float { rot: 20.0, ..Default::default() },
         story: None,
+        freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { rot_with_shape, ..Default::default() }), ..Default::default() },
     };
     let group = InlineObject::Group {

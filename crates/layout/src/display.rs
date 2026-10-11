@@ -69,6 +69,14 @@ pub enum Draw {
         /// Shadow, glow and soft edges (drawn with [`wordcraft_doc::effects::bands`]).
         effects: wordcraft_doc::effects::ShapeEffects,
     },
+    /// An ink stroke: a line through `pts` (page points) with round ends and joins, `width`
+    /// wide, in `color` at opacity `alpha`.
+    Ink {
+        pts: Vec<(f32, f32)>,
+        color: Rgb,
+        width: f32,
+        alpha: f32,
+    },
     /// A vector path (a chart's or diagram's polygons, slices, lines): filled, then stroked.
     Path {
         segs: Vec<PathSeg>,
@@ -140,13 +148,23 @@ pub struct DisplayOptions {
     pub markup: bool,
     /// Show on-screen-only marks: equation placeholders and prompts (never in print or PDF).
     pub placeholders: bool,
+    /// Review › Hide Ink: leave ink strokes out (they stay in the document).
+    pub hide_ink: bool,
     /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
     pub revisions: MarkupOptions,
 }
 
 impl Default for DisplayOptions {
     fn default() -> Self {
-        DisplayOptions { marks: false, dim_header: true, dim_body: false, markup: true, placeholders: false, revisions: MarkupOptions::default() }
+        DisplayOptions {
+            marks: false,
+            dim_header: true,
+            dim_body: false,
+            markup: true,
+            placeholders: false,
+            hide_ink: false,
+            revisions: MarkupOptions::default(),
+        }
     }
 }
 
@@ -302,7 +320,7 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
     for it in &page.items {
         item(doc, it, opts, ba, &mut out);
     }
-    if opts.markup && opts.revisions.insertions_deletions && opts.revisions.changed_lines != ChangeBar::None {
+    if opts.markup && (opts.revisions.insertions_deletions || opts.revisions.formatting) && opts.revisions.changed_lines != ChangeBar::None {
         change_bars(doc, page, &opts.revisions, ba, &mut out);
     }
     out
@@ -311,7 +329,8 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
 /// The automatic colour of the bars beside changed lines.
 pub const CHANGE_BAR: Rgb = Rgb(0x50, 0x50, 0x50);
 
-/// Bars in the margin beside body lines with tracked insertions or deletions.
+/// Bars in the margin beside body lines with tracked insertions or deletions, or (when shown)
+/// tracked formatting changes of their text, paragraph or paragraph mark.
 fn change_bars(doc: &Document, page: &Page, m: &MarkupOptions, alpha: f32, out: &mut Vec<Draw>) {
     // Outside: the left margin, or the outer one of a right-hand page with mirrored margins.
     let right = match m.changed_lines {
@@ -327,12 +346,17 @@ fn change_bars(doc: &Document, page: &Page, m: &MarkupOptions, alpha: f32, out: 
             continue;
         }
         let Some(first) = pl.lines.get(*l0) else { continue };
-        let mark_rev = doc.para(*story, path).is_some_and(|p| p.mark.ins.is_some() || p.mark.del.is_some());
+        let (text, fmt) = (m.insertions_deletions, m.formatting);
+        let para = doc.para(*story, path);
+        let mark_rev = para.is_some_and(|p| (text && (p.mark.ins.is_some() || p.mark.del.is_some())) || (fmt && p.mark.fmt_change.is_some()));
+        // A paragraph whose own formatting changed is marked on every line.
+        let para_fmt = fmt && para.is_some_and(|p| p.props.fmt_change.is_some());
         for li in *l0..*l1 {
             let Some(line) = pl.lines.get(li) else { continue };
-            let changed = (line.c0..line.c1)
-                .filter_map(|k| pl.clusters.get(k).and_then(|c| pl.styles.get(c.style as usize)))
-                .any(|st| st.rc.ins.is_some() || st.rc.del.is_some())
+            let changed = para_fmt
+                || (line.c0..line.c1)
+                    .filter_map(|k| pl.clusters.get(k).and_then(|c| pl.styles.get(c.style as usize)))
+                    .any(|st| (text && (st.rc.ins.is_some() || st.rc.del.is_some())) || (fmt && st.rc.fmt.is_some()))
                 || (mark_rev && line.end == LineEnd::Para);
             if changed {
                 let top = y + (line.top - first.top);
@@ -383,19 +407,11 @@ fn item(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, out: &mu
         Placed::Image { rect, media, crop, spin, .. } => {
             spun(*spin, *rect, vec![Draw::Image { rect: *rect, media: media.clone(), crop: *crop, alpha }], out)
         }
-        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, spin } => spun(
-            *spin,
-            *rect,
-            vec![Draw::Shape {
-                rect: *rect,
-                kind: *kind,
-                fill: *fill,
-                stroke: *stroke,
-                stroke_width: *stroke_width,
-                effects: effects_in(*effects, *spin),
-            }],
-            out,
-        ),
+        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin } => {
+            let mut items = Vec::new();
+            shape_draws(*rect, *kind, *fill, *stroke, *stroke_width, effects_in(*effects, *spin), freeform.as_deref(), opts, &mut items);
+            spun(*spin, *rect, items, out)
+        }
         Placed::Graphic { rect, graphic, spin, .. } => spun(*spin, *rect, graphic_draws(doc, graphic, *rect, alpha), out),
         Placed::Cell { .. } | Placed::Object { .. } => {}
         Placed::Lines { story, path, para, l0, l1, x, y, turn } if turn.is_turned() => {
@@ -778,7 +794,7 @@ fn lines(
             let spin = obj.and_then(InlineObject::frame).map(|(_, _, f)| f.spin()).unwrap_or_default();
             match obj {
                 Some(o @ (InlineObject::Image { .. } | InlineObject::Shape { .. } | InlineObject::Group { .. })) => {
-                    object_draws(o, rect, Spin::default(), alpha, out)
+                    object_draws(o, rect, Spin::default(), alpha, opts, out)
                 }
                 Some(InlineObject::Graphic { graphic, alt, .. }) => {
                     let mut draws = Vec::new();
@@ -1027,6 +1043,50 @@ fn page_segs(segs: &[PathSeg], map: impl Fn(f32, f32) -> (f32, f32)) -> Vec<Path
 }
 
 /// A path of clean segments (see [`page_segs`]) as a kurbo path, for the rasteriser and PDF.
+/// The draws of a shape at `rect`: a preset outline, or a freeform's paths (an ink stroke left out
+/// under Review › Hide Ink).
+#[allow(clippy::too_many_arguments)]
+fn shape_draws(
+    rect: Rect,
+    kind: ShapeKind,
+    fill: Option<Rgb>,
+    stroke: Option<Rgb>,
+    stroke_width: f32,
+    effects: wordcraft_doc::effects::ShapeEffects,
+    freeform: Option<&wordcraft_doc::freeform::Freeform>,
+    opts: &DisplayOptions,
+    out: &mut Vec<Draw>,
+) {
+    let Some(f) = freeform.filter(|_| kind == ShapeKind::Freeform) else {
+        out.push(Draw::Shape { rect, kind, fill, stroke, stroke_width, effects });
+        return;
+    };
+    if f.is_ink() && opts.hide_ink {
+        return;
+    }
+    let width = if stroke_width.is_finite() { stroke_width.clamp(0.0, 200.0) } else { 0.75 };
+    for (pts, closed) in f.placed(rect.x, rect.y, rect.w, rect.h) {
+        if f.is_ink() || (!closed && fill.is_none()) {
+            if let Some(color) = stroke {
+                let mut pts: Vec<(f32, f32)> = pts.iter().map(|[x, y]| (*x, *y)).collect();
+                if closed && let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+                out.push(Draw::Ink { pts, color, width: width.max(0.25), alpha: f.alpha });
+            }
+            continue;
+        }
+        let mut segs: Vec<PathSeg> = Vec::with_capacity(pts.len() + 1);
+        for (i, [x, y]) in pts.iter().enumerate() {
+            segs.push(if i == 0 { PathSeg::Move(*x, *y) } else { PathSeg::Line(*x, *y) });
+        }
+        if closed {
+            segs.push(PathSeg::Close);
+        }
+        out.push(Draw::Path { segs, fill: if closed { fill } else { None }, stroke, stroke_width: width });
+    }
+}
+
 pub fn seg_path(segs: &[PathSeg]) -> BezPath {
     let mut p = BezPath::new();
     for s in segs {
@@ -1122,18 +1182,20 @@ fn spun(spin: Spin, rect: Rect, items: Vec<Draw>, out: &mut Vec<Draw>) {
 /// A picture, shape or group drawn in `rect` (its unturned frame), turned by its own spin about
 /// the rect's centre; a group's members are turned inside it. `outer` is the spin it is already
 /// drawn inside (its group's). Nothing for anything else.
-fn object_draws(o: &InlineObject, rect: Rect, outer: Spin, alpha: f32, out: &mut Vec<Draw>) {
+fn object_draws(o: &InlineObject, rect: Rect, outer: Spin, alpha: f32, opts: &DisplayOptions, out: &mut Vec<Draw>) {
     let own = o.frame().map(|(_, _, f)| f.spin()).unwrap_or_default();
     match o {
         InlineObject::Image { media, crop, .. } => spun(own, rect, vec![Draw::Image { rect, media: media.clone(), crop: *crop, alpha }], out),
-        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, .. } => {
+        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, freeform, .. } => {
             let effects = effects_in(*effects, own.within(outer));
-            spun(own, rect, vec![Draw::Shape { rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width, effects }], out)
+            let mut items = Vec::new();
+            shape_draws(rect, *kind, *fill, *stroke, *stroke_width, effects, freeform.as_deref(), opts, &mut items);
+            spun(own, rect, items, out)
         }
         InlineObject::Group { .. } => {
             let mut members = Vec::new();
             for ([x, y, w, h], c) in o.group_rects(rect.x, rect.y, rect.w, rect.h) {
-                object_draws(c, Rect::new(x, y, w, h), own.within(outer), alpha, &mut members);
+                object_draws(c, Rect::new(x, y, w, h), own.within(outer), alpha, opts, &mut members);
             }
             spun(own, rect, members, out)
         }

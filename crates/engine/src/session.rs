@@ -77,6 +77,12 @@ pub struct ViewState {
     pub track_changes_pane: bool,
     /// Check spelling and grammar as you type.
     pub proofing: bool,
+    /// Review › Hide Ink: ink strokes aren't shown on screen (they stay in the document).
+    #[serde(default)]
+    pub hide_ink: bool,
+    /// Draw tab: the tool dragging on the page uses, and each pen's colour and thickness.
+    #[serde(default)]
+    pub draw: crate::cmd::draw::DrawState,
 }
 
 fn on() -> bool {
@@ -106,6 +112,8 @@ impl Default for ViewState {
             show_markup: true,
             track_changes_pane: false,
             proofing: true,
+            hide_ink: false,
+            draw: Default::default(),
         }
     }
 }
@@ -719,6 +727,10 @@ impl Session {
         match &result {
             Ok(_) => {
                 if spec.mutates {
+                    // Formatting changed while tracking becomes a formatting revision.
+                    if let Some((before, ..)) = &before_doc {
+                        crate::cmd::fmt_revisions::record(self, id, before);
+                    }
                     self.touch();
                     self.doc.ensure_nonempty();
                     self.doc.prune_text_boxes();
@@ -760,7 +772,12 @@ impl Session {
             return p.clone();
         }
         let f = &self.sel.focus;
-        self.doc.para_at(f).map(|p| p.props_at(f.off).clone()).unwrap_or_default()
+        let Some(p) = self.doc.para_at(f) else { return CharProps::default() };
+        let props = p.props_at(f.off);
+        // As in Word, text typed at either end of a hyperlink isn't part of it; only typing
+        // inside the link extends it.
+        let inside_link = props.link.is_some() && f.off > 0 && f.off < p.len() && p.props_of_char(f.off).link == props.link;
+        if props.link.is_some() && !inside_link { props.unlinked() } else { props.clone() }
     }
 
     /// Words in the document, as the status bar shows them (see [`Prefs::count_notes`]).

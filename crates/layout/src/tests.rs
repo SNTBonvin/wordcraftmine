@@ -232,6 +232,7 @@ fn many_hidden_float_anchors_lay_out_in_linear_time() {
             stroke_width: 1.0,
             float,
             story: None,
+            freeform: None,
             effects: Default::default(),
         };
         let obj = wordcraft_doc::para::OBJ.to_string();
@@ -1048,6 +1049,7 @@ fn text_wraps_around_square_float() {
         stroke_width: 1.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
@@ -1086,6 +1088,7 @@ fn deleted_float_leaves_no_wrap_area_without_markup() {
         stroke_width: 1.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
@@ -1138,6 +1141,7 @@ fn hidden_float_leaves_no_wrap_area_when_hidden_text_is_not_shown() {
         stroke_width: 1.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
@@ -1155,6 +1159,22 @@ fn hidden_float_leaves_no_wrap_area_when_hidden_text_is_not_shown() {
     assert!(left >= 144.0 && shown, "{left} {shown}");
     // Not shown: no shape, and no gap where it was.
     assert_eq!(first(false), (0.0, false));
+}
+
+/// A page-number start or a line-number start near `u32::MAX` (accepted from files and commands)
+/// overflowed when the next page or line was counted: a panic with overflow checks on.
+#[test]
+fn extreme_page_and_line_number_starts_do_not_overflow() {
+    let mut d = Document::from_text("one\ntwo\nthree");
+    for b in d.body.iter_mut() {
+        if let wordcraft_doc::Block::Para(p) = std::sync::Arc::make_mut(b) {
+            p.props.page_break_before = Some(true);
+        }
+    }
+    d.last_section.page_num_start = Some(u32::MAX);
+    d.last_section.line_numbers = Some(wordcraft_doc::section::LineNumbering { start: u32::MAX, ..Default::default() });
+    let l = lay(&d);
+    assert!(l.pages.len() >= 3, "{} pages", l.pages.len());
 }
 
 #[test]
@@ -1175,6 +1195,7 @@ fn line_numbers_borders_text_boxes() {
         stroke_width: 1.0,
         float: Default::default(),
         story: Some(id),
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(&Pos::body(2, 5), tb, &Default::default()).unwrap();
@@ -1275,6 +1296,24 @@ fn repeated_header_is_followed_by_the_next_row_even_when_it_overflows() {
     let pages = rows_per_page(t);
     assert!(pages.len() >= 2, "{pages:?}");
     assert!(pages.iter().all(|p| p.first() == Some(&0)), "{pages:?}");
+}
+
+/// A drop-cap paragraph in a font larger than 1000 pt used to panic in layout (`clamp` with min > max).
+#[test]
+fn drop_cap_with_a_huge_font_lays_out() {
+    for size in [999.0, 1000.0, 1001.0, 1638.0] {
+        let cp = wordcraft_doc::CharProps { size: Some(size), ..Default::default() };
+        let mut p = wordcraft_doc::Paragraph::with_text("Hello drop cap world", cp);
+        p.props.drop_cap = Some(3);
+        let mut d = Document::from_text("x");
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = lay(&d);
+        let Some(pl) = l.pages[0].items.iter().find_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None }) else {
+            panic!("no lines at size {size}")
+        };
+        let (nc, lines, _) = pl.drop_cap.unwrap_or((0, 0, 0.0));
+        assert_eq!((nc, lines), (1, 3), "size {size}");
+    }
 }
 
 #[test]
@@ -1469,6 +1508,7 @@ fn text_box_at(d: &mut Document, pos: &Pos, text: &str, w: f32, h: f32, float: w
         stroke_width: 0.75,
         float,
         story: Some(id),
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(pos, shape, &Default::default()).unwrap();
@@ -1540,6 +1580,7 @@ fn presses_grab_pictures_anywhere_and_text_boxes_by_their_border() {
         stroke_width: 1.0,
         float: Default::default(),
         story: None,
+        freeform: None,
         effects: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
@@ -1760,6 +1801,7 @@ fn box_fan_out(levels: usize, fan: usize) -> Document {
         stroke_width: 0.0,
         float: Default::default(),
         story: Some(story),
+        freeform: None,
         effects: Default::default(),
     };
     for (k, id) in ids.iter().enumerate() {
@@ -1833,6 +1875,7 @@ fn picture(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject {
         stroke_width: 1.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     }
 }
@@ -1981,6 +2024,7 @@ fn rect_shape(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject
         stroke_width: 1.0,
         float,
         story: None,
+        freeform: None,
         effects: Default::default(),
     }
 }
@@ -2150,6 +2194,7 @@ fn floating_header_text_box_leaves_the_body_at_the_top_margin() {
                 stroke_width: 0.75,
                 float,
                 story: Some(story),
+                freeform: None,
                 effects: Default::default(),
             };
             anchor.insert_object(0, tb, &Default::default()).unwrap();
@@ -2759,6 +2804,7 @@ fn rotated_float_wraps_around_its_rotated_bounds() {
             stroke_width: 1.0,
             float,
             story: None,
+            freeform: None,
             effects: Default::default(),
         };
         d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
@@ -2802,6 +2848,7 @@ fn rotated_group_turns_its_members_and_their_shadows() {
         stroke_width: 0.0,
         float: Float { rot, ..Default::default() },
         story: None,
+        freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { angle: 0.0, rot_with_shape, ..Default::default() }), ..Default::default() },
     };
     let float =
