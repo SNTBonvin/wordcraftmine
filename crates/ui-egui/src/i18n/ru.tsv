@@ -1965,3 +1965,9 @@ preview	Title	Пример
 	Continuous numbering	Сквозная нумерация
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
+
+# Paragraph dialog options (#512).
+	Formatting exceptions	Исключения форматирования
+	Inside:	Внутри:
+	Mirror indents	Зеркальные отступы
+	Outside:	Снаружи:

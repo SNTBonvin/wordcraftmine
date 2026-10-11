@@ -37,6 +37,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Paragraph dialog: Mirror indents (Inside/Outside labels), Don't add space between paragraphs of the same style, Formatting exceptions (Suppress line numbers, Don't hyphenate) (#512) |
 | 2026-10-11 | trivial | Accessibility pane (errors/warnings/tips, jump-to, fixes) and Alt Text pane, opened from Picture/Shape Format › Accessibility and right-click › View Alt Text… (#386) |
 | 2026-10-11 | trivial | References dialogs: Caption (New/Delete Label, Numbering with chapter numbers), Index and Mark Index Entry (Mark All), Custom Table of Contents (Options, TOC styles via Modify Style), Source Manager and Create/Edit Source; modal dialog count 34 (#402) |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |

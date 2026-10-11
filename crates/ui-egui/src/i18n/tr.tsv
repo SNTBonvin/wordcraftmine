@@ -1587,3 +1587,9 @@
 	Continuous numbering	Sürekli numaralandırma
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
+
+# Paragraph dialog options (#512).
+	Formatting exceptions	Biçimlendirme özel durumları
+	Inside:	İç:
+	Mirror indents	Ayna girintiler
+	Outside:	Dış:

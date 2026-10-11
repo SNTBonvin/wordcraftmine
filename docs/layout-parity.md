@@ -68,6 +68,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Mirror indents (`w:mirrorIndents`): left/right indents swap on even pages; suppress line numbers inherited from styles (#512) |
 | 2026-10-11 | trivial | Document grid: line and character pitch (#391) |
 | 2026-10-11 | trivial | Linked text boxes, Align Text and text-box text direction (#369) |
 | 2026-10-11 | trivial | Right-to-left tables and sections laid out mirrored (#362) |
