@@ -141,7 +141,10 @@ mod tests {
         a.run("edit.undo", json!({})).unwrap();
         assert_eq!(pictures(&mut a), 0);
         // Pasted text that names picture files only becomes pictures when files were copied.
-        assert!(names_picture_files("file:///home/me/shot%201.png\n/tmp/b.JPG\n"));
+        // On Windows, /tmp/foo is not an absolute path; use a platform-native second path.
+        let copied_paths =
+            if cfg!(windows) { "file:///C:/Users/me/shot%201.png\nC:\\Temp\\b.JPG\n" } else { "file:///home/me/shot%201.png\n/tmp/b.JPG\n" };
+        assert!(names_picture_files(copied_paths));
         assert!(!names_picture_files("see /tmp/b.png") && !names_picture_files("notes.txt") && !names_picture_files(""));
     }
 

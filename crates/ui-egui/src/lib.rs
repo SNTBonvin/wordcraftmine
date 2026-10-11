@@ -124,6 +124,24 @@ pub struct UiState {
     /// View › Switch Modes: show pages dark (white text on black), kept between runs. Only the
     /// pages: the interface follows [`UiState::theme`] (#312).
     pub dark_page: bool,
+    /// Saved tab order and active document (paths reopened from disk on next desktop launch).
+    pub workspace: WorkspaceState,
+}
+
+/// Only paths and empty placeholders are persisted: document contents are never written to
+/// preferences, so unsaved edits are handled by the existing Save Changes dialog on exit.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WorkspaceState {
+    pub tabs: Vec<WorkspaceTab>,
+    pub active: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WorkspaceTab {
+    pub path: Option<String>,
+    pub pinned: bool,
 }
 
 impl Default for UiState {
@@ -148,13 +166,81 @@ impl Default for UiState {
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
+            workspace: WorkspaceState::default(),
         }
     }
+}
+
+/// A document that is not currently selected. Its edit and view state are retained intact,
+/// including undo history, page caches and AutoSave permissions. The selected document lives
+/// in `WordApp` for compatibility with the existing ribbon, canvas and MCP integrations.
+struct DocumentTab {
+    session: Session,
+    canvas: canvas::CanvasState,
+    autosave_path: Option<std::path::PathBuf>,
+    last_autosave: f64,
+    word_count: (u64, usize),
+    read_aloud_at: Option<wordcraft_engine::doc::Pos>,
+    read_aloud_error: Option<String>,
+    change_picture_target: Option<String>,
+    equation_prev_tab: Option<String>,
+}
+
+impl DocumentTab {
+    fn new(session: Session) -> Self {
+        Self {
+            session,
+            canvas: canvas::CanvasState::default(),
+            autosave_path: None,
+            last_autosave: 0.0,
+            word_count: (0, 0),
+            read_aloud_at: None,
+            read_aloud_error: None,
+            change_picture_target: None,
+            equation_prev_tab: None,
+        }
+    }
+}
+
+/// A tab's public label, used by the tab strip and the document-list command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocumentTabInfo {
+    pub index: usize,
+    pub name: String,
+    pub dirty: bool,
+    pub active: bool,
+    pub pinned: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ClosedDocument {
+    path: String,
+    index: usize,
+    pinned: bool,
 }
 
 /// The application.
 pub struct WordApp {
     pub session: Session,
+    /// Exactly one slot (the active one) is `None`; all other slots hold full document state.
+    tabs: Vec<Option<DocumentTab>>,
+    /// Stable identity for each tab (unlike its re-orderable display index).
+    tab_ids: Vec<u64>,
+    pinned_tabs: Vec<bool>,
+    recently_closed: Vec<ClosedDocument>,
+    /// Stable IDs queued for Close Others / Close All, so earlier closes cannot shift indexes.
+    pending_closes: Vec<u64>,
+    pending_keep_tab: Option<u64>,
+    /// For window close, inspect every dirty tab without removing it from the saved workspace.
+    quit_reviewed: Vec<u64>,
+    quit_original_tab: Option<u64>,
+    /// Drag source index is stable until pointer release; tab reordering occurs after painting.
+    pub(crate) drag_document_tab: Option<usize>,
+    next_tab_id: u64,
+    active_tab: usize,
+    closing_all: bool,
+    /// Explicit Close / Close All should not restore documents at the next launch.
+    suppress_workspace_on_exit: bool,
     pub ui: UiState,
     pub services: Services,
     pub canvas: canvas::CanvasState,
@@ -237,6 +323,19 @@ impl WordApp {
     pub fn new(session: Session, services: Services) -> Self {
         WordApp {
             session,
+            tabs: vec![None],
+            tab_ids: vec![1],
+            pinned_tabs: vec![false],
+            recently_closed: Vec::new(),
+            pending_closes: Vec::new(),
+            pending_keep_tab: None,
+            quit_reviewed: Vec::new(),
+            quit_original_tab: None,
+            drag_document_tab: None,
+            next_tab_id: 2,
+            active_tab: 0,
+            closing_all: false,
+            suppress_workspace_on_exit: false,
             ui: UiState::default(),
             services,
             canvas: canvas::CanvasState::default(),
@@ -275,6 +374,385 @@ impl WordApp {
         }
     }
 
+    /// List all open documents, in display order.
+    pub fn document_tabs(&self) -> Vec<DocumentTabInfo> {
+        self.tabs
+            .iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                let session = slot.as_ref().map_or(&self.session, |t| &t.session);
+                let name = session.path.as_ref().and_then(|p| p.file_name()).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| {
+                    if session.doc.core.title.is_empty() {
+                        format!("Document {}", self.tab_ids.get(index).copied().unwrap_or(1))
+                    } else {
+                        session.doc.core.title.clone()
+                    }
+                });
+                DocumentTabInfo { index, name, dirty: session.dirty, active: index == self.active_tab, pinned: self.pinned_tabs[index] }
+            })
+            .collect()
+    }
+
+    pub fn active_document_tab(&self) -> usize {
+        self.active_tab
+    }
+
+    pub fn document_tab_path(&self, index: usize) -> Option<String> {
+        if index >= self.tabs.len() {
+            return None;
+        }
+        let session = self.tabs[index].as_ref().map_or(&self.session, |t| &t.session);
+        session.path.as_ref().map(|p| p.to_string_lossy().into_owned())
+    }
+
+    /// Stable ID for egui state such as a document's last scroll offset.
+    pub(crate) fn active_document_id(&self) -> u64 {
+        self.tab_ids.get(self.active_tab).copied().unwrap_or(0)
+    }
+
+    pub fn switch_document_tab(&mut self, index: usize) -> bool {
+        if index == self.active_tab {
+            return true;
+        }
+        if matches!(self.dialog, Some(dialogs::Dialog::SaveChanges { .. })) {
+            return false;
+        }
+        let Some(next) = self.tabs.get_mut(index).and_then(Option::take) else { return false };
+        // Swap the entire session and editor state, never copying a document or its undo stack.
+        let previous = DocumentTab {
+            session: std::mem::replace(&mut self.session, next.session),
+            canvas: std::mem::replace(&mut self.canvas, next.canvas),
+            autosave_path: std::mem::replace(&mut self.autosave_path, next.autosave_path),
+            last_autosave: std::mem::replace(&mut self.last_autosave, next.last_autosave),
+            word_count: std::mem::replace(&mut self.word_count, next.word_count),
+            read_aloud_at: std::mem::replace(&mut self.read_aloud_at, next.read_aloud_at),
+            read_aloud_error: std::mem::replace(&mut self.read_aloud_error, next.read_aloud_error),
+            change_picture_target: std::mem::replace(&mut self.change_picture_target, next.change_picture_target),
+            equation_prev_tab: std::mem::replace(&mut self.equation_prev_tab, next.equation_prev_tab),
+        };
+        self.tabs[self.active_tab] = Some(previous);
+        self.active_tab = index;
+        self.dialog = None;
+        self.ui.backstage = false;
+        self.canvas.want_focus = true;
+        self.status_msg = None;
+        self.applied_theme = None; // page-specific dark mode
+        self.previews = previews::Previews::default(); // style previews belong to the document
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint();
+        }
+        true
+    }
+
+    /// Close a tab by its displayed index. Unsaved work asks before the tab is removed.
+    pub fn close_document_tab(&mut self, index: usize) -> Result<Value, String> {
+        if !self.switch_document_tab(index) {
+            return Err("unable to select that document while a save prompt is open".into());
+        }
+        self.run("file.close", json!({}))
+    }
+
+    /// Toggle pinning; pinned documents form an ordered group at the left edge.
+    pub fn pin_document_tab(&mut self, index: usize, pinned: bool) -> bool {
+        if index >= self.tabs.len() {
+            return false;
+        }
+        if self.pinned_tabs[index] == pinned {
+            return true;
+        }
+        let other_pins = self.pinned_tabs.iter().filter(|&&p| p).count();
+        let destination = if pinned { other_pins } else { other_pins - 1 };
+        self.pinned_tabs[index] = pinned;
+        self.move_document_tab_unchecked(index, destination)
+    }
+
+    /// Queue a close operation that respects each tab's Save Changes prompt.
+    pub fn close_other_document_tabs(&mut self, index: usize) -> bool {
+        if index >= self.tabs.len() || self.dialog.is_some() {
+            return false;
+        }
+        self.pending_keep_tab = Some(self.tab_ids[index]);
+        self.pending_closes =
+            self.tab_ids.iter().enumerate().filter(|(i, _)| *i != index && !self.pinned_tabs[*i]).map(|(_, id)| *id).rev().collect();
+        self.continue_pending_closes();
+        true
+    }
+
+    /// Close every tab, including pinned tabs. The last close exits WordCraft.
+    pub fn close_all_document_tabs(&mut self) -> bool {
+        if self.dialog.is_some() {
+            return false;
+        }
+        self.pending_keep_tab = None;
+        self.pending_closes = self.tab_ids.iter().copied().rev().collect();
+        self.continue_pending_closes();
+        true
+    }
+
+    fn continue_pending_closes(&mut self) {
+        if self.dialog.is_some() || self.closing_all || self.quit_requested {
+            return;
+        }
+        while let Some(id) = self.pending_closes.pop() {
+            if let Some(index) = self.tab_ids.iter().position(|t| *t == id) {
+                let _ = self.close_document_tab(index);
+                return;
+            }
+        }
+        if let Some(id) = self.pending_keep_tab.take()
+            && let Some(index) = self.tab_ids.iter().position(|t| *t == id)
+        {
+            self.switch_document_tab(index);
+        }
+    }
+
+    /// Reopen the last closed file from disk, not discarded unsaved edits.
+    pub fn reopen_closed_document_tab(&mut self) -> Result<Value, String> {
+        let Some(closed) = self.recently_closed.last().cloned() else {
+            return Err("there is no previously closed saved document".into());
+        };
+        let path = closed.path.clone();
+        // A failed reopen must remain on the history stack for a future retry.
+        let result = self.add_document_tab("file.open", &json!({"path": path}))?;
+        self.recently_closed.pop();
+        if result.get("alreadyOpen").and_then(Value::as_bool) == Some(true) {
+            return Ok(result);
+        }
+        let from = self.active_tab;
+        // Pin first, then reorder within the same group so pinned tabs stay to the left.
+        self.pin_document_tab(from, closed.pinned);
+        let from = self.active_tab;
+        let pin_count = self.pinned_tabs.iter().filter(|&&p| p).count();
+        let min = if closed.pinned { 0 } else { pin_count };
+        let max = if closed.pinned { pin_count.saturating_sub(1) } else { self.tabs.len() - 1 };
+        self.reorder_document_tab(from, closed.index.clamp(min, max));
+        Ok(result)
+    }
+
+    /// Move an existing tab to another position without affecting any document state.
+    pub fn reorder_document_tab(&mut self, from: usize, to: usize) -> bool {
+        if from >= self.tabs.len() || to >= self.tabs.len() {
+            return false;
+        }
+        if from == to {
+            return true;
+        }
+        // Only move within the pinned or unpinned group; use pin_document_tab to cross it.
+        if self.pinned_tabs[from] != self.pinned_tabs[to] {
+            return false;
+        }
+        self.move_document_tab_unchecked(from, to)
+    }
+
+    fn move_document_tab_unchecked(&mut self, from: usize, to: usize) -> bool {
+        if from == to {
+            return true;
+        }
+        let slot = self.tabs.remove(from);
+        self.tabs.insert(to, slot);
+        let id = self.tab_ids.remove(from);
+        self.tab_ids.insert(to, id);
+        let pin = self.pinned_tabs.remove(from);
+        self.pinned_tabs.insert(to, pin);
+        if self.active_tab == from {
+            self.active_tab = to;
+        } else if from < self.active_tab && to >= self.active_tab {
+            self.active_tab -= 1;
+        } else if from > self.active_tab && to <= self.active_tab {
+            self.active_tab += 1;
+        }
+        true
+    }
+
+    fn add_document_tab(&mut self, id: &str, params: &Value) -> Result<Value, String> {
+        // Never put two independent edit sessions on the same file. Re-open selects its tab.
+        if id == "file.open"
+            && let Some(path) = params.get("path").and_then(Value::as_str)
+            && params.get("data").is_none()
+        {
+            let sought = std::fs::canonicalize(path).ok();
+            let found = self.document_tabs().into_iter().find(|tab| {
+                let session = self.tabs[tab.index].as_ref().map_or(&self.session, |t| &t.session);
+                session
+                    .path
+                    .as_ref()
+                    .is_some_and(|p| p.as_path() == std::path::Path::new(path) || (sought.is_some() && std::fs::canonicalize(p).ok() == sought))
+            });
+            if let Some(tab) = found {
+                self.switch_document_tab(tab.index);
+                return Ok(json!({"path": path, "tab": tab.index, "alreadyOpen": true}));
+            }
+        }
+        let mut session = Session::new(wordcraft_doc::Document::new());
+        session.author = self.session.author.clone();
+        session.prefs = self.session.prefs.clone();
+        session.view = self.session.view.clone();
+        // Parse and load before switching: failed file opens must leave all existing tabs intact.
+        let result = session.run(id, params).map_err(|e| e.to_string())?;
+        // Agent commands can supersede a pending prompt; never strand the new tab behind it.
+        if matches!(self.dialog, Some(dialogs::Dialog::SaveChanges { .. })) {
+            self.dialog = None;
+            self.closing_all = false;
+            self.quit_reviewed.clear();
+            self.quit_original_tab = None;
+            self.pending_closes.clear();
+            self.pending_keep_tab = None;
+        }
+        self.tabs.push(Some(DocumentTab::new(session)));
+        self.tab_ids.push(self.next_tab_id);
+        self.pinned_tabs.push(false);
+        self.next_tab_id = self.next_tab_id.wrapping_add(1);
+        let index = self.tabs.len() - 1;
+        self.switch_document_tab(index);
+        self.after_command(id);
+        Ok(result)
+    }
+
+    fn close_active_tab_now(&mut self) -> Result<Value, String> {
+        if self.tabs.len() == 1 {
+            self.suppress_workspace_on_exit = true;
+            self.quit_requested = true;
+            return Ok(json!({"closing": true}));
+        }
+        if let Some(path) = self.session.path.as_ref() {
+            // Reopening loads the saved file. Explicitly discarded edits are not recoverable.
+            self.recently_closed.push(ClosedDocument {
+                path: path.to_string_lossy().into_owned(),
+                index: self.active_tab,
+                pinned: self.pinned_tabs[self.active_tab],
+            });
+            if self.recently_closed.len() > 20 {
+                self.recently_closed.remove(0);
+            }
+        }
+        self.tabs.remove(self.active_tab);
+        self.tab_ids.remove(self.active_tab);
+        self.pinned_tabs.remove(self.active_tab);
+        let index = self.active_tab.min(self.tabs.len() - 1);
+        let Some(next) = self.tabs[index].take() else {
+            return Err("document tabs are in an invalid state".into());
+        };
+        self.session = next.session;
+        self.canvas = next.canvas;
+        self.autosave_path = next.autosave_path;
+        self.last_autosave = next.last_autosave;
+        self.word_count = next.word_count;
+        self.read_aloud_at = next.read_aloud_at;
+        self.read_aloud_error = next.read_aloud_error;
+        self.change_picture_target = next.change_picture_target;
+        self.equation_prev_tab = next.equation_prev_tab;
+        self.active_tab = index;
+        self.dialog = None;
+        self.status_msg = None;
+        self.previews = previews::Previews::default();
+        self.applied_theme = None;
+        self.canvas.want_focus = true;
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint();
+        }
+        Ok(json!({"closed": true, "activeTab": index}))
+    }
+
+    fn any_dirty_documents(&self) -> bool {
+        self.session.dirty || self.tabs.iter().flatten().any(|t| t.session.dirty)
+    }
+
+    /// Review the dirty tabs without disposing of sessions: the full workspace must still
+    /// exist when `on_exit` serializes preferences, including files saved during these prompts.
+    fn continue_close_all(&mut self) {
+        if !self.closing_all {
+            return;
+        }
+        if let Some(index) = self.tab_ids.iter().enumerate().find_map(|(i, id)| {
+            let dirty = self.tabs[i].as_ref().map_or(self.session.dirty, |t| t.session.dirty);
+            (dirty && !self.quit_reviewed.contains(id)).then_some(i)
+        }) {
+            if index != self.active_tab && !self.switch_document_tab(index) {
+                return;
+            }
+            let name =
+                self.session.path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| self.title_stem());
+            self.dialog = Some(dialogs::Dialog::SaveChanges {
+                name,
+                then: "ui.confirmQuitTab".into(),
+                params: json!({}),
+                document: self.session.document_id(),
+            });
+        } else {
+            // Prompting may have selected several dirty documents. Restore the user's
+            // selected document before persisting the workspace on exit.
+            if let Some(id) = self.quit_original_tab
+                && let Some(index) = self.tab_ids.iter().position(|&candidate| candidate == id)
+            {
+                self.switch_document_tab(index);
+            }
+            self.quit_requested = true;
+        }
+    }
+
+    /// Capture tab order, paths and pinning. Empty tabs reopen blank (never resurrect unsaved text).
+    pub fn workspace_snapshot(&self) -> WorkspaceState {
+        WorkspaceState {
+            tabs: self
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(i, slot)| {
+                    let session = slot.as_ref().map_or(&self.session, |t| &t.session);
+                    WorkspaceTab {
+                        path: session.path.as_ref().map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()).to_string_lossy().into_owned()),
+                        pinned: self.pinned_tabs[i],
+                    }
+                })
+                .collect(),
+            active: self.active_tab,
+        }
+    }
+
+    /// Called after preferences load, only for desktop launches without explicit files or --sample.
+    /// Missing or unreadable documents are skipped; the initial blank stays if nothing opens.
+    pub fn restore_workspace(&mut self) -> usize {
+        let saved = self.ui.workspace.clone();
+        if saved.tabs.is_empty() || self.services.download.is_some() {
+            return 0;
+        }
+        let mut count = 0;
+        let mut active_id = None;
+        for (i, tab) in saved.tabs.iter().enumerate() {
+            let result = match &tab.path {
+                Some(path) => self.add_document_tab("file.open", &json!({"path": path})),
+                None => self.add_document_tab("file.new", &json!({})),
+            };
+            match result {
+                Ok(value) if value.get("alreadyOpen").and_then(Value::as_bool) == Some(true) => {
+                    if saved.active == i {
+                        active_id = Some(self.active_document_id());
+                    }
+                }
+                Ok(_) => {
+                    if count == 0 {
+                        // The initial empty document is a placeholder, not part of the saved workspace.
+                        let _ = self.close_document_tab(0);
+                    }
+                    count += 1;
+                    let index = self.active_tab;
+                    self.pin_document_tab(index, tab.pinned);
+                    if saved.active == i {
+                        active_id = Some(self.active_document_id());
+                    }
+                }
+                Err(error) => log::warn!("could not restore document tab: {error}"),
+            }
+        }
+        if count > 0 {
+            let target = active_id
+                .and_then(|id| self.tab_ids.iter().position(|candidate| *candidate == id))
+                .unwrap_or_else(|| saved.active.min(self.tabs.len() - 1));
+            self.switch_document_tab(target);
+        }
+        count
+    }
+
     pub fn with_control(mut self, rx: std::sync::mpsc::Receiver<ControlRequest>) -> Self {
         self.control_rx = Some(rx);
         self
@@ -289,6 +767,7 @@ impl WordApp {
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
+        ui.workspace = if self.suppress_workspace_on_exit { WorkspaceState::default() } else { self.workspace_snapshot() };
         ui
     }
 
@@ -311,9 +790,8 @@ impl WordApp {
         self.session.view.dark_mode = self.ui.dark_page;
     }
 
-    /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
-    /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
-    /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
+    /// Run a user command. New and Open create/select tabs without discarding edits; Close,
+    /// Envelopes, Labels and Finish & Merge still ask before discarding a dirty document.
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
         // A button whose command needs input the user hasn't given yet opens its dialog (#240).
         if let Some(name) = input_dialog(id, &params)
@@ -356,6 +834,28 @@ impl WordApp {
         if !matches!(id, "ui.openRecipientList" | "mailings.recipients") {
             self.recipient_list_pending = false;
         }
+        if id == "file.new" || (id == "file.open" && params.get("path").is_some()) {
+            let result = self.add_document_tab(id, &params);
+            if let Err(error) = &result {
+                self.status(error.clone());
+            }
+            return result;
+        }
+        if id == "file.close" {
+            let result = self.close_active_tab_now();
+            if result.is_ok() && !self.quit_requested {
+                self.continue_pending_closes();
+            }
+            return result;
+        }
+        if id == "ui.confirmQuitTab" {
+            let id = self.active_document_id();
+            if !self.quit_reviewed.contains(&id) {
+                self.quit_reviewed.push(id);
+            }
+            self.continue_close_all();
+            return Ok(json!({"quit": self.quit_requested}));
+        }
         if let Some(r) = self.ui_command(id, &params) {
             return r;
         }
@@ -371,6 +871,22 @@ impl WordApp {
                 self.status(e.clone());
             }
             return r;
+        }
+        // Prevent Save As from turning two tabs into independent writers of the same file.
+        if self.services.download.is_none()
+            && matches!(id, "file.save" | "file.saveAs")
+            && let Some(path) = params.get("path").and_then(Value::as_str)
+        {
+            let wanted = std::fs::canonicalize(path).ok();
+            let conflict = self
+                .tabs
+                .iter()
+                .flatten()
+                .filter_map(|t| t.session.path.as_ref())
+                .any(|other| other.as_path() == std::path::Path::new(path) || (wanted.is_some() && std::fs::canonicalize(other).ok() == wanted));
+            if conflict {
+                return Err("that file is already open in another tab; choose another name".into());
+            }
         }
         // Web: saving and exporting become downloads.
         if self.services.download.is_some() && matches!(id, "file.save" | "file.saveAs" | "file.exportPdf" | "file.exportPng") {
@@ -457,6 +973,11 @@ impl WordApp {
             SaveChoice::Save => self.save_for_prompt(),
         };
         if !go {
+            self.closing_all = false;
+            self.quit_reviewed.clear();
+            self.quit_original_tab = None;
+            self.pending_closes.clear();
+            self.pending_keep_tab = None;
             return Ok(json!({"done": false}));
         }
         self.execute_user(&then, params).map(|r| json!({"done": true, "result": r}))
@@ -499,13 +1020,19 @@ impl WordApp {
         saved
     }
 
-    /// The window's close button (or the system) asked to quit. Returns true to let the window
-    /// close; with unsaved changes it asks first and returns false.
+    /// The window's close button (or the system) asked to quit. Checks all document tabs and
+    /// asks about each dirty document before allowing the window to close.
     pub fn close_requested(&mut self) -> bool {
-        if self.quit_requested || !self.session.dirty {
+        if self.quit_requested || !self.any_dirty_documents() {
             return true;
         }
-        let _ = self.run("file.close", json!({}));
+        // The system may repeat close requests while a modal Save Changes prompt is open.
+        if !self.closing_all {
+            self.closing_all = true;
+            self.quit_original_tab = Some(self.active_document_id());
+            self.quit_reviewed.clear();
+            self.continue_close_all();
+        }
         false
     }
 
@@ -552,7 +1079,11 @@ impl WordApp {
             }
         }
         if req.get("close").is_some() {
-            self.quit_requested = true;
+            // File > Exit must use the same multi-document Save Changes review as the
+            // window close button; forcing quit_requested would discard unsaved edits.
+            if self.close_requested() {
+                self.quit_requested = true;
+            }
         }
     }
 
@@ -631,6 +1162,66 @@ impl WordApp {
                 }
                 let lang = i18n::Lang::from_pref(&self.ui.language);
                 json!({"language": self.ui.language, "effective": lang.code(), "available": i18n::Lang::all().map(|l| json!({"code": l.code(), "name": l.name()})).collect::<Vec<_>>()})
+            }
+            "ui.documentTabs" => {
+                json!({"active": self.active_tab, "tabs": self.document_tabs().iter().map(|t| json!({
+                    "index": t.index, "name": t.name, "dirty": t.dirty, "active": t.active, "pinned": t.pinned,
+                })).collect::<Vec<_>>()})
+            }
+            "ui.switchDocument" => {
+                let Some(index) = p.get("index").and_then(Value::as_u64) else {
+                    return Some(Err("`index` must be a nonnegative integer".into()));
+                };
+                if !self.switch_document_tab(index as usize) {
+                    return Some(Err("unable to switch document tab".into()));
+                }
+                json!({"active": self.active_tab})
+            }
+            "ui.closeDocument" => {
+                let Some(index) = p.get("index").and_then(Value::as_u64) else {
+                    return Some(Err("`index` must be a nonnegative integer".into()));
+                };
+                return Some(self.close_document_tab(index as usize));
+            }
+            "ui.reopenClosedDocument" => return Some(self.reopen_closed_document_tab()),
+            "ui.closeOtherDocuments" => {
+                let Some(index) = p.get("index").and_then(Value::as_u64) else {
+                    return Some(Err("missing `index`".into()));
+                };
+                if !self.close_other_document_tabs(index as usize) {
+                    return Some(Err("cannot close other tabs".into()));
+                }
+                json!({"pending": !self.pending_closes.is_empty()})
+            }
+            "ui.closeAllDocuments" => {
+                if !self.close_all_document_tabs() {
+                    return Some(Err("cannot close tabs".into()));
+                }
+                json!({"pending": !self.pending_closes.is_empty()})
+            }
+            "ui.pinDocument" => {
+                let Some(index) = p.get("index").and_then(Value::as_u64) else {
+                    return Some(Err("missing `index`".into()));
+                };
+                let Some(pinned) = p.get("pinned").and_then(Value::as_bool) else {
+                    return Some(Err("missing `pinned`".into()));
+                };
+                if !self.pin_document_tab(index as usize, pinned) {
+                    return Some(Err("unable to pin tab".into()));
+                }
+                json!({"active": self.active_tab})
+            }
+            "ui.moveDocument" => {
+                let Some(from) = p.get("from").and_then(Value::as_u64) else {
+                    return Some(Err("missing `from` index".into()));
+                };
+                let Some(to) = p.get("to").and_then(Value::as_u64) else {
+                    return Some(Err("missing `to` index".into()));
+                };
+                if !self.reorder_document_tab(from as usize, to as usize) {
+                    return Some(Err("unable to reorder tabs".into()));
+                }
+                json!({"active": self.active_tab})
             }
             "ui.saveChanges" => {
                 let Some(choice) = s("answer").and_then(SaveChoice::parse) else {
@@ -818,7 +1409,7 @@ impl WordApp {
     /// Tell the host whether the document has unsaved changes ([`Services::on_dirty`]).
     fn report_dirty(&self) {
         if let Some(f) = &self.services.on_dirty {
-            f(self.session.dirty);
+            f(self.any_dirty_documents());
         }
     }
 
@@ -911,6 +1502,7 @@ impl WordApp {
             backstage::show(self, ui);
         } else {
             chrome::title_bar(self, ui);
+            chrome::document_tabs(self, ui);
             ribbon::show(self, ui);
             chrome::status_bar(self, ui);
             panes::show(self, ui);
@@ -1110,13 +1702,11 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     }
 }
 
-/// User commands that replace or close the document (`file.open` without a path only shows the
-/// file picker; the open that follows is checked). Envelopes, Labels and Finish & Merge make a
-/// new document in its place; a merge written to a file (`path`) leaves it alone.
+/// Commands that discard the current document. New and Open instead create/select tabs;
+/// Envelopes, Labels, Finish & Merge, and Close may replace/close it.
 fn discards_document(id: &str, params: &Value) -> bool {
     match id {
-        "file.new" | "file.close" | "mailings.envelopes" | "mailings.labels" => true,
-        "file.open" => params.get("path").is_some(),
+        "file.close" | "mailings.envelopes" | "mailings.labels" => true,
         "mailings.finish" => params.get("path").and_then(Value::as_str).is_none(),
         _ => false,
     }
@@ -1434,27 +2024,21 @@ mod tests {
         path
     }
 
-    /// Surfaces finding 1: Mod+N (and the File › New tiles) replaced unsaved work without asking.
+    /// Creating a new document opens a separate tab without discarding unsaved work.
     #[test]
-    fn new_asks_before_discarding_unsaved_work() {
+    fn new_keeps_unsaved_work_in_its_own_tab() {
         let mut a = typed();
         a.run("file.new", json!({})).unwrap();
-        assert_eq!(prompt(&a), Some("saveChanges"));
-        assert!(body_text(&a).contains(UNSAVED), "the document is untouched while the prompt is up");
-        assert!(a.session.dirty);
-
-        // Cancel: nothing happens.
-        a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
         assert_eq!(prompt(&a), None);
-        assert!(body_text(&a).contains(UNSAVED));
-
-        // Don't Save: the new document replaces it.
-        a.run("file.new", json!({"template": "letter"})).unwrap();
-        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
-        assert_eq!(prompt(&a), None);
-        assert!(!body_text(&a).contains(UNSAVED));
+        assert_eq!(a.document_tabs().len(), 2);
         assert!(!a.session.dirty);
-        assert!(!body_text(&a).trim().is_empty(), "the template the user picked was used");
+        assert!(!body_text(&a).contains(UNSAVED));
+        assert!(a.switch_document_tab(0));
+        assert!(a.session.dirty);
+        assert!(body_text(&a).contains(UNSAVED));
+        a.run("file.new", json!({"template": "letter"})).unwrap();
+        assert!(!body_text(&a).trim().is_empty());
+        assert_eq!(a.document_tabs().len(), 3);
     }
 
     #[test]
@@ -1478,8 +2062,7 @@ mod tests {
         assert!(a.execute("file.open", json!({"path": path.to_string_lossy()})).is_err(), "a script gets the error");
         assert_eq!(prompt(&a), None);
         a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
-        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
-        assert_eq!(prompt(&a), Some("password"));
+        assert_eq!(prompt(&a), Some("password"), "opening another tab must not discard unsaved work");
         assert!(body_text(&a).contains(UNSAVED), "nothing is replaced until the password fits");
         let state = serde_json::to_string(&a.dialog).unwrap();
         assert!(state.contains("locked.docx") && !state.contains("sesame"));
@@ -1495,22 +2078,20 @@ mod tests {
 
     /// Open (after the file is picked), recent files and dropped files all go through `file.open`.
     #[test]
-    fn open_asks_before_discarding_unsaved_work() {
+    fn open_keeps_unsaved_work_and_selects_new_tab() {
         let dir = scratch("open");
         let path = docx_on_disk(&dir, "Signed contract");
         let mut a = typed();
         a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
-        assert_eq!(prompt(&a), Some("saveChanges"));
-        assert!(body_text(&a).contains(UNSAVED));
-        assert_eq!(a.session.path, None);
-
-        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_eq!(prompt(&a), None);
         assert!(body_text(&a).contains("Signed contract"));
         assert_eq!(a.session.path.as_deref(), Some(path.as_path()));
+        assert!(a.switch_document_tab(0));
+        assert!(body_text(&a).contains(UNSAVED));
+        assert!(a.session.dirty);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Mod+O without a path only shows the file picker, so it doesn't ask yet.
     #[test]
     fn open_without_a_path_only_shows_the_picker() {
         let mut a = typed();
@@ -1568,6 +2149,7 @@ mod tests {
             let before = std::fs::read(&path).unwrap();
             let mut a = app();
             a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+            a.close_document_tab(0).unwrap(); // match opening a file from the desktop shell
             a.run("text.insert", json!({"text": "Revised "})).unwrap();
             a.run("file.close", json!({})).unwrap();
             assert_eq!(prompt(&a), Some("saveChanges"));
@@ -1679,7 +2261,7 @@ mod tests {
         let path = docx_on_disk(&dir, "Agent document");
         let ctx = egui::Context::default();
         let mut a = typed();
-        a.run("file.new", json!({})).unwrap();
+        a.run("file.close", json!({})).unwrap();
         assert_eq!(prompt(&a), Some("saveChanges"));
         let asked = a.dialog.clone();
         for command in [
@@ -1729,24 +2311,25 @@ mod tests {
 
     /// Save writes the document first, then carries on with what the user asked for.
     #[test]
-    fn save_then_continue() {
+    fn save_current_tab_does_not_save_or_replace_its_neighbours() {
         let dir = scratch("save");
         let path = docx_on_disk(&dir, "Draft");
         let mut a = app();
         a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
         a.run("text.insert", json!({"text": "Revised "})).unwrap();
+        let edited_index = a.active_document_tab();
         a.run("file.new", json!({})).unwrap();
-        assert_eq!(prompt(&a), Some("saveChanges"));
-        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
         assert_eq!(prompt(&a), None);
-        assert_eq!(a.session.path, None, "the new document replaced the saved one");
+        assert_ne!(edited_index, a.active_document_tab());
+        assert!(a.switch_document_tab(edited_index));
+        assert!(a.session.dirty);
+        a.run("file.save", json!({})).unwrap();
+        assert!(!a.session.dirty);
         let saved = wordcraft_engine::io::open_path(&path).unwrap();
         assert!(saved.plain_text(wordcraft_doc::StoryRef::Body).contains("Revised Draft"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Save As to a format that doesn't keep everything (a .png of page 1, plain text) reports
-    /// `saved` but leaves the document unsaved; the prompt took that as saved and replaced it.
     #[test]
     fn a_save_that_drops_content_does_not_continue() {
         for ext in ["png", "txt"] {
@@ -1754,10 +2337,10 @@ mod tests {
             let picked = dir.join(format!("novel.{ext}")).to_string_lossy().to_string();
             let mut a = typed();
             a.services.pick_save = Some(Box::new(move |_| Some(picked.clone())));
-            a.run("file.new", json!({})).unwrap();
+            a.run("file.close", json!({})).unwrap();
             a.status_msg = None;
             let r = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
-            assert_eq!(r["done"], false, "{ext}: the New was cancelled");
+            assert_eq!(r["done"], false, "{ext}: closing was cancelled");
             assert!(dir.join(format!("novel.{ext}")).exists(), "{ext}: the copy was written");
             assert_eq!(prompt(&a), None);
             assert!(body_text(&a).contains(UNSAVED), "{ext}: the document is kept");
@@ -1813,10 +2396,10 @@ mod tests {
         assert!(a.execute("file.save", json!({})).is_err());
         assert!(a.session.dirty);
 
-        a.run("file.new", json!({})).unwrap();
+        a.run("file.close", json!({})).unwrap();
         a.status_msg = None;
         let r = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
-        assert_eq!(r["done"], false, "the New was cancelled");
+        assert_eq!(r["done"], false, "closing was cancelled");
         assert!(body_text(&a).contains(UNSAVED));
         assert!(a.session.dirty);
         let msg = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
@@ -1828,7 +2411,7 @@ mod tests {
     fn save_as_cancelled_keeps_the_document() {
         let mut a = typed();
         a.services.pick_save = Some(Box::new(|_| None));
-        a.run("file.new", json!({})).unwrap();
+        a.run("file.close", json!({})).unwrap();
         a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
         assert_eq!(prompt(&a), None);
         assert!(body_text(&a).contains(UNSAVED));
@@ -1859,6 +2442,229 @@ mod tests {
         control::handle(&mut a, &ctx, &req);
         assert_eq!(prompt(&a), None);
         assert!(!body_text(&a).contains(UNSAVED));
+    }
+
+    #[test]
+    fn switching_tabs_preserves_undo_selection_and_zoom() {
+        let mut a = typed();
+        let original = body_text(&a);
+        a.session.view.zoom = 1.65;
+        a.run("file.new", json!({})).unwrap();
+        a.run("text.insert", json!({"text": "Another chapter"})).unwrap();
+        a.session.view.zoom = 0.8;
+        assert_eq!(a.document_tabs().len(), 2);
+        assert!(a.switch_document_tab(0));
+        assert_eq!(body_text(&a), original);
+        assert_eq!(a.session.view.zoom, 1.65);
+        a.run("edit.undo", json!({})).unwrap();
+        assert!(!body_text(&a).contains(UNSAVED));
+        assert!(a.switch_document_tab(1));
+        assert_eq!(a.session.view.zoom, 0.8);
+        assert!(body_text(&a).contains("Another chapter"));
+        a.run("edit.undo", json!({})).unwrap();
+        assert!(!body_text(&a).contains("Another chapter"));
+    }
+
+    #[test]
+    fn closing_an_inactive_dirty_tab_asks_to_save_without_losing_other_tabs() {
+        let mut a = typed();
+        a.run("file.new", json!({})).unwrap();
+        a.run("text.insert", json!({"text": "Second chapter"})).unwrap();
+        a.close_document_tab(0).unwrap();
+        assert_eq!(a.active_document_tab(), 0);
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        assert_eq!(a.document_tabs().len(), 2);
+        assert!(body_text(&a).contains(UNSAVED));
+        a.run("file.close", json!({})).unwrap();
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_eq!(a.document_tabs().len(), 1);
+        assert!(body_text(&a).contains("Second chapter"));
+        assert!(!a.quit_requested);
+    }
+
+    #[test]
+    fn pinning_moves_tab_into_left_group_and_prevents_cross_group_drag() {
+        let mut a = app();
+        a.run("file.new", json!({})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        assert!(a.pin_document_tab(2, true));
+        assert!(a.document_tabs()[0].pinned);
+        assert_eq!(a.active_document_tab(), 0);
+        assert!(!a.reorder_document_tab(0, 2), "pinned tab cannot leave its group by dragging");
+        assert!(a.pin_document_tab(0, false));
+        assert!(a.document_tabs().iter().all(|t| !t.pinned));
+    }
+
+    #[test]
+    fn explicitly_closing_last_tab_disables_session_restoration() {
+        let mut a = app();
+        a.run("file.close", json!({})).unwrap();
+        assert!(a.quit_requested);
+        assert!(a.prefs().workspace.tabs.is_empty());
+    }
+
+    #[test]
+    fn reopening_an_open_file_selects_the_existing_tab() {
+        let dir = scratch("same-file");
+        let path = docx_on_disk(&dir, "Contract");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        let original_index = a.active_document_tab();
+        a.run("file.new", json!({})).unwrap();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert_eq!(a.active_document_tab(), original_index);
+        assert_eq!(a.document_tabs().len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn window_close_checks_dirty_documents_across_tabs() {
+        let mut a = typed();
+        a.run("file.new", json!({})).unwrap();
+        assert!(!a.session.dirty);
+        assert!(!a.close_requested());
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        assert!(!a.quit_requested);
+        assert_eq!(a.document_tabs().len(), 2);
+        assert!(!a.close_requested());
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(a.quit_requested);
+    }
+
+    #[test]
+    fn moving_tabs_preserves_active_document_identity() {
+        let mut a = app();
+        a.run("document.setText", json!({"text": "Alpha"})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        a.run("document.setText", json!({"text": "Beta"})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        a.run("document.setText", json!({"text": "Gamma"})).unwrap();
+        assert!(a.reorder_document_tab(0, 2));
+        assert_eq!(a.active_document_tab(), 1);
+        assert!(body_text(&a).contains("Gamma"));
+        assert!(a.switch_document_tab(2));
+        assert!(body_text(&a).contains("Alpha"));
+        assert!(a.switch_document_tab(0));
+        assert!(body_text(&a).contains("Beta"));
+    }
+
+    #[test]
+    fn autosave_authority_is_isolated_per_document_tab() {
+        let dir = scratch("tabs-autosave");
+        let path = dir.join("first.docx");
+        let mut a = typed();
+        a.run("file.save", json!({"path": path.to_string_lossy()})).unwrap();
+        assert!(a.autosaves());
+        a.run("file.new", json!({})).unwrap();
+        assert!(!a.autosaves());
+        assert!(a.switch_document_tab(0));
+        assert!(a.autosaves());
+        assert!(a.switch_document_tab(1));
+        assert!(!a.autosaves());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn opening_missing_file_keeps_document_tabs_unchanged() {
+        let mut a = typed();
+        let active = a.active_document_tab();
+        let result = a.run("file.open", json!({"path": "/no/such/path/wordcraft-missing.docx"}));
+        assert!(result.is_err());
+        assert_eq!(a.document_tabs().len(), 1);
+        assert_eq!(a.active_document_tab(), active);
+        assert!(body_text(&a).contains(UNSAVED));
+    }
+
+    #[test]
+    fn workspace_restores_order_pins_active_and_skips_missing_files() {
+        let dir = scratch("restore-workspace");
+        let a_path = docx_on_disk(&dir, "First restored");
+        let b_path = dir.join("second.docx");
+        let _ = wordcraft_engine::io::save_path(&b_path, &wordcraft_doc::Document::new());
+        let mut first = app();
+        first.run("file.open", json!({"path": a_path.to_string_lossy()})).unwrap();
+        first.close_document_tab(0).unwrap();
+        first.run("file.open", json!({"path": b_path.to_string_lossy()})).unwrap();
+        assert!(first.pin_document_tab(1, true));
+        first.switch_document_tab(1);
+        let saved = serde_json::to_vec(&first.prefs()).unwrap();
+        let mut second = app();
+        second.apply_prefs(serde_json::from_slice(&saved).unwrap());
+        assert_eq!(second.restore_workspace(), 2);
+        assert_eq!(second.document_tabs().len(), 2);
+        assert!(second.document_tabs()[0].pinned);
+        assert_eq!(second.active_document_tab(), 1);
+        let canonical = std::fs::canonicalize(&a_path).unwrap();
+        assert_eq!(second.document_tab_path(1).as_deref(), Some(canonical.to_string_lossy().as_ref()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn restore_skips_unreadable_paths_without_deleting_the_initial_blank() {
+        let mut a = app();
+        a.ui.workspace =
+            WorkspaceState { tabs: vec![WorkspaceTab { path: Some("/not/a/real/wordcraft-file.docx".into()), pinned: false }], active: 0 };
+        assert_eq!(a.restore_workspace(), 0);
+        assert_eq!(a.document_tabs().len(), 1);
+        assert!(a.document_tab_path(0).is_none());
+    }
+
+    #[test]
+    fn reopen_closed_file_restores_original_position_and_pin() {
+        let dir = scratch("reopen-closed-file");
+        let path = docx_on_disk(&dir, "Reopen this");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        a.close_document_tab(0).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        a.pin_document_tab(0, true);
+        a.close_document_tab(0).unwrap();
+        assert_eq!(a.document_tabs().len(), 1);
+        a.reopen_closed_document_tab().unwrap();
+        assert_eq!(a.document_tabs().len(), 2);
+        assert!(a.document_tabs()[0].pinned);
+        assert!(body_text(&a).contains("Reopen this"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn close_others_preserves_pinned_tabs_and_cancel_stops_batch() {
+        let mut a = app();
+        a.run("file.new", json!({})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        assert!(a.pin_document_tab(0, true));
+        a.run("text.insert", json!({"text": "Must keep"})).unwrap();
+        assert!(a.close_other_document_tabs(0));
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        assert_eq!(a.document_tabs().len(), 2, "already closed clean tabs remain closed after Cancel");
+        assert!(!a.quit_requested);
+        assert!(a.close_other_document_tabs(0));
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_eq!(a.document_tabs().len(), 1);
+        assert!(a.document_tabs()[0].pinned);
+    }
+
+    #[test]
+    fn quitting_dirty_documents_keeps_workspace_for_restoration() {
+        let dir = scratch("quit-workspace");
+        let p = docx_on_disk(&dir, "Saved version");
+        let mut a = app();
+        a.run("file.open", json!({"path": p.to_string_lossy()})).unwrap();
+        a.close_document_tab(0).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        a.switch_document_tab(0);
+        a.run("text.insert", json!({"text": "Unsaved edit"})).unwrap();
+        assert!(!a.close_requested());
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(a.quit_requested);
+        assert_eq!(a.document_tabs().len(), 2, "the workspace is still available to on_exit");
+        assert_eq!(a.prefs().workspace.active, 0);
+        let canonical = std::fs::canonicalize(&p).unwrap();
+        assert_eq!(a.prefs().workspace.tabs[0].path.as_deref(), Some(canonical.to_string_lossy().as_ref()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     const MAILINGS: [&str; 3] = ["mailings.envelopes", "mailings.labels", "mailings.finish"];
@@ -1985,14 +2791,14 @@ mod tests {
             let result = body_text(&a);
             let b = a.session.document_id();
             assert!(a.session.dirty, "{id}: the result is unsaved");
-            a.run("file.new", json!({})).unwrap();
+            a.run("file.close", json!({})).unwrap();
             assert_eq!(prompt(&a), Some("saveChanges"), "{id}");
 
             a.execute("edit.undo", json!({})).unwrap();
             assert_eq!(a.session.document_id(), b, "{id}");
             assert_eq!(body_text(&a), result, "{id}: nothing from before the mailing comes back");
             a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
-            assert_ne!(a.session.document_id(), b, "{id}: Don't Save discarded the document it asked about");
+            assert!(a.quit_requested, "{id}: Don't Save closed the requested document");
         }
     }
 

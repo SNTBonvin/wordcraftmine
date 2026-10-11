@@ -289,14 +289,15 @@ mod tests {
     }
 
     /// "Save changes?" → Save on a new document: the held-back Close runs only once the later
-    /// Save As has actually saved; a cancelled Save As cancels the held-back New.
+    /// Save As has actually saved; a cancelled Save As cancels the held-back Close.
     #[test]
     fn save_changes_waits_for_the_save_as_answer() {
         let dir = scratch("prompt");
         let path = dir.join("novel.docx");
         let (mut a, shown) = async_app();
         typed(&mut a);
-        a.run("file.new", json!({})).unwrap();
+        // New opens a tab. Closing a dirty tab is what asks to save.
+        a.run("file.close", json!({})).unwrap();
         a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
         answer(&shown, None);
         a.poll_file_dialog();

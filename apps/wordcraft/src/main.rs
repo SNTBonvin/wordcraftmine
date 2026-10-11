@@ -237,9 +237,21 @@ fn main() -> eframe::Result {
                 app = app.with_control(rx);
                 key_file = file;
             }
+            if files.is_empty() && !sample {
+                app.restore_workspace();
+            }
+            let mut opened_initial_file = false;
             for f in files {
-                if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
-                    log::warn!("{f}: {e}");
+                match app.run("file.open", serde_json::json!({"path": f})) {
+                    Ok(_) => {
+                        // An explicit startup file takes the place of the unused initial blank
+                        // tab. Subsequent files stay open as their own tabs.
+                        if !opened_initial_file && !sample {
+                            let _ = app.close_document_tab(0);
+                        }
+                        opened_initial_file = true;
+                    }
+                    Err(e) => log::warn!("{f}: {e}"),
                 }
             }
             Ok(Box::new(App(
