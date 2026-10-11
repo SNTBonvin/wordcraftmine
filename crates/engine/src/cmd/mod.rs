@@ -24,6 +24,7 @@ pub mod paste;
 pub mod phonetic;
 pub mod references;
 pub mod review;
+pub mod smart_art;
 pub mod speech;
 pub mod table;
 pub mod table_draw;
@@ -66,6 +67,7 @@ pub fn registry() -> Registry {
     v.extend(mailings::specs());
     v.extend(citations::specs());
     v.extend(objects::specs());
+    v.extend(smart_art::specs());
     v.extend(draw::specs());
     v.extend(canvas::specs());
     v.extend(tools::specs());
