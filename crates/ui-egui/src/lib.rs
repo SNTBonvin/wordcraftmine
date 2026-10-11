@@ -1938,6 +1938,14 @@ mod tests {
             h.step();
             assert!(body_text(h.state()).ends_with(text), "{label}: typing continues in the document");
         }
+
+        // Every command button does the same, not only alignment: Bold, then type.
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Bold").click();
+        h.step();
+        assert!(h.state().canvas.focused, "Bold: the canvas keeps keyboard focus");
+        h.event(egui::Event::Text(" bold".into()));
+        h.step();
+        assert!(body_text(h.state()).ends_with(" bold"), "Bold: typing continues in the document");
     }
 
     /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
