@@ -12,6 +12,7 @@
 
 pub mod bidi;
 pub mod chart;
+pub mod cluster;
 pub mod connector;
 pub mod control;
 pub mod edit;
