@@ -957,7 +957,7 @@ impl Writer<'_> {
         if body.anchor != wordcraft_doc::props::VAlign::Top {
             attrs.push(("anchor", wordcraft_doc::props::anchor_ooxml(body.anchor)));
         }
-                match extra.warp.as_ref().and_then(|t| t.sanitized()) {
+        match extra.warp.as_ref().and_then(|t| t.sanitized()) {
             Some(warp) => {
                 w.open("wps:bodyPr", &attrs);
                 text_warp(w, &warp);
