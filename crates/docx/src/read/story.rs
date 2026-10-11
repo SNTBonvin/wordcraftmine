@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use wordcraft_doc::connector::{ConnEnd, ShapeExtra};
+use wordcraft_doc::control::{ContentControl, ControlKind, ControlWrap};
 use wordcraft_doc::effects::{Glow, Shadow, ShapeEffects};
 use wordcraft_doc::graphic::{Embedded, Graphic, GraphicItem, GraphicKind};
-use wordcraft_doc::para::{Anchor, Float, FloatAlign, NoteKind, ShapeKind, Wrap};
+use wordcraft_doc::para::{AltText, Anchor, Float, FloatAlign, NoteKind, ShapeKind, Wrap, WrapText, cap_alt};
 use wordcraft_doc::props::{CharProps, NumChange, PropChange, Rgb};
 use wordcraft_doc::table::{Cell, MAX_COLS, MAX_ROWS, Row, Table};
 use wordcraft_doc::{Block, Blocks, InlineObject, Paragraph, PartKind, RevisionKind, Run, para_block};
@@ -12,8 +14,9 @@ use wordcraft_doc::{Block, Blocks, InlineObject, Paragraph, PartKind, RevisionKi
 use super::Reader;
 use super::props::{sectpr, tcpr, trpr};
 use crate::package::{Rels, rt};
-use crate::units::{int, measure};
+use crate::units::{int, measure, u32_of};
 use crate::xml::El;
+use wordcraft_doc::wordart::TextWarp;
 
 /// Deepest table nesting we build (deeper tables become plain paragraphs).
 const MAX_TABLE_DEPTH: usize = 24;
@@ -53,6 +56,27 @@ struct FieldState {
     /// Kept as a range field: its result flows into the document as ordinary content between
     /// `FieldStart` and `FieldEnd` markers instead of being buffered.
     range: bool,
+    /// The font size of each piece of the code (where it starts in `instr`): an enclosure's
+    /// style is the size of its symbol and text (see [`wordcraft_doc::eq`]).
+    sizes: Vec<(usize, Option<f32>)>,
+}
+
+/// Enclosed characters (`eq \o\ac(○,字)`), with their style from the code's font sizes: Word
+/// enlarges the symbol (bigger than the text, which keeps the field's size) or shrinks the text
+/// (smaller than the symbol).
+fn enclosure(f: &FieldState) -> Option<wordcraft_doc::eq::Enclosure> {
+    use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
+    let mut e = Enclosure::parse(&f.instr)?;
+    let size_at = |at: usize| f.sizes.iter().rev().find(|(start, _)| *start <= at).and_then(|(_, s)| *s);
+    let sym = f.instr.char_indices().find(|(_, c)| EncloseShape::from_symbol(&c.to_string()) == Some(e.shape)).map(|(i, _)| i)?;
+    let txt = e.text.chars().next().and_then(|c| f.instr.get(sym..)?.find(c).map(|i| i + sym)).unwrap_or(sym);
+    let base = f.props.size;
+    e.style = match (size_at(sym), size_at(txt)) {
+        (Some(s), Some(t)) if s > t + 0.01 && base.is_none_or(|b| t >= b - 0.01) => EncloseStyle::Enlarge,
+        (Some(s), None) if base.is_none_or(|b| s > b + 0.01) => EncloseStyle::Enlarge,
+        _ => EncloseStyle::Shrink,
+    };
+    Some(e)
 }
 
 /// Fields kept as ranges: those whose result another program writes, with formatting and often
@@ -126,7 +150,7 @@ fn clean_text(s: &str) -> String {
 
 fn children_of_choice(ac: &El) -> Option<&El> {
     // Prefer a Choice whose requirements we understand; else the Fallback; else any Choice.
-    const KNOWN: &[&str] = &["wps", "wpg", "w14", "w15", "wp14", "a14", "w16se", "w16cid", "w16", "w16cex", "w16sdtdh", "v"];
+    const KNOWN: &[&str] = &["wps", "wpg", "wpc", "w14", "w15", "wp14", "a14", "w16se", "w16cid", "w16", "w16cex", "w16sdtdh", "v"];
     let ok = |c: &El| c.attr("Requires").unwrap_or("").split_whitespace().all(|r| KNOWN.contains(&r));
     ac.children("mc:Choice").find(|c| ok(c)).or_else(|| ac.child("mc:Fallback")).or_else(|| ac.child("mc:Choice"))
 }
@@ -166,11 +190,7 @@ impl Reader<'_> {
                         out.push(Arc::new(Block::Table(t)));
                     }
                 }
-                "w:sdt" => {
-                    if let Some(c) = e.child("w:sdtContent") {
-                        self.read_blocks(sc, c, rels, out, depth + 1);
-                    }
-                }
+                "w:sdt" => self.read_block_sdt(sc, e, rels, out, depth),
                 "w:customXml" | "w:smartTag" | "w:ins" | "w:moveTo" => self.read_blocks(sc, e, rels, out, depth + 1),
                 "mc:AlternateContent" => {
                     if let Some(c) = children_of_choice(e) {
@@ -182,9 +202,52 @@ impl Reader<'_> {
                         sc.pending.push(o);
                     }
                 }
+                "w:moveFromRangeStart" | "w:moveFromRangeEnd" | "w:moveToRangeStart" | "w:moveToRangeEnd" => self.move_range(e),
                 _ => {}
             }
         }
+    }
+
+    /// A block-level content control: its content's blocks, between a start marker at the start
+    /// of the first paragraph and an end marker at the end of the last (a table at either end
+    /// carries the control instead).
+    fn read_block_sdt(&mut self, sc: &mut StoryCtx, e: &El, rels: &Rels, out: &mut Blocks, depth: usize) {
+        let Some(content) = e.child("w:sdtContent") else { return };
+        let mut ctl = super::sdt::sdt_pr(e.child("w:sdtPr"), true);
+        ctl.end_pr_xml = super::sdt::sdt_end_pr(e.child("w:sdtEndPr"));
+        let mut inner = Blocks::new();
+        self.read_blocks(sc, content, rels, &mut inner, depth + 1);
+        // A table of contents' control belongs to the TOC: the writer puts it back around the
+        // TOC field and its entries, which References › Update Table rebuilds.
+        let toc = matches!(&ctl.kind, ControlKind::Gallery { list: false, gallery, .. } if gallery == "Table of Contents");
+        if inner.is_empty() || toc {
+            out.extend(inner);
+            return;
+        }
+        if ctl.showing_placeholder
+            && let Some(Block::Para(p)) = inner.first().map(|b| &**b)
+        {
+            ctl.placeholder_text = placeholder_of(&p.plain_text());
+        }
+        if let Some(first) = inner.first_mut() {
+            match Arc::make_mut(first) {
+                Block::Para(p) => {
+                    let props = p.props_of_char(0).clone();
+                    let _ = p.insert_object(0, InlineObject::ControlStart { control: Box::new(ctl) }, &props);
+                }
+                Block::Table(t) => t.controls.open.insert(0, ctl),
+            }
+        }
+        if let Some(last) = inner.last_mut() {
+            match Arc::make_mut(last) {
+                Block::Para(p) => {
+                    let (at, props) = (p.len(), p.runs.last().map(|r| r.props.clone()).unwrap_or_else(|| p.mark.clone()));
+                    let _ = p.insert_object(at, InlineObject::ControlEnd, &props);
+                }
+                Block::Table(t) => t.controls.close = t.controls.close.saturating_add(1),
+            }
+        }
+        out.extend(inner);
     }
 
     /// Markers left over at the end of a story go to its last paragraph.
@@ -233,6 +296,8 @@ impl Reader<'_> {
     fn read_para(&mut self, sc: &mut StoryCtx, e: &El, rels: &Rels, depth: usize) -> Paragraph {
         let mut pb = PB::default();
         let mut para = Paragraph::new();
+        let mut mark_moves: [Option<&El>; 2] = [None, None];
+        self.moves.closed_here = [None, None];
         for o in std::mem::take(&mut sc.pending) {
             pb.push_obj(o, &CharProps::default());
         }
@@ -245,8 +310,12 @@ impl Reader<'_> {
             if let Some(rpr) = ppr.child("w:rPr") {
                 for k in rpr.els() {
                     match k.name.as_str() {
-                        "w:ins" | "w:moveTo" => para.mark.ins = Some(self.revision(RevisionKind::Insert, k)),
-                        "w:del" | "w:moveFrom" => para.mark.del = Some(self.revision(RevisionKind::Delete, k)),
+                        "w:ins" => para.mark.ins = Some(self.revision(RevisionKind::Insert, k)),
+                        "w:del" => para.mark.del = Some(self.revision(RevisionKind::Delete, k)),
+                        // A moved paragraph mark (§17.13.5.21, §17.13.5.24): its move range
+                        // usually starts in the paragraph's content, so it is read after that.
+                        "w:moveTo" => mark_moves[1] = Some(k),
+                        "w:moveFrom" => mark_moves[0] = Some(k),
                         _ => {}
                     }
                 }
@@ -271,6 +340,12 @@ impl Reader<'_> {
         let ctx = RunCtx::default();
         self.read_inline_children(sc, &mut pb, e, rels, &ctx, depth + 1);
         self.spill_fields(sc, &mut pb);
+        if let Some(k) = mark_moves[0] {
+            para.mark.del = Some(self.move_revision(false, k, true));
+        }
+        if let Some(k) = mark_moves[1] {
+            para.mark.ins = Some(self.move_revision(true, k, true));
+        }
         para.text = pb.text;
         para.runs = pb.runs;
         para.objects = pb.objects;
@@ -336,14 +411,15 @@ impl Reader<'_> {
             }
             "w:ins" | "w:moveTo" => {
                 let mut c = ctx.clone();
-                c.ins = Some(self.revision(RevisionKind::Insert, k));
+                c.ins = Some(if k.name == "w:moveTo" { self.move_revision(true, k, false) } else { self.revision(RevisionKind::Insert, k) });
                 self.read_inline_children(sc, pb, k, rels, &c, depth + 1);
             }
             "w:del" | "w:moveFrom" => {
                 let mut c = ctx.clone();
-                c.del = Some(self.revision(RevisionKind::Delete, k));
+                c.del = Some(if k.name == "w:moveFrom" { self.move_revision(false, k, false) } else { self.revision(RevisionKind::Delete, k) });
                 self.read_inline_children(sc, pb, k, rels, &c, depth + 1);
             }
+            "w:moveFromRangeStart" | "w:moveFromRangeEnd" | "w:moveToRangeStart" | "w:moveToRangeEnd" => self.move_range(k),
             "w:fldSimple" => {
                 let instr = k.attr("w:instr").unwrap_or("").to_string();
                 let props = k.child("w:r").and_then(|r| r.child("w:rPr")).map(|p| self.run_props(p, ctx)).unwrap_or_else(|| self.run_props_none(ctx));
@@ -360,9 +436,23 @@ impl Reader<'_> {
                 }
             }
             "w:sdt" => {
-                if let Some(c) = k.child("w:sdtContent") {
-                    self.read_inline_children(sc, pb, c, rels, ctx, depth + 1);
+                let Some(c) = k.child("w:sdtContent") else { return };
+                let mut ctl = super::sdt::sdt_pr(k.child("w:sdtPr"), false);
+                ctl.end_pr_xml = super::sdt::sdt_end_pr(k.child("w:sdtEndPr"));
+                // The markers take the formatting of the content's first run (typing at the
+                // start of the content continues it).
+                let props = c.find("w:rPr").map(|p| self.run_props(p, ctx)).unwrap_or_else(|| self.run_props_none(ctx));
+                let (at, k0) = (pb.text.len(), pb.objects.len());
+                pb.push_obj(InlineObject::ControlStart { control: Box::new(ctl) }, &props);
+                self.read_inline_children(sc, pb, c, rels, ctx, depth + 1);
+                if let Some(InlineObject::ControlStart { control }) = pb.objects.get_mut(k0)
+                    && control.showing_placeholder
+                {
+                    let shown: String = pb.text.get(at..).unwrap_or("").chars().filter(|c| *c != wordcraft_doc::para::OBJ).collect();
+                    control.placeholder_text = placeholder_of(&shown);
                 }
+                let end_props = pb.runs.last().map(|r| r.props.clone()).unwrap_or(props);
+                pb.push_obj(InlineObject::ControlEnd, &end_props);
             }
             "w:smartTag" | "w:customXml" | "w:dir" | "w:bdo" => self.read_inline_children(sc, pb, k, rels, ctx, depth + 1),
             "m:oMath" => {
@@ -457,6 +547,9 @@ impl Reader<'_> {
                     && !f.spilled
                     && f.instr.len() < MAX_INSTR
                 {
+                    if f.sizes.len() < 64 {
+                        f.sizes.push((f.instr.len(), props.size));
+                    }
                     f.instr.push_str(&k.text());
                 }
             }
@@ -522,6 +615,10 @@ impl Reader<'_> {
                     *note = Some((kind, id, None));
                 }
             }
+            // The lines of a note separator (only there).
+            "w:separator" | "w:continuationSeparator" if self.in_note_sep => {
+                self.emit_obj(sc, pb, InlineObject::note_separator(k.name == "w:continuationSeparator"), props);
+            }
             "w:commentReference" => {
                 if let Some(cid) = k.attr("w:id").and_then(|i| self.comment_id(i))
                     && !self.comments_ended.contains(&cid)
@@ -533,15 +630,7 @@ impl Reader<'_> {
             "w:pgNum" => {
                 self.emit_obj(sc, pb, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, props)
             }
-            "w:ruby" => {
-                if let Some(base) = k.child("w:rubyBase") {
-                    for r in base.children("w:r") {
-                        for c in r.els() {
-                            self.read_run_child(sc, pb, c, props, rels, note, depth + 1);
-                        }
-                    }
-                }
-            }
+            "w:ruby" => self.read_ruby(sc, pb, k, props),
             "mc:AlternateContent" => {
                 if let Some(c) = children_of_choice(k) {
                     for x in c.els() {
@@ -553,6 +642,61 @@ impl Reader<'_> {
         }
     }
 
+    /// `w:ruby` (ECMA-376 §17.3.3.25): ruby text (`w:rt`) over base text (`w:rubyBase`), kept as
+    /// one [`InlineObject::Ruby`] in the base text's formatting (the first base run's).
+    fn read_ruby(&mut self, sc: &mut StoryCtx, pb: &mut PB, k: &El, props: &CharProps) {
+        const MAX: usize = 4096;
+        // The text of a part's runs and the formatting of its first run.
+        let part = |name: &str| -> (String, Option<CharProps>) {
+            let mut text = String::new();
+            let mut first = None;
+            for r in k.child(name).map(|e| e.children("w:r").collect::<Vec<_>>()).unwrap_or_default() {
+                if first.is_none() {
+                    first = Some(r.child("w:rPr").map(|p| self.pc.rpr(p)).unwrap_or_default());
+                }
+                for t in r.els().filter(|t| matches!(t.name.as_str(), "w:t" | "w:delText")) {
+                    if text.len() < MAX {
+                        text.push_str(&clean_text(&t.text()).replace('\t', " "));
+                    }
+                }
+            }
+            (text.chars().take(MAX).collect(), first)
+        };
+        let (base, base_props) = part("w:rubyBase");
+        let (ruby, ruby_props) = part("w:rt");
+        let mut bp = base_props.unwrap_or_default();
+        (bp.link, bp.ins, bp.del) = (props.link.clone(), props.ins, props.del);
+        if base.is_empty() {
+            return;
+        }
+        if ruby.is_empty() {
+            self.emit_text(sc, pb, &base, &bp);
+            return;
+        }
+        let pr = k.child("w:rubyPr");
+        let val = |n: &str| pr.and_then(|p| p.child(n)).and_then(|e| e.attr("w:val"));
+        let pt = |n: &str| val(n).and_then(|v| measure(v, 2.0)).filter(|v| v.is_finite() && *v >= 0.0);
+        let mut rp = ruby_props.unwrap_or_default();
+        let base_size = pt("w:hpsBaseText").filter(|v| *v > 0.0).or(bp.size).unwrap_or(0.0).min(1584.0);
+        let size = pt("w:hps").filter(|v| *v > 0.0).or(rp.size).unwrap_or(if base_size > 0.0 { base_size / 2.0 } else { 5.0 }).clamp(1.0, 1584.0);
+        let raise = pt("w:hpsRaise").unwrap_or_else(|| wordcraft_doc::para::ruby_raise(0.0, base_size.max(size), size)).min(1584.0);
+        // The ruby's size is `size`; its run keeps what it sets beyond the base text's formatting
+        // (writers repeat the base's).
+        (rp.size, rp.size_cs) = (None, None);
+        let rp = rp.minus(&bp);
+        let obj = InlineObject::Ruby {
+            base,
+            ruby,
+            align: val("w:rubyAlign").and_then(wordcraft_doc::para::RubyAlign::from_ooxml).unwrap_or_default(),
+            size,
+            raise,
+            base_size,
+            lang: val("w:lid").map(|l| l.chars().take(32).collect()).unwrap_or_default(),
+            props: Box::new(rp),
+        };
+        self.emit_obj(sc, pb, obj, &bp);
+    }
+
     // ---- fields ----
 
     fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool) {
@@ -561,7 +705,7 @@ impl Reader<'_> {
             return;
         }
         // Fields nested deeper than the cap are ignored (their content flows to the enclosing field).
-        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false });
+        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false, sizes: Vec::new() });
     }
 
     /// Whether the field below the innermost one is still collecting its code (a field nested
@@ -616,7 +760,12 @@ impl Reader<'_> {
                 Item::Obj(o) => result.push_str(o.plain_text()),
             }
         }
-        let obj = InlineObject::Field { instr: f.instr.trim().to_string(), result, locked: f.locked, code: false };
+        let (instr, result) = match enclosure(&f) {
+            // Word writes no result for enclosed characters: the text is their plain text.
+            Some(e) => (e.instr(), if result.is_empty() { e.text } else { result }),
+            None => (f.instr.trim().to_string(), result),
+        };
+        let obj = InlineObject::Field { instr, result, locked: f.locked, code: false };
         if let Some(parent) = sc.fields.last_mut()
             && !parent.spilled
             && parent.phase == Phase::Instr
@@ -677,8 +826,9 @@ impl Reader<'_> {
         let ext = c.child("wp:extent");
         let dim = |n: &str| ext.and_then(|e| e.attr(n)).and_then(|v| measure(v, 12_700.0)).unwrap_or(0.0).clamp(0.0, crate::units::MAX_LEN_PT);
         let (w, h) = (dim("cx"), dim("cy"));
-        let alt = c.child("wp:docPr").and_then(|p| p.attr("descr").filter(|s| !s.is_empty()).or_else(|| p.attr("title"))).unwrap_or("").to_string();
+        let (alt, meta) = nv_alt(c.child("wp:docPr"));
         let mut float = if anchored { anchor_float(c) } else { Float::default() };
+        float.alt = meta;
         if let Some(e) = c.child("wp:effectExtent") {
             for (slot, n) in float.effect.iter_mut().zip(["l", "t", "r", "b"]) {
                 // Negative for a rotated object narrower than its frame; settled below.
@@ -707,10 +857,12 @@ impl Reader<'_> {
             float.effect = float.effect.map(|e| e.max(0.0));
             return Some(InlineObject::Graphic { w, h, alt, float, graphic });
         }
-        let mut obj = if let Some(g) = gd.child("wpg:wgp") {
+        let mut obj = if let Some(c) = gd.child("wpc:wpc") {
+            self.read_canvas(sc, c, rels, w, h, float)
+        } else if let Some(g) = gd.child("wpg:wgp") {
             self.read_group(sc, g, rels, w, h, float)?
         } else if gd.find("a:blip").is_some() {
-            self.read_pic(gd, rels, w, h, alt, float)?
+            self.read_pic(gd, rels, w, h, alt.clone(), float)?
         } else {
             let wsp = gd.find("wps:wsp")?;
             let mut obj = self.read_wsp(sc, wsp, rels, w, h, float);
@@ -720,12 +872,18 @@ impl Reader<'_> {
                 && let Some(mut f) = super::freeform::cust_geom(sppr, w, h)
             {
                 f.alpha = super::freeform::line_alpha(sppr.child("a:ln"));
-                f.ink = c.child("wp:docPr").and_then(|p| p.attr("name")).and_then(super::freeform::ink_tool);
+                let name = c.child("wp:docPr").and_then(|p| p.attr("name"));
+                f.ink = name.and_then(super::freeform::ink_tool);
+                f.order = name.filter(|_| f.ink.is_some()).and_then(super::freeform::ink_order);
                 *kind = ShapeKind::Freeform;
                 *freeform = Some(Arc::new(f));
             }
             obj
         };
+        if !alt.is_empty() {
+            obj.set_alt_text(&alt);
+        }
+        self.set_shape_id(&mut obj, c.child("wp:docPr").and_then(|p| p.attr("id")));
         // Word's effect extent also covers a rotated object's overhang; the model keeps that
         // apart (it follows from the angle), so take it back out.
         if let Some(f) = obj.float_mut() {
@@ -746,14 +904,21 @@ impl Reader<'_> {
             GraphicKind::Chart => gd.child("c:chart").and_then(|c| c.attr("r:id")).and_then(|id| super::part_of(rels, id, rt::CHART)),
             GraphicKind::Diagram => self.diagram_part(gd, rels),
         };
-        let Some(path) = part else { return Arc::new(Graphic { kind, items: Vec::new(), w, h, source }) };
+        let Some(path) = part else { return Arc::new(Graphic { kind, items: Vec::new(), w, h, source, chart: None }) };
         let key = (kind, path, w.to_bits(), h.to_bits());
         if let Some(g) = self.graphics.get(&key) {
             return g.clone();
         }
         let items = if self.graphic_budget == 0 { Vec::new() } else { self.graphic_items(kind, &key.1, w, h) };
         self.graphic_budget = self.graphic_budget.saturating_sub(graphic_work(&items));
-        let g = Arc::new(Graphic { kind, items, w, h, source });
+        // A chart that is exactly what WordCraft writes for its model can be edited (and is
+        // written from the model); any other stays as it was read.
+        let chart = match kind {
+            GraphicKind::Chart if !items.is_empty() => self.graphic_part(&key.1).and_then(|space| crate::chart_spec::spec_of(&space)).map(Arc::new),
+            _ => None,
+        };
+        let source = if chart.is_some() { None } else { source };
+        let g = Arc::new(Graphic { kind, items, w, h, source, chart });
         self.graphics.insert(key, g.clone());
         g
     }
@@ -803,7 +968,29 @@ impl Reader<'_> {
         if children.is_empty() {
             return None;
         }
-        Some(InlineObject::Group { w, h, float, ch_w, ch_h, children })
+        Some(InlineObject::Group { w, h, float, ch_w, ch_h, children, canvas: None })
+    }
+
+    /// A `wpc:wpc` Drawing Canvas (`w` × `h`, ECMA-376 Part 1 §20.4 and the Word 2010 canvas
+    /// schema): its `wpc:bg` fill, `wpc:whole` outline and members, which sit in the canvas's
+    /// own space (offsets from its top-left corner, unscaled). An empty canvas is kept.
+    /// The canvas schema has no `a:xfrm` of its own (nor does the anchor), so a turned or
+    /// flipped canvas keeps its turn in our `wpc:extLst` extension ([`CANVAS_SPIN_EXT`]).
+    fn read_canvas(&mut self, sc: &mut StoryCtx, c: &El, rels: &Rels, w: f32, h: f32, mut float: Float) -> InlineObject {
+        let spin_ext = c.child("wpc:extLst").and_then(|l| l.els().find(|e| e.name == "a:ext" && e.attr("uri") == Some(crate::CANVAS_SPIN_EXT)));
+        float.set_spin(xfrm_spin(spin_ext));
+        let solid = |e: Option<&El>| {
+            e.and_then(|f| f.child("a:solidFill")).and_then(|f| f.child("a:srgbClr")).and_then(|c| c.attr("val")).and_then(Rgb::parse)
+        };
+        let ln = c.child("wpc:whole").and_then(|e| e.child("a:ln"));
+        let style = wordcraft_doc::para::CanvasStyle {
+            fill: solid(c.child("wpc:bg")),
+            stroke: solid(ln),
+            stroke_width: ln.and_then(|l| l.attr("w")).and_then(|v| measure(v, 12_700.0)).unwrap_or(0.0).clamp(0.0, 100.0),
+        };
+        let mut children = Vec::new();
+        self.group_members(sc, c, rels, (0.0, 0.0, 1.0, 1.0), 0, &mut children);
+        InlineObject::Group { w, h, float, ch_w: w.max(1.0), ch_h: h.max(1.0), children, canvas: Some(style) }
     }
 
     /// The members of group `g` into `out`, mapped into the outermost group's space by `t`
@@ -832,12 +1019,13 @@ impl Reader<'_> {
             let sppr = match e.name.as_str() {
                 "wps:wsp" => e.child("wps:spPr"),
                 "pic:pic" => e.child("pic:spPr"),
-                "wpg:grpSp" => e.child("wpg:grpSpPr"),
+                // A group inside a canvas is a whole `wpg:wgp`.
+                "wpg:grpSp" | "wpg:wgp" => e.child("wpg:grpSpPr"),
                 _ => continue,
             };
             let x = group_xfrm(sppr);
             let ((ox, oy), (ew, eh)) = (x.off, x.ext);
-            if e.name == "wpg:grpSp" {
+            if e.name == "wpg:grpSp" || e.name == "wpg:wgp" {
                 if depth >= 8 {
                     continue;
                 }
@@ -852,12 +1040,19 @@ impl Reader<'_> {
             let max = crate::units::MAX_LEN_PT;
             let fit = |v: f32, lo: f32| wordcraft_geom::finite(v).clamp(lo, max);
             let (w, h) = (fit(ew * sx, 0.0), fit(eh * sy, 0.0));
+            let (alt, meta) = nv_alt(if e.name == "pic:pic" { e.find("pic:cNvPr") } else { e.child("wps:cNvPr") });
+            let float = Float { alt: meta, ..Float::default() };
             let obj = if e.name == "pic:pic" {
-                let alt = e.find("pic:cNvPr").and_then(|p| p.attr("descr")).unwrap_or("").to_string();
-                self.read_pic(e, rels, w, h, alt, Float::default())
+                self.read_pic(e, rels, w, h, alt.clone(), float)
             } else {
-                Some(self.read_wsp(sc, e, rels, w, h, Float::default()))
+                let mut o = self.read_wsp(sc, e, rels, w, h, float);
+                self.set_shape_id(&mut o, e.child("wps:cNvPr").and_then(|p| p.attr("id")));
+                Some(o)
             };
+            let obj = obj.map(|mut o| {
+                o.set_alt_text(&alt);
+                o
+            });
             if let Some(obj) = obj {
                 out.push(wordcraft_doc::para::GroupChild { x: fit(x0 + ox * sx, -max), y: fit(y0 + oy * sy, -max), obj });
             }
@@ -874,7 +1069,10 @@ impl Reader<'_> {
             "ellipse" => ShapeKind::Ellipse,
             "triangle" | "rtTriangle" => ShapeKind::Triangle,
             "diamond" => ShapeKind::Diamond,
-            "line" | "straightConnector1" => ShapeKind::Line,
+            "line" => ShapeKind::Line,
+            "straightConnector1" => ShapeKind::StraightConnector,
+            "bentConnector2" | "bentConnector3" | "bentConnector4" | "bentConnector5" => ShapeKind::ElbowConnector,
+            "curvedConnector2" | "curvedConnector3" | "curvedConnector4" | "curvedConnector5" => ShapeKind::CurvedConnector,
             "rightArrow" | "leftArrow" | "upArrow" | "downArrow" => ShapeKind::Arrow,
             "star5" | "star4" | "star6" => ShapeKind::Star,
             "heart" => ShapeKind::Heart,
@@ -896,7 +1094,70 @@ impl Reader<'_> {
             Some(t) if sc.story_depth < MAX_STORY_DEPTH => Some(self.read_textbox(sc, t, rels)),
             _ => None,
         };
-        InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform: None, effects }
+        // A box continuing another's text (Create Link): its own, empty story, linked up once the
+        // whole document is read.
+        let linked = wsp.child("wps:linkedTxbx").filter(|_| txbx.is_none());
+        let story = match linked {
+            Some(l) => {
+                kind = ShapeKind::TextBox;
+                let id = l.attr("id").and_then(|v| v.trim().parse::<u32>().ok());
+                let seq = l.attr("seq").and_then(|v| v.trim().parse::<u32>().ok());
+                match (id, seq) {
+                    (Some(id), Some(seq)) if seq > 0 => {
+                        let part = self.doc.add_part(PartKind::TextBox, Blocks::new());
+                        self.txbx_links.push((id, seq, part));
+                        Some(part)
+                    }
+                    _ => story,
+                }
+            }
+            None => {
+                if let (Some(part), Some(id)) = (story, wsp.child("wps:txbx").and_then(|t| t.attr("id")).and_then(|v| v.trim().parse::<u32>().ok())) {
+                    self.txbx_links.push((id, 0, part));
+                }
+                story
+            }
+        };
+        // Text direction and alignment (`wps:bodyPr`).
+        if let (Some(id), Some(bp)) = (story, wsp.child("wps:bodyPr"))
+            && let Some(part) = self.doc.parts.get_mut(&id)
+        {
+            if let Some(v) = bp.attr("vert") {
+                part.body.vert = wordcraft_doc::props::TextVert::from_ooxml(v);
+            }
+            if let Some(a) = bp.attr("anchor") {
+                part.body.anchor = wordcraft_doc::props::valign_from_anchor(a);
+            }
+        }
+        let mut extra = ShapeExtra::default();
+        // Arrowheads: any end type but `none` (ECMA-376 §20.1.10.33) is drawn as a triangle.
+        let arrow = |tag: &str| ln.and_then(|l| l.child(tag)).and_then(|e| e.attr("type")).is_some_and(|t| t != "none");
+        extra.arrow_start = arrow("a:headEnd");
+        extra.arrow_end = arrow("a:tailEnd");
+        // A connector's glued ends (ECMA-376 §20.1.2.2.36, §20.1.2.2.13).
+        if let Some(cn) = wsp.child("wps:cNvCnPr") {
+            let end = |tag: &str| {
+                let e = cn.child(tag)?;
+                let id = e.attr("id").and_then(u32_of).filter(|v| *v != 0)?;
+                let site = e.attr("idx").and_then(u32_of).unwrap_or(0).min(wordcraft_doc::connector::MAX_SITE);
+                Some(ConnEnd { id, site })
+            };
+            extra.start = end("a:stCxn");
+            extra.end = end("a:endCxn");
+            self.glued.extend(extra.start.iter().chain(extra.end.iter()).map(|e| e.id));
+        }
+        extra.warp = wsp.child("wps:bodyPr").and_then(|b| b.child("a:prstTxWarp")).and_then(text_warp);
+        InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform: None, effects, extra }
+    }
+
+    /// Keep drawing id `id` on a shape read from a file (see [`Reader::glued`]).
+    fn set_shape_id(&mut self, obj: &mut InlineObject, id: Option<&str>) {
+        if let InlineObject::Shape { extra, .. } = obj
+            && let Some(id) = id.and_then(u32_of).filter(|v| *v != 0)
+        {
+            extra.id = id;
+            self.shape_ids = true;
+        }
     }
 
     fn read_textbox(&mut self, sc: &StoryCtx, content: &El, rels: &Rels) -> u32 {
@@ -937,6 +1198,7 @@ impl Reader<'_> {
                 story,
                 freeform: None,
                 effects: Default::default(),
+                extra: Default::default(),
             });
         }
         None
@@ -977,16 +1239,16 @@ impl Reader<'_> {
                 .collect();
         }
         let mut rows = Vec::new();
-        collect(t, "w:tr", &mut rows, 0);
-        for tr in rows.into_iter().take(MAX_ROWS) {
-            let mut row = Row { props: tr.child("w:trPr").map(trpr).unwrap_or_default(), cells: Vec::new() };
+        collect(t, "w:tr", &mut rows, &mut Vec::new(), 0);
+        for (tr, row_controls) in rows.into_iter().take(MAX_ROWS) {
+            let mut row = Row { props: tr.child("w:trPr").map(trpr).unwrap_or_default(), cells: Vec::new(), controls: row_controls };
             if let Some(ch) = tr.child("w:trPr").and_then(|p| p.child("w:trPrChange")) {
                 let old = ch.child("w:trPr").map(trpr).unwrap_or_default();
                 row.props.fmt_change = PropChange::boxed(self.revision(RevisionKind::Format, ch), old);
             }
             let mut tcs = Vec::new();
-            collect(tr, "w:tc", &mut tcs, 0);
-            for tc in tcs.into_iter().take(MAX_COLS) {
+            collect(tr, "w:tc", &mut tcs, &mut Vec::new(), 0);
+            for (tc, cell_controls) in tcs.into_iter().take(MAX_COLS) {
                 let (mut props, hcont) =
                     tc.child("w:tcPr").map(tcpr).unwrap_or_else(|| (wordcraft_doc::props::CellProps { span: 1, ..Default::default() }, false));
                 if let Some(ch) = tc.child("w:tcPr").and_then(|p| p.child("w:tcPrChange")) {
@@ -1000,7 +1262,7 @@ impl Reader<'_> {
                 let mut blocks = Blocks::new();
                 self.read_blocks(sc, tc, rels, &mut blocks, depth + 4);
                 self.flush_pending(sc, &mut blocks);
-                row.cells.push(Cell { props, blocks });
+                row.cells.push(Cell { props, blocks, controls: cell_controls });
             }
             if !row.cells.is_empty() {
                 table.rows.push(row);
@@ -1017,26 +1279,62 @@ impl Reader<'_> {
     }
 }
 
-/// Gather `name` children, looking through `w:sdt`/`w:customXml` wrappers.
-fn collect<'a>(e: &'a El, name: &str, out: &mut Vec<&'a El>, depth: usize) {
+/// Gather `name` children (rows, cells), looking through `w:sdt`/`w:customXml` wrappers; each
+/// with the content controls that open before it and how many close after it. `pending` holds
+/// controls opened but not yet given to an element.
+fn collect<'a>(e: &'a El, name: &str, out: &mut Vec<(&'a El, ControlWrap)>, pending: &mut Vec<ContentControl>, depth: usize) {
     if depth > 8 {
         return;
     }
     for k in e.els() {
         if k.name == name {
-            out.push(k);
+            out.push((k, ControlWrap { open: std::mem::take(pending), close: 0 }));
         } else if k.name == "w:sdt" {
             if let Some(c) = k.child("w:sdtContent") {
-                collect(c, name, out, depth + 1);
+                let mut ctl = super::sdt::sdt_pr(k.child("w:sdtPr"), true);
+                ctl.end_pr_xml = super::sdt::sdt_end_pr(k.child("w:sdtEndPr"));
+                let before = out.len();
+                pending.push(ctl);
+                collect(c, name, out, pending, depth + 1);
+                let grew = out.len() > before;
+                match out.last_mut() {
+                    Some((_, w)) if grew => w.close = w.close.saturating_add(1),
+                    // Nothing inside: the control goes (as before).
+                    _ => {
+                        pending.pop();
+                    }
+                }
             }
         } else if k.name == "w:customXml" {
-            collect(k, name, out, depth + 1);
+            collect(k, name, out, pending, depth + 1);
         }
     }
 }
 
+/// Placeholder text as read from a control showing it: one line, bounded.
+fn placeholder_of(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { ' ' } else { c }).take(wordcraft_doc::control::MAX_CONTROL_TEXT).collect::<String>().trim().to_string()
+}
+
 fn on_off_attr(e: &El, name: &str) -> bool {
     e.attr(name).is_some_and(|v| !matches!(v, "0" | "false" | "off"))
+}
+
+/// The alternative text of a `wp:docPr`, `pic:cNvPr` or `wps:cNvPr` (ECMA-376
+/// `CT_NonVisualDrawingProps`): the description (the title when there is none, as before), and
+/// the title and decorative mark (the `adec:decorative` extension of [MS-ODRAWXML]).
+fn nv_alt(p: Option<&El>) -> (String, AltText) {
+    let Some(p) = p else { return Default::default() };
+    let title = cap_alt(p.attr("title").unwrap_or(""));
+    let descr = p.attr("descr").filter(|s| !s.is_empty()).map(cap_alt).unwrap_or_else(|| title.clone());
+    let decorative = p
+        .child("a:extLst")
+        .into_iter()
+        .flat_map(|l| l.children("a:ext"))
+        .filter(|x| x.attr("uri").is_some_and(|u| u.eq_ignore_ascii_case(crate::xml::DECORATIVE_EXT)))
+        .flat_map(|x| x.els())
+        .any(|d| d.local() == "decorative" && on_off_attr(d, "val"));
+    (descr, AltText { text: String::new(), title, decorative })
 }
 
 fn anchor_float(c: &El) -> Float {
@@ -1044,9 +1342,13 @@ fn anchor_float(c: &El) -> Float {
     let behind = on_off_attr(c, "behindDoc");
     for k in c.els() {
         match k.name.as_str() {
-            "wp:wrapSquare" => f.wrap = Wrap::Square,
+            "wp:wrapSquare" => {
+                f.wrap = Wrap::Square;
+                f.wrap_text = k.attr("wrapText").and_then(WrapText::from_ooxml).unwrap_or_default();
+            }
             "wp:wrapTight" | "wp:wrapThrough" => {
                 f.wrap = if k.name == "wp:wrapTight" { Wrap::Tight } else { Wrap::Through };
+                f.wrap_text = k.attr("wrapText").and_then(WrapText::from_ooxml).unwrap_or_default();
                 f.wrap_polygon = k.child("wp:wrapPolygon").and_then(wrap_polygon).map(Arc::new);
             }
             "wp:wrapTopAndBottom" => f.wrap = Wrap::TopAndBottom,
@@ -1201,6 +1503,19 @@ fn graphic_work(items: &[GraphicItem]) -> usize {
 
 /// A shape's `a:effectLst` (ECMA-376 Part 1 §20.1.8.26): its outer shadow, glow and soft edges.
 /// Other effects are dropped.
+/// A preset text warp (`a:prstTxWarp`, ECMA-376 §20.1.9.19) and its adjust values
+/// (`a:avLst/a:gd` with `fmla="val N"`). Unknown presets are dropped.
+fn text_warp(e: &El) -> Option<TextWarp> {
+    let mut w = TextWarp::new(e.attr("prst")?)?;
+    for gd in e.child("a:avLst").into_iter().flat_map(|l| l.children("a:gd")) {
+        let (Some(name), Some(f)) = (gd.attr("name"), gd.attr("fmla")) else { continue };
+        if let Some(v) = f.trim().strip_prefix("val").and_then(|v| v.trim().parse::<i64>().ok()) {
+            w.set_adj(name, v);
+        }
+    }
+    Some(w)
+}
+
 fn effect_list(l: &El) -> ShapeEffects {
     let pt = |e: &El, n: &str| e.attr(n).and_then(|v| measure(v, 12_700.0)).unwrap_or(0.0);
     let shadow = l.child("a:outerShdw").map(|e| {

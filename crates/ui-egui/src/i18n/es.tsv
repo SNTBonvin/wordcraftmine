@@ -110,6 +110,7 @@
 	Backspace	Retroceso
 	Banded Columns	Columnas con bandas
 	Banded Rows	Filas con bandas
+	Base text:	Texto base:
 	Before:	Antes:
 	Bibliography	Bibliografía
 	Binary assets added	Recursos binarios añadidos
@@ -275,7 +276,9 @@
 	Display	Mostrar
 	Display for Review	Mostrar para revisión
 	Distribute Columns	Distribuir columnas
+	Distribute letters	Distribuir letras
 	Distribute Rows	Distribuir filas
+	Distribute spacing	Distribuir espacio
 	Distributed	Distribuido
 	Do Not Show in TOC	No mostrar en la tabla de contenido
 	Document End	Fin del documento
@@ -540,6 +543,7 @@
 	Number of columns:	Número de columnas:
 	Number of rows:	Número de filas:
 	Numbering	Numeración
+	Offset (pt):	Desplazamiento (pt):
 	OK	Aceptar
 	Object	Objeto
 	Odd Page	Página impar
@@ -606,6 +610,7 @@
 	Paste: Merge Formatting	Pegar: combinar formato
 	Pen	Pluma
 	Pencil	Lápiz
+	Phonetic Guide	Guía fonética
 	Picture Border	Borde de imagen
 	Picture Format	Formato de imagen
 	Picture Styles	Estilos de imagen
@@ -649,6 +654,7 @@
 	Reject All Changes	Rechazar todos los cambios
 	Reject Change	Rechazar cambio
 	Relaxed	Relajado
+	Remove	Quitar
 	Remove Background	Quitar fondo
 	Remove Footer	Quitar pie de página
 	Remove Header	Quitar encabezado
@@ -686,6 +692,7 @@
 	Rich Text Format (*.rtf)	Formato de texto enriquecido (*.rtf)
 	Rich Text Format (RTF)	Formato de texto enriquecido (RTF)
 	Right	Derecha
+	Right (vertical)	Derecha (vertical)
 	Right Border	Borde derecho
 	Right Margin	Margen derecho
 	Right-to-Left Text Direction	Dirección de texto de derecha a izquierda
@@ -694,6 +701,7 @@
 	Rotate	Girar
 	Rounded Rectangle	Rectángulo redondeado
 	Rows & Columns	Filas y columnas
+	Ruby text:	Texto ruby:
 	Ruler	Regla
 	Rules	Reglas
 	Résumé	Currículum
@@ -761,6 +769,7 @@
 	Single	Sencillo
 	Single Spacing	Interlineado sencillo
 	Size	Tamaño
+	Size (pt):	Tamaño (pt):
 	Size:	Tamaño:
 	Small Caps	Versalitas
 	Small caps	Versalitas
@@ -1107,6 +1116,8 @@
 	Type at least one recipient.	Escribe al menos un destinatario.
 	Type the recipients, or load them from a file.	Escribe los destinatarios o cárgalos desde un archivo.
 	Use an Existing List…	Usar una lista existente…
+	Choose the sheet that holds the recipients.	Elija la hoja que contiene los destinatarios.
+	First row of data contains column headers	La primera fila de datos contiene encabezados de columna
 	Interface theme:	Tema de la interfaz:
 	Interface\nTheme	Tema de la\ninterfaz
 	Interface Theme	Tema de la interfaz
@@ -1355,6 +1366,17 @@
 	Formatted	Con formato
 	Interface size:	Tamaño de la interfaz:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Agranda o reduce la cinta, los menús y los cuadros de diálogo, además del escalado de pantalla del sistema. El zoom del documento es aparte.
+	In Line with Text	En línea con el texto
+	Square	Cuadrado
+	Through	Transparente
+	Top and Bottom	Arriba y abajo
+	Behind Text	Detrás del texto
+	In Front of Text	Delante del texto
+	Wrap Text Sides	Lados del ajuste
+	Both Sides	Ambos lados
+	Left Only	Solo a la izquierda
+	Right Only	Solo a la derecha
+	Largest Only	Solo el lado más ancho
 	Customize Keyboard	Personalizar teclado
 	Choose a command	Elija un comando
 	Choose a shortcut	Elija un método abreviado
@@ -1366,7 +1388,6 @@
 	Not used by any command	Ningún comando lo usa
 	Remove every custom shortcut and restore the built-in keys?	¿Quitar todos los métodos abreviados personalizados y restaurar las teclas integradas?
 	Assign	Asignar
-	Remove	Quitar
 	Reset All…	Restablecer todo…
 	Press a key combination	Pulse una combinación de teclas
 	Customize	Personalizar
@@ -1391,3 +1412,346 @@
 	New Group	Nuevo grupo
 	Rename…	Cambiar nombre…
 	Ribbon and Quick Access Toolbar:	Cinta de opciones y barra de acceso rápido:
+	Accessibility Pane	Panel de accesibilidad
+	Alt Text Pane	Panel de texto alternativo
+	Alt\nText	Texto\nalternativo
+	View Alt Text…	Ver texto alternativo…
+	Mark as decorative	Marcar como decorativo
+	Title:	Título:
+	Errors ({n})	Errores ({n})
+	Warnings ({n})	Advertencias ({n})
+	Tips ({n})	Sugerencias ({n})
+	No accessibility issues found.	No se encontraron problemas de accesibilidad.
+	Describe what this object shows, for people who can't see it.	Describa lo que muestra este objeto para quienes no pueden verlo.
+	Decorative objects only add visual interest: screen readers skip them.	Los objetos decorativos solo aportan interés visual: los lectores de pantalla los omiten.
+	Describe what this table shows, for people who can't see it.	Describa lo que muestra esta tabla para quienes no pueden verla.
+	Select a picture, shape, chart or table to describe it.	Seleccione una imagen, forma, gráfico o tabla para describirlo.
+	Document Grid	Cuadrícula del documento
+	No grid	Sin cuadrícula
+	Lines only	Solo líneas
+	Lines and characters	Líneas y caracteres
+	Text snaps to characters	El texto se ajusta a los caracteres
+	Characters per line:	Caracteres por línea:
+	Lines per page:	Líneas por página:
+	Moved from	Movido desde
+	Moved to	Movido a
+	Developer	Programador
+	Controls	Controles
+	Rich Text Content Control	Control de contenido de texto enriquecido
+	Plain Text Content Control	Control de contenido de texto sin formato
+	Picture Content Control	Control de contenido de imagen
+	Building Block Gallery Content Control	Control de contenido de galería de bloques de creación
+	Check Box Content Control	Control de contenido de casilla
+	Combo Box Content Control	Control de contenido de cuadro combinado
+	Drop-Down List Content Control	Control de contenido de lista desplegable
+	Date Picker Content Control	Control de contenido de selector de fecha
+	Repeating Section Content Control	Control de contenido de sección repetida
+	Design Mode	Modo Diseño
+	Content Control at Selection	Control de contenido en la selección
+	Toggle Check Box	Alternar casilla
+	Choose List Item	Elegir elemento de la lista
+	Set Date	Establecer fecha
+	Remove Content Control	Quitar control de contenido
+	Content Control Properties	Propiedades del control de contenido
+	Title	Título
+	Tag	Etiqueta
+	Placeholder text	Texto del marcador de posición
+	Can't be deleted	No se puede eliminar
+	Contents can't be edited	El contenido no se puede editar
+	Remove the control once edited	Quitar el control al editarlo
+	Allow line breaks	Permitir saltos de línea
+	Date format	Formato de fecha
+	Checked symbol	Símbolo marcado
+	Unchecked symbol	Símbolo sin marcar
+	List entries	Entradas de la lista
+	Display text	Texto mostrado
+	Value	Valor
+	Today	Hoy
+	Put the caret in a content control first.	Coloque primero el cursor en un control de contenido.
+	Right-to-Left Table	Tabla de derecha a izquierda
+	Right-to-Left Section	Sección de derecha a izquierda
+	Table direction:	Dirección de la tabla:
+	Section direction:	Dirección de la sección:
+	Drawing Canvas	Lienzo de dibujo
+	New Drawing Canvas	Nuevo lienzo de dibujo
+	Fit	Ajustar
+	Expand	Expandir
+	Scale Drawing	Escalar dibujo
+	Canvas Member	Elemento del lienzo
+	Arrows	Flechas
+	Communication	Comunicación
+	Office	Oficina
+	People	Personas
+	Nature	Naturaleza
+	Weather	Tiempo
+	Technology	Tecnología
+	Transport	Transporte
+	Icon Color	Color del icono
+	Search icons	Buscar iconos
+	No icons match your search.	Ningún icono coincide con la búsqueda.
+	Recolor a one-color picture, such as an icon	Cambiar el color de una imagen de un solo color, como un icono
+	Enclose Characters	Encerrar caracteres
+	Shrink text	Reducir texto
+	Enlarge symbol	Agrandar símbolo
+	Enclosure	Contorno
+	Circle	Círculo
+	Change Chart Type	Cambiar tipo de gráfico
+	Chart Design	Diseño de gráfico
+	Type	Tipo
+	Edit Data	Editar datos
+	Chart Title	Título del gráfico
+	Chart Layouts	Diseños de gráfico
+	Add Chart Element	Agregar elemento de gráfico
+	Legend	Leyenda
+	Data Labels	Etiquetas de datos
+	Above Chart	Encima del gráfico
+	Insert Chart	Insertar gráfico
+	Clustered Column	Columnas agrupadas
+	Stacked Column	Columnas apiladas
+	Clustered Bar	Barras agrupadas
+	Stacked Bar	Barras apiladas
+	Area	Área
+	Pie	Circular
+	Doughnut	Anillo
+	Scatter	Dispersión
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) no es un número.
+	Category {n}	Categoría {n}
+	Series {n}	Serie {n}
+	Type the categories down the side and a column of values per series.	Escribe las categorías en el lateral y una columna de valores por serie.
+	Categories	Categorías
+	Series name	Nombre de la serie
+	Remove series	Quitar serie
+	Remove row	Quitar fila
+	Add Row	Agregar fila
+	Add Series	Agregar serie
+	Edit\nData	Editar\ndatos
+	Change\nChart Type	Cambiar tipo\nde gráfico
+	Align Text	Alinear texto
+	Create Link	Crear vínculo
+	Break Link	Romper vínculo
+	Rotate all text 90°	Girar todo el texto 90°
+	Rotate all text 270°	Girar todo el texto 270°
+	Stacked	Apilado
+	Middle	En medio
+	Click the empty text box the text should continue in (Esc cancels)	Haga clic en el cuadro de texto vacío donde debe continuar el texto (Esc cancela)
+	Not linked: click a text box	Sin vincular: haga clic en un cuadro de texto
+	Location	Ubicación
+	Endnotes	Notas finales
+	Below text	Debajo del texto
+	End of section	Final de la sección
+	End of document	Final del documento
+	Footnotes to endnotes	Notas al pie a notas finales
+	Endnotes to footnotes	Notas finales a notas al pie
+	Swap footnotes and endnotes	Intercambiar notas al pie y notas finales
+	Custom mark:	Marca personalizada:
+	Continuous numbering	Numeración continua
+	Apply	Aplicar
+	Convert Notes	Convertir notas
+	A, B, C, …	A, B, C, …
+	Above the item	Encima del elemento
+	Accessed on	Consultado el
+	Add New Source…	Agregar nueva fuente…
+	Add the chapter number	Agregar el número de capítulo
+	Atmosphere	Atmósfera
+	Below the item	Debajo del elemento
+	Book	Libro
+	Book title	Título del libro
+	Caption	Leyenda
+	Caption Numbering	Numeración de leyendas
+	Caption text	Texto de la leyenda
+	Caption:	Leyenda:
+	Chapter in a book	Capítulo de libro
+	Chapters begin at:	Los capítulos empiezan en:
+	Collect entries from:	Recoger entradas de:
+	Columns:	Columnas:
+	Conference	Conferencia
+	Conference paper	Ponencia de conferencia
+	Container Title	Título del contenedor
+	Create Source	Crear fuente
+	Cross-reference:	Referencia cruzada:
+	Custom Table of Contents…	Tabla de contenido personalizada…
+	DOI	DOI
+	Day	Día
+	Delete Label	Eliminar rótulo
+	Edit Source	Editar fuente
+	Edition	Edición
+	Edit…	Editar…
+	Entry marked.	Entrada marcada.
+	Example: {sample}	Ejemplo: {sample}
+	Figure	Figura
+	Film	Película
+	Heading styles (levels 1–{n})	Estilos de título (niveles 1–{n})
+	Heading {n}	Título {n}
+	I, II, III, …	I, II, III, …
+	Include page numbers	Incluir números de página
+	Indented	Con sangría
+	Institution	Institución
+	Ionosphere	Ionosfera
+	Issue	Número
+	Journal	Revista
+	Label:	Rótulo:
+	Last, First; Last, First	Apellido, Nombre; Apellido, Nombre
+	Leave the label out of the caption	Omitir el rótulo en la leyenda
+	Letter headings	Encabezados de letra
+	Levels:	Niveles:
+	Link entries to their headings	Vincular las entradas a sus títulos
+	Made from the author and year when empty	Si está vacío, se forma con autor y año
+	Magazine or newspaper article	Artículo de revista o periódico
+	Main entry:	Entrada principal:
+	Mark	Marcar
+	Mark All	Marcar todas
+	Mark Entry…	Marcar entrada…
+	Mark Index Entry	Marcar entrada de índice
+	Mesosphere	Mesosfera
+	Month	Mes
+	New Label	Nuevo rótulo
+	New Label…	Nuevo rótulo…
+	New…	Nueva…
+	No sources yet.	Aún no hay fuentes.
+	Numbering…	Numeración…
+	Options…	Opciones…
+	Other	Otro
+	Other styles and their TOC level:	Otros estilos y su nivel en la tabla:
+	Outline levels	Niveles de esquema
+	Page number style	Estilo del número de página
+	Page numbers at the right margin	Números de página en el margen derecho
+	Page title	Título de la página
+	Pages of bookmark:	Páginas del marcador:
+	Periodical	Publicación periódica
+	Position:	Posición:
+	Publisher	Editorial
+	Run-in	Continuo
+	See	Véase
+	Separator:	Separador:
+	Show every bibliography field	Mostrar todos los campos bibliográficos
+	Site name	Nombre del sitio
+	Source Manager	Administrador de fuentes
+	Source type:	Tipo de fuente:
+	Sources in this document:	Fuentes de este documento:
+	Styles:	Estilos:
+	Subentry:	Subentrada:
+	TC entry fields	Campos de entrada TC
+	Tab leader:	Carácter de relleno:
+	Table of Contents Options	Opciones de tabla de contenido
+	Table of Contents Styles	Estilos de tabla de contenido
+	This page	Esta página
+	Type:	Tipo:
+	URL	URL
+	Volume	Volumen
+	Website	Sitio web
+	Year	Año
+	a, b, c, …	a, b, c, …
+	i, ii, iii, …	i, ii, iii, …
+	{n} entries marked.	Entradas marcadas: {n}.
+	Lasso Select	Selección con lazo
+	Move Selected Ink	Mover la tinta seleccionada
+	Delete Selected Ink	Eliminar la tinta seleccionada
+	Recolor Selected Ink	Cambiar el color de la tinta seleccionada
+	Add Pen	Agregar pluma
+	Remove Pen	Quitar pluma
+	Ink to Shape	Tinta a forma
+	Convert to Shapes	Convertir en formas
+	Ink Replay	Reproducir tinta
+	Add\nPen	Agregar\npluma
+	Rewind	Rebobinar
+	Forward	Avanzar
+	Stroke {n} of {total}	Trazo {n} de {total}
+
+# WordArt and connectors (#416).
+	WordArt Styles	Estilos de WordArt
+	Text Fill	Relleno de texto
+	Text Outline	Contorno de texto
+	Transform	Transformar
+	No Fill	Sin relleno
+	No Outline	Sin contorno
+	Reflection	Reflejo
+	No Reflection	Sin reflejo
+	No Transform	Sin transformación
+	Connect Shapes	Conectar formas
+	Straight Connector	Conector recto
+	Straight Arrow Connector	Conector recto de flecha
+	Elbow Connector	Conector angular
+	Elbow Arrow Connector	Conector angular de flecha
+	Curved Connector	Conector curvo
+	Curved Arrow Connector	Conector curvo de flecha
+	Arch Up	Arco hacia arriba
+	Arch Down	Arco hacia abajo
+	Slant Up	Inclinación hacia arriba
+	Slant Down	Inclinación hacia abajo
+	Inflate	Inflar
+	Deflate	Desinflar
+	Chevron Up	Chevrón hacia arriba
+	Chevron Down	Chevrón hacia abajo
+	Triangle Up	Triángulo hacia arriba
+	Triangle Down	Triángulo hacia abajo
+	Solid Accent	Color de énfasis sólido
+	Light with Outline	Claro con contorno
+	Hollow	Hueco
+	Accent Gradient	Degradado de énfasis
+	Dark with Shadow	Oscuro con sombra
+	Soft Glow	Resplandor suave
+	Accent with Reflection	Énfasis con reflejo
+	Warm Gradient with Outline	Degradado cálido con contorno
+	Add line numbering	Agregar numeración de líneas
+	Add to Document	Agregar al documento
+	Address labels	Etiquetas de dirección
+	Arabic	Árabe
+	Auto	Auto
+	Automatically hyphenate document	Separar palabras automáticamente en el documento
+	Chinese (Simplified)	Chino (simplificado)
+	Chinese (Traditional)	Chino (tradicional)
+	Column:	Columna:
+	Count by:	Intervalo:
+	Czech	Checo
+	Danish	Danés
+	Delivery address:	Dirección del destinatario:
+	Detect language automatically	Detectar idioma automáticamente
+	Do not check spelling or grammar	No revisar la ortografía ni la gramática
+	Dutch	Neerlandés
+	English (United Kingdom)	Inglés (Reino Unido)
+	Envelope size:	Tamaño del sobre:
+	Estonian	Estonio
+	Finnish	Finés
+	French (France)	Francés (Francia)
+	From text:	Desde el texto:
+	Full page of the same label	Página completa de la misma etiqueta
+	German (Germany)	Alemán (Alemania)
+	Greek	Griego
+	Hebrew	Hebreo
+	Hyphenate at:	Separar en:
+	Hyphenate words in CAPS	Separar palabras en MAYÚSCULAS
+	Hyphenation Options…	Opciones de separación de palabras…
+	Hyphenation zone:	Zona de separación:
+	Italian	Italiano
+	Japanese	Japonés
+	Korean	Coreano
+	Limit consecutive hyphens to:	Limitar guiones consecutivos a:
+	Line Numbering Options…	Opciones de numeración de líneas…
+	Manual Hyphenation	Separación manual de palabras
+	Manual hyphenation is complete.	La separación manual de palabras ha terminado.
+	Manual…	Manual…
+	Mark selected text as:	Marcar el texto seleccionado como:
+	New Document	Documento nuevo
+	No limit	Sin límite
+	Norwegian (Bokmål)	Noruego (bokmål)
+	Numbering:	Numeración:
+	Omit	Omitir
+	One label per recipient	Una etiqueta por destinatario
+	Polish	Polaco
+	Portuguese (Brazil)	Portugués (Brasil)
+	Portuguese (Portugal)	Portugués (Portugal)
+	Return address labels	Etiquetas de remitente
+	Return address:	Dirección del remitente:
+	Row:	Fila:
+	Russian	Ruso
+	Serbian (Cyrillic)	Serbio (cirílico)
+	Serbian (Latin)	Serbio (latino)
+	Set As Default	Establecer como predeterminado
+	Shipping labels	Etiquetas de envío
+	Single label	Una sola etiqueta
+	Spanish (Mexico)	Español (México)
+	Spanish (Spain)	Español (España)
+	Swedish	Sueco
+	Turkish	Turco
+	Ukrainian	Ucraniano
+	{language} is now the document's default language.	{language} es ahora el idioma predeterminado del documento.

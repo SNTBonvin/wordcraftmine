@@ -68,6 +68,12 @@ pub struct ViewState {
     /// The Clipboard pane (Home › Clipboard): items collected by Copy and Cut.
     #[serde(default)]
     pub clipboard_pane: bool,
+    /// The Accessibility pane (Review › Check Accessibility): the checker's findings.
+    #[serde(default)]
+    pub accessibility_pane: bool,
+    /// The Alt Text pane (Picture/Shape Format › Alt Text): the selected object's or table's alt text.
+    #[serde(default)]
+    pub alt_text_pane: bool,
     pub multi_page: bool,
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
@@ -86,6 +92,9 @@ pub struct ViewState {
     /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
     #[serde(default)]
     pub field_codes: bool,
+    /// Developer › Design Mode: every content control shows its frame and title.
+    #[serde(default)]
+    pub design_mode: bool,
 }
 
 fn on() -> bool {
@@ -108,6 +117,8 @@ impl Default for ViewState {
             style_inspector: false,
             comments_pane: false,
             clipboard_pane: false,
+            accessibility_pane: false,
+            alt_text_pane: false,
             multi_page: false,
             fit: String::new(),
             web_width: 800.0,
@@ -118,6 +129,7 @@ impl Default for ViewState {
             hide_ink: false,
             draw: Default::default(),
             field_codes: false,
+            design_mode: false,
         }
     }
 }
@@ -197,6 +209,8 @@ pub struct Session {
     pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
     pub clipboard: Option<Fragment>,
+    /// A tracked cut the next paste can turn into a move (see `cmd::moves`).
+    pub pending_move: Option<crate::cmd::moves::PendingMove>,
     /// Plain text mirror of the clipboard (for the system clipboard).
     pub clipboard_text: String,
     /// Items collected by Copy and Cut this session, for the Clipboard pane.
@@ -302,11 +316,13 @@ pub struct Prefs {
     /// Track Changes Options: what markup shows and how revisions are drawn (per user, as in
     /// Word).
     pub markup: wordcraft_layout::display::MarkupOptions,
+    /// Language › Detect language automatically (per user, as in Word).
+    pub detect_language: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { count_notes: true, markup: Default::default() }
+        Prefs { count_notes: true, markup: Default::default(), detect_language: true }
     }
 }
 
@@ -324,6 +340,7 @@ impl Session {
             path: None,
             dirty: false,
             clipboard: None,
+            pending_move: None,
             clipboard_text: String::new(),
             clip_history: Default::default(),
             find: FindState::default(),
@@ -600,6 +617,8 @@ impl Session {
             path: _,
             dirty,
             clipboard: _,
+            // Like the clipboard: what the next paste can make a move of.
+            pending_move: _,
             clipboard_text: _,
             clip_history: _,
             find: _,
@@ -774,6 +793,10 @@ impl Session {
         } else if spec.id.starts_with("caret.") {
             self.typing_open = false;
         }
+        // Only the paste right after a tracked cut makes it a move.
+        if (spec.mutates || matches!(id, "edit.undo" | "edit.redo")) && !matches!(id, "edit.cut" | "edit.paste" | "edit.pasteSpecial") {
+            self.pending_move = None;
+        }
         let sel_before = self.sel.clone();
         let run = spec.run;
         let mutates = spec.mutates;
@@ -795,6 +818,10 @@ impl Session {
                     self.touch();
                     self.doc.ensure_nonempty();
                     self.doc.prune_text_boxes();
+                    // Glued connectors follow the shapes they join.
+                    if crate::cmd::connectors::reroutes_after(id) && crate::cmd::connectors::reroute(self) {
+                        self.touch();
+                    }
                 }
                 self.clamp_selection();
                 if spec.mutates && !matches!(id, "edit.undo" | "edit.redo") {

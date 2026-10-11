@@ -917,6 +917,43 @@ fn table_text_direction_cycles_and_turns_the_text() {
     }
 }
 
+/// Right-to-left tables and sections (#362): `table.rtl` and `layout.sectionRtl` set or toggle
+/// the direction, one Undo step each, and the layout mirrors the table.
+#[test]
+fn table_and_section_direction_commands() {
+    let mut s = s();
+    run(&mut s, "insert.table", json!({"rows": 1, "cols": 3}));
+    let rtl = |s: &Session| s.doc.body.iter().find_map(|b| b.as_table()).unwrap().props.bidi_visual;
+    let first_cell_x = |s: &mut Session| {
+        s.layout().pages[0].items.iter().find_map(|it| match it {
+            wordcraft_layout::Placed::Cell { rect, cell: 0, .. } => Some(rect.x),
+            _ => None,
+        })
+    };
+    let ltr_x = first_cell_x(&mut s).unwrap();
+    run(&mut s, "table.rtl", json!({}));
+    assert!(rtl(&s));
+    assert!(first_cell_x(&mut s).unwrap() > ltr_x + 100.0, "the first column moves to the right");
+    run(&mut s, "table.rtl", json!({"value": true}));
+    assert!(rtl(&s), "an explicit value sets rather than toggles");
+    run(&mut s, "table.properties", json!({"rtl": false}));
+    assert!(!rtl(&s));
+    run(&mut s, "edit.undo", json!({}));
+    assert!(rtl(&s));
+    assert_eq!(s.run("table.properties", &json!({})).unwrap()["bidiVisual"], json!(true));
+    run(&mut s, "layout.sectionRtl", json!({}));
+    assert!(crate::cmd::page::sect(&s).rtl);
+    run(&mut s, "layout.sectionRtl", json!({"value": false}));
+    assert!(!crate::cmd::page::sect(&s).rtl);
+    run(&mut s, "edit.undo", json!({}));
+    assert!(crate::cmd::page::sect(&s).rtl);
+    // Outside a table `table.rtl` is disabled.
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    if s.sel.focus.path.cell().is_none() {
+        assert!(s.run("table.rtl", &json!({})).is_err());
+    }
+}
+
 #[test]
 fn table_border_presets_mask_the_sides_they_clear() {
     // On a default (TableGrid) table the "outside"/"inside" presets must write nil over the
@@ -2405,6 +2442,7 @@ fn charts_and_diagrams_can_be_selected_and_deleted_but_not_moved() {
         ("arrange.bounds", json!({"width": 50})),
         ("picture.size", json!({"width": 50})),
         ("arrange.wrap", json!({"wrap": "square"})),
+        ("arrange.wrapText", json!({"side": "left"})),
         ("arrange.position", json!({"preset": "topLeft"})),
         ("arrange.align", json!({"value": "left"})),
         ("arrange.bringForward", json!({})),
@@ -2413,6 +2451,107 @@ fn charts_and_diagrams_can_be_selected_and_deleted_but_not_moved() {
     }
     run(&mut s, "text.delete", json!({}));
     assert!(s.doc.para_at(&Pos::body(0, 0)).is_some_and(|p| p.objects.is_empty()), "the chart is deleted");
+}
+
+/// The chart model of the first object in the body's first paragraph.
+fn first_chart(doc: &wordcraft_doc::Document) -> Option<wordcraft_doc::chart::ChartSpec> {
+    use wordcraft_doc::para::InlineObject;
+    let p = doc.para_at(&Pos::body(0, 0))?;
+    p.object_offsets().into_iter().find_map(|off| match p.object_at(off) {
+        Some(InlineObject::Graphic { graphic, .. }) => graphic.chart.as_deref().cloned(),
+        _ => None,
+    })
+}
+
+#[test]
+fn inserted_chart_is_saved_and_reopened_with_its_data() {
+    let mut s = s();
+    let data =
+        json!({"categories": ["Jan", "Feb", "Mar"], "series": [{"name": "Rain", "values": [12.5, null, 3]}, {"name": "Sun", "values": [4, 5, 6]}]});
+    let r = run(&mut s, "insert.chart", json!({"type": "line", "data": data, "title": "Weather", "legend": "right"}));
+    assert_eq!(r["chart"]["type"], "line");
+    let spec = first_chart(&s.doc).expect("a chart with a model");
+    assert_eq!(spec.series[0].values, vec![Some(12.5), None, Some(3.0)]);
+    assert!(crate::cmd::chart::selected_chart(&s).is_some(), "the new chart is selected");
+    let bytes = wordcraft_docx::write(&s.doc).unwrap();
+    assert!(bytes.windows(22).any(|w| w == b"word/charts/chart1.xml"), "a chart part is written");
+    let back = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(first_chart(&back), Some(spec), "the chart reads back as the same editable chart");
+    // Sample data when none is given.
+    let mut s2 = self::s();
+    run(&mut s2, "insert.chart", json!({"type": "pie"}));
+    assert!(first_chart(&s2.doc).is_some_and(|c| c.kind == wordcraft_doc::chart::ChartType::Pie && !c.series.is_empty()));
+    // No params: the picker, nothing inserted.
+    let mut s3 = self::s();
+    run(&mut s3, "insert.chart", json!({}));
+    assert!(s3.ui_requests.iter().any(|r| r["open"] == "insertChart"));
+    assert!(first_chart(&s3.doc).is_none());
+}
+
+#[test]
+fn chart_edits_are_one_undo_step_each() {
+    use wordcraft_doc::chart::{ChartType, LegendPos};
+    let mut s = s();
+    run(&mut s, "insert.chart", json!({"type": "column"}));
+    let before = first_chart(&s.doc).unwrap();
+    run(&mut s, "chart.editData", json!({"data": {"categories": ["A", "B"], "series": [{"name": "X", "values": [1, 2]}]}}));
+    run(&mut s, "chart.type", json!({"type": "barStacked"}));
+    run(&mut s, "chart.title", json!({"text": "Totals"}));
+    run(&mut s, "chart.legend", json!({"pos": "none"}));
+    run(&mut s, "chart.dataLabels", json!({"on": true}));
+    let c = first_chart(&s.doc).unwrap();
+    assert_eq!((c.kind, c.title.as_deref(), c.legend, c.data_labels), (ChartType::BarStacked, Some("Totals"), None, true));
+    assert_eq!((c.categories.len(), c.series.len()), (2, 1));
+    let steps: [&dyn Fn(&wordcraft_doc::chart::ChartSpec) -> bool; 5] = [
+        &|c| !c.data_labels,
+        &|c| c.legend == Some(LegendPos::Bottom),
+        &|c| c.title.is_none(),
+        &|c| c.kind == ChartType::Column && c.series.len() == 1,
+        &|c| *c == before,
+    ];
+    for (k, check) in steps.iter().enumerate() {
+        run(&mut s, "edit.undo", json!({}));
+        assert!(check(&first_chart(&s.doc).unwrap()), "undo step {k}");
+    }
+    // Resizing draws the chart again at its new size.
+    run(&mut s, "edit.redo", json!({}));
+    run(&mut s, "picture.size", json!({"width": 300, "height": 150, "lockAspect": false}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    let Some(wordcraft_doc::para::InlineObject::Graphic { graphic, w, .. }) = p.object_offsets().into_iter().find_map(|o| p.object_at(o)) else {
+        panic!()
+    };
+    assert_eq!((*w, graphic.w, graphic.h), (300.0, 300.0, 150.0));
+}
+
+#[test]
+fn hostile_chart_data_is_capped() {
+    use wordcraft_doc::chart::{MAX_CELLS, MAX_POINTS, MAX_SERIES, MAX_TEXT};
+    let mut s = s();
+    let values: Vec<serde_json::Value> = (0..5000).map(|i| if i % 2 == 0 { json!("NaN") } else { json!(1e308) }).collect();
+    let series: Vec<serde_json::Value> = (0..300).map(|i| json!({"name": "n".repeat(10_000), "values": values, "x": i})).collect();
+    let cats: Vec<serde_json::Value> = (0..6000).map(|i| json!(i)).collect();
+    run(
+        &mut s,
+        "insert.chart",
+        json!({"type": "scatter", "data": {"categories": cats, "series": series}, "title": "\u{0}".repeat(9999), "width": 1e30}),
+    );
+    let c = first_chart(&s.doc).unwrap();
+    assert!(c.series.len() <= MAX_SERIES && c.points() <= MAX_POINTS && c.series.len() * c.points() <= MAX_CELLS);
+    assert!(c.series.iter().all(|x| x.name.chars().count() <= MAX_TEXT && x.values.len() == c.points()));
+    assert!(c.series[0].values.iter().all(|v| v.is_none_or(f64::is_finite)));
+    let _ = s.layout();
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert_eq!(first_chart(&back), Some(c));
+    for bad in [json!({"type": "radar"}), json!({"data": {"series": 5}}), json!({"data": {"series": []}})] {
+        assert!(s.run("insert.chart", &bad).is_err(), "{bad}");
+    }
+    // A chart without a model (from another program) is shown, not edited.
+    let mut s = self::s();
+    let foreign =
+        wordcraft_doc::para::InlineObject::Graphic { w: 200.0, h: 100.0, alt: String::new(), float: Default::default(), graphic: Default::default() };
+    s.doc.insert_object(&Pos::body(0, 0), foreign, &Default::default()).unwrap();
+    run(&mut s, "select.range", json!({"anchor": Pos::body(0, 0), "focus": Pos::body(0, wordcraft_doc::para::OBJ.len_utf8())}));
+    assert!(s.run("chart.type", &json!({"type": "pie"})).is_err());
 }
 
 #[test]
@@ -2805,4 +2944,176 @@ fn deleting_the_last_cell_column_never_leaves_a_table_without_rows() {
     assert!(s.doc.body.iter().all(|b| b.as_table().is_none()), "an emptied table is removed");
     run(&mut s, "edit.undo", json!({}));
     assert!(s.doc.body.iter().any(|b| b.as_table().is_some_and(|t| !t.rows.is_empty())));
+}
+
+#[test]
+fn document_grid_sets_lines_and_characters_in_one_undo_step() {
+    // #391: Layout › Page Setup › Document Grid.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "日本語"}));
+    let undo = s.undo_labels().len();
+    let r = run(&mut s, "layout.documentGrid", json!({"type": "linesAndChars", "linesPerPage": 40, "charsPerLine": 30}));
+    assert_eq!(r["type"], "linesAndChars");
+    assert_eq!(r["linesPerPage"], 40);
+    assert_eq!(r["charsPerLine"], 30);
+    let g = crate::cmd::page::sect(&s).doc_grid.unwrap();
+    assert!((g.line_pitch - 648.0 / 40.0).abs() < 1e-3, "{g:?}");
+    assert_eq!(s.undo_labels().len(), undo + 1);
+    // Hostile values are clamped, not trusted.
+    let r = run(&mut s, "layout.documentGrid", json!({"linePitch": -5, "charSpace": 1e15}));
+    assert_eq!(r["linePitch"], 1.0);
+    assert!(r["charPitch"].as_f64().unwrap() <= 1584.0);
+    assert!(s.run("layout.documentGrid", &json!({"type": "diagonal"})).is_err());
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(crate::cmd::page::sect(&s).doc_grid, None);
+}
+
+#[test]
+fn insert_icon_places_a_picture_of_the_requested_size_that_saves_and_recolours() {
+    use wordcraft_doc::para::InlineObject;
+    let mut s = s();
+    // Without an id: the library is listed and a front end is asked for its picker.
+    let r = run(&mut s, "insert.icon", json!({"query": "envelope"}));
+    assert_eq!(r["icons"][0]["id"], "mail");
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "icons"})));
+    let all = run(&mut s, "insert.icon", json!({}));
+    assert!(all["icons"].as_array().unwrap().len() >= 40);
+    assert!(s.run("insert.icon", &json!({"id": "no-such-icon"})).is_err());
+    assert!(s.run("insert.icon", &json!({"id": "heart", "color": "red"})).is_err());
+
+    let r = run(&mut s, "insert.icon", json!({"id": "heart", "color": "C00000", "size": 48}));
+    assert_eq!((r["width"].as_f64(), r["height"].as_f64(), r["icon"].as_str()), (Some(48.0), Some(48.0), Some("heart")));
+    let Some((_, InlineObject::Image { media, w, h, alt, .. })) = crate::cmd::objects::selected(&s) else { panic!("no picture") };
+    assert_eq!((w, h, alt.as_str()), (48.0, 48.0, "Heart"));
+    let png = image::load_from_memory(&s.doc.media[&media]).unwrap().to_rgba8();
+    assert_eq!(png.dimensions(), (200, 200), "about 300 pixels per inch");
+    let inked: Vec<_> = png.pixels().filter(|p| p.0[3] == 255).collect();
+    assert!(!inked.is_empty() && inked.iter().all(|p| p.0[..3] == [0xC0, 0, 0]));
+    assert!(png.get_pixel(0, 0).0[3] == 0, "transparent background");
+    // It is an ordinary picture: it saves to .docx.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert_eq!(back.media.len(), 1);
+
+    // Icon Color repaints it, keeping the transparency.
+    run(&mut s, "picture.iconColor", json!({"color": "1F4E79"}));
+    let Some((_, InlineObject::Image { media: m2, .. })) = crate::cmd::objects::selected(&s) else { panic!("no picture") };
+    let png2 = image::load_from_memory(&s.doc.media[&m2]).unwrap().to_rgba8();
+    assert!(png2.pixels().zip(png.pixels()).all(|(a, b)| a.0[3] == b.0[3] && (a.0[3] == 0 || a.0[..3] == [0x1F, 0x4E, 0x79])));
+    assert!(s.run("picture.iconColor", &json!({})).is_err());
+}
+
+/// Home › Font › Enclose Characters (#297): the selection becomes an `EQ \o\ac` field, saved the
+/// way Word stores it (the style in the code's run sizes) and read back; null takes the text out
+/// again, and each step undoes.
+#[test]
+fn enclose_characters_make_an_eq_field_and_come_back_out() {
+    use wordcraft_doc::InlineObject;
+    let field = |s: &Session| {
+        let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+        p.objects.iter().find_map(|o| match o {
+            InlineObject::Field { instr, result, .. } => Some((instr.clone(), result.clone())),
+            _ => None,
+        })
+    };
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "No 12 and 字 here"}));
+    run(&mut s, "select.text", json!({"text": "No 12"}));
+    assert!(s.run("format.enclose", &json!({"shape": "circle"})).is_err(), "five characters don't fit");
+    run(&mut s, "select.text", json!({"text": "字"}));
+    assert!(s.run("format.enclose", &json!({})).is_err(), "a script must say which shape");
+    run(&mut s, "format.enclose", json!({"shape": "circle"}));
+    assert_eq!(field(&s), Some(("eq \\o\\ac(○,字)".to_string(), "字".to_string())));
+    assert_eq!(text(&s), "No 12 and 字 here", "the field's text reads as the character");
+    run(&mut s, "select.text", json!({"text": "12"}));
+    run(&mut s, "format.enclose", json!({"shape": "diamond", "style": "enlarge"}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    let codes: Vec<String> =
+        p.objects.iter().filter_map(|o| if let InlineObject::Field { instr, .. } = o { Some(instr.clone()) } else { None }).collect();
+    assert_eq!(codes, ["eq \\o\\ac(◇,12) \\* enlarge", "eq \\o\\ac(○,字)"]);
+
+    // Word's structure in the .docx: no result, the symbol and the text in runs of their own
+    // sizes; reading it back gives the same fields, styles included.
+    let bytes = wordcraft_docx::write(&s.doc).unwrap();
+    let back = wordcraft_docx::read(&bytes).unwrap();
+    let bp = back.para_at(&Pos::body(0, 0)).unwrap();
+    let back_codes: Vec<(String, String)> = bp
+        .objects
+        .iter()
+        .filter_map(|o| if let InlineObject::Field { instr, result, .. } = o { Some((instr.clone(), result.clone())) } else { None })
+        .collect();
+    assert_eq!(back_codes, [("eq \\o\\ac(◇,12) \\* enlarge".to_string(), "12".to_string()), ("eq \\o\\ac(○,字)".to_string(), "字".to_string())]);
+
+    // Change the shape of the enclosed characters at the caret, then remove it.
+    let e = s.doc.para_at(&Pos::body(0, 0)).unwrap().text.find('\u{FFFC}').unwrap();
+    s.sel = crate::Selection::caret(Pos::body(0, e + 3));
+    run(&mut s, "format.enclose", json!({"shape": "square"}));
+    assert!(field(&s).unwrap().0.starts_with("eq \\o\\ac(□,12) \\* enlarge"), "the style stays");
+    run(&mut s, "format.enclose", json!({"shape": null}));
+    assert_eq!(text(&s), "No 12 and 字 here");
+    assert_eq!(s.selected_text(), "12");
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert!(field(&s).unwrap().0.starts_with("eq \\o\\ac(◇,12)"));
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(field(&s), None, "back to plain text");
+    assert!(s.run("format.enclose", &json!({"shape": null})).is_err(), "nothing to remove");
+    // Text given (the dialog's Text box) goes in at a caret.
+    run(&mut s, "caret.docEnd", json!({}));
+    assert!(s.run("format.enclose", &json!({"shape": "triangle", "text": "ABC"})).is_err());
+    run(&mut s, "format.enclose", json!({"shape": "triangle", "text": "A"}));
+    assert_eq!(text(&s), "No 12 and 字 hereA");
+    assert_eq!(field(&s), Some(("eq \\o\\ac(△,A)".to_string(), "A".to_string())));
+}
+
+/// #385: note options for the whole document or one section, and converting notes, which undoes
+/// in one step.
+#[test]
+fn note_options_per_section_and_convert_notes() {
+    use wordcraft_doc::PartKind;
+    use wordcraft_doc::para::{InlineObject, NoteKind};
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "One"}));
+    let a = run(&mut s, "references.footnote", json!({"text": "First", "mark": "*"}))["id"].as_u64().unwrap() as u32;
+    s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Body));
+    run(&mut s, "layout.break", json!({"kind": "nextPage"}));
+    run(&mut s, "text.insert", json!({"text": "Two"}));
+    let b = run(&mut s, "references.footnote", json!({"text": "Second"}))["id"].as_u64().unwrap() as u32;
+    s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Body));
+    // The second section restarts at 3 in letters; the first keeps the document's options.
+    let got = run(&mut s, "references.noteOptions", json!({"numFmt": "lowerLetter", "numStart": 3, "numRestart": "eachSect", "scope": "section"}));
+    assert_eq!((got["footnote"]["numFmt"].as_str(), got["footnote"]["numStart"].as_u64()), (Some("lowerLetter"), Some(3)));
+    let sections = s.doc.sections();
+    assert!(sections[0].1.footnote_pr.is_empty());
+    assert_eq!(sections[1].1.footnote_pr.num_start, Some(3));
+    // Hostile or wrong values are refused or clamped.
+    assert!(s.run("references.noteOptions", &json!({"kind": "endnote", "pos": "pageBottom"})).is_err());
+    assert!(s.run("references.noteOptions", &json!({"kind": "endnote", "numRestart": "eachPage"})).is_err());
+    let got = run(&mut s, "references.noteOptions", json!({"kind": "endnote", "pos": "sectEnd", "numStart": -5}));
+    assert_eq!((got["endnote"]["pos"].as_str(), got["endnote"]["numStart"].as_u64()), (Some("sectEnd"), Some(1)));
+    // The whole document: the section's own start gives way.
+    run(&mut s, "references.noteOptions", json!({"numStart": 2}));
+    assert_eq!(s.doc.sections()[1].1.footnote_pr.num_start, None);
+    assert_eq!(s.doc.settings.footnote_pr.num_start, Some(2));
+    // Convert footnotes to endnotes: kinds, marks and styles; the custom mark stays. One undo.
+    let kinds = |s: &Session| -> Vec<NoteKind> {
+        let mut v = Vec::new();
+        s.doc.objects_in_reading_order(&mut |o| {
+            if let InlineObject::NoteRef { kind, .. } = o {
+                v.push(*kind);
+            }
+        });
+        v
+    };
+    assert_eq!(run(&mut s, "references.convertNotes", json!({"to": "endnote"}))["converted"], 2);
+    assert_eq!(kinds(&s), vec![NoteKind::Endnote, NoteKind::Endnote]);
+    assert!([a, b].iter().all(|id| s.doc.parts[id].kind == PartKind::Endnote));
+    let note = s.doc.para(StoryRef::Part(a), &wordcraft_doc::Path::top(0)).unwrap();
+    assert_eq!(note.props.style.as_deref(), Some("EndnoteText"));
+    assert!(matches!(&note.objects[0], InlineObject::NoteRef { kind: NoteKind::Endnote, custom, .. } if custom == "*"));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(kinds(&s), vec![NoteKind::Footnote, NoteKind::Footnote]);
+    assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
+    assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
 }

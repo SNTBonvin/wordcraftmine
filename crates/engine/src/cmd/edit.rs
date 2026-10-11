@@ -109,7 +109,11 @@ fn copy(s: &mut Session, _: &Value) -> CmdResult {
 
 fn cut(s: &mut Session, v: &Value) -> CmdResult {
     let r = copy(s, v)?;
-    delete_selection(s)?;
+    // A tracked cut of a paragraph or sentence may become a move when pasted.
+    if !super::moves::cut_tracked(s)? {
+        delete_selection(s)?;
+    }
+    super::controls::restore_placeholder(s)?;
     Ok(r)
 }
 

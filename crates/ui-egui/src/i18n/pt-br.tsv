@@ -106,6 +106,7 @@
 	Backspace	Backspace
 	Banded Columns	Colunas listradas
 	Banded Rows	Linhas listradas
+	Base text:	Texto base:
 	Before:	Antes:
 	Bibliography	Bibliografia
 	Binary assets added	Recursos binários adicionados
@@ -265,6 +266,13 @@
 	No templates match your search.	Nenhum modelo corresponde à pesquisa.
 	Reopen	Reabrir
 	Right Margin	Margem direita
+	Distribute letters	Distribuir letras
+	Distribute spacing	Distribuir espaçamento
+	Offset (pt):	Deslocamento (pt):
+	Phonetic Guide	Guia fonético
+	Remove	Remover
+	Right (vertical)	Direita (vertical)
+	Ruby text:	Texto ruby:
 	Search for templates	Pesquisar modelos
 	development build	versão de desenvolvimento
 	Diagonal	Diagonal
@@ -740,6 +748,7 @@
 	Single	Simples
 	Single Spacing	Espaçamento simples
 	Size	Tamanho
+	Size (pt):	Tamanho (pt):
 	Size:	Tamanho:
 	Small Caps	Versaletes
 	Small caps	Versaletes
@@ -1103,6 +1112,8 @@
 	Type at least one recipient.	Digite pelo menos um destinatário.
 	Type the recipients, or load them from a file.	Digite os destinatários ou carregue-os de um arquivo.
 	Use an Existing List…	Usar uma lista existente…
+	Choose the sheet that holds the recipients.	Escolha a planilha que contém os destinatários.
+	First row of data contains column headers	A primeira linha de dados contém cabeçalhos de coluna
 	Interface theme:	Tema da interface:
 	Interface\nTheme	Tema da\ninterface
 	Interface Theme	Tema da interface
@@ -1351,6 +1362,17 @@
 	Formatted	Formatado
 	Interface size:	Tamanho da interface:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Aumenta ou diminui a faixa de opções, os menus e as caixas de diálogo, além da escala de exibição do sistema. O zoom do documento é separado.
+	In Line with Text	Alinhado ao texto
+	Square	Quadrado
+	Through	Através
+	Top and Bottom	Acima e abaixo
+	Behind Text	Atrás do texto
+	In Front of Text	Na frente do texto
+	Wrap Text Sides	Lados da quebra
+	Both Sides	Ambos os lados
+	Left Only	Somente à esquerda
+	Right Only	Somente à direita
+	Largest Only	Somente o lado mais largo
 	Customize Keyboard	Personalizar teclado
 	Choose a command	Escolha um comando
 	Choose a shortcut	Escolha um atalho
@@ -1362,7 +1384,6 @@
 	Not used by any command	Nenhum comando usa
 	Remove every custom shortcut and restore the built-in keys?	Remover todos os atalhos personalizados e restaurar as teclas padrão?
 	Assign	Atribuir
-	Remove	Remover
 	Reset All…	Redefinir tudo…
 	Press a key combination	Pressione uma combinação de teclas
 	Customize	Personalizar
@@ -1387,3 +1408,346 @@
 	New Group	Novo Grupo
 	Rename…	Renomear…
 	Ribbon and Quick Access Toolbar:	Faixa de Opções e Barra de Acesso Rápido:
+	Accessibility Pane	Painel de acessibilidade
+	Alt Text Pane	Painel de texto alternativo
+	Alt\nText	Texto\nalternativo
+	View Alt Text…	Exibir texto alternativo…
+	Mark as decorative	Marcar como decorativo
+	Title:	Título:
+	Errors ({n})	Erros ({n})
+	Warnings ({n})	Avisos ({n})
+	Tips ({n})	Dicas ({n})
+	No accessibility issues found.	Nenhum problema de acessibilidade encontrado.
+	Describe what this object shows, for people who can't see it.	Descreva o que este objeto mostra, para quem não pode vê-lo.
+	Decorative objects only add visual interest: screen readers skip them.	Objetos decorativos só acrescentam interesse visual: os leitores de tela os ignoram.
+	Describe what this table shows, for people who can't see it.	Descreva o que esta tabela mostra, para quem não pode vê-la.
+	Select a picture, shape, chart or table to describe it.	Selecione uma imagem, forma, gráfico ou tabela para descrevê-lo.
+	Document Grid	Grade do documento
+	No grid	Sem grade
+	Lines only	Somente linhas
+	Lines and characters	Linhas e caracteres
+	Text snaps to characters	O texto se ajusta aos caracteres
+	Characters per line:	Caracteres por linha:
+	Lines per page:	Linhas por página:
+	Moved from	Movido de
+	Moved to	Movido para
+	Developer	Desenvolvedor
+	Controls	Controles
+	Rich Text Content Control	Controle de conteúdo de rich text
+	Plain Text Content Control	Controle de conteúdo de texto sem formatação
+	Picture Content Control	Controle de conteúdo de imagem
+	Building Block Gallery Content Control	Controle de conteúdo da galeria de blocos de construção
+	Check Box Content Control	Controle de conteúdo de caixa de seleção
+	Combo Box Content Control	Controle de conteúdo de caixa de combinação
+	Drop-Down List Content Control	Controle de conteúdo de lista suspensa
+	Date Picker Content Control	Controle de conteúdo de seletor de data
+	Repeating Section Content Control	Controle de conteúdo de seção repetida
+	Design Mode	Modo de Design
+	Content Control at Selection	Controle de conteúdo na seleção
+	Toggle Check Box	Alternar caixa de seleção
+	Choose List Item	Escolher item da lista
+	Set Date	Definir data
+	Remove Content Control	Remover controle de conteúdo
+	Content Control Properties	Propriedades do controle de conteúdo
+	Title	Título
+	Tag	Marca
+	Placeholder text	Texto do espaço reservado
+	Can't be deleted	Não pode ser excluído
+	Contents can't be edited	O conteúdo não pode ser editado
+	Remove the control once edited	Remover o controle após a edição
+	Allow line breaks	Permitir quebras de linha
+	Date format	Formato da data
+	Checked symbol	Símbolo marcado
+	Unchecked symbol	Símbolo desmarcado
+	List entries	Itens da lista
+	Display text	Texto exibido
+	Value	Valor
+	Today	Hoje
+	Put the caret in a content control first.	Coloque primeiro o cursor em um controle de conteúdo.
+	Right-to-Left Table	Tabela da direita para a esquerda
+	Right-to-Left Section	Seção da direita para a esquerda
+	Table direction:	Direção da tabela:
+	Section direction:	Direção da seção:
+	Drawing Canvas	Tela de desenho
+	New Drawing Canvas	Nova tela de desenho
+	Fit	Ajustar
+	Expand	Expandir
+	Scale Drawing	Dimensionar desenho
+	Canvas Member	Item da tela
+	Arrows	Setas
+	Communication	Comunicação
+	Office	Escritório
+	People	Pessoas
+	Nature	Natureza
+	Weather	Clima
+	Technology	Tecnologia
+	Transport	Transporte
+	Icon Color	Cor do Ícone
+	Search icons	Pesquisar ícones
+	No icons match your search.	Nenhum ícone corresponde à pesquisa.
+	Recolor a one-color picture, such as an icon	Mudar a cor de uma imagem de uma só cor, como um ícone
+	Enclose Characters	Envolver caracteres
+	Shrink text	Reduzir texto
+	Enlarge symbol	Ampliar símbolo
+	Enclosure	Contorno
+	Circle	Círculo
+	Change Chart Type	Alterar tipo de gráfico
+	Chart Design	Design do gráfico
+	Type	Tipo
+	Edit Data	Editar dados
+	Chart Title	Título do gráfico
+	Chart Layouts	Layouts do gráfico
+	Add Chart Element	Adicionar elemento ao gráfico
+	Legend	Legenda
+	Data Labels	Rótulos de dados
+	Above Chart	Acima do gráfico
+	Insert Chart	Inserir gráfico
+	Clustered Column	Colunas agrupadas
+	Stacked Column	Colunas empilhadas
+	Clustered Bar	Barras agrupadas
+	Stacked Bar	Barras empilhadas
+	Area	Área
+	Pie	Pizza
+	Doughnut	Rosca
+	Scatter	Dispersão
+	“{text}” ({row}, {series}) isn't a number.	“{text}” ({row}, {series}) não é um número.
+	Category {n}	Categoria {n}
+	Series {n}	Série {n}
+	Type the categories down the side and a column of values per series.	Digite as categorias na lateral e uma coluna de valores por série.
+	Categories	Categorias
+	Series name	Nome da série
+	Remove series	Remover série
+	Remove row	Remover linha
+	Add Row	Adicionar linha
+	Add Series	Adicionar série
+	Edit\nData	Editar\ndados
+	Change\nChart Type	Alterar tipo\nde gráfico
+	Align Text	Alinhar texto
+	Create Link	Criar link
+	Break Link	Quebrar link
+	Rotate all text 90°	Girar todo o texto 90°
+	Rotate all text 270°	Girar todo o texto 270°
+	Stacked	Empilhado
+	Middle	Meio
+	Click the empty text box the text should continue in (Esc cancels)	Clique na caixa de texto vazia em que o texto deve continuar (Esc cancela)
+	Not linked: click a text box	Não vinculado: clique em uma caixa de texto
+	Location	Local
+	Endnotes	Notas de fim
+	Below text	Abaixo do texto
+	End of section	Fim da seção
+	End of document	Fim do documento
+	Footnotes to endnotes	Notas de rodapé em notas de fim
+	Endnotes to footnotes	Notas de fim em notas de rodapé
+	Swap footnotes and endnotes	Trocar notas de rodapé e notas de fim
+	Custom mark:	Marca personalizada:
+	Continuous numbering	Numeração contínua
+	Apply	Aplicar
+	Convert Notes	Converter notas
+	A, B, C, …	A, B, C, …
+	Above the item	Acima do item
+	Accessed on	Acessado em
+	Add New Source…	Adicionar nova fonte…
+	Add the chapter number	Adicionar o número do capítulo
+	Atmosphere	Atmosfera
+	Below the item	Abaixo do item
+	Book	Livro
+	Book title	Título do livro
+	Caption	Legenda
+	Caption Numbering	Numeração de legendas
+	Caption text	Texto da legenda
+	Caption:	Legenda:
+	Chapter in a book	Capítulo de livro
+	Chapters begin at:	Os capítulos começam em:
+	Collect entries from:	Coletar entradas de:
+	Columns:	Colunas:
+	Conference	Conferência
+	Conference paper	Artigo de conferência
+	Container Title	Título do contêiner
+	Create Source	Criar fonte
+	Cross-reference:	Referência cruzada:
+	Custom Table of Contents…	Sumário personalizado…
+	DOI	DOI
+	Day	Dia
+	Delete Label	Excluir rótulo
+	Edit Source	Editar fonte
+	Edition	Edição
+	Edit…	Editar…
+	Entry marked.	Entrada marcada.
+	Example: {sample}	Exemplo: {sample}
+	Figure	Figura
+	Film	Filme
+	Heading styles (levels 1–{n})	Estilos de título (níveis 1–{n})
+	Heading {n}	Título {n}
+	I, II, III, …	I, II, III, …
+	Include page numbers	Incluir números de página
+	Indented	Recuado
+	Institution	Instituição
+	Ionosphere	Ionosfera
+	Issue	Número
+	Journal	Periódico científico
+	Label:	Rótulo:
+	Last, First; Last, First	Sobrenome, Nome; Sobrenome, Nome
+	Leave the label out of the caption	Omitir o rótulo na legenda
+	Letter headings	Cabeçalhos de letra
+	Levels:	Níveis:
+	Link entries to their headings	Vincular as entradas aos títulos
+	Made from the author and year when empty	Se vazio, é formado pelo autor e ano
+	Magazine or newspaper article	Artigo de revista ou jornal
+	Main entry:	Entrada principal:
+	Mark	Marcar
+	Mark All	Marcar todas
+	Mark Entry…	Marcar entrada…
+	Mark Index Entry	Marcar entrada de índice
+	Mesosphere	Mesosfera
+	Month	Mês
+	New Label	Novo rótulo
+	New Label…	Novo rótulo…
+	New…	Nova…
+	No sources yet.	Ainda não há fontes.
+	Numbering…	Numeração…
+	Options…	Opções…
+	Other	Outro
+	Other styles and their TOC level:	Outros estilos e seu nível no sumário:
+	Outline levels	Níveis de estrutura de tópicos
+	Page number style	Estilo do número de página
+	Page numbers at the right margin	Números de página na margem direita
+	Page title	Título da página
+	Pages of bookmark:	Páginas do indicador:
+	Periodical	Periódico
+	Position:	Posição:
+	Publisher	Editora
+	Run-in	Contínuo
+	See	Ver
+	Separator:	Separador:
+	Show every bibliography field	Mostrar todos os campos bibliográficos
+	Site name	Nome do site
+	Source Manager	Gerenciador de fontes
+	Source type:	Tipo de fonte:
+	Sources in this document:	Fontes deste documento:
+	Styles:	Estilos:
+	Subentry:	Subentrada:
+	TC entry fields	Campos de entrada TC
+	Tab leader:	Preenchimento de tabulação:
+	Table of Contents Options	Opções do sumário
+	Table of Contents Styles	Estilos do sumário
+	This page	Esta página
+	Type:	Tipo:
+	URL	URL
+	Volume	Volume
+	Website	Site
+	Year	Ano
+	a, b, c, …	a, b, c, …
+	i, ii, iii, …	i, ii, iii, …
+	{n} entries marked.	Entradas marcadas: {n}.
+	Lasso Select	Seleção com laço
+	Move Selected Ink	Mover a tinta selecionada
+	Delete Selected Ink	Excluir a tinta selecionada
+	Recolor Selected Ink	Mudar a cor da tinta selecionada
+	Add Pen	Adicionar caneta
+	Remove Pen	Remover caneta
+	Ink to Shape	Tinta para forma
+	Convert to Shapes	Converter em formas
+	Ink Replay	Reproduzir tinta
+	Add\nPen	Adicionar\ncaneta
+	Rewind	Retroceder
+	Forward	Avançar
+	Stroke {n} of {total}	Traço {n} de {total}
+
+# WordArt and connectors (#416).
+	WordArt Styles	Estilos de WordArt
+	Text Fill	Preenchimento do texto
+	Text Outline	Contorno do texto
+	Transform	Transformar
+	No Fill	Sem preenchimento
+	No Outline	Sem contorno
+	Reflection	Reflexo
+	No Reflection	Sem reflexo
+	No Transform	Sem transformação
+	Connect Shapes	Conectar formas
+	Straight Connector	Conector reto
+	Straight Arrow Connector	Conector reto com seta
+	Elbow Connector	Conector angular
+	Elbow Arrow Connector	Conector angular com seta
+	Curved Connector	Conector curvo
+	Curved Arrow Connector	Conector curvo com seta
+	Arch Up	Arco para cima
+	Arch Down	Arco para baixo
+	Slant Up	Inclinação para cima
+	Slant Down	Inclinação para baixo
+	Inflate	Inflar
+	Deflate	Desinflar
+	Chevron Up	Divisa para cima
+	Chevron Down	Divisa para baixo
+	Triangle Up	Triângulo para cima
+	Triangle Down	Triângulo para baixo
+	Solid Accent	Destaque sólido
+	Light with Outline	Claro com contorno
+	Hollow	Vazado
+	Accent Gradient	Gradiente de destaque
+	Dark with Shadow	Escuro com sombra
+	Soft Glow	Brilho suave
+	Accent with Reflection	Destaque com reflexo
+	Warm Gradient with Outline	Gradiente quente com contorno
+	Add line numbering	Adicionar numeração de linhas
+	Add to Document	Adicionar ao documento
+	Address labels	Etiquetas de endereço
+	Arabic	Árabe
+	Auto	Auto
+	Automatically hyphenate document	Hifenizar o documento automaticamente
+	Chinese (Simplified)	Chinês (simplificado)
+	Chinese (Traditional)	Chinês (tradicional)
+	Column:	Coluna:
+	Count by:	Intervalo:
+	Czech	Tcheco
+	Danish	Dinamarquês
+	Delivery address:	Endereço de entrega:
+	Detect language automatically	Detectar o idioma automaticamente
+	Do not check spelling or grammar	Não verificar ortografia nem gramática
+	Dutch	Holandês
+	English (United Kingdom)	Inglês (Reino Unido)
+	Envelope size:	Tamanho do envelope:
+	Estonian	Estoniano
+	Finnish	Finlandês
+	French (France)	Francês (França)
+	From text:	Distância do texto:
+	Full page of the same label	Página inteira da mesma etiqueta
+	German (Germany)	Alemão (Alemanha)
+	Greek	Grego
+	Hebrew	Hebraico
+	Hyphenate at:	Hifenizar em:
+	Hyphenate words in CAPS	Hifenizar palavras em MAIÚSCULAS
+	Hyphenation Options…	Opções de hifenização…
+	Hyphenation zone:	Zona de hifenização:
+	Italian	Italiano
+	Japanese	Japonês
+	Korean	Coreano
+	Limit consecutive hyphens to:	Limitar hífens consecutivos a:
+	Line Numbering Options…	Opções de numeração de linhas…
+	Manual Hyphenation	Hifenização manual
+	Manual hyphenation is complete.	A hifenização manual foi concluída.
+	Manual…	Manual…
+	Mark selected text as:	Marcar o texto selecionado como:
+	New Document	Novo documento
+	No limit	Sem limite
+	Norwegian (Bokmål)	Norueguês (bokmål)
+	Numbering:	Numeração:
+	Omit	Omitir
+	One label per recipient	Uma etiqueta por destinatário
+	Polish	Polonês
+	Portuguese (Brazil)	Português (Brasil)
+	Portuguese (Portugal)	Português (Portugal)
+	Return address labels	Etiquetas de remetente
+	Return address:	Endereço do remetente:
+	Row:	Linha:
+	Russian	Russo
+	Serbian (Cyrillic)	Sérvio (cirílico)
+	Serbian (Latin)	Sérvio (latino)
+	Set As Default	Definir como padrão
+	Shipping labels	Etiquetas de envio
+	Single label	Etiqueta única
+	Spanish (Mexico)	Espanhol (México)
+	Spanish (Spain)	Espanhol (Espanha)
+	Swedish	Sueco
+	Turkish	Turco
+	Ukrainian	Ucraniano
+	{language} is now the document's default language.	{language} agora é o idioma padrão do documento.

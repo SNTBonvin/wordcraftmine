@@ -1834,6 +1834,149 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.line(&[(3.5, 3.5), (12.5, 12.5)]);
             pen.line(&[(12.5, 3.5), (3.5, 12.5)]);
         }
+        "enclose" => {
+            pen.circle_c(8.0, 8.0, 6.5, a);
+            pen.glyph_a(8.0, 11.0, 6.0, c, c);
+        }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(8.0, 3.0, 5.0, "abc", a, false);
+            pen.glyph_a(8.0, 14.5, 8.0, c, c);
+        }
+        // Charts: bars on a baseline, and the one part the command changes.
+        "changeChartType" => {
+            pen.line(&[(1.5, 14.5), (8.5, 14.5)]);
+            pen.panel(2.0, 9.0, 4.0, 12.0, 0.5);
+            pen.panel(6.0, 6.0, 8.0, 12.0, 0.5);
+            pen.cycle(12.0, 5.5, 3.0, a);
+        }
+        "chartData" => {
+            pen.panel(1.5, 2.5, 14.5, 13.5, 1.0);
+            pen.inner(&[(1.5, 6.0), (14.5, 6.0)]);
+            pen.inner(&[(1.5, 9.75), (14.5, 9.75)]);
+            pen.inner(&[(6.0, 2.5), (6.0, 13.5)]);
+            pen.inner(&[(10.25, 2.5), (10.25, 13.5)]);
+            pen.block(11.5, 11.0, 13.25, 12.25, 0.5, a);
+        }
+        "chartTitle" => {
+            pen.block(4.0, 1.5, 12.0, 3.5, 0.75, a);
+            pen.line(&[(1.5, 14.5), (14.5, 14.5)]);
+            pen.panel(2.5, 9.0, 5.0, 12.0, 0.75);
+            pen.panel(6.75, 6.0, 9.25, 12.0, 0.75);
+            pen.panel(11.0, 8.0, 13.5, 12.0, 0.75);
+        }
+        "legend" => {
+            for (k, y) in [3.5_f32, 8.0, 12.5].into_iter().enumerate() {
+                if k == 0 {
+                    pen.block(1.5, y - 1.25, 4.0, y + 1.25, 0.5, a);
+                } else {
+                    pen.panel(1.5, y - 1.25, 4.0, y + 1.25, 0.5);
+                }
+                pen.line(&[(6.25, y), (14.5, y)]);
+            }
+        }
+        "dataLabels" => {
+            pen.line(&[(1.5, 14.5), (14.5, 14.5)]);
+            pen.panel(2.5, 9.0, 5.5, 12.0, 0.75);
+            pen.panel(10.5, 6.5, 13.5, 12.0, 0.75);
+            pen.rect_c(2.0, 4.0, 6.0, 6.5, 0.75, a);
+            pen.rect_c(10.0, 1.5, 14.0, 4.0, 0.75, a);
+        }
+        // WordArt: the letter in the fill colour, or drawn hollow.
+        "textFill" => {
+            pen.glyph_a(8.0, 10.0, 8.5, a, a);
+            pen.panel(1.5, 12.5, 14.5, 15.0, 0.75);
+        }
+        "textOutline" => {
+            pen.poly(&[(8.0, 1.5), (13.0, 11.0), (10.5, 11.0), (8.0, 6.0), (5.5, 11.0), (3.0, 11.0)], a);
+            pen.rect(1.5, 13.0, 14.5, 15.0, 0.75);
+        }
+        // Letters along an arch.
+        "transform" => {
+            pen.arc(8.0, 13.0, 6.5, 180.0, 360.0, a);
+            pen.glyph_a(8.0, 13.0, 4.0, c, c);
+        }
+        "addPen" => {
+            pen.pencil(0.0, 2.0, 0.8, c);
+            pen.plus(12.75, 3.25, green);
+        }
+        "altText" => {
+            // A small picture with lines of text beside and below it.
+            pen.picture(1.5, 1.5, 6.5);
+            pen.rows(10.25, 14.5, &[3.5, 6.5]);
+            pen.rows(1.5, 14.5, &[9.5]);
+            pen.rows(1.5, 10.0, &[12.5]);
+        }
+        "alignText" => {
+            // A box with its text lines in the middle, arrows to the top and bottom edges.
+            pen.panel(1.5, 1.5, 10.5, 14.5, 1.0);
+            pen.rows(3.75, 8.25, &[6.5, 9.5]);
+            pen.span(13.5, 2.0, 13.5, 14.0, a);
+        }
+        // Two boxes, the text running from the first into the second (broken: cut).
+        "textBoxLink" | "textBoxUnlink" => {
+            pen.panel(1.5, 1.5, 7.0, 7.0, 1.0);
+            pen.panel(9.0, 9.0, 14.5, 14.5, 1.0);
+            if name == "textBoxUnlink" {
+                pen.cross(4.75, 11.75, 1.5, red);
+            } else {
+                pen.acc(&[(4.25, 9.25), (4.25, 11.75), (6.5, 11.75)]);
+                pen.head(6.75, 11.75, 0.0, a);
+            }
+        }
+        // Developer › Controls: a field's frame with what it holds.
+        "ccRichText" => {
+            pen.rect_c(1.5, 3.0, 14.5, 13.0, 1.0, a);
+            pen.glyph_a(6.0, 10.5, 5.0, c, c);
+            pen.glyph_small_a(10.75, 10.5, 3.0, c);
+        }
+        "ccPlainText" => {
+            pen.rect_c(1.5, 3.0, 14.5, 13.0, 1.0, a);
+            pen.glyph_a(6.0, 10.5, 5.0, c, c);
+            pen.line(&[(10.5, 5.5), (10.5, 10.5)]);
+        }
+        "ccPicture" => {
+            pen.rect_c(1.5, 2.0, 14.5, 14.0, 1.0, a);
+            pen.line(&[(4.0, 11.5), (6.5, 8.0), (9.0, 10.5), (10.25, 9.25), (11.5, 10.5)]);
+            pen.dot(10.25, 5.25, 1.0, c);
+        }
+        "ccGallery" => {
+            pen.rect_c(1.5, 1.5, 14.5, 14.5, 1.0, a);
+            pen.block(4.0, 4.0, 7.25, 7.25, 0.5, c);
+            pen.block(8.75, 4.0, 12.0, 7.25, 0.5, c);
+            pen.rows(4.0, 12.0, &[10.5]);
+        }
+        "ccCheckBox" => {
+            pen.rect(2.5, 2.5, 13.5, 13.5, 1.0);
+            pen.check(8.0, 8.0, 1.2, a);
+        }
+        "ccComboBox" => {
+            pen.rect(1.5, 4.5, 14.5, 11.5, 1.0);
+            pen.rows(3.5, 7.5, &[8.0]);
+            pen.path(&[(9.75, 7.0), (11.25, 8.5), (12.75, 7.0)], a);
+        }
+        "ccDropDown" => {
+            pen.rect(1.5, 1.5, 14.5, 6.5, 1.0);
+            pen.path(&[(9.75, 3.25), (11.25, 4.75), (12.75, 3.25)], a);
+            pen.panel(1.5, 8.75, 11.0, 14.5, 1.0);
+            pen.rows(3.5, 9.0, &[11.75]);
+        }
+        "ccDate" => {
+            pen.panel(1.5, 2.5, 10.5, 11.5, 1.0);
+            pen.inner(&[(1.5, 5.5), (10.5, 5.5)]);
+            pen.dot(4.5, 8.5, 0.8, c);
+            pen.dot(7.5, 8.5, 0.8, a);
+            pen.path(&[(11.5, 12.0), (13.0, 13.5), (14.5, 12.0)], a);
+        }
+        "ccRepeat" => {
+            pen.rect_c(1.5, 1.5, 14.5, 14.5, 1.0, a);
+            pen.panel(4.0, 4.0, 12.0, 7.0, 0.5);
+            pen.panel(4.0, 9.0, 12.0, 12.0, 0.5);
+        }
+        "designMode" => {
+            pen.poly(&[(2.0, 2.0), (2.0, 14.0), (14.0, 14.0)], c);
+            pen.poly(&[(4.5, 8.5), (4.5, 11.5), (7.5, 11.5)], a);
+        }
         "dropdown" => pen.line(&[(4.0, 6.0), (8.0, 10.0), (12.0, 6.0)]),
         "more" => {
             for x in [3.0, 8.0, 13.0] {
@@ -1861,17 +2004,17 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.line(&[(8.5, 3.0), (13.5, 8.0), (8.5, 13.0)]);
         }
         // Read Aloud player
-        "mediaPlay" => pen.fill(&[(4.5, 2.5), (13.0, 8.0), (4.5, 13.5)], c),
-        "mediaPause" => {
+        "mediaPlay" | "replayPlay" => pen.fill(&[(4.5, 2.5), (13.0, 8.0), (4.5, 13.5)], c),
+        "mediaPause" | "replayPause" => {
             pen.block(3.5, 2.5, 6.5, 13.5, 0.75, c);
             pen.block(9.5, 2.5, 12.5, 13.5, 0.75, c);
         }
         "mediaStop" => pen.block(3.0, 3.0, 13.0, 13.0, 1.0, c),
-        "mediaPrev" => {
+        "mediaPrev" | "replayRewind" => {
             pen.block(2.5, 3.0, 4.5, 13.0, 0.5, c);
             pen.fill(&[(13.0, 3.0), (6.0, 8.0), (13.0, 13.0)], c);
         }
-        "mediaNext" => {
+        "mediaNext" | "replayForward" => {
             pen.block(11.5, 3.0, 13.5, 13.0, 0.5, c);
             pen.fill(&[(3.0, 3.0), (10.0, 8.0), (3.0, 13.0)], c);
         }
@@ -2210,10 +2353,69 @@ pub const NAMES: &[&str] = &[
     "addins",
     "discord",
     "help",
+    "enclose",
+    "phonetic",
+    "changeChartType",
+    "chartData",
+    "chartTitle",
+    "legend",
+    "dataLabels",
+    "textFill",
+    "textOutline",
+    "transform",
+    "addPen",
+    "replayRewind",
+    "replayPlay",
+    "replayPause",
+    "replayForward",
+    "altText",
+    "alignText",
+    "textBoxLink",
+    "textBoxUnlink",
+    "ccRichText",
+    "ccPlainText",
+    "ccPicture",
+    "ccGallery",
+    "ccCheckBox",
+    "ccComboBox",
+    "ccDropDown",
+    "ccDate",
+    "ccRepeat",
+    "designMode",
 ];
 
 /// Names that are deliberately the same drawing as another (aliases of one command or one idea).
-pub const ALIASES: &[(&str, &str)] = &[("search", "find"), ("drawTable", "draw")];
+pub const ALIASES: &[(&str, &str)] = &[
+    ("search", "find"),
+    ("drawTable", "draw"),
+    ("replayPlay", "mediaPlay"),
+    ("replayPause", "mediaPause"),
+    ("replayRewind", "mediaPrev"),
+    ("replayForward", "mediaNext"),
+];
+
+/// Draw an Insert › Icons library icon into `r` in `c`, from the same path data the inserted
+/// picture is rendered from (`wordcraft_render::icon_lib`).
+pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c: Color32) {
+    use wordcraft_render::icon_lib::{GRID, STROKE};
+    let s = r.width().min(r.height()) / GRID;
+    let o = r.center() - vec2(GRID / 2.0 * s, GRID / 2.0 * s);
+    let stroke = Stroke::new(STROKE * s, c);
+    for piece in icon.pieces() {
+        let pts: Vec<Pos2> = piece.points.iter().map(|q| pos2(o.x + q[0] * s, o.y + q[1] * s)).collect();
+        if piece.fill {
+            p.add(Shape::convex_polygon(pts, c, Stroke::NONE));
+        } else if piece.closed {
+            p.add(Shape::closed_line(pts, stroke));
+        } else {
+            // Round caps, as on the inserted picture.
+            for end in [pts.first(), pts.last()].into_iter().flatten() {
+                p.circle_filled(*end, stroke.width / 2.0, c);
+            }
+            p.add(Shape::line(pts, stroke));
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

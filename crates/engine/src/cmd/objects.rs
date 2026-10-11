@@ -4,9 +4,9 @@
 //! caret). Picture adjustments re-encode the bitmap (originals are kept for Reset Picture).
 
 use serde_json::{Value, json};
-use wordcraft_doc::para::{Float, InlineObject, Wrap};
-use wordcraft_doc::props::Rgb;
-use wordcraft_doc::{Pos, StoryRef};
+use wordcraft_doc::para::{Float, InlineObject, Wrap, WrapText};
+use wordcraft_doc::props::{Rgb, TextVert, VAlign};
+use wordcraft_doc::{Pos, StoryRef, TextBody};
 use wordcraft_geom::Spin;
 
 use super::sel_result;
@@ -31,6 +31,13 @@ fn has_floating(s: &Session) -> Option<&'static str> {
 /// Charts and diagrams are not written back on save yet, so their size, position and wrapping stay
 /// as imported: they can be selected and deleted, not moved, resized or arranged.
 const FROZEN: &str = "charts and diagrams can't be moved or resized yet";
+/// `has_movable` for Size: charts WordCraft can edit are drawn again at their new size.
+fn has_sizable(s: &Session) -> Option<&'static str> {
+    match selected(s) {
+        Some((_, InlineObject::Graphic { graphic, .. })) if graphic.chart.is_some() => None,
+        _ => has_movable(s),
+    }
+}
 /// `has_object` for the geometry commands: a chart or diagram is frozen.
 fn has_movable(s: &Session) -> Option<&'static str> {
     match selected(s) {
@@ -40,8 +47,16 @@ fn has_movable(s: &Session) -> Option<&'static str> {
 }
 fn has_group(s: &Session) -> Option<&'static str> {
     match selected(s) {
+        Some((_, o)) if o.is_canvas() => Some("a drawing canvas can't be ungrouped"),
         Some((_, InlineObject::Group { .. })) => None,
         _ => Some("select a group first"),
+    }
+}
+/// Shape Fill and Shape Outline: a shape, or a Drawing Canvas's background and border.
+fn has_shape_or_canvas(s: &Session) -> Option<&'static str> {
+    match selected(s) {
+        Some((_, o)) if o.is_canvas() => None,
+        _ => has_shape(s),
     }
 }
 fn can_group(s: &Session) -> Option<&'static str> {
@@ -56,7 +71,7 @@ fn has_shape(s: &Session) -> Option<&'static str> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("picture.size", "Size", "Picture Format › Size", size).params(r#"{"width"?: pt, "height"?: pt, "lockAspect"?: bool, "scale"?: percent}"#).when(has_movable),
+        CommandSpec::new("picture.size", "Size", "Picture Format › Size", size).params(r#"{"width"?: pt, "height"?: pt, "lockAspect"?: bool, "scale"?: percent}"#).when(has_sizable),
         CommandSpec::new("picture.crop", "Crop", "Picture Format › Size", |s, v| {
             let c = [p::f32(v, "left"), p::f32(v, "top"), p::f32(v, "right"), p::f32(v, "bottom")].map(|x| x.unwrap_or(0.0).clamp(0.0, 0.45));
             with_obj(s, |o| {
@@ -67,16 +82,16 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"left"?, "top"?, "right"?, "bottom"? (fractions 0–0.45)}"#)
         .when(has_picture),
+        // Kept for scripts written before every object had alt text: `object.altText` on a picture.
         CommandSpec::new("picture.altText", "Alt Text", "Picture Format › Accessibility", |s, v| {
-            let t = p::req_str(v, "text")?.to_string();
-            with_obj(s, |o| {
-                if let InlineObject::Image { alt, .. } = o {
-                    *alt = t.clone();
-                }
-            })
+            p::req_str(v, "text")?;
+            alt_text(s, v)
         })
-        .params(r#"{"text": string}"#)
+        .params(r#"{"text": string, "title"?: string, "decorative"?: bool}"#)
         .when(has_picture),
+        CommandSpec::new("object.altText", "Alt Text", "Shape Format › Accessibility", alt_text)
+            .params(r#"{"text"?: string, "title"?: string, "decorative"?: bool} (the selected picture, shape, text box, group or chart)"#)
+            .when(has_object),
         CommandSpec::new("picture.corrections", "Corrections", "Picture Format › Adjust", |s, v| {
             let b = p::f32(v, "brightness").unwrap_or(0.0).clamp(-100.0, 100.0);
             let c = p::f32(v, "contrast").unwrap_or(0.0).clamp(-100.0, 100.0);
@@ -105,6 +120,20 @@ pub fn specs() -> Vec<CommandSpec> {
             adjust(s, move |img| recolor(img, &mode, sat))
         })
         .params(r#"{"mode": "grayscale|sepia|washout|blackAndWhite|saturation|tint", "saturation"?: 0..400}"#)
+        .when(has_picture),
+        CommandSpec::new("picture.iconColor", "Icon Color", "Picture Format › Adjust", |s, v| {
+            let c = p::str(v, "color").and_then(Rgb::parse).ok_or_else(|| CmdError::Params("`color` (RRGGBB) is required".into()))?;
+            // One colour everywhere, transparency kept: recolours an inserted icon or other
+            // one-colour line art without redrawing it.
+            adjust(s, move |img| {
+                let mut rgba = img.to_rgba8();
+                for px in rgba.pixels_mut() {
+                    px.0 = [c.0, c.1, c.2, px.0[3]];
+                }
+                image::DynamicImage::ImageRgba8(rgba)
+            })
+        })
+        .params(r#"{"color": "RRGGBB"}"#)
         .when(has_picture),
         CommandSpec::new("picture.effects", "Artistic Effects", "Picture Format › Adjust", |s, v| {
             let e = p::str(v, "effect").unwrap_or("blur").to_string();
@@ -229,6 +258,13 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"wrap": "inline|square|tight|through|topAndBottom|behindText|inFrontOfText"}"#)
         .when(has_movable),
+        CommandSpec::new("arrange.wrapText", "Wrap Text Sides", "Layout › Arrange", |s, v| {
+            let side = p::str(v, "side").unwrap_or("bothSides");
+            let side = WrapText::from_ooxml(side).ok_or_else(|| CmdError::Params(format!("unknown side {side:?}")))?;
+            with_float(s, |f| f.wrap_text = side)
+        })
+        .params(r#"{"side": "bothSides|left|right|largest"}  (the sides of the selected Square, Tight or Through object text flows on; largest: the wider side, line by line)"#)
+        .when(has_movable),
         CommandSpec::new("arrange.position", "Position", "Layout › Arrange", |s, v| {
             let preset = p::str(v, "preset").unwrap_or("middleCenter").to_string();
             let (x, y) = (p::f32(v, "x"), p::f32(v, "y"));
@@ -308,25 +344,32 @@ pub fn specs() -> Vec<CommandSpec> {
             with_obj(s, |o| {
                 if let InlineObject::Shape { fill, .. } = o {
                     *fill = c;
+                } else if let Some(style) = super::canvas::style_mut(o) {
+                    style.fill = c;
                 }
             })
         })
-        .params(r#"{"color": "RRGGBB" | null}"#)
-        .when(has_shape),
+        .params(r#"{"color": "RRGGBB" | null}  (a selected drawing canvas: its background)"#)
+        .when(has_shape_or_canvas),
         CommandSpec::new("shape.outline", "Shape Outline", "Shape Format › Shape Styles", |s, v| {
             let c = p::str(v, "color").and_then(Rgb::parse);
-            let w = p::f32(v, "width");
+            let w = p::f32(v, "width").map(|w| w.clamp(0.0, 72.0));
             with_obj(s, |o| {
                 if let InlineObject::Shape { stroke, stroke_width, .. } = o {
                     *stroke = c;
                     if let Some(w) = w {
-                        *stroke_width = w.clamp(0.0, 72.0);
+                        *stroke_width = w;
+                    }
+                } else if let Some(style) = super::canvas::style_mut(o) {
+                    style.stroke = c;
+                    if let Some(w) = w {
+                        style.stroke_width = w;
                     }
                 }
             })
         })
-        .params(r#"{"color": "RRGGBB" | null, "width"?: pt}"#)
-        .when(has_shape),
+        .params(r#"{"color": "RRGGBB" | null, "width"?: pt}  (a selected drawing canvas: its border)"#)
+        .when(has_shape_or_canvas),
         CommandSpec::new("shape.effects", "Shape Effects", "Shape Format › Shape Styles", shape_effects)
             .params(
                 r#"{"shadow"?: preset|{"preset"?, "color"?: "RRGGBB", "transparency"?: %, "blur"?: pt, "distance"?: pt, "angle"?: deg}|null, "glow"?: pt|{"color"?: "RRGGBB", "size"?: pt, "transparency"?: %}|null, "softEdge"?: pt|null}  (shadow presets: offsetBottomRight, offsetBottom, offsetBottomLeft, offsetRight, offsetCenter, offsetLeft, offsetTopRight, offsetTop, offsetTopLeft; an omitted key is left as it is; applies to every shape in the selection)"#,
@@ -342,7 +385,128 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"kind": string}"#)
         .when(has_shape),
+        CommandSpec::new("shape.textDirection", "Text Direction", "Shape Format › Text", |s, v| {
+            let dir = p::str(v, "dir").unwrap_or("horz");
+            let vert = match dir {
+                "horz" | "horizontal" => TextVert::Horz,
+                "vert" | "rotate90" => TextVert::Vert,
+                "vert270" | "rotate270" => TextVert::Vert270,
+                "wordArtVert" | "stacked" => TextVert::Stacked,
+                other => return Err(CmdError::Params(format!("unknown text direction `{other}`"))),
+            };
+            set_text_body(s, |b| b.vert = vert)
+        })
+        .params(r#"{"dir": "horz|vert|vert270|wordArtVert"}  (horizontal, rotate all text 90°, 270°, stacked; the selected text box or the one the caret is in)"#)
+        .when(has_text_box),
+        CommandSpec::new("shape.alignText", "Align Text", "Shape Format › Text", |s, v| {
+            let anchor = match p::str(v, "anchor").unwrap_or("t") {
+                "t" | "top" => VAlign::Top,
+                "ctr" | "middle" | "center" => VAlign::Center,
+                "b" | "bottom" => VAlign::Bottom,
+                other => return Err(CmdError::Params(format!("unknown text alignment `{other}`"))),
+            };
+            set_text_body(s, |b| b.anchor = anchor)
+        })
+        .params(r#"{"anchor": "t|ctr|b"}  (top, middle, bottom of the box: for turned text, from the side its lines start on)"#)
+        .when(has_text_box),
+        CommandSpec::new("shape.link", "Create Link", "Shape Format › Text", link_text_box)
+            .params(r#"{"target": Pos | n}  (the empty text box the selected box's text continues in: its position, or its Selection Pane index)"#)
+            .when(can_link),
+        CommandSpec::new("shape.breakLink", "Break Link", "Shape Format › Text", |s, _| {
+            let (pos, id) = text_box_target(s).ok_or_else(|| CmdError::Disabled(NO_TEXT_BOX.into()))?;
+            let part = s.doc.parts.get_mut(&id).ok_or_else(|| CmdError::Failed("text box vanished".into()))?;
+            if part.body.next.take().is_none() {
+                return Err(CmdError::Disabled("this text box isn't linked to another".into()));
+            }
+            edit_obj(s, &pos, |_| {})?;
+            Ok(json!({"textBox": id}))
+        })
+        .params(r#"{}  (the text stops at the end of the selected box; the boxes after it go back to their own text)"#)
+        .when(|s| match text_box_target(s) {
+            Some((_, id)) if s.doc.parts.get(&id).is_some_and(|p| p.body.next.is_some()) => None,
+            _ => Some("select a text box linked to another first"),
+        }),
     ]
+}
+
+const NO_TEXT_BOX: &str = "select a text box first";
+
+fn has_text_box(s: &Session) -> Option<&'static str> {
+    if text_box_target(s).is_some() { None } else { Some(NO_TEXT_BOX) }
+}
+
+fn is_text_box(s: &Session, id: u32) -> bool {
+    s.doc.parts.get(&id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox)
+}
+
+/// The text box the Shape Format › Text commands work on: the selected one, or the one whose
+/// text the caret is in. Its U+FFFC's position and its story.
+pub fn text_box_target(s: &Session) -> Option<(Pos, u32)> {
+    if let Some((pos, InlineObject::Shape { story: Some(id), .. })) = selected(s)
+        && is_text_box(s, id)
+    {
+        return Some((pos, id));
+    }
+    let StoryRef::Part(id) = s.sel.focus.story else { return None };
+    if !is_text_box(s, id) {
+        return None;
+    }
+    let after = s.doc.text_box_anchor(id)?;
+    let off = after.off.checked_sub(wordcraft_doc::para::OBJ.len_utf8())?;
+    Some((Pos { off, ..after }, id))
+}
+
+/// Change the target text box's text direction, alignment or link.
+fn set_text_body(s: &mut Session, f: impl Fn(&mut TextBody)) -> CmdResult {
+    let (pos, id) = text_box_target(s).ok_or_else(|| CmdError::Disabled(NO_TEXT_BOX.into()))?;
+    let part = s.doc.parts.get_mut(&id).ok_or_else(|| CmdError::Failed("text box vanished".into()))?;
+    f(&mut part.body);
+    let body = part.body;
+    // Its paragraph is laid out again.
+    edit_obj(s, &pos, |_| {})?;
+    Ok(json!({"textBox": id, "body": body}))
+}
+
+fn can_link(s: &Session) -> Option<&'static str> {
+    match text_box_target(s) {
+        None => Some(NO_TEXT_BOX),
+        Some((_, id)) if s.doc.parts.get(&id).is_some_and(|p| p.body.next.is_some()) => Some("this text box is already linked: break the link first"),
+        Some(_) => None,
+    }
+}
+
+/// `shape.link`: the selected text box's text continues in the target box, which must be an
+/// empty text box no other box links to, and not one of those the text already runs through.
+fn link_text_box(s: &mut Session, v: &Value) -> CmdResult {
+    let (pos, from) = text_box_target(s).ok_or_else(|| CmdError::Disabled(NO_TEXT_BOX.into()))?;
+    let target = v.get("target").ok_or_else(|| CmdError::Params("`target`: the text box to link to".into()))?;
+    let at = match target.as_u64() {
+        Some(n) => all_objects(s).into_iter().nth(usize::try_from(n).unwrap_or(usize::MAX)).map(|(p, _)| p),
+        None => super::parse_pos(target),
+    }
+    .ok_or_else(|| CmdError::Params("no object there".into()))?;
+    let to = match s.doc.para_at(&at).and_then(|q| q.object_at(at.off)) {
+        Some(InlineObject::Shape { story: Some(id), .. }) if is_text_box(s, *id) => *id,
+        _ => return Err(CmdError::Params("the target isn't a text box".into())),
+    };
+    if s.doc.parts.get(&from).is_some_and(|p| p.body.next.is_some()) {
+        return Err(CmdError::Failed("this text box is already linked: break the link first".into()));
+    }
+    if to == from || s.doc.text_box_chain(from).is_some_and(|c| c.contains(&to)) {
+        return Err(CmdError::Failed("a text box can't link to itself or to a box its text already runs through".into()));
+    }
+    if s.doc.text_box_chains().iter().any(|c| c.iter().skip(1).any(|id| *id == to)) {
+        return Err(CmdError::Failed("another text box already links to that one".into()));
+    }
+    if !s.doc.plain_text(StoryRef::Part(to)).trim().is_empty() {
+        return Err(CmdError::Failed("the text box to link to must be empty".into()));
+    }
+    if let Some(p) = s.doc.parts.get_mut(&from) {
+        p.body.next = Some(to);
+    }
+    edit_obj(s, &pos, |_| {})?;
+    edit_obj(s, &at, |_| {})?;
+    Ok(json!({"textBox": from, "next": to}))
 }
 
 /// The selection when it is exactly one picture, shape or text box (its U+FFFC), rather than
@@ -633,6 +797,27 @@ fn obj_size(o: &InlineObject) -> (f32, f32) {
     o.frame().map_or((0.0, 0.0), |(w, h, _)| (w, h))
 }
 
+/// Alt Text: the selected object's description, title and decorative mark, in one undo step.
+fn alt_text(s: &mut Session, v: &Value) -> CmdResult {
+    let (text, title, decorative) = (p::str(v, "text"), p::str(v, "title"), p::bool(v, "decorative"));
+    if text.is_none() && title.is_none() && decorative.is_none() {
+        return Err(CmdError::Params("`text`, `title` or `decorative` is required".into()));
+    }
+    with_obj(s, |o| {
+        if let Some(t) = text {
+            o.set_alt_text(t);
+        }
+        if let Some(f) = o.float_mut() {
+            if let Some(t) = title {
+                f.alt.title = wordcraft_doc::para::cap_alt(t);
+            }
+            if let Some(d) = decorative {
+                f.alt.decorative = d;
+            }
+        }
+    })
+}
+
 fn with_obj(s: &mut Session, f: impl Fn(&mut InlineObject)) -> CmdResult {
     let (pos, _) = selected(s).ok_or_else(|| CmdError::Disabled("no picture or shape selected".into()))?;
     let o = edit_obj(s, &pos, f)?;
@@ -699,8 +884,13 @@ fn size(s: &mut Session, v: &Value) -> CmdResult {
         _ => {}
     }
     let (w, h) = (w.clamp(1.0, 4000.0), h.clamp(1.0, 4000.0));
-    // Any drawing: a group's members scale with its frame (its child space is kept).
-    with_obj(s, |o| o.set_size(w, h))
+    // Any drawing: a group's members scale with its frame (its child space is kept);
+    // a chart is redrawn at its new size.
+    let theme = s.doc.settings.theme_colors.clone();
+    with_obj(s, |o| {
+        o.set_size(w, h);
+        super::chart::redraw(o, &theme);
+    })
 }
 
 /// Apply an image operation to the selected picture's bitmap (stored as a new PNG).
@@ -940,6 +1130,9 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
         if matches!(obj, InlineObject::Graphic { .. }) {
             return Err(CmdError::Disabled(FROZEN.into()));
         }
+        if obj.is_canvas() {
+            return Err(CmdError::Disabled("a drawing canvas can't be grouped".into()));
+        }
         if !obj.is_floating() {
             return Err(CmdError::Disabled("objects in line with text can't be grouped: choose a text wrapping for them first".into()));
         }
@@ -978,15 +1171,18 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
             let mut obj = obj.clone();
             obj.set_size(cw, ch);
             if let Some(f) = obj.float_mut() {
-                *f = Float::default();
+                // Each member keeps its own alt text.
+                let alt = std::mem::take(&mut f.alt);
+                *f = Float { alt, ..Float::default() };
                 f.set_spin(spin);
             }
             GroupChild { x: x - x0, y: y - y0, obj }
         })
         .collect();
-    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| f.clone()).unwrap_or_default();
+    // The group takes the first member's placement; its members keep their own alt text.
+    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| Float { alt: Default::default(), ..f.clone() }).unwrap_or_default();
     float.set_spin(Spin::default());
-    let grouped = InlineObject::Group { w, h, float, ch_w: w, ch_h: h, children };
+    let grouped = InlineObject::Group { w, h, float, ch_w: w, ch_h: h, children, canvas: None };
     // Take the members out, last first so the earlier positions hold, and put the group where
     // the first one was.
     let len = wordcraft_doc::para::OBJ.len_utf8();
@@ -1035,7 +1231,9 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
             // Grown to its smallest size about its centre, so it stays centred where it was.
             let (x, y) = (x - (mw - cw) / 2.0, y - (mh - ch) / 2.0);
             if let Some(f) = c.float_mut() {
-                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), ..float.clone() };
+                // Each member keeps its own alt text; the group's placement is shared out.
+                let alt = std::mem::take(&mut f.alt);
+                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), alt, ..float.clone() };
                 f.set_spin(spin);
             }
             c
@@ -1195,6 +1393,13 @@ mod tests {
         assert_eq!(obj_size(&selected(&s).unwrap().1), (100.0, 50.0));
         s.run("picture.reset", &json!({})).unwrap();
         s.run("arrange.wrap", &json!({"wrap": "square"})).unwrap();
+        // Text on one side only (#354), one undo step; an unknown side is refused.
+        let side = |s: &Session| selected(s).unwrap().1.frame().unwrap().2.wrap_text;
+        s.run("arrange.wrapText", &json!({"side": "largest"})).unwrap();
+        assert_eq!(side(&s), WrapText::Largest);
+        assert!(s.run("arrange.wrapText", &json!({"side": "middle"})).is_err());
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(side(&s), WrapText::BothSides);
         s.run("arrange.position", &json!({"preset": "topRight"})).unwrap();
         let l = s.run("arrange.selectionPane", &json!({})).unwrap();
         assert_eq!(l.as_array().unwrap().len(), 1);
@@ -1429,5 +1634,80 @@ mod tests {
         let InlineObject::Image { alt, crop, .. } = o else { panic!("expected image") };
         assert_eq!(alt, "A red box");
         assert_eq!(crop, [0.1, 0.2, 0.05, 0.0]);
+    }
+
+    /// Shape Format › Text (#369): direction and alignment on the box the caret is in, then
+    /// Create Link to an empty box and Break Link, each one undo step.
+    #[test]
+    fn text_direction_alignment_and_links() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.textBox", &json!({"text": "Some text that flows on"})).unwrap();
+        let a = text_box_target(&s).unwrap().1;
+        s.run("shape.textDirection", &json!({"dir": "vert270"})).unwrap();
+        s.run("shape.alignText", &json!({"anchor": "ctr"})).unwrap();
+        let body = |s: &Session, id: u32| s.doc.parts.get(&id).unwrap().body;
+        assert_eq!((body(&s, a).vert, body(&s, a).anchor), (TextVert::Vert270, VAlign::Center));
+        assert!(s.run("shape.textDirection", &json!({"dir": "sideways"})).is_err());
+        assert_eq!(body(&s, a).vert, TextVert::Vert270, "a bad value changes nothing");
+
+        // A second, empty box after the first; link the first to it by its pane index.
+        s.run("caret.set", &json!({"pos": Pos::body(0, 3)})).unwrap();
+        s.run("insert.textBox", &json!({})).unwrap();
+        let b = text_box_target(&s).unwrap().1;
+        s.run("select.objects", &json!({"index": 0})).unwrap();
+        assert_eq!(text_box_target(&s).map(|t| t.1), Some(a));
+        s.run("shape.link", &json!({"target": 1})).unwrap();
+        assert_eq!(s.doc.text_box_chains(), vec![vec![a, b]]);
+        assert!(can_link(&s).is_some(), "linked once: Break Link first");
+        // The second box shows the first one's story.
+        let l = s.layout();
+        assert_eq!(
+            l.pages[0].items.iter().filter(|it| matches!(it, wordcraft_layout::Placed::Object { text_box: Some(t), .. } if *t == a)).count(),
+            2
+        );
+        // Linking back to the start, or to a box with text, is refused.
+        s.run("select.objects", &json!({"index": 1})).unwrap();
+        assert!(s.run("shape.link", &json!({"target": 0})).is_err());
+        s.run("select.objects", &json!({"index": 0})).unwrap();
+        s.run("shape.breakLink", &json!({})).unwrap();
+        assert!(s.doc.text_box_chains().is_empty());
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(s.doc.text_box_chains(), vec![vec![a, b]]);
+        s.run("edit.undo", &json!({})).unwrap();
+        assert!(s.doc.text_box_chains().is_empty());
+    }
+
+    #[test]
+    fn shape_alt_text_and_decorative_are_one_undo_step_each() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.shape", &json!({"kind": "ellipse"})).unwrap();
+        s.run("object.altText", &json!({"text": "A green circle", "title": "Logo"})).unwrap();
+        let (_, o) = selected(&s).unwrap();
+        assert_eq!((o.alt_text(), o.frame().map(|f| f.2.alt.title.as_str()), o.is_decorative()), ("A green circle", Some("Logo"), false));
+        s.run("object.altText", &json!({"decorative": true})).unwrap();
+        assert!(selected(&s).unwrap().1.is_decorative());
+        s.run("edit.undo", &json!({})).unwrap();
+        let (_, o) = selected(&s).unwrap();
+        assert!(!o.is_decorative() && o.alt_text() == "A green circle");
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.alt_text(), "");
+        // Hostile input is capped, and nothing to set is an error.
+        s.run("object.altText", &json!({"text": "x".repeat(50_000)})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.alt_text().len(), wordcraft_doc::para::MAX_ALT_TEXT);
+        assert!(s.run("object.altText", &json!({})).is_err());
+        // A picture-only alias stays a picture-only alias.
+        assert!(s.run("picture.altText", &json!({"text": "no"})).is_err());
+    }
+
+    #[test]
+    fn table_alt_text_sets_title_and_description() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.table", &json!({"rows": 2, "cols": 2})).unwrap();
+        s.run("table.altText", &json!({"title": "Prices", "text": "Prices by year"})).unwrap();
+        let t = s.doc.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t.clone()) } else { None }).unwrap();
+        assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), Some("Prices by year")));
+        s.run("table.altText", &json!({"text": ""})).unwrap();
+        let t = s.doc.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t.clone()) } else { None }).unwrap();
+        assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), None));
     }
 }
