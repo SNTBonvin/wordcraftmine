@@ -1728,14 +1728,26 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.panel(4.5, 6.0, 11.5, 14.5, 1.0);
             pen.span(4.5, 2.75, 11.5, 2.75, a);
         }
-        "cellAlign" => {
+        // Cell alignment: a cell with two text lines placed where the alignment puts them.
+        n if n.starts_with("cellAlign.") => {
+            let v = n.trim_start_matches("cellAlign.");
             pen.panel(1.5, 1.5, 14.5, 14.5, 1.0);
-            pen.acc(&[(5.0, 6.75), (11.0, 6.75)]);
-            pen.acc(&[(6.25, 9.25), (9.75, 9.25)]);
-            pen.inner(&[(8.0, 1.5), (8.0, 3.0)]);
-            pen.inner(&[(8.0, 13.0), (8.0, 14.5)]);
-            pen.inner(&[(1.5, 8.0), (3.0, 8.0)]);
-            pen.inner(&[(13.0, 8.0), (14.5, 8.0)]);
+            let y = if v.starts_with("top") {
+                4.75
+            } else if v.starts_with("bottom") {
+                8.25
+            } else {
+                6.5
+            };
+            let (long, short) = if v.ends_with("Left") {
+                ((4.25, 10.25), (4.25, 8.25))
+            } else if v.ends_with("Right") {
+                ((5.75, 11.75), (7.75, 11.75))
+            } else {
+                ((5.0, 11.0), (6.0, 10.0))
+            };
+            pen.acc(&[(long.0, y), (long.1, y)]);
+            pen.acc(&[(short.0, y + 3.0), (short.1, y + 3.0)]);
         }
         "textDirection" => {
             pen.glyph_a(5.5, 13.0, 10.0, c, c);
@@ -2140,7 +2152,15 @@ pub const NAMES: &[&str] = &[
     "distributeCols",
     "rowHeight",
     "colWidth",
-    "cellAlign",
+    "cellAlign.topLeft",
+    "cellAlign.topCenter",
+    "cellAlign.topRight",
+    "cellAlign.centerLeft",
+    "cellAlign.center",
+    "cellAlign.centerRight",
+    "cellAlign.bottomLeft",
+    "cellAlign.bottomCenter",
+    "cellAlign.bottomRight",
     "textDirection",
     "cellMargins",
     "repeatHeader",

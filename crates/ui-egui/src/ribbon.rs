@@ -1670,7 +1670,7 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
                 [("bottomLeft", "Align Bottom Left"), ("bottomCenter", "Align Bottom Center"), ("bottomRight", "Align Bottom Right")],
             ] {
                 for (v, tip) in row {
-                    small(ui, app, "cellAlign", None, tip, "table.cellAlign", json!({"value": v}), false);
+                    small(ui, app, &format!("cellAlign.{v}"), None, tip, "table.cellAlign", json!({"value": v}), false);
                 }
                 ui.end_row();
             }
