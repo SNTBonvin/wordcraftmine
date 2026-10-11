@@ -315,8 +315,6 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
         PartRels::default(),
     );
 
-    // Bibliography sources — package-root custom XML per ECMA-376 §15.2.
-
     // Media referenced by some drawing (orphan parts would make the package suspect).
     let mut media_types: BTreeMap<String, &str> = BTreeMap::new();
     for (key, file) in &wr.media_files {
@@ -1018,13 +1016,22 @@ pub(crate) fn from_source_type(st: &str) -> String {
     }
 }
 
+/// The document's citation style, APA when it has none, and a style sheet file name made from
+/// it (`\APA.XSL`, `\MLA.XSL`).
+fn bib_style(doc: &Document) -> (&str, String) {
+    let name = doc.settings.bib_style.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or("APA");
+    let file: String = name.chars().filter(char::is_ascii_alphanumeric).collect();
+    (name, format!("\\{}.XSL", if file.is_empty() { "APA" } else { &file }))
+}
+
 fn bibliography_xml(doc: &Document) -> Vec<u8> {
+    let (style_name, selected) = bib_style(doc);
     let mut w = W::new();
     w.open(
         "b:Sources",
         &[
-            ("SelectedStyle", r"\APA.XSL"),
-            ("StyleName", "APA"),
+            ("SelectedStyle", selected.as_str()),
+            ("StyleName", style_name),
             ("xmlns:b", "http://schemas.openxmlformats.org/officeDocument/2006/bibliography"),
             ("xmlns", "http://schemas.openxmlformats.org/officeDocument/2006/bibliography"),
         ],

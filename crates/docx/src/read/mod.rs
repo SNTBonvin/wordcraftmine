@@ -33,6 +33,19 @@ const MAX_PARTS: usize = 50_000;
 /// Most graphic work (items plus path segments, see `story::graphic_work`) built for one file's
 /// charts and diagrams; later ones are left empty.
 const MAX_GRAPHIC_WORK: usize = 2_000_000;
+/// Bibliography sources kept from a file (Word's own source manager holds far fewer).
+const MAX_SOURCES: usize = 10_000;
+/// Custom XML parts looked at for bibliography sources.
+const MAX_BIBLIOGRAPHY_PARTS: usize = 64;
+/// Characters kept of a bibliography's citation style name.
+const MAX_STYLE_NAME: usize = 64;
+
+/// Bibliography sources already read: tags, and (title, author) of untagged ones.
+#[derive(Default)]
+struct BibSeen {
+    tags: HashSet<String>,
+    untagged: HashSet<(String, String)>,
+}
 
 pub(crate) struct Reader<'p> {
     pkg: &'p Package,
@@ -147,21 +160,30 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         let ex = part(rt::COMMENTS_EX);
         lenient("comments", r.read_comments(&p, ex.as_deref()));
     }
-    if let Some(p) = part(rt::BIBLIOGRAPHY) {
-        lenient("bibliography", r.read_bibliography(&p));
-    }
+    // Bibliography sources live in a custom XML data store (`b:Sources`), related from the
+    // package root or the main part; Word's own files sometimes leave the relationship out, so
+    // the conventional `customXml/itemN.xml` names are tried too. Each part is read at most once.
+    let mut bib_parts: Vec<String> = Vec::new();
     for rel in root_rels.list.iter().chain(rels.list.iter()) {
-        if rel_is(&rel.kind, rt::CUSTOM_XML) && !rel.external {
-            lenient("customXml bibliography", r.read_bibliography(&rel.target));
-        }
-    }
-    if r.doc.sources.is_empty() {
-        for i in 1..=16 {
-            let path = format!("customXml/item{i}.xml");
-            if pkg.get(&path).is_some() {
-                lenient("customXml item", r.read_bibliography(&path));
+        if rel_is(&rel.kind, rt::CUSTOM_XML) && !rel.external && !bib_parts.contains(&rel.target) {
+            bib_parts.push(rel.target.clone());
+            if bib_parts.len() >= MAX_BIBLIOGRAPHY_PARTS {
+                break;
             }
         }
+    }
+    for i in 1..=16 {
+        let path = format!("customXml/item{i}.xml");
+        if bib_parts.len() < MAX_BIBLIOGRAPHY_PARTS && pkg.get(&path).is_some() && !bib_parts.contains(&path) {
+            bib_parts.push(path);
+        }
+    }
+    let mut seen_sources = BibSeen::default();
+    for path in &bib_parts {
+        if r.doc.sources.len() >= MAX_SOURCES {
+            break;
+        }
+        lenient("customXml bibliography", r.read_bibliography(path, &mut seen_sources));
     }
 
     if let Some(bg) = root.child("w:background").and_then(|b| b.attr("w:color")).and_then(Rgb::parse) {
@@ -824,14 +846,26 @@ impl Reader<'_> {
         Ok(())
     }
 
-    fn read_bibliography(&mut self, path: &str) -> Result<(), DocxError> {
+    /// Sources from a `b:Sources` custom XML part (other custom XML is left alone); at most
+    /// [`MAX_SOURCES`] in all, and the document's citation style from `StyleName`.
+    fn read_bibliography(&mut self, path: &str, seen: &mut BibSeen) -> Result<(), DocxError> {
         let Some(root) = self.xml(path)? else { return Ok(()) };
         if root.local() != "Sources" {
             return Ok(());
         }
+        if self.doc.settings.bib_style.is_none()
+            && let Some(name) = root.attrs.iter().find(|(k, _)| k.rsplit(':').next() == Some("StyleName")).map(|(_, v)| v.trim())
+            && !name.is_empty()
+        {
+            self.doc.settings.bib_style = Some(name.chars().take(MAX_STYLE_NAME).collect());
+        }
         let child_text = |el: &El, local: &str| el.els().find(|e| e.local() == local).map(|e| e.text()).unwrap_or_default();
 
         for src_el in root.els().filter(|e| e.local() == "Source") {
+            if self.doc.sources.len() >= MAX_SOURCES {
+                log::warn!("docx: more than {MAX_SOURCES} bibliography sources; the rest are dropped");
+                break;
+            }
             let tag = child_text(src_el, "Tag");
             let raw_kind = child_text(src_el, "SourceType");
             let kind = crate::write::from_source_type(&raw_kind);
@@ -867,13 +901,12 @@ impl Reader<'_> {
             let pages = child_text(src_el, "Pages");
             let url = child_text(src_el, "URL");
 
-            // Only add if has meaningful content and not already added
-            let is_duplicate = if !tag.is_empty() {
-                self.doc.sources.iter().any(|s| s.tag == tag)
-            } else {
-                self.doc.sources.iter().any(|s| s.title == title && s.author == author)
-            };
-            if (!tag.is_empty() || !title.is_empty() || !author.is_empty()) && !is_duplicate {
+            // Keep sources with some content, once each (by tag, or title and author untagged).
+            if tag.is_empty() && title.is_empty() && author.is_empty() {
+                continue;
+            }
+            let fresh = if tag.is_empty() { seen.untagged.insert((title.clone(), author.clone())) } else { seen.tags.insert(tag.clone()) };
+            if fresh {
                 self.doc.sources.push(wordcraft_doc::Source { tag, kind, author, title, year, city, publisher, journal, volume, pages, url });
             }
         }

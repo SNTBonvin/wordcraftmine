@@ -184,6 +184,28 @@ fn malformed_or_hostile_bibliography_never_panics() {
     }
 }
 
+/// A file with a huge number of bibliography sources (duplicates and distinct ones) reads in
+/// linear time and keeps at most 10,000 of them.
+#[test]
+fn hostile_bibliography_source_count_is_capped() {
+    let doc = format!("<w:document {W_NS}><w:body><w:p><w:r><w:t>body</w:t></w:r></w:p></w:body></w:document>");
+    let mut sources = String::from(r#"<b:Sources xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography" StyleName="MLA">"#);
+    for i in 0..60_000 {
+        sources.push_str(&format!("<b:Source><b:Tag>T{i}</b:Tag><b:Title>Title {i}</b:Title></b:Source>"));
+        // Untagged duplicates all collapse into one source.
+        sources.push_str("<b:Source><b:Title>Same</b:Title></b:Source>");
+    }
+    sources.push_str("</b:Sources>");
+    let root_rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="customXml/item1.xml"/></Relationships>"#;
+    let z = zip(&[("_rels/.rels", root_rels.as_bytes()), ("word/document.xml", doc.as_bytes()), ("customXml/item1.xml", sources.as_bytes())]);
+    let start = std::time::Instant::now();
+    let d = read(&z).unwrap();
+    assert_eq!(d.sources.len(), 10_000);
+    assert_eq!(d.sources.iter().filter(|s| s.tag.is_empty()).count(), 1, "untagged duplicates are kept once");
+    assert_eq!(d.settings.bib_style.as_deref(), Some("MLA"));
+    assert!(start.elapsed() < std::time::Duration::from_secs(30), "took {:?}", start.elapsed());
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 300, ..ProptestConfig::default() })]
 

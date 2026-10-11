@@ -297,6 +297,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 CmdError::Params(format!("style must be one of {:?}", STYLES.iter().map(|x| x.name).collect::<Vec<_>>()))
             })?;
             s.bib_style = st.name.to_string();
+            // Recorded in the document too, so a save keeps it.
+            s.doc.settings.bib_style = Some(st.name.to_string());
             update_citations(s)?;
             Ok(json!({"style": s.bib_style}))
         })
@@ -1009,6 +1011,22 @@ mod tests {
         let t = s2.doc.plain_text(StoryRef::Body);
         assert!(t.contains("(Rivera and Chen, 2021)"), "{t}");
         assert!(t.contains("Rivera, A. and Chen, M., 2021. Shared Spaces. Portland: Harbor Books."), "{t}");
+    }
+
+    #[test]
+    fn citation_style_survives_docx_save_and_reopen() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("references.citation", &json!({"source": {"author": "Rivera, Alex", "title": "Shared Spaces", "year": "2021"}})).unwrap();
+        s.run("references.citationStyle", &json!({"style": "Harvard (Anglia)"})).unwrap();
+        let bytes = wordcraft_docx::write(&s.doc).expect("docx write");
+        let doc = wordcraft_docx::read(&bytes).expect("docx read");
+        assert_eq!(doc.settings.bib_style.as_deref(), Some("Harvard (Anglia)"));
+        assert_eq!(Session::new(doc.clone()).bib_style, "Harvard (Anglia)");
+        let mut other = Session::new(wordcraft_doc::Document::new());
+        other.set_document(doc);
+        assert_eq!(other.bib_style, "Harvard (Anglia)");
+        // A document without a recorded style is APA.
+        assert_eq!(Session::new(wordcraft_doc::Document::new()).bib_style, "APA");
     }
 
     #[test]
