@@ -3135,6 +3135,8 @@ fn enclosed_characters_draw_a_shape_around_the_text() {
     assert!(!items.iter().any(|i| matches!(i, display::Draw::Shape { .. })));
     assert!(items.iter().any(|i| matches!(i, display::Draw::Glyphs { text, .. } if text.contains("=/"))), "{items:?}");
 }
+
+#[test]
 fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
     use wordcraft_doc::para::RubyAlign;
     let plain = Document::from_text("Plain words here");
@@ -3148,9 +3150,11 @@ fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
         base_size: 12.0,
         lang: String::new(),
         props: Default::default(),
+    };
     d.insert_object(&Pos::body(0, 6), ruby, &Default::default()).unwrap();
     let height = |l: &DocLayout| {
         l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { para.lines.first().map(|x| x.height) } else { None }).unwrap()
+    };
     let (lp, lr) = (lay(&plain), lay(&d));
     assert!(height(&lr) > height(&lp) + 3.0, "ruby line {} vs plain {}", height(&lr), height(&lp));
     let items = display::page_display(&d, &lr.pages[0], &Default::default());
@@ -3159,6 +3163,7 @@ fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
             display::Draw::Glyphs { text, glyphs, size, .. } if text.contains(want) => Some((*size, glyphs.clone())),
             _ => None,
         })
+    };
     let (_, line) = glyphs_of("Plain words").expect("base text drawn");
     let (size, over) = glyphs_of("a much longer reading").expect("ruby text drawn");
     let w = line[6]; // "Plain " then the base's first letter
@@ -3172,14 +3177,18 @@ fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
     assert_eq!(d.body[0].as_para().unwrap().plain_text(), "Plain words here");
     let (a, b) = (lr.caret(&Pos::body(0, 6)).unwrap(), lr.caret(&Pos::body(0, 9)).unwrap());
     assert!(b.x - a.x > 30.0, "{a:?} {b:?}");
+}
+
 /// #354: `wrapText`. Left: text only to the left of a centred object (Square or Tight); Right:
 /// only to its right; Largest: only on its wider side.
+#[test]
 fn wrap_text_keeps_text_on_one_side() {
     use wordcraft_doc::para::{Float, ShapeKind, Wrap, WrapText};
     // A 100pt shape at `x` in the 468pt column; the lines beside it.
     let beside = |kind, wrap, x: f32, side| {
         let f = Float { wrap, wrap_text: side, x, ..Default::default() };
         line_spans(&lay(&wrapped_shape_doc(kind, 100.0, 100.0, f))).into_iter().filter(|l| l.0 < 100.0).collect::<Vec<_>>()
+    };
     for (kind, wrap) in [(ShapeKind::Rectangle, Wrap::Square), (ShapeKind::Ellipse, Wrap::Tight)] {
         let both = beside(kind, wrap, 184.0, WrapText::BothSides);
         assert!(both.iter().any(|l| l.2 < 1.0) && both.iter().any(|l| l.2 > 200.0), "{both:?}");
@@ -3196,3 +3205,4 @@ fn wrap_text_keeps_text_on_one_side() {
     assert!(!near_left.is_empty() && near_left.iter().all(|l| l.2 >= 209.0 - 0.01), "{near_left:?}");
     let near_right = beside(ShapeKind::Rectangle, Wrap::Square, 268.0, WrapText::Largest);
     assert!(!near_right.is_empty() && near_right.iter().all(|l| l.2 < 1.0 && l.3 <= 259.0 + 0.01), "{near_right:?}");
+}

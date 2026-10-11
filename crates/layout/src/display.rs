@@ -830,6 +830,8 @@ fn lines(
         for r in pl.rubies.iter().filter(|r| (line.c0..line.c1).contains(&r.cluster)) {
             let Some(bst) = pl.clusters.get(r.cluster).and_then(|c| pl.styles.get(c.style as usize)) else { continue };
             if bst.rc.del.is_some() && !opts.markup {
+                continue;
+            }
             let cx = x + line.cl_left(r.cluster).unwrap_or(0.0);
             let y = base - bst.shift - r.raise;
             let mut i = 0;
@@ -851,6 +853,8 @@ fn lines(
                     link: None,
                     ranges,
                 });
+            }
+        }
         // Formatting marks.
         if opts.marks {
             let msize = pl.styles.first().map(|s| s.size).unwrap_or(11.0);
