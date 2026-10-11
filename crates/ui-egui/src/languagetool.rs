@@ -46,7 +46,7 @@ pub struct LtLink {
     /// Checking stopped until the settings change (rejected key, bad address).
     stopped: Option<String>,
     /// Texts not to send again.
-    skipped: HashSet<String>,
+    skipped: HashSet<(String, String)>,
     /// Paragraphs checked since the settings last changed.
     pub checked: u64,
     /// The last failure, shown in Options.
@@ -255,7 +255,7 @@ fn take_results(app: &mut WordApp, ctx: &egui::Context, now: f64) {
         lt.idle_rev = None;
         match done.result {
             Ok(issues) => {
-                wordcraft_proof::external::put(&done.text, issues);
+                wordcraft_proof::external::put(&done.text, &done.language, issues);
                 lt.checked = lt.checked.saturating_add(1);
                 lt.last_error = None;
                 changed = true;
@@ -264,7 +264,7 @@ fn take_results(app: &mut WordApp, ctx: &egui::Context, now: f64) {
                 if lt.skipped.len() >= MAX_SKIPPED {
                     lt.skipped.clear();
                 }
-                lt.skipped.insert(done.text);
+                lt.skipped.insert((done.language, done.text));
                 lt.last_error = Some(e.to_string());
             }
             Err(e @ (LtError::BadServer(_) | LtError::Unsupported(_))) => lt.stopped = Some(e.to_string()),
@@ -296,13 +296,17 @@ fn next_job(app: &WordApp, settings: &Settings) -> Option<Job> {
             continue;
         }
         let text = wordcraft_engine::layout::para::proof_text(p);
-        if wordcraft_proof::external::has(&text) || lt.skipped.contains(&text) {
-            continue;
-        }
         let plain = CharProps::default();
         let first = p.run_ranges().next().map(|(_, c)| c).unwrap_or(&plain);
         let lang = doc.styles.resolve_char(p.props.style.as_deref(), first).lang;
         let language = settings.language_for(lang.as_deref());
+        // A result in another language (the paragraph's language changed since) is asked for
+        // again (#575 review).
+        let key = (language, text);
+        if wordcraft_proof::external::has(&key.1, &key.0) || lt.skipped.contains(&key) {
+            continue;
+        }
+        let (language, text) = key;
         return Some(Job { text, language });
     }
     None

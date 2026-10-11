@@ -22,6 +22,8 @@ pub struct Job {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Done {
     pub text: String,
+    /// The language it was checked in (the job's).
+    pub language: String,
     pub result: Result<Vec<Issue>, LtError>,
 }
 
@@ -115,7 +117,7 @@ fn run(settings: &Settings, pacing: Pacing, mut transport: Transport, jobs: &Rec
             // Never the text, the key or the request body: only what went wrong.
             log::warn!("LanguageTool check failed: {e}");
         }
-        if done.send(Done { text: job.text, result }).is_err() {
+        if done.send(Done { text: job.text, language: job.language, result }).is_err() {
             break;
         }
         wake();
