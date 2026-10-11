@@ -1,5 +1,6 @@
 //! Word-style keytips: Alt (or F10) shows letter badges over ribbon tabs, then over a tab's
-//! controls; the badge's command runs on press. Typing never reaches the document while active.
+//! controls; numbered badges also reach the customized Quick Access Toolbar. Typing never
+//! reaches the document while active.
 
 use egui::{Align2, CornerRadius, Rect, Stroke, Ui, Vec2};
 
@@ -463,17 +464,20 @@ pub fn controls_public(tab: &str) -> Vec<ControlInfo> {
         .collect()
 }
 
-/// A keytip badge: one letter in a small rounded square, high contrast in both themes.
+/// A keytip badge: letters or toolbar numbers, high contrast in both themes.
 pub fn badge(ui: &Ui, rect: Rect, letter: &str) {
-    if letter.is_empty() || letter.chars().count() > 1 {
+    let count = letter.chars().count();
+    if count == 0 || count > 4 {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let r = Rect::from_min_size(rect.min + Vec2::new(2.0, 1.0), Vec2::splat(15.0));
+    let font = semibold(if count > 3 { 8.5 } else { 10.0 });
+    let width = ui.ctx().fonts_mut(|f| f.layout_no_wrap(letter.to_string(), font.clone(), t.on_accent).size().x);
+    let r = Rect::from_min_size(rect.min + Vec2::new(2.0, 1.0), Vec2::new((width + 4.0).max(15.0), 15.0));
     let p = ui.painter();
     p.rect_filled(r, CornerRadius::same(3), t.accent);
     p.rect_stroke(r, CornerRadius::same(3), Stroke::new(1.0, t.menu), egui::StrokeKind::Inside);
-    p.text(r.center(), Align2::CENTER_CENTER, letter, semibold(10.0), t.on_accent);
+    p.text(r.center(), Align2::CENTER_CENTER, letter, font, t.on_accent);
 }
 
 /// Record a tab badge over a tab's real rect, called as each tab is laid out.
@@ -512,10 +516,15 @@ pub fn handle_key(app: &mut WordApp, key: egui::Key) -> bool {
             }
             k => {
                 let Some(name) = keys::key_name(k).map(|n| n.to_ascii_uppercase()) else {
-                    // A key with no keytip (digits, punctuation, arrows) cancels, as in Word.
+                    // A key with no keytip cancels the mode.
                     app.ui.keytips = Phase::Off;
+                    app.ui.keytip_prefix.clear();
                     return true;
                 };
+                if app.ui.keytips == Phase::Tabs && (name.chars().all(|c| c.is_ascii_digit()) || !app.ui.keytip_prefix.is_empty()) {
+                    qat_key(app, &name);
+                    return true;
+                }
                 match app.ui.keytips {
                     Phase::Tabs => {
                         let mut hit: Option<&'static str> = None;
@@ -553,14 +562,51 @@ pub fn handle_key(app: &mut WordApp, key: egui::Key) -> bool {
                 }
             }
         }
+        app.ui.keytip_prefix.clear();
         return true;
     }
     false
 }
 
+/// The first nine buttons use one digit. Further buttons use a leading zero and equally wide
+/// numbers, so no complete badge is the prefix of another, even for the maximum-size toolbar.
+pub(crate) fn qat_label(index: usize, count: usize) -> String {
+    if index < 9 {
+        (index + 1).to_string()
+    } else {
+        let width = count.saturating_sub(9).to_string().len();
+        format!("0{:0width$}", index.saturating_sub(8))
+    }
+}
+
+fn qat_key(app: &mut WordApp, name: &str) {
+    app.ui.keytip_prefix.push_str(name);
+    let ids = app.session.ribbon.qat();
+    let mut hit = None;
+    let mut pending = false;
+    for (index, id) in ids.iter().enumerate() {
+        let label = qat_label(index, ids.len());
+        if label == app.ui.keytip_prefix {
+            hit = Some((*id).to_string());
+            break;
+        }
+        pending |= label.starts_with(&app.ui.keytip_prefix);
+    }
+    if hit.is_some() || !pending {
+        app.ui.keytips = Phase::Off;
+        app.ui.keytip_prefix.clear();
+        if let Some(id) = hit
+            && crate::chrome::qat_enabled(app, &id)
+        {
+            let _ = app.run(&id, serde_json::json!({}));
+        }
+    }
+}
+
 /// Alt (or F10) turns keytips on: the first press shows the tab badges.
 pub fn activate(app: &mut WordApp) {
-    if app.ui.keytips == Phase::Off {
+    if app.ui.keytips_enabled && app.ui.keytips == Phase::Off {
+        app.ui.keytip_prefix.clear();
         app.ui.keytips = Phase::Tabs;
     }
 }
@@ -571,7 +617,7 @@ use crate::keys;
 /// (not the canvas) has focus; the canvas lets Alt open keytips and `canvas_events` swallows
 /// typing while they show.
 pub fn suppressed(app: &WordApp, ctx: &egui::Context) -> bool {
-    app.ui.backstage || app.dialog.is_some() || (ctx.egui_wants_keyboard_input() && !app.canvas.focused)
+    !app.ui.keytips_enabled || app.ui.backstage || app.dialog.is_some() || (ctx.egui_wants_keyboard_input() && !app.canvas.focused)
 }
 
 /// Read keytip input every frame, before layout, so the frame paints the new state. Suppression
@@ -584,6 +630,12 @@ pub fn suppressed(app: &WordApp, ctx: &egui::Context) -> bool {
 pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
     if suppressed(app, ctx) {
         app.ui.keytips = Phase::Off;
+        app.ui.keytip_prefix.clear();
+        app.keytip_rects.clear();
+        ctx.data_mut(|d| {
+            d.insert_temp(phase_id(), Phase::Off);
+            d.remove::<Vec<(Rect, String)>>(rects_id());
+        });
         return;
     }
     // On macOS Option+key types accents, so Alt must never arm keytips there.
@@ -626,19 +678,36 @@ pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
         }
     }
     // Route letter/navigation keys to the keytips while they are showing.
+    let mut consumed = Vec::new();
     for e in &events {
         if let egui::Event::Key { key, pressed: true, modifiers, .. } = e
             && app.ui.keytips != Phase::Off
             && !is_alt(*key)
             && (*key != egui::Key::F10 || modifiers.any())
+            && handle_key(app, *key)
         {
-            handle_key(app, *key);
+            consumed.push(*key);
         }
+    }
+    // A badge can turn the mode off before canvas_events runs. Consume both the key and its
+    // text event now, or the digit/letter would also be typed into the document (#620).
+    if !consumed.is_empty() {
+        ctx.input_mut(|i| {
+            i.events.retain(|e| match e {
+                egui::Event::Key { key, pressed: true, .. } => !consumed.contains(key),
+                egui::Event::Text(_) => false,
+                _ => true,
+            });
+        });
     }
     if ALT_ARMS && alt_released && !other_key {
         app.ui.keytips = if app.ui.keytips == Phase::Tabs { Phase::Off } else { Phase::Tabs };
+        app.ui.keytip_prefix.clear();
     } else if f10 {
         activate(app);
+    }
+    if app.ui.keytips == Phase::Off {
+        app.ui.keytip_prefix.clear();
     }
     // Publish the state the ribbon widgets read to place their badges, and clear last frame's.
     ctx.data_mut(|d| {
@@ -808,5 +877,122 @@ mod tests {
         assert_eq!(a.ui.keytips, Phase::Commands);
         assert!(handle_key(&mut a, egui::Key::F));
         assert_eq!(a.ui.keytips, Phase::Off);
+    }
+
+    #[test]
+    fn qat_keytips_follow_custom_order_and_skip_disabled_commands() {
+        let mut a = app();
+        a.run("tools.customizeRibbon", serde_json::json!({"qatAdd": "format.bold"})).unwrap();
+        a.run("tools.customizeRibbon", serde_json::json!({"qatAdd": "format.italic"})).unwrap();
+        a.run("tools.customizeRibbon", serde_json::json!({"qatMove": {"command": "format.bold", "by": -4}})).unwrap();
+        let bold_index = a.session.ribbon.qat().iter().position(|id| *id == "format.bold").unwrap();
+        assert_eq!(bold_index, 0);
+        activate(&mut a);
+        handle_key(&mut a, egui::Key::Num1);
+        assert_eq!(a.session.run("format.state", &serde_json::json!({})).unwrap()["bold"], true);
+        assert_eq!(a.ui.keytips, Phase::Off);
+
+        let mut b = app();
+        let before = b.session.doc.clone();
+        activate(&mut b);
+        handle_key(&mut b, egui::Key::Num2); // Undo is disabled in an untouched document.
+        assert_eq!(b.session.doc, before);
+        assert!(!b.session.can_redo());
+        assert_eq!(b.ui.keytips, Phase::Off);
+    }
+
+    #[test]
+    fn long_qat_badges_wait_for_the_complete_number_and_escape_cancels() {
+        let mut a = app();
+        let mut commands: Vec<String> =
+            a.session.registry.all().iter().filter(|s| s.id != "format.bold").take(19).map(|s| s.id.to_string()).collect();
+        commands.insert(9, "format.bold".into());
+        a.session.ribbon.qat = Some(commands);
+        activate(&mut a);
+        handle_key(&mut a, egui::Key::Num0);
+        handle_key(&mut a, egui::Key::Num0);
+        assert_eq!(a.ui.keytips, Phase::Tabs);
+        assert_eq!(a.session.run("format.state", &serde_json::json!({})).unwrap()["bold"], false);
+        handle_key(&mut a, egui::Key::Num1); // 001: first button after the first nine.
+        assert_eq!(a.session.run("format.state", &serde_json::json!({})).unwrap()["bold"], true);
+        assert_eq!(a.ui.keytips, Phase::Off);
+        activate(&mut a);
+        handle_key(&mut a, egui::Key::Num0);
+        handle_key(&mut a, egui::Key::Escape);
+        assert!(a.ui.keytip_prefix.is_empty());
+        assert_eq!(a.ui.keytips, Phase::Off);
+
+        for count in [9, 10, 18, 19, 100, 200] {
+            let labels: Vec<_> = (0..count).map(|i| qat_label(i, count)).collect();
+            for (i, label) in labels.iter().enumerate() {
+                assert!(
+                    !labels.iter().enumerate().any(|(j, other)| i != j && other.starts_with(label)),
+                    "ambiguous label {label} in {count} buttons"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn qat_digit_runs_once_and_never_types_into_the_document() {
+        let mut a = app();
+        a.session.ribbon.qat = Some(vec!["text.insert".into(), "format.bold".into()]);
+        a.canvas.focused = true;
+        a.canvas.want_focus = true;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let key = |key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        h.input_mut().events.push(key(egui::Key::F10));
+        h.step();
+        assert_eq!(h.state().ui.keytips, Phase::Tabs);
+        h.input_mut().events.extend([key(egui::Key::Num2), egui::Event::Text("2".into())]);
+        h.step();
+        assert_eq!(h.state().ui.keytips, Phase::Off);
+        assert_eq!(h.state_mut().session.run("format.state", &serde_json::json!({})).unwrap()["bold"], true);
+        assert!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).is_empty());
+        // Normal typing resumes immediately after the command.
+        h.input_mut().events.push(egui::Event::Text("hello".into()));
+        h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "hello");
+    }
+
+    #[test]
+    fn keytips_option_persists_and_disabled_keytips_leave_f10_alone() {
+        let mut a = app();
+        activate(&mut a);
+        a.run("ui.keytips", serde_json::json!({"value": false})).unwrap();
+        assert_eq!(a.ui.keytips, Phase::Off);
+        assert!(a.run("ui.keytips", serde_json::json!({"value": "false"})).is_err());
+        let saved = serde_json::to_vec(&a.prefs()).unwrap();
+        let mut b = app();
+        b.apply_prefs(serde_json::from_slice(&saved).unwrap());
+        activate(&mut b);
+        assert_eq!(b.ui.keytips, Phase::Off);
+        assert_eq!(b.run("ui.keytips", serde_json::json!({})).unwrap()["enabled"], false);
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F10,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ui| logic(&mut b, ui.ctx()),
+        );
+        output.textures_delta.clear();
+        assert_eq!(b.ui.keytips, Phase::Off);
+        b.apply_prefs(serde_json::from_str("{}").unwrap());
+        assert!(b.ui.keytips_enabled, "older preferences retain enabled KeyTips");
     }
 }

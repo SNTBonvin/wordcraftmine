@@ -119,6 +119,11 @@ pub struct UiState {
     /// Read Aloud speed (1 = normal) and whether it skips citations and bibliographies.
     pub read_aloud_rate: f32,
     pub read_aloud_skip_citations: bool,
+    /// Show ribbon and Quick Access Toolbar KeyTips on Alt/F10 (#620).
+    pub keytips_enabled: bool,
+    /// Digits entered for a multi-key Quick Access Toolbar badge; never persisted.
+    #[serde(skip)]
+    pub keytip_prefix: String,
     /// Keytips (Alt) state; not persisted, it resets each session.
     #[serde(skip)]
     pub keytips: crate::keytips::Phase,
@@ -156,6 +161,8 @@ impl Default for UiState {
             editing: wordcraft_engine::Prefs::default(),
             read_aloud_rate: 1.0,
             read_aloud_skip_citations: true,
+            keytips_enabled: true,
+            keytip_prefix: String::new(),
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
@@ -623,6 +630,17 @@ impl WordApp {
             "ui.collapseRibbon" => {
                 self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
                 json!({"collapsed": self.ui.ribbon_collapsed})
+            }
+            "ui.keytips" => {
+                if let Some(v) = p.get("value") {
+                    let Some(enabled) = v.as_bool() else { return Some(Err("`value` must be a boolean".into())) };
+                    self.ui.keytips_enabled = enabled;
+                    if !enabled {
+                        self.ui.keytips = keytips::Phase::Off;
+                        self.ui.keytip_prefix.clear();
+                    }
+                }
+                json!({"enabled": self.ui.keytips_enabled})
             }
             "ui.dark" => {
                 // A manual Light/Dark switch (toggles what is shown when no value is given).
