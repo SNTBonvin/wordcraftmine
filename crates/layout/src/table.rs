@@ -164,6 +164,7 @@ pub fn measure_table_columns(doc: &wordcraft_doc::Document, t: &Table) -> Vec<(f
                 label: None,
                 fields: &fields,
                 show_hidden: false,
+                field_codes: false,
                 hide_deleted: false,
                 table: text.as_ref(),
                 proofing: false,
@@ -685,7 +686,7 @@ pub fn split_row(row: &RowLayout, cut: f32) -> Option<(RowLayout, RowLayout)> {
                     }
                 }
             }
-            Placed::Image { rect, .. } | Placed::Shape { rect, .. } | Placed::Graphic { rect, .. } => {
+            Placed::Image { rect, .. } | Placed::Shape { rect, .. } | Placed::Graphic { rect, .. } | Placed::Clip { rect, .. } => {
                 if rect.bottom() <= cut + 0.01 {
                     kept_any = true;
                 } else {
@@ -752,7 +753,11 @@ pub fn split_row(row: &RowLayout, cut: f32) -> Option<(RowLayout, RowLayout)> {
                     });
                 }
             }
-            Placed::Image { rect, .. } | Placed::Shape { rect, .. } | Placed::Graphic { rect, .. } | Placed::Object { rect, .. } => {
+            Placed::Image { rect, .. }
+            | Placed::Shape { rect, .. }
+            | Placed::Graphic { rect, .. }
+            | Placed::Clip { rect, .. }
+            | Placed::Object { rect, .. } => {
                 if rect.bottom() <= cut + 0.01 {
                     a.push(it.clone());
                 } else {

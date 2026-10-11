@@ -327,3 +327,157 @@ fn tracked_enter_and_backspace_track_the_paragraph_mark() {
     assert_eq!(s.sel.focus, Pos::body(0, 3));
     assert!(s.doc.para_at(&Pos::body(0, 0)).is_some_and(|p| p.mark.del.is_some()));
 }
+
+/// Linked text in each body paragraph, and whether its paragraph mark carries a link.
+fn links(s: &Session) -> Vec<(String, bool)> {
+    s.doc
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .map(|p| {
+            let linked = p.run_ranges().filter(|(_, c)| c.link.is_some()).filter_map(|(r, _)| p.text.get(r)).collect();
+            (linked, p.mark.link.is_some())
+        })
+        .collect()
+}
+
+#[test]
+fn a_link_covers_only_its_own_text() {
+    // Issue #413: linking a whole paragraph also linked its mark, so Enter carried the link into
+    // the next paragraph and everything typed there (or hovered below it) became the link.
+    let mut s = typed("hi\nhello");
+    run(&mut s, "select.text", json!({"text": "hello"}));
+    run(&mut s, "insert.link", json!({"url": "https://example.org/"}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 5}}));
+    typ(&mut s, "\nnext");
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 0}}));
+    typ(&mut s, "\n");
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 0}}));
+    typ(&mut s, "above");
+    assert_eq!(texts(&s), ["hi", "above", "hello", "next"]);
+    let unlinked = (String::new(), false);
+    assert_eq!(links(&s), [unlinked.clone(), unlinked.clone(), ("Hello".into(), false), unlinked]);
+}
+
+#[test]
+fn typing_at_either_end_of_a_link_is_not_linked() {
+    // As in Word: a link typed in with Ctrl+K, then text typed after it, at its end later on,
+    // at its start, or after Enter, stays outside the link; typing inside it extends it.
+    let mut s = typed("see ");
+    run(&mut s, "insert.link", json!({"url": "https://example.org/", "text": "site"}));
+    typ(&mut s, " now");
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 8}}));
+    typ(&mut s, "!");
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 4}}));
+    typ(&mut s, "a ");
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 8}}));
+    typ(&mut s, "x");
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 11}}));
+    typ(&mut s, "\nmore");
+    assert_eq!(texts(&s), ["see a sixte", "more! now"]);
+    assert_eq!(links(&s), [("sixte".into(), false), (String::new(), false)]);
+}
+
+/// Press a shortcut the way the keyboard does: run the command bound to it.
+fn press(s: &mut Session, combo: &str) -> Result<serde_json::Value, crate::CmdError> {
+    let id = s.registry.by_shortcut(combo).map(|c| c.id).unwrap_or_else(|| panic!("nothing bound to {combo}"));
+    s.run(id, &json!({}))
+}
+
+/// Word's outline keys: Alt+Shift+arrows, ⌃⇧+arrows on macOS.
+fn outline_key(arrow: &str) -> String {
+    if cfg!(target_os = "macos") { format!("Ctrl+Shift+{arrow}") } else { format!("Alt+Shift+{arrow}") }
+}
+
+#[test]
+fn alt_shift_down_then_up_moves_a_paragraph_and_back_and_undoes() {
+    let mut s = typed("One\nTwo\nThree");
+    run(&mut s, "caret.docStart", json!({}));
+    press(&mut s, &outline_key("Down")).unwrap();
+    assert_eq!(texts(&s), ["two", "one", "three"]);
+    assert_eq!(s.sel.focus, Pos::body(1, 0), "the caret moves with the paragraph");
+    press(&mut s, &outline_key("Up")).unwrap();
+    assert_eq!(texts(&s), ["one", "two", "three"]);
+    assert!(press(&mut s, &outline_key("Up")).is_err(), "nothing above the first paragraph");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["two", "one", "three"], "each move is one undo step");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["one", "two", "three"]);
+    // A selected paragraph (with its mark) moves alone; list items keep their list.
+    let mut s = typed("1. First\nSecond\n\nAfter");
+    run(&mut s, "select.paragraph", json!({}));
+    press(&mut s, &outline_key("Up")).unwrap();
+    assert_eq!(paras(&s), vec![para("First", Some(0)), para("After", None), para("Second", Some(0))]);
+    assert!(press(&mut s, &outline_key("Down")).is_ok());
+    assert!(press(&mut s, &outline_key("Down")).is_err(), "nothing below the last paragraph");
+}
+
+fn style_of(s: &Session, i: usize) -> Option<String> {
+    s.doc.body.get(i).and_then(|b| b.as_para()).and_then(|p| p.props.style.clone())
+}
+
+#[test]
+fn alt_shift_left_and_right_promote_and_demote_headings_and_list_items() {
+    let mut s = typed("Intro\nBody");
+    run(&mut s, "caret.docStart", json!({}));
+    run(&mut s, "para.heading2", json!({}));
+    run(&mut s, "caret.docEnd", json!({}));
+    // Promoted body text takes the level of the heading before it; then one level at a time.
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading2"));
+    press(&mut s, &outline_key("Right")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading3"));
+    press(&mut s, &outline_key("Left")).unwrap();
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading1"));
+    assert!(press(&mut s, &outline_key("Left")).is_err(), "Heading 1 is the top level");
+    for _ in 0..8 {
+        press(&mut s, &outline_key("Right")).unwrap();
+    }
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading9"));
+    assert!(press(&mut s, &outline_key("Right")).is_err(), "Heading 9 is the lowest heading");
+    // In a list they change the item's level, like Tab and Shift+Tab.
+    let mut s = typed("* One\nTwo");
+    press(&mut s, &outline_key("Right")).unwrap();
+    assert_eq!(paras(&s), vec![para("One", Some(0)), para("Two", Some(1))]);
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(paras(&s), vec![para("One", Some(0)), para("Two", Some(0))]);
+}
+
+#[test]
+fn alt_x_toggles_between_a_character_and_its_code() {
+    if !cfg!(target_os = "macos") {
+        assert_eq!(s().registry.by_shortcut("Alt+X").map(|c| c.id), Some("text.toggleUnicode"));
+    }
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "x 00e9"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é"]);
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x 00e9"]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["x é"], "one undo step");
+    run(&mut s, "text.insert", json!({"text": " U+1F600"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é 😀"]);
+    // A selected code converts too.
+    run(&mut s, "text.insert", json!({"text": " 2014"}));
+    run(&mut s, "select.text", json!({"text": "2014"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é 😀 —"]);
+}
+
+#[test]
+fn shift_f5_goes_back_through_the_last_edits() {
+    let mut s = typed("One\nTwo\nThree");
+    run(&mut s, "caret.docStart", json!({}));
+    let mut back = || {
+        press(&mut s, "Shift+F5").unwrap();
+        s.sel.focus.clone()
+    };
+    assert_eq!(back(), Pos::body(2, 5), "the last edit first");
+    assert_eq!(back(), Pos::body(1, 3));
+    assert_eq!(back(), Pos::body(0, 3));
+    assert_eq!(back(), Pos::body(2, 5), "then round again");
+    assert!(Session::new(wordcraft_doc::Document::new()).run("edit.goBack", &json!({})).is_err(), "nothing edited yet");
+}

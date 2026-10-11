@@ -26,6 +26,28 @@ fn doc_extension_dispatches_to_docbin() {
 }
 
 #[test]
+fn txt_open_decodes_windows_1252_and_unmarked_utf16() {
+    // #433: the TXT open path sniffs encodings like the formats importer.
+    let open = |b: &[u8]| crate::io::open_bytes("x.txt", b).unwrap().plain_text(StoryRef::Body);
+    assert_eq!(open(b"\x80"), "€");
+    assert_eq!(open(b"A\0B\0"), "AB");
+    assert_eq!(open(b"\0A\0B"), "AB");
+    assert_eq!(open("€".as_bytes()), "€");
+    assert_eq!(open(b"\xFF\xFEA\0B\0"), "AB");
+    assert_eq!(open(b"A\0B"), "AB", "odd byte count stays safe");
+    assert_eq!(crate::io::decode_text(b"caf\xE9 \x80"), "café €");
+}
+
+#[test]
+fn txt_save_writes_list_labels() {
+    // #434: list paragraphs keep their bullet or number and a tab in plain text.
+    let doc = crate::io::open_bytes("l.md", b"- alpha\n- beta\n\n1. first\n2. second\n").unwrap();
+    assert_eq!(crate::io::save_bytes("l.txt", &doc).unwrap(), "•\talpha\r\n•\tbeta\r\n1.\tfirst\r\n2.\tsecond".as_bytes());
+    let plain = crate::io::open_bytes("p.md", b"alpha\n\nbeta\n").unwrap();
+    assert_eq!(crate::io::save_bytes("p.txt", &plain).unwrap(), b"alpha\r\nbeta");
+}
+
+#[test]
 fn every_command_has_unique_id() {
     let reg = cmd::registry();
     let mut ids: Vec<&str> = reg.all().iter().map(|c| c.id).collect();
@@ -49,6 +71,58 @@ fn every_shortcut_runs_one_command() {
         }
     }
     assert_eq!(reg.by_shortcut("Shift+F3").map(|c| c.id), Some("format.changeCase"));
+}
+
+#[test]
+fn word_default_shortcuts_resolve() {
+    // #330: Word's documented default shortcuts reach the matching commands, with Word for
+    // Mac's keys where macOS takes Word's (⌘Q quits, ⌘Space is Spotlight, ⌘⇧G is Find Previous).
+    let reg = cmd::registry();
+    let id = |k: &str| reg.by_shortcut(k).map(|c| c.id);
+    assert_eq!(id("Mod+Alt+1"), Some("para.heading1"));
+    assert_eq!(id("Mod+Alt+P"), Some("view.printLayout"));
+    assert_eq!(id("Mod+Alt+O"), Some("view.outline"));
+    assert_eq!(id("Mod+Alt+N"), Some("view.draft"));
+    assert_eq!(id("Mod+Alt+S"), Some("view.split"));
+    assert_eq!(id("Mod+Alt+-"), Some("text.emDash"));
+    assert_eq!(id("Mod+Shift+F5"), Some("insert.bookmark"));
+    assert_eq!(id("Alt+F7"), Some("review.spelling"));
+    assert_eq!(id("Shift+F12"), Some("file.save"));
+    assert_eq!(id(cmd::mac_or("Ctrl+Q", "Mod+Q")), Some("para.reset"));
+    assert_eq!(id(cmd::mac_or("Ctrl+Space", "Mod+Space")), Some("format.resetChar"));
+    assert_eq!(id(cmd::mac_or("Ctrl+Shift+D", "Alt+Shift+D")), Some("insert.dateField"));
+    if cfg!(target_os = "macos") {
+        assert_eq!(id("Mod+Shift+G"), Some("edit.findPrevious"));
+    } else {
+        assert_eq!(id("Mod+Shift+G"), Some("review.wordCount"));
+        assert_eq!(id("Mod+Alt+C"), Some("text.copyright"));
+        assert_eq!(id("Mod+Alt+H"), Some("format.highlight"));
+    }
+    assert_eq!(id("Mod+PageUp"), Some("edit.findPrevious"));
+}
+
+#[test]
+fn reset_shortcuts_remove_direct_formatting_but_keep_styles() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello world"}));
+    run(&mut s, "para.heading1", json!({}));
+    run(&mut s, "para.indent", json!({}));
+    run(&mut s, "para.alignCenter", json!({}));
+    run(&mut s, "para.reset", json!({}));
+    let props = s.doc.para_at(&Pos::body(0, 0)).unwrap().props.clone();
+    assert_eq!(props.style.as_deref(), Some("Heading1"), "Ctrl+Q keeps the paragraph style");
+    assert_eq!((props.indent_left, props.align), (None, None), "Ctrl+Q drops direct paragraph formatting");
+
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.bold", json!({}));
+    run(&mut s, "format.resetChar", json!({}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    assert_eq!(p.props_of_char(1).bold, None, "Ctrl+Space drops direct character formatting");
+    assert_eq!(p.props.style.as_deref(), Some("Heading1"), "Ctrl+Space leaves the paragraph alone");
+
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "text.emDash", json!({}));
+    assert_eq!(text(&s), "Hello world—");
 }
 
 #[test]
@@ -2355,6 +2429,7 @@ fn charts_and_diagrams_can_be_selected_and_deleted_but_not_moved() {
         ("arrange.bounds", json!({"width": 50})),
         ("picture.size", json!({"width": 50})),
         ("arrange.wrap", json!({"wrap": "square"})),
+        ("arrange.wrapText", json!({"side": "left"})),
         ("arrange.position", json!({"preset": "topLeft"})),
         ("arrange.align", json!({"value": "left"})),
         ("arrange.bringForward", json!({})),
@@ -2755,4 +2830,102 @@ fn deleting_the_last_cell_column_never_leaves_a_table_without_rows() {
     assert!(s.doc.body.iter().all(|b| b.as_table().is_none()), "an emptied table is removed");
     run(&mut s, "edit.undo", json!({}));
     assert!(s.doc.body.iter().any(|b| b.as_table().is_some_and(|t| !t.rows.is_empty())));
+}
+
+#[test]
+fn insert_icon_places_a_picture_of_the_requested_size_that_saves_and_recolours() {
+    use wordcraft_doc::para::InlineObject;
+    let mut s = s();
+    // Without an id: the library is listed and a front end is asked for its picker.
+    let r = run(&mut s, "insert.icon", json!({"query": "envelope"}));
+    assert_eq!(r["icons"][0]["id"], "mail");
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "icons"})));
+    let all = run(&mut s, "insert.icon", json!({}));
+    assert!(all["icons"].as_array().unwrap().len() >= 40);
+    assert!(s.run("insert.icon", &json!({"id": "no-such-icon"})).is_err());
+    assert!(s.run("insert.icon", &json!({"id": "heart", "color": "red"})).is_err());
+
+    let r = run(&mut s, "insert.icon", json!({"id": "heart", "color": "C00000", "size": 48}));
+    assert_eq!((r["width"].as_f64(), r["height"].as_f64(), r["icon"].as_str()), (Some(48.0), Some(48.0), Some("heart")));
+    let Some((_, InlineObject::Image { media, w, h, alt, .. })) = crate::cmd::objects::selected(&s) else { panic!("no picture") };
+    assert_eq!((w, h, alt.as_str()), (48.0, 48.0, "Heart"));
+    let png = image::load_from_memory(&s.doc.media[&media]).unwrap().to_rgba8();
+    assert_eq!(png.dimensions(), (200, 200), "about 300 pixels per inch");
+    let inked: Vec<_> = png.pixels().filter(|p| p.0[3] == 255).collect();
+    assert!(!inked.is_empty() && inked.iter().all(|p| p.0[..3] == [0xC0, 0, 0]));
+    assert!(png.get_pixel(0, 0).0[3] == 0, "transparent background");
+    // It is an ordinary picture: it saves to .docx.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert_eq!(back.media.len(), 1);
+
+    // Icon Color repaints it, keeping the transparency.
+    run(&mut s, "picture.iconColor", json!({"color": "1F4E79"}));
+    let Some((_, InlineObject::Image { media: m2, .. })) = crate::cmd::objects::selected(&s) else { panic!("no picture") };
+    let png2 = image::load_from_memory(&s.doc.media[&m2]).unwrap().to_rgba8();
+    assert!(png2.pixels().zip(png.pixels()).all(|(a, b)| a.0[3] == b.0[3] && (a.0[3] == 0 || a.0[..3] == [0x1F, 0x4E, 0x79])));
+    assert!(s.run("picture.iconColor", &json!({})).is_err());
+}
+
+/// Home › Font › Enclose Characters (#297): the selection becomes an `EQ \o\ac` field, saved the
+/// way Word stores it (the style in the code's run sizes) and read back; null takes the text out
+/// again, and each step undoes.
+#[test]
+fn enclose_characters_make_an_eq_field_and_come_back_out() {
+    use wordcraft_doc::InlineObject;
+    let field = |s: &Session| {
+        let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+        p.objects.iter().find_map(|o| match o {
+            InlineObject::Field { instr, result, .. } => Some((instr.clone(), result.clone())),
+            _ => None,
+        })
+    };
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "No 12 and 字 here"}));
+    run(&mut s, "select.text", json!({"text": "No 12"}));
+    assert!(s.run("format.enclose", &json!({"shape": "circle"})).is_err(), "five characters don't fit");
+    run(&mut s, "select.text", json!({"text": "字"}));
+    assert!(s.run("format.enclose", &json!({})).is_err(), "a script must say which shape");
+    run(&mut s, "format.enclose", json!({"shape": "circle"}));
+    assert_eq!(field(&s), Some(("eq \\o\\ac(○,字)".to_string(), "字".to_string())));
+    assert_eq!(text(&s), "No 12 and 字 here", "the field's text reads as the character");
+    run(&mut s, "select.text", json!({"text": "12"}));
+    run(&mut s, "format.enclose", json!({"shape": "diamond", "style": "enlarge"}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    let codes: Vec<String> =
+        p.objects.iter().filter_map(|o| if let InlineObject::Field { instr, .. } = o { Some(instr.clone()) } else { None }).collect();
+    assert_eq!(codes, ["eq \\o\\ac(◇,12) \\* enlarge", "eq \\o\\ac(○,字)"]);
+
+    // Word's structure in the .docx: no result, the symbol and the text in runs of their own
+    // sizes; reading it back gives the same fields, styles included.
+    let bytes = wordcraft_docx::write(&s.doc).unwrap();
+    let back = wordcraft_docx::read(&bytes).unwrap();
+    let bp = back.para_at(&Pos::body(0, 0)).unwrap();
+    let back_codes: Vec<(String, String)> = bp
+        .objects
+        .iter()
+        .filter_map(|o| if let InlineObject::Field { instr, result, .. } = o { Some((instr.clone(), result.clone())) } else { None })
+        .collect();
+    assert_eq!(back_codes, [("eq \\o\\ac(◇,12) \\* enlarge".to_string(), "12".to_string()), ("eq \\o\\ac(○,字)".to_string(), "字".to_string())]);
+
+    // Change the shape of the enclosed characters at the caret, then remove it.
+    let e = s.doc.para_at(&Pos::body(0, 0)).unwrap().text.find('\u{FFFC}').unwrap();
+    s.sel = crate::Selection::caret(Pos::body(0, e + 3));
+    run(&mut s, "format.enclose", json!({"shape": "square"}));
+    assert!(field(&s).unwrap().0.starts_with("eq \\o\\ac(□,12) \\* enlarge"), "the style stays");
+    run(&mut s, "format.enclose", json!({"shape": null}));
+    assert_eq!(text(&s), "No 12 and 字 here");
+    assert_eq!(s.selected_text(), "12");
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert!(field(&s).unwrap().0.starts_with("eq \\o\\ac(◇,12)"));
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(field(&s), None, "back to plain text");
+    assert!(s.run("format.enclose", &json!({"shape": null})).is_err(), "nothing to remove");
+    // Text given (the dialog's Text box) goes in at a caret.
+    run(&mut s, "caret.docEnd", json!({}));
+    assert!(s.run("format.enclose", &json!({"shape": "triangle", "text": "ABC"})).is_err());
+    run(&mut s, "format.enclose", json!({"shape": "triangle", "text": "A"}));
+    assert_eq!(text(&s), "No 12 and 字 hereA");
+    assert_eq!(field(&s), Some(("eq \\o\\ac(△,A)".to_string(), "A".to_string())));
 }

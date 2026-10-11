@@ -72,12 +72,30 @@ fn map_substitutes_digits_both_ways() {
 }
 
 #[test]
-fn resolve_never_returns_system() {
-    assert_eq!(NumeralMode::Arabic.resolve(), NumeralMode::Arabic);
-    assert_eq!(NumeralMode::Hindi.resolve(), NumeralMode::Hindi);
-    assert_eq!(NumeralMode::Context.resolve(), NumeralMode::Context);
-    let r = NumeralMode::System.resolve();
-    assert!(r == NumeralMode::Arabic || r == NumeralMode::Hindi, "System resolves to a concrete mode");
+fn resolve_uses_the_given_system_locale() {
+    for m in [NumeralMode::Arabic, NumeralMode::Hindi, NumeralMode::Context] {
+        assert_eq!(m.resolve(Some("ar-EG")), m, "only System is resolved");
+    }
+    for tag in ["ar", "ar-EG", "fa_IR.UTF-8", "ur-PK", "ckb-IQ", "AR-sa"] {
+        assert_eq!(NumeralMode::System.resolve(Some(tag)), NumeralMode::Hindi, "{tag}");
+    }
+    for tag in ["en-US", "C", "", "tr_TR", "ary"] {
+        assert_eq!(NumeralMode::System.resolve(Some(tag)), NumeralMode::Arabic, "{tag}");
+    }
+    assert_eq!(NumeralMode::System.resolve(None), NumeralMode::Arabic, "unknown locale: Western digits");
+}
+
+#[test]
+fn context_mode_on_a_very_long_digit_run_stays_linear() {
+    // Every digit used to scan back over all the digits and spaces before it (O(n²)).
+    let text = format!("سنة {}", "1 ".repeat(100_000));
+    let start = std::time::Instant::now();
+    let l = lay_opts(&text, false, NumeralMode::Context);
+    assert!(!l.pages.is_empty());
+    assert!(start.elapsed() < std::time::Duration::from_secs(60), "took {:?}", start.elapsed());
+    // The digits follow the Arabic word before them.
+    let short = "سنة 1 2 3";
+    assert_eq!(line_gids(&lay_opts(short, false, NumeralMode::Context), short), line_gids(&lay_opts(short, false, NumeralMode::Hindi), short));
 }
 
 #[test]

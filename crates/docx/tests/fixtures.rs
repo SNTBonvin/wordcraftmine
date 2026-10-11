@@ -66,8 +66,8 @@ fn toc_complex_field_spanning_paragraphs() {
     let p = paras(&d);
     assert_eq!(p.len(), 5);
     assert_eq!(p[0].text, "\u{FFFC}Intro\t\u{FFFC}");
-    assert_eq!(p[0].objects[0], InlineObject::Field { instr: r#"TOC \o "1-3" \h \z \u"#.into(), result: String::new(), locked: false });
-    assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false });
+    assert_eq!(p[0].objects[0], InlineObject::Field { instr: r#"TOC \o "1-3" \h \z \u"#.into(), result: String::new(), locked: false, code: false });
+    assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false, code: false });
     assert_eq!(p[0].props_of_char(3).link.as_deref(), Some("#_Toc1"));
     assert_eq!(p[0].props.style.as_deref(), Some("TOC1"));
     assert_eq!(p[1].text, "Body\t2");
@@ -75,7 +75,7 @@ fn toc_complex_field_spanning_paragraphs() {
     assert_eq!(p[2].text, "");
     assert_eq!(p[3].objects, vec![InlineObject::BookmarkStart { name: "_Toc1".into() }, InlineObject::BookmarkEnd { name: "_Toc1".into() }]);
     assert_eq!(p[4].plain_text(), "Page 7");
-    assert_eq!(p[4].objects[0], InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false });
+    assert_eq!(p[4].objects[0], InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false, code: false });
     // And it writes back out and reads the same.
     let again = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
     assert_eq!(again.body, d.body);
@@ -499,7 +499,7 @@ fn unbalanced_fields_and_markers() {
     let d = read_body(body);
     let p = paras(&d);
     assert_eq!(p[0].text, "a");
-    assert_eq!(p[1].objects, vec![InlineObject::Field { instr: "IF X = \"y\"".into(), result: String::new(), locked: false }]);
+    assert_eq!(p[1].objects, vec![InlineObject::Field { instr: "IF X = \"y\"".into(), result: String::new(), locked: false, code: false }]);
     assert_eq!(p[2].objects, vec![InlineObject::BookmarkStart { name: "between".into() }, InlineObject::BookmarkEnd { name: "between".into() }]);
     assert_eq!(p[2].plain_text(), "after");
 }
@@ -600,7 +600,8 @@ fn anchor_alignment_reference_areas_and_distances() {
     );
     let d = read_body(&body);
     let p = paras(&d);
-    let floats: Vec<_> = p[0].objects.iter().filter_map(|o| if let InlineObject::Shape { float, .. } = o { Some(*float) } else { None }).collect();
+    let floats: Vec<_> =
+        p[0].objects.iter().filter_map(|o| if let InlineObject::Shape { float, .. } = o { Some(float.clone()) } else { None }).collect();
     let [a, b] = floats.as_slice() else { panic!("{floats:?}") };
     assert_eq!((a.h_rel, a.h_align, a.v_rel, a.v_align, a.y), (Anchor::Margin, Some(FloatAlign::Center), Anchor::TopMargin, None, -1.0));
     assert_eq!((a.dist, a.dist_top, a.dist_bottom), (9.0, 2.0, 4.0));
@@ -662,7 +663,9 @@ fn absolute_vml_text_box_in_header_floats() {
             .iter()
             .filter_map(|b| b.as_para())
             .flat_map(|p| &p.objects)
-            .filter_map(|o| if let InlineObject::Shape { kind, w, h, float, story, .. } = o { Some((*kind, *w, *h, *float, *story)) } else { None })
+            .filter_map(|o| {
+                if let InlineObject::Shape { kind, w, h, float, story, .. } = o { Some((*kind, *w, *h, float.clone(), *story)) } else { None }
+            })
             .collect();
         let [(k0, w0, h0, f0, s0), (_, w1, h1, f1, _), (_, _, _, f2, _), (_, _, _, f3, _)] = shapes.as_slice() else { panic!("{shapes:?}") };
         assert_eq!(*k0, ShapeKind::TextBox);
@@ -951,7 +954,7 @@ fn word_group_with_nested_group() {
 </wpg:grpSp></wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict/></mc:Fallback></mc:AlternateContent></w:r></w:p>"#;
     let d = read_body(body);
     let p = paras(&d);
-    let InlineObject::Group { w, h, float, ch_w, ch_h, children } = &p[0].objects[0] else { panic!("{:?}", p[0].objects) };
+    let InlineObject::Group { w, h, float, ch_w, ch_h, children, .. } = &p[0].objects[0] else { panic!("{:?}", p[0].objects) };
     assert_eq!((*w, *h, *ch_w, *ch_h), (200.0, 100.0, 200.0, 100.0));
     assert_eq!(float.wrap, Wrap::Square);
     let got: Vec<(f32, f32, ShapeKind, f32, f32)> = children
@@ -1074,4 +1077,52 @@ fn formatting_revisions_round_trip() {
     assert_eq!(again.body, d.body);
     assert_eq!(again.last_section, d.last_section);
     assert_eq!(again.revisions, d.revisions);
+}
+
+/// A document's own footnote separators and continuation notice are kept (ECMA-376 §17.11), and
+/// written back as Word numbers them: -1, 0 and 1, the notes after them.
+#[test]
+fn note_separators_and_continuation_notice_round_trip() {
+    let footnotes = format!(
+        r#"<w:footnotes {W_NS}><w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:t xml:space="preserve">More: </w:t></w:r><w:r><w:continuationSeparator/></w:r></w:p></w:footnote><w:footnote w:type="continuationNotice" w:id="1"><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>(continued)</w:t></w:r></w:p></w:footnote><w:footnote w:id="2"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> The note.</w:t></w:r></w:p></w:footnote></w:footnotes>"#
+    );
+    let body = r#"<w:p><w:r><w:t>Text</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p>"#;
+    let bytes = docx(body, &[("rId1", "footnotes", "footnotes.xml")], &[("word/footnotes.xml", &footnotes)]);
+    let check = |d: &Document| {
+        let s = &d.footnote_separators;
+        let first = |b: &Option<wordcraft_doc::Blocks>| b.as_ref().unwrap()[0].as_para().unwrap().clone();
+        let sep = first(&s.separator);
+        assert_eq!(sep.objects.iter().map(InlineObject::as_note_separator).collect::<Vec<_>>(), vec![Some(false)]);
+        assert_eq!(sep.props.space_after, Some(0.0));
+        let cont = first(&s.continuation_separator);
+        assert_eq!(cont.plain_text(), "More: ");
+        assert_eq!(cont.objects.iter().map(InlineObject::as_note_separator).collect::<Vec<_>>(), vec![Some(true)]);
+        let notice = first(&s.continuation_notice);
+        assert_eq!(notice.plain_text(), "(continued)");
+        assert_eq!(notice.props.align, Some(Align::Right));
+        assert!(d.endnote_separators.is_empty());
+        // The note itself is read as before.
+        let InlineObject::NoteRef { id, .. } = paras(d)[0].objects[0] else { panic!() };
+        assert_eq!(d.parts[&id].blocks[0].as_para().unwrap().plain_text(), " The note.");
+        assert_eq!(d.parts.len(), 1, "special notes aren't notes");
+    };
+    let d = wordcraft_docx::read(&bytes).unwrap();
+    check(&d);
+
+    let out = wordcraft_docx::write(&d).unwrap();
+    let part = |name: &str| {
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&out)).unwrap();
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(name).unwrap(), &mut xml).unwrap();
+        xml
+    };
+    let notes = part("word/footnotes.xml");
+    for (kind, id) in [("separator", "-1"), ("continuationSeparator", "0"), ("continuationNotice", "1")] {
+        assert!(notes.contains(&format!(r#"<w:footnote w:type="{kind}" w:id="{id}">"#)), "{kind}: {notes}");
+    }
+    assert!(notes.contains(r#"<w:footnote w:id="2">"#), "the note follows the notice: {notes}");
+    assert!(part("word/document.xml").contains(r#"<w:footnoteReference w:id="2"/>"#));
+    let settings = part("word/settings.xml");
+    assert!(settings.contains(r#"<w:footnote w:id="-1"/><w:footnote w:id="0"/><w:footnote w:id="1"/>"#), "{settings}");
+    check(&wordcraft_docx::read(&out).unwrap());
 }
