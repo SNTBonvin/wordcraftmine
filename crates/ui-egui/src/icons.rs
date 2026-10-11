@@ -29,6 +29,8 @@
 //! - Separate parts keep at least 1.25 units of clear space (2.25 between stroke centre lines).
 //! - Shapes never overlap or cross: show depth by a gap or by drawing only the visible part of the
 //!   back shape (see `copy`), never by stacking.
+//! - Lines inside a shape (dividers, title bars, ticks) stay inside it: draw any line that ends on
+//!   an outline with `Pen::inner`, so its round caps never poke out past the outline.
 //! - Balance the composition in the frame; don't crowd one corner.
 //!
 //! # Reused elements
@@ -187,6 +189,23 @@ impl Pen<'_> {
     }
     fn acc(&self, pts: &[(f32, f32)]) {
         self.path(pts, self.a);
+    }
+    /// An ink line whose ends sit on an outline (a divider, a title bar, a tick): both ends are
+    /// pulled in by half a stroke, so the round caps stay inside the outline instead of poking out.
+    fn inner(&self, pts: &[(f32, f32)]) {
+        let e = self.w / self.s * 0.5;
+        let pull = |p: (f32, f32), q: (f32, f32)| {
+            let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+            let l = (dx * dx + dy * dy).sqrt();
+            if l <= 2.0 * e { p } else { (p.0 + dx / l * e, p.1 + dy / l * e) }
+        };
+        let mut v = pts.to_vec();
+        let n = v.len();
+        if n >= 2 {
+            v[0] = pull(pts[0], pts[1]);
+            v[n - 1] = pull(pts[n - 1], pts[n - 2]);
+        }
+        self.line(&v);
     }
     /// An ink polyline at a heavier weight (bold lettering).
     fn heavy(&self, pts: &[(f32, f32)]) {
@@ -362,16 +381,16 @@ impl Pen<'_> {
     /// A window: frame and title bar, tinted.
     fn window(&self, x0: f32, y0: f32, x1: f32, y1: f32) {
         self.panel(x0, y0, x1, y1, 1.0);
-        self.line(&[(x0, y0 + 2.5), (x1, y0 + 2.5)]);
+        self.inner(&[(x0, y0 + 2.5), (x1, y0 + 2.5)]);
     }
     /// A table grid: frame, header row line and the given inner lines.
     fn grid(&self, x0: f32, y0: f32, x1: f32, y1: f32, cols: &[f32], rows: &[f32]) {
         self.panel(x0, y0, x1, y1, 1.0);
         for x in cols {
-            self.line(&[(*x, y0), (*x, y1)]);
+            self.inner(&[(*x, y0), (*x, y1)]);
         }
         for y in rows {
-            self.line(&[(x0, *y), (x1, *y)]);
+            self.inner(&[(x0, *y), (x1, *y)]);
         }
     }
     /// The table from Table, `w` wide at 13:11: a tinted header row, three columns, three rows.
@@ -758,7 +777,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         }
         "stylesPane" => {
             pen.window(1.5, 1.5, 14.5, 14.5);
-            pen.line(&[(9.25, 4.0), (9.25, 14.5)]);
+            pen.inner(&[(9.25, 4.0), (9.25, 14.5)]);
             pen.rows(4.0, 6.75, &[7.0, 10.0]);
             pen.dot(12.0, 7.0, 0.65, a);
             pen.dot(12.0, 9.5, 0.65, c);
@@ -916,7 +935,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         }
         "dateTime" => {
             pen.panel(1.5, 2.5, 14.5, 14.5, 1.5);
-            pen.line(&[(1.5, 6.0), (14.5, 6.0)]);
+            pen.inner(&[(1.5, 6.0), (14.5, 6.0)]);
             pen.line(&[(5.0, 1.0), (5.0, 3.5)]);
             pen.line(&[(11.0, 1.0), (11.0, 3.5)]);
             pen.dot(10.5, 10.5, 1.4, a);
@@ -1357,7 +1376,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         // Review
         "thesaurus" => {
             pen.panel(2.5, 1.5, 13.5, 14.5, 1.0);
-            pen.line(&[(5.0, 1.5), (5.0, 14.5)]);
+            pen.inner(&[(5.0, 1.5), (5.0, 14.5)]);
             pen.acc(&[(7.5, 5.0), (11.0, 5.0)]);
             pen.rows(7.5, 11.0, &[8.0, 11.0]);
         }
@@ -1386,7 +1405,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         }
         "language" => {
             pen.disc(8.0, 8.0, 6.5);
-            pen.line(&[(1.5, 8.0), (14.5, 8.0)]);
+            pen.inner(&[(1.5, 8.0), (14.5, 8.0)]);
             pen.line(&[(2.75, 4.75), (13.25, 4.75)]);
             pen.line(&[(2.75, 11.25), (13.25, 11.25)]);
             let meridian =
@@ -1433,7 +1452,7 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         "reviewingPane" => {
             pen.window(1.5, 1.5, 14.5, 14.5);
             pen.line(&[(4.0, 6.75), (12.0, 6.75)]);
-            pen.line(&[(1.5, 9.5), (14.5, 9.5)]);
+            pen.inner(&[(1.5, 9.5), (14.5, 9.5)]);
             pen.acc(&[(4.0, 12.0), (9.0, 12.0)]);
         }
         "accept" => {
@@ -1534,20 +1553,20 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.fill(&[(4.0, 1.5), (7.0, 1.5), (5.5, 3.5)], a);
             pen.panel(1.5, 5.5, 14.5, 11.5, 1.0);
             for (i, x) in [4.0, 6.5, 9.0, 11.5].iter().enumerate() {
-                pen.line(&[(*x, 5.5), (*x, if i % 2 == 0 { 8.75 } else { 7.75 })]);
+                pen.inner(&[(*x, 5.5), (*x, if i % 2 == 0 { 8.75 } else { 7.75 })]);
             }
         }
         "gridlines" => {
             pen.block(5.75, 5.75, 10.25, 10.25, 0.0, pen.a.gamma_multiply(0.5));
             pen.rect(1.5, 1.5, 14.5, 14.5, 1.0);
             for k in [5.75, 10.25] {
-                pen.line(&[(k, 1.5), (k, 14.5)]);
-                pen.line(&[(1.5, k), (14.5, k)]);
+                pen.inner(&[(k, 1.5), (k, 14.5)]);
+                pen.inner(&[(1.5, k), (14.5, k)]);
             }
         }
         "navPane" => {
             pen.window(1.5, 1.5, 14.5, 14.5);
-            pen.line(&[(6.75, 4.0), (6.75, 14.5)]);
+            pen.inner(&[(6.75, 4.0), (6.75, 14.5)]);
             pen.dot(4.0, 7.0, 0.7, a);
             pen.dot(4.0, 9.5, 0.7, c);
             pen.dot(4.0, 12.0, 0.7, c);
@@ -1683,10 +1702,13 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.acc(&[(3.5, 8.0), (12.5, 8.0)]);
         }
         "autofit" => {
-            pen.grid(1.5, 2.5, 14.5, 13.5, &[8.0], &[8.0]);
-            for (x, y) in [(3.75, 5.25), (10.25, 5.25), (3.75, 10.75), (10.25, 10.75)] {
-                pen.acc(&[(x, y), (x + 2.0, y)]);
-            }
+            // A table whose body row holds a double arrow: the columns resize to fit.
+            pen.block(1.5, 2.5, 14.5, 6.0, 1.0, a.gamma_multiply(0.5));
+            pen.panel(1.5, 2.5, 14.5, 13.5, 1.0);
+            pen.inner(&[(1.5, 6.0), (14.5, 6.0)]);
+            pen.inner(&[(5.83, 2.5), (5.83, 6.0)]);
+            pen.inner(&[(10.17, 2.5), (10.17, 6.0)]);
+            pen.span(4.0, 9.75, 12.0, 9.75, a);
         }
         "distributeRows" => {
             pen.grid(6.0, 1.5, 14.5, 14.5, &[], &[5.83, 10.17]);
@@ -1708,10 +1730,10 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.panel(1.5, 1.5, 14.5, 14.5, 1.0);
             pen.acc(&[(5.0, 6.75), (11.0, 6.75)]);
             pen.acc(&[(6.25, 9.25), (9.75, 9.25)]);
-            pen.line(&[(8.0, 1.5), (8.0, 3.0)]);
-            pen.line(&[(8.0, 13.0), (8.0, 14.5)]);
-            pen.line(&[(1.5, 8.0), (3.0, 8.0)]);
-            pen.line(&[(13.0, 8.0), (14.5, 8.0)]);
+            pen.inner(&[(8.0, 1.5), (8.0, 3.0)]);
+            pen.inner(&[(8.0, 13.0), (8.0, 14.5)]);
+            pen.inner(&[(1.5, 8.0), (3.0, 8.0)]);
+            pen.inner(&[(13.0, 8.0), (14.5, 8.0)]);
         }
         "textDirection" => {
             pen.glyph_a(5.5, 13.0, 10.0, c, c);
@@ -1726,8 +1748,8 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
         "repeatHeader" => {
             pen.block(1.5, 1.5, 14.5, 5.5, 1.0, a);
             pen.rect(1.5, 7.5, 14.5, 14.5, 1.0);
-            pen.line(&[(1.5, 11.0), (14.5, 11.0)]);
-            pen.line(&[(8.0, 7.5), (8.0, 14.5)]);
+            pen.inner(&[(1.5, 11.0), (14.5, 11.0)]);
+            pen.inner(&[(8.0, 7.5), (8.0, 14.5)]);
         }
         "toText" => {
             // The table turns into lines of text: an arrow from the table down to the lines.
