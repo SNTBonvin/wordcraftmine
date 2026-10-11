@@ -29,6 +29,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ | ✅ | 80% | — |
 | Interface themes (light, dark, system #249, follows OS changes live #311), dark page separate from the interface theme (#194, #312) | ✅ | ✅ | 90% | — |
 | Interface size (File › Options › General, 80–200 %, on top of the system display scale; `ui.interfaceSize`) (#475) | ✅ | system display scaling only | 100% | — |
+| File dialogs (Open, Save As, Export, Insert Picture) | system dialog, without blocking the window (#94); Linux/BSD without a file chooser portal or zenity: WordCraft's own browser, also File › Open › Browse in WordCraft… (#576) | system dialog | 95% | — |
 | Platform conventions (macOS menus/traffic lights #255, Windows title bar, Linux CSD on Wayland #78) | partial | native | 70% | 3–5 |
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on, document canvas exposure untested | full | 25% | 10–15 |
 | Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
@@ -37,6 +38,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Built-in file browser when the system file dialog can't be shown on Linux/BSD; `ui.fileBrowser` (#576) |
 | 2026-10-11 | trivial | Accessibility pane (errors/warnings/tips, jump-to, fixes) and Alt Text pane, opened from Picture/Shape Format › Accessibility and right-click › View Alt Text… (#386) |
 | 2026-10-11 | trivial | References dialogs: Caption (New/Delete Label, Numbering with chapter numbers), Index and Mark Index Entry (Mark All), Custom Table of Contents (Options, TOC styles via Modify Style), Source Manager and Create/Edit Source; modal dialog count 34 (#402) |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
