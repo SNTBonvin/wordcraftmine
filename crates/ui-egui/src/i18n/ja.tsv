@@ -1087,6 +1087,9 @@
 	Light	ライト
 	Dark	ダーク
 	Use system setting	システム設定を使用
+	Light theme	ライトテーマ
+	Dark theme	ダークテーマ
+	Active	使用中
 	A file dialog is already open.	ファイル ダイアログが既に開いています。
 	Height:	高さ:
 	Width:	幅:

@@ -374,7 +374,7 @@ fn options_page(app: &mut WordApp, ui: &mut Ui) {
             app.session.author = n;
         }
     });
-    theme_picker(app, ui);
+    crate::appearance::theme_picker(app, ui);
     interface_size_picker(app, ui);
     // The browser can't write to the user's files, so AutoSave can't be turned on there (#176).
     let browser = app.autosave_block() == Some(crate::AutoSaveBlock::Browser);
@@ -408,21 +408,6 @@ fn options_page(app: &mut WordApp, ui: &mut Ui) {
     ui.add_space(10.0);
     ui.label(egui::RichText::new(tl!("Agents")).font(semibold(15.0)));
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
-}
-
-/// File ▸ Options ▸ Interface theme: Light, Dark, or follow the system's appearance (#115).
-fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
-    use crate::theme::Appearance;
-    ui.horizontal(|ui| {
-        ui.label(tl!("Interface theme:"));
-        egui::ComboBox::from_id_salt("interface_theme").selected_text(tl!(app.ui.theme.label())).width(220.0).show_ui(ui, |ui| {
-            for a in Appearance::ALL {
-                if ui.selectable_label(app.ui.theme == a, tl!(a.label())).clicked() {
-                    let _ = app.run("ui.theme", json!({"value": a.code()}));
-                }
-            }
-        });
-    });
 }
 
 /// File ▸ Options ▸ Interface size: 80–200 %, on top of the system's display scale (#475).

@@ -1088,6 +1088,9 @@
 	Light	淺色
 	Dark	深色
 	Use system setting	使用系統設定
+	Light theme	淺色主題
+	Dark theme	深色主題
+	Active	使用中
 	A file dialog is already open.	已有一個檔案對話方塊開啟中。
 	Height:	高度：
 	Width:	寬度：
