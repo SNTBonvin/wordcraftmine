@@ -61,8 +61,8 @@ Turkish works the same way (`tr-TR` and `tr-CY` system locales, `{"value":"tr"}`
 entries. Command search folds the Turkish dotted and dotless I (`italik` finds İtalik, `YAZI TİPİ`
 finds Yazı Tipi) while English labels and ASCII command ids keep their usual matching. Turkish
 proofing is not included; terminology and checks: [`localization-tr.md`](localization-tr.md).
-Hungarian follows `hu-HU` system locales and `{"value":"hu"}`, with all 1,572 entries of the
-Spanish catalog. Hungarian proofing is not included; terminology and conventions:
+Hungarian follows `hu-HU` system locales and `{"value":"hu"}`, with 1,946 entries: every key of
+the Russian catalog, built-in style names shown translated, plus the citation style names. Hungarian proofing is not included; terminology and conventions:
 [`localization-hu.md`](localization-hu.md).
 
 ## Shared work (not in the per-language hours)
@@ -80,7 +80,7 @@ Spanish catalog. Hungarian proofing is not included; terminology and conventions
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-10 | minor | Russian interface (#300; 1,524 entries, built-in style names shown translated; covers everything the interface audit finds) |
-| 2026-10-11 | minor | Hungarian interface catalog (1,572 entries), locale selection, saved preference and font coverage checks |
+| 2026-10-11 | minor | Hungarian interface catalog (1,946 entries, built-in style names shown translated; covers everything the interface audit finds), locale selection, saved preference and font coverage checks |
 | 2026-10-11 | minor | Turkish interface catalog (1,307 entries), locale selection, saved preference, Turkish casing in command search and font coverage checks; catalog sizes re-counted |
 | 2026-10-11 | trivial | English spelling (#520): our supplement `assets/spelling/en-extra.txt` adds ~220 common modern words the Moby list lacks ("desktop", "download", "email"…) |
 | 2026-10-10 | minor | Estonian interface catalog, locale selection, saved preference and font coverage checks |

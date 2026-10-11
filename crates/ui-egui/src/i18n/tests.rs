@@ -640,7 +640,10 @@ fn hungarian_locales_and_saved_preference_work_without_changing_the_document() {
 fn hungarian_covers_the_entire_existing_interface_catalog() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
-    assert_eq!(keys(lang("hu").0.source), keys(lang("es").0.source));
+    // Every key of the most complete catalog: built-in style names, equation gallery labels, paper
+    // sizes and watermarks included.
+    assert!(keys(lang("hu").0.source).is_superset(&keys(lang("ru").0.source)));
+    assert!(keys(lang("hu").0.source).is_superset(&keys(lang("es").0.source)));
     let hu = lang("hu");
     for (source, expected) in [
         ("Home", "Kezdőlap"),
@@ -665,6 +668,11 @@ fn hungarian_covers_the_entire_existing_interface_catalog() {
     // The Font dialog uppercases its preview sample for All Caps.
     assert_eq!(super::tr(hu, "AaBbYyZz").to_uppercase(), "AABBYYZZ ŐŐŰŰ");
     set_current(hu);
+    // Built-in styles show translated names; numbered families go through their template.
+    for (style, expected) in [("Normal", "Normál"), ("No Spacing", "Nincs térköz"), ("Heading 2", "Címsor 2"), ("TOC 3", "Tartalomjegyzék 3")] {
+        assert_eq!(builtin_style_name(style), expected);
+    }
+    assert_eq!(builtin_style_name("My Own Style"), "My Own Style");
     assert_eq!(location("Home › Font"), "Kezdőlap › Betűtípus");
     assert_eq!(prefixed("Undo", "Bold"), "Visszavonás: Félkövér");
     set_current(Lang::EN);
