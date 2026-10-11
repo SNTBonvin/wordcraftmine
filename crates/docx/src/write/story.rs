@@ -378,6 +378,17 @@ impl Writer<'_> {
                 field_run(w, props, &|w| w.empty("w:fldChar", &[("w:fldCharType", "end")]));
                 self.rev_close(w, props);
             }
+            InlineObject::ContentControlStart { properties, end_properties } => {
+                w.raw("<w:sdt>");
+                if properties.is_empty() {
+                    w.raw("<w:sdtPr/>");
+                } else {
+                    w.raw(properties);
+                }
+                w.raw(end_properties);
+                w.raw("<w:sdtContent>");
+            }
+            InlineObject::ContentControlEnd => w.raw("</w:sdtContent></w:sdt>"),
             InlineObject::NoteRef { kind, id, custom } => {
                 let foot = *kind == NoteKind::Footnote;
                 if self.current_note == Some((foot, *id)) {

@@ -361,7 +361,12 @@ impl Reader<'_> {
             }
             "w:sdt" => {
                 if let Some(c) = k.child("w:sdtContent") {
+                    let properties = k.child("w:sdtPr").map(El::to_xml).unwrap_or_default();
+                    let end_properties = k.child("w:sdtEndPr").map(El::to_xml).unwrap_or_default();
+                    let props = self.run_props_none(ctx);
+                    pb.push_obj(InlineObject::ContentControlStart { properties, end_properties }, &props);
                     self.read_inline_children(sc, pb, c, rels, ctx, depth + 1);
+                    pb.push_obj(InlineObject::ContentControlEnd, &props);
                 }
             }
             "w:smartTag" | "w:customXml" | "w:dir" | "w:bdo" => self.read_inline_children(sc, pb, k, rels, ctx, depth + 1),

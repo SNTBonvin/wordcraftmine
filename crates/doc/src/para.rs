@@ -305,6 +305,10 @@ pub enum InlineObject {
     },
     /// The end of the innermost open [`InlineObject::FieldStart`].
     FieldEnd,
+    /// The start of an inline Word content control; its contents remain ordinary editable runs.
+    ContentControlStart { properties: String, end_properties: String },
+    /// The end of the innermost open [`InlineObject::ContentControlStart`].
+    ContentControlEnd,
     NoteRef {
         kind: NoteKind,
         /// `Document::parts` id of the note's story.
@@ -449,6 +453,8 @@ impl InlineObject {
                 | InlineObject::CommentEnd { .. }
                 | InlineObject::FieldStart { .. }
                 | InlineObject::FieldEnd
+                | InlineObject::ContentControlStart { .. }
+                | InlineObject::ContentControlEnd
         )
     }
     pub fn is_floating(&self) -> bool {

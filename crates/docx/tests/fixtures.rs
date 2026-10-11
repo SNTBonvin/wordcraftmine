@@ -134,6 +134,34 @@ fn alternate_content_choice_and_fallback() {
 }
 
 #[test]
+fn inline_content_control_properties_survive_round_trip() {
+    let body = r#"
+<w:p><w:r><w:t>before </w:t></w:r>
+ <w:sdt><w:sdtPr><w:alias w:val="Customer name"/><w:tag w:val="customer.name"/><w:id w:val="42"/><w:lock w:val="sdtContentLocked"/><w:dataBinding w:storeItemID="{12345678-1234-1234-1234-123456789ABC}" w:xpath="/customer/name" w:prefixMappings=""/></w:sdtPr><w:sdtEndPr><w:rPr><w:i/></w:rPr></w:sdtEndPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr><w:t>Jordan</w:t></w:r></w:sdtContent></w:sdt>
+ <w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>"#;
+    let original = read_body(body);
+    let original_para = paras(&original)[0];
+    assert_eq!(original_para.plain_text(), "before Jordan after");
+    let text_offset = original_para.text.find("Jordan").unwrap();
+    assert_eq!(original_para.props_of_char(text_offset).bold, Some(true));
+
+    let written = wordcraft_docx::write(&original).unwrap();
+    let document_xml = text(&unzip(&written), "word/document.xml");
+    assert!(document_xml.contains("<w:sdtPr>"), "{document_xml}");
+    assert!(document_xml.contains("<w:alias w:val=\"Customer name\"/>"), "{document_xml}");
+    assert!(document_xml.contains("<w:tag w:val=\"customer.name\"/>"), "{document_xml}");
+    assert!(document_xml.contains("<w:lock w:val=\"sdtContentLocked\"/>"), "{document_xml}");
+    assert!(document_xml.contains("w:xpath=\"/customer/name\""), "{document_xml}");
+    assert!(document_xml.contains("<w:sdtEndPr><w:rPr><w:i/></w:rPr></w:sdtEndPr>"), "{document_xml}");
+
+    let round_trip = wordcraft_docx::read(&written).unwrap();
+    let round_trip_para = paras(&round_trip)[0];
+    assert_eq!(round_trip_para.plain_text(), "before Jordan after");
+    let text_offset = round_trip_para.text.find("Jordan").unwrap();
+    assert_eq!(round_trip_para.props_of_char(text_offset).bold, Some(true));
+}
+
+#[test]
 fn table_look_bitmask_and_legacy_merges() {
     let body = r#"
 <w:tbl>
