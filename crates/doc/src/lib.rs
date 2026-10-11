@@ -14,6 +14,7 @@ pub mod bidi;
 pub mod edit;
 pub mod effects;
 pub mod encoding;
+pub mod eq;
 pub mod fields;
 pub mod freeform;
 pub mod graphic;
@@ -29,6 +30,7 @@ pub mod resolve;
 pub mod section;
 pub mod styles;
 pub mod table;
+pub mod wrap;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

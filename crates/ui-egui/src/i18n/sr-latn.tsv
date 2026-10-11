@@ -162,6 +162,14 @@
 	Shadow, glow and soft edges	Senka, sjaj i meke ivice
 	Shape Effects	Efekti oblika
 	Show all revisions inline	Prikaži sve izmene u tekstu
+	Base text:	Osnovni tekst:
+	Distribute letters	Rasporedi slova
+	Distribute spacing	Rasporedi razmak
+	Offset (pt):	Pomak (pt):
+	Phonetic Guide	Fonetski vodič
+	Remove	Ukloni
+	Right (vertical)	Desno (vertikalno)
+	Ruby text:	Rubi tekst:
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	Prikaži dokumente sa invertovanim bojama, kao kod Prikaz › Promeni režim. Čuvanje, štampanje i PDF nisu pogođeni.
 	AutoSave saves every change to the file (needs a saved document)	Automatsko čuvanje upisuje svaku izmenu u fajl (dokument mora biti već sačuvan)
 	AutoSave isn't available in the browser: it can't write to your files. Save downloads a copy.	Automatsko čuvanje nije dostupno u pregledaču: ne može da upisuje u vaše fajlove. Čuvanje preuzima kopiju.
@@ -789,6 +797,7 @@
 	Single	Jednostruko
 	Single Spacing	Jednostruko proređenje
 	Size	Veličina papira
+	Size (pt):	Veličina (pt):
 	Size:	Veličina:
 	Small Caps	Kapitelke
 	Small caps	kapitelke
@@ -1163,6 +1172,8 @@
 	Type at least one recipient.	Unesite bar jednog primaoca.
 	Type the recipients, or load them from a file.	Unesite primaoce ili ih učitajte iz fajla.
 	Use an Existing List…	Koristi postojeću listu…
+	Choose the sheet that holds the recipients.	Izaberite list na kome su primaoci.
+	First row of data contains column headers	Prvi red podataka sadrži zaglavlja kolona
 	A file dialog is already open.	Dijalog za fajlove je već otvoren.
 	Height:	Visina:
 	Width:	Širina:
@@ -1245,6 +1256,9 @@
 	South	Jug
 	West	Zapad
 	Total	Ukupno
+
+# Table Layout › Draw (#308)
+	Draw\nTable	Nacrtaj\ntabelu
 # Columns, Symbol and Field dialogs (#321).
 	(All)	(Sve)
 	(none)	(nema)
@@ -1328,6 +1342,12 @@
 	Rotate Left 90°	Rotiraj ulevo za 90°
 	Flip Vertical	Okreni vertikalno
 	Flip Horizontal	Okreni horizontalno
+	Move Paragraph Up	Pomeri pasus nagore
+	Move Paragraph Down	Pomeri pasus nadole
+	Promote	Podigni nivo
+	Demote	Spusti nivo
+	Go Back	Vrati se nazad
+	Toggle Unicode Character	Prebaci Unicode znak
 	Toggle Field Codes	Uključi/isključi kodove polja
 	Edit Field Code	Uredi kod polja
 	Unlink Fields	Raskini vezu polja
@@ -1340,3 +1360,66 @@
 	Formatted	Formatirano
 	Interface size:	Veličina interfejsa:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Povećava ili smanjuje traku, menije i dijaloge, povrh skaliranja ekrana u sistemu. Zumiranje dokumenta je zasebno.
+	In Line with Text	U ravni sa tekstom
+	Square	Kvadratno
+	Through	Kroz
+	Top and Bottom	Iznad i ispod
+	Behind Text	Iza teksta
+	In Front of Text	Ispred teksta
+	Wrap Text Sides	Strane preloma teksta
+	Both Sides	Obe strane
+	Left Only	Samo levo
+	Right Only	Samo desno
+	Largest Only	Samo šira strana
+	Customize Keyboard	Prilagođavanje tastature
+	Choose a command	Izaberite komandu
+	Choose a shortcut	Izaberite prečicu
+	All Commands	Sve komande
+	Commands:	Komande:
+	Keys for this command:	Tasteri za ovu komandu:
+	New shortcut:	Nova prečica:
+	Now used by {command}	Sada koristi: {command}
+	Not used by any command	Nijedna komanda je ne koristi
+	Remove every custom shortcut and restore the built-in keys?	Ukloniti sve prilagođene prečice i vratiti ugrađene tastere?
+	Assign	Dodeli
+	Reset All…	Resetuj sve…
+	Press a key combination	Pritisnite kombinaciju tastera
+	Customize	Prilagođavanje
+	Keyboard shortcuts:	Prečice na tastaturi:
+	Customize…	Prilagodi…
+	Customize Ribbon	Prilagodi traku
+	Add to Quick Access Toolbar	Dodaj na traku sa alatkama za brzi pristup
+	Remove from Quick Access Toolbar	Ukloni sa trake sa alatkama za brzi pristup
+	Customize the Ribbon…	Prilagodi traku…
+	Customize Quick Access Toolbar…	Prilagodi traku sa alatkama za brzi pristup…
+	More Commands…	Još komandi…
+	Ribbon	Traka
+	(Custom)	(Prilagođeno)
+	Remove every custom tab and group and show all tabs again?	Ukloniti sve prilagođene kartice i grupe i ponovo prikazati sve kartice?
+	Put the default commands back on the Quick Access Toolbar?	Vratiti podrazumevane komande na traku sa alatkama za brzi pristup?
+	Reset…	Resetuj…
+	Add >>	Dodaj >>
+	<< Remove	<< Ukloni
+	Pick a custom group (New Group makes one)	Izaberite prilagođenu grupu (Nova grupa pravi jednu)
+	Ribbon tabs	Kartice trake
+	New Tab	Nova kartica
+	New Group	Nova grupa
+	Rename…	Preimenuj…
+	Ribbon and Quick Access Toolbar:	Traka i traka sa alatkama za brzi pristup:
+	Arrows	Strelice
+	Communication	Komunikacija
+	Office	Kancelarija
+	People	Ljudi
+	Nature	Priroda
+	Weather	Vreme
+	Technology	Tehnologija
+	Transport	Prevoz
+	Icon Color	Boja ikonice
+	Search icons	Pretraži ikonice
+	No icons match your search.	Nijedna ikonica ne odgovara pretrazi.
+	Recolor a one-color picture, such as an icon	Promeni boju jednobojne slike, kao što je ikonica
+	Enclose Characters	Uokviri znakove
+	Shrink text	Smanji tekst
+	Enlarge symbol	Uvećaj simbol
+	Enclosure	Okvir
+	Circle	Krug

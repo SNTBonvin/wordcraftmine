@@ -702,7 +702,7 @@
 	Style Inspector	Stil Denetçisi
 	Style Set	Stil Kümesi
 	Style based on:	Temel alınan stil:
-	Style: APA	Stil: APA
+	Style: {style}	Stil: {style}
 	Styles	Stiller
 	Styles Pane	Stiller Bölmesi
 	Subscript	Alt Simge
@@ -1322,3 +1322,103 @@
 	Flip Vertical	Dikey Çevir
 	Flip Horizontal	Yatay Çevir
 	Formatted	Biçimlendirildi
+	Copyright Sign	Telif Hakkı İşareti
+	Demote	Düzey Düşür
+	Edit Field Code	Alan Kodunu Düzenle
+	Edit Field…	Alanı Düzenle…
+	Go Back	Geri Git
+	Insert Date Field	Tarih Alanı Ekle
+	Insert Page Field	Sayfa Alanı Ekle
+	Insert Time Field	Saat Alanı Ekle
+	Interface size:	Arabirim boyutu:
+	Lock Fields	Alanları Kilitle
+	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Şeridi, menüleri ve iletişim kutularını sisteminizin ekran ölçeklendirmesine ek olarak büyütür veya küçültür. Belge yakınlaştırması ayrıdır.
+	Move Paragraph Down	Paragrafı Aşağı Taşı
+	Move Paragraph Up	Paragrafı Yukarı Taşı
+	Next Field	Sonraki Alan
+	Previous Field	Önceki Alan
+	Promote	Düzey Yükselt
+	Registered Sign	Tescilli Marka İşareti
+	Reset Character Formatting	Karakter Biçimlendirmesini Sıfırla
+	Reset Paragraph Formatting	Paragraf Biçimlendirmesini Sıfırla
+	Selected Fields	Seçili Alanlar
+	Toggle Field Codes	Alan Kodlarını Aç/Kapat
+	Toggle Unicode Character	Unicode Karakterini Değiştir
+	Trademark Sign	Ticari Marka İşareti
+	Unlink Fields	Alan Bağlantılarını Kaldır
+	Unlock Fields	Alanların Kilidini Aç
+	Draw\nTable	Tablo\nÇiz
+	Customize Keyboard	Klavyeyi Özelleştir
+	Choose a command	Bir komut seçin
+	Choose a shortcut	Bir kısayol seçin
+	All Commands	Tüm Komutlar
+	Commands:	Komutlar:
+	Keys for this command:	Bu komutun tuşları:
+	New shortcut:	Yeni kısayol:
+	Now used by {command}	Şu anda kullanan: {command}
+	Not used by any command	Hiçbir komut kullanmıyor
+	Remove every custom shortcut and restore the built-in keys?	Tüm özel kısayollar kaldırılıp yerleşik tuşlar geri yüklensin mi?
+	Assign	Ata
+	Remove	Kaldır
+	Reset All…	Tümünü Sıfırla…
+	Press a key combination	Bir tuş birleşimine basın
+	Customize	Özelleştir
+	Keyboard shortcuts:	Klavye kısayolları:
+	Customize…	Özelleştir…
+	Customize Ribbon	Şeridi Özelleştir
+	Add to Quick Access Toolbar	Hızlı Erişim Araç Çubuğuna Ekle
+	Remove from Quick Access Toolbar	Hızlı Erişim Araç Çubuğundan Kaldır
+	Customize the Ribbon…	Şeridi Özelleştir…
+	Customize Quick Access Toolbar…	Hızlı Erişim Araç Çubuğunu Özelleştir…
+	More Commands…	Diğer Komutlar…
+	Ribbon	Şerit
+	(Custom)	(Özel)
+	Remove every custom tab and group and show all tabs again?	Tüm özel sekmeler ve gruplar kaldırılıp tüm sekmeler yeniden gösterilsin mi?
+	Put the default commands back on the Quick Access Toolbar?	Varsayılan komutlar Hızlı Erişim Araç Çubuğuna geri konsun mu?
+	Reset…	Sıfırla…
+	Add >>	Ekle >>
+	<< Remove	<< Kaldır
+	Pick a custom group (New Group makes one)	Bir özel grup seçin (Yeni Grup bir tane oluşturur)
+	Ribbon tabs	Şerit sekmeleri
+	New Tab	Yeni Sekme
+	New Group	Yeni Grup
+	Rename…	Yeniden Adlandır…
+	Ribbon and Quick Access Toolbar:	Şerit ve Hızlı Erişim Araç Çubuğu:
+	Enclose Characters	Karakterleri Çevrele
+	Shrink text	Metni küçült
+	Enlarge symbol	Simgeyi büyüt
+	Enclosure	Çerçeve
+	Circle	Daire
+	Square	Kare
+	Base text:	Ana metin:
+	Distribute letters	Harfleri dağıt
+	Distribute spacing	Aralığı dağıt
+	Offset (pt):	Kaydırma (pt):
+	Phonetic Guide	Fonetik Kılavuz
+	Right (vertical)	Sağ (dikey)
+	Ruby text:	Ruby metni:
+	Size (pt):	Boyut (pt):
+	In Line with Text	Metinle Aynı Hizada
+	Through	Geçişli
+	Top and Bottom	Üst ve Alt
+	Behind Text	Metnin Arkasında
+	In Front of Text	Metnin Önünde
+	Wrap Text Sides	Metin Kaydırma Kenarları
+	Both Sides	Her İki Kenar
+	Left Only	Yalnızca Sol
+	Right Only	Yalnızca Sağ
+	Largest Only	Yalnızca En Geniş
+	Choose the sheet that holds the recipients.	Alıcıları içeren sayfayı seçin.
+	First row of data contains column headers	Verinin ilk satırı sütun başlıklarını içerir
+	Arrows	Oklar
+	Communication	İletişim
+	Office	Ofis
+	People	İnsanlar
+	Nature	Doğa
+	Weather	Hava Durumu
+	Technology	Teknoloji
+	Transport	Ulaşım
+	Icon Color	Simge Rengi
+	Search icons	Simgelerde ara
+	No icons match your search.	Aramanızla eşleşen simge yok.
+	Recolor a one-color picture, such as an icon	Simge gibi tek renkli bir resmi yeniden renklendir

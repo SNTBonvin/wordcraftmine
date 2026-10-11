@@ -1392,3 +1392,85 @@
 	Selected Fields	Campi selezionati
 	Edit Field…	Modifica campo…
 	Style: APA	Stile: APA
+
+# Added with the merge of main (Customize Keyboard and Ribbon, wrap sides, paragraph moves).
+	(Custom)	(Personalizzato)
+	<< Remove	<< Rimuovi
+	Add >>	Aggiungi >>
+	Add to Quick Access Toolbar	Aggiungi alla barra di accesso rapido
+	All Commands	Tutti i comandi
+	Assign	Assegna
+	Behind Text	Dietro al testo
+	Both Sides	Entrambi i lati
+	Choose a command	Scegli un comando
+	Choose a shortcut	Scegli una scelta rapida
+	Commands:	Comandi:
+	Customize	Personalizza
+	Customize Keyboard	Personalizza tastiera
+	Customize Quick Access Toolbar…	Personalizza barra di accesso rapido…
+	Customize Ribbon	Personalizza barra multifunzione
+	Customize the Ribbon…	Personalizza la barra multifunzione…
+	Customize…	Personalizza…
+	Demote	Abbassa di livello
+	Go Back	Torna indietro
+	In Front of Text	Davanti al testo
+	In Line with Text	In linea con il testo
+	Keyboard shortcuts:	Scelte rapide da tastiera:
+	Keys for this command:	Tasti per questo comando:
+	Largest Only	Solo il lato più ampio
+	Left Only	Solo a sinistra
+	More Commands…	Altri comandi…
+	Move Paragraph Down	Sposta paragrafo giù
+	Move Paragraph Up	Sposta paragrafo su
+	New Group	Nuovo gruppo
+	New Tab	Nuova scheda
+	New shortcut:	Nuova scelta rapida:
+	Not used by any command	Non usata da alcun comando
+	Now used by {command}	Ora usata da {command}
+	Pick a custom group (New Group makes one)	Scegli un gruppo personalizzato (Nuovo gruppo ne crea uno)
+	Press a key combination	Premi una combinazione di tasti
+	Promote	Alza di livello
+	Put the default commands back on the Quick Access Toolbar?	Ripristinare i comandi predefiniti sulla barra di accesso rapido?
+	Remove	Rimuovi
+	Remove every custom shortcut and restore the built-in keys?	Rimuovere tutte le scelte rapide personalizzate e ripristinare i tasti predefiniti?
+	Remove every custom tab and group and show all tabs again?	Rimuovere tutte le schede e i gruppi personalizzati e mostrare di nuovo tutte le schede?
+	Remove from Quick Access Toolbar	Rimuovi dalla barra di accesso rapido
+	Rename…	Rinomina…
+	Reset All…	Reimposta tutto…
+	Reset…	Reimposta…
+	Ribbon	Barra multifunzione
+	Ribbon and Quick Access Toolbar:	Barra multifunzione e barra di accesso rapido:
+	Ribbon tabs	Schede della barra multifunzione
+	Right Only	Solo a destra
+	Square	Incorniciato
+	Through	Passante
+	Toggle Unicode Character	Attiva/disattiva carattere Unicode
+	Top and Bottom	Sopra e sotto
+	Wrap Text Sides	Lati per il testo a capo
+	Arrows	Frecce
+	Base text:	Testo di base:
+	Choose the sheet that holds the recipients.	Scegli il foglio che contiene i destinatari.
+	Circle	Cerchio
+	Communication	Comunicazione
+	Distribute letters	Distribuisci lettere
+	Distribute spacing	Distribuisci spaziatura
+	Enclose Characters	Racchiudi caratteri
+	Enclosure	Contorno
+	Enlarge symbol	Ingrandisci simbolo
+	First row of data contains column headers	La prima riga di dati contiene le intestazioni di colonna
+	Icon Color	Colore icona
+	Nature	Natura
+	No icons match your search.	Nessuna icona corrisponde alla ricerca.
+	Office	Ufficio
+	Offset (pt):	Scostamento (pt):
+	People	Persone
+	Phonetic Guide	Guida fonetica
+	Recolor a one-color picture, such as an icon	Ricolora un'immagine a un solo colore, ad esempio un'icona
+	Right (vertical)	Destra (verticale)
+	Ruby text:	Testo ruby:
+	Search icons	Cerca icone
+	Shrink text	Riduci testo
+	Size (pt):	Dimensione (pt):
+	Technology	Tecnologia
+	Transport	Trasporti
+	Weather	Meteo

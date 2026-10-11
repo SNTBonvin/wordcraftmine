@@ -58,6 +58,49 @@ pub enum Wrap {
     InFrontOfText,
 }
 
+/// Which sides of a Square, Tight or Through object text may flow on (`@wrapText`, ECMA-376
+/// Part 1, §20.4.3.7 `ST_WrapText`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum WrapText {
+    /// Both sides of the object.
+    #[default]
+    BothSides,
+    /// Only the left side: the band to the object's right stays empty.
+    Left,
+    /// Only the right side.
+    Right,
+    /// Only whichever side has more room, decided per line.
+    Largest,
+}
+
+impl WrapText {
+    /// From the OOXML value (`bothSides`, `left`, `right`, `largest`).
+    pub fn from_ooxml(v: &str) -> Option<WrapText> {
+        match v {
+            "bothSides" => Some(WrapText::BothSides),
+            "left" => Some(WrapText::Left),
+            "right" => Some(WrapText::Right),
+            "largest" => Some(WrapText::Largest),
+            _ => None,
+        }
+    }
+
+    /// The OOXML value.
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            WrapText::BothSides => "bothSides",
+            WrapText::Left => "left",
+            WrapText::Right => "right",
+            WrapText::Largest => "largest",
+        }
+    }
+
+    pub fn is_both(&self) -> bool {
+        *self == WrapText::BothSides
+    }
+}
+
 /// What a floating object's offset is relative to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -126,10 +169,13 @@ impl FloatAlign {
 }
 
 /// Floating placement (ignored when `wrap` is `Inline`).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Float {
     pub wrap: Wrap,
+    /// The sides text wraps on (Square, Tight and Through).
+    #[serde(skip_serializing_if = "WrapText::is_both")]
+    pub wrap_text: WrapText,
     pub h_rel: Anchor,
     pub v_rel: Anchor,
     /// Offsets, points (used when the matching alignment is `None`).
@@ -158,6 +204,10 @@ pub struct Float {
     pub flip_h: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub flip_v: bool,
+    /// The outline Tight and Through wrapping follow (`wp:wrapPolygon`), in the object's own
+    /// (unrotated) frame; `None` = derived from the object (see [`crate::wrap`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrap_polygon: Option<std::sync::Arc<crate::wrap::WrapPolygon>>,
 }
 
 fn is_zero(v: &f32) -> bool {
@@ -217,6 +267,55 @@ pub enum NoteKind {
     #[default]
     Footnote,
     Endnote,
+}
+
+/// How ruby (phonetic guide) text lines up over its base text (ECMA-376 `ST_RubyAlign`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RubyAlign {
+    #[default]
+    Center,
+    /// Letters spread evenly from edge to edge.
+    DistributeLetter,
+    /// Letters spread evenly with half a gap at each edge.
+    DistributeSpace,
+    Left,
+    Right,
+    /// Right-aligned beside vertical text (laid out like `Right` in horizontal text).
+    RightVertical,
+}
+
+impl RubyAlign {
+    pub const ALL: [RubyAlign; 6] =
+        [RubyAlign::Center, RubyAlign::DistributeLetter, RubyAlign::DistributeSpace, RubyAlign::Left, RubyAlign::Right, RubyAlign::RightVertical];
+
+    /// The OOXML name (`center`, `distributeLetter`…), also used by commands.
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            RubyAlign::Center => "center",
+            RubyAlign::DistributeLetter => "distributeLetter",
+            RubyAlign::DistributeSpace => "distributeSpace",
+            RubyAlign::Left => "left",
+            RubyAlign::Right => "right",
+            RubyAlign::RightVertical => "rightVertical",
+        }
+    }
+
+    pub fn from_ooxml(v: &str) -> Option<RubyAlign> {
+        RubyAlign::ALL.into_iter().find(|a| a.ooxml() == v)
+    }
+}
+
+/// Phonetic Guide's Offset for a ruby `raise` (baseline to baseline, points): the gap from the top
+/// of the base text to the bottom of the ruby text, taking letters as rising 0.8 em above their
+/// baseline and dropping 0.2 em below it.
+pub fn ruby_offset(raise: f32, base_size: f32, size: f32) -> f32 {
+    raise - 0.8 * base_size - 0.2 * size
+}
+
+/// The ruby raise (baseline to baseline, points) for a Phonetic Guide Offset (see [`ruby_offset`]).
+pub fn ruby_raise(offset: f32, base_size: f32, size: f32) -> f32 {
+    offset + 0.8 * base_size + 0.2 * size
 }
 
 /// An inline object anchored at a U+FFFC in the paragraph text.
@@ -339,6 +438,27 @@ pub enum InlineObject {
         /// The structure; empty = parse `linear`.
         #[serde(default, skip_serializing_if = "crate::math::Math::is_empty")]
         math: crate::math::Math,
+    },
+    /// Ruby (Phonetic Guide): small `ruby` text (furigana, pinyin…) set over `base` text. The base
+    /// text takes the formatting of the object's run; it reads as the paragraph's text.
+    Ruby {
+        base: String,
+        ruby: String,
+        #[serde(default)]
+        align: RubyAlign,
+        /// Ruby text size, points (`w:hps`).
+        size: f32,
+        /// From the base text's baseline up to the ruby text's baseline, points (`w:hpsRaise`).
+        raise: f32,
+        /// The base text size the ruby was set for, points (`w:hpsBaseText`).
+        #[serde(default)]
+        base_size: f32,
+        /// Language of the ruby (`w:lid`, e.g. `ja-JP`); empty = unspecified.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        lang: String,
+        /// Formatting of the ruby text over the run's (font, colour…); its size is `size`.
+        #[serde(default, skip_serializing_if = "CharProps::is_empty")]
+        props: Box<CharProps>,
     },
     /// Something we don't model, kept for round-trip (raw XML of the source format).
     Opaque {
@@ -477,6 +597,7 @@ impl InlineObject {
         match self {
             InlineObject::Field { result, .. } => result,
             InlineObject::Equation { linear, .. } => linear,
+            InlineObject::Ruby { base, .. } => base,
             InlineObject::Opaque { text, .. } => text,
             _ => "",
         }

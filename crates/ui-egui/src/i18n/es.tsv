@@ -110,6 +110,7 @@
 	Backspace	Retroceso
 	Banded Columns	Columnas con bandas
 	Banded Rows	Filas con bandas
+	Base text:	Texto base:
 	Before:	Antes:
 	Bibliography	Bibliografía
 	Binary assets added	Recursos binarios añadidos
@@ -275,7 +276,9 @@
 	Display	Mostrar
 	Display for Review	Mostrar para revisión
 	Distribute Columns	Distribuir columnas
+	Distribute letters	Distribuir letras
 	Distribute Rows	Distribuir filas
+	Distribute spacing	Distribuir espacio
 	Distributed	Distribuido
 	Do Not Show in TOC	No mostrar en la tabla de contenido
 	Document End	Fin del documento
@@ -540,6 +543,7 @@
 	Number of columns:	Número de columnas:
 	Number of rows:	Número de filas:
 	Numbering	Numeración
+	Offset (pt):	Desplazamiento (pt):
 	OK	Aceptar
 	Object	Objeto
 	Odd Page	Página impar
@@ -606,6 +610,7 @@
 	Paste: Merge Formatting	Pegar: combinar formato
 	Pen	Pluma
 	Pencil	Lápiz
+	Phonetic Guide	Guía fonética
 	Picture Border	Borde de imagen
 	Picture Format	Formato de imagen
 	Picture Styles	Estilos de imagen
@@ -649,6 +654,7 @@
 	Reject All Changes	Rechazar todos los cambios
 	Reject Change	Rechazar cambio
 	Relaxed	Relajado
+	Remove	Quitar
 	Remove Background	Quitar fondo
 	Remove Footer	Quitar pie de página
 	Remove Header	Quitar encabezado
@@ -686,6 +692,7 @@
 	Rich Text Format (*.rtf)	Formato de texto enriquecido (*.rtf)
 	Rich Text Format (RTF)	Formato de texto enriquecido (RTF)
 	Right	Derecha
+	Right (vertical)	Derecha (vertical)
 	Right Border	Borde derecho
 	Right Margin	Margen derecho
 	Right-to-Left Text Direction	Dirección de texto de derecha a izquierda
@@ -694,6 +701,7 @@
 	Rotate	Girar
 	Rounded Rectangle	Rectángulo redondeado
 	Rows & Columns	Filas y columnas
+	Ruby text:	Texto ruby:
 	Ruler	Regla
 	Rules	Reglas
 	Résumé	Currículum
@@ -761,6 +769,7 @@
 	Single	Sencillo
 	Single Spacing	Interlineado sencillo
 	Size	Tamaño
+	Size (pt):	Tamaño (pt):
 	Size:	Tamaño:
 	Small Caps	Versalitas
 	Small caps	Versalitas
@@ -1107,6 +1116,8 @@
 	Type at least one recipient.	Escribe al menos un destinatario.
 	Type the recipients, or load them from a file.	Escribe los destinatarios o cárgalos desde un archivo.
 	Use an Existing List…	Usar una lista existente…
+	Choose the sheet that holds the recipients.	Elija la hoja que contiene los destinatarios.
+	First row of data contains column headers	La primera fila de datos contiene encabezados de columna
 	Interface theme:	Tema de la interfaz:
 	Interface\nTheme	Tema de la\ninterfaz
 	Interface Theme	Tema de la interfaz
@@ -1328,12 +1339,21 @@
 	South	Sur
 	West	Oeste
 	Total	Total
+
+# Table Layout › Draw (#308)
+	Draw\nTable	Dibujar\ntabla
 	Rotation	Giro
 	Rotation:	Giro:
 	Rotate Right 90°	Girar 90° a la derecha
 	Rotate Left 90°	Girar 90° a la izquierda
 	Flip Vertical	Voltear verticalmente
 	Flip Horizontal	Voltear horizontalmente
+	Move Paragraph Up	Subir párrafo
+	Move Paragraph Down	Bajar párrafo
+	Promote	Promover
+	Demote	Degradar
+	Go Back	Volver
+	Toggle Unicode Character	Alternar carácter Unicode
 	Toggle Field Codes	Alternar códigos de campo
 	Edit Field Code	Editar código de campo
 	Unlink Fields	Desvincular campos
@@ -1346,3 +1366,66 @@
 	Formatted	Con formato
 	Interface size:	Tamaño de la interfaz:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Agranda o reduce la cinta, los menús y los cuadros de diálogo, además del escalado de pantalla del sistema. El zoom del documento es aparte.
+	In Line with Text	En línea con el texto
+	Square	Cuadrado
+	Through	Transparente
+	Top and Bottom	Arriba y abajo
+	Behind Text	Detrás del texto
+	In Front of Text	Delante del texto
+	Wrap Text Sides	Lados del ajuste
+	Both Sides	Ambos lados
+	Left Only	Solo a la izquierda
+	Right Only	Solo a la derecha
+	Largest Only	Solo el lado más ancho
+	Customize Keyboard	Personalizar teclado
+	Choose a command	Elija un comando
+	Choose a shortcut	Elija un método abreviado
+	All Commands	Todos los comandos
+	Commands:	Comandos:
+	Keys for this command:	Teclas de este comando:
+	New shortcut:	Nuevo método abreviado:
+	Now used by {command}	Ahora lo usa {command}
+	Not used by any command	Ningún comando lo usa
+	Remove every custom shortcut and restore the built-in keys?	¿Quitar todos los métodos abreviados personalizados y restaurar las teclas integradas?
+	Assign	Asignar
+	Reset All…	Restablecer todo…
+	Press a key combination	Pulse una combinación de teclas
+	Customize	Personalizar
+	Keyboard shortcuts:	Métodos abreviados de teclado:
+	Customize…	Personalizar…
+	Customize Ribbon	Personalizar cinta de opciones
+	Add to Quick Access Toolbar	Agregar a la barra de herramientas de acceso rápido
+	Remove from Quick Access Toolbar	Quitar de la barra de herramientas de acceso rápido
+	Customize the Ribbon…	Personalizar la cinta de opciones…
+	Customize Quick Access Toolbar…	Personalizar barra de herramientas de acceso rápido…
+	More Commands…	Más comandos…
+	Ribbon	Cinta de opciones
+	(Custom)	(Personalizado)
+	Remove every custom tab and group and show all tabs again?	¿Quitar todas las pestañas y grupos personalizados y volver a mostrar todas las pestañas?
+	Put the default commands back on the Quick Access Toolbar?	¿Volver a poner los comandos predeterminados en la barra de herramientas de acceso rápido?
+	Reset…	Restablecer…
+	Add >>	Agregar >>
+	<< Remove	<< Quitar
+	Pick a custom group (New Group makes one)	Elija un grupo personalizado (Nuevo grupo crea uno)
+	Ribbon tabs	Pestañas de la cinta
+	New Tab	Nueva pestaña
+	New Group	Nuevo grupo
+	Rename…	Cambiar nombre…
+	Ribbon and Quick Access Toolbar:	Cinta de opciones y barra de acceso rápido:
+	Arrows	Flechas
+	Communication	Comunicación
+	Office	Oficina
+	People	Personas
+	Nature	Naturaleza
+	Weather	Tiempo
+	Technology	Tecnología
+	Transport	Transporte
+	Icon Color	Color del icono
+	Search icons	Buscar iconos
+	No icons match your search.	Ningún icono coincide con la búsqueda.
+	Recolor a one-color picture, such as an icon	Cambiar el color de una imagen de un solo color, como un icono
+	Enclose Characters	Encerrar caracteres
+	Shrink text	Reducir texto
+	Enlarge symbol	Agrandar símbolo
+	Enclosure	Contorno
+	Circle	Círculo

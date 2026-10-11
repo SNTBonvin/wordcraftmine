@@ -20,8 +20,10 @@ pub mod control;
 pub mod credits;
 pub mod dialogs;
 pub mod dialogs_insert;
+pub mod dialogs_keyboard;
 pub mod dialogs_lists;
 pub mod dialogs_para;
+pub mod dialogs_ribbon;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
@@ -127,6 +129,11 @@ pub struct UiState {
     /// View › Switch Modes: show pages dark (white text on black), kept between runs. Only the
     /// pages: the interface follows [`UiState::theme`] (#312).
     pub dark_page: bool,
+    /// Custom keyboard shortcuts (Customize Keyboard, #368); the session owns them while running.
+    pub keyboard: wordcraft_engine::KeyMap,
+    /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
+    /// #379); the session owns them while running.
+    pub ribbon: wordcraft_engine::RibbonLayout,
 }
 
 impl Default for UiState {
@@ -152,6 +159,8 @@ impl Default for UiState {
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
+            keyboard: wordcraft_engine::KeyMap::default(),
+            ribbon: wordcraft_engine::RibbonLayout::default(),
         }
     }
 }
@@ -293,6 +302,8 @@ impl WordApp {
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
+        ui.keyboard = self.session.keymap.clone();
+        ui.ribbon = self.session.ribbon.clone();
         ui
     }
 
@@ -313,6 +324,13 @@ impl WordApp {
         self.session.read_aloud.set_rate(self.ui.read_aloud_rate);
         self.session.read_aloud.skip_citations = self.ui.read_aloud_skip_citations;
         self.session.view.dark_mode = self.ui.dark_page;
+        // Keys for commands this version doesn't have are dropped.
+        self.session.keymap = std::mem::take(&mut self.ui.keyboard);
+        let reg = self.session.registry.clone();
+        self.session.keymap.retain_known(&reg);
+        // So are ribbon and toolbar commands.
+        self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
+        self.session.ribbon.retain_known(&reg);
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -747,10 +765,20 @@ impl WordApp {
         let _ = self.ask_file(file_dialogs::FileDialogRequest::Open { purpose: "recipients".into() }, file_dialogs::AfterPick::Recipients);
     }
 
-    /// Load mail-merge recipients and say how many there are.
+    /// Load mail-merge recipients and say how many there are. A workbook with several sheets
+    /// shows Select Table to choose one first (#334).
     pub(crate) fn load_recipients(&mut self, params: Value) -> Result<Value, String> {
-        let r = self.run("mailings.recipients", params);
-        if let Ok(v) = &r {
+        let r = self.run("mailings.recipients", params.clone());
+        if let Ok(v) = &r
+            && v.get("chooseSheet").and_then(Value::as_bool) == Some(true)
+        {
+            let sheets = v
+                .get("sheets")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            self.dialog = Some(dialogs::Dialog::SelectTable { sheets, selected: 0, headers: true, message: String::new(), params });
+        } else if let Ok(v) = &r {
             let records = v.get("records").and_then(Value::as_u64).unwrap_or(0).to_string();
             self.status(i18n::fmt(tl!("Recipients: {count}"), &[("count", &records)]));
         }
@@ -837,7 +865,15 @@ impl WordApp {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
                 let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
-                let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.run("file.open", json!({"path": path})) };
+                let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
+                let _ = if img {
+                    self.run("insert.picture", json!({"path": path}))
+                } else if sheet {
+                    // A spreadsheet isn't a document: it's a recipient list (#334).
+                    self.load_recipients(json!({"path": path}))
+                } else {
+                    self.run("file.open", json!({"path": path}))
+                };
             }
         }
         self.report_dirty();
@@ -965,7 +1001,7 @@ impl WordApp {
     }
 
     /// Files that arrived asynchronously (web picker, drops): documents open, pictures insert,
-    /// recipient lists (CSV/TSV, or a text file asked for as one) load as recipients.
+    /// recipient lists (CSV/TSV, spreadsheets, or a text file asked for as one) load as recipients.
     fn drain_inbox(&mut self) {
         let Some(inbox) = self.services.inbox.clone() else { return };
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
@@ -974,7 +1010,11 @@ impl WordApp {
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
             let list =
                 lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && std::mem::take(&mut self.recipient_list_pending));
-            let r = if list {
+            let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lower.ends_with(e));
+            let r = if sheet {
+                self.recipient_list_pending = false;
+                self.load_recipients(json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
+            } else if list {
                 self.load_recipients(json!({"csv": wordcraft_engine::io::decode_text(&bytes)}))
             } else if img {
                 self.insert_or_change_picture(json!({"data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
@@ -1106,7 +1146,7 @@ fn keeps_everything(name: &str) -> bool {
 /// the command's own error or default instead): Select Recipients and Edit Recipient List without
 /// data, Insert Merge Field without a field, Find Recipient without text, the If and Skip
 /// Record If rules (or Rules with no rule at all) without a field, Table Properties without
-/// settings, and Symbol and Field without a character or code.
+/// settings, Symbol and Field without a character or code, and Enclose Characters without a shape.
 fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     let has = |k: &str| params.get(k).is_some_and(|v| !v.is_null());
     let rule = params.get("rule").and_then(Value::as_str).map(str::to_ascii_uppercase);
@@ -1116,7 +1156,7 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
             Some("SKIPIF") => Some("ruleSkipIf"),
             _ => None,
         },
-        "mailings.recipients" if !["csv", "path", "rows"].into_iter().any(has) => Some("recipientList"),
+        "mailings.recipients" if !["csv", "path", "data", "rows"].into_iter().any(has) => Some("recipientList"),
         "mailings.editRecipients" if !has("rows") => Some("recipientList"),
         "mailings.insertField" if !has("field") => Some("insertMergeField"),
         "mailings.findRecipient" if !has("text") => Some("findRecipient"),
@@ -1139,6 +1179,8 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "insert.bookmark" if !has("name") => Some("bookmark"),
         // Word Count from the keyboard or command search shows its dialog, as the ribbon does.
         "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
+        // Enclose Characters without a shape (null is one: it takes the enclosure away).
+        "format.enclose" if params.get("shape").is_none() => Some("enclose"),
         _ => None,
     }
 }
@@ -1223,6 +1265,19 @@ mod tests {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
     }
 
+    /// Insert › Icons (#309) opens the icon picker from the ribbon; an id inserts without it.
+    #[test]
+    fn icons_button_opens_the_picker_and_ids_insert_directly() {
+        let mut a = app();
+        a.run("insert.icon", json!({})).unwrap();
+        assert_eq!(a.dialog.as_ref().map(dialogs::Dialog::name), Some("icons"));
+        a.dialog = None;
+        let r = a.run("insert.icon", json!({"id": "sun", "size": 36})).unwrap();
+        assert_eq!(r["icon"], "sun");
+        assert!(a.dialog.is_none(), "an id inserts without the dialog");
+        assert!(a.selected_picture_media().is_some());
+    }
+
     /// Table Layout › Properties (#44) opens the dialog from the ribbon; OK sends only what
     /// changed, as one `table.properties` step. Scripts with settings never see the dialog.
     #[test]
@@ -1248,6 +1303,24 @@ mod tests {
         assert_eq!(t.props.align, Some(wordcraft_doc::props::Align::Center));
         assert_eq!((t.rows[0].props.height, t.rows[0].props.header), (Some(36.0), true));
         assert_eq!(dialogs::TableForm::read(&a).unwrap().changes(&f), json!({}), "the dialog reopens with the new values");
+    }
+
+    /// Home › Font › Enclose Characters (#297): the button opens the dialog on the selected
+    /// character; the dialog's OK is `format.enclose`, and it reopens showing the enclosure.
+    #[test]
+    fn enclose_characters_button_opens_the_dialog() {
+        let mut a = app();
+        a.run("text.insert", json!({"text": "a 字 b"})).unwrap();
+        a.run("select.text", json!({"text": "字"})).unwrap();
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, text, shape }) = a.dialog.clone() else { panic!("no dialog: {:?}", a.dialog) };
+        assert_eq!((style.as_str(), text.as_str(), shape.as_str()), ("shrink", "字", "circle"));
+        a.dialog = None;
+        a.run("format.enclose", json!({"shape": "square", "style": "enlarge", "text": "字"})).unwrap();
+        assert!(a.dialog.is_none(), "a shape applies without the dialog");
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, shape, .. }) = a.dialog.clone() else { panic!("no dialog") };
+        assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
     /// Issue #139: Ctrl+wheel over the page didn't zoom.
