@@ -366,6 +366,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "tOGGLE cASE", "format.changeCase", json!({"mode": "toggle"}));
                 });
                 small(ui, app, "clear", None, "Clear All Formatting", "format.clear", json!({}), false);
+                small(ui, app, "phonetic", None, "Phonetic Guide", "format.phonetic", json!({}), false);
             });
             ui.add_space(3.0);
             crate::widgets::row(ui, |ui| {
@@ -389,6 +390,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 small(ui, app, "subscript", None, "Subscript", "format.subscript", json!({}), flag("subscript"));
                 small(ui, app, "superscript", None, "Superscript", "format.superscript", json!({}), flag("superscript"));
                 small(ui, app, "charborder", None, "Character Border", "format.border", json!({}), flag("border"));
+                small(ui, app, "enclose", None, "Enclose Characters", "format.enclose", json!({}), false);
                 ui.add_space(4.0);
                 menu_button(ui, app, "effects", None, "Text Effects and Typography", false, |ui, app| {
                     mi(ui, app, "Outline", "format.outline", json!({}));

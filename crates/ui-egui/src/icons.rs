@@ -120,6 +120,10 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rect(3.0, 3.0, 17.0, 17.0, a);
             pen.text(10.0, 6.0, 9.0, "A", c, false);
         }
+        "enclose" => {
+            pen.circle(10.0, 10.5, 7.5, a);
+            pen.text(10.0, 10.5, 9.0, "A", c, false);
+        }
         "subscript" => {
             pen.text(8.0, 9.0, 13.0, "x", c, false);
             pen.text(15.0, 14.5, 8.0, "2", a, true);
@@ -140,6 +144,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "clear" => {
             pen.text(8.0, 9.0, 13.0, "A", c, false);
             pen.fill(&[(10.0, 15.0), (14.0, 11.0), (18.0, 15.0), (14.0, 19.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
+        }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(10.0, 5.0, 7.5, "abc", a, false);
+            pen.text(10.0, 13.5, 12.5, "A", c, false);
         }
         "highlight" => {
             pen.fill(&[(5.0, 12.0), (11.0, 4.0), (14.0, 7.0), (8.0, 15.0)], c);

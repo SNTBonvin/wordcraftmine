@@ -53,6 +53,27 @@ struct FieldState {
     /// Kept as a range field: its result flows into the document as ordinary content between
     /// `FieldStart` and `FieldEnd` markers instead of being buffered.
     range: bool,
+    /// The font size of each piece of the code (where it starts in `instr`): an enclosure's
+    /// style is the size of its symbol and text (see [`wordcraft_doc::eq`]).
+    sizes: Vec<(usize, Option<f32>)>,
+}
+
+/// Enclosed characters (`eq \o\ac(○,字)`), with their style from the code's font sizes: Word
+/// enlarges the symbol (bigger than the text, which keeps the field's size) or shrinks the text
+/// (smaller than the symbol).
+fn enclosure(f: &FieldState) -> Option<wordcraft_doc::eq::Enclosure> {
+    use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
+    let mut e = Enclosure::parse(&f.instr)?;
+    let size_at = |at: usize| f.sizes.iter().rev().find(|(start, _)| *start <= at).and_then(|(_, s)| *s);
+    let sym = f.instr.char_indices().find(|(_, c)| EncloseShape::from_symbol(&c.to_string()) == Some(e.shape)).map(|(i, _)| i)?;
+    let txt = e.text.chars().next().and_then(|c| f.instr.get(sym..)?.find(c).map(|i| i + sym)).unwrap_or(sym);
+    let base = f.props.size;
+    e.style = match (size_at(sym), size_at(txt)) {
+        (Some(s), Some(t)) if s > t + 0.01 && base.is_none_or(|b| t >= b - 0.01) => EncloseStyle::Enlarge,
+        (Some(s), None) if base.is_none_or(|b| s > b + 0.01) => EncloseStyle::Enlarge,
+        _ => EncloseStyle::Shrink,
+    };
+    Some(e)
 }
 
 /// Fields kept as ranges: those whose result another program writes, with formatting and often
@@ -457,6 +478,9 @@ impl Reader<'_> {
                     && !f.spilled
                     && f.instr.len() < MAX_INSTR
                 {
+                    if f.sizes.len() < 64 {
+                        f.sizes.push((f.instr.len(), props.size));
+                    }
                     f.instr.push_str(&k.text());
                 }
             }
@@ -533,15 +557,7 @@ impl Reader<'_> {
             "w:pgNum" => {
                 self.emit_obj(sc, pb, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, props)
             }
-            "w:ruby" => {
-                if let Some(base) = k.child("w:rubyBase") {
-                    for r in base.children("w:r") {
-                        for c in r.els() {
-                            self.read_run_child(sc, pb, c, props, rels, note, depth + 1);
-                        }
-                    }
-                }
-            }
+            "w:ruby" => self.read_ruby(sc, pb, k, props),
             "mc:AlternateContent" => {
                 if let Some(c) = children_of_choice(k) {
                     for x in c.els() {
@@ -553,6 +569,61 @@ impl Reader<'_> {
         }
     }
 
+    /// `w:ruby` (ECMA-376 §17.3.3.25): ruby text (`w:rt`) over base text (`w:rubyBase`), kept as
+    /// one [`InlineObject::Ruby`] in the base text's formatting (the first base run's).
+    fn read_ruby(&mut self, sc: &mut StoryCtx, pb: &mut PB, k: &El, props: &CharProps) {
+        const MAX: usize = 4096;
+        // The text of a part's runs and the formatting of its first run.
+        let part = |name: &str| -> (String, Option<CharProps>) {
+            let mut text = String::new();
+            let mut first = None;
+            for r in k.child(name).map(|e| e.children("w:r").collect::<Vec<_>>()).unwrap_or_default() {
+                if first.is_none() {
+                    first = Some(r.child("w:rPr").map(|p| self.pc.rpr(p)).unwrap_or_default());
+                }
+                for t in r.els().filter(|t| matches!(t.name.as_str(), "w:t" | "w:delText")) {
+                    if text.len() < MAX {
+                        text.push_str(&clean_text(&t.text()).replace('\t', " "));
+                    }
+                }
+            }
+            (text.chars().take(MAX).collect(), first)
+        };
+        let (base, base_props) = part("w:rubyBase");
+        let (ruby, ruby_props) = part("w:rt");
+        let mut bp = base_props.unwrap_or_default();
+        (bp.link, bp.ins, bp.del) = (props.link.clone(), props.ins, props.del);
+        if base.is_empty() {
+            return;
+        }
+        if ruby.is_empty() {
+            self.emit_text(sc, pb, &base, &bp);
+            return;
+        }
+        let pr = k.child("w:rubyPr");
+        let val = |n: &str| pr.and_then(|p| p.child(n)).and_then(|e| e.attr("w:val"));
+        let pt = |n: &str| val(n).and_then(|v| measure(v, 2.0)).filter(|v| v.is_finite() && *v >= 0.0);
+        let mut rp = ruby_props.unwrap_or_default();
+        let base_size = pt("w:hpsBaseText").filter(|v| *v > 0.0).or(bp.size).unwrap_or(0.0).min(1584.0);
+        let size = pt("w:hps").filter(|v| *v > 0.0).or(rp.size).unwrap_or(if base_size > 0.0 { base_size / 2.0 } else { 5.0 }).clamp(1.0, 1584.0);
+        let raise = pt("w:hpsRaise").unwrap_or_else(|| wordcraft_doc::para::ruby_raise(0.0, base_size.max(size), size)).min(1584.0);
+        // The ruby's size is `size`; its run keeps what it sets beyond the base text's formatting
+        // (writers repeat the base's).
+        (rp.size, rp.size_cs) = (None, None);
+        let rp = rp.minus(&bp);
+        let obj = InlineObject::Ruby {
+            base,
+            ruby,
+            align: val("w:rubyAlign").and_then(wordcraft_doc::para::RubyAlign::from_ooxml).unwrap_or_default(),
+            size,
+            raise,
+            base_size,
+            lang: val("w:lid").map(|l| l.chars().take(32).collect()).unwrap_or_default(),
+            props: Box::new(rp),
+        };
+        self.emit_obj(sc, pb, obj, &bp);
+    }
+
     // ---- fields ----
 
     fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool) {
@@ -561,7 +632,7 @@ impl Reader<'_> {
             return;
         }
         // Fields nested deeper than the cap are ignored (their content flows to the enclosing field).
-        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false });
+        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false, sizes: Vec::new() });
     }
 
     /// Whether the field below the innermost one is still collecting its code (a field nested
@@ -616,7 +687,12 @@ impl Reader<'_> {
                 Item::Obj(o) => result.push_str(o.plain_text()),
             }
         }
-        let obj = InlineObject::Field { instr: f.instr.trim().to_string(), result, locked: f.locked, code: false };
+        let (instr, result) = match enclosure(&f) {
+            // Word writes no result for enclosed characters: the text is their plain text.
+            Some(e) => (e.instr(), if result.is_empty() { e.text } else { result }),
+            None => (f.instr.trim().to_string(), result),
+        };
+        let obj = InlineObject::Field { instr, result, locked: f.locked, code: false };
         if let Some(parent) = sc.fields.last_mut()
             && !parent.spilled
             && parent.phase == Phase::Instr
