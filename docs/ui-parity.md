@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (one drop-down marker, #659; previously minor: status bar language follows the caret and sets the proofing language; Review › Language is a menu; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (table selection areas, insert buttons, move handle and double-click AutoFit on the page; previously trivial: one drop-down marker, #659; previously minor: status bar language follows the caret and sets the proofing language; Review › Language is a menu; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -24,7 +24,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Backstage (Home, New, Open, Info, Save As, Print, Share, Export, Options) | Home and New separate (#254), Info properties kept (#268), Options in Word's panes with working settings (#485), Print page with preview, page range and copies (#641) | | 68% | 4–6 |
 | Rulers: indents, tabs, margins, table columns | indents draggable (one undo, #62); tabs; table column drag pending (#49) | ✅ | 70% | 2–3 |
 | On-canvas objects: select, drag, resize handles, nudge | ✅ tested (#228) | ✅ | 75% | — |
-| Tables on the page: drag column and row borders, resize handle past the bottom-right corner | ✅ resize cursors, dashed guide, one undo step per drag, selection kept; Shift moves one column; Esc cancels (#217). Missing: Ctrl and Alt drags, the left edge, borders of selected cells only, double-click AutoFit | ✅ | 80% | 1–2 |
+| Tables on the page: drag column and row borders, resize handle past the bottom-right corner; select columns, rows and cells; "+" insert buttons; move handle | ✅ resize cursors, dashed guide, one undo step per drag, selection kept; Shift moves one column; Esc cancels (#217); double-click a column border to AutoFit it; selection arrows above a column, left of a row and along a cell's left edge (a drag selects more; the cells are shaded and a column is edited cell by cell); "+" left of a row border and above a column border; move handle past the top-left corner (a click selects the table, a drag floats it where it's dropped). Missing: Ctrl and Alt drags, the left edge, borders of selected cells only, Shift+click to extend a cell selection | ✅ | 90% | 1–2 |
 | Rotation handle, crop handles on canvas, alignment guides, smart guides | rotation handle (Shift: 15° steps), turned frames resize along their axes (#332); crop handles and guides missing | ✅ | 25% | 3–5 |
 | Selection: word/sentence/paragraph clicks, dragging after a double-click/triple-click/Ctrl+click extends by whole words/paragraphs/sentences (#549), Shift extend, F8 extend mode, column (Alt+drag, #237) | ✅ | ✅ | 90% | 1 |
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251) | ✅ | ✅ | 85% | — |
@@ -43,6 +43,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Tables on the page: selection areas for columns, rows and cells, "+" insert buttons, the move handle and double-click AutoFit; Select Column in the ribbon |
 | 2026-10-11 | trivial | Ribbon buttons that run a command (alignment, Bold, styles…) hand keyboard focus back to the document, so typing continues without another click; they also report their name and enabled state to screen readers (#686) |
 | 2026-10-11 | trivial | Tables on the page: column and row borders and the resize handle drag, with a dashed guide and one undo step per drag (#217) |
 | 2026-10-11 | trivial | Animation effects › Use system setting also reads macOS (Reduce motion) and the Linux/BSD desktops (settings portal: the cross-desktop reduced-motion preference, GNOME's switch, KDE's animation speed; the GTK and KDE settings files where no portal answers), and follows a change without a restart |
