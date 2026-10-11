@@ -1058,6 +1058,13 @@ fn zotero(app: &mut WordApp, ui: &mut Ui) {
 }
 
 fn review(app: &mut WordApp, ui: &mut Ui) {
+    group(ui, "Grok", None, app, |ui, app| {
+        big(ui, app, "grok", "Rewrite", "grok.rewrite", json!({}), false);
+        stack(ui, |ui| {
+            small(ui, app, "grok", Some("Continue"), "Continue writing. Sends text to api.x.ai", "grok.continue", json!({}), false);
+            small(ui, app, "grok", Some("Summarize"), "Summarize in a comment. Sends text to api.x.ai", "grok.summarize", json!({}), false);
+        });
+    });
     group(ui, "Proofing", None, app, |ui, app| {
         big(ui, app, "spelling", "Spelling &\nGrammar", "review.spelling", json!({}), false);
         stack(ui, |ui| {

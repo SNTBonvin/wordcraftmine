@@ -25,6 +25,7 @@ pub mod dialogs_para;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
+pub mod grok_box;
 pub mod i18n;
 pub mod icons;
 pub mod ink;
@@ -163,6 +164,8 @@ pub struct WordApp {
     pub services: Services,
     pub canvas: canvas::CanvasState,
     pub dialog: Option<dialogs::Dialog>,
+    /// A Grok suggestion waiting for thumbs up or thumbs down.
+    pub grok_preview: Option<grok_box::Preview>,
     pub status_msg: Option<(String, f64)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
@@ -245,6 +248,7 @@ impl WordApp {
             services,
             canvas: canvas::CanvasState::default(),
             dialog: None,
+            grok_preview: None,
             status_msg: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
@@ -338,6 +342,21 @@ impl WordApp {
             && params.get("text").is_none()
             && let Some(r) = paste_picture::paste(self)
         {
+            return r;
+        }
+        if matches!(id, "grok.rewrite" | "grok.continue" | "grok.summarize") {
+            let r = self.execute(id, params);
+            if let Ok(v) = &r {
+                let text = v.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if !text.is_empty() {
+                    self.grok_preview = Some(grok_box::Preview {
+                        action: v.get("action").and_then(|x| x.as_str()).unwrap_or("rewrite").to_string(),
+                        source: v.get("source").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        text,
+                        sel: self.session.sel.clone(),
+                    });
+                }
+            }
             return r;
         }
         let r = self.execute_user(id, params);
@@ -947,6 +966,7 @@ impl WordApp {
             });
         }
         dialogs::show(self, &ctx);
+        grok_box::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);

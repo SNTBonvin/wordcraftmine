@@ -28,6 +28,10 @@ regex-automata = { workspace = true }
 image = { workspace = true }
 zeroize = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Desktop only. Tests compile the client but `complete` never calls it under `cfg(test)`.
+ureq = { version = "2.12.1", default-features = false, features = ["json", "tls"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # The browser clock for `now_iso` (`SystemTime::now()` panics on wasm32).
 js-sys = "0.3"

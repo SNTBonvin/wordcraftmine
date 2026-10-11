@@ -10,6 +10,7 @@ pub mod equation;
 pub mod file;
 pub mod fmt_revisions;
 pub mod format;
+pub mod grok;
 pub mod insert;
 pub mod inspector;
 pub mod lists;
@@ -63,6 +64,7 @@ pub fn registry() -> Registry {
     v.extend(draw::specs());
     v.extend(tools::specs());
     v.extend(speech::specs());
+    v.extend(grok::specs());
     Registry::new(v)
 }
 

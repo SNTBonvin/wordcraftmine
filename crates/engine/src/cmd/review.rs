@@ -98,7 +98,7 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-fn new_comment(s: &mut Session, v: &Value) -> CmdResult {
+pub(crate) fn new_comment(s: &mut Session, v: &Value) -> CmdResult {
     let text = p::str(v, "text").unwrap_or("").to_string();
     let (a, b) = s.sel.ordered();
     let (a, b) = if a == b {
