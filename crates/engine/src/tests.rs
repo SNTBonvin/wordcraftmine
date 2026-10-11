@@ -349,3 +349,31 @@ fn caret_navigation() {
     run(&mut s, "caret.left", json!({}));
     assert_eq!(s.sel.focus.off, 10);
 }
+
+/// A Word extension doesn't say what is inside: a `.doc` may be RTF or a renamed `.docx`, and a
+/// compound file named `.docx` is a legacy or password-protected document, not a broken zip.
+#[test]
+fn word_files_open_by_content() {
+    let rtf = crate::io::open_bytes("letter.doc", b"{\\rtf1\\ansi hello\\par}").unwrap();
+    assert_eq!(rtf.plain_text(StoryRef::Body), "hello");
+    let docx = crate::io::save_bytes("a.docx", &wordcraft_doc::Document::from_text("zipped")).unwrap();
+    assert_eq!(crate::io::open_bytes("renamed.doc", &docx).unwrap().plain_text(StoryRef::Body), "zipped");
+    let mut cfb = wordcraft_formats::doc::CFB_MAGIC.to_vec();
+    cfb.resize(2048, 0);
+    for name in ["old.doc", "locked.docx"] {
+        let e = crate::io::open_bytes(name, &cfb).unwrap_err();
+        assert!(e.contains("Word document"), "{e}");
+    }
+    assert!(crate::io::open_bytes("notes.doc", b"just text").is_err());
+    assert!(crate::io::OPEN_EXTS.contains(&"doc"));
+}
+
+/// A legacy `.doc` can be opened but not written: Save asks for a new name instead of failing.
+#[test]
+fn saving_a_document_opened_from_doc_asks_for_a_name() {
+    let mut s = s();
+    s.path = Some("C:/tmp/old.doc".into());
+    let r = run(&mut s, "file.save", json!({}));
+    assert_eq!(r["saved"], false);
+    assert!(s.ui_requests.iter().any(|r| r["open"] == "saveAs"));
+}

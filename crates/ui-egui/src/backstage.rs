@@ -180,7 +180,7 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
         ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 13.0), Align2::LEFT_CENTER, &name, medium(13.0), t.text);
         ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 29.0), Align2::LEFT_CENTER, &p, regular(11.0), t.text_dim);
         if resp.clicked() {
-            let _ = app.run("file.open", json!({"path": p}));
+            let _ = app.open_document(json!({"path": p}));
             app.ui.backstage = false;
             app.canvas.want_focus = true;
         }

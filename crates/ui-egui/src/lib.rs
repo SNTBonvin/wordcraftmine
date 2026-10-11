@@ -305,6 +305,20 @@ impl WordApp {
         self.status_msg = Some((s.into(), now_ms()));
     }
 
+    /// Open a document the user chose: picked, dropped, from the recent list or on the command
+    /// line. A failure gets a dialog, since the status bar is easy to miss when nothing opens.
+    /// (Commands run by agents report the error to the caller and never open dialogs.)
+    pub fn open_document(&mut self, params: Value) -> Result<Value, String> {
+        let r = self.run("file.open", params.clone());
+        if let Err(e) = &r {
+            let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+            let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+            let why = e.strip_prefix(path).and_then(|e| e.strip_prefix(": ")).unwrap_or(e);
+            self.dialog = Some(dialogs::Dialog::Message { title: "Couldn't Open the Document".into(), text: format!("{name}\n\n{why}") });
+        }
+        r
+    }
+
     fn open_dialog(&mut self) {
         if let Some(f) = &self.services.open_async {
             f("document");
@@ -312,7 +326,7 @@ impl WordApp {
         }
         let picked = self.services.pick_open.as_ref().and_then(|f| f("document"));
         if let Some(path) = picked {
-            let _ = self.run("file.open", json!({"path": path}));
+            let _ = self.open_document(json!({"path": path}));
             self.ui.backstage = false;
         }
     }
@@ -398,7 +412,7 @@ impl WordApp {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
                 let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
-                let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.run("file.open", json!({"path": path})) };
+                let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.open_document(json!({"path": path})) };
             }
         }
     }
@@ -460,7 +474,7 @@ impl WordApp {
             let lower = name.to_ascii_lowercase();
             let data = wordcraft_engine::cmd::insert::base64_encode(&bytes);
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
-            let r = if img { self.run("insert.picture", json!({"data": data})) } else { self.run("file.open", json!({"path": name, "data": data})) };
+            let r = if img { self.run("insert.picture", json!({"data": data})) } else { self.open_document(json!({"path": name, "data": data})) };
             if r.is_ok() {
                 self.ui.backstage = false;
             }

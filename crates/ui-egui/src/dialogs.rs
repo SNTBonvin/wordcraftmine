@@ -102,6 +102,11 @@ pub enum Dialog {
     About {
         tab: u8,
     },
+    /// Something the user has to be told (a file that couldn't be opened).
+    Message {
+        title: String,
+        text: String,
+    },
 }
 
 impl Dialog {
@@ -123,6 +128,7 @@ impl Dialog {
             Dialog::ModifyStyle { .. } => "modifyStyle",
             Dialog::Commands { .. } => "commands",
             Dialog::About { .. } => "about",
+            Dialog::Message { .. } => "message",
         }
     }
 
@@ -287,9 +293,11 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::ModifyStyle { .. } => "Modify Style",
         Dialog::Commands { .. } => "Search Commands",
         Dialog::About { .. } => "About WordCraft",
+        Dialog::Message { title, .. } => title.as_str(),
     };
-    egui::Window::new(tl!(title))
-        .id(egui::Id::new(("dialog", title)))
+    let title = title.to_string();
+    egui::Window::new(tl!(&title))
+        .id(egui::Id::new(("dialog", &title)))
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, -40.0))
@@ -706,6 +714,17 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 }
             }
             close || ui.input(|i| i.key_pressed(egui::Key::Escape))
+        }
+        Dialog::Message { text, .. } => {
+            ui.set_max_width(460.0);
+            ui.add(egui::Label::new(text.as_str()).wrap());
+            ui.add_space(8.0);
+            let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                let ok = egui::Button::new(egui::RichText::new(tl!("OK")).color(egui::Color32::WHITE)).fill(crate::theme::APP_COLOR);
+                close |= ui.add(ok).clicked();
+            });
+            close
         }
         Dialog::About { tab } => {
             ui.set_width(660.0);

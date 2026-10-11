@@ -108,8 +108,9 @@ fn services() -> Services {
             let d = if purpose == "picture" {
                 d.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
             } else {
-                d.add_filter("Documents", &["docx", "docm", "dotx", "odt", "rtf", "txt", "md", "html", "htm", "json"])
+                d.add_filter("Documents", &["docx", "docm", "dotx", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "json"])
                     .add_filter("Word document", &["docx"])
+                    .add_filter("Word 97–2003 document", &["doc", "dot"])
                     .add_filter("All files", &["*"])
             };
             d.pick_file().map(|p| p.to_string_lossy().to_string())
@@ -202,7 +203,7 @@ fn main() -> eframe::Result {
                 app = app.with_control(rx);
             }
             for f in files {
-                if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
+                if let Err(e) = app.open_document(serde_json::json!({"path": f})) {
                     log::warn!("{f}: {e}");
                 }
             }

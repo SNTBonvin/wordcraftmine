@@ -1170,7 +1170,7 @@ impl Reader {
 }
 
 /// The target of a `HYPERLINK "url"` (or `HYPERLINK \l "bookmark"`) field instruction.
-fn hyperlink(instr: &str) -> Option<String> {
+pub(crate) fn hyperlink(instr: &str) -> Option<String> {
     let t = instr.trim();
     let rest = t.strip_prefix("HYPERLINK").or_else(|| t.strip_prefix("hyperlink"))?;
     let local = rest.contains("\\l");
