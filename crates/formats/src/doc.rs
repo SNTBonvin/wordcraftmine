@@ -194,13 +194,14 @@ impl<'a> Cfb<'a> {
     /// storages of their own, so only the root's children are searched).
     fn stream(&self, name: &str) -> Option<Vec<u8>> {
         let mut stack = vec![self.dir.first()?.child];
-        let mut seen = 0;
+        // Each entry is looked at once, so sibling links that loop can't hold the search.
+        let mut seen = vec![false; self.dir.len()];
         while let Some(id) = stack.pop() {
-            seen += 1;
-            if seen > self.dir.len() + 1 {
-                break;
-            }
             let Some(e) = self.dir.get(id as usize) else { continue };
+            match seen.get_mut(id as usize) {
+                Some(s) if !*s => *s = true,
+                _ => continue,
+            }
             if e.name.eq_ignore_ascii_case(name) {
                 return Some(if e.size < self.cutoff { self.mini_bytes(e.start, e.size) } else { self.chain_bytes(e.start, e.size) });
             }
@@ -980,7 +981,11 @@ pub fn parse(bytes: &[u8]) -> Result<(Flow, Page), String> {
     if flags & 0x8100 != 0 {
         return Err("this document is password-protected; encrypted documents can't be opened yet".into());
     }
-    let table = cfb.stream(if flags & 0x0200 != 0 { "1Table" } else { "0Table" }).ok_or("damaged Word document (no table stream)")?;
+    // The flag names the table stream; some writers leave only the other one.
+    let (named, other) = if flags & 0x0200 != 0 { ("1Table", "0Table") } else { ("0Table", "1Table") };
+    let Some(table) = cfb.stream(named).or_else(|| cfb.stream(other)) else {
+        return Err("damaged Word document (no table stream)".into());
+    };
     let table = table.as_slice();
     let data = cfb.stream("Data").unwrap_or_default();
 
@@ -1160,14 +1165,14 @@ mod tests {
         let minifat_start = if minifat.is_empty() { END } else { chain(&minifat_bytes, &mut sectors, &mut fat) };
         // The directory: the root, then the streams as a chain of right siblings.
         let mut dir = Vec::new();
-        let mut entry = |name: &str, kind: u8, right: u32, child: u32, start: u32, size: usize| {
+        let mut entry = |name: &str, kind: u8, left: u32, right: u32, child: u32, start: u32, size: usize| {
             let mut e = utf16(name);
             let len = e.len() as u16 + 2;
             e.resize(64, 0);
             w16(&mut e, len);
             e.push(kind);
             e.push(1);
-            w32(&mut e, NO_STREAM);
+            w32(&mut e, left);
             w32(&mut e, right);
             w32(&mut e, child);
             e.resize(116, 0);
@@ -1176,10 +1181,12 @@ mod tests {
             w32(&mut e, 0);
             dir.extend_from_slice(&e);
         };
-        entry("Root Entry", 5, NO_STREAM, if entries.is_empty() { NO_STREAM } else { 1 }, mini_start, mini.len());
+        entry("Root Entry", 5, NO_STREAM, NO_STREAM, if entries.is_empty() { NO_STREAM } else { 1 }, mini_start, mini.len());
         for (i, (name, start, size)) in entries.iter().enumerate() {
-            let right = if i + 1 == entries.len() { NO_STREAM } else { i as u32 + 2 };
-            entry(name, 2, right, NO_STREAM, *start, *size);
+            // Siblings hang off the left and the right in turn, as in the trees real files have.
+            let next = if i + 1 == entries.len() { NO_STREAM } else { i as u32 + 2 };
+            let (left, right) = if i % 2 == 0 { (next, NO_STREAM) } else { (NO_STREAM, next) };
+            entry(name, 2, left, right, NO_STREAM, *start, *size);
         }
         let dir_start = chain(&dir, &mut sectors, &mut fat);
         assert!(fat.len() <= 128, "test file too large for one FAT sector");
@@ -1480,6 +1487,20 @@ mod tests {
         assert_eq!(grid(&mut rows), [100.0, 100.0, 100.0]);
         assert_eq!(rows[1].0.iter().map(|c| c.colspan).collect::<Vec<_>>(), [2, 1]);
         assert_eq!(rows[0].0.iter().map(|c| c.colspan).collect::<Vec<_>>(), [1, 1, 1]);
+    }
+
+    /// Regression: a stream deep in the directory tree was reported missing, because looking at
+    /// the empty sibling links used up the search's budget.
+    #[test]
+    fn finds_streams_anywhere_in_the_directory() {
+        let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
+        let streams: Vec<(&str, Vec<u8>)> = names.iter().map(|n| (*n, n.as_bytes().to_vec())).collect();
+        let file = cfb(&streams);
+        let cfb = Cfb::open(&file).unwrap();
+        for n in names {
+            assert_eq!(cfb.stream(n).as_deref(), Some(n.as_bytes()), "{n}");
+        }
+        assert!(cfb.stream("missing").is_none());
     }
 
     #[test]
