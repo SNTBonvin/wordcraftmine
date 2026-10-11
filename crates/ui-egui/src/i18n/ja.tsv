@@ -1578,3 +1578,5 @@
 	Rewind	巻き戻し
 	Forward	早送り
 	Stroke {n} of {total}	ストローク {n}/{total}
+	Move with Text	文字列と一緒に移動する
+	Fix Position on Page	ページ上で位置を固定する

@@ -1588,3 +1588,5 @@
 	Rewind	Na početak
 	Forward	Napred
 	Stroke {n} of {total}	Potez {n} od {total}
+	Move with Text	Pomeraj sa tekstom
+	Fix Position on Page	Fiksiraj položaj na stranici

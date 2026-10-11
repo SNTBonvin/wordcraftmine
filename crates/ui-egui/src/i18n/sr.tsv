@@ -1592,3 +1592,5 @@
 	Rewind	На почетак
 	Forward	Напред
 	Stroke {n} of {total}	Потез {n} од {total}
+	Move with Text	Померај са текстом
+	Fix Position on Page	Фиксирај положај на страници

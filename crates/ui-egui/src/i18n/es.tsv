@@ -1594,3 +1594,5 @@
 	Rewind	Rebobinar
 	Forward	Avanzar
 	Stroke {n} of {total}	Trazo {n} de {total}
+	Move with Text	Mover con el texto
+	Fix Position on Page	Fijar posición en la página
