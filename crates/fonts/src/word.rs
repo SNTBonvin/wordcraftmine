@@ -159,11 +159,18 @@ fn style_name(bold: bool, italic: bool) -> &'static str {
 
 /// Resolve `family` with bold/italic to a face (memoised).
 pub fn resolve(family: &str, bold: bool, italic: bool) -> Resolved {
-    static CACHE: OnceLock<Mutex<HashMap<(String, bool, bool), Resolved>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    static CACHE: OnceLock<Mutex<(u32, HashMap<(String, bool, bool), Resolved>)>> = OnceLock::new();
+    let cache_lock = CACHE.get_or_init(|| Mutex::new((0, HashMap::new())));
+    let cur_gen = FontDb::global().generation();
     let key = (family.to_string(), bold, italic);
-    if let Some(r) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
-        return *r;
+    {
+        let mut guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.0 != cur_gen {
+            guard.0 = cur_gen;
+            guard.1.clear();
+        } else if let Some(r) = guard.1.get(&key) {
+            return *r;
+        }
     }
     let db = FontDb::global();
     let (fam, substituted) = if db.has_family(family) {
@@ -174,7 +181,10 @@ pub fn resolve(family: &str, bold: bool, italic: bool) -> Resolved {
     };
     let face = db.face(&fam, style_name(bold, italic));
     let r = Resolved { synth_bold: bold && face.weight < 600.0, synth_italic: italic && !face.italic, substituted, face: FaceRef::of(&face) };
-    cache.lock().unwrap_or_else(|e| e.into_inner()).insert(key, r);
+    let mut guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.0 == cur_gen {
+        guard.1.insert(key, r);
+    }
     r
 }
 

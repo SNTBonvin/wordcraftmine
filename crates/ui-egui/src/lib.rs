@@ -80,6 +80,12 @@ pub struct Services {
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
     pub clipboard_picture: Option<Box<dyn Fn() -> Option<paste_picture::ClipboardPicture>>>,
+    /// Host hook to pull / load local system fonts (e.g. web `window.queryLocalFonts()`).
+    pub load_system_fonts: Option<Box<dyn Fn()>>,
+    /// Host hook to upload custom font files (e.g. web file dialog for .ttf, .otf, .ttc, .woff2).
+    pub upload_font: Option<Box<dyn Fn()>>,
+    /// Host notification that a font family is requested or selected, to load its bytes on demand.
+    pub request_font: Option<Box<dyn Fn(&str)>>,
 }
 
 /// Files delivered asynchronously.
@@ -216,6 +222,7 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    pub font_gen: u32,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -276,6 +283,7 @@ impl WordApp {
             recipient_list_pending: false,
             file_dialog: None,
             info_editing: None,
+            font_gen: wordcraft_fonts::FontDb::global().generation(),
         }
     }
 
@@ -400,6 +408,9 @@ impl WordApp {
             if let Some(d) = &self.services.download
                 && let Err(e) = d(&name, &bytes)
             {
+                if e == "cancelled" {
+                    return Ok(json!({"saved": false, "cancelled": true}));
+                }
                 let msg = i18n::fmt(tl!("Couldn't download {name}: {error}"), &[("name", &name), ("error", &e)]);
                 log::error!("download of {name} failed: {e}");
                 self.status(msg.clone());
@@ -408,9 +419,10 @@ impl WordApp {
             // An export is a copy, and so is a save in a format that doesn't keep everything (a
             // page image, plain text): the document itself still has unsaved changes.
             if matches!(id, "file.save" | "file.saveAs") && keeps_everything(&name) {
+                self.session.path = Some(name.clone().into());
                 self.session.dirty = false;
             }
-            return Ok(json!({"downloaded": name, "bytes": bytes.len()}));
+            return Ok(json!({"saved": true, "downloaded": name, "bytes": bytes.len()}));
         }
         let document = self.session.document_id();
         let r = self.session.run(id, &params).map_err(|e| e.to_string());
@@ -663,6 +675,10 @@ impl WordApp {
                 self.open_dialog();
                 json!({})
             }
+            "ui.saveFileDialog" => {
+                self.save_as_dialog();
+                json!({})
+            }
             // Mailings › Select Recipients › Use an Existing List…: pick a CSV/TSV/text file and
             // load it as the mail-merge recipients. Opens system UI, like `ui.openFileDialog`.
             "ui.openRecipientList" => {
@@ -784,6 +800,14 @@ impl WordApp {
 
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        let cur_font_gen = wordcraft_fonts::FontDb::global().generation();
+        if self.font_gen != cur_font_gen {
+            self.font_gen = cur_font_gen;
+            self.session.relayout();
+            self.canvas.clear_textures();
+            self.previews.invalidate_families();
+            ctx.request_repaint();
+        }
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
@@ -836,6 +860,16 @@ impl WordApp {
             {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
+                let font = [".ttf", ".otf", ".ttc", ".woff", ".woff2"].iter().any(|e| lp.ends_with(e));
+                if font {
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        let added = wordcraft_fonts::FontDb::global().add_font(bytes);
+                        if added > 0 {
+                            self.status(format!("Loaded font: {path} ({added} face{})", if added == 1 { "" } else { "s" }));
+                        }
+                    }
+                    continue;
+                }
                 let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
                 let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.run("file.open", json!({"path": path})) };
             }
@@ -971,6 +1005,16 @@ impl WordApp {
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
+            let font = [".ttf", ".otf", ".ttc", ".woff", ".woff2"].iter().any(|e| lower.ends_with(e));
+            if font {
+                let added = wordcraft_fonts::FontDb::global().add_font(bytes);
+                if added > 0 {
+                    self.status(format!("Loaded font: {name} ({added} face{})", if added == 1 { "" } else { "s" }));
+                } else {
+                    self.status(format!("No new font faces found in {name}"));
+                }
+                continue;
+            }
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
             let list =
                 lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && std::mem::take(&mut self.recipient_list_pending));
@@ -1878,6 +1922,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn save_as_dialog_closes_backstage_and_saves() {
+        let dir = scratch("saveas_backstage");
+        let path = dir.join("backstage_doc.docx");
+        let picked = path.to_string_lossy().to_string();
+        let mut a = typed();
+        a.ui.backstage = true;
+        a.services.pick_save = Some(Box::new(move |_| Some(picked.clone())));
+        let r = a.run("ui.saveFileDialog", json!({})).unwrap();
+        assert_eq!(r, json!({}));
+        assert!(!a.ui.backstage, "successful save closes backstage");
+        assert!(path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn web_save_cancelled_does_not_mark_clean() {
+        let mut a = typed();
+        a.services.download = Some(Box::new(|_, _| Err("cancelled".into())));
+        let r = a.run("file.save", json!({})).unwrap();
+        assert_eq!(r["saved"], false);
+        assert_eq!(r["cancelled"], true);
+        assert!(a.session.dirty, "cancelled save does not mark document as clean");
+    }
+
     /// Scripts and agents (control channel, MCP bridge) are never asked anything.
     #[test]
     fn programmatic_commands_never_prompt() {
@@ -2241,7 +2310,7 @@ mod tests {
     #[test]
     fn interface_theme_migrates_and_survives_a_restart() {
         use theme::Appearance;
-        for (saved, want) in [(r#"{"dark": false}"#, Appearance::Light), (r#"{"dark": true}"#, Appearance::Dark), ("{}", Appearance::Light)] {
+        for (saved, want) in [(r#"{"dark": false}"#, Appearance::Light), (r#"{"dark": true}"#, Appearance::Dark), ("{}", Appearance::System)] {
             let mut a = app();
             a.apply_prefs(serde_json::from_str(saved).unwrap());
             assert_eq!(a.ui.theme, want, "{saved}");
@@ -2255,7 +2324,7 @@ mod tests {
         assert_eq!(b.ui.theme, Appearance::System);
         // An unknown saved value keeps the rest of the preferences.
         let odd: UiState = serde_json::from_str(r#"{"theme": "sepia", "tab": "Insert"}"#).unwrap();
-        assert_eq!((odd.theme, odd.tab.as_str()), (Appearance::Light, "Insert"));
+        assert_eq!((odd.theme, odd.tab.as_str()), (Appearance::System, "Insert"));
     }
 
     /// #475: the interface size is kept between runs; junk saved values read as 100 % and
@@ -2589,5 +2658,19 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
         assert!(!a.recipient_list_pending);
+    }
+
+    /// Web and async inbox: custom font files (.ttf, .otf, .ttc) are added to FontDb and
+    /// report success in the status bar without opening as documents.
+    #[test]
+    fn custom_font_uploaded_through_inbox_registers_in_fontdb() {
+        let mut a = typed();
+        let inbox: Inbox = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        a.services.inbox = Some(inbox.clone());
+        let font_bytes = wordcraft_fonts::bundled().first().map(|b| b.to_vec()).unwrap();
+        inbox.lock().unwrap().push(("custom_test_font.ttf".into(), font_bytes));
+        a.drain_inbox();
+        assert!(a.status_msg.as_ref().is_some_and(|(msg, _)| msg.contains("custom_test_font.ttf")));
+        assert!(body_text(&a).contains(UNSAVED), "the document stays open");
     }
 }

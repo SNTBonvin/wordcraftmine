@@ -16,6 +16,7 @@ use crate::theme::{Tokens, regular};
 pub struct Previews {
     tex: HashMap<String, TextureHandle>,
     families: Option<Vec<String>>,
+    font_gen: u32,
     styles_hash: (u64, u64),
     /// Previews rendered this frame (rendering is spread over frames).
     budget: std::cell::Cell<u32>,
@@ -24,7 +25,9 @@ pub struct Previews {
 
 impl Previews {
     pub fn families(&mut self) -> Vec<String> {
-        if self.families.is_none() {
+        let cur_gen = wordcraft_fonts::FontDb::global().generation();
+        if self.families.is_none() || self.font_gen != cur_gen {
+            self.font_gen = cur_gen;
             let mut f: Vec<String> = wordcraft_fonts::FontDb::global().families().into_iter().filter(|f| !f.starts_with('.')).collect();
             for w in [wordcraft_doc::styles::BODY_FONT, wordcraft_doc::styles::HEADING_FONT] {
                 if !f.iter().any(|x| x == w) {
@@ -38,17 +41,28 @@ impl Previews {
         self.families.clone().unwrap_or_default()
     }
 
+    pub fn invalidate_families(&mut self) {
+        self.families = None;
+    }
+
     /// A closure drawing a font-menu entry in its own face.
     pub fn font_preview_fn(&mut self) -> Box<dyn Fn(&mut Ui, &str) -> Response> {
         Box::new(|ui: &mut Ui, name: &str| {
             let key = format!("font:{name}");
+            let loaded = wordcraft_fonts::FontDb::global().is_loaded(name);
             let tex: Option<TextureHandle> = ui.ctx().data(|d| d.get_temp::<TextureHandle>(egui::Id::new(&key)));
             let (r, resp) = ui.allocate_exact_size(vec2(260.0, crate::widgets::COMBO_PREVIEW_ROW_H), Sense::click());
             let t = Tokens::get(ui.ctx());
             if resp.hovered() {
                 ui.painter().rect_filled(r, 3.0, t.hover);
             }
+            if !loaded {
+                wordcraft_fonts::FontDb::global().request_font(name);
+            }
             let tex = tex.or_else(|| {
+                if !loaded {
+                    return None;
+                }
                 // Context accessors share a lock: read input before taking the data write lock.
                 let now = ui.input(|i| i.time);
                 let n = ui.ctx().data_mut(|d| {
@@ -64,14 +78,20 @@ impl Previews {
                     return None;
                 }
                 let ppp = ui.ctx().pixels_per_point();
-                let img = snippet(
+                let face = wordcraft_fonts::FontDb::global().face(name, "Regular");
+                let disp = truncate_font_text(&face, name, 230.0, 13.0);
+                let mut img = snippet(
                     &Document::new(),
-                    Paragraph::with_text(name, CharProps { font: Some(name.to_string()), size: Some(13.0), ..Default::default() }),
+                    Paragraph::with_text(&disp, CharProps { font: Some(name.to_string()), size: Some(13.0), ..Default::default() }),
                     240.0,
                     20.0,
                     ppp,
                     2.0,
                 )?;
+                for p in &mut img.pixels {
+                    let darkness = 255u8.saturating_sub(p.r());
+                    *p = egui::Color32::from_rgba_unmultiplied(255, 255, 255, darkness);
+                }
                 let h = ui.ctx().load_texture(&key, img, egui::TextureOptions::LINEAR);
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(&key), h.clone()));
                 Some(h)
@@ -79,18 +99,19 @@ impl Previews {
             match tex {
                 Some(h) => {
                     let sz = h.size_vec2() / ui.ctx().pixels_per_point();
-                    ui.painter().image(
+                    ui.painter().with_clip_rect(r).image(
                         h.id(),
                         Rect::from_min_size(pos2(r.min.x + 6.0, r.center().y - sz.y / 2.0), sz),
                         Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
+                        t.text,
                     );
                 }
                 None => {
-                    ui.painter().text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, name, regular(12.0), t.text);
+                    let disp = truncate_ui_text(ui, name, 230.0, regular(12.0));
+                    ui.painter().with_clip_rect(r).text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, disp, regular(12.0), t.text);
                 }
             }
-            resp
+            resp.on_hover_text(name)
         })
     }
 
@@ -181,6 +202,72 @@ fn math_image(nodes: &wordcraft_doc::math::Arg, display: bool, pt: f32, w: f32, 
     let img = wordcraft_render::render_area(&d, page, 0.0, mid - h / 2.0, w, h, ppp, &opts);
     let px = img.to_straight();
     Some(egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &px))
+}
+
+fn font_text_advance(face: &wordcraft_fonts::FontFace, text: &str, pt: f32) -> f32 {
+    let shaped = wordcraft_fonts::shape(face, text, &[], |c| c);
+    let k = pt / face.upem.max(1.0) as f32;
+    shaped.iter().map(|g| g.x_advance as f32 * k).sum()
+}
+
+pub(crate) fn truncate_font_text(face: &wordcraft_fonts::FontFace, text: &str, max_w: f32, pt: f32) -> String {
+    let full_w = font_text_advance(face, text, pt);
+    if full_w <= max_w {
+        return text.to_string();
+    }
+    let ell = "...";
+    let ell_w = font_text_advance(face, ell, pt);
+    if ell_w >= max_w {
+        return ell.to_string();
+    }
+    let budget = max_w - ell_w;
+    let ends: Vec<usize> = text.char_indices().map(|(i, c)| i + c.len_utf8()).collect();
+    let mut low = 0;
+    let mut high = ends.len();
+    let mut best = 0;
+    while low < high {
+        let mid = (low + high) / 2;
+        let end = ends.get(mid).copied().unwrap_or(0);
+        let prefix = text.get(..end).unwrap_or("");
+        let w = font_text_advance(face, prefix, pt);
+        if w <= budget {
+            best = end;
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    format!("{}...", text.get(..best).unwrap_or("").trim_end())
+}
+
+pub(crate) fn truncate_ui_text(ui: &Ui, text: &str, max_w: f32, font: egui::FontId) -> String {
+    let full_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE).size().x);
+    if full_w <= max_w {
+        return text.to_string();
+    }
+    let ell = "...";
+    let ell_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(ell.to_string(), font.clone(), egui::Color32::WHITE).size().x);
+    if ell_w >= max_w {
+        return ell.to_string();
+    }
+    let budget = max_w - ell_w;
+    let ends: Vec<usize> = text.char_indices().map(|(i, c)| i + c.len_utf8()).collect();
+    let mut low = 0;
+    let mut high = ends.len();
+    let mut best = 0;
+    while low < high {
+        let mid = (low + high) / 2;
+        let end = ends.get(mid).copied().unwrap_or(0);
+        let prefix = text.get(..end).unwrap_or("");
+        let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(prefix.to_string(), font.clone(), egui::Color32::WHITE).size().x);
+        if w <= budget {
+            best = end;
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    format!("{}...", text.get(..best).unwrap_or("").trim_end())
 }
 
 /// Lay out `para` (with `base`'s styles) in a `w`×`h` pt box and rasterise it.
@@ -440,5 +527,39 @@ mod tests {
         });
         rx.recv_timeout(std::time::Duration::from_secs(30)).expect("font menu preview rendering hung or failed");
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn long_font_names_truncate_with_ellipsis() {
+        let db = wordcraft_fonts::FontDb::global();
+        let face = db.face("Source Sans 3", "Regular");
+        let short = "Arial";
+        let trunc_short = truncate_font_text(&face, short, 230.0, 13.0);
+        assert_eq!(trunc_short, "Arial");
+
+        let long = "Very Long Font Family Name Extra Super Expanded Bold";
+        let trunc_long = truncate_font_text(&face, long, 230.0, 13.0);
+        assert!(trunc_long.ends_with("..."), "expected ... at end, got {trunc_long}");
+        assert!(trunc_long.len() < long.len());
+        let w = font_text_advance(&face, &trunc_long, 13.0);
+        assert!(w <= 230.0, "advance {w} exceeds 230.0");
+    }
+
+    #[test]
+    fn long_ui_font_names_truncate_with_ellipsis() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let short = "Arial";
+            let trunc_short = truncate_ui_text(ui, short, 230.0, regular(12.0));
+            assert_eq!(trunc_short, "Arial");
+
+            let long = "Very Long Font Family Name Extra Super Expanded Bold";
+            let trunc_long = truncate_ui_text(ui, long, 230.0, regular(12.0));
+            assert!(trunc_long.ends_with("..."), "expected ... at end, got {trunc_long}");
+            assert!(trunc_long.len() < long.len());
+            let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(trunc_long.clone(), regular(12.0), egui::Color32::WHITE).size().x);
+            assert!(w <= 230.0, "width {w} exceeds 230.0");
+        })
+        .drop_without_applying_deltas();
     }
 }

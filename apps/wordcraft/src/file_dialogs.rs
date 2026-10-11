@@ -51,7 +51,7 @@ impl Launcher {
             let dialog = rfd::AsyncFileDialog::new().set_parent(parent);
             let picking: Picking = match req {
                 FileDialogRequest::Open { purpose } => Box::pin(open_filters(dialog, &purpose).pick_file()),
-                FileDialogRequest::Save { name } => Box::pin(dialog.set_file_name(name).save_file()),
+                FileDialogRequest::Save { name } => Box::pin(save_filters(dialog, &name).set_file_name(name).save_file()),
             };
             let ctx = self.ctx.clone();
             let waiting = std::thread::Builder::new().name("file dialog".into()).spawn(move || {
@@ -78,5 +78,20 @@ fn open_filters(d: rfd::AsyncFileDialog, purpose: &str) -> rfd::AsyncFileDialog 
         d.add_filter("Documents", &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json"])
             .add_filter("Word document", &["docx"])
             .add_filter("All files", &["*"])
+    }
+}
+
+/// The file types Save offers based on the suggested file extension.
+fn save_filters(d: rfd::AsyncFileDialog, name: &str) -> rfd::AsyncFileDialog {
+    let ext = std::path::Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "pdf" => d.add_filter("PDF Document", &["pdf"]),
+        "png" => d.add_filter("PNG Image", &["png"]),
+        _ => d
+            .add_filter("Word Document", &["docx"])
+            .add_filter("OpenDocument Text", &["odt"])
+            .add_filter("Rich Text Format", &["rtf"])
+            .add_filter("Plain Text", &["txt"])
+            .add_filter("All files", &["*"]),
     }
 }

@@ -214,12 +214,12 @@ impl FontFace {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 struct CatalogEntry {
     family: String,
     style: String,
     legacy: String,
+    #[cfg(not(target_arch = "wasm32"))]
     path: std::path::PathBuf,
 }
 
@@ -232,7 +232,6 @@ pub struct FontDb {
     /// search sorts every loaded face, so without this text in a script the requested font lacks
     /// (Thai, #59) got slower with every font loaded.
     fallbacks: RwLock<FallbackCache>,
-    #[cfg(not(target_arch = "wasm32"))]
     catalog: RwLock<Vec<CatalogEntry>>,
     /// The folders the system font scan reads (the platform's font folders for [`FontDb::global`]).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
@@ -247,6 +246,9 @@ pub struct FontDb {
     /// System fallback state: enabled, and characters no system font covers.
     #[cfg(not(target_arch = "wasm32"))]
     sys: Mutex<SysFallback>,
+    generation: AtomicU32,
+    loader: Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>,
+    requested: Mutex<std::collections::HashSet<String>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -339,7 +341,7 @@ pub(crate) fn face_names(f: &skrifa::FontRef<'_>) -> Option<(String, String, Opt
 /// variable font's named instance: the family plus the style's words other than Regular, Bold and
 /// Italic, which stay styles within it (OpenType `name` table, IDs 1/2 vs 16/17). "Roboto" +
 /// "Light Italic" → "Roboto Light"; "Roboto" + "Bold Italic" → "Roboto".
-pub(crate) fn legacy_family(family: &str, style: &str) -> String {
+pub fn legacy_family(family: &str, style: &str) -> String {
     const RIBBI: &[&str] = &["regular", "normal", "bold", "italic", "oblique"];
     let extra: Vec<&str> = base_style(style).split_whitespace().filter(|w| !RIBBI.iter().any(|r| w.eq_ignore_ascii_case(r))).collect();
     if extra.is_empty() { family.to_string() } else { format!("{family} {}", extra.join(" ")) }
@@ -614,7 +616,6 @@ impl FontDb {
             faces: RwLock::new(faces),
             outlines: Mutex::new(HashMap::new()),
             fallbacks: RwLock::new(FallbackCache::default()),
-            #[cfg(not(target_arch = "wasm32"))]
             catalog: RwLock::new(Vec::new()),
             font_dirs,
             #[cfg(not(target_arch = "wasm32"))]
@@ -623,6 +624,9 @@ impl FontDb {
             loading: Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             sys: Mutex::new(SysFallback { enabled: true, ..Default::default() }),
+            generation: AtomicU32::new(0),
+            loader: Mutex::new(None),
+            requested: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -651,8 +655,14 @@ impl FontDb {
         self.faces.read().unwrap_or_else(|e| e.into_inner())
     }
 
+    fn ensure_catalog(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.cataloged.get_or_init(|| {
+            self.scan_font_dirs();
+        });
+    }
+
     /// The system font catalog, scanned first if it hasn't been yet.
-    #[cfg(not(target_arch = "wasm32"))]
     fn read_catalog(&self) -> std::sync::RwLockReadGuard<'_, Vec<CatalogEntry>> {
         self.ensure_catalog();
         self.catalog.read().unwrap_or_else(|e| e.into_inner())
@@ -663,7 +673,6 @@ impl FontDb {
     /// SemiBold"), which [`FontDb::face`] resolves to that face.
     pub fn families(&self) -> Vec<String> {
         let mut v: Vec<String> = self.read_faces().iter().flat_map(|f| [f.family.clone(), f.legacy_family.clone()]).collect();
-        #[cfg(not(target_arch = "wasm32"))]
         v.extend(self.read_catalog().iter().flat_map(|c| [c.family.clone(), c.legacy.clone()]));
         v.sort_by_key(|a| a.to_lowercase());
         v.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
@@ -682,7 +691,6 @@ impl FontDb {
                     .filter(|f| named(&f.family, &f.legacy_family) && !f.style.contains('{'))
                     .map(|f| (f.italic, f.weight, f.style.clone())),
             );
-            #[cfg(not(target_arch = "wasm32"))]
             for c in self.read_catalog().iter() {
                 if named(&c.family, &c.legacy) && !v.iter().any(|(_, _, s)| s.eq_ignore_ascii_case(&c.style)) {
                     v.push((style_italic(&c.style), style_weight(&c.style), c.style.clone()));
@@ -725,16 +733,11 @@ impl FontDb {
                 added += 1;
             }
         }
+        if added > 0 {
+            self.fallbacks.write().unwrap_or_else(|e| e.into_inner()).map.clear();
+            self.generation.fetch_add(1, Ordering::Relaxed);
+        }
         added
-    }
-
-    /// Catalog the installed fonts unless that has been done: the first caller scans the font
-    /// folders, any other waits for that scan to finish.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn ensure_catalog(&self) {
-        self.cataloged.get_or_init(|| {
-            self.scan_font_dirs();
-        });
     }
 
     /// Catalog the installed fonts on a background thread, so the first lookup by family name
@@ -788,7 +791,42 @@ impl FontDb {
         let n = found.len();
         log::debug!("cataloged {n} system font faces");
         *self.catalog.write().unwrap_or_else(|e| e.into_inner()) = found;
+        self.generation.fetch_add(1, Ordering::Relaxed);
         n
+    }
+
+    /// Register font metadata entries (family, style, legacy family) into the catalog without
+    /// reading full font file bytes. Used on web (e.g. from `queryLocalFonts`) so system fonts
+    /// are cataloged and shown in font selection immediately.
+    pub fn register_font_entries(&self, entries: Vec<(String, String, String)>) -> usize {
+        let mut cat = self.catalog.write().unwrap_or_else(|e| e.into_inner());
+        let mut existing: std::collections::HashSet<(String, String)> =
+            cat.iter().map(|c| (c.family.to_lowercase(), c.style.to_lowercase())).collect();
+        let mut added = 0;
+        for (family, style, legacy) in entries {
+            let fam_lower = family.to_lowercase();
+            let sty_lower = style.to_lowercase();
+            if existing.insert((fam_lower, sty_lower)) {
+                let legacy = if legacy.is_empty() || legacy.eq_ignore_ascii_case(&family) { legacy_family(&family, &style) } else { legacy };
+                cat.push(CatalogEntry {
+                    family,
+                    style,
+                    legacy,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    path: std::path::PathBuf::new(),
+                });
+                added += 1;
+            }
+        }
+        if added > 0 {
+            self.generation.fetch_add(1, Ordering::Relaxed);
+        }
+        added
+    }
+
+    /// The current generation counter, incremented whenever fonts are added or cataloged.
+    pub fn generation(&self) -> u32 {
+        self.generation.load(Ordering::Relaxed)
     }
 
     /// Load the files of the installed `family`: the whole typographic family, also when asked for
@@ -817,6 +855,30 @@ impl FontDb {
         self.add_fonts(files) > 0
     }
 
+    /// Register a hook to request font data asynchronously by family name (used on web).
+    pub fn set_loader<F: Fn(&str) + Send + Sync + 'static>(&self, f: F) {
+        *self.loader.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
+    }
+
+    /// Request font data for a family if cataloged but not loaded yet.
+    pub fn request_font(&self, family: &str) {
+        if self.is_loaded(family) {
+            return;
+        }
+        let lower = family.to_lowercase();
+        let already = {
+            let mut req = self.requested.lock().unwrap_or_else(|e| e.into_inner());
+            !req.insert(lower)
+        };
+        if already {
+            return;
+        }
+        let l = self.loader.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(f) = l.as_ref() {
+            f(family);
+        }
+    }
+
     /// Resolve a family + style to a face, falling back to the closest style of the family, then to
     /// Source Sans 3 Regular. `family` is a typographic family ("Roboto") or a face's legacy family
     /// name ("Roboto Light", whose styles are Light and Light Italic). Installed system fonts are
@@ -833,6 +895,7 @@ impl FontDb {
                 return f;
             }
         }
+        self.request_font(family);
         self.find(FALLBACK_FAMILY, style)
             .or_else(|| self.find(FALLBACK_FAMILY, "Regular"))
             .or_else(|| self.read_faces().first().cloned())
@@ -844,7 +907,6 @@ impl FontDb {
         if self.is_loaded(family) {
             return true;
         }
-        #[cfg(not(target_arch = "wasm32"))]
         if self.read_catalog().iter().any(|c| c.family.eq_ignore_ascii_case(family) || c.legacy.eq_ignore_ascii_case(family)) {
             return true;
         }
@@ -852,7 +914,7 @@ impl FontDb {
     }
 
     /// Is a face named `family` (its typographic or legacy family) loaded?
-    fn is_loaded(&self, family: &str) -> bool {
+    pub fn is_loaded(&self, family: &str) -> bool {
         self.read_faces().iter().any(|f| f.named(family))
     }
 

@@ -347,7 +347,7 @@ pub fn combo(
     items: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, preview, false)
+    combo_impl(ui, id, width, current, items, preview, false, &[])
 }
 
 /// The font box: a [`combo`] where typing lists the matching families under the field (#359).
@@ -362,7 +362,37 @@ pub fn font_combo(
     items: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, preview, true)
+    combo_impl(ui, id, width, current, items, preview, true, &[])
+}
+
+/// The font box with optional header actions (such as loading installed system fonts or uploading custom fonts).
+pub fn font_combo_with_actions(
+    ui: &mut Ui,
+    id: &str,
+    width: f32,
+    current: &str,
+    items: &[String],
+    preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
+    actions: &[(&str, &dyn Fn())],
+) -> Option<String> {
+    combo_impl(ui, id, width, current, items, preview, true, actions)
+}
+
+/// The font box with an optional header action (such as loading installed system fonts).
+pub fn font_combo_with_action(
+    ui: &mut Ui,
+    id: &str,
+    width: f32,
+    current: &str,
+    items: &[String],
+    preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
+    action: Option<(&str, &dyn Fn())>,
+) -> Option<String> {
+    if let Some((label, act)) = action {
+        combo_impl(ui, id, width, current, items, preview, true, &[(label, act)])
+    } else {
+        combo_impl(ui, id, width, current, items, preview, true, &[])
+    }
 }
 
 /// Indices of the `items` matching `query`, ignoring case: exact matches, then the names starting
@@ -413,6 +443,7 @@ fn combo_impl(
     items: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
     search: bool,
+    actions: &[(&str, &dyn Fn())],
 ) -> Option<String> {
     let mut out = None;
     let edit_id = ui.id().with(("combo_text", id));
@@ -485,7 +516,23 @@ fn combo_impl(
         let (ar, aresp) = ui.allocate_exact_size(vec2(16.0, resp.rect.height()), Sense::click());
         ui.painter().rect(ar, 0.0, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
         icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
+        let menu_w = (width + 60.0).max(if preview.is_some() { 260.0 } else { 0.0 });
         egui::Popup::menu(&aresp).show(|ui| {
+            for &(label, act) in actions {
+                let (r, resp) = ui.allocate_exact_size(vec2(menu_w, 24.0), Sense::click());
+                let t = Tokens::get(ui.ctx());
+                if resp.hovered() {
+                    ui.painter().rect_filled(r, 3.0, t.hover);
+                }
+                ui.painter().text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, label, regular(12.0), t.accent);
+                if resp.clicked() {
+                    act();
+                    ui.close();
+                }
+            }
+            if !actions.is_empty() {
+                ui.separator();
+            }
             if let Some(v) = combo_list(ui, width, current, items, preview) {
                 out = Some(v);
                 ui.close();
@@ -497,6 +544,20 @@ fn combo_impl(
             let shown = egui::Area::new(search_id.with("list")).order(egui::Order::Tooltip).fixed_pos(resp.rect.left_bottom()).show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style())
                     .show(ui, |ui| {
+                        for &(label, act) in actions {
+                            let (r, resp) = ui.allocate_exact_size(vec2(menu_w, 24.0), Sense::click());
+                            let t = Tokens::get(ui.ctx());
+                            if resp.hovered() {
+                                ui.painter().rect_filled(r, 3.0, t.hover);
+                            }
+                            ui.painter().text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, label, regular(12.0), t.accent);
+                            if resp.clicked() {
+                                act();
+                            }
+                        }
+                        if !actions.is_empty() {
+                            ui.separator();
+                        }
                         let item = |k: usize| matches.get(k).and_then(|&i| items.get(i));
                         list_rows(ui, width, current, matches.len(), &item, Some(s.highlight), scroll, preview)
                     })
@@ -571,8 +632,9 @@ fn list_rows<'a>(
         area = area.vertical_scroll_offset(offset.max(0.0));
     }
     let fill = Tokens::get(ui.ctx()).checked;
+    let min_w = (width + 60.0).max(if preview.is_some() { 260.0 } else { 0.0 });
     let shown = area.show_rows(ui, row_h, n, |ui, range| {
-        ui.set_min_width(width + 60.0);
+        ui.set_min_width(min_w);
         for k in range {
             let Some(it) = item(k) else { continue };
             let lit = highlight == Some(k);

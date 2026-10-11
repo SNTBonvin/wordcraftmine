@@ -5254,6 +5254,7 @@ dependencies = [
  "web-sys",
  "wordcraft-doc",
  "wordcraft-engine",
+ "wordcraft-fonts",
  "wordcraft-ui-egui",
 ]
 

@@ -80,6 +80,11 @@ impl CanvasState {
     pub(crate) fn page_texture(&self, page: usize) -> Option<&TextureHandle> {
         self.textures.get(&page).map(|(_, t)| t)
     }
+
+    /// Clear all rendered page textures (e.g. when loaded fonts change).
+    pub fn clear_textures(&mut self) {
+        self.textures.clear();
+    }
 }
 
 impl Default for CanvasState {

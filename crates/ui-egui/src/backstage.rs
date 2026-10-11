@@ -72,10 +72,23 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 if resp.clicked() {
                     match id {
                         "save" => {
-                            let _ = app.run("file.save", json!({}));
+                            if app.session.path.is_some() {
+                                let r = app.run("file.save", json!({}));
+                                if r.is_ok() {
+                                    app.ui.backstage = false;
+                                    app.canvas.want_focus = true;
+                                    if let Some(p) = &app.session.path {
+                                        app.status(crate::i18n::fmt(tl!("Saved {path}"), &[("path", &p.to_string_lossy())]));
+                                    }
+                                }
+                            } else {
+                                app.ui.backstage_page = "saveAs".into();
+                                let _ = app.run("ui.saveFileDialog", json!({}));
+                            }
                         }
                         "saveAs" => {
-                            app.save_as_dialog();
+                            app.ui.backstage_page = "saveAs".into();
+                            let _ = app.run("ui.saveFileDialog", json!({}));
                         }
                         "open" => {
                             app.ui.backstage_page = id.into();
@@ -106,6 +119,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             "home" => home_page(app, ui),
             "new" => new_page(app, ui),
             "open" => open_page(app, ui),
+            "saveAs" => save_as_page(app, ui),
             "info" => info_page(app, ui),
             "print" | "export" => export_page(app, ui),
             "options" => options_page(app, ui),
@@ -259,6 +273,15 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Open");
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
         let _ = app.run("ui.openFileDialog", json!({}));
+    }
+    ui.add_space(18.0);
+    open_list(app, ui);
+}
+
+fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
+    heading(ui, "Save As");
+    if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
+        let _ = app.run("ui.saveFileDialog", json!({}));
     }
     ui.add_space(18.0);
     open_list(app, ui);

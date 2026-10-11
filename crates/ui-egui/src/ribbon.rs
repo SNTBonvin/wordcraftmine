@@ -4,7 +4,7 @@ use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, medium, regular, semibold};
-use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, color_grid, combo, font_combo, group, menu_button, small, split};
+use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, color_grid, combo, font_combo_with_actions, group, menu_button, small, split};
 use crate::{WordApp, icons};
 
 pub const TABS: [&str; 12] = ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Zotero", "Help"];
@@ -281,7 +281,17 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
                 let fams = app.previews.families();
                 let prev = app.previews.font_preview_fn();
-                if let Some(f) = font_combo(ui, "font", 150.0, &font, &fams, Some(&*prev)) {
+                let mut actions: Vec<(&str, &dyn Fn())> = Vec::new();
+                if let Some(upload_font) = &app.services.upload_font {
+                    actions.push(("Upload custom font...", &**upload_font));
+                }
+                if let Some(load_system_fonts) = &app.services.load_system_fonts {
+                    actions.push(("Load local fonts...", &**load_system_fonts));
+                }
+                if let Some(f) = font_combo_with_actions(ui, "font", 150.0, &font, &fams, Some(&*prev), &actions) {
+                    if let Some(rf) = &app.services.request_font {
+                        rf(&f);
+                    }
                     let _ = app.run("format.font", json!({"name": f}));
                 }
                 let size = st
@@ -307,6 +317,28 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "tOGGLE cASE", "format.changeCase", json!({"mode": "toggle"}));
                 });
                 small(ui, app, "clear", None, "Clear All Formatting", "format.clear", json!({}), false);
+                if let Some(upload_font) = &app.services.upload_font {
+                    let (r, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+                    let t = crate::theme::Tokens::get(ui.ctx());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(r, 3.0, t.hover);
+                    }
+                    crate::icons::paint(ui.painter(), r.shrink(3.0), "fontupload", t.icon, t.accent);
+                    if resp.on_hover_text("Upload custom font (.ttf, .otf, .ttc, .woff2)").clicked() {
+                        upload_font();
+                    }
+                }
+                if let Some(load_system_fonts) = &app.services.load_system_fonts {
+                    let (r, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+                    let t = crate::theme::Tokens::get(ui.ctx());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(r, 3.0, t.hover);
+                    }
+                    crate::icons::paint(ui.painter(), r.shrink(3.0), "fontsystem", t.icon, t.accent);
+                    if resp.on_hover_text("Load installed system fonts from device").clicked() {
+                        load_system_fonts();
+                    }
+                }
             });
             ui.add_space(3.0);
             crate::widgets::row(ui, |ui| {

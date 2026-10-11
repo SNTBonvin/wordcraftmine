@@ -155,6 +155,17 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.text(10.5, 10.5, 15.0, "A", Color32::from_rgba_unmultiplied(0, 0, 0, 40), true);
         }
         "fontdialog" => pen.line(&[(13.0, 13.0), (17.0, 17.0), (17.0, 13.0)]),
+        "fontsystem" => {
+            pen.text(7.0, 9.0, 13.0, "A", c, false);
+            pen.rect(11.0, 10.0, 17.0, 15.0, c);
+            pen.line(&[(14.0, 15.0), (14.0, 17.0)]);
+            pen.line(&[(12.0, 17.0), (16.0, 17.0)]);
+        }
+        "fontupload" => {
+            pen.text(7.0, 9.0, 13.0, "A", c, false);
+            pen.line_c(&[(14.5, 17.0), (14.5, 7.0)], a);
+            pen.line_c(&[(11.5, 10.0), (14.5, 7.0), (17.5, 10.0)], a);
+        }
         // Paragraph
         "bullets" => {
             for (i, y) in [5.0, 10.0, 15.0].iter().enumerate() {

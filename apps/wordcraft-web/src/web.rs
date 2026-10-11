@@ -2,15 +2,21 @@
 //! web runner.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use wasm_bindgen::JsCast as _;
+use wasm_bindgen::JsValue;
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{Inbox, Services, WordApp};
+
+type LocalFontMap = Arc<Mutex<HashMap<String, Vec<JsValue>>>>;
 
 const DOC_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json"];
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 const RECIPIENT_EXTS: &[&str] = &["csv", "tsv", "txt"];
+const FONT_EXTS: &[&str] = &["ttf", "otf", "ttc", "woff2", "woff"];
 const CANVAS_ID: &str = "wordcraft_canvas";
 const LOADING_ID: &str = "wordcraft_loading";
 
@@ -152,6 +158,23 @@ fn listen_for_pasted_pictures(inbox: Inbox, ctx: egui::Context) -> Result<(), St
 /// `dirty` is the flag the `beforeunload` guard reads ([`guard_unload`]).
 fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>) -> Services {
     let open_inbox = inbox.clone();
+    let upload_inbox = inbox.clone();
+    let font_map: LocalFontMap = Arc::new(Mutex::new(HashMap::new()));
+    let loaded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let (load_system_fonts, _) = setup_system_fonts(font_map.clone(), ctx.clone(), loaded, in_flight);
+
+    let req_font_map = font_map.clone();
+    let req_ctx = ctx.clone();
+    let upload_ctx = ctx.clone();
+
+    let loader_font_map = font_map;
+    let loader_ctx = ctx.clone();
+    wordcraft_fonts::FontDb::global().set_loader(move |fam| {
+        request_font_family(fam, loader_font_map.clone(), loader_ctx.clone());
+    });
+
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
@@ -160,6 +183,8 @@ fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>) -> Services
                 rfd::AsyncFileDialog::new().add_filter("Pictures", IMAGE_EXTS)
             } else if purpose == "recipients" {
                 rfd::AsyncFileDialog::new().add_filter("Recipient lists", RECIPIENT_EXTS)
+            } else if purpose == "font" {
+                rfd::AsyncFileDialog::new().add_filter("Fonts", FONT_EXTS)
             } else {
                 rfd::AsyncFileDialog::new().add_filter("Documents", DOC_EXTS)
             };
@@ -178,8 +203,238 @@ fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>) -> Services
         print: Some(Box::new(print_pdf)),
         inbox: Some(inbox),
         on_dirty: Some(Box::new(move |d| dirty.set(d))),
+        load_system_fonts,
+        upload_font: Some(Box::new(move || {
+            let inbox = upload_inbox.clone();
+            let ctx = upload_ctx.clone();
+            let dialog =
+                rfd::AsyncFileDialog::new().set_title("Upload Custom Fonts").add_filter("Fonts (*.ttf, *.otf, *.ttc, *.woff2, *.woff)", FONT_EXTS);
+            wasm_bindgen_futures::spawn_local(async move {
+                let Some(files) = dialog.pick_files().await else {
+                    return;
+                };
+                let mut loaded = Vec::new();
+                for file in files {
+                    let name = file.file_name();
+                    let bytes = file.read().await;
+                    loaded.push((name, bytes));
+                }
+                inbox.lock().unwrap_or_else(|e| e.into_inner()).extend(loaded);
+                ctx.request_repaint();
+            });
+        })),
+        request_font: Some(Box::new(move |family: &str| {
+            request_font_family(family, req_font_map.clone(), req_ctx.clone());
+        })),
         ..Default::default()
     }
+}
+
+async fn fetch_font_blob(item: &JsValue) -> Result<Vec<u8>, String> {
+    let blob_fn: js_sys::Function = js_sys::Reflect::get(item, &JsValue::from_str("blob"))
+        .map_err(|e| format!("{e:?}"))?
+        .dyn_into()
+        .map_err(|_| "blob is not a function".to_string())?;
+    let blob_prom: js_sys::Promise =
+        blob_fn.call0(item).map_err(|e| format!("{e:?}"))?.dyn_into().map_err(|_| "blob did not return a promise".to_string())?;
+    let blob_val = wasm_bindgen_futures::JsFuture::from(blob_prom).await.map_err(|e| format!("{e:?}"))?;
+    let blob: web_sys::Blob = blob_val.dyn_into().map_err(|_| "not a Blob".to_string())?;
+    let buf_prom = blob.array_buffer();
+    let buf_val = wasm_bindgen_futures::JsFuture::from(buf_prom).await.map_err(|e| format!("{e:?}"))?;
+    let u8_arr = js_sys::Uint8Array::new(&buf_val);
+    Ok(u8_arr.to_vec())
+}
+
+fn request_font_family(family: &str, font_map: LocalFontMap, ctx: egui::Context) {
+    let clean = family.trim().trim_matches('\'').trim_matches('"').trim();
+    if clean.is_empty() || wordcraft_fonts::FontDb::global().is_loaded(clean) {
+        return;
+    }
+    let fam_lower = clean.to_lowercase();
+    let items: Vec<JsValue> = {
+        let lock = font_map.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(v) = lock.get(&fam_lower) {
+            v.clone()
+        } else {
+            lock.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(&fam_lower) || fam_lower.starts_with(k.as_str()) || k.starts_with(fam_lower.as_str()))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        }
+    };
+    if items.is_empty() {
+        return;
+    }
+    let fam_name = clean.to_string();
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut added = 0;
+        for item in items {
+            match fetch_font_blob(&item).await {
+                Ok(bytes) => {
+                    added += wordcraft_fonts::FontDb::global().add_font(bytes);
+                }
+                Err(e) => {
+                    log::warn!("failed to fetch local font blob for {fam_name}: {e}");
+                }
+            }
+        }
+        if added > 0 {
+            log::info!("Loaded {added} face(s) for family {fam_name}");
+            ctx.request_repaint();
+        }
+    });
+}
+
+fn catalog_local_fonts(arr: js_sys::Array, font_map: LocalFontMap, ctx: egui::Context) {
+    let mut entries: Vec<(String, String, String)> = Vec::with_capacity(arr.length() as usize);
+    let mut map_guard = font_map.lock().unwrap_or_else(|e| e.into_inner());
+
+    for i in 0..arr.length() {
+        let item = arr.get(i);
+        let family = js_sys::Reflect::get(&item, &JsValue::from_str("family")).ok().and_then(|v| v.as_string()).unwrap_or_default();
+        let style = js_sys::Reflect::get(&item, &JsValue::from_str("style")).ok().and_then(|v| v.as_string()).unwrap_or_else(|| "Regular".into());
+
+        if !family.is_empty() {
+            let legacy = wordcraft_fonts::legacy_family(&family, &style);
+            entries.push((family.clone(), style, legacy.clone()));
+            map_guard.entry(family.to_lowercase()).or_default().push(item.clone());
+            if !legacy.eq_ignore_ascii_case(&family) {
+                map_guard.entry(legacy.to_lowercase()).or_default().push(item);
+            }
+        }
+    }
+    drop(map_guard);
+
+    let count = wordcraft_fonts::FontDb::global().register_font_entries(entries);
+    log::info!("Cataloged {count} local system fonts");
+    ctx.request_repaint();
+}
+
+fn trigger_query_local_fonts(
+    window: &web_sys::Window,
+    query_fn: &js_sys::Function,
+    font_map: LocalFontMap,
+    ctx: egui::Context,
+    loaded: Arc<std::sync::atomic::AtomicBool>,
+    in_flight: Arc<std::sync::atomic::AtomicBool>,
+) {
+    if loaded.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    if in_flight.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    match query_fn.call0(window) {
+        Ok(prom_val) => {
+            if let Ok(promise) = prom_val.dyn_into::<js_sys::Promise>() {
+                let loaded = loaded.clone();
+                let in_flight = in_flight.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match wasm_bindgen_futures::JsFuture::from(promise).await {
+                        Ok(result) => {
+                            if let Ok(arr) = result.dyn_into::<js_sys::Array>() {
+                                log::info!("queryLocalFonts resolved with {} fonts", arr.length());
+                                catalog_local_fonts(arr, font_map, ctx);
+                                loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            in_flight.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            log::info!("queryLocalFonts not granted or deferred: {e:?}");
+                            in_flight.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                });
+            } else {
+                in_flight.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        Err(e) => {
+            log::info!("queryLocalFonts synchronous call error: {e:?}");
+            in_flight.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+fn setup_system_fonts(
+    font_map: LocalFontMap,
+    ctx: egui::Context,
+    loaded: Arc<std::sync::atomic::AtomicBool>,
+    in_flight: Arc<std::sync::atomic::AtomicBool>,
+) -> (Option<Box<dyn Fn()>>, Option<js_sys::Function>) {
+    let Some(window) = web_sys::window() else { return (None, None) };
+    let query_prop = match js_sys::Reflect::get(&window, &JsValue::from_str("queryLocalFonts")) {
+        Ok(p) => p,
+        Err(_) => return (None, None),
+    };
+    if !query_prop.is_function() {
+        log::info!("queryLocalFonts is not available in this browser");
+        return (None, None);
+    }
+    let query_fn: js_sys::Function = match query_prop.dyn_into() {
+        Ok(f) => f,
+        Err(_) => return (None, None),
+    };
+
+    // Attach capture listeners so that on user interaction or button clicks,
+    // queryLocalFonts() runs with valid transient user activation:
+    let window_clone = window.clone();
+    let query_fn_clone = query_fn.clone();
+    let font_map_clone = font_map.clone();
+    let ctx_clone = ctx.clone();
+    let loaded_clone = loaded.clone();
+    let in_flight_clone = in_flight.clone();
+
+    let on_gesture = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_e: web_sys::Event| {
+        trigger_query_local_fonts(
+            &window_clone,
+            &query_fn_clone,
+            font_map_clone.clone(),
+            ctx_clone.clone(),
+            loaded_clone.clone(),
+            in_flight_clone.clone(),
+        );
+    });
+
+    let callback_fn = on_gesture.as_ref().unchecked_ref::<js_sys::Function>();
+    let event_names = ["click", "pointerup", "mouseup", "keydown", "pointerdown"];
+
+    for evt in &event_names {
+        let _ = window.add_event_listener_with_callback_and_bool(evt, callback_fn, true);
+    }
+
+    if let Some(doc) = window.document() {
+        for evt in &event_names {
+            let _ = doc.add_event_listener_with_callback_and_bool(evt, callback_fn, true);
+        }
+        if let Some(canvas) = doc.get_element_by_id(CANVAS_ID) {
+            for evt in &event_names {
+                let _ = canvas.add_event_listener_with_callback_and_bool(evt, callback_fn, true);
+            }
+        }
+    }
+
+    on_gesture.forget();
+
+    let action_window = window.clone();
+    let action_query_fn = query_fn.clone();
+    let action_font_map = font_map;
+    let action_ctx = ctx;
+    let action_loaded = loaded;
+    let action_in_flight = in_flight;
+
+    let load_action: Box<dyn Fn()> = Box::new(move || {
+        trigger_query_local_fonts(
+            &action_window,
+            &action_query_fn,
+            action_font_map.clone(),
+            action_ctx.clone(),
+            action_loaded.clone(),
+            action_in_flight.clone(),
+        );
+    });
+
+    (Some(load_action), Some(query_fn))
 }
 
 /// Closing, reloading or leaving the tab with unsaved changes asks first. Browsers show their own
@@ -199,20 +454,115 @@ fn guard_unload(dirty: Rc<Cell<bool>>) -> Result<(), String> {
     Ok(())
 }
 
-/// Trigger a browser download of `bytes` named after the last component of `path`.
+/// Trigger a browser save dialog or download of `bytes` named after the last component of `path`.
 fn download(path: &str, bytes: &[u8]) -> Result<(), String> {
     let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
     let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "document".into());
     let window = web_sys::window().ok_or("no window")?;
+
+    let show_picker_fn: Option<js_sys::Function> =
+        js_sys::Reflect::get(&window, &JsValue::from_str("showSaveFilePicker")).ok().and_then(|v| v.dyn_into().ok());
+
+    if let Some(picker_fn) = show_picker_fn {
+        let ext = std::path::Path::new(&name).extension().and_then(|e| e.to_str()).unwrap_or("docx").to_ascii_lowercase();
+        let dot_ext = format!(".{ext}");
+        let mime = mime_for(&name);
+
+        let accept_obj = js_sys::Object::new();
+        let exts_arr = js_sys::Array::new();
+        exts_arr.push(&JsValue::from_str(&dot_ext));
+        let _ = js_sys::Reflect::set(&accept_obj, &JsValue::from_str(mime), &exts_arr);
+
+        let type_desc = match ext.as_str() {
+            "docx" => "Word Document (*.docx)",
+            "docm" => "Word Macro-Enabled Document (*.docm)",
+            "dotx" => "Word Template (*.dotx)",
+            "dotm" => "Word Macro-Enabled Template (*.dotm)",
+            "odt" => "OpenDocument Text (*.odt)",
+            "rtf" => "Rich Text Format (*.rtf)",
+            "txt" => "Plain Text (*.txt)",
+            "pdf" => "PDF Document (*.pdf)",
+            "png" => "PNG Image (*.png)",
+            "html" | "htm" => "HTML Document (*.html)",
+            "json" => "JSON Document (*.json)",
+            _ => "Document",
+        };
+
+        let type_obj = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&type_obj, &JsValue::from_str("description"), &JsValue::from_str(type_desc));
+        let _ = js_sys::Reflect::set(&type_obj, &JsValue::from_str("accept"), &accept_obj);
+
+        let types_arr = js_sys::Array::new();
+        types_arr.push(&type_obj);
+
+        let picker_opts = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&picker_opts, &JsValue::from_str("suggestedName"), &JsValue::from_str(&name));
+        let _ = js_sys::Reflect::set(&picker_opts, &JsValue::from_str("types"), &types_arr);
+
+        // Call showSaveFilePicker synchronously while transient user activation is active:
+        let prom_val = picker_fn.call1(&window, &picker_opts).map_err(js)?;
+        let prom: js_sys::Promise = prom_val.dyn_into().map_err(|_| "not a promise".to_string())?;
+
+        let bytes_vec = bytes.to_vec();
+        wasm_bindgen_futures::spawn_local(async move {
+            match wasm_bindgen_futures::JsFuture::from(prom).await {
+                Ok(handle_val) => {
+                    if let Err(e) = write_file_handle(&handle_val, &bytes_vec).await {
+                        log::error!("failed writing to file handle: {e}");
+                    } else {
+                        log::info!("Successfully saved file through save file picker");
+                    }
+                }
+                Err(e) => {
+                    let err_name = js_sys::Reflect::get(&e, &JsValue::from_str("name")).ok().and_then(|v| v.as_string()).unwrap_or_default();
+                    if err_name == "AbortError" {
+                        log::info!("Save file dialog cancelled by user");
+                    } else {
+                        log::error!("showSaveFilePicker error: {e:?}");
+                    }
+                }
+            }
+        });
+        return Ok(());
+    }
+
+    // Fallback for browsers without showSaveFilePicker (e.g. Firefox):
+    trigger_anchor_download(&window, &name, bytes)
+}
+
+async fn write_file_handle(handle: &JsValue, bytes: &[u8]) -> Result<(), String> {
+    let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
+    let create_fn: js_sys::Function = js_sys::Reflect::get(handle, &JsValue::from_str("createWritable"))
+        .map_err(js)?
+        .dyn_into()
+        .map_err(|_| "createWritable is not a function".to_string())?;
+    let stream_prom: js_sys::Promise = create_fn.call0(handle).map_err(js)?.dyn_into().map_err(|_| "not a promise".to_string())?;
+    let stream = wasm_bindgen_futures::JsFuture::from(stream_prom).await.map_err(js)?;
+
+    let write_fn: js_sys::Function =
+        js_sys::Reflect::get(&stream, &JsValue::from_str("write")).map_err(js)?.dyn_into().map_err(|_| "write is not a function".to_string())?;
+    let uint8 = js_sys::Uint8Array::from(bytes);
+    let write_prom: js_sys::Promise = write_fn.call1(&stream, &uint8).map_err(js)?.dyn_into().map_err(|_| "not a promise".to_string())?;
+    wasm_bindgen_futures::JsFuture::from(write_prom).await.map_err(js)?;
+
+    let close_fn: js_sys::Function =
+        js_sys::Reflect::get(&stream, &JsValue::from_str("close")).map_err(js)?.dyn_into().map_err(|_| "close is not a function".to_string())?;
+    let close_prom: js_sys::Promise = close_fn.call0(&stream).map_err(js)?.dyn_into().map_err(|_| "not a promise".to_string())?;
+    wasm_bindgen_futures::JsFuture::from(close_prom).await.map_err(js)?;
+    Ok(())
+}
+
+fn trigger_anchor_download(window: &web_sys::Window, name: &str, bytes: &[u8]) -> Result<(), String> {
+    let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
     let document = window.document().ok_or("no document")?;
     let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes));
     let opts = web_sys::BlobPropertyBag::new();
-    opts.set_type(mime_for(&name));
+    opts.set_type(mime_for(name));
     let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts).map_err(js)?;
     let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(js)?;
-    let a: web_sys::HtmlAnchorElement = document.create_element("a").map_err(js)?.dyn_into().map_err(|_| "not an anchor")?;
+    let a: web_sys::HtmlAnchorElement = document.create_element("a").map_err(js)?.dyn_into().map_err(|_| "not an anchor".to_string())?;
     a.set_href(&url);
-    a.set_download(&name);
+    a.set_download(name);
     a.style().set_property("display", "none").map_err(js)?;
     let body = document.body().ok_or("no body")?;
     body.append_child(&a).map_err(js)?;
