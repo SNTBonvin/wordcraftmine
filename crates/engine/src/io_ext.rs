@@ -15,14 +15,11 @@ pub fn open(ext: &str, bytes: &[u8]) -> Option<Result<Document, String>> {
 /// the content decides.
 fn open_word(ext: &str, bytes: &[u8]) -> Result<Document, String> {
     let legacy = matches!(ext, "doc" | "dot");
-    if wordcraft_formats::doc::is_cfb(bytes) {
-        wordcraft_formats::doc::import(bytes)
-    } else if bytes.starts_with(b"PK") || !legacy {
+    if bytes.starts_with(b"PK") || (!legacy && !wordcraft_formats::doc::is_cfb(bytes)) {
         wordcraft_docx::read(bytes).map_err(|e| e.to_string())
-    } else if bytes.trim_ascii_start().starts_with(b"{\\rtf") {
-        wordcraft_formats::rtf::import(bytes)
     } else {
-        Err("not a Word document".into())
+        // Compound files and RTF under a Word extension.
+        wordcraft_formats::import("doc", bytes).unwrap_or_else(|| Err("not a Word document".into()))
     }
 }
 

@@ -31,6 +31,8 @@ pub fn import(ext: &str, bytes: &[u8]) -> Option<Result<Document, String>> {
         "html" | "htm" | "xhtml" => Ok(html::import(&html::decode(bytes))),
         "rtf" => rtf::import(bytes),
         "odt" => odt::import(bytes),
+        // Many `.doc` files are RTF under the old extension.
+        "doc" | "dot" if !doc::is_cfb(bytes) && bytes.trim_ascii_start().starts_with(b"{\\rtf") => rtf::import(bytes),
         "doc" | "dot" => doc::import(bytes),
         _ => return None,
     };

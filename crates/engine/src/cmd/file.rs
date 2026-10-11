@@ -106,10 +106,10 @@ fn open(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn save(s: &mut Session, v: &Value) -> CmdResult {
-    // A document opened from a format that can't be written (legacy `.doc`) is saved under a new name.
+    // A document opened from a legacy `.doc`, which can be read but not written, is saved under a new name.
     let own = s.path.clone().filter(|p| {
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-        crate::io::SAVE_EXTS.contains(&ext.as_str())
+        !matches!(ext.as_str(), "doc" | "dot")
     });
     let path = match p::str(v, "path").map(std::path::PathBuf::from).or(own) {
         Some(p) => p,

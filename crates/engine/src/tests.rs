@@ -376,4 +376,11 @@ fn saving_a_document_opened_from_doc_asks_for_a_name() {
     let r = run(&mut s, "file.save", json!({}));
     assert_eq!(r["saved"], false);
     assert!(s.ui_requests.iter().any(|r| r["open"] == "saveAs"));
+    // Every other format a document was opened from is still saved in place.
+    let path = std::env::temp_dir().join(format!("wordcraft-save-in-place-{}.htm", std::process::id()));
+    s.path = Some(path.clone());
+    let r = run(&mut s, "file.save", json!({}));
+    assert_eq!(r["saved"], true);
+    assert!(path.exists());
+    let _ = std::fs::remove_file(&path);
 }

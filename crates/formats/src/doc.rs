@@ -26,6 +26,12 @@ const MAX_DIR: usize = 1 << 16;
 const MAX_STYLE_DEPTH: usize = 16;
 /// Nested fields tracked.
 const MAX_FIELDS: usize = 64;
+/// Bytes of one style's property list read (real ones are a few dozen bytes).
+const MAX_STYLE_PROPS: usize = 4096;
+/// Sections whose properties are read.
+const MAX_SECTIONS: usize = 4096;
+/// Bytes of oversized paragraph property lists (in the Data stream) read in all.
+const MAX_HUGE_PROPS: usize = 64 << 20;
 /// Cells kept per table row.
 const MAX_CELLS: usize = 63;
 
@@ -335,11 +341,18 @@ struct Std {
     chpx: Vec<u8>,
 }
 
+/// The style sheet, with what each style comes to worked out once (documents have thousands of
+/// paragraphs per style).
 #[derive(Default)]
 struct Styles {
     stds: Vec<Option<Std>>,
     ftc: u16,
     ftc_fe: u16,
+    /// Per style: its character and paragraph properties, base styles applied.
+    chps: Vec<Chp>,
+    paps: Vec<Pap>,
+    /// Per style: the character property lists of its base styles and its own, in a row.
+    char_chains: Vec<Vec<u8>>,
 }
 
 impl Styles {
@@ -359,6 +372,17 @@ impl Styles {
             at += 2 + cb;
             st.stds.push(Self::std(std, base_len));
         }
+        let all = 0..st.stds.len() as u16;
+        st.char_chains = all
+            .clone()
+            .map(|i| {
+                let mut chain: Vec<u8> = st.chain(i).iter().flat_map(|s| s.chpx.iter().copied()).collect();
+                chain.truncate(MAX_STYLE_PROPS);
+                chain
+            })
+            .collect();
+        st.chps = all.clone().map(|i| st.resolve_chp(i)).collect();
+        st.paps = all.map(|i| st.resolve_pap(i)).collect();
         st
     }
 
@@ -374,12 +398,12 @@ impl Styles {
         if stk == 1 {
             let cb = u16_at(s, at).unwrap_or(0) as usize;
             // The paragraph UPX starts with the style's own index.
-            std.papx = sub(s, at + 4, cb.saturating_sub(2)).unwrap_or(&[]).to_vec();
+            std.papx = sub(s, at + 4, cb.saturating_sub(2).min(MAX_STYLE_PROPS)).unwrap_or(&[]).to_vec();
             at = even(at + 2 + cb);
         }
         if stk == 1 || stk == 2 {
             let cb = u16_at(s, at).unwrap_or(0) as usize;
-            std.chpx = sub(s, at + 2, cb).unwrap_or(&[]).to_vec();
+            std.chpx = sub(s, at + 2, cb.min(MAX_STYLE_PROPS)).unwrap_or(&[]).to_vec();
         }
         Some(std)
     }
@@ -407,6 +431,15 @@ impl Styles {
 
     /// The character properties style `istd` gives.
     fn chp(&self, istd: u16) -> Chp {
+        self.chps.get(istd as usize).cloned().unwrap_or_else(|| Chp { ftc: self.ftc, ftc_fe: self.ftc_fe, ..Default::default() })
+    }
+
+    /// The paragraph properties style `istd` gives.
+    fn pap(&self, istd: u16) -> Pap {
+        self.paps.get(istd as usize).cloned().unwrap_or_else(|| Pap { istd, ..Default::default() })
+    }
+
+    fn resolve_chp(&self, istd: u16) -> Chp {
         let mut chp = Chp { ftc: self.ftc, ftc_fe: self.ftc_fe, ..Default::default() };
         for s in self.chain(istd) {
             let base = chp.clone();
@@ -415,11 +448,10 @@ impl Styles {
         chp
     }
 
-    /// The paragraph properties style `istd` gives.
-    fn pap(&self, istd: u16) -> Pap {
+    fn resolve_pap(&self, istd: u16) -> Pap {
         let mut pap = Pap::default();
         for s in self.chain(istd) {
-            apply_pap(&mut pap, &s.papx, &[], 0);
+            apply_pap(&mut pap, &s.papx, &[], &mut 0, 0);
         }
         pap.istd = istd;
         pap
@@ -427,6 +459,7 @@ impl Styles {
 
     /// Apply character sprms; `style` is what toggles are relative to.
     fn apply_chp(&self, chp: &mut Chp, grpprl: &[u8], style: &Chp, depth: usize) {
+        let mut styled = false;
         for (op, v) in sprms(grpprl) {
             let b = v.first().copied().unwrap_or(0);
             let w = u16_at(v, 0).unwrap_or(0);
@@ -444,10 +477,11 @@ impl Styles {
                 0x2A48 => chp.iss = b,
                 0x4A4F => chp.ftc = w,
                 0x4A50 => chp.ftc_fe = w,
-                // sprmCIstd: a character style, laid over what the paragraph gives.
-                0x4A30 if depth == 0 => {
-                    for s in self.chain(w) {
-                        self.apply_chp(chp, &s.chpx, style, depth + 1);
+                // sprmCIstd: a character style, laid over what the paragraph gives. A run has one.
+                0x4A30 if depth == 0 && !styled => {
+                    styled = true;
+                    if let Some(chain) = self.char_chains.get(w as usize) {
+                        self.apply_chp(chp, chain, style, depth + 1);
                     }
                 }
                 _ => {}
@@ -456,8 +490,9 @@ impl Styles {
     }
 }
 
-/// Apply paragraph sprms. `data` is the `Data` stream, where oversized property lists live.
-fn apply_pap(pap: &mut Pap, grpprl: &[u8], data: &[u8], depth: usize) {
+/// Apply paragraph sprms. `data` is the `Data` stream, where oversized property lists live;
+/// `huge` is how many bytes of those may still be read.
+fn apply_pap(pap: &mut Pap, grpprl: &[u8], data: &[u8], huge: &mut usize, depth: usize) {
     for (op, v) in sprms(grpprl) {
         let b = v.first().copied().unwrap_or(0);
         match op {
@@ -475,10 +510,11 @@ fn apply_pap(pap: &mut Pap, grpprl: &[u8], data: &[u8], depth: usize) {
             // sprmPHugePapx: the real list is in the Data stream.
             0x6645 | 0x6646 if depth == 0 => {
                 let at = u32_at(v, 0).unwrap_or(u32::MAX) as usize;
-                if let Some(cb) = u16_at(data, at)
-                    && let Some(huge) = at.checked_add(2).and_then(|o| sub(data, o, cb as usize))
+                if let Some(cb) = u16_at(data, at).filter(|cb| *cb as usize <= *huge)
+                    && let Some(list) = at.checked_add(2).and_then(|o| sub(data, o, cb as usize))
                 {
-                    apply_pap(pap, huge, data, depth + 1);
+                    *huge -= cb as usize;
+                    apply_pap(pap, list, data, huge, depth + 1);
                 }
             }
             _ => {}
@@ -678,13 +714,14 @@ fn section(wd: &[u8], fc_sepx: u32) -> (Page, bool) {
 struct Chunk<'a> {
     text: String,
     grpprl: &'a [u8],
-    link: Option<String>,
+    /// Index into the builder's link targets.
+    link: Option<usize>,
 }
 
 struct Field {
     instr: String,
     in_result: bool,
-    link: Option<String>,
+    link: Option<usize>,
 }
 
 /// Is `c` East Asian text (which takes the East Asian font)?
@@ -705,6 +742,9 @@ struct Builder<'a> {
     cell: Vec<FBlock>,
     chunks: Vec<Chunk<'a>>,
     fields: Vec<Field>,
+    /// The targets of the hyperlink fields met so far.
+    links: Vec<String>,
+    huge_budget: usize,
     /// Fields opened beyond `MAX_FIELDS` (their text is dropped).
     overflow: usize,
     page_break: bool,
@@ -721,7 +761,7 @@ impl<'a> Builder<'a> {
             }
             return;
         }
-        let link = self.fields.iter().rev().find_map(|f| f.link.clone());
+        let link = self.fields.iter().rev().find_map(|f| f.link);
         match self.chunks.last_mut() {
             Some(last) if std::ptr::eq(last.grpprl, grpprl) && last.link == link => last.text.push(c),
             _ => self.chunks.push(Chunk { text: c.to_string(), grpprl, link }),
@@ -740,7 +780,10 @@ impl<'a> Builder<'a> {
             0x14 => {
                 if let Some(f) = self.fields.last_mut() {
                     f.in_result = true;
-                    f.link = crate::rtf::hyperlink(&f.instr);
+                    f.link = crate::rtf::hyperlink(&f.instr).map(|target| {
+                        self.links.push(target);
+                        self.links.len() - 1
+                    });
                 }
             }
             _ => {
@@ -784,7 +827,7 @@ impl<'a> Builder<'a> {
                 strike: chp.strike,
                 sup: chp.iss == 1,
                 sub: chp.iss == 2,
-                link: chunk.link,
+                link: chunk.link.and_then(|i| self.links.get(i).cloned()),
                 color: chp.color,
                 size: Some(chp.hps.min(3276) as f32 / 2.0),
                 background: chp.highlight,
@@ -970,7 +1013,7 @@ pub fn parse(bytes: &[u8]) -> Result<(Flow, Page), String> {
     let sections = plc_sed.len().saturating_sub(4) / 16;
     let sepx = |i: usize| u32_at(plc_sed, (sections + 1) * 4 + i * 12 + 2).unwrap_or(u32::MAX);
     let mut continuous_after = std::collections::HashSet::new();
-    for i in 1..sections {
+    for i in 1..sections.min(MAX_SECTIONS) {
         if let Some(cp) = u32_at(plc_sed, i * 4)
             && !section(wd, sepx(i)).1
         {
@@ -990,14 +1033,16 @@ pub fn parse(bytes: &[u8]) -> Result<(Flow, Page), String> {
         cell: Vec::new(),
         chunks: Vec::new(),
         fields: Vec::new(),
+        links: Vec::new(),
+        huge_budget: MAX_HUGE_PROPS,
         overflow: 0,
         page_break: false,
     };
-    let para_props = |b: &Builder, fc: u32| -> Pap {
+    let para_props = |b: &mut Builder, fc: u32| -> Pap {
         match run_at(&papx, fc) {
             Some(run) => {
                 let mut pap = b.styles.pap(run.istd);
-                apply_pap(&mut pap, run.grpprl, b.data, 0);
+                apply_pap(&mut pap, run.grpprl, b.data, &mut b.huge_budget, 0);
                 pap
             }
             None => Pap::default(),
@@ -1018,12 +1063,12 @@ pub fn parse(bytes: &[u8]) -> Result<(Flow, Page), String> {
             let grpprl: &[u8] = run_at(&chpx, fc).map_or(&[], |r| r.grpprl);
             match unit {
                 0x0D | 0x07 => {
-                    let pap = para_props(&b, fc);
+                    let pap = para_props(&mut b, fc);
                     b.end_para(unit, &pap);
                 }
                 0x0C => {
                     // A page break, or the end of a section. Text before it stays a paragraph.
-                    let pap = para_props(&b, fc);
+                    let pap = para_props(&mut b, fc);
                     if !b.chunks.is_empty() {
                         b.end_para(0x0D, &pap);
                     }
@@ -1453,6 +1498,27 @@ mod tests {
         assert!(parse(b"plain text").is_err());
         assert!(parse(&cfb(&[("Other", vec![1, 2, 3])])).unwrap_err().contains("not a Word document"));
         assert!(parse(&CFB_MAGIC).is_err());
+    }
+
+    /// A file made to be slow: long style chains, a character style named over and over, and
+    /// thousands of paragraphs. Styles are worked out once, so this stays quick.
+    #[test]
+    fn crafted_style_sheets_stay_fast() {
+        let mut st = Styles::default();
+        let chpx: Vec<u8> = (0..1000).flat_map(|_| sprm(0x4A30, &[15, 0])).collect();
+        for i in 0..16u16 {
+            st.stds.push(Some(Std { sti: 0, base: i.saturating_sub(1), papx: Vec::new(), chpx: chpx.clone() }));
+        }
+        let all = 0..st.stds.len() as u16;
+        st.char_chains = all.clone().map(|i| st.chain(i).iter().flat_map(|s| s.chpx.iter().copied()).take(MAX_STYLE_PROPS).collect()).collect();
+        st.chps = all.map(|i| st.resolve_chp(i)).collect();
+        let start = std::time::Instant::now();
+        for _ in 0..100_000 {
+            let base = st.chp(15);
+            let mut chp = base.clone();
+            st.apply_chp(&mut chp, &chpx[..252], &base, 0);
+        }
+        assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
     }
 
     /// Crash regression: every offset, count and chain in the file is input. Truncated and
