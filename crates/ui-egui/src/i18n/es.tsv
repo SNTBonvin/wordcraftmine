@@ -1103,6 +1103,9 @@
 	Light	Claro
 	Dark	Oscuro
 	Use system setting	Usar la configuración del sistema
+	Light theme	Tema claro
+	Dark theme	Tema oscuro
+	Active	Activo
 	A file dialog is already open.	Ya hay un cuadro de diálogo de archivo abierto.
 	Height:	Alto:
 	Width:	Ancho:

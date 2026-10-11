@@ -1000,6 +1000,9 @@
 	Light	Hele
 	Dark	Tume
 	Use system setting	Kasuta süsteemi seadistust
+	Light theme	Hele teema
+	Dark theme	Tume teema
+	Active	Aktiivne
 	A file dialog is already open.	Failidialoog on juba avatud.
 	Alt text	Asendustekst
 	Indent from left:	Taane vasakult:

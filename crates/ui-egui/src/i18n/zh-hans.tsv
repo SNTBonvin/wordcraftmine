@@ -1098,6 +1098,9 @@
 	Light	浅色
 	Dark	深色
 	Use system setting	使用系统设置
+	Light theme	浅色主题
+	Dark theme	深色主题
+	Active	当前
 	A file dialog is already open.	已有一个文件对话框处于打开状态。
 	Height:	高度：
 	Width:	宽度：
