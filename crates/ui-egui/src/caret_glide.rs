@@ -20,10 +20,10 @@
 //! unfocused), and moves that start or end off screen. Our choice; Word wasn't measured there.
 //!
 //! With animations off the caret jumps and blinks on and off, as it always did: File ▸ Options ▸
-//! Animation (the `ui.caretAnimation` command) turns them off, and so do egui's `animation_time`
-//! at 0 (the headless test harness, so scripted screenshots never catch a caret in flight) and
-//! `WORDCRAFT_CARET_GLIDE_MS=0`. The variable also sets the duration, for looking at the motion
-//! slowed down.
+//! Advanced ▸ Animation (the `ui.caretAnimation` command) turns them off, and so do egui's
+//! `animation_time` at 0 (the headless test harness, so scripted screenshots never catch a caret
+//! in flight) and `WORDCRAFT_CARET_GLIDE_MS=0`. The variable also sets the duration, for looking
+//! at the motion slowed down.
 //!
 //! The glide runs in content space (screen points from the top-left of the scrolled content), so
 //! scrolling under a moving caret doesn't bend its path.
