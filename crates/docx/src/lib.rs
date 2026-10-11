@@ -7,6 +7,7 @@
 //! error or a best-effort document, never a panic.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod chart_spec;
 mod crypt;
 mod custom;
 mod package;
@@ -16,7 +17,11 @@ mod units;
 mod write;
 mod xml;
 
-pub use crypt::{DEFAULT_SPIN_COUNT, MAX_PASSWORD_CHARS, check_password, decrypt, encrypt, encrypt_with_spin_count, is_encrypted};
+pub use chart_spec::{chart_items, chart_xml};
+pub use crypt::{
+    DEFAULT_SPIN_COUNT, MAX_PASSWORD_CHARS, PasswordCheck, check_password, check_protection_password, decrypt, encrypt, encrypt_with_spin_count,
+    is_encrypted, protection_hash,
+};
 pub use read::read;
 pub use smart_art::smart_art_items;
 pub use write::{write, write_as};

@@ -17,6 +17,8 @@ pub enum InsertDialog {
     Symbol(SymbolForm),
     Field(FieldForm),
     SmartArt(crate::dialogs_smart_art::SmartArtForm),
+    ChartType(crate::dialogs_chart::ChartTypeForm),
+    ChartData(crate::dialogs_chart::ChartDataForm),
 }
 
 impl InsertDialog {
@@ -26,6 +28,9 @@ impl InsertDialog {
             InsertDialog::Symbol(_) => "symbol",
             InsertDialog::Field(_) => "field",
             InsertDialog::SmartArt(_) => "insertSmartArt",
+            InsertDialog::ChartType(f) if f.change => "changeChartType",
+            InsertDialog::ChartType(_) => "insertChart",
+            InsertDialog::ChartData(_) => "chartData",
         }
     }
 
@@ -36,11 +41,15 @@ impl InsertDialog {
             InsertDialog::Symbol(_) => "Symbol",
             InsertDialog::Field(_) => "Field",
             InsertDialog::SmartArt(_) => "Insert SmartArt",
+            InsertDialog::ChartType(f) if f.change => "Change Chart Type",
+            InsertDialog::ChartType(_) => "Insert Chart",
+            InsertDialog::ChartData(_) => "Edit Data",
         }
     }
 }
 
-/// The dialog `ui.dialog` opens by `name`: `columns`, `symbol`, `specialCharacters`, `field` or
+/// The dialog `ui.dialog` opens by `name`: `columns`, `symbol`, `specialCharacters`, `field`,
+/// `insertChart`, `changeChartType` or `chartData` (the last two for the selected chart), or
 /// `insertSmartArt`.
 pub fn open(name: &str, app: &WordApp) -> Option<InsertDialog> {
     Some(match name {
@@ -49,6 +58,9 @@ pub fn open(name: &str, app: &WordApp) -> Option<InsertDialog> {
         "specialCharacters" => InsertDialog::Symbol(SymbolForm::new(app, 1)),
         "field" => InsertDialog::Field(FieldForm::new(app)),
         "insertSmartArt" => InsertDialog::SmartArt(crate::dialogs_smart_art::SmartArtForm::new(app)),
+        "insertChart" => InsertDialog::ChartType(crate::dialogs_chart::ChartTypeForm::new(app, false)?),
+        "changeChartType" => InsertDialog::ChartType(crate::dialogs_chart::ChartTypeForm::new(app, true)?),
+        "chartData" => InsertDialog::ChartData(crate::dialogs_chart::ChartDataForm::new(app)?),
         _ => return None,
     })
 }
@@ -60,6 +72,8 @@ pub fn body(app: &mut WordApp, ui: &mut Ui, d: &mut InsertDialog) -> bool {
         InsertDialog::Symbol(f) => symbol_ui(app, ui, f),
         InsertDialog::Field(f) => field_ui(app, ui, f),
         InsertDialog::SmartArt(f) => crate::dialogs_smart_art::picker_ui(app, ui, f),
+        InsertDialog::ChartType(f) => crate::dialogs_chart::type_ui(app, ui, f),
+        InsertDialog::ChartData(f) => crate::dialogs_chart::data_ui(app, ui, f),
     }
 }
 
@@ -107,7 +121,7 @@ pub struct ColumnsForm {
 
 impl ColumnsForm {
     fn k() -> f32 {
-        wordcraft_geom::Unit::default().pt_per_unit()
+        crate::options::unit().pt_per_unit()
     }
 
     pub fn read(app: &WordApp) -> ColumnsForm {
@@ -338,7 +352,7 @@ fn columns_preview(ui: &mut Ui, f: &ColumnsForm, t: &Tokens) {
 
 fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
     let t = Tokens::get(ui.ctx());
-    let unit = wordcraft_geom::Unit::default();
+    let unit = crate::options::unit();
     ui.set_width(420.0);
     ui.label(egui::RichText::new(tl!("Presets")).font(semibold(12.5)));
     let current = f.current_preset();
