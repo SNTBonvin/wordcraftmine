@@ -317,6 +317,7 @@ struct Key {
     excl: u64,
     eq: u32,
     grid: (u32, u32, u32, bool),
+    fit: bool,
 }
 
 /// Memoised paragraph layouts.
@@ -445,6 +446,7 @@ impl Ctx<'_> {
             exclusions: &[],
             eq_number: 0,
             grid: para::Grid::default(),
+            fit_objects: false,
         };
         let pl = Arc::new(para::layout_para(&p, &env));
         self.numbers.insert(n, pl.clone());
@@ -490,6 +492,7 @@ impl Ctx<'_> {
             excl: if exclusions.is_empty() { 0 } else { hash_of(&format!("{exclusions:?}")) },
             eq: if eq_here > 0 { eq_number } else { 0 },
             grid: self.grid.key(),
+            fit: self.boxes.inside(),
         };
         self.cache.used.insert(key.clone());
         if let Some(pl) = self.cache.paras.get(&key) {
@@ -510,6 +513,7 @@ impl Ctx<'_> {
             exclusions,
             eq_number,
             grid: self.grid,
+            fit_objects: self.boxes.inside(),
         };
         let pl = Arc::new(para::layout_para(p, &env));
         self.cache.paras.insert(key, pl.clone());
@@ -2454,6 +2458,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
                 exclusions: &[],
                 eq_number: ctx.eq_count,
                 grid: ctx.grid,
+                fit_objects: false,
             };
             let _ = rp;
             let pl = para::layout_para(p, &env);
