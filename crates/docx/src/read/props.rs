@@ -7,7 +7,10 @@ use wordcraft_doc::props::{
     Align, Border, BorderStyle, Borders, CellProps, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign,
     TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
-use wordcraft_doc::section::{Columns, LineNumberRestart, LineNumbering, NumFormat, SectionProps, SectionStart};
+use wordcraft_doc::section::{
+    Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, NotePos, NoteProps, NoteRestart, NumFormat,
+    SectionProps, SectionStart,
+};
 
 use crate::units::{int, measure, on_off, tw, u32_of};
 use crate::xml::El;
@@ -149,6 +152,7 @@ impl PropCtx {
                 "w:topLinePunct" => p.top_line_punct = Some(on_off(k)),
                 "w:autoSpaceDE" => p.auto_space_de = Some(on_off(k)),
                 "w:autoSpaceDN" => p.auto_space_dn = Some(on_off(k)),
+                "w:snapToGrid" => p.snap_to_grid = Some(on_off(k)),
                 "w:framePr" => {
                     if matches!(k.attr("w:dropCap"), Some("drop") | Some("margin")) {
                         p.drop_cap = Some(k.attr("w:lines").and_then(u32_of).unwrap_or(3).clamp(1, 10) as u8);
@@ -487,6 +491,8 @@ pub fn sectpr(e: &El) -> (SectionProps, Vec<HfRef>) {
                 }
                 s.columns = c;
             }
+            "w:footnotePr" => s.footnote_pr = note_pr(k, true),
+            "w:endnotePr" => s.endnote_pr = note_pr(k, true),
             "w:titlePg" => s.title_page = on_off(k),
             "w:bidi" => s.rtl = on_off(k),
             "w:pgNumType" => {
@@ -519,10 +525,35 @@ pub fn sectpr(e: &El) -> (SectionProps, Vec<HfRef>) {
                 }
             }
             "w:pgBorders" => s.page_borders = Some(borders(k)),
+            "w:docGrid" => {
+                let mut g = DocGrid::default();
+                if let Some(t) = k.attr("w:type").and_then(DocGridType::from_ooxml) {
+                    g.kind = t;
+                }
+                if let Some(p) = tw(k, "w:linePitch").filter(|v| v.is_finite() && *v > 0.0) {
+                    g.line_pitch = p.min(MAX_GRID_PITCH);
+                }
+                if let Some(c) = k.attr("w:charSpace").and_then(int) {
+                    g.char_space = c.clamp(-(MAX_CHAR_SPACE as i64), MAX_CHAR_SPACE as i64) as i32;
+                }
+                s.doc_grid = Some(g);
+            }
             _ => {}
         }
     }
     (s, refs)
+}
+
+/// `w:footnotePr` / `w:endnotePr` (ECMA-376 §17.11): placement, number format (only kept when
+/// `fmt`: the document's goes to its own setting), start and restart. A start out of range is
+/// clamped; unknown values are left unset.
+pub fn note_pr(e: &El, fmt: bool) -> NoteProps {
+    NoteProps {
+        pos: e.child_val("w:pos").and_then(NotePos::from_ooxml),
+        num_fmt: if fmt { e.child_val("w:numFmt").map(NumFormat::from_ooxml) } else { None },
+        num_start: e.child_val("w:numStart").and_then(int).map(|v| v.clamp(1, wordcraft_doc::section::MAX_NOTE_START as i64) as u32),
+        num_restart: e.child_val("w:numRestart").and_then(NoteRestart::from_ooxml),
+    }
 }
 
 /// `w:tblpPr`: a floating table's anchors, offsets or alignments and distances from text.

@@ -50,6 +50,8 @@ pub struct CanvasState {
     pub(crate) ink: Option<crate::ink::InkDrag>,
     /// The eraser is down: whether it has erased anything in this drag yet.
     pub(crate) erasing: Option<bool>,
+    /// The lasso being drawn or dragged, and Ink Replay (Draw tab).
+    pub(crate) ink_ui: crate::ink::InkUi,
     /// Wheel/touchpad scrolling (smooth notches, touchpad momentum).
     pub(crate) wheel: crate::scroll::CanvasScroll,
     /// The scroll offset and its maximum at the end of last frame.
@@ -111,6 +113,7 @@ impl Default for CanvasState {
             obj_drag: None,
             ink: None,
             erasing: None,
+            ink_ui: Default::default(),
             context_menu_open: false,
             mini_anchor: None,
             pasted: false,
@@ -157,7 +160,9 @@ pub fn markup_width(app: &WordApp) -> f32 {
     let m = &app.session.prefs.markup;
     let on = on && m.balloons != wordcraft_layout::display::BalloonMode::Inline;
     let comments = m.comments && !app.session.doc.comments.is_empty();
-    if on && (comments || (m.formatting && wordcraft_engine::cmd::review::has_format_changes(&app.session.doc))) { 216.0 } else { 0.0 }
+    let formats = m.formatting && wordcraft_engine::cmd::review::has_format_changes(&app.session.doc);
+    let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&app.session.doc);
+    if on && (comments || formats || moves) { 216.0 } else { 0.0 }
 }
 
 /// A page dimension (points) safe to lay out: finite, at least 1 pt, at most `cap`.
@@ -264,7 +269,7 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
     let v = &app.session.view;
-    (v.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink).hash(&mut h);
+    (v.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
@@ -348,6 +353,7 @@ fn drawing_grid_step(spacing: f32, scale: f32) -> f32 {
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    crate::ink::replay_tick(app, ui.ctx());
     let layout = app.session.layout();
     // View › Switch Modes: dark paper, inverted document colours, a white caret.
     let dark_page = app.session.view.dark_mode;
@@ -458,7 +464,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 opts.display.marks = app.session.view.marks;
                 opts.display.placeholders = true;
                 opts.display.markup = app.session.view.show_markup;
-                opts.display.hide_ink = app.session.view.hide_ink;
+                // Ink Replay draws the ink itself, stroke by stroke, over pages without it.
+                opts.display.hide_ink = app.session.view.hide_ink || app.session.view.draw.replay;
                 opts.display.revisions = app.session.prefs.markup.clone();
                 opts.dark = dark_page;
                 opts.dark_paper = dark_paper;
@@ -502,7 +509,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             // View › Gridlines: the drawing grid over the text area (Print Layout, on screen only).
             if app.session.view.gridlines && app.session.view.mode == wordcraft_layout::ViewMode::Print && !app.session.view.read_mode {
                 let settings = &app.session.doc.settings;
-                let step = (drawing_grid_step(settings.grid_h, page_scale), drawing_grid_step(settings.grid_v, page_scale));
+                // A section with a document grid (`w:docGrid`) shows that grid: lines at the line
+                // pitch and, for a character grid, columns at the character pitch.
+                let sections = app.session.doc.sections();
+                let sect = sections.get(page.section).map(|(_, s)| *s);
+                let step = match sect.and_then(|s| s.grid_line_pitch().map(|lp| (s, lp))) {
+                    Some((s, lp)) => {
+                        let size = app.session.doc.styles.resolve_char(Some("Normal"), &Default::default()).size;
+                        let cp = s.grid_char_pitch(size).map_or(f32::INFINITY, |cp| drawing_grid_step(cp, page_scale));
+                        (cp, drawing_grid_step(lp, page_scale))
+                    }
+                    None => (drawing_grid_step(settings.grid_h, page_scale), drawing_grid_step(settings.grid_v, page_scale)),
+                };
                 let (xs, ys) = drawing_grid(page.body, step);
                 let stroke = Stroke::new(1.0, t.blue.linear_multiply(0.22));
                 let (x0, x1) = (visual_sr.min.x + page.body.x * page_scale, visual_sr.min.x + page.body.right() * page_scale);
@@ -662,6 +680,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         (resp, rects)
     });
     app.canvas.scroll_offset = out.state.offset;
+    crate::ink::replay_bar(app, ui, out.inner_rect);
     app.canvas.scroll_max = (out.content_size - out.inner_rect.size()).max(egui::Vec2::ZERO);
     let (resp, rects) = out.inner;
     // A click on the page leaves the selected comment balloon.
@@ -777,6 +796,13 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         let what = crate::panes::describe_props(&props).join(", ");
         let text = if what.is_empty() { tl!("Formatted").to_string() } else { format!("{}: {what}", tl!("Formatted")) };
+        by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Format(author, text), pos));
+    }
+    // Each end of a tracked move.
+    let moves = if m.insertions_deletions { wordcraft_engine::cmd::review::move_changes(&app.session) } else { Vec::new() };
+    for (pos, author, from) in moves.into_iter().take(500) {
+        let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
+        let text = if from { tl!("Moved from") } else { tl!("Moved to") }.to_string();
         by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Format(author, text), pos));
     }
     let palette = [t.blue, Color32::from_rgb(0xB0, 0x3A, 0x2E), Color32::from_rgb(0x2E, 0x7D, 0x32), Color32::from_rgb(0x8E, 0x44, 0xAD), t.orange];
@@ -913,7 +939,7 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
 /// What a balloon in the markup area shows.
 enum Balloon {
     Comment(u32),
-    /// A tracked formatting change: its author and "Formatted: …".
+    /// A tracked formatting change or move: its author and "Formatted: …" / "Moved from".
     Format(String, String),
 }
 

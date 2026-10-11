@@ -23,7 +23,9 @@ pub mod dialogs;
 pub mod dialogs_insert;
 pub mod dialogs_keyboard;
 pub mod dialogs_lists;
+pub mod dialogs_notes;
 pub mod dialogs_para;
+pub mod dialogs_refs;
 pub mod dialogs_ribbon;
 pub mod equation_tab;
 pub mod file_dialogs;
@@ -135,6 +137,13 @@ pub struct UiState {
     /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
     /// #379); the session owns them while running.
     pub ribbon: wordcraft_engine::RibbonLayout,
+    /// Caption labels the user added (References › Insert Caption › New Label), kept between
+    /// runs like Word keeps them in its Normal template (#402).
+    pub caption_labels: Vec<String>,
+    /// Draw › Add Pen: the pens added to the pen gallery; the session owns them while running.
+    /// Entries that aren't pens are dropped on reading.
+    #[serde(deserialize_with = "wordcraft_engine::cmd::draw::lenient_pens")]
+    pub ink_pens: Vec<wordcraft_engine::cmd::draw::CustomPen>,
 }
 
 impl Default for UiState {
@@ -162,6 +171,8 @@ impl Default for UiState {
             dark_page: false,
             keyboard: wordcraft_engine::KeyMap::default(),
             ribbon: wordcraft_engine::RibbonLayout::default(),
+            caption_labels: Vec::new(),
+            ink_pens: Vec::new(),
         }
     }
 }
@@ -305,6 +316,7 @@ impl WordApp {
         ui.dark_page = self.session.view.dark_mode;
         ui.keyboard = self.session.keymap.clone();
         ui.ribbon = self.session.ribbon.clone();
+        ui.ink_pens = self.session.view.draw.pens.clone();
         ui
     }
 
@@ -332,6 +344,7 @@ impl WordApp {
         // So are ribbon and toolbar commands.
         self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
         self.session.ribbon.retain_known(&reg);
+        self.session.view.draw.pens = std::mem::take(&mut self.ui.ink_pens);
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -1195,6 +1208,16 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
         // Enclose Characters without a shape (null is one: it takes the enclosure away).
         "format.enclose" if params.get("shape").is_none() => Some("enclose"),
+        // Footnote and Endnote without settings shows its dialog (#385).
+        "references.noteOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("noteOptions"),
+        // References dialogs (#402): Insert Caption, Insert Index, Mark Entry, Manage Sources and
+        // Insert Citation without a source.
+        "references.caption" | "references.index" if params.as_object().is_none_or(|m| m.is_empty()) => {
+            Some(if id == "references.caption" { "caption" } else { "index" })
+        }
+        "references.markEntry" if !has("entry") => Some("markEntry"),
+        "references.sources" if params.as_object().is_none_or(|m| m.is_empty()) => Some("sourceManager"),
+        "references.citation" if !has("tag") && !has("source") => Some("createSource"),
         _ => None,
     }
 }
