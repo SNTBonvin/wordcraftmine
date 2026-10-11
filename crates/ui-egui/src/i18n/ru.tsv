@@ -699,7 +699,7 @@
 	Style	Стиль
 	Style based on:	Основан на стиле:
 	Style Set	Набор стилей
-	Style: APA	Стиль: APA
+	Style: {style}	Стиль: {style}
 	Styles	Стили
 	Styles Pane	Область стилей
 	Subject	Тема
@@ -1705,3 +1705,6 @@ preview	Title	Пример
 	Current - Professional	Текущее — профессиональный вид
 	Centered as Group	По центру как группа
 	✓ None	✓ Нет
+	Formatted	Отформатировано
+	Interface size:	Размер интерфейса:
+	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Увеличивает или уменьшает ленту, меню и диалоговые окна поверх системного масштабирования экрана. Масштаб документа настраивается отдельно.
