@@ -620,6 +620,23 @@ pub fn suppressed(app: &WordApp, ctx: &egui::Context) -> bool {
     !app.ui.keytips_enabled || app.ui.backstage || app.dialog.is_some() || (ctx.egui_wants_keyboard_input() && !app.canvas.focused)
 }
 
+/// Native backends report Alt through both key and modifier events, in either order. Track
+/// the transition once; the key-up event can still carry the old `alt: true` modifier state.
+fn alt_transition(app: &mut WordApp, pressed: bool, modifiers: egui::Modifiers) -> bool {
+    let other_modifier = modifiers.ctrl || modifiers.shift || modifiers.command || modifiers.mac_cmd;
+    if pressed {
+        if !app.ui.alt_pressed {
+            app.ui.alt_chord_used = false;
+        }
+        app.ui.alt_pressed = true;
+        app.ui.alt_chord_used |= other_modifier;
+        false
+    } else {
+        let released = std::mem::take(&mut app.ui.alt_pressed);
+        released && !std::mem::take(&mut app.ui.alt_chord_used) && !other_modifier
+    }
+}
+
 /// Read keytip input every frame, before layout, so the frame paints the new state. Suppression
 /// cancels keytips so letters reach the text; Alt still reaches the rest of the UI (the
 /// registry's Alt+letter shortcuts are untouched).
@@ -628,9 +645,11 @@ pub fn suppressed(app: &WordApp, ctx: &egui::Context) -> bool {
 /// uses. On macOS they never arm from Alt at all, because Option is how you type accented
 /// characters there and hijacking it would swallow the next letter.
 pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
-    if suppressed(app, ctx) {
+    if suppressed(app, ctx) || !ctx.input(|i| i.focused) {
         app.ui.keytips = Phase::Off;
         app.ui.keytip_prefix.clear();
+        app.ui.alt_pressed = false;
+        app.ui.alt_chord_used = false;
         app.keytip_rects.clear();
         ctx.data_mut(|d| {
             d.insert_temp(phase_id(), Phase::Off);
@@ -646,22 +665,9 @@ pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
     let mut f10 = false;
     for e in &events {
         match e {
-            egui::Event::Key { key, pressed, repeat, modifiers, .. } => {
+            egui::Event::Key { key, pressed, modifiers, .. } => {
                 if is_alt(*key) {
-                    if *pressed {
-                        // A new Alt press starts a fresh chord (auto-repeat keeps the current one).
-                        if !*repeat {
-                            app.ui.alt_chord_used = false;
-                        }
-                        if modifiers.any() {
-                            // Alt combined with another modifier is a shortcut, not a keytip chord.
-                            other_key = true;
-                        }
-                    } else if !modifiers.any() {
-                        // Alt+click and Alt+drag (column selection), or Alt+key held across frames,
-                        // end with a bare Alt release too; only an untouched Alt tap counts.
-                        alt_released = !std::mem::take(&mut app.ui.alt_chord_used);
-                    }
+                    alt_released |= alt_transition(app, *pressed, *modifiers);
                 } else if *pressed {
                     other_key = true;
                     app.ui.alt_chord_used = true;
@@ -669,6 +675,9 @@ pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
                         f10 = true;
                     }
                 }
+            }
+            egui::Event::ModifiersChanged(modifiers) => {
+                alt_released |= alt_transition(app, modifiers.alt, *modifiers);
             }
             egui::Event::PointerButton { pressed: true, .. } => {
                 other_key = true;
@@ -744,6 +753,88 @@ mod tests {
 
     fn app() -> WordApp {
         WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default())
+    }
+
+    fn key_event(key: egui::Key, pressed: bool, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers }
+    }
+
+    fn input_frame(ctx: &egui::Context, app: &mut WordApp, events: Vec<egui::Event>) {
+        ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| logic(app, ui.ctx())).drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn native_alt_taps_toggle_once_in_either_event_order() {
+        let alt = egui::Modifiers { alt: true, ..Default::default() };
+        // Key-up can precede ModifiersChanged and still carry alt=true. Some backends send
+        // only modifier events; a fast tap can also fit entirely in a single frame.
+        for key in [None, Some(egui::Key::AltLeft), Some(egui::Key::AltRight)] {
+            for modifiers_first in [false, true] {
+                for same_frame in [false, true] {
+                    let ctx = egui::Context::default();
+                    let mut a = app();
+                    let mut press = vec![egui::Event::ModifiersChanged(alt)];
+                    let mut release = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)];
+                    if let Some(key) = key {
+                        if modifiers_first {
+                            press.push(key_event(key, true, alt));
+                            release.push(key_event(key, false, egui::Modifiers::NONE));
+                        } else {
+                            press.insert(0, key_event(key, true, egui::Modifiers::NONE));
+                            release.insert(0, key_event(key, false, alt));
+                        }
+                    }
+                    for expected in [if cfg!(target_os = "macos") { Phase::Off } else { Phase::Tabs }, Phase::Off] {
+                        if same_frame {
+                            input_frame(&ctx, &mut a, press.iter().chain(&release).cloned().collect());
+                        } else {
+                            input_frame(&ctx, &mut a, press.clone());
+                            input_frame(&ctx, &mut a, release.clone());
+                        }
+                        assert_eq!(a.ui.keytips, expected, "key={key:?}, modifiers_first={modifiers_first}, same_frame={same_frame}");
+                        assert!(!a.ui.alt_pressed);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_alt_chords_and_interrupted_taps_do_not_activate() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let alt = egui::Modifiers { alt: true, ..Default::default() };
+        for modifier in [egui::Modifiers::CTRL, egui::Modifiers::SHIFT, egui::Modifiers::MAC_CMD] {
+            input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(modifier | alt)]);
+            // Releasing the other modifier first must not turn this into a bare Alt tap.
+            input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(alt)]);
+            input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+            assert_eq!(a.ui.keytips, Phase::Off);
+        }
+        for event in [
+            key_event(egui::Key::ArrowDown, true, alt),
+            egui::Event::PointerButton { pos: egui::pos2(400.0, 300.0), button: egui::PointerButton::Primary, pressed: true, modifiers: alt },
+        ] {
+            input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(alt)]);
+            input_frame(&ctx, &mut a, vec![event]);
+            // A repeated key-down must not forget the key/mouse chord.
+            input_frame(&ctx, &mut a, vec![key_event(egui::Key::AltLeft, true, alt)]);
+            input_frame(&ctx, &mut a, vec![key_event(egui::Key::AltLeft, false, alt), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+            assert_eq!(a.ui.keytips, Phase::Off);
+        }
+        input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(alt)]);
+        ctx.run_ui(egui::RawInput { focused: false, events: vec![egui::Event::WindowFocused(false)], ..Default::default() }, |ui| {
+            logic(&mut a, ui.ctx())
+        })
+        .drop_without_applying_deltas();
+        input_frame(&ctx, &mut a, vec![key_event(egui::Key::AltLeft, false, alt), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+        assert_eq!(a.ui.keytips, Phase::Off, "returning after Alt+Tab must not arm keytips");
+        input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(alt)]);
+        a.ui.backstage = true;
+        input_frame(&ctx, &mut a, vec![]);
+        a.ui.backstage = false;
+        input_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+        assert_eq!(a.ui.keytips, Phase::Off, "suppression cancels the pending Alt tap");
     }
 
     #[test]
@@ -961,6 +1052,18 @@ mod tests {
         h.input_mut().events.push(egui::Event::Text("hello".into()));
         h.step();
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "hello");
+        if !cfg!(target_os = "macos") {
+            let alt = egui::Modifiers { alt: true, ..Default::default() };
+            h.input_mut().events.extend([key_event(egui::Key::AltLeft, true, egui::Modifiers::NONE), egui::Event::ModifiersChanged(alt)]);
+            h.step();
+            h.input_mut().events.extend([key_event(egui::Key::AltLeft, false, alt), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+            h.step();
+            assert_eq!(h.state().ui.keytips, Phase::Tabs);
+            h.input_mut().events.extend([key(egui::Key::Num2), egui::Event::Text("2".into())]);
+            h.step();
+            assert_eq!(h.state_mut().session.run("format.state", &serde_json::json!({})).unwrap()["bold"], false);
+            assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "hello");
+        }
     }
 
     #[test]

@@ -127,6 +127,9 @@ pub struct UiState {
     /// Keytips (Alt) state; not persisted, it resets each session.
     #[serde(skip)]
     pub keytips: crate::keytips::Phase,
+    /// Alt is held according to key or modifier events; never persisted.
+    #[serde(skip)]
+    pub alt_pressed: bool,
     /// Since the last Alt press, another key or a mouse button was pressed: the Alt release
     /// that follows ends a chord (Alt+click, Alt+drag column selection), not a keytip tap.
     #[serde(skip)]
@@ -164,6 +167,7 @@ impl Default for UiState {
             keytips_enabled: true,
             keytip_prefix: String::new(),
             keytips: crate::keytips::Phase::Off,
+            alt_pressed: false,
             alt_chord_used: false,
             dark_page: false,
             keyboard: wordcraft_engine::KeyMap::default(),

@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (Quick Access Toolbar KeyTips and a saved enable/disable option, #620) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (native Alt key/modifier event handling, #620; previously: Quick Access Toolbar KeyTips and a saved enable/disable option) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -37,6 +37,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Alt activation handles native key/modifier events in either order, including key-up with the old Alt flag; taps toggle once, chords and focus loss do not activate KeyTips |
 | 2026-10-11 | trivial | Quick Access Toolbar KeyTips (#620): 1–9, zero-prefixed numbers for longer toolbars, disabled commands stay disabled, Escape cancels, badge keystrokes never type into the document; persisted File › Options switch |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
 | 2026-10-11 | trivial | Customize Keyboard dialog (Tools › Customize Keyboard, File › Options › Keyboard shortcuts): custom keys override built-ins and persist (#368) |
