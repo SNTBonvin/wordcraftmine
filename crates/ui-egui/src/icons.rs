@@ -120,6 +120,10 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rect(3.0, 3.0, 17.0, 17.0, a);
             pen.text(10.0, 6.0, 9.0, "A", c, false);
         }
+        "enclose" => {
+            pen.circle(10.0, 10.5, 7.5, a);
+            pen.text(10.0, 10.5, 9.0, "A", c, false);
+        }
         "subscript" => {
             pen.text(8.0, 9.0, 13.0, "x", c, false);
             pen.text(15.0, 14.5, 8.0, "2", a, true);
@@ -140,6 +144,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "clear" => {
             pen.text(8.0, 9.0, 13.0, "A", c, false);
             pen.fill(&[(10.0, 15.0), (14.0, 11.0), (18.0, 15.0), (14.0, 19.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
+        }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(10.0, 5.0, 7.5, "abc", a, false);
+            pen.text(10.0, 13.5, 12.5, "A", c, false);
         }
         "highlight" => {
             pen.fill(&[(5.0, 12.0), (11.0, 4.0), (14.0, 7.0), (8.0, 15.0)], c);
@@ -351,6 +360,43 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.frect(13.5, 9.0, 16.5, 17.0, green);
             pen.line(&[(2.0, 17.5), (18.0, 17.5)]);
         }
+        "changeChartType" => {
+            pen.frect(3.0, 11.0, 5.5, 17.0, a);
+            pen.frect(7.0, 7.0, 9.5, 17.0, orange);
+            pen.line(&[(2.0, 17.5), (11.0, 17.5)]);
+            pen.fill(&[(15.0, 10.0), (15.0, 5.0), (19.0, 8.5)], green);
+            pen.circle(15.0, 10.0, 4.0, c);
+            pen.line_c(&[(4.0, 5.0), (9.0, 2.5), (12.0, 4.5)], a);
+        }
+        "chartData" => {
+            pen.rect(2.5, 3.0, 17.5, 17.0, c);
+            pen.frect(2.5, 3.0, 17.5, 6.5, a);
+            pen.line(&[(2.5, 10.0), (17.5, 10.0)]);
+            pen.line(&[(2.5, 13.5), (17.5, 13.5)]);
+            pen.line(&[(7.5, 3.0), (7.5, 17.0)]);
+            pen.line(&[(12.5, 3.0), (12.5, 17.0)]);
+            pen.frect(9.0, 14.5, 11.0, 16.0, orange);
+        }
+        "chartTitle" => {
+            pen.frect(5.0, 2.5, 15.0, 4.5, a);
+            pen.frect(4.0, 11.0, 7.0, 17.0, c);
+            pen.frect(8.5, 8.0, 11.5, 17.0, c);
+            pen.frect(13.0, 12.5, 16.0, 17.0, c);
+            pen.line(&[(2.5, 17.5), (17.5, 17.5)]);
+        }
+        "legend" => {
+            for (k, col) in [a, orange, green].into_iter().enumerate() {
+                let y = 5.0 + 5.0 * k as f32;
+                pen.frect(3.0, y - 1.5, 6.0, y + 1.5, col);
+                pen.line(&[(8.0, y), (17.0, y)]);
+            }
+        }
+        "dataLabels" => {
+            pen.frect(3.5, 11.0, 7.0, 17.5, a);
+            pen.frect(12.0, 8.0, 15.5, 17.5, orange);
+            pen.rect(2.5, 5.5, 8.0, 9.0, c);
+            pen.rect(11.0, 2.5, 16.5, 6.0, c);
+        }
         "screenshot" => {
             pen.line(&[(3.0, 7.0), (3.0, 3.0), (7.0, 3.0)]);
             pen.line(&[(13.0, 3.0), (17.0, 3.0), (17.0, 7.0)]);
@@ -430,6 +476,26 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.text(10.0, 10.5, 15.0, "A", a, true);
             pen.line_c(&[(3.0, 17.5), (17.0, 17.5)], orange);
         }
+        "textFill" => {
+            pen.text(10.0, 8.5, 13.0, "A", c, true);
+            pen.frect(3.0, 15.0, 17.0, 18.5, a);
+        }
+        "textOutline" => {
+            pen.text(10.0, 8.5, 13.0, "A", a, false);
+            pen.rect(3.0, 15.0, 17.0, 18.5, c);
+        }
+        "transform" => {
+            // Letters along an arch.
+            let arc: Vec<(f32, f32)> = (0..=12)
+                .map(|i| {
+                    let t = std::f32::consts::PI * (1.0 - i as f32 / 12.0);
+                    (10.0 + 7.5 * t.cos(), 15.0 - 9.0 * t.sin())
+                })
+                .collect();
+            pen.line_c(&arc, a);
+            pen.text(10.0, 13.0, 8.0, "A", c, true);
+            pen.line(&[(2.5, 17.5), (17.5, 17.5)]);
+        }
         "dropCap" => {
             pen.text(6.0, 8.0, 12.0, "A", a, true);
             pen.lines(11.0, 17.0, &[4.0, 8.0, 12.0]);
@@ -488,6 +554,27 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "replay" => {
             pen.circle(10.0, 10.0, 6.5, c);
             pen.fill(&[(8.5, 7.0), (8.5, 13.0), (13.0, 10.0)], a);
+        }
+        // Add Pen: a pen with a plus.
+        "addPen" => {
+            pen.line(&[(3.0, 17.0), (11.0, 9.0), (13.0, 11.0), (5.0, 19.0), (2.5, 19.5), (3.0, 17.0)]);
+            pen.fill(&[(11.0, 9.0), (12.5, 7.5), (14.5, 9.5), (13.0, 11.0)], a);
+            pen.line_c(&[(15.0, 2.0), (15.0, 8.0)], a);
+            pen.line_c(&[(12.0, 5.0), (18.0, 5.0)], a);
+        }
+        // Ink Replay's controls.
+        "replayRewind" => {
+            pen.frect(4.0, 5.0, 5.5, 15.0, c);
+            pen.fill(&[(16.0, 5.0), (16.0, 15.0), (6.5, 10.0)], c);
+        }
+        "replayPlay" => pen.fill(&[(6.0, 4.0), (6.0, 16.0), (16.0, 10.0)], a),
+        "replayPause" => {
+            pen.frect(5.5, 4.5, 8.5, 15.5, a);
+            pen.frect(11.5, 4.5, 14.5, 15.5, a);
+        }
+        "replayForward" => {
+            pen.fill(&[(4.0, 5.0), (4.0, 15.0), (13.5, 10.0)], c);
+            pen.frect(14.5, 5.0, 16.0, 15.0, c);
         }
         // Design
         "themes" => {
@@ -751,6 +838,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 7.0), (16.0, 7.0)]);
             pen.line(&[(10.0, 7.0), (10.0, 12.0), (7.0, 17.5)]);
             pen.line(&[(10.0, 12.0), (13.0, 17.5)]);
+        }
+        "altText" => {
+            // A small picture with lines of text beside and below it.
+            pen.rect(2.5, 3.5, 11.5, 11.0, c);
+            pen.line_c(&[(3.5, 10.0), (6.0, 6.5), (8.0, 8.5), (9.0, 7.5), (10.5, 10.0)], a);
+            for (x0, x1, y) in [(13.5, 17.5, 5.0), (13.5, 17.5, 8.0), (2.5, 17.5, 14.0), (2.5, 13.0, 17.0)] {
+                pen.line_c(&[(x0, y), (x1, y)], c);
+            }
         }
         "translate" | "language" => {
             pen.text(6.5, 7.0, 9.0, "A", c, true);
@@ -1141,9 +1236,87 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.closed(&[(6.0, 11.5), (14.0, 11.5), (14.0, 17.5), (6.0, 17.5)], a);
             pen.fcircle(15.0, 9.5, 0.8, c);
         }
+        "alignText" => {
+            // A box with its text lines in the middle, arrows to the top and bottom edges.
+            pen.rect(3.0, 2.5, 17.0, 17.5, c);
+            pen.lines(5.5, 11.0, &[9.0, 11.5]);
+            pen.line_c(&[(14.0, 5.0), (14.0, 15.0)], a);
+            pen.line_c(&[(12.5, 6.5), (14.0, 5.0), (15.5, 6.5)], a);
+            pen.line_c(&[(12.5, 13.5), (14.0, 15.0), (15.5, 13.5)], a);
+        }
+        "textBoxLink" | "textBoxUnlink" => {
+            // Two boxes, the text running from the first into the second (broken: cut through).
+            pen.rect(2.0, 3.0, 8.5, 11.0, c);
+            pen.rect(11.5, 9.0, 18.0, 17.0, c);
+            pen.lines(3.5, 7.0, &[5.5, 8.0]);
+            pen.line_c(&[(5.0, 11.0), (5.0, 14.0), (11.5, 14.0)], a);
+            pen.line_c(&[(9.5, 12.5), (11.5, 14.0), (9.5, 15.5)], a);
+            if name == "textBoxUnlink" {
+                pen.line_c(&[(6.5, 16.5), (9.0, 11.5)], c);
+            }
+        }
         "help" => {
             pen.circle(10.0, 10.0, 7.0, c);
             pen.text(10.0, 10.0, 10.0, "?", a, true);
+        }
+        // Developer › Controls: a field's frame with what it holds.
+        "ccRichText" => {
+            pen.rect(2.5, 5.0, 17.5, 15.0, a);
+            pen.text(7.5, 10.0, 8.0, "A", c, true);
+            pen.text(13.0, 10.5, 7.0, "a", c, false);
+        }
+        "ccPlainText" => {
+            pen.rect(2.5, 5.0, 17.5, 15.0, a);
+            pen.text(8.0, 10.0, 8.0, "A", c, false);
+            pen.line(&[(12.0, 7.5), (12.0, 12.5)]);
+        }
+        "ccPicture" => {
+            pen.rect(2.5, 4.0, 17.5, 16.0, a);
+            pen.line(&[(4.5, 14.0), (8.5, 9.5), (11.5, 12.5), (13.5, 10.5), (15.5, 14.0)]);
+            pen.fcircle(13.5, 7.0, 1.2, c);
+        }
+        "ccGallery" => {
+            pen.rect(2.5, 3.0, 17.5, 17.0, a);
+            pen.frect(5.0, 5.5, 9.0, 9.5, c);
+            pen.frect(11.0, 5.5, 15.0, 9.5, c);
+            pen.lines(5.0, 15.0, &[12.5, 15.0]);
+        }
+        "ccCheckBox" => {
+            pen.rect(4.0, 4.0, 16.0, 16.0, c);
+            pen.line_c(&[(6.5, 10.0), (9.0, 13.0), (14.0, 6.5)], a);
+        }
+        "ccComboBox" => {
+            pen.rect(2.5, 6.0, 17.5, 14.0, c);
+            pen.line(&[(13.0, 6.0), (13.0, 14.0)]);
+            pen.lines(4.5, 10.5, &[10.0]);
+            pen.arrow_down(15.25, 10.0, a);
+        }
+        "ccDropDown" => {
+            pen.rect(2.5, 3.0, 17.5, 9.0, c);
+            pen.line(&[(13.0, 3.0), (13.0, 9.0)]);
+            pen.arrow_down(15.25, 6.0, a);
+            pen.rect(2.5, 9.0, 13.0, 17.0, c);
+            pen.lines(4.5, 11.0, &[11.5, 14.5]);
+        }
+        "ccDate" => {
+            pen.rect(3.0, 4.5, 17.0, 17.0, c);
+            pen.frect(3.0, 4.5, 17.0, 8.0, a);
+            pen.line(&[(6.5, 3.0), (6.5, 6.0)]);
+            pen.line(&[(13.5, 3.0), (13.5, 6.0)]);
+            for (x, y) in [(6.5, 11.0), (10.0, 11.0), (13.5, 11.0), (6.5, 14.5), (10.0, 14.5)] {
+                pen.fcircle(x, y, 0.9, c);
+            }
+        }
+        "ccRepeat" => {
+            pen.rect(2.5, 3.0, 17.5, 17.0, a);
+            pen.rect(5.0, 5.5, 15.0, 9.5, c);
+            pen.rect(5.0, 11.0, 15.0, 15.0, c);
+            pen.line_c(&[(10.0, 15.0), (10.0, 18.5)], a);
+        }
+        "designMode" => {
+            pen.line(&[(4.0, 16.0), (16.0, 16.0), (4.0, 4.0), (4.0, 16.0)]);
+            pen.line_c(&[(4.0, 12.0), (8.0, 16.0)], a);
+            pen.line(&[(7.0, 13.0), (7.0, 12.0)]);
         }
         _ => {
             // Fallback: a rounded tile with the first letter.
@@ -1161,5 +1334,28 @@ trait ThenLines {
 impl ThenLines for () {
     fn then_lines(self, pen: &Pen, x0: f32, x1: f32, ys: &[f32]) {
         pen.lines(x0, x1, ys);
+    }
+}
+
+/// Draw an Insert › Icons library icon into `r` in `c`, from the same path data the inserted
+/// picture is rendered from (`wordcraft_render::icon_lib`).
+pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c: Color32) {
+    use wordcraft_render::icon_lib::{GRID, STROKE};
+    let s = r.width().min(r.height()) / GRID;
+    let o = r.center() - vec2(GRID / 2.0 * s, GRID / 2.0 * s);
+    let stroke = Stroke::new(STROKE * s, c);
+    for piece in icon.pieces() {
+        let pts: Vec<Pos2> = piece.points.iter().map(|q| pos2(o.x + q[0] * s, o.y + q[1] * s)).collect();
+        if piece.fill {
+            p.add(Shape::convex_polygon(pts, c, Stroke::NONE));
+        } else if piece.closed {
+            p.add(Shape::closed_line(pts, stroke));
+        } else {
+            // Round caps, as on the inserted picture.
+            for end in [pts.first(), pts.last()].into_iter().flatten() {
+                p.circle_filled(*end, stroke.width / 2.0, c);
+            }
+            p.add(Shape::line(pts, stroke));
+        }
     }
 }
