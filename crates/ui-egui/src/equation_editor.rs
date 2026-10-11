@@ -228,6 +228,10 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         let mut changed = false;
         if let Some((x, baseline, pt)) = app.canvas.equation_screen {
             o.widget.set_font_size(f64::from(pt).clamp(4.0, 1200.0));
+            // Laid out in the style the page draws it in (inline: text style).
+            if let Some(eq) = equation_at(app, &o.at) {
+                o.widget.set_display_style(eq.1);
+            }
             let pad = EquationEditor::inline_pad();
             let base = o.widget.inline_baseline().unwrap_or((pad.y + 0.8 * pt).max(1.0));
             let t = Tokens::get(ctx);
