@@ -68,6 +68,12 @@ pub struct ViewState {
     /// The Clipboard pane (Home › Clipboard): items collected by Copy and Cut.
     #[serde(default)]
     pub clipboard_pane: bool,
+    /// The Accessibility pane (Review › Check Accessibility): the checker's findings.
+    #[serde(default)]
+    pub accessibility_pane: bool,
+    /// The Alt Text pane (Picture/Shape Format › Alt Text): the selected object's or table's alt text.
+    #[serde(default)]
+    pub alt_text_pane: bool,
     pub multi_page: bool,
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
@@ -86,6 +92,9 @@ pub struct ViewState {
     /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
     #[serde(default)]
     pub field_codes: bool,
+    /// Developer › Design Mode: every content control shows its frame and title.
+    #[serde(default)]
+    pub design_mode: bool,
 }
 
 fn on() -> bool {
@@ -108,6 +117,8 @@ impl Default for ViewState {
             style_inspector: false,
             comments_pane: false,
             clipboard_pane: false,
+            accessibility_pane: false,
+            alt_text_pane: false,
             multi_page: false,
             fit: String::new(),
             web_width: 800.0,
@@ -118,6 +129,7 @@ impl Default for ViewState {
             hide_ink: false,
             draw: Default::default(),
             field_codes: false,
+            design_mode: false,
         }
     }
 }
@@ -147,6 +159,8 @@ struct Undo {
     label: String,
     doc: Document,
     sel: Selection,
+    /// Formatting waiting at the caret (Bold with nothing selected), so Undo takes it back too.
+    pending: Option<CharProps>,
 }
 
 /// What [`Session::restore`] needs to take commands back exactly: the document, the selection,
@@ -197,6 +211,8 @@ pub struct Session {
     pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
     pub clipboard: Option<Fragment>,
+    /// A tracked cut the next paste can turn into a move (see `cmd::moves`).
+    pub pending_move: Option<crate::cmd::moves::PendingMove>,
     /// Plain text mirror of the clipboard (for the system clipboard).
     pub clipboard_text: String,
     /// Items collected by Copy and Cut this session, for the Clipboard pane.
@@ -236,8 +252,6 @@ pub struct Session {
     /// Macro being recorded: (name, steps).
     pub recording: Option<(String, Vec<(String, Value)>)>,
     pub macros: std::collections::BTreeMap<String, Vec<(String, Value)>>,
-    pub autocorrect_on: bool,
-    pub autocorrect_user: Vec<(String, String)>,
     /// Saved versions: (label, date, document).
     pub versions: Vec<(String, String, Document)>,
     /// Quick Parts / AutoText entries.
@@ -302,11 +316,17 @@ pub struct Prefs {
     /// Track Changes Options: what markup shows and how revisions are drawn (per user, as in
     /// Word).
     pub markup: wordcraft_layout::display::MarkupOptions,
+    /// Language › Detect language automatically (per user, as in Word).
+    pub detect_language: bool,
+    /// AutoCorrect Options: replacements, capitalization and AutoFormat As You Type (per user, as
+    /// in Word). A damaged saved value reads as the defaults.
+    #[serde(deserialize_with = "crate::cmd::tools::lenient_autocorrect")]
+    pub autocorrect: crate::cmd::tools::AutoCorrectPrefs,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { count_notes: true, markup: Default::default() }
+        Prefs { count_notes: true, markup: Default::default(), detect_language: true, autocorrect: Default::default() }
     }
 }
 
@@ -324,6 +344,7 @@ impl Session {
             path: None,
             dirty: false,
             clipboard: None,
+            pending_move: None,
             clipboard_text: String::new(),
             clip_history: Default::default(),
             find: FindState::default(),
@@ -346,8 +367,6 @@ impl Session {
             last_command: None,
             recording: None,
             macros: Default::default(),
-            autocorrect_on: true,
-            autocorrect_user: Vec::new(),
             versions: Vec::new(),
             building_blocks: Default::default(),
             autosave: true,
@@ -475,7 +494,7 @@ impl Session {
             return;
         }
         self.typing_open = label == "Typing";
-        self.history.push(Arc::new(Undo { label: label.to_string(), doc: self.doc.clone(), sel: self.sel.clone() }));
+        self.history.push(Arc::new(Undo { label: label.to_string(), doc: self.doc.clone(), sel: self.sel.clone(), pending: self.pending.clone() }));
         if self.history.len() > MAX_UNDO {
             self.history.remove(0);
             self.undo_evicted += 1;
@@ -485,7 +504,7 @@ impl Session {
     /// Record `doc`/`sel` as their own undo step after the fact and close the typing group, so
     /// Undo right after an automatic change (AutoFormat, AutoCorrect) reverts only that change.
     pub fn push_undo(&mut self, label: &str, doc: Document, sel: Selection) {
-        self.history.push(Arc::new(Undo { label: label.to_string(), doc, sel }));
+        self.history.push(Arc::new(Undo { label: label.to_string(), doc, sel, pending: self.pending.clone() }));
         if self.history.len() > MAX_UNDO {
             self.history.remove(0);
             self.undo_evicted += 1;
@@ -536,15 +555,30 @@ impl Session {
     pub fn undo(&mut self) -> bool {
         self.typing_open = false;
         let Some(u) = self.history.pop().map(Arc::unwrap_or_clone) else { return false };
-        let cur = Undo { label: u.label.clone(), doc: std::mem::replace(&mut self.doc, u.doc), sel: std::mem::replace(&mut self.sel, u.sel) };
+        let cur = Undo {
+            label: u.label.clone(),
+            doc: std::mem::replace(&mut self.doc, u.doc),
+            sel: std::mem::replace(&mut self.sel, u.sel),
+            pending: std::mem::replace(&mut self.pending, u.pending),
+        };
         self.redo.push(Arc::new(cur));
         self.touch();
         true
     }
+    /// Would Undo (or Redo) take the document's protection away? Only Stop Protection lifts it.
+    pub fn step_lifts_protection(&self, redo: bool) -> bool {
+        let next = if redo { self.redo.last() } else { self.history.last() };
+        next.is_some_and(|u| crate::cmd::protect::protection_lifted(&self.doc, &u.doc))
+    }
     pub fn redo(&mut self) -> bool {
         self.typing_open = false;
         let Some(u) = self.redo.pop().map(Arc::unwrap_or_clone) else { return false };
-        let cur = Undo { label: u.label.clone(), doc: std::mem::replace(&mut self.doc, u.doc), sel: std::mem::replace(&mut self.sel, u.sel) };
+        let cur = Undo {
+            label: u.label.clone(),
+            doc: std::mem::replace(&mut self.doc, u.doc),
+            sel: std::mem::replace(&mut self.sel, u.sel),
+            pending: std::mem::replace(&mut self.pending, u.pending),
+        };
         self.history.push(Arc::new(cur));
         self.touch();
         true
@@ -600,6 +634,8 @@ impl Session {
             path: _,
             dirty,
             clipboard: _,
+            // Like the clipboard: what the next paste can make a move of.
+            pending_move: _,
             clipboard_text: _,
             clip_history: _,
             find: _,
@@ -621,8 +657,6 @@ impl Session {
             last_command: _,
             recording: _,
             macros: _,
-            autocorrect_on: _,
-            autocorrect_user: _,
             versions: _,
             building_blocks: _,
             autosave: _,
@@ -715,27 +749,27 @@ impl Session {
         if let Some(why) = (spec.enabled)(self) {
             return Err(CmdError::Disabled(format!("{id}: {why}")));
         }
-        // Restrict Editing.
-        if spec.mutates
-            && let Some(mode) = self.doc.settings.protection.clone()
-        {
-            let allowed = id.starts_with("review.restrict") || id.starts_with("file.") || id == "edit.undo" || id == "edit.redo";
-            let comment_ok = id.starts_with("review.") && (id.contains("Comment") || id == "review.reply");
-            match mode.as_str() {
-                "readOnly" | "forms" if !allowed => return Err(CmdError::Disabled(format!("{id}: the document is protected (read only)"))),
-                "comments" if !allowed && !comment_ok => return Err(CmdError::Disabled(format!("{id}: only comments are allowed in this document"))),
-                "trackedChanges" => self.doc.settings.track_changes = true,
-                _ => {}
-            }
+        // Restrict Editing: refused outright, or allowed as long as it only edits the exceptions.
+        let guard = if spec.mutates { crate::cmd::protect::check_before(self, id, params)? } else { false };
+        if spec.mutates && self.doc.settings.protection.as_deref() == Some("trackedChanges") {
+            self.doc.settings.track_changes = true;
         }
         // Macro recording and Repeat.
         let record = !matches!(id, "tools.recordMacro" | "tools.macros" | "edit.undo" | "edit.redo" | "edit.repeat")
             && (spec.mutates || id.starts_with("caret.") || id.starts_with("select."));
+        // A password never lands in a recorded macro or Repeat.
+        let kept = || {
+            let mut p = params.clone();
+            if let Some(m) = p.as_object_mut() {
+                m.remove("password");
+            }
+            p
+        };
         if record && let Some((_, steps)) = self.recording.as_mut() {
-            steps.push((id.to_string(), params.clone()));
+            steps.push((id.to_string(), kept()));
         }
         if spec.mutates && !matches!(id, "edit.undo" | "edit.redo" | "edit.repeat") {
-            self.last_command = Some((id.to_string(), params.clone()));
+            self.last_command = Some((id.to_string(), kept()));
         }
         // Typing, caret movement and selection outside the equation commands leave the equation.
         if self.math.is_some()
@@ -774,17 +808,29 @@ impl Session {
         } else if spec.id.starts_with("caret.") {
             self.typing_open = false;
         }
+        // Only the paste right after a tracked cut makes it a move.
+        if (spec.mutates || matches!(id, "edit.undo" | "edit.redo")) && !matches!(id, "edit.cut" | "edit.paste" | "edit.pasteSpecial") {
+            self.pending_move = None;
+        }
         let sel_before = self.sel.clone();
         let run = spec.run;
         let mutates = spec.mutates;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cmd::column::dispatch(self, id, mutates, run, params)));
-        let result = match result {
+        let mut result = match result {
             Ok(r) => r,
             Err(p) => {
                 let msg = p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
                 Err(CmdError::Failed(format!("{id} panicked: {msg}")))
             }
         };
+        // Restrict Editing: outside the exceptions nothing may change.
+        if result.is_ok()
+            && guard
+            && let Some((before, ..)) = &before_doc
+            && !crate::cmd::protect::outside_unchanged(before, &self.doc, &self.author)
+        {
+            result = Err(CmdError::Disabled(format!("{id}: only the editable regions of this protected document can change")));
+        }
         match &result {
             Ok(_) => {
                 if spec.mutates {
@@ -795,8 +841,17 @@ impl Session {
                     self.touch();
                     self.doc.ensure_nonempty();
                     self.doc.prune_text_boxes();
+                    // Glued connectors follow the shapes they join.
+                    if crate::cmd::connectors::reroutes_after(id) && crate::cmd::connectors::reroute(self) {
+                        self.touch();
+                    }
                 }
                 self.clamp_selection();
+                // A selection command that moves the insertion point ends the typing group, like
+                // caret movement: typing, Select, typing are two undo steps (#419).
+                if !spec.mutates && self.sel != sel_before {
+                    self.typing_open = false;
+                }
                 if spec.mutates && !matches!(id, "edit.undo" | "edit.redo") {
                     self.note_edit();
                 }

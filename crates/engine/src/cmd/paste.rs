@@ -128,10 +128,16 @@ fn paste_special(s: &mut Session, v: &Value) -> CmdResult {
 
 /// Replace the selection with `frag`, marking it as an insertion under Track Changes.
 pub fn insert(s: &mut Session, mut frag: Fragment) -> Result<(), CmdError> {
+    super::controls::prepare_edit(s)?;
     let at = delete_selection(s)?;
+    let track = s.doc.settings.track_changes;
     let mut rid = None;
-    if s.doc.settings.track_changes {
-        let r = super::new_revision(s, wordcraft_doc::RevisionKind::Insert);
+    if track {
+        // What the last command cut, pasted again: the two ends of a move.
+        let r = match super::moves::take_paste(s, &frag) {
+            Some(r) => r,
+            None => super::new_revision(s, wordcraft_doc::RevisionKind::Insert),
+        };
         rid = Some(r);
         for b in &mut frag.blocks {
             each_para(b, 0, &mut |p| {

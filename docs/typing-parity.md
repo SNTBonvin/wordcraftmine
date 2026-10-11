@@ -25,6 +25,13 @@ overall picture is in [`target-app-parity.md`](target-app-parity.md).
 | `1. ` after other text | a new list restarting at 1 (never continues an earlier list) | `typing_1_dot_starts_numbering_again` |
 | ⌘Z right after an AutoFormat | undoes only the AutoFormat (`* ` comes back as text) | `undo_right_after_autoformat_undoes_only_the_autoformat` |
 
+## Undo
+
+| Keys | Word's result | Test |
+|---|---|---|
+| type, select some of it, type over it | two undo steps: the first ⌘Z brings the selected text back (still selected), the second removes the typing. Uninterrupted typing stays one step | `typing_then_selecting_then_typing_are_two_undo_steps` |
+| ⌘B with nothing selected, ⌘Z, type | the text isn't bold (Undo takes the waiting caret formatting back too); ⌘Y brings it back | `undoing_bold_at_the_caret_turns_bold_typing_off_again` |
+
 ## Track Changes
 
 | Keys | Word's result | Test |
@@ -62,6 +69,12 @@ Applied when a word is finished by a space, punctuation **or Enter** (`enter_fin
   `typing_at_either_end_of_a_link_is_not_linked`).
 - Enter after `---` `===` `***` `___` `~~~` `###` → a bottom border on the paragraph above
   (single, double, dotted, thick, wave, triple) (`border_line_autoformat`).
+- Names of days are capitalised (`monday` → `Monday`). AutoCorrect Options (#412,
+  `tools.autocorrect`, saved per user) switch each of these off: replacements, sentence and
+  table-cell capitals, days, smart quotes, fractions, ordinals, dashes, links, bulleted and
+  numbered lists, border lines; user entries are added, replaced or deleted (built-in ones too),
+  and "don't capitalize after" exceptions extend the abbreviation list. A replacement of several
+  words takes a sentence capital on its first (`autocorrect_options_change_what_typing_does`).
 
 ## Layout
 
@@ -94,6 +107,8 @@ Applied when a word is finished by a space, punctuation **or Enter** (`enter_fin
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-11 | minor | Pasted paragraph breaks: tracked under Track Changes (#417), kept in a list by Keep Text Only (#422) |
+| 2026-10-11 | minor | Undo rows: a selection ends the typing group (#419); Undo of Bold at the caret restores unbolded typing (#424) |
+| 2026-10-11 | minor | Names of days capitalised; AutoCorrect Options (user entries, deleted built-ins, exceptions, every AutoCorrect/AutoFormat switch) change typing (#412) |
 | 2026-10-11 | minor | Editing keys: Move Paragraph Up/Down, Promote/Demote, Go Back (Shift+F5), Alt+X (#343) |
 | 2026-10-11 | minor | Hyperlinks: text typed at either end of a link or after Enter stays outside it (#413) |
 | 2026-10-10 | trivial | Status line, revision history and cross-links added (progress-docs standard) |
