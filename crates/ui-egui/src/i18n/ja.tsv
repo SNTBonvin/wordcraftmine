@@ -539,6 +539,16 @@
 	Open	開く
 	OpenDocument Text (*.odt)	OpenDocument テキスト (*.odt)
 	Optional Hyphen	任意指定のハイフン
+	Copyright Sign	著作権記号
+	Ellipsis	省略記号
+	Em Dash	エム ダッシュ
+	Insert Date Field	日付フィールドの挿入
+	Insert Page Field	ページ フィールドの挿入
+	Insert Time Field	時刻フィールドの挿入
+	Registered Sign	登録商標記号
+	Reset Character Formatting	文字書式のリセット
+	Reset Paragraph Formatting	段落書式のリセット
+	Trademark Sign	商標記号
 	Options	オプション
 	Orientation	印刷の向き
 	Outline	アウトライン
@@ -1139,8 +1149,6 @@
 	Document Information	文書の情報
 	Double Closing Quote	二重引用符 (閉じ)
 	Double Opening Quote	二重引用符 (開き)
-	Ellipsis	省略記号
-	Em Dash	em ダッシュ
 	En Dash	en ダッシュ
 	Em Space	em スペース
 	En Space	en スペース
@@ -1310,6 +1318,15 @@
 	Rotate Left 90°	左へ 90 度回転
 	Flip Vertical	上下反転
 	Flip Horizontal	左右反転
+	Toggle Field Codes	フィールドコードの表示切り替え
+	Edit Field Code	フィールドコードの編集
+	Unlink Fields	フィールドのリンク解除
+	Lock Fields	フィールドのロック
+	Unlock Fields	フィールドのロック解除
+	Next Field	次のフィールド
+	Previous Field	前のフィールド
+	Selected Fields	選択したフィールド
+	Edit Field…	フィールドの編集…
 	Formatted	書式変更
 	Interface size:	表示サイズ:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	リボン、メニュー、ダイアログを、システムの表示倍率に加えて拡大または縮小します。文書のズームは別に設定します。

@@ -591,6 +591,16 @@
 	Open	Отвори
 	OpenDocument Text (*.odt)	OpenDocument текст (*.odt)
 	Optional Hyphen	Опционална цртица
+	Copyright Sign	Знак ауторског права
+	Ellipsis	Три тачке
+	Em Dash	Дуга црта
+	Insert Date Field	Уметни поље датума
+	Insert Page Field	Уметни поље стране
+	Insert Time Field	Уметни поље времена
+	Registered Sign	Знак регистрованог жига
+	Reset Character Formatting	Поништи форматирање знакова
+	Reset Paragraph Formatting	Поништи форматирање пасуса
+	Trademark Sign	Знак жига
 	Options	Опције
 	Orientation	Оријентација
 	Outline	Контура
@@ -1258,8 +1268,6 @@
 	Document Information	Информације о документу
 	Double Closing Quote	Затворени двоструки наводник
 	Double Opening Quote	Отворени двоструки наводник
-	Ellipsis	Три тачке
-	Em Dash	Дуга црта
 	En Dash	Средња црта
 	Em Space	Em размак
 	En Space	En размак
@@ -1324,6 +1332,15 @@
 	Rotate Left 90°	Ротирај улево за 90°
 	Flip Vertical	Окрени вертикално
 	Flip Horizontal	Окрени хоризонтално
+	Toggle Field Codes	Укључи/искључи кодове поља
+	Edit Field Code	Уреди код поља
+	Unlink Fields	Раскини везу поља
+	Lock Fields	Закључај поља
+	Unlock Fields	Откључај поља
+	Next Field	Следеће поље
+	Previous Field	Претходно поље
+	Selected Fields	Изабрана поља
+	Edit Field…	Уреди поље…
 	Formatted	Форматирано
 	Interface size:	Величина интерфејса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.
