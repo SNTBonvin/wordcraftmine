@@ -3121,14 +3121,17 @@ fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
     let (a, b) = (lr.caret(&Pos::body(0, 6)).unwrap(), lr.caret(&Pos::body(0, 9)).unwrap());
     assert!(b.x - a.x > 30.0, "{a:?} {b:?}");
 }
+
 /// #354: `wrapText`. Left: text only to the left of a centred object (Square or Tight); Right:
 /// only to its right; Largest: only on its wider side.
+#[test]
 fn wrap_text_keeps_text_on_one_side() {
     use wordcraft_doc::para::{Float, ShapeKind, Wrap, WrapText};
     // A 100pt shape at `x` in the 468pt column; the lines beside it.
     let beside = |kind, wrap, x: f32, side| {
         let f = Float { wrap, wrap_text: side, x, ..Default::default() };
         line_spans(&lay(&wrapped_shape_doc(kind, 100.0, 100.0, f))).into_iter().filter(|l| l.0 < 100.0).collect::<Vec<_>>()
+    };
     for (kind, wrap) in [(ShapeKind::Rectangle, Wrap::Square), (ShapeKind::Ellipse, Wrap::Tight)] {
         let both = beside(kind, wrap, 184.0, WrapText::BothSides);
         assert!(both.iter().any(|l| l.2 < 1.0) && both.iter().any(|l| l.2 > 200.0), "{both:?}");
@@ -3145,3 +3148,4 @@ fn wrap_text_keeps_text_on_one_side() {
     assert!(!near_left.is_empty() && near_left.iter().all(|l| l.2 >= 209.0 - 0.01), "{near_left:?}");
     let near_right = beside(ShapeKind::Rectangle, Wrap::Square, 268.0, WrapText::Largest);
     assert!(!near_right.is_empty() && near_right.iter().all(|l| l.2 < 1.0 && l.3 <= 259.0 + 0.01), "{near_right:?}");
+}
