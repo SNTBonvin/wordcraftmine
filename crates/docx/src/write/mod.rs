@@ -97,6 +97,9 @@ pub(crate) struct Writer<'d> {
     boxes: wordcraft_doc::BoxBudget,
     /// Charts, diagrams and OLE objects kept from a file: the parts they need.
     embeds: embed::EmbedWriter<'d>,
+    /// Linked text boxes: part id → (`wps:txbx`/`wps:linkedTxbx` id, seq; 0 for the box holding
+    /// the text).
+    txbx_links: HashMap<u32, (u32, u32)>,
 }
 
 const CT_WML: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.";
@@ -140,6 +143,12 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
         used_media: Default::default(),
         boxes: wordcraft_doc::BoxBudget::default(),
         embeds: embed::EmbedWriter::new(doc),
+        txbx_links: doc
+            .text_box_chains()
+            .iter()
+            .enumerate()
+            .flat_map(|(n, c)| c.iter().enumerate().map(move |(seq, id)| (*id, (n as u32 + 1, seq as u32))))
+            .collect(),
     };
     wr.assign_media();
     wr.embeds.reserve_media(wr.media_files.values());
@@ -852,11 +861,12 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool) -> Vec<u8> {
         }
     }
     w.val("w:characterSpacingControl", "doNotCompress");
-    for (tag, fmt, used, el) in
-        [("w:footnotePr", s.footnote_format, footnotes, "w:footnote"), ("w:endnotePr", s.endnote_format, endnotes, "w:endnote")]
-    {
+    for (tag, fmt, pr, used, el) in [
+        ("w:footnotePr", s.footnote_format, &s.footnote_pr, footnotes, "w:footnote"),
+        ("w:endnotePr", s.endnote_format, &s.endnote_pr, endnotes, "w:endnote"),
+    ] {
         w.open(tag, &[]);
-        w.val("w:numFmt", fmt.ooxml());
+        story::note_pr_inner(&mut w, &wordcraft_doc::section::NoteProps { num_fmt: Some(fmt), ..*pr });
         if used {
             w.empty(el, &[("w:id", "-1")]);
             w.empty(el, &[("w:id", "0")]);

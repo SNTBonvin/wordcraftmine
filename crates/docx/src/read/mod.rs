@@ -66,6 +66,9 @@ pub(crate) struct Reader<'p> {
     content_types: Option<ContentTypes>,
     /// Parts kept for charts, diagrams and OLE objects (see `embed`).
     embedded: EmbeddedManifest,
+    /// Linked text boxes as read: (`wps:txbx/@id` or `wps:linkedTxbx/@id`, `seq` (0 for the box
+    /// holding the text), text box part). See [`link_text_boxes`].
+    pub txbx_links: Vec<(u32, u32, u32)>,
 }
 
 /// The package path that internal relationship `id` points at, if it has type `kind` (an `rt`
@@ -119,6 +122,7 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         main: main.clone(),
         content_types: None,
         embedded: EmbeddedManifest::default(),
+        txbx_links: Vec::new(),
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
     r.pc.minor_font = r.doc.settings.minor_font.clone();
@@ -191,6 +195,8 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
         r.doc.passthrough.insert(EMBEDDED_PARTS.into(), Arc::new(manifest));
     }
     r.finish_moves();
+    let links = std::mem::take(&mut r.txbx_links);
+    link_text_boxes(&mut r.doc, links);
     let mut doc = r.doc;
     doc.ensure_nonempty();
     Ok(doc)
@@ -266,6 +272,27 @@ impl Reader<'_> {
         for r in &mut self.doc.revisions {
             if r.move_name.as_ref().is_some_and(|n| !ok.contains(n)) {
                 r.move_name = None;
+            }
+        }
+    }
+}
+
+/// Link the text boxes read as (id, seq, part) into chains (see [`Reader::txbx_links`]): each
+/// id's boxes in `seq` order after the box holding the text. A repeated seq, a chain without its
+/// first box or more than [`wordcraft_doc::MAX_LINKED_BOXES`] boxes: the extra boxes stay apart.
+fn link_text_boxes(doc: &mut Document, mut links: Vec<(u32, u32, u32)>) {
+    links.sort_by_key(|l| (l.0, l.1));
+    links.dedup_by_key(|l| (l.0, l.1));
+    for group in links.chunk_by(|a, b| a.0 == b.0) {
+        if group.first().is_none_or(|l| l.1 != 0) {
+            continue;
+        }
+        let chain: Vec<u32> = group.iter().take(wordcraft_doc::MAX_LINKED_BOXES).map(|l| l.2).collect();
+        for pair in chain.windows(2) {
+            if let [a, b] = pair
+                && let Some(p) = doc.parts.get_mut(a)
+            {
+                p.body.next = Some(*b);
             }
         }
     }
@@ -781,11 +808,13 @@ impl Reader<'_> {
                     if let Some(f) = k.child_val("w:numFmt") {
                         s.footnote_format = NumFormat::from_ooxml(f);
                     }
+                    s.footnote_pr = props::note_pr(k, false);
                 }
                 "w:endnotePr" => {
                     if let Some(f) = k.child_val("w:numFmt") {
                         s.endnote_format = NumFormat::from_ooxml(f);
                     }
+                    s.endnote_pr = props::note_pr(k, false);
                 }
                 "w:documentProtection" => {
                     let enforced = k.attr("w:enforcement").is_some_and(|v| !matches!(v, "0" | "false" | "off"));

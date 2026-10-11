@@ -213,6 +213,96 @@ fn capitalize(s: &str) -> String {
     out
 }
 
+/// Where footnotes or endnotes are placed (ECMA-376 §17.18.33/§17.18.20, `ST_FtnPos`/`ST_EdnPos`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NotePos {
+    /// Footnotes: at the bottom of the page.
+    #[default]
+    PageBottom,
+    /// Footnotes: right below the page's last line of text.
+    BeneathText,
+    /// Endnotes: at the end of each section.
+    SectEnd,
+    /// Endnotes: at the end of the document.
+    DocEnd,
+}
+
+impl NotePos {
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            NotePos::PageBottom => "pageBottom",
+            NotePos::BeneathText => "beneathText",
+            NotePos::SectEnd => "sectEnd",
+            NotePos::DocEnd => "docEnd",
+        }
+    }
+    pub fn from_ooxml(s: &str) -> Option<NotePos> {
+        [NotePos::PageBottom, NotePos::BeneathText, NotePos::SectEnd, NotePos::DocEnd].into_iter().find(|p| p.ooxml() == s)
+    }
+}
+
+/// When note numbering starts again (ECMA-376 §17.18.66, `ST_RestartNumber`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteRestart {
+    #[default]
+    Continuous,
+    EachSect,
+    EachPage,
+}
+
+impl NoteRestart {
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            NoteRestart::Continuous => "continuous",
+            NoteRestart::EachSect => "eachSect",
+            NoteRestart::EachPage => "eachPage",
+        }
+    }
+    pub fn from_ooxml(s: &str) -> Option<NoteRestart> {
+        [NoteRestart::Continuous, NoteRestart::EachSect, NoteRestart::EachPage].into_iter().find(|r| r.ooxml() == s)
+    }
+}
+
+/// The highest note number "start at" takes (Word's own limit is lower; this keeps hostile files
+/// from overflowing the counters).
+pub const MAX_NOTE_START: u32 = 32_767;
+
+/// Footnote or endnote options as a document or a section states them (ECMA-376 §17.11.11 and
+/// §17.11.4, `w:footnotePr` / `w:endnotePr`): unset fields come from the level above (a
+/// section's from the document's, the document's from Word's defaults). The document's number
+/// format is `Settings::footnote_format` / `endnote_format`, so its `num_fmt` stays unset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NoteProps {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos: Option<NotePos>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_fmt: Option<NumFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_start: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_restart: Option<NoteRestart>,
+}
+
+impl NoteProps {
+    pub fn is_empty(&self) -> bool {
+        *self == NoteProps::default()
+    }
+}
+
+/// Footnote or endnote options in effect for a section (see [`crate::Document::note_options`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteOptions {
+    pub pos: NotePos,
+    pub num_fmt: NumFormat,
+    /// 1..=[`MAX_NOTE_START`].
+    pub num_start: u32,
+    pub num_restart: NoteRestart,
+}
+
 /// Header/footer story ids (in `Document::parts`) for a section.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -299,6 +389,11 @@ pub struct SectionProps {
     /// Tracked change of the section's properties (`w:sectPrChange`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fmt_change: Option<Box<crate::props::PropChange<SectionProps>>>,
+    /// The section's own footnote and endnote options (unset: the document's).
+    #[serde(skip_serializing_if = "NoteProps::is_empty")]
+    pub footnote_pr: NoteProps,
+    #[serde(skip_serializing_if = "NoteProps::is_empty")]
+    pub endnote_pr: NoteProps,
 }
 
 impl Default for SectionProps {
@@ -327,6 +422,8 @@ impl Default for SectionProps {
             page_borders: None,
             rtl: false,
             fmt_change: None,
+            footnote_pr: NoteProps::default(),
+            endnote_pr: NoteProps::default(),
         }
     }
 }
@@ -359,14 +456,15 @@ impl SectionProps {
             self.margin_top = r;
         }
     }
-    /// Column (x offset from the text area's left, width) for each column.
+    /// Column (x offset from the text area's left, width) for each column, in reading order:
+    /// in a right-to-left section (`rtl`, `w:bidi`) the first column stands at the right edge
+    /// and the columns (with the space after each) run leftwards.
     pub fn column_boxes(&self) -> Vec<(f32, f32)> {
         let tw = self.text_width();
         let n = self.columns.count.clamp(1, 45) as usize;
-        if !self.columns.widths.is_empty() && self.columns.widths.len() == n {
+        let boxes: Vec<(f32, f32)> = if !self.columns.widths.is_empty() && self.columns.widths.len() == n {
             let mut x = 0.0;
-            return self
-                .columns
+            self.columns
                 .widths
                 .iter()
                 .map(|(w, sp)| {
@@ -374,11 +472,13 @@ impl SectionProps {
                     x += w + sp;
                     b
                 })
-                .collect();
-        }
-        let space = self.columns.space.max(0.0);
-        let w = ((tw - space * (n as f32 - 1.0)) / n as f32).max(18.0);
-        (0..n).map(|i| (i as f32 * (w + space), w)).collect()
+                .collect()
+        } else {
+            let space = self.columns.space.max(0.0);
+            let w = ((tw - space * (n as f32 - 1.0)) / n as f32).max(18.0);
+            (0..n).map(|i| (i as f32 * (w + space), w)).collect()
+        };
+        if self.rtl { boxes.into_iter().map(|(x, w)| (tw - x - w, w)).collect() } else { boxes }
     }
 }
 
@@ -420,5 +520,18 @@ mod tests {
         assert_eq!(b.len(), 2);
         assert_eq!(b[0], (0.0, 216.0));
         assert_eq!(b[1], (252.0, 216.0));
+    }
+
+    #[test]
+    fn rtl_columns_run_right_to_left() {
+        let s = SectionProps { rtl: true, columns: Columns { count: 2, space: 36.0, ..Default::default() }, ..Default::default() };
+        assert_eq!(s.column_boxes(), vec![(252.0, 216.0), (0.0, 216.0)]);
+        let s = SectionProps {
+            rtl: true,
+            columns: Columns { count: 2, widths: vec![(100.0, 20.0), (200.0, 0.0)], ..Default::default() },
+            ..Default::default()
+        };
+        // Text width 468: the first column hugs the right edge, the second sits 20pt to its left.
+        assert_eq!(s.column_boxes(), vec![(368.0, 100.0), (148.0, 200.0)]);
     }
 }

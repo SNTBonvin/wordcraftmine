@@ -249,7 +249,32 @@ impl NoteSeparators {
 pub struct Part {
     pub kind: PartKind,
     pub blocks: Blocks,
+    /// A text box's text direction, alignment and link (unused by other parts).
+    #[serde(default, skip_serializing_if = "TextBody::is_default")]
+    pub body: TextBody,
 }
+
+/// How a text box shows its text (Shape Format › Text): which way it runs, where it sits between
+/// the box's top and bottom, and the box its overflow continues in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TextBody {
+    pub vert: props::TextVert,
+    pub anchor: props::VAlign,
+    /// Create Link: the text box (another `TextBox` part, shown by its own shape) the text
+    /// continues in when it doesn't fit this one. The linked box shows the rest of this box's
+    /// story; its own blocks are unused. See [`Document::text_box_chains`].
+    pub next: Option<u32>,
+}
+
+impl TextBody {
+    pub fn is_default(&self) -> bool {
+        *self == TextBody::default()
+    }
+}
+
+/// Most boxes one chain of linked text boxes runs through (hostile files).
+pub const MAX_LINKED_BOXES: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -367,6 +392,12 @@ pub struct Settings {
     pub theme_name: String,
     pub footnote_format: section::NumFormat,
     pub endnote_format: section::NumFormat,
+    /// The document's footnote and endnote placement, start and restart (`w:footnotePr` /
+    /// `w:endnotePr` in the settings); sections may override them.
+    #[serde(skip_serializing_if = "section::NoteProps::is_empty")]
+    pub footnote_pr: section::NoteProps,
+    #[serde(skip_serializing_if = "section::NoteProps::is_empty")]
+    pub endnote_pr: section::NoteProps,
     pub protection: Option<String>,
     /// Word compatibility mode the document is laid out in (`compatibilityMode`): 15 for Word
     /// 2013 and later, which places a table's border at the margin rather than its text and lets
@@ -437,6 +468,8 @@ impl Default for Settings {
             theme_name: "Craft".into(),
             footnote_format: section::NumFormat::Decimal,
             endnote_format: section::NumFormat::LowerRoman,
+            footnote_pr: section::NoteProps::default(),
+            endnote_pr: section::NoteProps::default(),
             protection: None,
             compat_mode: COMPAT_MODE_CURRENT,
             grid_h: DEFAULT_GRID,
@@ -713,6 +746,31 @@ impl Document {
         v
     }
 
+    /// The footnote (`endnote` false) or endnote options in effect in section `sect`: its own,
+    /// else the document's, else Word's defaults (footnotes at the page bottom in 1, 2, 3;
+    /// endnotes at the end of the document in i, ii, iii; numbered on through the document).
+    /// Placements that don't apply to the kind fall back to its default.
+    pub fn note_options(&self, sect: &SectionProps, endnote: bool) -> section::NoteOptions {
+        use section::NotePos;
+        let (own, doc, fmt) = if endnote {
+            (&sect.endnote_pr, &self.settings.endnote_pr, self.settings.endnote_format)
+        } else {
+            (&sect.footnote_pr, &self.settings.footnote_pr, self.settings.footnote_format)
+        };
+        let pos = own.pos.or(doc.pos);
+        let pos = if endnote {
+            pos.filter(|p| matches!(p, NotePos::SectEnd | NotePos::DocEnd)).unwrap_or(NotePos::DocEnd)
+        } else {
+            pos.filter(|p| matches!(p, NotePos::PageBottom | NotePos::BeneathText)).unwrap_or(NotePos::PageBottom)
+        };
+        section::NoteOptions {
+            pos,
+            num_fmt: own.num_fmt.unwrap_or(fmt),
+            num_start: own.num_start.or(doc.num_start).unwrap_or(1).clamp(1, section::MAX_NOTE_START),
+            num_restart: own.num_restart.or(doc.num_restart).unwrap_or_default(),
+        }
+    }
+
     /// The section that contains top-level body block `block` (index into `sections()`).
     pub fn section_index_of(&self, block: usize) -> usize {
         self.sections().iter().position(|(end, _)| block <= *end).unwrap_or(0)
@@ -735,7 +793,7 @@ impl Document {
     /// Allocate a new part id and insert the part.
     pub fn add_part(&mut self, kind: PartKind, blocks: Blocks) -> u32 {
         let id = self.parts.keys().next_back().map(|k| k + 1).unwrap_or(1);
-        let mut part = Part { kind, blocks };
+        let mut part = Part { kind, blocks, body: TextBody::default() };
         if part.blocks.is_empty() {
             part.blocks.push(para_block(Paragraph::new()));
         }
@@ -775,7 +833,87 @@ impl Document {
         let live = self.reachable(roots, &|o| o.text_boxes().into_iter().map(|id| (id, &[PartKind::TextBox][..])).collect());
         let before = self.parts.len();
         self.parts.retain(|id, p| p.kind != PartKind::TextBox || live.contains(&StoryRef::Part(*id)));
-        before - self.parts.len()
+        let gone = before - self.parts.len();
+        if gone > 0 {
+            // A link to a box that went ends the chain there (its id may be reused).
+            let ids: std::collections::BTreeSet<u32> = self.parts.keys().copied().collect();
+            for p in self.parts.values_mut() {
+                if p.body.next.is_some_and(|n| !ids.contains(&n)) {
+                    p.body.next = None;
+                }
+            }
+        }
+        gone
+    }
+
+    /// The chains of linked text boxes (Create Link), each in order from the box holding the
+    /// text: every chain has two or more boxes. A link to a part that isn't a text box, a box
+    /// already linked from another, or links running in a circle are ignored (those boxes show
+    /// their own text); a chain stops after [`MAX_LINKED_BOXES`].
+    pub fn text_box_chains(&self) -> Vec<Vec<u32>> {
+        let is_box = |id: u32| self.parts.get(&id).is_some_and(|p| p.kind == PartKind::TextBox);
+        // Who links to whom: the first box (by id) to link to a box wins.
+        let mut prev: BTreeMap<u32, u32> = BTreeMap::new();
+        for (id, p) in &self.parts {
+            if p.kind != PartKind::TextBox {
+                continue;
+            }
+            if let Some(n) = p.body.next.filter(|n| *n != *id && is_box(*n)) {
+                prev.entry(n).or_insert(*id);
+            }
+        }
+        let next = |id: u32| self.parts.get(&id).and_then(|p| p.body.next).filter(|n| prev.get(n) == Some(&id));
+        let mut out = Vec::new();
+        for (id, p) in &self.parts {
+            if p.kind != PartKind::TextBox || prev.contains_key(id) || next(*id).is_none() {
+                continue;
+            }
+            let mut chain = vec![*id];
+            let mut at = *id;
+            while let Some(n) = next(at) {
+                if chain.len() >= MAX_LINKED_BOXES || chain.contains(&n) {
+                    break;
+                }
+                chain.push(n);
+                at = n;
+            }
+            out.push(chain);
+        }
+        out
+    }
+
+    /// The chain (see [`Document::text_box_chains`]) text box `part` belongs to, if linked.
+    pub fn text_box_chain(&self, part: u32) -> Option<Vec<u32>> {
+        self.text_box_chains().into_iter().find(|c| c.contains(&part))
+    }
+
+    /// The size (width, height) of the shapes showing text boxes `ids`, in any story (a group
+    /// member's as the group stretches it).
+    pub fn text_box_sizes(&self, ids: &std::collections::BTreeSet<u32>) -> BTreeMap<u32, (f32, f32)> {
+        let mut out = BTreeMap::new();
+        let stories = std::iter::once(&self.body).chain(self.parts.values().map(|p| &p.blocks));
+        for blocks in stories {
+            for b in blocks {
+                edit::each_para(b, 0, &mut |p| {
+                    for o in &p.objects {
+                        match o {
+                            InlineObject::Shape { story: Some(id), w, h, .. } if ids.contains(id) => {
+                                out.entry(*id).or_insert((*w, *h));
+                            }
+                            InlineObject::Group { w, h, .. } => {
+                                for (r, c) in o.group_rects(0.0, 0.0, *w, *h) {
+                                    if let Some(id) = c.text_box().filter(|id| ids.contains(id)) {
+                                        out.entry(id).or_insert((r[2], r[3]));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+        }
+        out
     }
 
     /// Every inline object in reading order: the body's, with each text box's objects where the
@@ -793,6 +931,15 @@ impl Document {
     /// `f` returns whether to go into the object's text box (false: the box is left out).
     pub fn objects_in_reading_order_at(&self, f: &mut dyn FnMut(&Paragraph, usize) -> bool) {
         self.walk_objects(&self.body, &mut BoxBudget::default(), f);
+    }
+
+    /// Like [`Document::objects_in_reading_order_at`], also giving the top-level body block each
+    /// object is in (for objects in text boxes, the block of the box's anchor).
+    pub fn objects_in_reading_order_by_block(&self, f: &mut dyn FnMut(usize, &Paragraph, usize) -> bool) {
+        let mut budget = BoxBudget::default();
+        for (i, b) in self.body.iter().enumerate() {
+            self.walk_objects(std::slice::from_ref(b), &mut budget, &mut |p, k| f(i, p, k));
+        }
     }
 
     /// The footnotes and endnotes referenced inside text box story `part` (nested boxes too), in
@@ -814,7 +961,7 @@ impl Document {
         out
     }
 
-    fn walk_objects(&self, blocks: &Blocks, budget: &mut BoxBudget, f: &mut dyn FnMut(&Paragraph, usize) -> bool) {
+    fn walk_objects(&self, blocks: &[Arc<Block>], budget: &mut BoxBudget, f: &mut dyn FnMut(&Paragraph, usize) -> bool) {
         for b in blocks {
             edit::each_para(b, 0, &mut |p| {
                 for (k, o) in p.objects.iter().enumerate() {

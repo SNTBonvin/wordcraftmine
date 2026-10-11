@@ -62,6 +62,11 @@ pub fn specs() -> Vec<CommandSpec> {
             };
             with_sect(s, |x| x.valign = va)
         }),
+        CommandSpec::new("layout.sectionRtl", "Right-to-Left Section", "Layout › Page Setup", |s, v| {
+            let on = p::bool(v, "value").unwrap_or(!sect(s).rtl);
+            with_sect(s, |x| x.rtl = on)
+        })
+        .params(r#"{"value"?: bool} (true: the section's columns run right to left; without a value it toggles)"#),
         CommandSpec::new("layout.differentFirstPage", "Different First Page", "Header & Footer › Options", |s, v| {
             let on = p::bool(v, "value").unwrap_or(!sect(s).title_page);
             with_sect(s, |x| x.title_page = on)
@@ -98,7 +103,7 @@ pub fn sect(s: &Session) -> SectionProps {
 }
 
 /// Apply to the section(s) of the selection.
-fn with_sect(s: &mut Session, f: impl Fn(&mut SectionProps)) -> CmdResult {
+pub(crate) fn with_sect(s: &mut Session, f: impl Fn(&mut SectionProps)) -> CmdResult {
     let (a, b) = s.sel.ordered();
     let (i0, i1) = (a.path.0.first().copied().unwrap_or(0) as usize, b.path.0.first().copied().unwrap_or(0) as usize);
     let ends: Vec<usize> = s.doc.sections().iter().map(|(e, _)| *e).collect();

@@ -22,6 +22,7 @@ pub mod dialogs;
 pub mod dialogs_insert;
 pub mod dialogs_keyboard;
 pub mod dialogs_lists;
+pub mod dialogs_notes;
 pub mod dialogs_para;
 pub mod dialogs_ribbon;
 pub mod equation_tab;
@@ -695,6 +696,15 @@ impl WordApp {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
             }
+            // Shape Format › Text › Create Link: the next click on an empty text box links the
+            // selected box to it (`shape.link` with that box as the target); Esc cancels.
+            "ui.linkTextBox" => {
+                let from = wordcraft_engine::cmd::objects::text_box_target(&self.session).filter(|_| widgets::enabled(self, "shape.link"));
+                let Some((pos, _)) = from else { return Some(Err("select a text box that isn't linked yet first".into())) };
+                self.canvas.link_from = Some(pos);
+                self.status(tl!("Click the empty text box the text should continue in (Esc cancels)"));
+                json!({"pending": "link"})
+            }
             _ => return None,
         }))
     }
@@ -1181,6 +1191,8 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
         // Enclose Characters without a shape (null is one: it takes the enclosure away).
         "format.enclose" if params.get("shape").is_none() => Some("enclose"),
+        // Footnote and Endnote without settings shows its dialog (#385).
+        "references.noteOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("noteOptions"),
         _ => None,
     }
 }
@@ -1303,6 +1315,11 @@ mod tests {
         assert_eq!(t.props.align, Some(wordcraft_doc::props::Align::Center));
         assert_eq!((t.rows[0].props.height, t.rows[0].props.header), (Some(36.0), true));
         assert_eq!(dialogs::TableForm::read(&a).unwrap().changes(&f), json!({}), "the dialog reopens with the new values");
+        // Table direction (#362) is one more setting of the same step.
+        let mut g = dialogs::TableForm::read(&a).unwrap();
+        let basis = g.clone();
+        g.rtl = true;
+        assert_eq!(g.changes(&basis), json!({"rtl": true}));
     }
 
     /// Home › Font › Enclose Characters (#297): the button opens the dialog on the selected
