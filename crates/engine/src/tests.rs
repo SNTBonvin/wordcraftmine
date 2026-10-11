@@ -312,8 +312,9 @@ fn failed_command_restores_history_changed_by_nested_commands() {
     // outer and nested checkpoints each evict the oldest step.
     fn timeline(s: &mut Session) -> Vec<(Vec<String>, wordcraft_doc::Document)> {
         let mut out = Vec::new();
+        // Straight through the history (the commands won't undo past Restrict Editing).
         while s.can_redo() {
-            run(s, "edit.redo", json!({}));
+            s.redo();
         }
         loop {
             // Comments are stamped with the time to the second, and the two sessions compared
@@ -324,7 +325,7 @@ fn failed_command_restores_history_changed_by_nested_commands() {
             if !s.can_undo() {
                 return out;
             }
-            run(s, "edit.undo", json!({}));
+            s.undo();
         }
     }
     let kept = {
@@ -914,6 +915,43 @@ fn table_text_direction_cycles_and_turns_the_text() {
     s.sel = crate::Selection::caret(Pos::body(0, 0));
     if s.sel.focus.path.cell().is_none() {
         assert!(s.run("table.textDirection", &json!({})).is_err());
+    }
+}
+
+/// Right-to-left tables and sections (#362): `table.rtl` and `layout.sectionRtl` set or toggle
+/// the direction, one Undo step each, and the layout mirrors the table.
+#[test]
+fn table_and_section_direction_commands() {
+    let mut s = s();
+    run(&mut s, "insert.table", json!({"rows": 1, "cols": 3}));
+    let rtl = |s: &Session| s.doc.body.iter().find_map(|b| b.as_table()).unwrap().props.bidi_visual;
+    let first_cell_x = |s: &mut Session| {
+        s.layout().pages[0].items.iter().find_map(|it| match it {
+            wordcraft_layout::Placed::Cell { rect, cell: 0, .. } => Some(rect.x),
+            _ => None,
+        })
+    };
+    let ltr_x = first_cell_x(&mut s).unwrap();
+    run(&mut s, "table.rtl", json!({}));
+    assert!(rtl(&s));
+    assert!(first_cell_x(&mut s).unwrap() > ltr_x + 100.0, "the first column moves to the right");
+    run(&mut s, "table.rtl", json!({"value": true}));
+    assert!(rtl(&s), "an explicit value sets rather than toggles");
+    run(&mut s, "table.properties", json!({"rtl": false}));
+    assert!(!rtl(&s));
+    run(&mut s, "edit.undo", json!({}));
+    assert!(rtl(&s));
+    assert_eq!(s.run("table.properties", &json!({})).unwrap()["bidiVisual"], json!(true));
+    run(&mut s, "layout.sectionRtl", json!({}));
+    assert!(crate::cmd::page::sect(&s).rtl);
+    run(&mut s, "layout.sectionRtl", json!({"value": false}));
+    assert!(!crate::cmd::page::sect(&s).rtl);
+    run(&mut s, "edit.undo", json!({}));
+    assert!(crate::cmd::page::sect(&s).rtl);
+    // Outside a table `table.rtl` is disabled.
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    if s.sel.focus.path.cell().is_none() {
+        assert!(s.run("table.rtl", &json!({})).is_err());
     }
 }
 
@@ -2046,7 +2084,7 @@ fn column_selection_copies_the_block() {
     // A caret move drops the block; pasting the copy gives three paragraphs.
     run(&mut s, "caret.docEnd", json!({}));
     assert!(s.column_segments().is_none());
-    s.autocorrect_on = false;
+    s.prefs.autocorrect.enabled = false;
     run(&mut s, "text.newParagraph", json!({}));
     run(&mut s, "edit.paste", json!({}));
     assert_eq!(text(&s), "abcdef\nabcdef\nabcdef\ncd\ncd\ncd");
@@ -2414,6 +2452,107 @@ fn charts_and_diagrams_can_be_selected_and_deleted_but_not_moved() {
     }
     run(&mut s, "text.delete", json!({}));
     assert!(s.doc.para_at(&Pos::body(0, 0)).is_some_and(|p| p.objects.is_empty()), "the chart is deleted");
+}
+
+/// The chart model of the first object in the body's first paragraph.
+fn first_chart(doc: &wordcraft_doc::Document) -> Option<wordcraft_doc::chart::ChartSpec> {
+    use wordcraft_doc::para::InlineObject;
+    let p = doc.para_at(&Pos::body(0, 0))?;
+    p.object_offsets().into_iter().find_map(|off| match p.object_at(off) {
+        Some(InlineObject::Graphic { graphic, .. }) => graphic.chart.as_deref().cloned(),
+        _ => None,
+    })
+}
+
+#[test]
+fn inserted_chart_is_saved_and_reopened_with_its_data() {
+    let mut s = s();
+    let data =
+        json!({"categories": ["Jan", "Feb", "Mar"], "series": [{"name": "Rain", "values": [12.5, null, 3]}, {"name": "Sun", "values": [4, 5, 6]}]});
+    let r = run(&mut s, "insert.chart", json!({"type": "line", "data": data, "title": "Weather", "legend": "right"}));
+    assert_eq!(r["chart"]["type"], "line");
+    let spec = first_chart(&s.doc).expect("a chart with a model");
+    assert_eq!(spec.series[0].values, vec![Some(12.5), None, Some(3.0)]);
+    assert!(crate::cmd::chart::selected_chart(&s).is_some(), "the new chart is selected");
+    let bytes = wordcraft_docx::write(&s.doc).unwrap();
+    assert!(bytes.windows(22).any(|w| w == b"word/charts/chart1.xml"), "a chart part is written");
+    let back = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(first_chart(&back), Some(spec), "the chart reads back as the same editable chart");
+    // Sample data when none is given.
+    let mut s2 = self::s();
+    run(&mut s2, "insert.chart", json!({"type": "pie"}));
+    assert!(first_chart(&s2.doc).is_some_and(|c| c.kind == wordcraft_doc::chart::ChartType::Pie && !c.series.is_empty()));
+    // No params: the picker, nothing inserted.
+    let mut s3 = self::s();
+    run(&mut s3, "insert.chart", json!({}));
+    assert!(s3.ui_requests.iter().any(|r| r["open"] == "insertChart"));
+    assert!(first_chart(&s3.doc).is_none());
+}
+
+#[test]
+fn chart_edits_are_one_undo_step_each() {
+    use wordcraft_doc::chart::{ChartType, LegendPos};
+    let mut s = s();
+    run(&mut s, "insert.chart", json!({"type": "column"}));
+    let before = first_chart(&s.doc).unwrap();
+    run(&mut s, "chart.editData", json!({"data": {"categories": ["A", "B"], "series": [{"name": "X", "values": [1, 2]}]}}));
+    run(&mut s, "chart.type", json!({"type": "barStacked"}));
+    run(&mut s, "chart.title", json!({"text": "Totals"}));
+    run(&mut s, "chart.legend", json!({"pos": "none"}));
+    run(&mut s, "chart.dataLabels", json!({"on": true}));
+    let c = first_chart(&s.doc).unwrap();
+    assert_eq!((c.kind, c.title.as_deref(), c.legend, c.data_labels), (ChartType::BarStacked, Some("Totals"), None, true));
+    assert_eq!((c.categories.len(), c.series.len()), (2, 1));
+    let steps: [&dyn Fn(&wordcraft_doc::chart::ChartSpec) -> bool; 5] = [
+        &|c| !c.data_labels,
+        &|c| c.legend == Some(LegendPos::Bottom),
+        &|c| c.title.is_none(),
+        &|c| c.kind == ChartType::Column && c.series.len() == 1,
+        &|c| *c == before,
+    ];
+    for (k, check) in steps.iter().enumerate() {
+        run(&mut s, "edit.undo", json!({}));
+        assert!(check(&first_chart(&s.doc).unwrap()), "undo step {k}");
+    }
+    // Resizing draws the chart again at its new size.
+    run(&mut s, "edit.redo", json!({}));
+    run(&mut s, "picture.size", json!({"width": 300, "height": 150, "lockAspect": false}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    let Some(wordcraft_doc::para::InlineObject::Graphic { graphic, w, .. }) = p.object_offsets().into_iter().find_map(|o| p.object_at(o)) else {
+        panic!()
+    };
+    assert_eq!((*w, graphic.w, graphic.h), (300.0, 300.0, 150.0));
+}
+
+#[test]
+fn hostile_chart_data_is_capped() {
+    use wordcraft_doc::chart::{MAX_CELLS, MAX_POINTS, MAX_SERIES, MAX_TEXT};
+    let mut s = s();
+    let values: Vec<serde_json::Value> = (0..5000).map(|i| if i % 2 == 0 { json!("NaN") } else { json!(1e308) }).collect();
+    let series: Vec<serde_json::Value> = (0..300).map(|i| json!({"name": "n".repeat(10_000), "values": values, "x": i})).collect();
+    let cats: Vec<serde_json::Value> = (0..6000).map(|i| json!(i)).collect();
+    run(
+        &mut s,
+        "insert.chart",
+        json!({"type": "scatter", "data": {"categories": cats, "series": series}, "title": "\u{0}".repeat(9999), "width": 1e30}),
+    );
+    let c = first_chart(&s.doc).unwrap();
+    assert!(c.series.len() <= MAX_SERIES && c.points() <= MAX_POINTS && c.series.len() * c.points() <= MAX_CELLS);
+    assert!(c.series.iter().all(|x| x.name.chars().count() <= MAX_TEXT && x.values.len() == c.points()));
+    assert!(c.series[0].values.iter().all(|v| v.is_none_or(f64::is_finite)));
+    let _ = s.layout();
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert_eq!(first_chart(&back), Some(c));
+    for bad in [json!({"type": "radar"}), json!({"data": {"series": 5}}), json!({"data": {"series": []}})] {
+        assert!(s.run("insert.chart", &bad).is_err(), "{bad}");
+    }
+    // A chart without a model (from another program) is shown, not edited.
+    let mut s = self::s();
+    let foreign =
+        wordcraft_doc::para::InlineObject::Graphic { w: 200.0, h: 100.0, alt: String::new(), float: Default::default(), graphic: Default::default() };
+    s.doc.insert_object(&Pos::body(0, 0), foreign, &Default::default()).unwrap();
+    run(&mut s, "select.range", json!({"anchor": Pos::body(0, 0), "focus": Pos::body(0, wordcraft_doc::para::OBJ.len_utf8())}));
+    assert!(s.run("chart.type", &json!({"type": "pie"})).is_err());
 }
 
 #[test]
@@ -2809,6 +2948,94 @@ fn deleting_the_last_cell_column_never_leaves_a_table_without_rows() {
 }
 
 #[test]
+fn center_after_select_paragraph_leaves_the_next_paragraph_alone() {
+    // #418: Select Paragraph ends at the next paragraph's start; that paragraph isn't selected.
+    use wordcraft_doc::Align;
+    let align = |s: &Session, i: usize| s.doc.para_at(&Pos::body(i, 0)).and_then(|p| p.props.align);
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 2}}));
+    run(&mut s, "select.paragraph", json!({}));
+    assert_eq!(s.selected_text(), "Alpha\n");
+    run(&mut s, "para.alignCenter", json!({}));
+    assert_eq!((align(&s, 0), align(&s, 1)), (Some(Align::Center), None));
+    // Reversed, too; a range into Beta centres both; a caret at Beta's start centres Beta.
+    for (a, b, want) in [((1, 0), (0, 0), (Some(Align::Center), None)), ((0, 0), (1, 1), (Some(Align::Center), Some(Align::Center)))] {
+        let mut s = crate::Session::new(wordcraft_doc::Document::new());
+        run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+        run(&mut s, "caret.set", json!({"pos": {"block": a.0, "off": a.1}}));
+        run(&mut s, "caret.set", json!({"pos": {"block": b.0, "off": b.1}, "extend": true}));
+        run(&mut s, "para.align", json!({"value": "center"}));
+        assert_eq!((align(&s, 0), align(&s, 1)), want, "{a:?}..{b:?}");
+    }
+    let mut s = crate::Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 0}}));
+    run(&mut s, "para.alignCenter", json!({}));
+    assert_eq!((align(&s, 0), align(&s, 1)), (None, Some(Align::Center)));
+}
+
+#[test]
+fn change_case_keeps_the_selection_when_lengths_change() {
+    // #420: İ lowers to i + U+0307 (one byte more); the selection still covers the result.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "aİxZ", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "İx"}));
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    assert_eq!(text(&s), "ai\u{307}xZ");
+    assert_eq!(s.selected_text(), "i\u{307}x");
+    // ı uppers to I (one byte less); the trailing Z stays out of the selection.
+    let mut s = crate::Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "ıxZ", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "ıx"}));
+    run(&mut s, "format.changeCase", json!({"mode": "upper"}));
+    assert_eq!(text(&s), "IXZ");
+    assert_eq!(s.selected_text(), "IX");
+}
+
+#[test]
+fn change_case_keeps_each_runs_formatting_when_lengths_change() {
+    // #421: lowercasing a plain İ and a bold x keeps x bold (and the i̇ plain).
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "İx", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "x"}));
+    run(&mut s, "format.bold", json!({"value": true}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    assert_eq!(p.text, "i\u{307}x");
+    assert_ne!(p.props_of_char(0).bold, Some(true));
+    assert_ne!(p.props_of_char(1).bold, Some(true));
+    assert_eq!(p.props_of_char(3).bold, Some(true));
+    // Typing over the converted selection replaces all of it.
+    run(&mut s, "text.insert", json!({"text": "Q", "raw": true}));
+    assert_eq!(text(&s), "Q");
+}
+
+#[test]
+fn document_grid_sets_lines_and_characters_in_one_undo_step() {
+    // #391: Layout › Page Setup › Document Grid.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "日本語"}));
+    let undo = s.undo_labels().len();
+    let r = run(&mut s, "layout.documentGrid", json!({"type": "linesAndChars", "linesPerPage": 40, "charsPerLine": 30}));
+    assert_eq!(r["type"], "linesAndChars");
+    assert_eq!(r["linesPerPage"], 40);
+    assert_eq!(r["charsPerLine"], 30);
+    let g = crate::cmd::page::sect(&s).doc_grid.unwrap();
+    assert!((g.line_pitch - 648.0 / 40.0).abs() < 1e-3, "{g:?}");
+    assert_eq!(s.undo_labels().len(), undo + 1);
+    // Hostile values are clamped, not trusted.
+    let r = run(&mut s, "layout.documentGrid", json!({"linePitch": -5, "charSpace": 1e15}));
+    assert_eq!(r["linePitch"], 1.0);
+    assert!(r["charPitch"].as_f64().unwrap() <= 1584.0);
+    assert!(s.run("layout.documentGrid", &json!({"type": "diagonal"})).is_err());
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(crate::cmd::page::sect(&s).doc_grid, None);
+}
+
+#[test]
 fn insert_icon_places_a_picture_of_the_requested_size_that_saves_and_recolours() {
     use wordcraft_doc::para::InlineObject;
     let mut s = s();
@@ -2904,4 +3131,125 @@ fn enclose_characters_make_an_eq_field_and_come_back_out() {
     run(&mut s, "format.enclose", json!({"shape": "triangle", "text": "A"}));
     assert_eq!(text(&s), "No 12 and 字 hereA");
     assert_eq!(field(&s), Some(("eq \\o\\ac(△,A)".to_string(), "A".to_string())));
+}
+
+#[test]
+fn replace_all_splits_paragraphs_at_a_paragraph_mark_in_the_replacement() {
+    // Issue #423: untracked Replace All left `\r` in the paragraph instead of splitting it.
+    for with in ["A\rB", "A\u{2029}B"] {
+        let mut s = s();
+        run(&mut s, "text.insert", json!({"text": "cat cat"}));
+        run(&mut s, "edit.replaceAll", json!({"text": "cat", "with": with}));
+        assert_eq!(body_texts(&s), ["A", "B A", "B"], "{with:?}");
+    }
+    // A line feed stays a line break.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "cat"}));
+    run(&mut s, "edit.replaceAll", json!({"text": "cat", "with": "A\nB"}));
+    assert_eq!(body_texts(&s), ["A\nB"]);
+}
+
+/// A one-row table converted from tab-separated `text`.
+fn table_from(text: &str) -> Session {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": text}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "table.fromText", json!({}));
+    s
+}
+
+fn table_texts(s: &Session) -> Vec<Vec<String>> {
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).expect("a table");
+    t.rows.iter().map(|r| r.cells.iter().map(|c| c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect()).collect()).collect()
+}
+
+#[test]
+fn delete_columns_deletes_every_selected_column() {
+    // Issue #431: only the selection's focus column went.
+    let cell = |r: u32, c: u32, off: usize| json!({"story": "body", "path": [0, r, c, 0], "off": off});
+    for (anchor, focus) in [(cell(0, 0, 0), cell(1, 1, 1)), (cell(1, 1, 1), cell(0, 0, 0))] {
+        let mut s = table_from("Left\tMiddle\tRight\nA\tB\tC");
+        run(&mut s, "select.range", json!({"anchor": anchor, "focus": focus}));
+        run(&mut s, "table.deleteColumn", json!({}));
+        assert_eq!(table_texts(&s), [["Right"], ["C"]]);
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(table_texts(&s), [["Left", "Middle", "Right"], ["A", "B", "C"]]);
+    }
+    // A caret deletes its own column only.
+    let mut s = table_from("Left\tMiddle\tRight");
+    run(&mut s, "caret.set", json!({"pos": cell(0, 1, 0)}));
+    run(&mut s, "table.deleteColumn", json!({}));
+    assert_eq!(table_texts(&s), [["Left", "Right"]]);
+}
+
+#[test]
+fn split_cells_leaves_the_other_rows_alone() {
+    // Issue #432: splitting a cell inserted a grid column with a new cell in every row.
+    let spans = |s: &Session| -> Vec<Vec<usize>> {
+        let t = s.doc.body.iter().find_map(|b| b.as_table()).expect("a table");
+        t.rows.iter().map(|r| r.cells.iter().map(wordcraft_doc::Cell::span).collect()).collect()
+    };
+    let mut s = table_from("Left\nA");
+    let width: f32 = s.doc.body.iter().find_map(|b| b.as_table()).unwrap().total_width();
+    run(&mut s, "table.split", json!({"columns": 2}));
+    assert_eq!(table_texts(&s), [vec!["Left", ""], vec!["A"]]);
+    assert_eq!(spans(&s), [vec![1, 1], vec![2]]);
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert!((t.total_width() - width).abs() < 0.1, "{:?}", t.grid);
+    assert!((t.grid[0] - width / 2.0).abs() < 0.1, "{:?}", t.grid);
+    let mut s = table_from("Left\tMiddle\tRight\nA\tB\tC");
+    run(&mut s, "table.split", json!({"columns": 2}));
+    assert_eq!(table_texts(&s), [vec!["Left", "", "Middle", "Right"], vec!["A", "B", "C"]]);
+    assert_eq!(spans(&s), [vec![1, 1, 1, 1], vec![2, 1, 1]]);
+}
+
+/// #385: note options for the whole document or one section, and converting notes, which undoes
+/// in one step.
+#[test]
+fn note_options_per_section_and_convert_notes() {
+    use wordcraft_doc::PartKind;
+    use wordcraft_doc::para::{InlineObject, NoteKind};
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "One"}));
+    let a = run(&mut s, "references.footnote", json!({"text": "First", "mark": "*"}))["id"].as_u64().unwrap() as u32;
+    s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Body));
+    run(&mut s, "layout.break", json!({"kind": "nextPage"}));
+    run(&mut s, "text.insert", json!({"text": "Two"}));
+    let b = run(&mut s, "references.footnote", json!({"text": "Second"}))["id"].as_u64().unwrap() as u32;
+    s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Body));
+    // The second section restarts at 3 in letters; the first keeps the document's options.
+    let got = run(&mut s, "references.noteOptions", json!({"numFmt": "lowerLetter", "numStart": 3, "numRestart": "eachSect", "scope": "section"}));
+    assert_eq!((got["footnote"]["numFmt"].as_str(), got["footnote"]["numStart"].as_u64()), (Some("lowerLetter"), Some(3)));
+    let sections = s.doc.sections();
+    assert!(sections[0].1.footnote_pr.is_empty());
+    assert_eq!(sections[1].1.footnote_pr.num_start, Some(3));
+    // Hostile or wrong values are refused or clamped.
+    assert!(s.run("references.noteOptions", &json!({"kind": "endnote", "pos": "pageBottom"})).is_err());
+    assert!(s.run("references.noteOptions", &json!({"kind": "endnote", "numRestart": "eachPage"})).is_err());
+    let got = run(&mut s, "references.noteOptions", json!({"kind": "endnote", "pos": "sectEnd", "numStart": -5}));
+    assert_eq!((got["endnote"]["pos"].as_str(), got["endnote"]["numStart"].as_u64()), (Some("sectEnd"), Some(1)));
+    // The whole document: the section's own start gives way.
+    run(&mut s, "references.noteOptions", json!({"numStart": 2}));
+    assert_eq!(s.doc.sections()[1].1.footnote_pr.num_start, None);
+    assert_eq!(s.doc.settings.footnote_pr.num_start, Some(2));
+    // Convert footnotes to endnotes: kinds, marks and styles; the custom mark stays. One undo.
+    let kinds = |s: &Session| -> Vec<NoteKind> {
+        let mut v = Vec::new();
+        s.doc.objects_in_reading_order(&mut |o| {
+            if let InlineObject::NoteRef { kind, .. } = o {
+                v.push(*kind);
+            }
+        });
+        v
+    };
+    assert_eq!(run(&mut s, "references.convertNotes", json!({"to": "endnote"}))["converted"], 2);
+    assert_eq!(kinds(&s), vec![NoteKind::Endnote, NoteKind::Endnote]);
+    assert!([a, b].iter().all(|id| s.doc.parts[id].kind == PartKind::Endnote));
+    let note = s.doc.para(StoryRef::Part(a), &wordcraft_doc::Path::top(0)).unwrap();
+    assert_eq!(note.props.style.as_deref(), Some("EndnoteText"));
+    assert!(matches!(&note.objects[0], InlineObject::NoteRef { kind: NoteKind::Endnote, custom, .. } if custom == "*"));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(kinds(&s), vec![NoteKind::Footnote, NoteKind::Footnote]);
+    assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
+    assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
 }

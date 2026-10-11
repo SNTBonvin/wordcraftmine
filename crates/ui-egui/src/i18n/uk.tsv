@@ -87,19 +87,23 @@
 	Enter formatting for number:	Вигляд номера:
 	Follow number with:	Після номера:
 	Formatting	Форматування
+	Formatting exceptions	Винятки форматування
 	Include level number from:	Додати номер рівня:
 	Ink	Рукописні примітки
 	Insertions and Deletions	Вставлення й видалення
 	Insertions:	Вставлення:
+	Inside:	Усередині:
 	Left border	Ліва межа
 	Legal style numbering	Юридична нумерація
 	Link level to style:	Зв'язати рівень зі стилем:
 	List Definition	Визначення списку
+	Mirror indents	Дзеркальні відступи
 	Nothing	Нічого
 	Number alignment:	Вирівнювання номера:
 	Number format	Формат номера
 	Number style for this level:	Стиль номера для цього рівня:
 	Outside border	Зовнішня межа
+	Outside:	Зовні:
 	Restart list after:	Почати список знову після:
 	Right border	Права межа
 	Save the document to turn on AutoSave	Збережіть документ, щоб увімкнути автозбереження
@@ -1362,6 +1366,80 @@
 	Formatted	Відформатовано
 	Interface size:	Розмір інтерфейсу:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Збільшує або зменшує стрічку, меню й діалогові вікна понад системне масштабування екрана. Масштаб документа налаштовується окремо.
+
+# Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
+	1. Formatting restrictions	1. Обмеження форматування
+	2. Editing restrictions	2. Обмеження редагування
+	3. Start enforcement	3. Увімкнення захисту
+	<< Less	<< Менше
+	Another file	Інший файл
+	Apply as you type	Застосовувати під час введення
+	AutoCorrect	Автовиправлення
+	AutoFormat As You Type	Автоформат під час введення
+	Automatic bulleted lists	Автоматичні марковані списки
+	Automatic numbered lists	Автоматичні нумеровані списки
+	Border lines	Лінії меж
+	Capitalize first letter of sentences	Перша літера речення велика
+	Capitalize first letter of table cells	Перша літера в клітинках таблиці велика
+	Capitalize names of days	Назви днів із великої літери
+	Case changes	Зміни регістру
+	Character level	Рівень символів
+	Checked styles are allowed:	Позначені стилі дозволено:
+	Combine Documents	Об'єднання документів
+	Compare Documents	Порівняння документів
+	Compared: {changes} changes	Порівняно: змін {changes}
+	Comparing with another file needs the desktop app.	Для порівняння з іншим файлом потрібна настільна програма.
+	Comparison settings	Параметри порівняння
+	Don't capitalize after:	Не робити великої літери після:
+	Editing in this document is restricted.	Редагування цього документа обмежено.
+	Every change is recorded as a tracked change.	Кожна зміна записується як відстежувана.
+	Everyone	Усі
+	Exceptions (optional)	Винятки (необов'язково)
+	Exceptions…	Винятки…
+	Fields	Поля
+	Filling in forms	Заповнення форм
+	Find Next Editable Region	Знайти наступну область для редагування
+	Footnotes and endnotes	Виноски та кінцеві виноски
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	Порівнюються форматування, регістр, пробіли й таблиці; інші параметри збережено на майбутнє.
+	Fractions (1/2) as fraction characters (½)	Дроби (1/2) як символи дробів (½)
+	Headers and footers	Колонтитули
+	Hyphens (--) as dashes (—)	Дефіси (--) як тире (—)
+	In equations, typing a name after a backslash replaces it with its symbol.	У рівняннях назва після зворотної скісної риски замінюється символом.
+	Internet addresses as links	Інтернет-адреси як посилання
+	Label changes with:	Позначати зміни іменем:
+	Limit formatting to a selection of styles	Обмежити форматування вибраними стилями
+	Math AutoCorrect	Математичне автовиправлення
+	More >>	Більше >>
+	Moves	Переміщення
+	New document	Новий документ
+	No changes (read only)	Без змін (лише читання)
+	Only allow this kind of editing:	Дозволити лише такий тип редагування:
+	Only comments can be added, except in regions marked editable.	Можна лише додавати коментарі, крім областей, позначених для редагування.
+	Only form fields can be filled in.	Можна заповнювати лише поля форми.
+	Only the allowed styles can be applied.	Можна застосовувати лише дозволені стилі.
+	Ordinals (1st) as superscript	Порядкові (1st) як надрядкові
+	Original document	Вихідний документ
+	This password type isn't supported.	Цей тип пароля не підтримується.
+	Replace as you type	Замінювати під час введення
+	Replace text as you type	Замінювати текст під час введення
+	Replace:	Замінити:
+	Revised document	Змінений документ
+	Select text, then tick who can still edit it.	Виділіть текст і позначте, хто може його редагувати.
+	Settings…	Параметри…
+	Show changes at:	Показувати зміни на рівні:
+	Show changes in:	Показувати зміни в:
+	Smart quotes instead of straight quotes	Типографські лапки замість прямих
+	Start Enforcing Protection	Увімкнути захист
+	Stop Protection	Вимкнути захист
+	Text boxes	Текстові поля
+	The document is read only, except for regions marked editable.	Документ лише для читання, крім областей, позначених для редагування.
+	The password is optional; without it anyone can stop the protection.	Пароль необов'язковий; без нього будь-хто може вимкнути захист.
+	This document	Цей документ
+	Tracked changes	Відстежувані зміни
+	Type the password to stop the protection.	Введіть пароль, щоб вимкнути захист.
+	White space	Пробіли
+	With:	На:
+	Word level	Рівень слів
 	In Line with Text	У рядку з текстом
 	Square	Квадрат
 	Through	Наскрізне
@@ -1408,6 +1486,66 @@
 	New Group	Нова група
 	Rename…	Перейменувати…
 	Ribbon and Quick Access Toolbar:	Стрічка й панель швидкого доступу:
+	Accessibility Pane	Панель доступності
+	Alt Text Pane	Панель альтернативного тексту
+	Alt\nText	Альтернативний\nтекст
+	View Alt Text…	Переглянути альтернативний текст…
+	Mark as decorative	Позначити як декоративний
+	Title:	Заголовок:
+	Errors ({n})	Помилки ({n})
+	Warnings ({n})	Попередження ({n})
+	Tips ({n})	Поради ({n})
+	No accessibility issues found.	Проблем із доступністю не знайдено.
+	Describe what this object shows, for people who can't see it.	Опишіть, що показує цей об’єкт, для тих, хто не може його бачити.
+	Decorative objects only add visual interest: screen readers skip them.	Декоративні об’єкти лише прикрашають документ: засоби читання з екрана їх пропускають.
+	Describe what this table shows, for people who can't see it.	Опишіть, що показує ця таблиця, для тих, хто не може її бачити.
+	Select a picture, shape, chart or table to describe it.	Виберіть зображення, фігуру, діаграму або таблицю, щоб описати її.
+	Document Grid	Сітка документа
+	No grid	Без сітки
+	Lines only	Лише рядки
+	Lines and characters	Рядки й символи
+	Text snaps to characters	Текст прив’язується до символів
+	Characters per line:	Символів у рядку:
+	Lines per page:	Рядків на сторінці:
+	Moved from	Переміщено звідси
+	Moved to	Переміщено сюди
+	Developer	Розробник
+	Controls	Елементи керування
+	Rich Text Content Control	Елемент керування вмістом «Форматований текст»
+	Plain Text Content Control	Елемент керування вмістом «Звичайний текст»
+	Picture Content Control	Елемент керування вмістом «Зображення»
+	Building Block Gallery Content Control	Елемент керування вмістом «Колекція стандартних блоків»
+	Check Box Content Control	Елемент керування вмістом «Прапорець»
+	Combo Box Content Control	Елемент керування вмістом «Поле зі списком»
+	Drop-Down List Content Control	Елемент керування вмістом «Розкривний список»
+	Date Picker Content Control	Елемент керування вмістом «Вибір дати»
+	Repeating Section Content Control	Елемент керування вмістом «Розділ, що повторюється»
+	Design Mode	Режим конструктора
+	Content Control at Selection	Елемент керування вмістом у виділенні
+	Toggle Check Box	Перемкнути прапорець
+	Choose List Item	Вибрати елемент списку
+	Set Date	Задати дату
+	Remove Content Control	Видалити елемент керування вмістом
+	Content Control Properties	Властивості елемента керування вмістом
+	Title	Назва
+	Tag	Тег
+	Placeholder text	Текст заповнювача
+	Can't be deleted	Не можна видалити
+	Contents can't be edited	Вміст не можна редагувати
+	Remove the control once edited	Видалити елемент після редагування
+	Allow line breaks	Дозволити розриви рядків
+	Date format	Формат дати
+	Checked symbol	Символ увімкненого стану
+	Unchecked symbol	Символ вимкненого стану
+	List entries	Елементи списку
+	Display text	Текст для показу
+	Value	Значення
+	Today	Сьогодні
+	Put the caret in a content control first.	Спершу поставте курсор в елемент керування вмістом.
+	Right-to-Left Table	Таблиця справа наліво
+	Right-to-Left Section	Розділ справа наліво
+	Table direction:	Напрямок таблиці:
+	Section direction:	Напрямок розділу:
 	Drawing Canvas	Полотно малювання
 	New Drawing Canvas	Нове полотно малювання
 	Fit	Підігнати
@@ -1431,3 +1569,263 @@
 	Enlarge symbol	Збільшити символ
 	Enclosure	Обведення
 	Circle	Коло
+	Change Chart Type	Змінити тип діаграми
+	Chart Design	Конструктор діаграми
+	Type	Тип
+	Edit Data	Редагувати дані
+	Chart Title	Назва діаграми
+	Chart Layouts	Макети діаграми
+	Add Chart Element	Додати елемент діаграми
+	Legend	Легенда
+	Data Labels	Підписи даних
+	Above Chart	Над діаграмою
+	Insert Chart	Вставити діаграму
+	Clustered Column	Стовпці з групуванням
+	Stacked Column	Стовпці з накопиченням
+	Clustered Bar	Смуги з групуванням
+	Stacked Bar	Смуги з накопиченням
+	Area	Області
+	Pie	Кругова
+	Doughnut	Кільцева
+	Scatter	Точкова
+	“{text}” ({row}, {series}) isn't a number.	«{text}» ({row}, {series}) — не число.
+	Category {n}	Категорія {n}
+	Series {n}	Ряд {n}
+	Type the categories down the side and a column of values per series.	Введіть категорії збоку та стовпець значень для кожного ряду.
+	Categories	Категорії
+	Series name	Назва ряду
+	Remove series	Видалити ряд
+	Remove row	Видалити рядок
+	Add Row	Додати рядок
+	Add Series	Додати ряд
+	Edit\nData	Редагувати\nдані
+	Change\nChart Type	Змінити тип\nдіаграми
+	Align Text	Вирівняти текст
+	Create Link	Створити зв'язок
+	Break Link	Розірвати зв'язок
+	Rotate all text 90°	Повернути весь текст на 90°
+	Rotate all text 270°	Повернути весь текст на 270°
+	Stacked	Стовпчиком
+	Middle	Посередині
+	Click the empty text box the text should continue in (Esc cancels)	Клацніть порожнє текстове поле, у якому має продовжитися текст (Esc — скасувати)
+	Not linked: click a text box	Не зв'язано: клацніть текстове поле
+	Location	Розташування
+	Endnotes	Кінцеві виноски
+	Below text	Під текстом
+	End of section	Кінець розділу
+	End of document	Кінець документа
+	Footnotes to endnotes	Виноски на кінцеві виноски
+	Endnotes to footnotes	Кінцеві виноски на виноски
+	Swap footnotes and endnotes	Поміняти виноски й кінцеві виноски
+	Custom mark:	Власна позначка:
+	Continuous numbering	Наскрізна нумерація
+	Apply	Застосувати
+	Convert Notes	Перетворити примітки
+	A, B, C, …	A, B, C, …
+	Above the item	Над елементом
+	Accessed on	Дата звернення
+	Add New Source…	Додати нове джерело…
+	Add the chapter number	Додати номер розділу
+	Atmosphere	Атмосфера
+	Below the item	Під елементом
+	Book	Книга
+	Book title	Назва книги
+	Caption	Підпис
+	Caption Numbering	Нумерація підписів
+	Caption text	Текст підпису
+	Caption:	Підпис:
+	Chapter in a book	Розділ книги
+	Chapters begin at:	Розділи починаються з:
+	Collect entries from:	Брати елементи з:
+	Columns:	Стовпці:
+	Conference	Конференція
+	Conference paper	Доповідь конференції
+	Container Title	Назва видання
+	Create Source	Створити джерело
+	Cross-reference:	Перехресне посилання:
+	Custom Table of Contents…	Настроюваний зміст…
+	DOI	DOI
+	Day	День
+	Delete Label	Видалити мітку
+	Edit Source	Редагувати джерело
+	Edition	Видання
+	Edit…	Редагувати…
+	Entry marked.	Елемент позначено.
+	Example: {sample}	Приклад: {sample}
+	Figure	Рисунок
+	Film	Фільм
+	Heading styles (levels 1–{n})	Стилі заголовків (рівні 1–{n})
+	Heading {n}	Заголовок {n}
+	I, II, III, …	I, II, III, …
+	Include page numbers	Додавати номери сторінок
+	Indented	З відступом
+	Institution	Установа
+	Ionosphere	Іоносфера
+	Issue	Випуск
+	Journal	Журнал
+	Label:	Мітка:
+	Last, First; Last, First	Прізвище, Ім’я; Прізвище, Ім’я
+	Leave the label out of the caption	Не включати мітку в підпис
+	Letter headings	Літерні заголовки
+	Levels:	Рівні:
+	Link entries to their headings	Пов’язати елементи із заголовками
+	Made from the author and year when empty	Якщо порожньо, утворюється з автора й року
+	Magazine or newspaper article	Стаття в журналі чи газеті
+	Main entry:	Основний елемент:
+	Mark	Позначити
+	Mark All	Позначити всі
+	Mark Entry…	Позначити елемент…
+	Mark Index Entry	Позначити елемент покажчика
+	Mesosphere	Мезосфера
+	Month	Місяць
+	New Label	Нова мітка
+	New Label…	Нова мітка…
+	New…	Створити…
+	No sources yet.	Джерел ще немає.
+	Numbering…	Нумерація…
+	Options…	Параметри…
+	Other	Інше
+	Other styles and their TOC level:	Інші стилі та їхній рівень у змісті:
+	Outline levels	Рівні структури
+	Page number style	Стиль номера сторінки
+	Page numbers at the right margin	Номери сторінок біля правого поля
+	Page title	Назва сторінки
+	Pages of bookmark:	Сторінки закладки:
+	Periodical	Періодичне видання
+	Position:	Розташування:
+	Publisher	Видавець
+	Run-in	Суцільний
+	See	Див.
+	Separator:	Роздільник:
+	Show every bibliography field	Показати всі поля бібліографії
+	Site name	Назва сайту
+	Source Manager	Диспетчер джерел
+	Source type:	Тип джерела:
+	Sources in this document:	Джерела в цьому документі:
+	Styles:	Стилі:
+	Subentry:	Піделемент:
+	TC entry fields	Поля елементів TC
+	Tab leader:	Заповнювач табуляції:
+	Table of Contents Options	Параметри змісту
+	Table of Contents Styles	Стилі змісту
+	This page	Ця сторінка
+	Type:	Тип:
+	URL	URL
+	Volume	Том
+	Website	Вебсайт
+	Year	Рік
+	a, b, c, …	a, b, c, …
+	i, ii, iii, …	i, ii, iii, …
+	{n} entries marked.	Позначено елементів: {n}.
+	Lasso Select	Виділення ласо
+	Move Selected Ink	Перемістити виділений рукопис
+	Delete Selected Ink	Видалити виділений рукопис
+	Recolor Selected Ink	Змінити колір виділеного рукопису
+	Add Pen	Додати перо
+	Remove Pen	Вилучити перо
+	Ink to Shape	Рукопис у фігуру
+	Convert to Shapes	Перетворити на фігури
+	Ink Replay	Відтворити рукопис
+	Add\nPen	Додати\nперо
+	Rewind	На початок
+	Forward	Вперед
+	Stroke {n} of {total}	Штрих {n} з {total}
+
+# WordArt and connectors (#416).
+	WordArt Styles	Стилі WordArt
+	Text Fill	Заливка тексту
+	Text Outline	Контур тексту
+	Transform	Перетворення
+	No Fill	Без заливки
+	No Outline	Без контуру
+	Reflection	Відбиття
+	No Reflection	Без відбиття
+	No Transform	Без перетворення
+	Connect Shapes	З'єднати фігури
+	Straight Connector	Прямий з'єднувач
+	Straight Arrow Connector	Прямий з'єднувач зі стрілкою
+	Elbow Connector	Ламаний з'єднувач
+	Elbow Arrow Connector	Ламаний з'єднувач зі стрілкою
+	Curved Connector	Вигнутий з'єднувач
+	Curved Arrow Connector	Вигнутий з'єднувач зі стрілкою
+	Arch Up	Арка вгору
+	Arch Down	Арка вниз
+	Slant Up	Нахил угору
+	Slant Down	Нахил униз
+	Inflate	Роздуття
+	Deflate	Стиснення
+	Chevron Up	Шеврон угору
+	Chevron Down	Шеврон униз
+	Triangle Up	Трикутник угору
+	Triangle Down	Трикутник униз
+	Solid Accent	Суцільний акцент
+	Light with Outline	Світлий з контуром
+	Hollow	Порожнистий
+	Accent Gradient	Акцентний градієнт
+	Dark with Shadow	Темний із тінню
+	Soft Glow	М'яке світіння
+	Accent with Reflection	Акцент із відбиттям
+	Warm Gradient with Outline	Теплий градієнт із контуром
+	Add line numbering	Додати нумерацію рядків
+	Add to Document	Додати до документа
+	Address labels	Адресні етикетки
+	Arabic	Арабська
+	Auto	Авто
+	Automatically hyphenate document	Автоматично переносити слова в документі
+	Chinese (Simplified)	Китайська (спрощена)
+	Chinese (Traditional)	Китайська (традиційна)
+	Column:	Стовпець:
+	Count by:	Крок:
+	Czech	Чеська
+	Danish	Данська
+	Delivery address:	Адреса одержувача:
+	Detect language automatically	Визначати мову автоматично
+	Do not check spelling or grammar	Не перевіряти правопис і граматику
+	Dutch	Нідерландська
+	English (United Kingdom)	Англійська (Велика Британія)
+	Envelope size:	Розмір конверта:
+	Estonian	Естонська
+	Finnish	Фінська
+	French (France)	Французька (Франція)
+	From text:	Від тексту:
+	Full page of the same label	Ціла сторінка однакових етикеток
+	German (Germany)	Німецька (Німеччина)
+	Greek	Грецька
+	Hebrew	Іврит
+	Hyphenate at:	Перенести після:
+	Hyphenate words in CAPS	Переносити слова з ВЕЛИКИХ ЛІТЕР
+	Hyphenation Options…	Параметри перенесення слів…
+	Hyphenation zone:	Зона перенесення:
+	Italian	Італійська
+	Japanese	Японська
+	Korean	Корейська
+	Limit consecutive hyphens to:	Обмежити кількість переносів поспіль:
+	Line Numbering Options…	Параметри нумерації рядків…
+	Manual Hyphenation	Ручне перенесення слів
+	Manual hyphenation is complete.	Ручне перенесення слів завершено.
+	Manual…	Вручну…
+	Mark selected text as:	Позначити виділений текст як:
+	New Document	Новий документ
+	No limit	Без обмеження
+	Norwegian (Bokmål)	Норвезька (букмол)
+	Numbering:	Нумерація:
+	Omit	Пропустити
+	One label per recipient	Одна етикетка на одержувача
+	Polish	Польська
+	Portuguese (Brazil)	Португальська (Бразилія)
+	Portuguese (Portugal)	Португальська (Португалія)
+	Return address labels	Етикетки зі зворотною адресою
+	Return address:	Зворотна адреса:
+	Row:	Рядок:
+	Russian	Російська
+	Serbian (Cyrillic)	Сербська (кирилиця)
+	Serbian (Latin)	Сербська (латиниця)
+	Set As Default	Зробити типовою
+	Shipping labels	Етикетки для відправлень
+	Single label	Одна етикетка
+	Spanish (Mexico)	Іспанська (Мексика)
+	Spanish (Spain)	Іспанська (Іспанія)
+	Swedish	Шведська
+	Turkish	Турецька
+	Ukrainian	Українська
+	{language} is now the document's default language.	{language} тепер типова мова документа.

@@ -234,6 +234,7 @@ fn many_hidden_float_anchors_lay_out_in_linear_time() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         let obj = wordcraft_doc::para::OBJ.to_string();
         let mut p = wordcraft_doc::Paragraph::with_text("Text ", Default::default());
@@ -399,7 +400,7 @@ fn right_tab_aligns_text_end() {
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");
     let id = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
-    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 0), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
+    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 5), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
     let l = lay(&d);
     let labels: Vec<String> = l.pages[0]
         .items
@@ -694,7 +695,12 @@ fn display_has_glyphs_and_marks() {
 #[test]
 fn a_tracked_paragraph_mark_shows_in_its_authors_colour() {
     let mut d = Document::from_text("Split\nhere");
-    d.revisions.push(wordcraft_doc::Revision { kind: wordcraft_doc::RevisionKind::Insert, author: "Ana".into(), date: String::new() });
+    d.revisions.push(wordcraft_doc::Revision {
+        kind: wordcraft_doc::RevisionKind::Insert,
+        author: "Ana".into(),
+        date: String::new(),
+        move_name: None,
+    });
     d.para_mut(wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(0)).unwrap().mark.ins = Some(0);
     let l = lay(&d);
     let marks = |markup: bool| -> Vec<Option<wordcraft_doc::props::Rgb>> {
@@ -1056,6 +1062,7 @@ fn text_wraps_around_square_float() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1095,6 +1102,7 @@ fn deleted_float_leaves_no_wrap_area_without_markup() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1148,6 +1156,7 @@ fn hidden_float_leaves_no_wrap_area_when_hidden_text_is_not_shown() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1202,6 +1211,7 @@ fn line_numbers_borders_text_boxes() {
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(2, 5), tb, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1380,6 +1390,32 @@ fn auto_hyphenation_breaks_long_words() {
     let _ = hyphens(&l2);
 }
 
+/// Hyphenation Options (#407): a consecutive-hyphen limit of 1 never lets two lines in a row end
+/// with a hyphen, and words in capitals stay whole when the document says so.
+#[test]
+fn hyphenation_options_limit_hyphens_and_spare_capitals() {
+    let text = "Internationalization considerations notwithstanding, administrators systematically reconsidered extraordinarily uncharacteristic responsibilities. ".repeat(6);
+    let lines = |d: &Document| -> Vec<bool> {
+        lay(d).pages[0]
+            .items
+            .iter()
+            .filter_map(|i| {
+                if let Placed::Lines { para, .. } = i { Some(para.lines.iter().map(|x| x.hyphen.is_some()).collect::<Vec<_>>()) } else { None }
+            })
+            .flatten()
+            .collect()
+    };
+    let mut d = Document::from_text(&text);
+    d.settings.auto_hyphenation = true;
+    d.settings.consecutive_hyphen_limit = 1;
+    let hy = lines(&d);
+    assert!(hy.windows(2).all(|w| !(w[0] && w[1])), "two hyphenated lines in a row: {hy:?}");
+    let mut caps = Document::from_text(&text.to_uppercase());
+    caps.settings.auto_hyphenation = true;
+    caps.settings.hyphenate_caps = false;
+    assert!(lines(&caps).iter().all(|h| !h), "a word in capitals was hyphenated");
+}
+
 /// A table of `rows` x 2 with text in every cell, after a "before" paragraph.
 fn styled_table_doc(style: Option<&str>, rows: usize) -> Document {
     let mut d = Document::from_text("before\nafter");
@@ -1515,6 +1551,7 @@ fn text_box_at(d: &mut Document, pos: &Pos, text: &str, w: f32, h: f32, float: w
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(pos, shape, &Default::default()).unwrap();
     id
@@ -1587,6 +1624,7 @@ fn presses_grab_pictures_anywhere_and_text_boxes_by_their_border() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1808,6 +1846,7 @@ fn box_fan_out(levels: usize, fan: usize) -> Document {
         story: Some(story),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     for (k, id) in ids.iter().enumerate() {
         let next = *ids.get(k + 1).unwrap_or(id);
@@ -1882,6 +1921,7 @@ fn picture(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2031,6 +2071,7 @@ fn rect_shape(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2201,6 +2242,7 @@ fn floating_header_text_box_leaves_the_body_at_the_top_margin() {
                 story: Some(story),
                 freeform: None,
                 effects: Default::default(),
+                extra: Default::default(),
             };
             anchor.insert_object(0, tb, &Default::default()).unwrap();
         }
@@ -2594,7 +2636,7 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         stroke: Some(Rgb::BLACK),
         stroke_width: 4.0,
     }];
-    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None };
+    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None };
     let obj = InlineObject::Graphic { w: 1000.0, h: 500.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
     let mut d = Document::from_text("Chart");
     d.insert_object(&Pos::body(0, 0), obj, &Default::default()).unwrap();
@@ -2811,6 +2853,7 @@ fn rotated_float_wraps_around_its_rotated_bounds() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
         let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
@@ -2855,6 +2898,7 @@ fn rotated_group_turns_its_members_and_their_shadows() {
         story: None,
         freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { angle: 0.0, rot_with_shape, ..Default::default() }), ..Default::default() },
+        extra: Default::default(),
     };
     let float =
         Float { wrap: Wrap::InFrontOfText, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 100.0, y: 100.0, rot: 90.0, ..Default::default() };
@@ -3014,6 +3058,7 @@ fn wrapped_shape_doc(kind: wordcraft_doc::para::ShapeKind, w: f32, h: f32, float
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     d
@@ -3208,6 +3253,58 @@ fn wrap_text_keeps_text_on_one_side() {
     assert!(!near_right.is_empty() && near_right.iter().all(|l| l.2 < 1.0 && l.3 <= 259.0 + 0.01), "{near_right:?}");
 }
 
+#[test]
+fn document_note_separators_and_continuation_notice() {
+    let mut d = Document::from_text(&"Body text line.\n".repeat(16));
+    let long = footnote(&mut d, &Pos::body(4, 4), &"A long footnote that runs on and on. ".repeat(100));
+    let sep = |cont: bool| {
+        let mut p = wordcraft_doc::Paragraph::new();
+        p.props.space_after = Some(0.0);
+        p.insert_object(0, InlineObject::note_separator(cont), &Default::default()).unwrap();
+        Some(vec![wordcraft_doc::para_block(p)])
+    };
+    let mut notice = wordcraft_doc::Paragraph::with_text("(continued)", Default::default());
+    notice.props.space_after = Some(0.0);
+    d.footnote_separators = wordcraft_doc::NoteSeparators {
+        separator: sep(false),
+        continuation_separator: sep(true),
+        continuation_notice: Some(vec![wordcraft_doc::para_block(notice)]),
+    };
+    let l = lay(&d);
+    let pieces = note_pieces(&l, long);
+    assert!(pieces.len() >= 2 && (pieces[0].0, pieces[1].0) == (0, 1), "{pieces:?}");
+    // The document's separators are paragraphs: their lines are drawn across the separator's
+    // place, short on page 1 and across the text on page 2.
+    let decor = |pi: usize| -> Vec<(f32, f32)> {
+        l.pages[pi]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Placed::Lines { story, y, para, l0, l1, .. } if *story == DECOR_STORY => Some((*y, item_bottom(*y, para, *l0, *l1).unwrap())),
+                _ => None,
+            })
+            .collect()
+    };
+    let (d0, d1) = (decor(0), decor(1));
+    assert_eq!((d0.len(), d1.len()), (2, 1), "separator and notice on page 1, continuation separator on page 2");
+    assert_eq!(rules_below(&l, 0, 0.0), vec![144.0]);
+    assert_eq!(rules_below(&l, 1, 0.0), vec![468.0]);
+    // The notice sits right under the part of the note on page 1, inside the page.
+    let note_bottom = l.pages[0]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            Placed::Lines { story: StoryRef::Part(s), y, para, l0, l1, .. } if *s == long => item_bottom(*y, para, *l0, *l1),
+            _ => None,
+        })
+        .fold(0.0f32, f32::max);
+    let (ny, nb) = d0[1];
+    assert!((ny - note_bottom).abs() < 0.01, "notice at {ny}, note ends at {note_bottom}");
+    assert!(nb <= 720.01, "notice inside the page: {nb}");
+    // The separators and notice aren't text anyone clicks into.
+    assert_ne!(l.story_at(0, 80.0, ny + 2.0), Some(DECOR_STORY));
+}
+
 /// #344 with #332: a Drawing Canvas turns as a whole, like a group: its background and outline,
 /// then its members clipped to its frame, all drawn inside its turn (the clip in the unturned
 /// frame, so the clip turns too); floating or inline. Hit testing follows the turned canvas.
@@ -3226,6 +3323,7 @@ fn rotated_canvas_draws_its_clipped_members_inside_the_turn() {
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     let canvas = |float: Float| InlineObject::Group {
         w: 200.0,
@@ -3297,6 +3395,26 @@ fn rotated_canvas_draws_its_clipped_members_inside_the_turn() {
             assert!(l.object_at(0, cx, cy - 80.0, 0.0).is_some());
         }
     }
+}
+
+#[test]
+fn mirror_indents_swap_sides_on_even_pages() {
+    // #512: with mirrored indents the left indent is the inside one, on the right of an even page.
+    let mut d = Document::from_text("odd page\neven page");
+    let last = Pos::body(1, 0);
+    d.format_paragraphs(&Pos::body(0, 0), &last, &|p| {
+        p.indent_left = Some(72.0);
+        p.mirror_indents = Some(true);
+    })
+    .unwrap();
+    d.format_paragraphs(&last, &last, &|p| p.page_break_before = Some(true)).unwrap();
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2);
+    let odd = l.caret(&Pos::body(0, 0)).unwrap();
+    let even = l.caret(&last).unwrap();
+    assert_eq!(even.page, 1);
+    assert!((odd.x - 144.0).abs() < 0.5, "odd page: inside indent on the left, {odd:?}");
+    assert!((even.x - 72.0).abs() < 0.5, "even page: the left side has the outside indent (0), {even:?}");
 }
 
 /// Ten short paragraphs in a two-column section (`widths`: unequal columns), then one paragraph
@@ -3371,4 +3489,130 @@ fn columns_before_a_page_break_or_a_column_break_are_not_balanced() {
     assert_eq!((nl, nr, page), (2, 8, 0));
     // The next section starts below the taller column.
     assert!(br > bl + 50.0 && after >= br - 0.5, "columns end at {bl} and {br}, next section at {after}");
+}
+
+/// The glyphs of each note reference mark in the body, by note id.
+fn note_marks(l: &DocLayout) -> HashMap<u32, Vec<u32>> {
+    let mut marks = HashMap::new();
+    for it in l.pages.iter().flat_map(|p| p.items.iter()) {
+        if let Placed::Lines { story: StoryRef::Body, para, .. } = it {
+            for (ci, id) in &para.notes {
+                let c = &para.clusters[*ci];
+                marks.insert(*id, para.glyphs[c.g0 as usize..c.g1 as usize].iter().map(|g| g.gid).collect::<Vec<_>>());
+            }
+        }
+    }
+    marks
+}
+
+#[test]
+fn footnotes_restart_on_each_page_and_section() {
+    use wordcraft_doc::section::{NoteProps, NoteRestart};
+    let mut d = Document::from_text(&"Body text line.\n".repeat(120));
+    let a = footnote(&mut d, &Pos::body(2, 4), "First note.");
+    let b = footnote(&mut d, &Pos::body(4, 4), "Second note.");
+    let c = footnote(&mut d, &Pos::body(110, 4), "A later page's note.");
+    let l = lay(&d);
+    let page = |l: &DocLayout, id: u32| l.caret(&d.start_of(StoryRef::Part(id))).unwrap().page;
+    assert!(page(&l, c) > page(&l, a), "the third note is on a later page");
+    let marks = note_marks(&l);
+    assert_ne!(marks[&c], marks[&a], "numbered on: 3 is not 1");
+    // Restart each page: the later page's note is 1 again; the first page counts 1, 2.
+    d.settings.footnote_pr = NoteProps { num_restart: Some(NoteRestart::EachPage), ..Default::default() };
+    let marks = note_marks(&lay(&d));
+    assert_eq!(marks[&c], marks[&a]);
+    assert_ne!(marks[&b], marks[&a]);
+    // Restart each section, starting at 5, in a second section that starts at paragraph 50.
+    d.settings.footnote_pr = NoteProps::default();
+    d.para_mut(StoryRef::Body, &Path::top(49)).unwrap().section = Some(Box::new(SectionProps::default()));
+    d.last_section.footnote_pr = NoteProps { num_restart: Some(NoteRestart::EachSect), num_start: Some(5), ..Default::default() };
+    let nums = note_numbers(&d, false);
+    assert_eq!((nums[&a], nums[&b], nums[&c]), (1, 2, 5));
+}
+
+#[test]
+fn endnotes_at_section_end_and_footnotes_below_text() {
+    use wordcraft_doc::section::{NotePos, NoteProps};
+    let mut d = Document::from_text("Alpha\nBeta\nGamma\nDelta");
+    let eid = d.add_part(
+        wordcraft_doc::PartKind::Endnote,
+        vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("An endnote.", Default::default()))],
+    );
+    d.insert_object(
+        &Pos::body(0, 5),
+        InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Endnote, id: eid, custom: String::new() },
+        &Default::default(),
+    )
+    .unwrap();
+    // Two sections, the second on a new page.
+    d.para_mut(StoryRef::Body, &Path::top(1)).unwrap().section = Some(Box::new(SectionProps::default()));
+    let end_page = |d: &Document| {
+        let l = lay(d);
+        (l.caret(&d.start_of(StoryRef::Part(eid))).unwrap().page, l.caret(&Pos::body(2, 0)).unwrap().page)
+    };
+    assert_eq!(end_page(&d), (1, 1), "end of document: after the second section's text");
+    d.settings.endnote_pr = NoteProps { pos: Some(NotePos::SectEnd), ..Default::default() };
+    assert_eq!(end_page(&d), (0, 1), "end of section: on the first section's page");
+    // A footnote below the text sits right under the last line, above where it'd be at the bottom.
+    let fid = footnote(&mut d, &Pos::body(0, 2), "A footnote.");
+    let top = |d: &Document| lay(d).caret(&d.start_of(StoryRef::Part(fid))).unwrap().top;
+    let bottom = top(&d);
+    d.settings.footnote_pr = NoteProps { pos: Some(NotePos::BeneathText), ..Default::default() };
+    let below = top(&d);
+    let text = lay(&d).caret(&Pos::body(1, 0)).unwrap();
+    assert!(below > text.top + text.height && below < bottom - 100.0, "{below} {bottom} {text:?}");
+}
+
+/// #451: page totals in the body show the document's page count (the stale cached result is
+/// ignored), on every page, like the same fields in the footer.
+#[test]
+fn body_page_totals_count_every_page() {
+    let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
+    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: "9".into(), locked: false, code: false };
+    for i in 0..3 {
+        let p = d.para_mut(StoryRef::Body, &Path::top(i)).unwrap();
+        p.props.page_break_before = Some(i > 0);
+        let n = p.len();
+        p.insert_object(n, field("NUMPAGES"), &Default::default()).unwrap();
+        let n = p.len();
+        p.insert_object(n, field("SECTIONPAGES"), &Default::default()).unwrap();
+    }
+    let mut fp = wordcraft_doc::Paragraph::new();
+    fp.insert_object(0, field("NUMPAGES"), &Default::default()).unwrap();
+    let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(fp)]);
+    d.last_section.footers.default = Some(id);
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 3);
+    let shown = |items: &[Placed]| -> Vec<String> {
+        items
+            .iter()
+            .flat_map(|it| if let Placed::Lines { para, .. } = it { para.shown.iter().map(|s| s.1.clone()).collect() } else { vec![] })
+            .collect()
+    };
+    for (i, p) in l.pages.iter().enumerate() {
+        assert_eq!(shown(&p.items), ["3", "3"], "body of page {}", i + 1);
+        assert_eq!(shown(&p.footer), ["3"], "footer of page {}", i + 1);
+    }
+    // One page: one pass, total 1.
+    let mut d1 = Document::from_text("Only");
+    let p = d1.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    p.insert_object(4, field("NUMPAGES"), &Default::default()).unwrap();
+    assert_eq!(shown(&lay(&d1).pages[0].items), ["1"]);
+}
+
+/// #450: a footnote referenced in a table cell is placed at the bottom of its page, like one in
+/// a body paragraph.
+#[test]
+fn table_cell_footnotes_are_placed() {
+    let mut d = Document::from_text("After the table.");
+    d.insert_block(StoryRef::Body, &Path::top(0), wordcraft_doc::Block::Table(wordcraft_doc::Table::new(1, 1, 300.0))).unwrap();
+    let cell = Pos { story: StoryRef::Body, path: Path(vec![0, 0, 0, 0]), off: 0 };
+    d.para_mut(StoryRef::Body, &cell.path).unwrap().insert_text(0, "Table reference", &Default::default()).unwrap();
+    let id = footnote(&mut d, &Pos { off: "Table reference".len(), ..cell }, "Table note payload.");
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 1);
+    let c = l.caret(&d.start_of(StoryRef::Part(id))).expect("the cell's footnote is placed");
+    assert_eq!(c.page, 0);
+    let body = l.caret(&Pos::body(1, 0)).unwrap();
+    assert!(c.top > body.top + 100.0, "at the page bottom: {c:?} {body:?}");
 }
