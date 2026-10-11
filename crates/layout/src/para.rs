@@ -503,9 +503,7 @@ impl<'a> Builder<'a> {
             if ea.is_empty() {
                 None
             } else {
-                wordcraft_fonts::FontDb::global()
-                    .fallback_for_east_asian(&ea, primary.id(), rc.bold, rc.italic)
-                    .map(|f| FaceRef::of(&f))
+                wordcraft_fonts::FontDb::global().fallback_for_east_asian(&ea, primary.id(), rc.bold, rc.italic).map(|f| FaceRef::of(&f))
             }
         };
         // Split by font coverage (fallback faces), small caps case, script formatting and direction.
