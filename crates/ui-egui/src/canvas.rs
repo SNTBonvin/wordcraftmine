@@ -75,6 +75,9 @@ pub struct CanvasState {
     pub(crate) table_stroke: Option<crate::table_pen::PenStroke>,
     /// A table border or the table's resize handle being dragged (`table_resize`).
     pub(crate) table_resize: Option<crate::table_resize::ResizeDrag>,
+    /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
+    /// isn't typed. The next key press clears it.
+    pub(crate) swallow_text: bool,
 }
 
 impl CanvasState {
@@ -111,6 +114,7 @@ impl Default for CanvasState {
             context_menu_open: false,
             mini_anchor: None,
             pasted: false,
+            swallow_text: false,
             wheel: Default::default(),
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
@@ -1092,6 +1096,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             }
             return;
         }
+        // Double-click a field showing its code: edit the code.
+        if let Some(pos) = layout.hit(page, x, y, story)
+            && let Some(field) = field_showing_code(app, &pos)
+        {
+            app.session.sel = wordcraft_engine::Selection::caret(field);
+            let _ = app.run("fields.setCode", json!({}));
+            return;
+        }
         let _ = app.run("select.word", json!({}));
         return;
     }
@@ -1617,6 +1629,12 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
+    if !wordcraft_engine::cmd::fields::selected(&app.session).is_empty() {
+        ui.separator();
+        item(ui, app, tl!("Update Field"), "references.updateFields", json!({}));
+        item(ui, app, tl!("Edit Field…"), "fields.setCode", json!({}));
+        item(ui, app, tl!("Toggle Field Codes"), "fields.toggleCode", json!({}));
+    }
     if crate::ribbon::has_picture_selected(&app.session) {
         ui.separator();
         item(ui, app, "Change Picture…", "ui.changePicture", json!({}));
@@ -1638,6 +1656,19 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         });
         item(ui, app, "Merge Cells", "table.merge", json!({}));
     }
+}
+
+/// The simple field at or just before `pos` when it shows its code (View › Field Codes, or its
+/// own toggle): where it is.
+fn field_showing_code(app: &WordApp, pos: &wordcraft_doc::Pos) -> Option<wordcraft_doc::Pos> {
+    let para = app.session.doc.para_at(pos)?;
+    let width = wordcraft_doc::para::OBJ.len_utf8();
+    [Some(pos.off), pos.off.checked_sub(width)].into_iter().flatten().find_map(|off| match para.object_at(off) {
+        Some(wordcraft_doc::para::InlineObject::Field { code, .. }) if *code != app.session.view.field_codes => {
+            Some(wordcraft_doc::Pos { off, ..pos.clone() })
+        }
+        _ => None,
+    })
 }
 
 /// Render options for page rasters shown on screen: on macOS, text is darkened the way the system
