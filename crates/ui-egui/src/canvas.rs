@@ -931,6 +931,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if !crate::table_pen::pointer(app, ui, &resp, &rects, &layout, geo.scale) {
         mouse(app, ui, &resp, &rects, &layout, geo.scale);
     }
+    // A mouse selection is not a navigation request. Following the caret in Reading Mode
+    // would move its entire column to the left on the next frame and turn a held click
+    // into a selection across other columns under the same stationary screen position.
+    if app.session.view.read_mode
+        && ((ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer())
+            || resp.clicked()
+            || resp.double_clicked()
+            || resp.triple_clicked())
+    {
+        app.canvas.scroll_to_caret = false;
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
     if resp.secondary_clicked()
