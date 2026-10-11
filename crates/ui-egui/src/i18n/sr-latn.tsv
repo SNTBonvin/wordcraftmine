@@ -1406,6 +1406,10 @@
 	New Group	Nova grupa
 	Rename…	Preimenuj…
 	Ribbon and Quick Access Toolbar:	Traka i traka sa alatkama za brzi pristup:
+	Right-to-Left Table	Tabela sa desna na levo
+	Right-to-Left Section	Odeljak sa desna na levo
+	Table direction:	Smer tabele:
+	Section direction:	Smer odeljka:
 	Drawing Canvas	Platno za crtanje
 	New Drawing Canvas	Novo platno za crtanje
 	Fit	Prilagodi
@@ -1429,3 +1433,12 @@
 	Enlarge symbol	Uvećaj simbol
 	Enclosure	Okvir
 	Circle	Krug
+	Align Text	Poravnaj tekst
+	Create Link	Napravi vezu
+	Break Link	Prekini vezu
+	Rotate all text 90°	Rotiraj sav tekst za 90°
+	Rotate all text 270°	Rotiraj sav tekst za 270°
+	Stacked	Naslagano
+	Middle	Sredina
+	Click the empty text box the text should continue in (Esc cancels)	Kliknite prazno polje za tekst u kom tekst treba da se nastavi (Esc otkazuje)
+	Not linked: click a text box	Nije povezano: kliknite polje za tekst
