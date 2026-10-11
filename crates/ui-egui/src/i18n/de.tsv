@@ -1318,3 +1318,82 @@
 	Formatted	Formatiert
 	Interface size:	Oberflächengröße:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Vergrößert oder verkleinert Menüband, Menüs und Dialoge, zusätzlich zur Anzeigeskalierung Ihres Systems. Die Dokumentansicht ist davon getrennt.
+	Base text:	Basistext:
+	Distribute letters	Buchstaben verteilen
+	Distribute spacing	Abstände verteilen
+	Offset (pt):	Versatz (pt):
+	Phonetic Guide	Aussprachehilfe
+	Remove	Entfernen
+	Right (vertical)	Rechts (vertikal)
+	Ruby text:	Ruby-Text:
+	Copyright Sign	Copyrightzeichen
+	Insert Date Field	Datumsfeld einfügen
+	Insert Page Field	Seitenfeld einfügen
+	Insert Time Field	Uhrzeitfeld einfügen
+	Registered Sign	Zeichen für eingetragene Marke
+	Reset Character Formatting	Zeichenformatierung zurücksetzen
+	Reset Paragraph Formatting	Absatzformatierung zurücksetzen
+	Trademark Sign	Markenzeichen
+	Size (pt):	Größe (pt):
+	Draw\nTable	Tabelle\nzeichnen
+	Move Paragraph Up	Absatz nach oben verschieben
+	Move Paragraph Down	Absatz nach unten verschieben
+	Promote	Höher stufen
+	Demote	Tiefer stufen
+	Go Back	Zurückspringen
+	Toggle Unicode Character	Unicode-Zeichen umschalten
+	Toggle Field Codes	Feldfunktionen ein/aus
+	Edit Field Code	Feldfunktion bearbeiten
+	Unlink Fields	Feldverknüpfungen aufheben
+	Lock Fields	Felder sperren
+	Unlock Fields	Felder entsperren
+	Next Field	Nächstes Feld
+	Previous Field	Vorheriges Feld
+	Selected Fields	Ausgewählte Felder
+	Edit Field…	Feld bearbeiten…
+	In Line with Text	Mit Text in Zeile
+	Square	Quadrat
+	Through	Durchgehend
+	Top and Bottom	Oben und unten
+	Behind Text	Hinter den Text
+	In Front of Text	Vor den Text
+	Wrap Text Sides	Umbruchseiten
+	Both Sides	Beide Seiten
+	Left Only	Nur links
+	Right Only	Nur rechts
+	Largest Only	Nur größte Seite
+	Customize Keyboard	Tastatur anpassen
+	Choose a command	Befehl auswählen
+	Choose a shortcut	Tastenkombination auswählen
+	All Commands	Alle Befehle
+	Commands:	Befehle:
+	Keys for this command:	Tasten für diesen Befehl:
+	New shortcut:	Neue Tastenkombination:
+	Now used by {command}	Derzeit belegt durch {command}
+	Not used by any command	Keinem Befehl zugewiesen
+	Remove every custom shortcut and restore the built-in keys?	Alle eigenen Tastenkombinationen entfernen und die Standardbelegung wiederherstellen?
+	Assign	Zuweisen
+	Reset All…	Alle zurücksetzen…
+	Press a key combination	Tastenkombination drücken
+	Customize	Anpassen
+	Keyboard shortcuts:	Tastenkombinationen:
+	Customize…	Anpassen…
+	Customize Ribbon	Menüband anpassen
+	Add to Quick Access Toolbar	Zur Symbolleiste für den Schnellzugriff hinzufügen
+	Remove from Quick Access Toolbar	Aus der Symbolleiste für den Schnellzugriff entfernen
+	Customize the Ribbon…	Menüband anpassen…
+	Customize Quick Access Toolbar…	Symbolleiste für den Schnellzugriff anpassen…
+	More Commands…	Weitere Befehle…
+	Ribbon	Menüband
+	(Custom)	(Benutzerdefiniert)
+	Remove every custom tab and group and show all tabs again?	Alle eigenen Registerkarten und Gruppen entfernen und wieder alle Registerkarten anzeigen?
+	Put the default commands back on the Quick Access Toolbar?	Die Standardbefehle wieder in die Symbolleiste für den Schnellzugriff übernehmen?
+	Reset…	Zurücksetzen…
+	Add >>	Hinzufügen >>
+	<< Remove	<< Entfernen
+	Pick a custom group (New Group makes one)	Eigene Gruppe auswählen (mit „Neue Gruppe“ anlegen)
+	Ribbon tabs	Registerkarten des Menübands
+	New Tab	Neue Registerkarte
+	New Group	Neue Gruppe
+	Rename…	Umbenennen…
+	Ribbon and Quick Access Toolbar:	Menüband und Symbolleiste für den Schnellzugriff:

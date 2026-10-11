@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 use wordcraft_doc::math::MathJc;
 use wordcraft_doc::numbering::{Level, LevelSuffix};
-use wordcraft_doc::para::{COLUMN_BREAK, InlineObject, LINE_BREAK, NoteKind, OBJ, PAGE_BREAK, SOFT_HYPHEN};
+use wordcraft_doc::para::{COLUMN_BREAK, InlineObject, LINE_BREAK, NoteKind, OBJ, PAGE_BREAK, RubyAlign, SOFT_HYPHEN, WrapText};
 use wordcraft_doc::props::{Align, CharProps, LineSpacing, ParaProps, TabAlign, TabLeader, TabStop};
 use wordcraft_doc::resolve::{ResolvedChar, ResolvedPara};
 use wordcraft_doc::{Document, Paragraph};
 use wordcraft_fonts::FaceRef;
 
-use crate::fields::{FieldCtx, field_text};
+use crate::fields::{FIELD_SHADING, FieldCtx, field_code_text, field_text};
 
 /// A face at a size with the formatting needed to draw it.
 #[derive(Clone, Debug)]
@@ -221,6 +221,21 @@ pub struct Label {
     pub width: f32,
 }
 
+/// Ruby text laid out over its base text's cluster.
+#[derive(Clone, Debug)]
+pub struct RubyLayout {
+    /// The base text's cluster (the one cluster standing for an [`InlineObject::Ruby`]).
+    pub cluster: usize,
+    /// Glyphs with their style (index into `ParaLayout::styles`); `dx` is from the cluster's left
+    /// edge.
+    pub glyphs: Vec<(u16, Glyph)>,
+    /// The ruby text and each glyph's byte range in it.
+    pub text: String,
+    pub ranges: Vec<std::ops::Range<usize>>,
+    /// The ruby's baseline above the base text's, points.
+    pub raise: f32,
+}
+
 /// A laid-out paragraph.
 #[derive(Clone, Debug)]
 pub struct ParaLayout {
@@ -250,6 +265,8 @@ pub struct ParaLayout {
     pub drop_cap_w: f32,
     /// Laid-out equations by object index.
     pub maths: Vec<(usize, Arc<crate::math::MathLayout>)>,
+    /// Ruby (Phonetic Guide) text over base-text clusters, in cluster order.
+    pub rubies: Vec<RubyLayout>,
     /// Display equations (on lines of their own): cluster index and justification.
     pub displays: Vec<(usize, wordcraft_doc::math::MathJc)>,
     /// Byte ranges of the text laid out as nothing ([`left_out`]): hidden text that is not shown,
@@ -278,6 +295,8 @@ pub struct ParaEnv<'a> {
     pub label: Option<(String, Level)>,
     pub fields: &'a FieldCtx,
     pub show_hidden: bool,
+    /// Show field codes instead of results ([`crate::LayoutOptions::field_codes`]).
+    pub field_codes: bool,
     /// Leave tracked deletions out, like hidden text (the final, "No Markup" text).
     pub hide_deleted: bool,
     /// The table style's formatting for text in this paragraph's cell (`None` outside tables).
@@ -291,7 +310,7 @@ pub struct ParaEnv<'a> {
 }
 
 /// An area text wraps around.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Exclusion {
     pub top: f32,
     pub bottom: f32,
@@ -299,6 +318,11 @@ pub struct Exclusion {
     pub right: f32,
     /// Text only above and below (no text beside it).
     pub top_bottom: bool,
+    /// Tight and Through wrapping: the outline text follows inside the area (relative to its
+    /// top-left); `None` = the whole area.
+    pub contour: Option<Arc<crate::contour::Contour>>,
+    /// The sides of the object text may go on (Square, Tight, Through).
+    pub side: WrapText,
 }
 
 struct Builder<'a> {
@@ -599,6 +623,66 @@ impl<'a> Builder<'a> {
     }
 }
 
+impl Builder<'_> {
+    /// One cluster for ruby `base` text (an [`InlineObject::Ruby`] at `start..end`), as wide as the
+    /// wider of the base and the ruby, with the ruby text laid out over it by `align`. The line
+    /// grows to fit the ruby through the cluster's `obj_h`.
+    #[allow(clippy::too_many_arguments)]
+    fn ruby(
+        &mut self,
+        base: &str,
+        ruby: &str,
+        align: RubyAlign,
+        raise: f32,
+        start: usize,
+        end: usize,
+        rc: &Arc<ResolvedChar>,
+        ruby_rc: &Arc<ResolvedChar>,
+    ) -> Option<RubyLayout> {
+        self.shape_atomic(base, start, end, rc);
+        let ci = self.clusters.len().checked_sub(1)?;
+        let (bc, bg) = (self.clusters.len(), self.glyphs.len());
+        self.shape_with(ruby, 0, ruby_rc, None, false);
+        let cl: Vec<Cluster> = self.clusters.drain(bc..).collect();
+        let ruby_w: f32 = cl.iter().map(|c| c.adv).sum();
+        let base_w = self.clusters.get(ci).map_or(0.0, |c| c.adv);
+        let w = base_w.max(ruby_w);
+        let n = cl.len().max(1) as f32;
+        // Where the narrower text starts, and the extra gap between its letters (ruby only).
+        let lead = |room: f32| match align {
+            RubyAlign::Left => 0.0,
+            RubyAlign::Right | RubyAlign::RightVertical => room,
+            _ => room / 2.0,
+        };
+        let (x0, gap) = match align {
+            RubyAlign::DistributeLetter if cl.len() > 1 => (0.0, (w - ruby_w) / (n - 1.0)),
+            RubyAlign::DistributeSpace => ((w - ruby_w) / n / 2.0, (w - ruby_w) / n),
+            _ => (lead(w - ruby_w), 0.0),
+        };
+        let mut glyphs = Vec::new();
+        let mut ranges = Vec::new();
+        let mut x = x0;
+        for c in &cl {
+            for g in self.glyphs.get(c.g0 as usize..c.g1 as usize).into_iter().flatten() {
+                glyphs.push((c.style, Glyph { dx: g.dx + x, ..*g }));
+                ranges.push(c.start..c.end);
+            }
+            x += c.adv + gap;
+        }
+        self.glyphs.truncate(bg);
+        // The base text centres (or aligns) under a wider ruby.
+        let shift = lead(w - base_w);
+        let ascent = cl.iter().filter_map(|c| self.styles.get(c.style as usize)).map(|s| s.ascent).fold(0.0f32, f32::max);
+        let c = self.clusters.get_mut(ci)?;
+        for g in self.glyphs.get_mut(c.g0 as usize..c.g1 as usize).into_iter().flatten() {
+            g.dx += shift;
+        }
+        c.adv = w;
+        c.obj_h = raise + ascent;
+        Some(RubyLayout { cluster: ci, glyphs, text: ruby.to_string(), ranges, raise })
+    }
+}
+
 /// Whether text with this formatting is left out of the layout: hidden text unless it is shown, and
 /// tracked deletions in the final text. It takes no room, draws nothing and is no place to break.
 pub(crate) fn left_out(rc: &ResolvedChar, show_hidden: bool, hide_deleted: bool) -> bool {
@@ -638,6 +722,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let mut drop_cap = None;
     let mut drop_cap_w = 0.0;
     let mut maths = Vec::new();
+    let mut rubies = Vec::new();
     let mut displays = Vec::new();
     let mut eq_counter = env.eq_number;
     let math_props = doc.settings.math.clone().unwrap_or_default();
@@ -750,10 +835,19 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                                 push(&mut b, ClKind::Object(k), 0.0, 0.0);
                             }
                         }
-                        Some(InlineObject::Field { instr, result, .. }) => {
-                            let (t, page_dep) = field_text(instr, result, env.fields);
-                            has_page_fields |= page_dep;
-                            b.shape_atomic(&t, start, end, &rc);
+                        Some(InlineObject::Field { instr, result, code, .. }) => {
+                            if env.field_codes != *code {
+                                // The code in braces on grey, like Word's field shading.
+                                let mut shaded = (*rc).clone();
+                                if shaded.highlight.is_none() && shaded.shading.is_none() {
+                                    shaded.shading = Some(FIELD_SHADING);
+                                }
+                                b.shape_atomic(&field_code_text(instr), start, end, &Arc::new(shaded));
+                            } else {
+                                let (t, page_dep) = field_text(instr, result, env.fields);
+                                has_page_fields |= page_dep;
+                                b.shape_atomic(&t, start, end, &rc);
+                            }
                         }
                         Some(InlineObject::NoteRef { kind, id, custom }) => {
                             let num = if custom.is_empty() {
@@ -793,6 +887,16 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                                 displays.push((b.clusters.len() - 1, math.jc));
                             }
                             maths.push((k, Arc::new(ml)));
+                        }
+                        Some(InlineObject::Ruby { base, ruby, align, size, raise, props: ruby_props, .. }) => {
+                            let mut rr = (*resolve(&props.clone().overlaid(ruby_props))).clone();
+                            let size = if size.is_finite() { size.clamp(1.0, 1584.0) } else { rc.size * 0.5 };
+                            (rr.size, rr.size_cs, rr.position) = (size, size, 0.0);
+                            rr.vert_align = wordcraft_doc::props::VertAlign::Baseline;
+                            let raise = if raise.is_finite() { raise.clamp(0.0, 1584.0) } else { rc.size };
+                            if let Some(r) = b.ruby(base, ruby, *align, raise, start, end, &rc, &Arc::new(rr)) {
+                                rubies.push(r);
+                            }
                         }
                         Some(InlineObject::Opaque { text, .. }) => b.shape_atomic(text, start, end, &rc),
                         _ => push(&mut b, ClKind::Marker, 0.0, 0.0),
@@ -903,6 +1007,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         bidi_levels: b.levels,
         drop_cap_w,
         maths,
+        rubies,
         displays,
         left_out: Vec::new(),
     };
@@ -953,7 +1058,22 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
     let bidi = rtl_para || !pl.bidi_levels.is_empty();
     let mirrored: Vec<Exclusion>;
     let exclusions: &[Exclusion] = if rtl_para {
-        mirrored = env.exclusions.iter().map(|e| Exclusion { left: width - e.right, right: width - e.left, ..*e }).collect();
+        mirrored = env
+            .exclusions
+            .iter()
+            .map(|e| Exclusion {
+                left: width - e.right,
+                right: width - e.left,
+                contour: e.contour.as_ref().map(|c| Arc::new(c.mirrored(e.right - e.left))),
+                // Mirrored, the object's left side is the line's right.
+                side: match e.side {
+                    WrapText::Left => WrapText::Right,
+                    WrapText::Right => WrapText::Left,
+                    s => s,
+                },
+                ..e.clone()
+            })
+            .collect();
         &mirrored
     } else {
         env.exclusions
@@ -1246,7 +1366,8 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                         (st.ascent, st.descent)
                     }
                 } else {
-                    (st.ascent + st.shift.max(0.0), st.descent + (-st.shift).max(0.0))
+                    // `obj_h` is set on text clusters only under ruby text, which the line grows to fit.
+                    ((st.ascent + st.shift.max(0.0)).max(c.obj_h + st.shift), st.descent + (-st.shift).max(0.0))
                 };
                 asc = asc.max(a);
                 desc = desc.max(d);
@@ -1527,23 +1648,46 @@ const MIN_SPAN: f32 = 20.0;
 /// here, try again at `y` (below what's in the way).
 fn row_spans(exclusions: &[Exclusion], top: f32, h: f32, lo: f32, hi: f32) -> Result<VecDeque<(f32, f32)>, f32> {
     let here: Vec<&Exclusion> = exclusions.iter().filter(|e| e.bottom > top && e.top < top + h && e.right > lo && e.left < hi).collect();
-    if here.is_empty() {
-        return Ok(VecDeque::from([(lo, hi)]));
-    }
     if let Some(below) = here.iter().filter(|e| e.top_bottom).map(|e| e.bottom).reduce(f32::max) {
         return Err(below);
     }
-    let mut spans = vec![(lo, hi)];
+    // What each object takes of the row: its whole area, or (Tight, Through) the stretches its
+    // outline takes, as (left, right, bottom of the object's area).
+    let mut taken: Vec<(f32, f32, f32)> = Vec::new();
     for e in &here {
+        let first = taken.len();
+        match &e.contour {
+            None => taken.push((e.left, e.right, e.bottom)),
+            Some(c) => taken.extend(c.occupied(top - e.top, top + h - e.top).into_iter().map(|(a, b)| (a + e.left, b + e.left, e.bottom))),
+        }
+        // Text on one side only: the object's other side of the row is taken too.
+        let Some(mine) = taken.get(first..).filter(|t| !t.is_empty() && !e.side.is_both()) else { continue };
+        let left = mine.iter().map(|t| t.0).fold(f32::INFINITY, f32::min);
+        let right = mine.iter().map(|t| t.1).fold(f32::NEG_INFINITY, f32::max);
+        let text_left = match e.side {
+            WrapText::Left => true,
+            WrapText::Right => false,
+            // The side with more room on this line (left on a tie).
+            _ => left - lo >= hi - right,
+        };
+        taken.truncate(first);
+        taken.push(if text_left { (left, hi.max(right), e.bottom) } else { (lo.min(left), right, e.bottom) });
+    }
+    taken.retain(|(l, r, _)| *r > lo && *l < hi);
+    if taken.is_empty() {
+        return Ok(VecDeque::from([(lo, hi)]));
+    }
+    let mut spans = vec![(lo, hi)];
+    for &(left, right, _) in &taken {
         spans = spans
             .into_iter()
-            .flat_map(|(a, b)| if e.right <= a || e.left >= b { vec![(a, b)] } else { vec![(a, e.left.min(b)), (e.right.max(a), b)] })
+            .flat_map(|(a, b)| if right <= a || left >= b { vec![(a, b)] } else { vec![(a, left.min(b)), (right.max(a), b)] })
             .collect();
     }
     spans.retain(|(a, b)| b - a >= MIN_SPAN);
     if spans.is_empty() {
         // Nothing wide enough: the line goes below the first object that ends.
-        return Err(here.iter().map(|e| e.bottom).reduce(f32::min).unwrap_or(top));
+        return Err(taken.iter().map(|t| t.2).reduce(f32::min).unwrap_or(top));
     }
     Ok(spans.into())
 }
