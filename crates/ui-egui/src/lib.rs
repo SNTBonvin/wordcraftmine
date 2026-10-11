@@ -20,8 +20,10 @@ pub mod control;
 pub mod credits;
 pub mod dialogs;
 pub mod dialogs_insert;
+pub mod dialogs_keyboard;
 pub mod dialogs_lists;
 pub mod dialogs_para;
+pub mod dialogs_ribbon;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
@@ -127,6 +129,11 @@ pub struct UiState {
     /// View › Switch Modes: show pages dark (white text on black), kept between runs. Only the
     /// pages: the interface follows [`UiState::theme`] (#312).
     pub dark_page: bool,
+    /// Custom keyboard shortcuts (Customize Keyboard, #368); the session owns them while running.
+    pub keyboard: wordcraft_engine::KeyMap,
+    /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
+    /// #379); the session owns them while running.
+    pub ribbon: wordcraft_engine::RibbonLayout,
 }
 
 impl Default for UiState {
@@ -152,6 +159,8 @@ impl Default for UiState {
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
+            keyboard: wordcraft_engine::KeyMap::default(),
+            ribbon: wordcraft_engine::RibbonLayout::default(),
         }
     }
 }
@@ -293,6 +302,8 @@ impl WordApp {
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
+        ui.keyboard = self.session.keymap.clone();
+        ui.ribbon = self.session.ribbon.clone();
         ui
     }
 
@@ -313,6 +324,13 @@ impl WordApp {
         self.session.read_aloud.set_rate(self.ui.read_aloud_rate);
         self.session.read_aloud.skip_citations = self.ui.read_aloud_skip_citations;
         self.session.view.dark_mode = self.ui.dark_page;
+        // Keys for commands this version doesn't have are dropped.
+        self.session.keymap = std::mem::take(&mut self.ui.keyboard);
+        let reg = self.session.registry.clone();
+        self.session.keymap.retain_known(&reg);
+        // So are ribbon and toolbar commands.
+        self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
+        self.session.ribbon.retain_known(&reg);
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -747,10 +765,20 @@ impl WordApp {
         let _ = self.ask_file(file_dialogs::FileDialogRequest::Open { purpose: "recipients".into() }, file_dialogs::AfterPick::Recipients);
     }
 
-    /// Load mail-merge recipients and say how many there are.
+    /// Load mail-merge recipients and say how many there are. A workbook with several sheets
+    /// shows Select Table to choose one first (#334).
     pub(crate) fn load_recipients(&mut self, params: Value) -> Result<Value, String> {
-        let r = self.run("mailings.recipients", params);
-        if let Ok(v) = &r {
+        let r = self.run("mailings.recipients", params.clone());
+        if let Ok(v) = &r
+            && v.get("chooseSheet").and_then(Value::as_bool) == Some(true)
+        {
+            let sheets = v
+                .get("sheets")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            self.dialog = Some(dialogs::Dialog::SelectTable { sheets, selected: 0, headers: true, message: String::new(), params });
+        } else if let Ok(v) = &r {
             let records = v.get("records").and_then(Value::as_u64).unwrap_or(0).to_string();
             self.status(i18n::fmt(tl!("Recipients: {count}"), &[("count", &records)]));
         }
@@ -837,7 +865,15 @@ impl WordApp {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
                 let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
-                let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.run("file.open", json!({"path": path})) };
+                let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
+                let _ = if img {
+                    self.run("insert.picture", json!({"path": path}))
+                } else if sheet {
+                    // A spreadsheet isn't a document: it's a recipient list (#334).
+                    self.load_recipients(json!({"path": path}))
+                } else {
+                    self.run("file.open", json!({"path": path}))
+                };
             }
         }
         self.report_dirty();
@@ -965,7 +1001,7 @@ impl WordApp {
     }
 
     /// Files that arrived asynchronously (web picker, drops): documents open, pictures insert,
-    /// recipient lists (CSV/TSV, or a text file asked for as one) load as recipients.
+    /// recipient lists (CSV/TSV, spreadsheets, or a text file asked for as one) load as recipients.
     fn drain_inbox(&mut self) {
         let Some(inbox) = self.services.inbox.clone() else { return };
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
@@ -974,7 +1010,11 @@ impl WordApp {
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
             let list =
                 lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && std::mem::take(&mut self.recipient_list_pending));
-            let r = if list {
+            let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lower.ends_with(e));
+            let r = if sheet {
+                self.recipient_list_pending = false;
+                self.load_recipients(json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
+            } else if list {
                 self.load_recipients(json!({"csv": wordcraft_engine::io::decode_text(&bytes)}))
             } else if img {
                 self.insert_or_change_picture(json!({"data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
@@ -1106,7 +1146,7 @@ fn keeps_everything(name: &str) -> bool {
 /// the command's own error or default instead): Select Recipients and Edit Recipient List without
 /// data, Insert Merge Field without a field, Find Recipient without text, the If and Skip
 /// Record If rules (or Rules with no rule at all) without a field, Table Properties without
-/// settings, and Symbol and Field without a character or code.
+/// settings, Symbol and Field without a character or code, and Enclose Characters without a shape.
 fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     let has = |k: &str| params.get(k).is_some_and(|v| !v.is_null());
     let rule = params.get("rule").and_then(Value::as_str).map(str::to_ascii_uppercase);
@@ -1116,13 +1156,15 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
             Some("SKIPIF") => Some("ruleSkipIf"),
             _ => None,
         },
-        "mailings.recipients" if !["csv", "path", "rows"].into_iter().any(has) => Some("recipientList"),
+        "mailings.recipients" if !["csv", "path", "data", "rows"].into_iter().any(has) => Some("recipientList"),
         "mailings.editRecipients" if !has("rows") => Some("recipientList"),
         "mailings.insertField" if !has("field") => Some("insertMergeField"),
         "mailings.findRecipient" if !has("text") => Some("findRecipient"),
         // Symbol without a character and Field without a code show their dialogs (#321).
         "insert.symbol" if !has("char") => Some("symbol"),
         "insert.field" if !has("instr") => Some("field"),
+        // Edit Field Code shows the selected field's code (#339).
+        "fields.setCode" if !has("code") => Some("editFieldCode"),
         // Table Properties without settings shows the dialog (with settings it applies them).
         "table.properties" if params.as_object().is_none_or(|m| m.is_empty()) => Some("tableProperties"),
         // Tabs, Borders and Shading, and Page Borders without settings show their dialogs (#320).
@@ -1134,6 +1176,11 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         // Define New Multilevel List and Track Changes Options without settings show their dialogs.
         "list.define" if params.get("levels").is_none() => Some("defineList"),
         "review.trackingOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("trackChangesOptions"),
+        "insert.bookmark" if !has("name") => Some("bookmark"),
+        // Word Count from the keyboard or command search shows its dialog, as the ribbon does.
+        "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
+        // Enclose Characters without a shape (null is one: it takes the enclosure away).
+        "format.enclose" if params.get("shape").is_none() => Some("enclose"),
         _ => None,
     }
 }
@@ -1218,6 +1265,19 @@ mod tests {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
     }
 
+    /// Insert › Icons (#309) opens the icon picker from the ribbon; an id inserts without it.
+    #[test]
+    fn icons_button_opens_the_picker_and_ids_insert_directly() {
+        let mut a = app();
+        a.run("insert.icon", json!({})).unwrap();
+        assert_eq!(a.dialog.as_ref().map(dialogs::Dialog::name), Some("icons"));
+        a.dialog = None;
+        let r = a.run("insert.icon", json!({"id": "sun", "size": 36})).unwrap();
+        assert_eq!(r["icon"], "sun");
+        assert!(a.dialog.is_none(), "an id inserts without the dialog");
+        assert!(a.selected_picture_media().is_some());
+    }
+
     /// Table Layout › Properties (#44) opens the dialog from the ribbon; OK sends only what
     /// changed, as one `table.properties` step. Scripts with settings never see the dialog.
     #[test]
@@ -1243,6 +1303,24 @@ mod tests {
         assert_eq!(t.props.align, Some(wordcraft_doc::props::Align::Center));
         assert_eq!((t.rows[0].props.height, t.rows[0].props.header), (Some(36.0), true));
         assert_eq!(dialogs::TableForm::read(&a).unwrap().changes(&f), json!({}), "the dialog reopens with the new values");
+    }
+
+    /// Home › Font › Enclose Characters (#297): the button opens the dialog on the selected
+    /// character; the dialog's OK is `format.enclose`, and it reopens showing the enclosure.
+    #[test]
+    fn enclose_characters_button_opens_the_dialog() {
+        let mut a = app();
+        a.run("text.insert", json!({"text": "a 字 b"})).unwrap();
+        a.run("select.text", json!({"text": "字"})).unwrap();
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, text, shape }) = a.dialog.clone() else { panic!("no dialog: {:?}", a.dialog) };
+        assert_eq!((style.as_str(), text.as_str(), shape.as_str()), ("shrink", "字", "circle"));
+        a.dialog = None;
+        a.run("format.enclose", json!({"shape": "square", "style": "enlarge", "text": "字"})).unwrap();
+        assert!(a.dialog.is_none(), "a shape applies without the dialog");
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, shape, .. }) = a.dialog.clone() else { panic!("no dialog") };
+        assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
     /// Issue #139: Ctrl+wheel over the page didn't zoom.
@@ -1753,6 +1831,36 @@ mod tests {
         h.step();
         assert!(h.state().session.dirty, "the keystroke reached the document");
         assert_eq!(reported.get(), Some(true), "the host was told before the frame ended");
+    }
+
+    /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
+    /// an Alt shortcut doesn't also type the character its key would produce.
+    #[test]
+    fn word_shortcuts_run_from_the_keyboard() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        h.event(egui::Event::Text("Kilns".into()));
+        h.step();
+        h.event(key(egui::Key::Num1, egui::Modifiers::COMMAND | egui::Modifiers::ALT));
+        h.step();
+        let style =
+            |h: &egui_kittest::Harness<WordApp>| h.state().session.doc.para_at(&wordcraft_doc::Pos::body(0, 0)).and_then(|p| p.props.style.clone());
+        assert_eq!(style(&h).as_deref(), Some("Heading1"));
+        // Alt+F7 (next misspelling) can come with key text on some platforms; none is typed.
+        h.event(key(egui::Key::F7, egui::Modifiers::ALT));
+        h.event(egui::Event::Text("x".into()));
+        h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
     }
 
     /// Save writes the document first, then carries on with what the user asked for.
@@ -2500,6 +2608,24 @@ mod tests {
         // Programmatic calls never open dialogs.
         let mut b = app();
         assert!(b.execute("mailings.recipients", json!({})).is_err());
+        assert!(b.dialog.is_none());
+    }
+
+    /// #339: Ctrl+F9 opens the Field dialog (#321) and Edit Field… shows the selected field's code;
+    /// scripts and agents get an error instead of a dialog.
+    #[test]
+    fn field_code_dialogs_open_for_users_only() {
+        let mut a = app();
+        assert_eq!(a.run("insert.field", json!({})).unwrap(), json!({"pending": "field"}));
+        a.dialog = None;
+        a.run("insert.field", json!({"instr": "PAGE"})).unwrap();
+        a.run("caret.docStart", json!({})).unwrap();
+        assert_eq!(a.run("fields.setCode", json!({})).unwrap(), json!({"pending": "editFieldCode"}));
+        let Some(dialogs::Dialog::FieldCode { code, edit: true, .. }) = &a.dialog else { panic!("{:?}", a.dialog) };
+        assert_eq!(code, "PAGE");
+        let mut b = app();
+        assert!(b.execute("insert.field", json!({})).is_err());
+        assert!(b.execute("fields.setCode", json!({})).is_err());
         assert!(b.dialog.is_none());
     }
 

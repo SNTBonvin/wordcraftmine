@@ -103,6 +103,14 @@
 	Restart list after:	リストを振り直すレベル:
 	Right border	右罫線
 	Right Margin	右余白
+	Base text:	親文字:
+	Distribute letters	文字を均等に配置
+	Distribute spacing	間隔を均等に配置
+	Offset (pt):	オフセット (pt):
+	Phonetic Guide	ルビ
+	Remove	削除
+	Right (vertical)	右 (縦書き)
+	Ruby text:	ルビ文字:
 	Search for templates	テンプレートを検索
 	Show all revisions inline	すべての変更履歴を本文中に表示
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	表示 › モードの切り替えと同様に、文書の色を反転して表示します。保存、印刷、PDF は変わりません。
@@ -539,6 +547,16 @@
 	Open	開く
 	OpenDocument Text (*.odt)	OpenDocument テキスト (*.odt)
 	Optional Hyphen	任意指定のハイフン
+	Copyright Sign	著作権記号
+	Ellipsis	省略記号
+	Em Dash	エム ダッシュ
+	Insert Date Field	日付フィールドの挿入
+	Insert Page Field	ページ フィールドの挿入
+	Insert Time Field	時刻フィールドの挿入
+	Registered Sign	登録商標記号
+	Reset Character Formatting	文字書式のリセット
+	Reset Paragraph Formatting	段落書式のリセット
+	Trademark Sign	商標記号
 	Options	オプション
 	Orientation	印刷の向き
 	Outline	アウトライン
@@ -729,6 +747,7 @@
 	Single	一重線
 	Single Spacing	1 行
 	Size	サイズ
+	Size (pt):	サイズ (pt):
 	Size:	サイズ:
 	Small Caps	小型英大文字
 	Small caps	小型英大文字
@@ -1081,6 +1100,8 @@
 	Type at least one recipient.	宛先を1件以上入力してください。
 	Type the recipients, or load them from a file.	宛先を入力するか、ファイルから読み込みます。
 	Use an Existing List…	既存のリストを使用…
+	Choose the sheet that holds the recipients.	宛先が入っているシートを選んでください。
+	First row of data contains column headers	データの先頭行を列見出しとして使う
 	Interface theme:	表示テーマ:
 	Interface\nTheme	表示テーマ
 	Interface Theme	表示テーマ
@@ -1139,8 +1160,6 @@
 	Document Information	文書の情報
 	Double Closing Quote	二重引用符 (閉じ)
 	Double Opening Quote	二重引用符 (開き)
-	Ellipsis	省略記号
-	Em Dash	em ダッシュ
 	En Dash	en ダッシュ
 	Em Space	em スペース
 	En Space	en スペース
@@ -1304,12 +1323,99 @@
 	South	南
 	West	西
 	Total	合計
+
+# Table Layout › Draw (#308)
+	Draw\nTable	表の\n描画
 	Rotation	回転角度
 	Rotation:	回転:
 	Rotate Right 90°	右へ 90 度回転
 	Rotate Left 90°	左へ 90 度回転
 	Flip Vertical	上下反転
 	Flip Horizontal	左右反転
+	Move Paragraph Up	段落を上へ移動
+	Move Paragraph Down	段落を下へ移動
+	Promote	レベル上げ
+	Demote	レベル下げ
+	Go Back	前の編集位置に戻る
+	Toggle Unicode Character	Unicode 文字の切り替え
+	Toggle Field Codes	フィールドコードの表示切り替え
+	Edit Field Code	フィールドコードの編集
+	Unlink Fields	フィールドのリンク解除
+	Lock Fields	フィールドのロック
+	Unlock Fields	フィールドのロック解除
+	Next Field	次のフィールド
+	Previous Field	前のフィールド
+	Selected Fields	選択したフィールド
+	Edit Field…	フィールドの編集…
 	Formatted	書式変更
 	Interface size:	表示サイズ:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	リボン、メニュー、ダイアログを、システムの表示倍率に加えて拡大または縮小します。文書のズームは別に設定します。
+	In Line with Text	行内
+	Square	四角形
+	Through	内部
+	Top and Bottom	上下
+	Behind Text	背面
+	In Front of Text	前面
+	Wrap Text Sides	文字を配置する側
+	Both Sides	両側
+	Left Only	左側のみ
+	Right Only	右側のみ
+	Largest Only	広い側のみ
+	Customize Keyboard	キーボードのユーザー設定
+	Choose a command	コマンドを選択
+	Choose a shortcut	ショートカットを選択
+	All Commands	すべてのコマンド
+	Commands:	コマンド:
+	Keys for this command:	このコマンドのキー:
+	New shortcut:	新しいショートカット:
+	Now used by {command}	現在の割り当て: {command}
+	Not used by any command	どのコマンドにも割り当てられていません
+	Remove every custom shortcut and restore the built-in keys?	すべてのカスタム ショートカットを削除し、既定のキーに戻しますか?
+	Assign	割り当て
+	Reset All…	すべてリセット…
+	Press a key combination	キーの組み合わせを押してください
+	Customize	ユーザー設定
+	Keyboard shortcuts:	キーボード ショートカット:
+	Customize…	ユーザー設定…
+	Customize Ribbon	リボンのユーザー設定
+	Add to Quick Access Toolbar	クイック アクセス ツール バーに追加
+	Remove from Quick Access Toolbar	クイック アクセス ツール バーから削除
+	Customize the Ribbon…	リボンのユーザー設定…
+	Customize Quick Access Toolbar…	クイック アクセス ツール バーのユーザー設定…
+	More Commands…	その他のコマンド…
+	Ribbon	リボン
+	(Custom)	(ユーザー設定)
+	Remove every custom tab and group and show all tabs again?	すべてのユーザー設定タブとグループを削除し、すべてのタブを再表示しますか?
+	Put the default commands back on the Quick Access Toolbar?	クイック アクセス ツール バーを既定のコマンドに戻しますか?
+	Reset…	リセット…
+	Add >>	追加 >>
+	<< Remove	<< 削除
+	Pick a custom group (New Group makes one)	ユーザー設定グループを選んでください (新しいグループで作成できます)
+	Ribbon tabs	リボンのタブ
+	New Tab	新しいタブ
+	New Group	新しいグループ
+	Rename…	名前の変更…
+	Ribbon and Quick Access Toolbar:	リボンとクイック アクセス ツール バー:
+	Drawing Canvas	描画キャンバス
+	New Drawing Canvas	新しい描画キャンバス
+	Fit	サイズに合わせる
+	Expand	拡大
+	Scale Drawing	描画の拡大縮小
+	Canvas Member	キャンバス内の図形
+	Arrows	矢印
+	Communication	コミュニケーション
+	Office	オフィス
+	People	人物
+	Nature	自然
+	Weather	天気
+	Technology	テクノロジー
+	Transport	乗り物
+	Icon Color	アイコンの色
+	Search icons	アイコンを検索
+	No icons match your search.	検索に一致するアイコンはありません。
+	Recolor a one-color picture, such as an icon	アイコンなどの単色の画像の色を変更
+	Enclose Characters	囲い文字
+	Shrink text	文字を縮小
+	Enlarge symbol	記号を拡大
+	Enclosure	囲い
+	Circle	円

@@ -1,5 +1,6 @@
 //! Command implementations, one module per area. Each module exposes `specs()`.
 
+pub mod canvas;
 pub mod caret;
 pub mod citations;
 pub mod column;
@@ -7,6 +8,7 @@ pub mod design;
 pub mod draw;
 pub mod edit;
 pub mod equation;
+pub mod fields;
 pub mod file;
 pub mod fmt_revisions;
 pub mod format;
@@ -18,6 +20,7 @@ pub mod objects;
 pub mod page;
 pub mod para;
 pub mod paste;
+pub mod phonetic;
 pub mod references;
 pub mod review;
 pub mod speech;
@@ -43,6 +46,7 @@ pub fn registry() -> Registry {
     v.extend(edit::specs());
     v.extend(paste::specs());
     v.extend(format::specs());
+    v.extend(phonetic::specs());
     v.extend(para::specs());
     v.extend(lists::specs());
     v.extend(inspector::specs());
@@ -57,13 +61,26 @@ pub fn registry() -> Registry {
     v.extend(file::specs());
     v.extend(design::specs());
     v.extend(references::specs());
+    v.extend(fields::specs());
     v.extend(mailings::specs());
     v.extend(citations::specs());
     v.extend(objects::specs());
     v.extend(draw::specs());
+    v.extend(canvas::specs());
     v.extend(tools::specs());
     v.extend(speech::specs());
     Registry::new(v)
+}
+
+/// A shortcut that differs on macOS, where Word for Mac moves it (⌘Q quits, ⌘Space is
+/// Spotlight, ⌘⌥H hides other apps…): `mac` there, `other` everywhere else.
+pub const fn mac_or(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") { mac } else { other }
+}
+
+/// A shortcut with no macOS equivalent (Option+letter types the character there).
+pub const fn non_mac(k: &'static str) -> &'static str {
+    mac_or("", k)
 }
 
 /// Parse a position from JSON (`{"story":"body","path":[0],"off":3}` or `{"block":0,"off":3}`).

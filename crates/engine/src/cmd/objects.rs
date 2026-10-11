@@ -4,7 +4,7 @@
 //! caret). Picture adjustments re-encode the bitmap (originals are kept for Reset Picture).
 
 use serde_json::{Value, json};
-use wordcraft_doc::para::{Float, InlineObject, Wrap};
+use wordcraft_doc::para::{Float, InlineObject, Wrap, WrapText};
 use wordcraft_doc::props::Rgb;
 use wordcraft_doc::{Pos, StoryRef};
 use wordcraft_geom::Spin;
@@ -40,8 +40,16 @@ fn has_movable(s: &Session) -> Option<&'static str> {
 }
 fn has_group(s: &Session) -> Option<&'static str> {
     match selected(s) {
+        Some((_, o)) if o.is_canvas() => Some("a drawing canvas can't be ungrouped"),
         Some((_, InlineObject::Group { .. })) => None,
         _ => Some("select a group first"),
+    }
+}
+/// Shape Fill and Shape Outline: a shape, or a Drawing Canvas's background and border.
+fn has_shape_or_canvas(s: &Session) -> Option<&'static str> {
+    match selected(s) {
+        Some((_, o)) if o.is_canvas() => None,
+        _ => has_shape(s),
     }
 }
 fn can_group(s: &Session) -> Option<&'static str> {
@@ -105,6 +113,20 @@ pub fn specs() -> Vec<CommandSpec> {
             adjust(s, move |img| recolor(img, &mode, sat))
         })
         .params(r#"{"mode": "grayscale|sepia|washout|blackAndWhite|saturation|tint", "saturation"?: 0..400}"#)
+        .when(has_picture),
+        CommandSpec::new("picture.iconColor", "Icon Color", "Picture Format › Adjust", |s, v| {
+            let c = p::str(v, "color").and_then(Rgb::parse).ok_or_else(|| CmdError::Params("`color` (RRGGBB) is required".into()))?;
+            // One colour everywhere, transparency kept: recolours an inserted icon or other
+            // one-colour line art without redrawing it.
+            adjust(s, move |img| {
+                let mut rgba = img.to_rgba8();
+                for px in rgba.pixels_mut() {
+                    px.0 = [c.0, c.1, c.2, px.0[3]];
+                }
+                image::DynamicImage::ImageRgba8(rgba)
+            })
+        })
+        .params(r#"{"color": "RRGGBB"}"#)
         .when(has_picture),
         CommandSpec::new("picture.effects", "Artistic Effects", "Picture Format › Adjust", |s, v| {
             let e = p::str(v, "effect").unwrap_or("blur").to_string();
@@ -229,6 +251,13 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"wrap": "inline|square|tight|through|topAndBottom|behindText|inFrontOfText"}"#)
         .when(has_movable),
+        CommandSpec::new("arrange.wrapText", "Wrap Text Sides", "Layout › Arrange", |s, v| {
+            let side = p::str(v, "side").unwrap_or("bothSides");
+            let side = WrapText::from_ooxml(side).ok_or_else(|| CmdError::Params(format!("unknown side {side:?}")))?;
+            with_float(s, |f| f.wrap_text = side)
+        })
+        .params(r#"{"side": "bothSides|left|right|largest"}  (the sides of the selected Square, Tight or Through object text flows on; largest: the wider side, line by line)"#)
+        .when(has_movable),
         CommandSpec::new("arrange.position", "Position", "Layout › Arrange", |s, v| {
             let preset = p::str(v, "preset").unwrap_or("middleCenter").to_string();
             let (x, y) = (p::f32(v, "x"), p::f32(v, "y"));
@@ -308,25 +337,32 @@ pub fn specs() -> Vec<CommandSpec> {
             with_obj(s, |o| {
                 if let InlineObject::Shape { fill, .. } = o {
                     *fill = c;
+                } else if let Some(style) = super::canvas::style_mut(o) {
+                    style.fill = c;
                 }
             })
         })
-        .params(r#"{"color": "RRGGBB" | null}"#)
-        .when(has_shape),
+        .params(r#"{"color": "RRGGBB" | null}  (a selected drawing canvas: its background)"#)
+        .when(has_shape_or_canvas),
         CommandSpec::new("shape.outline", "Shape Outline", "Shape Format › Shape Styles", |s, v| {
             let c = p::str(v, "color").and_then(Rgb::parse);
-            let w = p::f32(v, "width");
+            let w = p::f32(v, "width").map(|w| w.clamp(0.0, 72.0));
             with_obj(s, |o| {
                 if let InlineObject::Shape { stroke, stroke_width, .. } = o {
                     *stroke = c;
                     if let Some(w) = w {
-                        *stroke_width = w.clamp(0.0, 72.0);
+                        *stroke_width = w;
+                    }
+                } else if let Some(style) = super::canvas::style_mut(o) {
+                    style.stroke = c;
+                    if let Some(w) = w {
+                        style.stroke_width = w;
                     }
                 }
             })
         })
-        .params(r#"{"color": "RRGGBB" | null, "width"?: pt}"#)
-        .when(has_shape),
+        .params(r#"{"color": "RRGGBB" | null, "width"?: pt}  (a selected drawing canvas: its border)"#)
+        .when(has_shape_or_canvas),
         CommandSpec::new("shape.effects", "Shape Effects", "Shape Format › Shape Styles", shape_effects)
             .params(
                 r#"{"shadow"?: preset|{"preset"?, "color"?: "RRGGBB", "transparency"?: %, "blur"?: pt, "distance"?: pt, "angle"?: deg}|null, "glow"?: pt|{"color"?: "RRGGBB", "size"?: pt, "transparency"?: %}|null, "softEdge"?: pt|null}  (shadow presets: offsetBottomRight, offsetBottom, offsetBottomLeft, offsetRight, offsetCenter, offsetLeft, offsetTopRight, offsetTop, offsetTopLeft; an omitted key is left as it is; applies to every shape in the selection)"#,
@@ -940,6 +976,9 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
         if matches!(obj, InlineObject::Graphic { .. }) {
             return Err(CmdError::Disabled(FROZEN.into()));
         }
+        if obj.is_canvas() {
+            return Err(CmdError::Disabled("a drawing canvas can't be grouped".into()));
+        }
         if !obj.is_floating() {
             return Err(CmdError::Disabled("objects in line with text can't be grouped: choose a text wrapping for them first".into()));
         }
@@ -984,9 +1023,9 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
             GroupChild { x: x - x0, y: y - y0, obj }
         })
         .collect();
-    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| *f).unwrap_or_default();
+    let mut float = found.first().and_then(|(o, _)| o.frame()).map(|(_, _, f)| f.clone()).unwrap_or_default();
     float.set_spin(Spin::default());
-    let grouped = InlineObject::Group { w, h, float, ch_w: w, ch_h: h, children };
+    let grouped = InlineObject::Group { w, h, float, ch_w: w, ch_h: h, children, canvas: None };
     // Take the members out, last first so the earlier positions hold, and put the group where
     // the first one was.
     let len = wordcraft_doc::para::OBJ.len_utf8();
@@ -1023,7 +1062,7 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
     };
     let obj = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned().ok_or_else(|| CmdError::Failed("object vanished".into()))?;
     let Some((w, h, float)) = obj.frame() else { return Err(CmdError::Failed("object vanished".into())) };
-    let float = *float;
+    let float = float.clone();
     // Each member where the group shows it: the group's turn moves its centre about the group's
     // centre and adds to its own turn.
     let members: Vec<InlineObject> = shown_members(&obj, [0.0, 0.0, w, h])
@@ -1035,7 +1074,7 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
             // Grown to its smallest size about its centre, so it stays centred where it was.
             let (x, y) = (x - (mw - cw) / 2.0, y - (mh - ch) / 2.0);
             if let Some(f) = c.float_mut() {
-                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), ..float };
+                *f = Float { x: (float.x + x).clamp(-MAX_OFFSET, MAX_OFFSET), y: (float.y + y).clamp(-MAX_OFFSET, MAX_OFFSET), ..float.clone() };
                 f.set_spin(spin);
             }
             c
@@ -1195,6 +1234,13 @@ mod tests {
         assert_eq!(obj_size(&selected(&s).unwrap().1), (100.0, 50.0));
         s.run("picture.reset", &json!({})).unwrap();
         s.run("arrange.wrap", &json!({"wrap": "square"})).unwrap();
+        // Text on one side only (#354), one undo step; an unknown side is refused.
+        let side = |s: &Session| selected(s).unwrap().1.frame().unwrap().2.wrap_text;
+        s.run("arrange.wrapText", &json!({"side": "largest"})).unwrap();
+        assert_eq!(side(&s), WrapText::Largest);
+        assert!(s.run("arrange.wrapText", &json!({"side": "middle"})).is_err());
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(side(&s), WrapText::BothSides);
         s.run("arrange.position", &json!({"preset": "topRight"})).unwrap();
         let l = s.run("arrange.selectionPane", &json!({})).unwrap();
         assert_eq!(l.as_array().unwrap().len(), 1);
