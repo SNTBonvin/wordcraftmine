@@ -1,6 +1,6 @@
 # WordCraft parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (all 12 bibliography styles, #383; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (ribbon and context-menu Paste read external clipboard text, #584; previously trivial: all 12 bibliography styles, #383; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 The authoritative assessment of how close WordCraft is to Microsoft Word. [`ROADMAP.md`](../ROADMAP.md)
 summarizes it; [`gaps.md`](gaps.md) itemizes every shortfall; the deep checklists are
@@ -56,7 +56,7 @@ full parity for the area.
 
 | Area | Weight | Parity | Was (2026-10-06) | Hours | Evidence and what's missing |
 |---|---|---|---|---|---|
-| Typing, selection, clipboard, undo, find/replace | 12 | 85% | 85% | 8–12 | Typing parity pinned by `tests_typing.rs` ([typing-parity.md](typing-parity.md)). Paste Special (#235), Advanced Find (#234) and Column Selection (#237) landed; Clipboard pane still missing (PR #264 open). |
+| Typing, selection, clipboard, undo, find/replace | 12 | 85% | 85% | 8–12 | Typing parity pinned by `tests_typing.rs` ([typing-parity.md](typing-parity.md)). Ribbon and context-menu Paste read external clipboard text (#584). Paste Special (#235), Advanced Find (#234) and Column Selection (#237) landed; Clipboard pane still missing (PR #264 open). |
 | Character and paragraph formatting | 11 | 82% | 85% | 8–12 | Nearly every property, Font/Paragraph dialogs, character border. Missing: Phonetic Guide, Enclose Characters, Asian Typography, kerning/ligature/stylistic-set options in the Font dialog's Advanced tab. |
 | Styles and themes | 8 | 74% | 75% | 8–12 | Gallery, pane, create/modify, style sets, themes. Style Inspector landed (#236). Missing: Manage Styles (#270 open), style separators, linked-style edge cases; Word ships 11 Quick Style sets plus dozens of themes, we ship our own smaller set. |
 | Lists | 6 | 78% | 75% | 5–8 | Bullets, numbering, multilevel, restart, `w:lvlOverride` levels (#134), Word's list AutoFormat and Enter/Backspace behaviour. Missing: Define New Multilevel List dialog depth, list styles, legal numbering edge cases. |
@@ -249,6 +249,7 @@ can be used without committing Word output.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Ribbon and context-menu Paste read external clipboard text (#584); no percentage change |
 | 2026-10-11 | trivial | References: all 12 of Word's bibliography styles (eight more: Harvard, ISO 690 ×2, Turabian, GB/T 7714, GOST ×2, SIST02) (#383); no percentage change |
 | 2026-10-11 | trivial | Mail merge fixes (#427–#430): SKIPIF drops matching records, NEXT advances later fields, IF previews, header/footer fields merge; Mailings row updated, no percentage change |
 | 2026-10-11 | trivial | Formatting revisions (#41): Review row updated; no percentage change |

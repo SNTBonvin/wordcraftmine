@@ -80,6 +80,9 @@ pub struct Services {
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
     pub clipboard_picture: Option<Box<dyn Fn() -> Option<paste_picture::ClipboardPicture>>>,
+    /// Desktop: text on the system clipboard when Paste is invoked from a UI control rather than
+    /// a keyboard paste event (which egui populates with `Event::Paste`).
+    pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
 }
 
 /// Files delivered asynchronously.
@@ -332,6 +335,23 @@ impl WordApp {
             self.dialog = Some(dialogs::Dialog::SaveChanges { name, then: id.to_string(), params, document: self.session.document_id() });
             return Ok(json!({"pending": "saveChanges"}));
         }
+        let params = if id == "edit.paste" && params.get("text").is_none() {
+            if let Some(text) = self.services.clipboard_text.as_ref().and_then(|read| read()).filter(|text| !text.is_empty()) {
+                // A file manager represents copied pictures as paths in the text clipboard too.
+                // Preserve the file-list handling used for keyboard paste.
+                if self.session.math.is_none()
+                    && paste_picture::names_picture_files(&text)
+                    && let Some(r) = paste_picture::paste(self)
+                {
+                    return r;
+                }
+                json!({"text": text})
+            } else {
+                params
+            }
+        } else {
+            params
+        };
         // Paste without system clipboard text: a picture there is newer than our own copy (copying
         // here replaces it with text), so it wins (#45).
         if id == "edit.paste"
@@ -1216,6 +1236,15 @@ mod tests {
 
     fn app() -> WordApp {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
+    }
+
+    /// Ribbon and context-menu Paste don't receive egui's keyboard-generated `Event::Paste`.
+    #[test]
+    fn paste_control_reads_text_from_the_system_clipboard() {
+        let services = Services { clipboard_text: Some(Box::new(|| Some("outside text".into()))), ..Default::default() };
+        let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), services);
+        app.run("edit.paste", json!({})).unwrap();
+        assert_eq!(app.session.doc.plain_text(wordcraft_doc::StoryRef::Body), "outside text");
     }
 
     /// Table Layout › Properties (#44) opens the dialog from the ribbon; OK sends only what

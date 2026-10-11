@@ -127,8 +127,15 @@ fn services(file_dialog: file_dialogs::Hook) -> Services {
         file_dialog: Some(file_dialog),
         print: Some(print::hook()),
         clipboard_picture: Some(Box::new(clipboard_picture)),
+        clipboard_text: Some(Box::new(clipboard_text)),
         ..Default::default()
     }
+}
+
+/// Text on the system clipboard for Paste controls that don't arrive as egui paste events.
+fn clipboard_text() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| log::warn!("clipboard: {e}")).ok()?;
+    clipboard.get_text().ok().filter(|text| !text.is_empty())
 }
 
 /// The picture on the system clipboard (#45): copied files, else image pixels. The UI checks the
