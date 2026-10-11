@@ -35,11 +35,14 @@ pub fn key_name(k: Key) -> Option<&'static str> {
         Key::Num5 => "5",
         Key::Num8 => "8",
         Key::Num9 => "9",
+        Key::F2 => "F2",
         Key::F3 => "F3",
+        Key::F4 => "F4",
         Key::F5 => "F5",
         Key::F7 => "F7",
         Key::F8 => "F8",
         Key::F9 => "F9",
+        Key::F11 => "F11",
         Key::F12 => "F12",
         Key::A => "A",
         Key::B => "B",
@@ -57,6 +60,7 @@ pub fn key_name(k: Key) -> Option<&'static str> {
         Key::N => "N",
         Key::O => "O",
         Key::P => "P",
+        Key::Q => "Q",
         Key::R => "R",
         Key::S => "S",
         Key::T => "T",
@@ -148,6 +152,12 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     }
     let events = ctx.input(|i| i.events.clone());
     for e in events {
+        // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
+        match &e {
+            egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,
+            egui::Event::Text(_) if std::mem::take(&mut app.canvas.swallow_text) => continue,
+            _ => {}
+        }
         if let egui::Event::Paste(t) = &e {
             app.canvas.pasted = true;
             // Copied picture files arrive as their paths: insert the pictures (#45).
@@ -171,7 +181,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
             match &e {
                 egui::Event::Text(t) => {
                     let m = ctx.input(|i| i.modifiers);
-                    if !(m.command || (m.ctrl && !cfg!(target_os = "macos"))) && !t.is_empty() && t.chars().all(|c| !c.is_control()) {
+                    if !(m.command || t.is_empty() || (m.ctrl && !cfg!(target_os = "macos"))) && t.chars().all(|c| !c.is_control()) {
                         let _ = app.run("equation.type", json!({"text": t}));
                     }
                     continue;
@@ -260,7 +270,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("insert.closeHeader", json!({}));
                     continue;
                 }
-                dispatch(app, key, modifiers);
+                app.canvas.swallow_text = dispatch(app, key, modifiers) && modifiers.alt;
             }
             _ => {}
         }
@@ -275,7 +285,7 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     let events = ctx.input(|i| i.events.clone());
     for e in events {
         if let egui::Event::Key { key, pressed: true, modifiers, .. } = e
-            && (modifiers.command || matches!(key, Key::F3 | Key::F5 | Key::F7 | Key::F9 | Key::F12))
+            && (modifiers.command || matches!(key, Key::F3 | Key::F5 | Key::F7 | Key::F9 | Key::F11 | Key::F12))
         {
             dispatch(app, key, modifiers);
         }
