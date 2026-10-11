@@ -1898,6 +1898,19 @@ preview	Title	Пример
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Помечено записей: {n}.
+	Lasso Select	Лассо
+	Move Selected Ink	Переместить выделенные штрихи
+	Delete Selected Ink	Удалить выделенные штрихи
+	Recolor Selected Ink	Перекрасить выделенные штрихи
+	Add Pen	Добавить перо
+	Remove Pen	Удалить перо
+	Ink to Shape	Рукописный ввод в фигуры
+	Convert to Shapes	Преобразовать в фигуры
+	Ink Replay	Воспроизведение рукописного ввода
+	Add\nPen	Добавить\nперо
+	Rewind	Назад
+	Forward	Вперёд
+	Stroke {n} of {total}	Штрих {n} из {total}
 	Drawing Canvas	Полотно для рисования
 	New Drawing Canvas	Новое полотно для рисования
 	Fit	По размеру

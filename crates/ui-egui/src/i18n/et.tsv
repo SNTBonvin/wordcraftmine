@@ -1561,3 +1561,16 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Märgitud kirjeid: {n}.
+	Lasso Select	Lassoga valimine
+	Move Selected Ink	Teisalda valitud tint
+	Delete Selected Ink	Kustuta valitud tint
+	Recolor Selected Ink	Muuda valitud tindi värvi
+	Add Pen	Lisa pliiats
+	Remove Pen	Eemalda pliiats
+	Ink to Shape	Käsikiri kujundiks
+	Convert to Shapes	Teisenda kujunditeks
+	Ink Replay	Esita käsikiri
+	Add\nPen	Lisa\npliiats
+	Rewind	Keri algusesse
+	Forward	Edasi
+	Stroke {n} of {total}	Joon {n}/{total}

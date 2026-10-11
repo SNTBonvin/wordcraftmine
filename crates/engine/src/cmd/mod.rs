@@ -13,6 +13,7 @@ pub mod file;
 pub mod fmt_revisions;
 pub mod format;
 pub mod index;
+pub mod ink_shape;
 pub mod insert;
 pub mod inspector;
 pub mod lists;
