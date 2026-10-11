@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (one drop-down marker, #659; previously minor: status bar language follows the caret and sets the proofing language; Review › Language is a menu; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (menu buttons grey out, #658; previously trivial: one drop-down marker, #659; previously minor: status bar language follows the caret and sets the proofing language; Review › Language is a menu; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -68,6 +68,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Text field and combo outlines reach 3:1 against their fill and surroundings in both themes (light #8A8A8A, dark #7A7A7A); a test pins the ratios (#657) |
 | 2026-10-11 | trivial | Font dialog: Asian text font and Latin text font boxes, each with its own list and type-to-find, shown for a Chinese/Japanese interface or East Asian text in the selection; OK sets only the fonts changed; `format.font {"eastAsia"}` (#505) |
 | 2026-10-11 | trivial | References › Table of Authorities: Insert Table of Authorities is labelled and joined by Update Table (`references.updateAuthorities`), as in the Index group (#661) |
+| 2026-10-11 | trivial | Menu buttons (Header, Page Number, Breaks, Wrap Text, table Select/Delete/AutoFit…) grey out and don't open while the command their menu is about is disabled, like the other ribbon buttons (#658) |
 | 2026-10-11 | trivial | One drop-down marker everywhere: large ribbon buttons, Equation and the Editing/Reviewing button draw the `dropdown` icon after their label, like split and menu buttons, instead of a text glyph (#659) |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
 | 2026-10-11 | trivial | Customize Keyboard dialog (Tools › Customize Keyboard, File › Options › Keyboard shortcuts): custom keys override built-ins and persist (#368) |
