@@ -77,6 +77,14 @@ pub struct ViewState {
     pub read_width: f32,
     #[serde(skip, default = "default_read_height")]
     pub read_height: f32,
+    /// Reader-only layout controls; they are neither document formatting nor saved UI prefs.
+    /// `None` chooses responsive column width and keeps the document's line spacing.
+    #[serde(skip)]
+    pub read_column_width: Option<f32>,
+    #[serde(skip, default = "default_read_zoom")]
+    pub read_zoom: f32,
+    #[serde(skip)]
+    pub read_line_spacing: Option<f32>,
     pub dark_mode: bool,
     pub show_markup: bool,
     pub track_changes_pane: bool,
@@ -105,6 +113,10 @@ fn default_read_height() -> f32 {
     500.0
 }
 
+fn default_read_zoom() -> f32 {
+    1.0
+}
+
 impl Default for ViewState {
     fn default() -> Self {
         ViewState {
@@ -126,6 +138,9 @@ impl Default for ViewState {
             web_width: 800.0,
             read_width: default_read_width(),
             read_height: default_read_height(),
+            read_column_width: None,
+            read_zoom: default_read_zoom(),
+            read_line_spacing: None,
             dark_mode: false,
             show_markup: true,
             track_changes_pane: false,
@@ -243,7 +258,7 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    layout: Option<(u64, f32, f32, ViewMode, Arc<DocLayout>, bool)>,
+    layout: Option<(u64, f32, f32, ViewMode, Option<u32>, Arc<DocLayout>, bool)>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -453,11 +468,13 @@ impl Session {
         let mode = if self.view.read_mode { ViewMode::Read } else { self.view.mode };
         let width = if self.view.read_mode { self.view.read_width } else { self.view.web_width };
         let height = if self.view.read_mode { self.view.read_height } else { 0.0 };
-        if let Some((r, w, h, m, l, pf)) = &self.layout
+        let spacing = if self.view.read_mode { self.view.read_line_spacing.map(f32::to_bits) } else { None };
+        if let Some((r, w, h, m, sp, l, pf)) = &self.layout
             && *r == self.rev
             && (*w == width || mode == ViewMode::Print)
             && *h == height
             && *m == mode
+            && *sp == spacing
             && *pf == self.view.proofing
         {
             return l.clone();
@@ -466,13 +483,14 @@ impl Session {
             view: mode,
             web_width: width,
             read_height: height,
+            read_line_spacing: spacing.map(f32::from_bits),
             show_hidden: self.view.marks,
             hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
             proofing: self.view.proofing,
             field_codes: self.view.field_codes,
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, width, height, mode, l.clone(), self.view.proofing));
+        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
@@ -481,6 +499,7 @@ impl Session {
             view: ViewMode::Print,
             web_width: 0.0,
             read_height: 0.0,
+            read_line_spacing: None,
             show_hidden: false,
             hide_deleted: false,
             proofing: false,

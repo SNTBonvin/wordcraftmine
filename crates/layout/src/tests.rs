@@ -62,6 +62,8 @@ fn reading_layout_reflows_into_viewport_height_pages_without_changing_print_layo
     // Window height changes page breaks, not the text, and a malformed dimension stays bounded.
     let short = layout(&d, &mut LayoutCache::new(), &LayoutOptions { read_height: 260.0, ..opts.clone() });
     assert!(short.pages.len() > read.pages.len());
+    let spaced = layout(&d, &mut LayoutCache::new(), &LayoutOptions { read_line_spacing: Some(2.0), ..opts.clone() });
+    assert!(spaced.pages.len() > read.pages.len(), "reader-only line spacing repaginates text");
     let invalid = layout(&d, &mut LayoutCache::new(), &LayoutOptions { web_width: f32::NAN, read_height: f32::INFINITY, ..opts });
     assert!(invalid.pages.iter().all(|p| p.w.is_finite() && p.h.is_finite()));
 }
@@ -887,6 +889,7 @@ fn web_view_is_one_page() {
             view: ViewMode::Web,
             web_width: 800.0,
             read_height: 0.0,
+            read_line_spacing: None,
             show_hidden: false,
             hide_deleted: false,
             proofing: false,

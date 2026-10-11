@@ -55,6 +55,8 @@ pub struct LayoutOptions {
     pub web_width: f32,
     /// Page height in Reading Mode (document points).
     pub read_height: f32,
+    /// Transient read-only line-spacing override; ignored by print/export views.
+    pub read_line_spacing: Option<f32>,
     pub show_hidden: bool,
     /// Final text ("No Markup"): tracked deletions take no space and draw nothing.
     pub hide_deleted: bool,
@@ -317,6 +319,7 @@ struct Key {
     notes: u64,
     excl: u64,
     eq: u32,
+    read_spacing: Option<u32>,
 }
 
 /// Memoised paragraph layouts.
@@ -436,6 +439,7 @@ impl Ctx<'_> {
             proofing: false,
             exclusions: &[],
             eq_number: 0,
+            read_line_spacing: None,
         };
         let pl = Arc::new(para::layout_para(&p, &env));
         self.numbers.insert(n, pl.clone());
@@ -480,6 +484,7 @@ impl Ctx<'_> {
             notes: if p.objects.iter().any(|o| matches!(o, InlineObject::NoteRef { .. })) { self.notes_hash } else { 0 },
             excl: if exclusions.is_empty() { 0 } else { hash_of(&format!("{exclusions:?}")) },
             eq: if eq_here > 0 { eq_number } else { 0 },
+            read_spacing: if self.opts.view == ViewMode::Read { self.opts.read_line_spacing.map(f32::to_bits) } else { None },
         };
         self.cache.used.insert(key.clone());
         if let Some(pl) = self.cache.paras.get(&key) {
@@ -499,6 +504,7 @@ impl Ctx<'_> {
             proofing: self.opts.proofing,
             exclusions,
             eq_number,
+            read_line_spacing: if self.opts.view == ViewMode::Read { self.opts.read_line_spacing } else { None },
         };
         let pl = Arc::new(para::layout_para(p, &env));
         self.cache.paras.insert(key, pl.clone());
@@ -2386,6 +2392,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
                 proofing: false,
                 exclusions: &[],
                 eq_number: ctx.eq_count,
+                read_line_spacing: if ctx.opts.view == ViewMode::Read { ctx.opts.read_line_spacing } else { None },
             };
             let _ = rp;
             let pl = para::layout_para(p, &env);

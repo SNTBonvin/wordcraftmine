@@ -322,6 +322,7 @@ pub struct ParaEnv<'a> {
     pub exclusions: &'a [Exclusion],
     /// Automatic equation numbers used before this paragraph.
     pub eq_number: u32,
+    pub read_line_spacing: Option<f32>,
 }
 
 /// An area text wraps around.
@@ -846,6 +847,9 @@ pub(crate) fn left_out(rc: &ResolvedChar, show_hidden: bool, hide_deleted: bool)
 pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let doc = env.doc;
     let mut rp = doc.styles.resolve_para_in(&p.props, env.table.map(|t| &t.para));
+    if let Some(spacing) = env.read_line_spacing.filter(|s| s.is_finite() && (1.0..=2.0).contains(s)) {
+        rp.line_spacing = wordcraft_doc::props::LineSpacing::Multiple(spacing);
+    }
     // List level indents apply unless the paragraph sets its own.
     if let Some((_, lvl)) = &env.label {
         if p.props.indent_left.is_none() {
