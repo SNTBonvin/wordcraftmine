@@ -1173,6 +1173,8 @@
 	West	Lääs
 	Total	Kokku
 
+# Table Layout › Draw (#308)
+	Draw\nTable	Joonista\ntabel
 # Define New Multilevel List and Track Changes Options (#342)
 	(no style)	(stiil puudub)
 	Add tab stop at:	Lisa tabelduskoht kohal:
@@ -1212,7 +1214,6 @@
 	Text indent at:	Teksti taane:
 	Track Changes Options	Muudatuste jälitamise suvandid
 	Track formatting	Jälita vormingut
-
 # Rotation and flips (#332)
 	Flip Horizontal	Peegelda horisontaalselt
 	Flip Vertical	Peegelda vertikaalselt
@@ -1220,7 +1221,6 @@
 	Rotate Right 90°	Pööra paremale 90°
 	Rotation	Pööramine
 	Rotation:	Pööre:
-
 # Tabs, Borders and Shading (#327); Columns, Symbol and Field (#335)
 	Tab stop position:	Tabelduskoha asukoht:
 	Default tab stops:	Vaikimisi tabelduskohad:
@@ -1323,6 +1323,29 @@
 	Type the field's name and its switches, for example PAGE \\* roman.	Sisesta välja nimi ja lülitid, näiteks PAGE \\* roman.
 	Width and spacing	Laius ja vahe
 	from Unicode (hex)	Unicode (kuueteistkümnend)
+	Move Paragraph Up	Teisalda lõik üles
+	Move Paragraph Down	Teisalda lõik alla
+	Promote	Tõsta taset
+	Demote	Langeta taset
+	Go Back	Mine tagasi
+	Toggle Unicode Character	Lülita Unicode-märk
+	Toggle Field Codes	Lülita väljakoodid sisse/välja
+	Edit Field Code	Redigeeri väljakoodi
+	Unlink Fields	Eemalda väljade link
+	Lock Fields	Lukusta väljad
+	Unlock Fields	Ava väljade lukk
+	Next Field	Järgmine väli
+	Previous Field	Eelmine väli
+	Selected Fields	Valitud väljad
+	Edit Field…	Redigeeri välja…
+	Copyright Sign	Autoriõiguse märk
+	Insert Date Field	Lisa kuupäevaväli
+	Insert Page Field	Lisa leheküljeväli
+	Insert Time Field	Lisa kellaajaväli
+	Registered Sign	Registreeritud kaubamärgi märk
+	Reset Character Formatting	Lähtesta märgivorming
+	Reset Paragraph Formatting	Lähtesta lõiguvorming
+	Trademark Sign	Kaubamärgi märk
 	Formatted	Vormindatud
 	Interface size:	Kasutajaliidese suurus:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Muudab menüülindi, menüüd ja dialoogid suuremaks või väiksemaks, lisaks süsteemi ekraani skaleerimisele. Dokumendi suum on eraldi.
