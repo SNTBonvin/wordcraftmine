@@ -234,6 +234,7 @@ fn many_hidden_float_anchors_lay_out_in_linear_time() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         let obj = wordcraft_doc::para::OBJ.to_string();
         let mut p = wordcraft_doc::Paragraph::with_text("Text ", Default::default());
@@ -399,7 +400,7 @@ fn right_tab_aligns_text_end() {
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");
     let id = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
-    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 0), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
+    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 5), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
     let l = lay(&d);
     let labels: Vec<String> = l.pages[0]
         .items
@@ -1061,6 +1062,7 @@ fn text_wraps_around_square_float() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1100,6 +1102,7 @@ fn deleted_float_leaves_no_wrap_area_without_markup() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1153,6 +1156,7 @@ fn hidden_float_leaves_no_wrap_area_when_hidden_text_is_not_shown() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1207,6 +1211,7 @@ fn line_numbers_borders_text_boxes() {
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(2, 5), tb, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1546,6 +1551,7 @@ fn text_box_at(d: &mut Document, pos: &Pos, text: &str, w: f32, h: f32, float: w
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(pos, shape, &Default::default()).unwrap();
     id
@@ -1618,6 +1624,7 @@ fn presses_grab_pictures_anywhere_and_text_boxes_by_their_border() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1839,6 +1846,7 @@ fn box_fan_out(levels: usize, fan: usize) -> Document {
         story: Some(story),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     for (k, id) in ids.iter().enumerate() {
         let next = *ids.get(k + 1).unwrap_or(id);
@@ -1913,6 +1921,7 @@ fn picture(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2062,6 +2071,7 @@ fn rect_shape(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2232,6 +2242,7 @@ fn floating_header_text_box_leaves_the_body_at_the_top_margin() {
                 story: Some(story),
                 freeform: None,
                 effects: Default::default(),
+                extra: Default::default(),
             };
             anchor.insert_object(0, tb, &Default::default()).unwrap();
         }
@@ -2625,7 +2636,7 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         stroke: Some(Rgb::BLACK),
         stroke_width: 4.0,
     }];
-    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None };
+    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None };
     let obj = InlineObject::Graphic { w: 1000.0, h: 500.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
     let mut d = Document::from_text("Chart");
     d.insert_object(&Pos::body(0, 0), obj, &Default::default()).unwrap();
@@ -2842,6 +2853,7 @@ fn rotated_float_wraps_around_its_rotated_bounds() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
         let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
@@ -2886,6 +2898,7 @@ fn rotated_group_turns_its_members_and_their_shadows() {
         story: None,
         freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { angle: 0.0, rot_with_shape, ..Default::default() }), ..Default::default() },
+        extra: Default::default(),
     };
     let float =
         Float { wrap: Wrap::InFrontOfText, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 100.0, y: 100.0, rot: 90.0, ..Default::default() };
@@ -3045,6 +3058,7 @@ fn wrapped_shape_doc(kind: wordcraft_doc::para::ShapeKind, w: f32, h: f32, float
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     d
@@ -3309,6 +3323,7 @@ fn rotated_canvas_draws_its_clipped_members_inside_the_turn() {
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     let canvas = |float: Float| InlineObject::Group {
         w: 200.0,
@@ -3380,6 +3395,26 @@ fn rotated_canvas_draws_its_clipped_members_inside_the_turn() {
             assert!(l.object_at(0, cx, cy - 80.0, 0.0).is_some());
         }
     }
+}
+
+#[test]
+fn mirror_indents_swap_sides_on_even_pages() {
+    // #512: with mirrored indents the left indent is the inside one, on the right of an even page.
+    let mut d = Document::from_text("odd page\neven page");
+    let last = Pos::body(1, 0);
+    d.format_paragraphs(&Pos::body(0, 0), &last, &|p| {
+        p.indent_left = Some(72.0);
+        p.mirror_indents = Some(true);
+    })
+    .unwrap();
+    d.format_paragraphs(&last, &last, &|p| p.page_break_before = Some(true)).unwrap();
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2);
+    let odd = l.caret(&Pos::body(0, 0)).unwrap();
+    let even = l.caret(&last).unwrap();
+    assert_eq!(even.page, 1);
+    assert!((odd.x - 144.0).abs() < 0.5, "odd page: inside indent on the left, {odd:?}");
+    assert!((even.x - 72.0).abs() < 0.5, "even page: the left side has the outside indent (0), {even:?}");
 }
 
 /// Ten short paragraphs in a two-column section (`widths`: unequal columns), then one paragraph
@@ -3526,4 +3561,58 @@ fn endnotes_at_section_end_and_footnotes_below_text() {
     let below = top(&d);
     let text = lay(&d).caret(&Pos::body(1, 0)).unwrap();
     assert!(below > text.top + text.height && below < bottom - 100.0, "{below} {bottom} {text:?}");
+}
+
+/// #451: page totals in the body show the document's page count (the stale cached result is
+/// ignored), on every page, like the same fields in the footer.
+#[test]
+fn body_page_totals_count_every_page() {
+    let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
+    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: "9".into(), locked: false, code: false };
+    for i in 0..3 {
+        let p = d.para_mut(StoryRef::Body, &Path::top(i)).unwrap();
+        p.props.page_break_before = Some(i > 0);
+        let n = p.len();
+        p.insert_object(n, field("NUMPAGES"), &Default::default()).unwrap();
+        let n = p.len();
+        p.insert_object(n, field("SECTIONPAGES"), &Default::default()).unwrap();
+    }
+    let mut fp = wordcraft_doc::Paragraph::new();
+    fp.insert_object(0, field("NUMPAGES"), &Default::default()).unwrap();
+    let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(fp)]);
+    d.last_section.footers.default = Some(id);
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 3);
+    let shown = |items: &[Placed]| -> Vec<String> {
+        items
+            .iter()
+            .flat_map(|it| if let Placed::Lines { para, .. } = it { para.shown.iter().map(|s| s.1.clone()).collect() } else { vec![] })
+            .collect()
+    };
+    for (i, p) in l.pages.iter().enumerate() {
+        assert_eq!(shown(&p.items), ["3", "3"], "body of page {}", i + 1);
+        assert_eq!(shown(&p.footer), ["3"], "footer of page {}", i + 1);
+    }
+    // One page: one pass, total 1.
+    let mut d1 = Document::from_text("Only");
+    let p = d1.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    p.insert_object(4, field("NUMPAGES"), &Default::default()).unwrap();
+    assert_eq!(shown(&lay(&d1).pages[0].items), ["1"]);
+}
+
+/// #450: a footnote referenced in a table cell is placed at the bottom of its page, like one in
+/// a body paragraph.
+#[test]
+fn table_cell_footnotes_are_placed() {
+    let mut d = Document::from_text("After the table.");
+    d.insert_block(StoryRef::Body, &Path::top(0), wordcraft_doc::Block::Table(wordcraft_doc::Table::new(1, 1, 300.0))).unwrap();
+    let cell = Pos { story: StoryRef::Body, path: Path(vec![0, 0, 0, 0]), off: 0 };
+    d.para_mut(StoryRef::Body, &cell.path).unwrap().insert_text(0, "Table reference", &Default::default()).unwrap();
+    let id = footnote(&mut d, &Pos { off: "Table reference".len(), ..cell }, "Table note payload.");
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 1);
+    let c = l.caret(&d.start_of(StoryRef::Part(id))).expect("the cell's footnote is placed");
+    assert_eq!(c.page, 0);
+    let body = l.caret(&Pos::body(1, 0)).unwrap();
+    assert!(c.top > body.top + 100.0, "at the page bottom: {c:?} {body:?}");
 }

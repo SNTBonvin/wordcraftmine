@@ -1431,6 +1431,39 @@
 	Lines per page:	Sayfa başına satır:
 	Moved from	Taşındı (kaynak)
 	Moved to	Taşındı (hedef)
+	Developer	Geliştirici
+	Controls	Denetimler
+	Rich Text Content Control	Zengin Metin İçerik Denetimi
+	Plain Text Content Control	Düz Metin İçerik Denetimi
+	Picture Content Control	Resim İçerik Denetimi
+	Building Block Gallery Content Control	Yapı Bloğu Galerisi İçerik Denetimi
+	Check Box Content Control	Onay Kutusu İçerik Denetimi
+	Combo Box Content Control	Açılan Kutu İçerik Denetimi
+	Drop-Down List Content Control	Açılır Liste İçerik Denetimi
+	Date Picker Content Control	Tarih Seçici İçerik Denetimi
+	Repeating Section Content Control	Yinelenen Bölüm İçerik Denetimi
+	Design Mode	Tasarım Modu
+	Content Control at Selection	Seçimdeki İçerik Denetimi
+	Toggle Check Box	Onay Kutusunu Değiştir
+	Choose List Item	Liste Öğesi Seç
+	Set Date	Tarihi Ayarla
+	Remove Content Control	İçerik Denetimini Kaldır
+	Content Control Properties	İçerik Denetimi Özellikleri
+	Title	Başlık
+	Tag	Etiket
+	Placeholder text	Yer tutucu metin
+	Can't be deleted	Silinemez
+	Contents can't be edited	İçerik düzenlenemez
+	Remove the control once edited	Düzenlendikten sonra denetimi kaldır
+	Allow line breaks	Satır sonlarına izin ver
+	Date format	Tarih biçimi
+	Checked symbol	Seçili simge
+	Unchecked symbol	Seçili olmayan simge
+	List entries	Liste girdileri
+	Display text	Görünen metin
+	Value	Değer
+	Today	Bugün
+	Put the caret in a content control first.	Önce imleci bir içerik denetiminin içine koyun.
 	Right-to-Left Table	Sağdan Sola Tablo
 	Right-to-Left Section	Sağdan Sola Bölüm
 	Table direction:	Tablo yönü:
@@ -1522,9 +1555,7 @@
 	Tab leader:	Sekme öncülü:
 	Table of Contents Options	İçindekiler Tablosu Seçenekleri
 	Table of Contents Styles	İçindekiler Tablosu Stilleri
-	Tag	Etiket
 	This page	Bu sayfa
-	Title	Başlık
 	Type:	Tür:
 	URL	URL
 	Volume	Cilt
@@ -1566,6 +1597,109 @@
 	Search icons	Simgelerde ara
 	No icons match your search.	Aramanızla eşleşen simge yok.
 	Recolor a one-color picture, such as an icon	Simge gibi tek renkli bir resmi yeniden renklendir
+	1. Formatting restrictions	1. Biçimlendirme kısıtlamaları
+	2. Editing restrictions	2. Düzenleme kısıtlamaları
+	3. Start enforcement	3. Korumayı başlat
+	<< Less	<< Daha az
+	Another file	Başka bir dosya
+	Apply as you type	Yazarken uygula
+	AutoCorrect	Otomatik Düzelt
+	AutoFormat As You Type	Yazarken Otomatik Biçimlendir
+	Automatic bulleted lists	Otomatik madde işaretli listeler
+	Automatic numbered lists	Otomatik numaralı listeler
+	Border lines	Kenarlık çizgileri
+	Capitalize first letter of sentences	Cümlelerin ilk harfini büyük yap
+	Capitalize first letter of table cells	Tablo hücrelerinin ilk harfini büyük yap
+	Capitalize names of days	Gün adlarını büyük harfle başlat
+	Case changes	Büyük/küçük harf değişiklikleri
+	Character level	Karakter düzeyi
+	Checked styles are allowed:	İşaretli stillere izin verilir:
+	Combine Documents	Belgeleri Birleştir
+	Compare Documents	Belgeleri Karşılaştır
+	Compared: {changes} changes	Karşılaştırıldı: {changes} değişiklik
+	Comparing with another file needs the desktop app.	Başka bir dosyayla karşılaştırma için masaüstü uygulaması gerekir.
+	Comparison settings	Karşılaştırma ayarları
+	Don't capitalize after:	Şundan sonra büyük harf yapma:
+	Editing in this document is restricted.	Bu belgede düzenleme kısıtlanmıştır.
+	Every change is recorded as a tracked change.	Her değişiklik izlenen değişiklik olarak kaydedilir.
+	Everyone	Herkes
+	Exceptions (optional)	Özel durumlar (isteğe bağlı)
+	Exceptions…	Özel durumlar…
+	Fields	Alanlar
+	Filling in forms	Form doldurma
+	Find Next Editable Region	Sonraki Düzenlenebilir Bölgeyi Bul
+	Footnotes and endnotes	Dipnotlar ve sonnotlar
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	Biçimlendirme, harf büyüklüğü, boşluklar ve tablolar karşılaştırılır; diğer ayarlar daha sonra için saklanır.
+	Fractions (1/2) as fraction characters (½)	Kesirleri (1/2) kesir karakteri (½) olarak yaz
+	Headers and footers	Üst bilgiler ve alt bilgiler
+	Hyphens (--) as dashes (—)	Kısa çizgileri (--) uzun çizgi (—) olarak yaz
+	In equations, typing a name after a backslash replaces it with its symbol.	Denklemlerde ters eğik çizgiden sonra yazılan ad, simgesiyle değiştirilir.
+	Internet addresses as links	İnternet adreslerini bağlantı yap
+	Label changes with:	Değişiklikleri şununla etiketle:
+	Limit formatting to a selection of styles	Biçimlendirmeyi seçili stillerle sınırla
+	Math AutoCorrect	Matematik Otomatik Düzelt
+	More >>	Daha fazla >>
+	Moves	Taşımalar
+	New document	Yeni belge
+	No changes (read only)	Değişiklik yok (salt okunur)
+	Only allow this kind of editing:	Yalnızca bu tür düzenlemeye izin ver:
+	Only comments can be added, except in regions marked editable.	Düzenlenebilir işaretli bölgeler dışında yalnızca yorum eklenebilir.
+	Only form fields can be filled in.	Yalnızca form alanları doldurulabilir.
+	Only the allowed styles can be applied.	Yalnızca izin verilen stiller uygulanabilir.
+	Ordinals (1st) as superscript	Sıra sayılarını (1st) üst simge yap
+	Original document	Özgün belge
+	This password type isn't supported.	Bu parola türü desteklenmiyor.
+	Replace as you type	Yazarken değiştir
+	Replace text as you type	Yazarken metni değiştir
+	Replace:	Değiştirilecek:
+	Revised document	Düzeltilmiş belge
+	Select text, then tick who can still edit it.	Metni seçin, sonra kimlerin düzenleyebileceğini işaretleyin.
+	Settings…	Ayarlar…
+	Show changes at:	Değişiklikleri göster:
+	Show changes in:	Değişiklikleri şurada göster:
+	Smart quotes instead of straight quotes	Düz tırnak yerine akıllı tırnak
+	Start Enforcing Protection	Korumayı Başlat
+	Stop Protection	Korumayı Durdur
+	Text boxes	Metin kutuları
+	The document is read only, except for regions marked editable.	Düzenlenebilir işaretli bölgeler dışında belge salt okunurdur.
+	The password is optional; without it anyone can stop the protection.	Parola isteğe bağlıdır; olmadan herkes korumayı durdurabilir.
+	This document	Bu belge
+	Tracked changes	İzlenen değişiklikler
+	Type the password to stop the protection.	Korumayı durdurmak için parolayı yazın.
+	White space	Boşluk
+	With:	Yeni:
+	Word level	Sözcük düzeyi
+	Change Chart Type	Grafik Türünü Değiştir
+	Chart Design	Grafik Tasarımı
+	Type	Tür
+	Edit Data	Verileri Düzenle
+	Chart Title	Grafik Başlığı
+	Chart Layouts	Grafik Düzenleri
+	Add Chart Element	Grafik Öğesi Ekle
+	Legend	Gösterge
+	Data Labels	Veri Etiketleri
+	Above Chart	Grafiğin Üstünde
+	Insert Chart	Grafik Ekle
+	Clustered Column	Kümelenmiş Sütun
+	Stacked Column	Yığılmış Sütun
+	Clustered Bar	Kümelenmiş Çubuk
+	Stacked Bar	Yığılmış Çubuk
+	Area	Alan
+	Pie	Pasta
+	Doughnut	Halka
+	Scatter	Dağılım
+	“{text}” ({row}, {series}) isn't a number.	“{text}” ({row}, {series}) bir sayı değil.
+	Category {n}	Kategori {n}
+	Series {n}	Seri {n}
+	Type the categories down the side and a column of values per series.	Kategorileri yan tarafa, her seri için bir değer sütunu yazın.
+	Categories	Kategoriler
+	Series name	Seri adı
+	Remove series	Seriyi kaldır
+	Remove row	Satırı kaldır
+	Add Row	Satır Ekle
+	Add Series	Seri Ekle
+	Edit\nData	Verileri\nDüzenle
+	Change\nChart Type	Grafik Türünü\nDeğiştir
 	Align Text	Metni Hizala
 	Create Link	Bağlantı Oluştur
 	Break Link	Bağlantıyı Kes
@@ -1587,6 +1721,50 @@
 	Continuous numbering	Sürekli numaralandırma
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
+
+# Wrap Text context menu (#513).
+	Move with Text	Metinle birlikte taşı
+	Fix Position on Page	Sayfadaki konumu sabitle
+# Paragraph dialog options (#512).
+	Formatting exceptions	Biçimlendirme özel durumları
+	Inside:	İç:
+	Mirror indents	Ayna girintiler
+	Outside:	Dış:
+# WordArt and connectors (#416).
+	WordArt Styles	WordArt Stilleri
+	Text Fill	Metin Dolgusu
+	Text Outline	Metin Anahattı
+	Transform	Dönüştür
+	No Fill	Dolgu Yok
+	No Outline	Anahat Yok
+	Reflection	Yansıma
+	No Reflection	Yansıma Yok
+	No Transform	Dönüşüm Yok
+	Connect Shapes	Şekilleri Bağla
+	Straight Connector	Düz Bağlayıcı
+	Straight Arrow Connector	Düz Oklu Bağlayıcı
+	Elbow Connector	Dirsekli Bağlayıcı
+	Elbow Arrow Connector	Dirsekli Oklu Bağlayıcı
+	Curved Connector	Eğri Bağlayıcı
+	Curved Arrow Connector	Eğri Oklu Bağlayıcı
+	Arch Up	Yukarı Kemer
+	Arch Down	Aşağı Kemer
+	Slant Up	Yukarı Eğim
+	Slant Down	Aşağı Eğim
+	Inflate	Şişir
+	Deflate	Söndür
+	Chevron Up	Yukarı Şevron
+	Chevron Down	Aşağı Şevron
+	Triangle Up	Yukarı Üçgen
+	Triangle Down	Aşağı Üçgen
+	Solid Accent	Düz Vurgu
+	Light with Outline	Anahatlı Açık
+	Hollow	İçi Boş
+	Accent Gradient	Vurgu Geçişi
+	Dark with Shadow	Gölgeli Koyu
+	Soft Glow	Yumuşak Parıltı
+	Accent with Reflection	Yansımalı Vurgu
+	Warm Gradient with Outline	Anahatlı Sıcak Geçiş
 	Add line numbering	Satır numaralandırma ekle
 	Add to Document	Belgeye Ekle
 	Address labels	Adres etiketleri

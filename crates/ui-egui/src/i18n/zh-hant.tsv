@@ -94,6 +94,7 @@
 	Ignore words in capitals	忽略全部大寫的單字
 	Ignore words with numbers	忽略包含數字的單字
 	Inches	英寸
+	Formatting exceptions	格式例外
 	Include level number from:	包含的層級編號來自：
 	Initials:	縮寫：
 	Ink	筆跡
@@ -101,6 +102,7 @@
 	Insertions:	插入內容：
 	Interface	介面
 	Interface language	介面語言
+	Inside:	內側：
 	Left border	左框線
 	Left Margin	左邊界
 	Indents and Spacing	縮排和間距
@@ -111,6 +113,7 @@
 	Mark grammar errors as you type	輸入時標示文法錯誤
 	Measurement units:	度量單位：
 	Millimeters	公釐
+	Mirror indents	對稱縮排
 	More templates →	更多範本 →
 	New comments and tracked changes are recorded under this name and these initials.	新的註解和追蹤修訂會以此名稱和縮寫記錄。
 	New word	新單字
@@ -133,6 +136,7 @@
 	Proofing language	校訂語言
 	Recent documents to show:	顯示的最近文件數：
 	Remove	移除
+	Outside:	外側：
 	Reopen	重新開啟
 	Restart list after:	重新開始清單的層級：
 	Right border	右框線
@@ -1393,6 +1397,80 @@
 	Formatted	已設定格式
 	Interface size:	介面大小：
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	在系統顯示縮放的基礎上放大或縮小功能區、功能表與對話方塊。文件縮放另行設定。
+
+# Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
+	1. Formatting restrictions	1. 格式設定限制
+	2. Editing restrictions	2. 編輯限制
+	3. Start enforcement	3. 開始保護
+	<< Less	<< 較少
+	Another file	其他檔案
+	Apply as you type	輸入時套用
+	AutoCorrect	自動校正
+	AutoFormat As You Type	輸入時自動格式設定
+	Automatic bulleted lists	自動項目符號清單
+	Automatic numbered lists	自動編號清單
+	Border lines	框線
+	Capitalize first letter of sentences	句首字母大寫
+	Capitalize first letter of table cells	表格儲存格首字母大寫
+	Capitalize names of days	星期名稱首字母大寫
+	Case changes	大小寫變更
+	Character level	字元層級
+	Checked styles are allowed:	勾選的樣式可以使用:
+	Combine Documents	合併文件
+	Compare Documents	比較文件
+	Compared: {changes} changes	已比較: {changes} 處變更
+	Comparing with another file needs the desktop app.	與其他檔案比較需要桌面版應用程式。
+	Comparison settings	比較設定
+	Don't capitalize after:	不在以下內容後大寫:
+	Editing in this document is restricted.	此文件的編輯受到限制。
+	Every change is recorded as a tracked change.	每項變更都會記錄為追蹤修訂。
+	Everyone	所有人
+	Exceptions (optional)	例外狀況 (選用)
+	Exceptions…	例外狀況…
+	Fields	功能變數
+	Filling in forms	填寫表單
+	Find Next Editable Region	尋找下一個可編輯區域
+	Footnotes and endnotes	註腳和章節附註
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	會比較格式、大小寫、空白和表格；其他設定留待日後支援。
+	Fractions (1/2) as fraction characters (½)	分數 (1/2) 取代為分數字元 (½)
+	Headers and footers	頁首及頁尾
+	Hyphens (--) as dashes (—)	連字號 (--) 取代為破折號 (—)
+	In equations, typing a name after a backslash replaces it with its symbol.	在方程式中，於反斜線後輸入名稱會取代為對應符號。
+	Internet addresses as links	網際網路位址取代為連結
+	Label changes with:	變更標記為:
+	Limit formatting to a selection of styles	限制格式為選取的樣式
+	Math AutoCorrect	數學自動校正
+	More >>	更多 >>
+	Moves	移動
+	New document	新文件
+	No changes (read only)	不允許任何變更 (唯讀)
+	Only allow this kind of editing:	僅允許此類編輯:
+	Only comments can be added, except in regions marked editable.	只能新增註解，標示為可編輯的區域除外。
+	Only form fields can be filled in.	只能填寫表單欄位。
+	Only the allowed styles can be applied.	只能套用允許的樣式。
+	Ordinals (1st) as superscript	序數 (1st) 取代為上標
+	Original document	原始文件
+	This password type isn't supported.	不支援此密碼類型。
+	Replace as you type	輸入時自動取代
+	Replace text as you type	輸入時自動取代文字
+	Replace:	取代:
+	Revised document	修訂的文件
+	Select text, then tick who can still edit it.	選取文字，然後勾選仍可編輯的人。
+	Settings…	設定…
+	Show changes at:	顯示變更的層級:
+	Show changes in:	顯示變更於:
+	Smart quotes instead of straight quotes	以彎引號取代直引號
+	Start Enforcing Protection	開始強制保護
+	Stop Protection	停止保護
+	Text boxes	文字方塊
+	The document is read only, except for regions marked editable.	文件為唯讀，標示為可編輯的區域除外。
+	The password is optional; without it anyone can stop the protection.	密碼為選用；沒有密碼，任何人都能停止保護。
+	This document	此文件
+	Tracked changes	追蹤修訂
+	Type the password to stop the protection.	輸入密碼以停止保護。
+	White space	空白
+	With:	取代為:
+	Word level	字組層級
 	In Line with Text	與文字同行
 	Square	矩形
 	Through	穿透
@@ -1462,6 +1540,39 @@
 	Lines per page:	每頁行數：
 	Moved from	移動自
 	Moved to	移動到
+	Developer	開發人員
+	Controls	控制項
+	Rich Text Content Control	RTF 文字內容控制項
+	Plain Text Content Control	純文字內容控制項
+	Picture Content Control	圖片內容控制項
+	Building Block Gallery Content Control	建置組塊庫內容控制項
+	Check Box Content Control	核取方塊內容控制項
+	Combo Box Content Control	下拉式方塊內容控制項
+	Drop-Down List Content Control	下拉式清單內容控制項
+	Date Picker Content Control	日期選擇器內容控制項
+	Repeating Section Content Control	重複區段內容控制項
+	Design Mode	設計模式
+	Content Control at Selection	選取範圍的內容控制項
+	Toggle Check Box	切換核取方塊
+	Choose List Item	選擇清單項目
+	Set Date	設定日期
+	Remove Content Control	移除內容控制項
+	Content Control Properties	內容控制項屬性
+	Title	標題
+	Tag	標籤
+	Placeholder text	預留位置文字
+	Can't be deleted	無法刪除
+	Contents can't be edited	無法編輯內容
+	Remove the control once edited	編輯後移除控制項
+	Allow line breaks	允許換行
+	Date format	日期格式
+	Checked symbol	已勾選符號
+	Unchecked symbol	未勾選符號
+	List entries	清單項目
+	Display text	顯示文字
+	Value	值
+	Today	今天
+	Put the caret in a content control first.	請先將游標放在內容控制項中。
 	Right-to-Left Table	從右至左表格
 	Right-to-Left Section	從右至左節
 	Table direction:	表格方向：
@@ -1489,6 +1600,37 @@
 	Enlarge symbol	放大符號
 	Enclosure	圍繞符號
 	Circle	圓形
+	Change Chart Type	變更圖表類型
+	Chart Design	圖表設計
+	Type	類型
+	Edit Data	編輯資料
+	Chart Title	圖表標題
+	Chart Layouts	圖表版面配置
+	Add Chart Element	新增圖表項目
+	Legend	圖例
+	Data Labels	資料標籤
+	Above Chart	圖表上方
+	Insert Chart	插入圖表
+	Clustered Column	群組直條圖
+	Stacked Column	堆疊直條圖
+	Clustered Bar	群組橫條圖
+	Stacked Bar	堆疊橫條圖
+	Area	區域圖
+	Pie	圓形圖
+	Doughnut	環圈圖
+	Scatter	散佈圖
+	“{text}” ({row}, {series}) isn't a number.	「{text}」（{row}，{series}）不是數字。
+	Category {n}	類別 {n}
+	Series {n}	數列 {n}
+	Type the categories down the side and a column of values per series.	在左側輸入類別，每個數列輸入一欄數值。
+	Categories	類別
+	Series name	數列名稱
+	Remove series	移除數列
+	Remove row	移除列
+	Add Row	新增列
+	Add Series	新增數列
+	Edit\nData	編輯\n資料
+	Change\nChart Type	變更\n圖表類型
 	Align Text	對齊文字
 	Create Link	建立連結
 	Break Link	中斷連結
@@ -1597,9 +1739,7 @@
 	Tab leader:	定位點前置字元：
 	Table of Contents Options	目錄選項
 	Table of Contents Styles	目錄樣式
-	Tag	標記名
 	This page	目前頁面
-	Title	標題
 	Type:	類型：
 	URL	URL
 	Volume	卷
@@ -1621,6 +1761,44 @@
 	Rewind	倒轉
 	Forward	快轉
 	Stroke {n} of {total}	第 {n} 筆，共 {total} 筆
+	Move with Text	隨文字移動
+	Fix Position on Page	固定於頁面上的位置
+
+# WordArt and connectors (#416).
+	WordArt Styles	文字藝術師樣式
+	Text Fill	文字填滿
+	Text Outline	文字外框
+	Transform	轉換
+	No Fill	無填滿
+	No Outline	無外框
+	Reflection	反射
+	No Reflection	無反射
+	No Transform	無轉換
+	Connect Shapes	連接圖案
+	Straight Connector	直線接點
+	Straight Arrow Connector	直線箭頭接點
+	Elbow Connector	肘形接點
+	Elbow Arrow Connector	肘形箭頭接點
+	Curved Connector	曲線接點
+	Curved Arrow Connector	曲線箭頭接點
+	Arch Up	上彎弧形
+	Arch Down	下彎弧形
+	Slant Up	向上傾斜
+	Slant Down	向下傾斜
+	Inflate	膨脹
+	Deflate	收縮
+	Chevron Up	向上V形
+	Chevron Down	向下V形
+	Triangle Up	正三角形
+	Triangle Down	倒三角形
+	Solid Accent	實心強調色
+	Light with Outline	淺色加外框
+	Hollow	空心
+	Accent Gradient	強調色漸層
+	Dark with Shadow	深色加陰影
+	Soft Glow	柔和光暈
+	Accent with Reflection	強調色加反射
+	Warm Gradient with Outline	暖色漸層加外框
 	Add line numbering	新增行號
 	Add to Document	新增至文件
 	Address labels	地址標籤
