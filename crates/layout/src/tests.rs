@@ -234,6 +234,7 @@ fn many_hidden_float_anchors_lay_out_in_linear_time() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         let obj = wordcraft_doc::para::OBJ.to_string();
         let mut p = wordcraft_doc::Paragraph::with_text("Text ", Default::default());
@@ -1061,6 +1062,7 @@ fn text_wraps_around_square_float() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1100,6 +1102,7 @@ fn deleted_float_leaves_no_wrap_area_without_markup() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1153,6 +1156,7 @@ fn hidden_float_leaves_no_wrap_area_when_hidden_text_is_not_shown() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let obj = wordcraft_doc::para::OBJ.len_utf8();
@@ -1207,6 +1211,7 @@ fn line_numbers_borders_text_boxes() {
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(2, 5), tb, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1385,6 +1390,32 @@ fn auto_hyphenation_breaks_long_words() {
     let _ = hyphens(&l2);
 }
 
+/// Hyphenation Options (#407): a consecutive-hyphen limit of 1 never lets two lines in a row end
+/// with a hyphen, and words in capitals stay whole when the document says so.
+#[test]
+fn hyphenation_options_limit_hyphens_and_spare_capitals() {
+    let text = "Internationalization considerations notwithstanding, administrators systematically reconsidered extraordinarily uncharacteristic responsibilities. ".repeat(6);
+    let lines = |d: &Document| -> Vec<bool> {
+        lay(d).pages[0]
+            .items
+            .iter()
+            .filter_map(|i| {
+                if let Placed::Lines { para, .. } = i { Some(para.lines.iter().map(|x| x.hyphen.is_some()).collect::<Vec<_>>()) } else { None }
+            })
+            .flatten()
+            .collect()
+    };
+    let mut d = Document::from_text(&text);
+    d.settings.auto_hyphenation = true;
+    d.settings.consecutive_hyphen_limit = 1;
+    let hy = lines(&d);
+    assert!(hy.windows(2).all(|w| !(w[0] && w[1])), "two hyphenated lines in a row: {hy:?}");
+    let mut caps = Document::from_text(&text.to_uppercase());
+    caps.settings.auto_hyphenation = true;
+    caps.settings.hyphenate_caps = false;
+    assert!(lines(&caps).iter().all(|h| !h), "a word in capitals was hyphenated");
+}
+
 /// A table of `rows` x 2 with text in every cell, after a "before" paragraph.
 fn styled_table_doc(style: Option<&str>, rows: usize) -> Document {
     let mut d = Document::from_text("before\nafter");
@@ -1520,6 +1551,7 @@ fn text_box_at(d: &mut Document, pos: &Pos, text: &str, w: f32, h: f32, float: w
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(pos, shape, &Default::default()).unwrap();
     id
@@ -1592,6 +1624,7 @@ fn presses_grab_pictures_anywhere_and_text_boxes_by_their_border() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     let l = lay(&d);
@@ -1813,6 +1846,7 @@ fn box_fan_out(levels: usize, fan: usize) -> Document {
         story: Some(story),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     for (k, id) in ids.iter().enumerate() {
         let next = *ids.get(k + 1).unwrap_or(id);
@@ -1887,6 +1921,7 @@ fn picture(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2036,6 +2071,7 @@ fn rect_shape(w: f32, h: f32, float: wordcraft_doc::para::Float) -> InlineObject
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     }
 }
 
@@ -2206,6 +2242,7 @@ fn floating_header_text_box_leaves_the_body_at_the_top_margin() {
                 story: Some(story),
                 freeform: None,
                 effects: Default::default(),
+                extra: Default::default(),
             };
             anchor.insert_object(0, tb, &Default::default()).unwrap();
         }
@@ -2599,7 +2636,7 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         stroke: Some(Rgb::BLACK),
         stroke_width: 4.0,
     }];
-    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None };
+    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None };
     let obj = InlineObject::Graphic { w: 1000.0, h: 500.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
     let mut d = Document::from_text("Chart");
     d.insert_object(&Pos::body(0, 0), obj, &Default::default()).unwrap();
@@ -2816,6 +2853,7 @@ fn rotated_float_wraps_around_its_rotated_bounds() {
             story: None,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         };
         d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
         let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
@@ -2860,6 +2898,7 @@ fn rotated_group_turns_its_members_and_their_shadows() {
         story: None,
         freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { angle: 0.0, rot_with_shape, ..Default::default() }), ..Default::default() },
+        extra: Default::default(),
     };
     let float =
         Float { wrap: Wrap::InFrontOfText, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 100.0, y: 100.0, rot: 90.0, ..Default::default() };
@@ -3019,6 +3058,7 @@ fn wrapped_shape_doc(kind: wordcraft_doc::para::ShapeKind, w: f32, h: f32, float
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
     d
@@ -3283,6 +3323,7 @@ fn rotated_canvas_draws_its_clipped_members_inside_the_turn() {
         story: None,
         effects: Default::default(),
         freeform: None,
+        extra: Default::default(),
     };
     let canvas = |float: Float| InlineObject::Group {
         w: 200.0,
