@@ -341,6 +341,137 @@ impl WordApp {
     }
 }
 
+/// Browser-style document tabs, positioned above the ribbon. Tabs can be reordered by dragging
+/// their labels; pinned tabs occupy the left group. Long lists scroll horizontally.
+pub fn document_tabs(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    egui::Panel::top("document_tabs")
+        .exact_size(35.0)
+        .frame(egui::Frame::NONE.fill(t.tab_strip).inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 2 }))
+        .show(ui, |ui| {
+            egui::ScrollArea::horizontal().id_salt("open_document_tabs_scroll").auto_shrink([false, false]).show(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+                    let mut hit_rects = Vec::new();
+                    // Snapshot labels: closing/reordering may change indexes during this frame.
+                    for tab in app.document_tabs() {
+                        let fill = if tab.active { t.ribbon } else { t.tab_strip };
+                        let ink = if tab.active { t.text } else { t.text_dim };
+                        egui::Frame::NONE
+                            .fill(fill)
+                            .corner_radius(egui::CornerRadius { nw: 5, ne: 5, sw: 2, se: 2 })
+                            .stroke(Stroke::new(if tab.active { 1.0 } else { 0.5 }, t.border))
+                            .inner_margin(egui::Margin::symmetric(6, 3))
+                            .show(ui, |ui| {
+                                ui.horizontal_centered(|ui| {
+                                    ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+                                    let name: String = if tab.name.chars().count() > 26 {
+                                        let shortened: String = tab.name.chars().take(23).collect();
+                                        format!("{shortened}…")
+                                    } else {
+                                        tab.name.clone()
+                                    };
+                                    if tab.pinned {
+                                        let (rect, _) = ui.allocate_exact_size(vec2(14.0, 17.0), egui::Sense::hover());
+                                        crate::icons::paint(ui.painter(), rect, "pin", t.icon, t.accent);
+                                    }
+                                    let label = format!("{}{}", name, if tab.dirty { " •" } else { "" });
+                                    let button = egui::Button::new(egui::RichText::new(label).font(regular(11.5)).color(ink))
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .stroke(Stroke::NONE)
+                                        .frame(false)
+                                        .sense(egui::Sense::click_and_drag())
+                                        .min_size(vec2(65.0, 23.0));
+                                    let response = ui.add(button).on_hover_text(format!("{} (drag to reorder)", tab.name));
+                                    hit_rects.push((tab.index, response.rect));
+                                    if response.clicked() {
+                                        app.switch_document_tab(tab.index);
+                                    }
+                                    if response.drag_started() {
+                                        app.drag_document_tab = Some(tab.index);
+                                    }
+                                    response.context_menu(|ui| {
+                                        if ui.button(if tab.pinned { "Unpin tab" } else { "Pin tab" }).clicked() {
+                                            app.pin_document_tab(tab.index, !tab.pinned);
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.add_enabled(tab.index > 0, egui::Button::new("Move tab left")).clicked() {
+                                            app.reorder_document_tab(tab.index, tab.index - 1);
+                                            ui.close();
+                                        }
+                                        if ui.add_enabled(tab.index + 1 < app.document_tabs().len(), egui::Button::new("Move tab right")).clicked() {
+                                            app.reorder_document_tab(tab.index, tab.index + 1);
+                                            ui.close();
+                                        }
+                                        if let Some(path) = app.document_tab_path(tab.index)
+                                            && ui.button("Copy full path").clicked()
+                                        {
+                                            ui.ctx().copy_text(path);
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button("Close tab").clicked() {
+                                            let _ = app.close_document_tab(tab.index);
+                                            ui.close();
+                                        }
+                                        if ui.button("Close other unpinned tabs").clicked() {
+                                            app.close_other_document_tabs(tab.index);
+                                            ui.close();
+                                        }
+                                        if ui.button("Close all tabs").clicked() {
+                                            app.close_all_document_tabs();
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button("Reopen closed tab   Ctrl+Shift+T").clicked() {
+                                            let _ = app.reopen_closed_document_tab();
+                                            ui.close();
+                                        }
+                                    });
+                                    if ui
+                                        .add(
+                                            egui::Button::new(egui::RichText::new("×").size(15.0).color(t.text_dim))
+                                                .fill(egui::Color32::TRANSPARENT)
+                                                .stroke(Stroke::NONE)
+                                                .frame(false)
+                                                .min_size(vec2(17.0, 23.0)),
+                                        )
+                                        .on_hover_text(tl!("Close"))
+                                        .clicked()
+                                    {
+                                        let _ = app.close_document_tab(tab.index);
+                                    }
+                                });
+                            });
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(egui::RichText::new("+").size(17.0).color(t.text))
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(Stroke::NONE)
+                                .min_size(vec2(28.0, 24.0)),
+                        )
+                        .on_hover_text(tl!("New"))
+                        .clicked()
+                    {
+                        let _ = app.run("file.new", json!({}));
+                    }
+                    // Apply a completed drag *after* collecting hit targets for every tab.
+                    if app.drag_document_tab.is_some() && ui.input(|i| i.pointer.any_released()) {
+                        let pos = ui.input(|i| i.pointer.latest_pos());
+                        if let (Some(from), Some(pos)) = (app.drag_document_tab, pos)
+                            && let Some((to, _)) = hit_rects.iter().find(|(_, rect)| rect.contains(pos))
+                        {
+                            app.reorder_document_tab(from, *to);
+                        }
+                        app.drag_document_tab = None;
+                    }
+                });
+            });
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

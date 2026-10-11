@@ -376,7 +376,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let opts = ui.ctx().options(|o| o.input_options);
     let delta = ui.input(|i| app.canvas.wheel.frame(i, &opts, hovered, notch, area.height()));
     let mut scroll_area = egui::ScrollArea::both()
-        .id_salt("canvas_scroll")
+        .id_salt(("canvas_scroll", app.active_document_id()))
         .auto_shrink([false, false])
         .scroll_source(egui::scroll_area::ScrollSource { mouse_wheel: false, ..Default::default() });
     if delta != egui::Vec2::ZERO {

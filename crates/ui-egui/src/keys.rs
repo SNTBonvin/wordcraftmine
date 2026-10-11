@@ -93,6 +93,22 @@ fn combo(m: Modifiers, key: &str, with_shift: bool) -> String {
 
 /// Find and run the command bound to this key. Returns true if handled.
 fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
+    // Reopen most recently closed on-disk document, including while editing in the canvas.
+    if key == Key::T && m.ctrl && m.shift && !m.alt {
+        let _ = app.run("ui.reopenClosedDocument", json!({}));
+        return true;
+    }
+    // Ctrl+Tab / Ctrl+Shift+Tab cycle through open documents (including on macOS, where
+    // Command+Tab belongs to the operating system's application switcher).
+    if key == Key::Tab && m.ctrl && !m.alt {
+        let count = app.document_tabs().len();
+        if count > 1 {
+            let current = app.active_document_tab();
+            let next = if m.shift { (current + count - 1) % count } else { (current + 1) % count };
+            app.switch_document_tab(next);
+        }
+        return true;
+    }
     let Some(name) = key_name(key) else { return false };
     let reg = app.session.registry.clone();
     if let Some(spec) = reg.by_shortcut(&combo(m, name, true)) {
@@ -148,6 +164,14 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     }
     let events = ctx.input(|i| i.events.clone());
     for e in events {
+        if let egui::Event::Key { key, pressed: true, modifiers, .. } = &e
+            && modifiers.ctrl
+            && !modifiers.alt
+            && (*key == Key::Tab || (*key == Key::T && modifiers.shift))
+        {
+            dispatch(app, *key, *modifiers);
+            continue;
+        }
         if let egui::Event::Paste(t) = &e {
             app.canvas.pasted = true;
             // Copied picture files arrive as their paths: insert the pictures (#45).
@@ -266,7 +290,9 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     let events = ctx.input(|i| i.events.clone());
     for e in events {
         if let egui::Event::Key { key, pressed: true, modifiers, .. } = e
-            && (modifiers.command || matches!(key, Key::F3 | Key::F5 | Key::F7 | Key::F9 | Key::F12))
+            && (modifiers.command
+                || (modifiers.ctrl && (key == Key::Tab || (key == Key::T && modifiers.shift)))
+                || matches!(key, Key::F3 | Key::F5 | Key::F7 | Key::F9 | Key::F12))
         {
             dispatch(app, key, modifiers);
         }
