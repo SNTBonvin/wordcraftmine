@@ -218,6 +218,7 @@ Layout|Page Setup|Line Numbers|layout.lineNumbers
 Layout|Page Setup|Hyphenation|layout.hyphenation
 Layout|Page Setup|Page Setup Dialog|layout.pageSetup
 Layout|Page Setup|Vertical Alignment|layout.verticalAlign
+Layout|Page Setup|Section Direction|layout.sectionRtl
 Layout|Paragraph|Indent|para.indents
 Layout|Paragraph|Spacing|para.spacing
 Layout|Arrange|Position|arrange.position
@@ -341,6 +342,7 @@ Table Layout|Table|Select Row|table.selectRow
 Table Layout|Table|Select Cell|table.selectCell
 Table Layout|Table|View Gridlines|table.viewGridlines
 Table Layout|Table|Properties|table.properties
+Table Layout|Table|Table Direction|table.rtl
 Table Layout|Draw|Draw Table|table.draw
 Table Layout|Draw|Eraser|table.eraser
 Table Layout|Rows & Columns|Delete Cells|table.deleteCells

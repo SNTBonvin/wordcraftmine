@@ -1790,6 +1790,10 @@ preview	Title	Пример
 	Left Only	Только слева
 	Right Only	Только справа
 	Largest Only	Только по большей стороне
+	Right-to-Left Table	Таблица справа налево
+	Right-to-Left Section	Раздел справа налево
+	Table direction:	Направление таблицы:
+	Section direction:	Направление раздела:
 	Drawing Canvas	Полотно для рисования
 	New Drawing Canvas	Новое полотно для рисования
 	Fit	По размеру
@@ -1814,3 +1818,12 @@ preview	Title	Пример
 	Hindi	Хинди
 	Context	Контекст
 	System	Системные
+	Align Text	Выравнивание текста
+	Create Link	Создать связь
+	Break Link	Разорвать связь
+	Rotate all text 90°	Повернуть весь текст на 90°
+	Rotate all text 270°	Повернуть весь текст на 270°
+	Stacked	Столбиком
+	Middle	По центру
+	Click the empty text box the text should continue in (Esc cancels)	Щёлкните пустую надпись, в которой должен продолжиться текст (Esc — отмена)
+	Not linked: click a text box	Не связано: щёлкните надпись

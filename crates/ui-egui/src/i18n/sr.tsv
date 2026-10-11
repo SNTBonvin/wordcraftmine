@@ -1410,6 +1410,10 @@
 	New Group	Нова група
 	Rename…	Преименуј…
 	Ribbon and Quick Access Toolbar:	Трака и трака са алаткама за брзи приступ:
+	Right-to-Left Table	Табела са десна на лево
+	Right-to-Left Section	Одељак са десна на лево
+	Table direction:	Смер табеле:
+	Section direction:	Смер одељка:
 	Drawing Canvas	Платно за цртање
 	New Drawing Canvas	Ново платно за цртање
 	Fit	Прилагоди
@@ -1438,3 +1442,12 @@
 	Hindi	Хинди
 	Context	Контекст
 	System	Систем
+	Align Text	Поравнај текст
+	Create Link	Направи везу
+	Break Link	Прекини везу
+	Rotate all text 90°	Ротирај сав текст за 90°
+	Rotate all text 270°	Ротирај сав текст за 270°
+	Stacked	Наслагано
+	Middle	Средина
+	Click the empty text box the text should continue in (Esc cancels)	Кликните празно поље за текст у ком текст треба да се настави (Esc отказује)
+	Not linked: click a text box	Није повезано: кликните поље за текст
