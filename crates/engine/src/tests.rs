@@ -312,8 +312,9 @@ fn failed_command_restores_history_changed_by_nested_commands() {
     // outer and nested checkpoints each evict the oldest step.
     fn timeline(s: &mut Session) -> Vec<(Vec<String>, wordcraft_doc::Document)> {
         let mut out = Vec::new();
+        // Straight through the history (the commands won't undo past Restrict Editing).
         while s.can_redo() {
-            run(s, "edit.redo", json!({}));
+            s.redo();
         }
         loop {
             // Comments are stamped with the time to the second, and the two sessions compared
@@ -324,7 +325,7 @@ fn failed_command_restores_history_changed_by_nested_commands() {
             if !s.can_undo() {
                 return out;
             }
-            run(s, "edit.undo", json!({}));
+            s.undo();
         }
     }
     let kept = {
@@ -2083,7 +2084,7 @@ fn column_selection_copies_the_block() {
     // A caret move drops the block; pasting the copy gives three paragraphs.
     run(&mut s, "caret.docEnd", json!({}));
     assert!(s.column_segments().is_none());
-    s.autocorrect_on = false;
+    s.prefs.autocorrect.enabled = false;
     run(&mut s, "text.newParagraph", json!({}));
     run(&mut s, "edit.paste", json!({}));
     assert_eq!(text(&s), "abcdef\nabcdef\nabcdef\ncd\ncd\ncd");
@@ -2944,6 +2945,71 @@ fn deleting_the_last_cell_column_never_leaves_a_table_without_rows() {
     assert!(s.doc.body.iter().all(|b| b.as_table().is_none()), "an emptied table is removed");
     run(&mut s, "edit.undo", json!({}));
     assert!(s.doc.body.iter().any(|b| b.as_table().is_some_and(|t| !t.rows.is_empty())));
+}
+
+#[test]
+fn center_after_select_paragraph_leaves_the_next_paragraph_alone() {
+    // #418: Select Paragraph ends at the next paragraph's start; that paragraph isn't selected.
+    use wordcraft_doc::Align;
+    let align = |s: &Session, i: usize| s.doc.para_at(&Pos::body(i, 0)).and_then(|p| p.props.align);
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 2}}));
+    run(&mut s, "select.paragraph", json!({}));
+    assert_eq!(s.selected_text(), "Alpha\n");
+    run(&mut s, "para.alignCenter", json!({}));
+    assert_eq!((align(&s, 0), align(&s, 1)), (Some(Align::Center), None));
+    // Reversed, too; a range into Beta centres both; a caret at Beta's start centres Beta.
+    for (a, b, want) in [((1, 0), (0, 0), (Some(Align::Center), None)), ((0, 0), (1, 1), (Some(Align::Center), Some(Align::Center)))] {
+        let mut s = crate::Session::new(wordcraft_doc::Document::new());
+        run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+        run(&mut s, "caret.set", json!({"pos": {"block": a.0, "off": a.1}}));
+        run(&mut s, "caret.set", json!({"pos": {"block": b.0, "off": b.1}, "extend": true}));
+        run(&mut s, "para.align", json!({"value": "center"}));
+        assert_eq!((align(&s, 0), align(&s, 1)), want, "{a:?}..{b:?}");
+    }
+    let mut s = crate::Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "Alpha\rBeta", "raw": true}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 0}}));
+    run(&mut s, "para.alignCenter", json!({}));
+    assert_eq!((align(&s, 0), align(&s, 1)), (None, Some(Align::Center)));
+}
+
+#[test]
+fn change_case_keeps_the_selection_when_lengths_change() {
+    // #420: İ lowers to i + U+0307 (one byte more); the selection still covers the result.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "aİxZ", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "İx"}));
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    assert_eq!(text(&s), "ai\u{307}xZ");
+    assert_eq!(s.selected_text(), "i\u{307}x");
+    // ı uppers to I (one byte less); the trailing Z stays out of the selection.
+    let mut s = crate::Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "ıxZ", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "ıx"}));
+    run(&mut s, "format.changeCase", json!({"mode": "upper"}));
+    assert_eq!(text(&s), "IXZ");
+    assert_eq!(s.selected_text(), "IX");
+}
+
+#[test]
+fn change_case_keeps_each_runs_formatting_when_lengths_change() {
+    // #421: lowercasing a plain İ and a bold x keeps x bold (and the i̇ plain).
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "İx", "raw": true}));
+    run(&mut s, "select.text", json!({"text": "x"}));
+    run(&mut s, "format.bold", json!({"value": true}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    assert_eq!(p.text, "i\u{307}x");
+    assert_ne!(p.props_of_char(0).bold, Some(true));
+    assert_ne!(p.props_of_char(1).bold, Some(true));
+    assert_eq!(p.props_of_char(3).bold, Some(true));
+    // Typing over the converted selection replaces all of it.
+    run(&mut s, "text.insert", json!({"text": "Q", "raw": true}));
+    assert_eq!(text(&s), "Q");
 }
 
 #[test]
