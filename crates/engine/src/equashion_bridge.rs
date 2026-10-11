@@ -117,6 +117,116 @@ pub fn from_latex(src: &str, display: bool) -> Option<(Math, bool)> {
     from_editor(&m)
 }
 
+/// Largest OMML or MathML clipboard text read as an equation, bytes.
+pub const MAX_CLIP_MARKUP: usize = 1 << 20;
+/// Largest delimited LaTeX clipboard text read as an equation, bytes.
+pub const MAX_CLIP_LATEX: usize = 1 << 15;
+
+/// The format of an equation on the clipboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipFormat {
+    Omml,
+    MathMl,
+    Latex,
+}
+
+impl ClipFormat {
+    pub fn name(self) -> &'static str {
+        match self {
+            ClipFormat::Omml => "OMML",
+            ClipFormat::MathMl => "MathML",
+            ClipFormat::Latex => "LaTeX",
+        }
+    }
+}
+
+/// Recognise an equation in pasted plain text. The whole text (trimmed) must be exactly one OMML
+/// `m:oMath` / `m:oMathPara` element, one MathML `<math>` element, or LaTeX between explicit
+/// delimiters: `$$..$$` or `\[..\]` (display), `$..$` or `\(..\)` (inline). `None` when it is not
+/// such a payload (paste it as text); otherwise its format and the equation with its display
+/// flag, or why it could not be read.
+pub fn clipboard_equation(text: &str) -> Option<(ClipFormat, Result<(Math, bool), String>)> {
+    let t = text.trim();
+    if let Some((qname, local)) = root_element(t) {
+        let format = match local {
+            "oMath" | "oMathPara" => ClipFormat::Omml,
+            "math" => ClipFormat::MathMl,
+            _ => return None,
+        };
+        if !whole_element(t, qname) {
+            return None;
+        }
+        if t.len() > MAX_CLIP_MARKUP {
+            return Some((format, Err(format!("the {} is too large", format.name()))));
+        }
+        let read = match format {
+            ClipFormat::Omml => omml_equation(t).filter(|(m, _)| !m.nodes.is_empty()),
+            _ => from_mathml(t),
+        };
+        return Some((format, read.ok_or_else(|| format!("not a {} equation WordCraft can read", format.name()))));
+    }
+    let (inner, display) = latex_inner(t)?;
+    if inner.len() > MAX_CLIP_LATEX {
+        return Some((ClipFormat::Latex, Err("the LaTeX is too long".into())));
+    }
+    Some((ClipFormat::Latex, from_latex(inner, display).ok_or_else(|| "the LaTeX equation is empty".to_string())))
+}
+
+/// The qualified and local name of the first element, after an XML declaration, processing
+/// instructions and comments.
+fn root_element(t: &str) -> Option<(&str, &str)> {
+    let mut rest = t;
+    loop {
+        let (open, close) = if rest.starts_with("<?") {
+            ("<?", "?>")
+        } else if rest.starts_with("<!--") {
+            ("<!--", "-->")
+        } else {
+            break;
+        };
+        let body = rest.get(open.len()..)?;
+        rest = body.get(body.find(close)? + close.len()..)?.trim_start();
+    }
+    let r = rest.strip_prefix('<')?;
+    let len = r.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(r.len());
+    let qname = r.get(..len).filter(|n| !n.is_empty())?;
+    Some((qname, qname.rsplit(':').next().unwrap_or(qname)))
+}
+
+/// The text ends with the root element's end tag and holds no second element of that name at
+/// the top: it is that one element.
+fn whole_element(t: &str, qname: &str) -> bool {
+    let end = format!("</{qname}>");
+    match t.find(&end) {
+        Some(i) => i + end.len() == t.len(),
+        // An empty element (`<m:oMath/>`): its start tag ends the text.
+        None => {
+            let Some(start) = t.find(&format!("<{qname}")) else { return false };
+            let tag_end = t.get(start..).and_then(|r| r.find('>')).map(|g| start + g + 1);
+            t.ends_with("/>") && tag_end == Some(t.len())
+        }
+    }
+}
+
+/// The LaTeX between explicit delimiters spanning the whole text, and whether it is display.
+/// Single `$` follows the usual Markdown rule (no space just inside either `$`), so prices and
+/// other text with dollar signs stay text.
+fn latex_inner(t: &str) -> Option<(&str, bool)> {
+    let pick = |open: &str, close: &str, display: bool| -> Option<(&str, bool)> {
+        let inner = t.strip_prefix(open)?.strip_suffix(close)?;
+        if inner.contains(open) || inner.contains(close) || inner.trim().is_empty() {
+            return None;
+        }
+        Some((inner, display))
+    };
+    if t.starts_with("$$") {
+        return pick("$$", "$$", true).filter(|(i, _)| !i.contains('$'));
+    }
+    pick("\\[", "\\]", true)
+        .or_else(|| pick("\\(", "\\)", false))
+        .or_else(|| pick("$", "$", false).filter(|(i, _)| !i.starts_with(char::is_whitespace) && !i.ends_with(char::is_whitespace)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +302,50 @@ mod tests {
         let (m, _) = equation_from_omml(xml).unwrap();
         assert!(!m.omml.is_empty());
         assert_eq!(eq::to_linear(&to_editor(&to_linear(&m.nodes), false, &m)), "E^2");
+    }
+
+    #[test]
+    fn clipboard_detection_takes_only_whole_payloads() {
+        for t in [
+            "",
+            "hello",
+            "costs $5",
+            "$5 and $6",
+            "between $ 5 and 6 $",
+            "a \\frac{1}{2} b",
+            "\\alpha",
+            "$$",
+            "$ $",
+            "$a$ and $b$",
+            "<b>x</b>",
+            "<mathx>y</mathx>",
+            "<math><mi>x</mi></math> and more",
+            "<m:oMath><m:r><m:t>a</m:t></m:r></m:oMath><m:oMath><m:r><m:t>b</m:t></m:r></m:oMath>",
+            "<m:oMath><m:r><m:t>x</m:t></m:r>",
+            "<!-- unterminated",
+            "<?xml",
+        ] {
+            assert!(clipboard_equation(t).is_none(), "{t:?}");
+        }
+        let read = |t: &str| clipboard_equation(t).map(|(f, r)| (f, r.map(|(m, d)| (to_linear(&m.nodes), d))));
+        assert_eq!(read("  $x^2$\n"), Some((ClipFormat::Latex, Ok(("x^2".into(), false)))));
+        assert_eq!(read("$$\\frac{a}{b}$$"), Some((ClipFormat::Latex, Ok(("a/b".into(), true)))));
+        assert_eq!(read("\\[x\\]"), Some((ClipFormat::Latex, Ok(("x".into(), true)))));
+        assert_eq!(read("\\(y\\)"), Some((ClipFormat::Latex, Ok(("y".into(), false)))));
+        let para = "<?xml version=\"1.0\"?>\n<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:oMath><m:r><m:t>y</m:t></m:r></m:oMath></m:oMathPara>";
+        assert_eq!(read(para), Some((ClipFormat::Omml, Ok(("y".into(), true)))));
+        assert_eq!(read("<m:oMath><m:r><m:t>z</m:t></m:r></m:oMath>"), Some((ClipFormat::Omml, Ok(("z".into(), false)))));
+        assert_eq!(read("<math display=\"block\"><mi>x</mi></math>"), Some((ClipFormat::MathMl, Ok(("x".into(), true)))));
+        // Looks like an equation but cannot be read: the caller pastes text and says why.
+        assert!(matches!(read("<m:oMath/>"), Some((ClipFormat::Omml, Err(_)))), "empty");
+        assert!(matches!(read("<x:oMath xmlns:x=\"urn:other\"><x:r><x:t>a</x:t></x:r></x:oMath>"), Some((ClipFormat::Omml, Err(_)))));
+        let long = format!("${}$", "x".repeat(MAX_CLIP_LATEX + 1));
+        assert!(matches!(read(&long), Some((ClipFormat::Latex, Err(_)))));
+        // equaSHion's own MathML copy reads back.
+        let copied = eq::to_mathml_display(&eq::from_linear(r"\sqrt{x}"), true);
+        assert!(
+            matches!(clipboard_equation(&copied), Some((ClipFormat::MathMl, Ok((m, true)))) if matches!(m.nodes.as_slice(), [MNode::Rad { .. }]))
+        );
     }
 
     #[test]

@@ -170,7 +170,7 @@ fn insert(s: &mut Session, v: &Value) -> CmdResult {
     insert_nodes_as_equation(s, nodes, v)
 }
 
-fn insert_nodes_as_equation(s: &mut Session, nodes: Arg, v: &Value) -> CmdResult {
+pub(super) fn insert_nodes_as_equation(s: &mut Session, nodes: Arg, v: &Value) -> CmdResult {
     s.math = None;
     let props = s.typing_props();
     let at = delete_selection(s)?;
