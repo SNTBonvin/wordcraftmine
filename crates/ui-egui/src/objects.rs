@@ -153,6 +153,9 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
             let _ = app.run("arrange.rotation", json!({"degrees": d.drag.deg}));
             return;
         }
+        Grab::Move if !d.object.floating() => {
+            json!({"page": d.drag.to_page, "x": r.x + r.w * 0.5, "y": r.y + r.h * 0.5, "keepWrap": true})
+        }
         Grab::Move => json!({"page": d.drag.to_page, "x": r.x, "y": r.y}),
         // An inline object stays in the text; a floating one keeps its far edges put.
         Grab::Resize(_) if d.object.floating() && movable(&d.object) => json!({"width": r.w, "height": r.h, "page": d.drag.page, "x": r.x, "y": r.y}),

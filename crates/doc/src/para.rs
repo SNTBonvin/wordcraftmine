@@ -58,6 +58,44 @@ pub enum Wrap {
     InFrontOfText,
 }
 
+/// Which side(s) of a floating object text wraps around.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum WrapSide {
+    /// Text wraps on both sides of the object.
+    #[default]
+    BothSides,
+    /// Text wraps only on the left side of the object.
+    Left,
+    /// Text wraps only on the right side of the object.
+    Right,
+    /// Text wraps only on whichever side has more room.
+    Largest,
+}
+
+impl WrapSide {
+    /// From an OOXML `wrapText` attribute (`bothSides`, `left`, `right`, `largest`).
+    pub fn from_ooxml(v: &str) -> Option<WrapSide> {
+        match v {
+            "bothSides" => Some(WrapSide::BothSides),
+            "left" => Some(WrapSide::Left),
+            "right" => Some(WrapSide::Right),
+            "largest" => Some(WrapSide::Largest),
+            _ => None,
+        }
+    }
+
+    /// The OOXML attribute value (`bothSides`, `left`, `right`, `largest`).
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            WrapSide::BothSides => "bothSides",
+            WrapSide::Left => "left",
+            WrapSide::Right => "right",
+            WrapSide::Largest => "largest",
+        }
+    }
+}
+
 /// What a floating object's offset is relative to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +168,7 @@ impl FloatAlign {
 #[serde(default, rename_all = "camelCase")]
 pub struct Float {
     pub wrap: Wrap,
+    pub wrap_side: WrapSide,
     pub h_rel: Anchor,
     pub v_rel: Anchor,
     /// Offsets, points (used when the matching alignment is `None`).
@@ -140,8 +179,11 @@ pub struct Float {
     pub h_align: Option<FloatAlign>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub v_align: Option<FloatAlign>,
-    /// Distance from surrounding text at the left and right (points).
+    /// Distance from surrounding text at the left (or both sides when `dist_right` is None), points.
     pub dist: f32,
+    /// Distance from surrounding text at the right (points). If None, falls back to `dist`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dist_right: Option<f32>,
     /// Distance from surrounding text above and below (points).
     pub dist_top: f32,
     pub dist_bottom: f32,
@@ -168,6 +210,14 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl Float {
+    /// Distance from surrounding text at the left, points.
+    pub fn dist_left(&self) -> f32 {
+        self.dist
+    }
+    /// Distance from surrounding text at the right, points.
+    pub fn dist_right(&self) -> f32 {
+        self.dist_right.unwrap_or(self.dist)
+    }
     /// The rotation and flips, the angle normalised to `0..360` (a NaN angle is no rotation).
     pub fn spin(&self) -> wordcraft_geom::Spin {
         wordcraft_geom::Spin::new(self.rot, self.flip_h, self.flip_v)
@@ -200,9 +250,20 @@ pub enum ShapeKind {
     RoundedRectangle,
     Ellipse,
     Triangle,
+    RightTriangle,
     Diamond,
+    Parallelogram,
+    Trapezoid,
+    Pentagon,
+    Hexagon,
+    Octagon,
+    Cross,
+    Cloud,
     Line,
     Arrow,
+    LeftArrow,
+    UpArrow,
+    DownArrow,
     Star,
     Heart,
     /// A text box (rectangle with a text story).
@@ -371,6 +432,10 @@ impl InlineObject {
             | InlineObject::Group { w, h, float, .. } => Some((*w, *h, float)),
             _ => None,
         }
+    }
+    /// A drawing's placement.
+    pub fn float(&self) -> Option<&Float> {
+        self.frame().map(|(_, _, f)| f)
     }
     /// A drawing's placement, to change.
     pub fn float_mut(&mut self) -> Option<&mut Float> {

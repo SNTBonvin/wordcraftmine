@@ -1,7 +1,8 @@
 //! The ribbon: tab strip and every tab's groups. Each control runs a command by id.
 
-use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
+use wordcraft_doc::para::ShapeKind;
 
 use crate::theme::{Tokens, medium, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, color_grid, combo, font_combo, group, menu_button, small, split};
@@ -250,6 +251,47 @@ fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str
     let enabled = crate::widgets::enabled(app, id);
     let resp = ui.add_enabled(enabled, egui::Button::new((mark, tl!(label))).selected(checked).min_size(vec2(200.0, 0.0)));
     if resp.clicked() {
+        let _ = app.run(id, params);
+        ui.close();
+    }
+}
+
+/// A menu item with an icon on the left.
+fn mi_icon(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str, params: Value) {
+    let t = Tokens::get(ui.ctx());
+    let enabled = crate::widgets::enabled(app, id);
+    let (rect, resp) = ui.allocate_exact_size(vec2(200.0, 24.0), Sense::click());
+    if resp.hovered() && enabled {
+        ui.painter().rect_filled(rect, 3.0, t.hover);
+    }
+    let icon_r = Rect::from_center_size(pos2(rect.min.x + 14.0, rect.center().y), vec2(16.0, 16.0));
+    icons::paint(ui.painter(), icon_r, icon, t.text, t.accent);
+    let text_color = if enabled { t.text } else { t.text_disabled };
+    ui.painter().text(pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, tl!(label), regular(12.0), text_color);
+    if resp.clicked() && enabled {
+        let _ = app.run(id, params);
+        ui.close();
+    }
+}
+
+/// A menu item with both a check mark and an icon.
+fn mi_check_icon(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, checked: bool, id: &str, params: Value) {
+    let t = Tokens::get(ui.ctx());
+    let enabled = crate::widgets::enabled(app, id);
+    let (rect, resp) = ui.allocate_exact_size(vec2(220.0, 24.0), Sense::click());
+    if resp.hovered() && enabled {
+        ui.painter().rect_filled(rect, 3.0, t.hover);
+    }
+    if checked {
+        ui.painter().rect_filled(rect, 3.0, t.checked);
+    }
+    let mark_color = if checked { t.accent_text } else { Color32::TRANSPARENT };
+    ui.painter().text(pos2(rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, "✓", semibold(12.0), mark_color);
+    let icon_r = Rect::from_center_size(pos2(rect.min.x + 26.0, rect.center().y), vec2(16.0, 16.0));
+    icons::paint(ui.painter(), icon_r, icon, t.text, t.accent);
+    let text_color = if enabled { t.text } else { t.text_disabled };
+    ui.painter().text(pos2(rect.min.x + 42.0, rect.center().y), Align2::LEFT_CENTER, tl!(label), regular(12.0), text_color);
+    if resp.clicked() && enabled {
         let _ = app.run(id, params);
         ui.close();
     }
@@ -508,6 +550,248 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+fn paint_shape_preview(p: &egui::Painter, r: Rect, kind: ShapeKind, stroke_color: Color32, fill_color: Color32) {
+    let s = Stroke::new(1.2, stroke_color);
+    let (cx, cy) = (r.center().x, r.center().y);
+    let (w, h) = (r.width(), r.height());
+    let (x0, y0, x1, y1) = (r.min.x, r.min.y, r.max.x, r.max.y);
+    let pts_to_pos = |pts: &[(f32, f32)]| pts.iter().map(|&(x, y)| pos2(x, y)).collect::<Vec<_>>();
+    match kind {
+        ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => {
+            p.rect(r, 0.0, fill_color, s, egui::StrokeKind::Inside);
+        }
+        ShapeKind::RoundedRectangle => {
+            p.rect(r, 3.0, fill_color, s, egui::StrokeKind::Inside);
+        }
+        ShapeKind::Ellipse => {
+            let pts = (0..16)
+                .map(|i| {
+                    let a = std::f32::consts::TAU * i as f32 / 16.0;
+                    pos2(cx + a.cos() * w * 0.48, cy + a.sin() * h * 0.48)
+                })
+                .collect::<Vec<_>>();
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Triangle => {
+            let pts = pts_to_pos(&[(cx, y0), (x1, y1), (x0, y1)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::RightTriangle => {
+            let pts = pts_to_pos(&[(x0, y0), (x1, y1), (x0, y1)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Diamond => {
+            let pts = pts_to_pos(&[(cx, y0), (x1, cy), (cx, y1), (x0, cy)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Parallelogram => {
+            let pts = pts_to_pos(&[(x0 + w * 0.25, y0), (x1, y0), (x1 - w * 0.25, y1), (x0, y1)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Trapezoid => {
+            let pts = pts_to_pos(&[(x0 + w * 0.2, y0), (x1 - w * 0.2, y0), (x1, y1), (x0, y1)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Pentagon => {
+            let pts = pts_to_pos(&[(cx, y0), (x1, y0 + h * 0.38), (x0 + w * 0.81, y1), (x0 + w * 0.19, y1), (x0, y0 + h * 0.38)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Hexagon => {
+            let pts = pts_to_pos(&[(x0 + w * 0.25, y0), (x1 - w * 0.25, y0), (x1, cy), (x1 - w * 0.25, y1), (x0 + w * 0.25, y1), (x0, cy)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Octagon => {
+            let pts = pts_to_pos(&[
+                (x0 + w * 0.29, y0),
+                (x1 - w * 0.29, y0),
+                (x1, y0 + h * 0.29),
+                (x1, y1 - h * 0.29),
+                (x1 - w * 0.29, y1),
+                (x0 + w * 0.29, y1),
+                (x0, y1 - h * 0.29),
+                (x0, y0 + h * 0.29),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Cross => {
+            let (px0, px1, px2, px3) = (x0, cx - w * 0.15, cx + w * 0.15, x1);
+            let (py0, py1, py2, py3) = (y0, cy - h * 0.15, cy + h * 0.15, y1);
+            let pts = pts_to_pos(&[
+                (px1, py0),
+                (px2, py0),
+                (px2, py1),
+                (px3, py1),
+                (px3, py2),
+                (px2, py2),
+                (px2, py3),
+                (px1, py3),
+                (px1, py2),
+                (px0, py2),
+                (px0, py1),
+                (px1, py1),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Cloud => {
+            p.circle_filled(pos2(x0 + w * 0.25, cy + h * 0.1), w * 0.2, fill_color);
+            p.circle_filled(pos2(cx, y0 + h * 0.35), w * 0.28, fill_color);
+            p.circle_filled(pos2(x1 - w * 0.25, cy + h * 0.1), w * 0.22, fill_color);
+            p.circle_filled(pos2(cx, cy + h * 0.2), w * 0.22, fill_color);
+            p.circle_stroke(pos2(x0 + w * 0.25, cy + h * 0.1), w * 0.2, s);
+            p.circle_stroke(pos2(cx, y0 + h * 0.35), w * 0.28, s);
+            p.circle_stroke(pos2(x1 - w * 0.25, cy + h * 0.1), w * 0.22, s);
+        }
+        ShapeKind::Line => {
+            p.line_segment([pos2(x0, y1), pos2(x1, y0)], s);
+        }
+        ShapeKind::Arrow => {
+            let pts = pts_to_pos(&[
+                (x0, cy - h * 0.2),
+                (x1 - h * 0.45, cy - h * 0.2),
+                (x1 - h * 0.45, y0),
+                (x1, cy),
+                (x1 - h * 0.45, y1),
+                (x1 - h * 0.45, cy + h * 0.2),
+                (x0, cy + h * 0.2),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::LeftArrow => {
+            let pts = pts_to_pos(&[
+                (x0, cy),
+                (x0 + h * 0.45, y0),
+                (x0 + h * 0.45, cy - h * 0.2),
+                (x1, cy - h * 0.2),
+                (x1, cy + h * 0.2),
+                (x0 + h * 0.45, cy + h * 0.2),
+                (x0 + h * 0.45, y1),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::UpArrow => {
+            let pts = pts_to_pos(&[
+                (cx, y0),
+                (x1, y0 + w * 0.45),
+                (cx + w * 0.2, y0 + w * 0.45),
+                (cx + w * 0.2, y1),
+                (cx - w * 0.2, y1),
+                (cx - w * 0.2, y0 + w * 0.45),
+                (x0, y0 + w * 0.45),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::DownArrow => {
+            let pts = pts_to_pos(&[
+                (cx - w * 0.2, y0),
+                (cx + w * 0.2, y0),
+                (cx + w * 0.2, y1 - w * 0.45),
+                (x1, y1 - w * 0.45),
+                (cx, y1),
+                (x0, y1 - w * 0.45),
+                (cx - w * 0.2, y1 - w * 0.45),
+            ]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Star => {
+            let mut pts = Vec::new();
+            for i in 0..10 {
+                let a = std::f32::consts::PI * i as f32 / 5.0 - std::f32::consts::FRAC_PI_2;
+                let rad = if i % 2 == 0 { 1.0 } else { 0.4 };
+                pts.push(pos2(cx + a.cos() * w * 0.5 * rad, cy + a.sin() * h * 0.5 * rad));
+            }
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+        ShapeKind::Heart => {
+            let pts =
+                pts_to_pos(&[(cx, y0 + h * 0.25), (x0 + w * 0.15, y0), (x0, y0 + h * 0.35), (cx, y1), (x1, y0 + h * 0.35), (x1 - w * 0.15, y0)]);
+            p.add(egui::Shape::convex_polygon(pts.clone(), fill_color, Stroke::NONE));
+            p.add(egui::Shape::closed_line(pts, s));
+        }
+    }
+}
+
+fn shapes_gallery(ui: &mut Ui, app: &mut WordApp) {
+    let t = Tokens::get(ui.ctx());
+    let categories: &[(&str, &[(&str, &str, ShapeKind)])] = &[
+        (
+            "Lines & Arrows",
+            &[
+                ("Line", "line", ShapeKind::Line),
+                ("Right Arrow", "arrow", ShapeKind::Arrow),
+                ("Left Arrow", "leftArrow", ShapeKind::LeftArrow),
+                ("Up Arrow", "upArrow", ShapeKind::UpArrow),
+                ("Down Arrow", "downArrow", ShapeKind::DownArrow),
+            ],
+        ),
+        ("Rectangles", &[("Rectangle", "rectangle", ShapeKind::Rectangle), ("Rounded Rectangle", "roundedRectangle", ShapeKind::RoundedRectangle)]),
+        (
+            "Basic Shapes",
+            &[
+                ("Oval", "ellipse", ShapeKind::Ellipse),
+                ("Triangle", "triangle", ShapeKind::Triangle),
+                ("Right Triangle", "rightTriangle", ShapeKind::RightTriangle),
+                ("Diamond", "diamond", ShapeKind::Diamond),
+                ("Parallelogram", "parallelogram", ShapeKind::Parallelogram),
+                ("Trapezoid", "trapezoid", ShapeKind::Trapezoid),
+                ("Pentagon", "pentagon", ShapeKind::Pentagon),
+                ("Hexagon", "hexagon", ShapeKind::Hexagon),
+                ("Octagon", "octagon", ShapeKind::Octagon),
+                ("Cross", "cross", ShapeKind::Cross),
+                ("Star", "star", ShapeKind::Star),
+                ("Heart", "heart", ShapeKind::Heart),
+                ("Cloud", "cloud", ShapeKind::Cloud),
+            ],
+        ),
+    ];
+
+    for (cat_name, shapes) in categories {
+        ui.label(egui::RichText::new(tl!(*cat_name)).small().weak());
+        let cols = 5;
+        let btn_size = vec2(30.0, 30.0);
+        egui::Grid::new(*cat_name).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+            for (idx, (label, kind_str, kind)) in shapes.iter().enumerate() {
+                let (rect, resp) = ui.allocate_exact_size(btn_size, Sense::click());
+                let resp = resp.on_hover_text(tl!(*label));
+                let bg = if resp.hovered() { t.hover } else { t.canvas };
+                ui.painter().rect_filled(rect, 3.0, bg);
+                if resp.hovered() {
+                    ui.painter().rect_stroke(rect, 3.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+                }
+                let icon_rect = rect.shrink(5.0);
+                let fill_c = if *kind == ShapeKind::Line {
+                    Color32::TRANSPARENT
+                } else {
+                    Color32::from_rgba_unmultiplied(t.accent.r(), t.accent.g(), t.accent.b(), 35)
+                };
+                paint_shape_preview(ui.painter(), icon_rect, *kind, t.accent_text, fill_c);
+                if resp.clicked() {
+                    let _ = app.run("insert.shape", json!({"kind": kind_str}));
+                    ui.close();
+                }
+                if (idx + 1) % cols == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+        ui.add_space(4.0);
+    }
+}
+
 fn insert(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Pages", None, app, |ui, app| {
         stack(ui, |ui| {
@@ -536,19 +820,7 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Illustrations", None, app, |ui, app| {
         big(ui, app, "picture", "Pictures", "insert.picture", json!({}), false);
         menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, |ui, app| {
-            for (l, k) in [
-                ("Rectangle", "rectangle"),
-                ("Rounded Rectangle", "roundedRectangle"),
-                ("Oval", "ellipse"),
-                ("Triangle", "triangle"),
-                ("Diamond", "diamond"),
-                ("Line", "line"),
-                ("Arrow", "arrow"),
-                ("Star", "star"),
-                ("Heart", "heart"),
-            ] {
-                mi(ui, app, l, "insert.shape", json!({"kind": k}));
-            }
+            shapes_gallery(ui, app);
         });
         stack(ui, |ui| {
             small(ui, app, "icons", Some("Icons"), "Icons", "insert.icon", json!({}), false);
@@ -862,7 +1134,7 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
-        big(ui, app, "wrapText", "Wrap\nText", "arrange.wrap", json!({}), false);
+        wrap_menu(ui, app, Some("Wrap\nText"));
         stack(ui, |ui| {
             small(ui, app, "bringForward", Some("Bring Forward"), "Bring Forward", "arrange.bringForward", json!({}), false);
             small(ui, app, "sendBackward", Some("Send Backward"), "Send Backward", "arrange.sendBackward", json!({}), false);
@@ -898,6 +1170,97 @@ fn rotation_field(ui: &mut Ui, app: &mut WordApp) {
         }
         let _ = app.run("arrange.rotation", json!({"degrees": deg}));
     }
+}
+
+/// Arrange › Wrap Text: In Line with Text, Square, Tight, Through, Top and Bottom,
+/// Behind Text, In Front of Text, and wrapping sides.
+fn wrap_menu(ui: &mut Ui, app: &mut WordApp, label: Option<&str>) {
+    let (cur_wrap, cur_side) = wordcraft_engine::cmd::objects::selected(&app.session)
+        .and_then(|(_, o)| o.float().map(|f| (f.wrap, f.wrap_side)))
+        .unwrap_or((wordcraft_doc::para::Wrap::Inline, wordcraft_doc::para::WrapSide::BothSides));
+    let big_btn = label.is_some_and(|l| l.contains('\n'));
+    menu_button(ui, app, "wrapText", label, "Wrap Text", big_btn, |ui, app| {
+        mi_check_icon(
+            ui,
+            app,
+            "wrapInline",
+            "In Line with Text",
+            cur_wrap == wordcraft_doc::para::Wrap::Inline,
+            "arrange.wrap",
+            json!({"wrap": "inline"}),
+        );
+        ui.separator();
+        mi_check_icon(ui, app, "wrapSquare", "Square", cur_wrap == wordcraft_doc::para::Wrap::Square, "arrange.wrap", json!({"wrap": "square"}));
+        mi_check_icon(ui, app, "wrapTight", "Tight", cur_wrap == wordcraft_doc::para::Wrap::Tight, "arrange.wrap", json!({"wrap": "tight"}));
+        mi_check_icon(ui, app, "wrapThrough", "Through", cur_wrap == wordcraft_doc::para::Wrap::Through, "arrange.wrap", json!({"wrap": "through"}));
+        mi_check_icon(
+            ui,
+            app,
+            "wrapTopBottom",
+            "Top and Bottom",
+            cur_wrap == wordcraft_doc::para::Wrap::TopAndBottom,
+            "arrange.wrap",
+            json!({"wrap": "topAndBottom"}),
+        );
+        mi_check_icon(
+            ui,
+            app,
+            "wrapBehind",
+            "Behind Text",
+            cur_wrap == wordcraft_doc::para::Wrap::BehindText,
+            "arrange.wrap",
+            json!({"wrap": "behindText"}),
+        );
+        mi_check_icon(
+            ui,
+            app,
+            "wrapInFront",
+            "In Front of Text",
+            cur_wrap == wordcraft_doc::para::Wrap::InFrontOfText,
+            "arrange.wrap",
+            json!({"wrap": "inFrontOfText"}),
+        );
+        if cur_wrap != wordcraft_doc::para::Wrap::Inline && cur_wrap != wordcraft_doc::para::Wrap::TopAndBottom {
+            ui.separator();
+            ui.label(egui::RichText::new(tl!("Wrap Text Sides:")).small().weak());
+            mi_check_icon(
+                ui,
+                app,
+                "wrapBothSides",
+                "Both Sides",
+                cur_side == wordcraft_doc::para::WrapSide::BothSides,
+                "arrange.wrap",
+                json!({"side": "bothSides"}),
+            );
+            mi_check_icon(
+                ui,
+                app,
+                "wrapLeftOnly",
+                "Left Only",
+                cur_side == wordcraft_doc::para::WrapSide::Left,
+                "arrange.wrap",
+                json!({"side": "left"}),
+            );
+            mi_check_icon(
+                ui,
+                app,
+                "wrapRightOnly",
+                "Right Only",
+                cur_side == wordcraft_doc::para::WrapSide::Right,
+                "arrange.wrap",
+                json!({"side": "right"}),
+            );
+            mi_check_icon(
+                ui,
+                app,
+                "wrapLargestOnly",
+                "Largest Only",
+                cur_side == wordcraft_doc::para::WrapSide::Largest,
+                "arrange.wrap",
+                json!({"side": "largest"}),
+            );
+        }
+    });
 }
 
 /// Arrange › Group: Group (Shift+click objects to select several) and Ungroup.
@@ -1219,17 +1582,24 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
         _ => (None, None),
     };
     let theme = app.session.doc.settings.theme_colors.clone();
+    group(ui, "Insert Shapes", None, app, |ui, app| {
+        menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, |ui, app| {
+            shapes_gallery(ui, app);
+        });
+    });
     group(ui, "Shape Styles", None, app, |ui, app| {
         stack(ui, |ui| {
             menu_button(ui, app, "shading", Some("Shape Fill"), "Shape Fill", false, |ui, app| {
-                mi(ui, app, "No Color", "shape.fill", json!({"color": null}));
+                mi_icon(ui, app, "noFill", "No Fill", "shape.fill", json!({"color": null}));
+                ui.separator();
                 if let Some(hex) = color_grid(ui, &theme) {
                     let _ = app.run("shape.fill", json!({"color": hex}));
                     ui.close();
                 }
             });
             menu_button(ui, app, "pen", Some("Shape Outline"), "Shape Outline", false, |ui, app| {
-                mi(ui, app, "No Color", "shape.outline", json!({"color": null}));
+                mi_icon(ui, app, "noColor", "No Outline", "shape.outline", json!({"color": null}));
+                ui.separator();
                 if let Some(hex) = color_grid(ui, &theme) {
                     let _ = app.run("shape.outline", json!({"color": hex}));
                     ui.close();
@@ -1249,7 +1619,7 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
-        big(ui, app, "wrapText", "Wrap\nText", "arrange.wrap", json!({}), false);
+        wrap_menu(ui, app, Some("Wrap\nText"));
         stack(ui, |ui| {
             rotate_menu(ui, app, Some("Rotate"));
             small(ui, app, "align", Some("Align"), "Align", "arrange.align", json!({}), false);
@@ -1361,7 +1731,7 @@ fn picture_format(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Arrange", None, app, |ui, app| {
         big(ui, app, "position", "Position", "arrange.position", json!({}), false);
-        big(ui, app, "wrapText", "Wrap\nText", "arrange.wrap", json!({}), false);
+        wrap_menu(ui, app, Some("Wrap\nText"));
         stack(ui, |ui| {
             rotate_menu(ui, app, Some("Rotate"));
             small(ui, app, "align", Some("Align"), "Align", "arrange.align", json!({}), false);

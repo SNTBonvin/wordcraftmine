@@ -676,9 +676,20 @@ impl Writer<'_> {
             ShapeKind::RoundedRectangle => "roundRect",
             ShapeKind::Ellipse => "ellipse",
             ShapeKind::Triangle => "triangle",
+            ShapeKind::RightTriangle => "rtTriangle",
             ShapeKind::Diamond => "diamond",
+            ShapeKind::Parallelogram => "parallelogram",
+            ShapeKind::Trapezoid => "trapezoid",
+            ShapeKind::Pentagon => "homePlate",
+            ShapeKind::Hexagon => "hexagon",
+            ShapeKind::Octagon => "octagon",
+            ShapeKind::Cross => "mathPlus",
+            ShapeKind::Cloud => "cloud",
             ShapeKind::Line => "line",
             ShapeKind::Arrow => "rightArrow",
+            ShapeKind::LeftArrow => "leftArrow",
+            ShapeKind::UpArrow => "upArrow",
+            ShapeKind::DownArrow => "downArrow",
             ShapeKind::Star => "star5",
             ShapeKind::Heart => "heart",
         };
@@ -750,7 +761,8 @@ impl Writer<'_> {
         if float.wrap == Wrap::Inline {
             w.open("wp:inline", &[("distT", "0"), ("distB", "0"), ("distL", "0"), ("distR", "0")]);
         } else {
-            let d = emu(float.dist.clamp(0.0, 1584.0));
+            let dl = emu(float.dist_left().clamp(0.0, 1584.0));
+            let dr = emu(float.dist_right().clamp(0.0, 1584.0));
             let (dt, db) = (emu(float.dist_top.clamp(0.0, 1584.0)), emu(float.dist_bottom.clamp(0.0, 1584.0)));
             self.z += 1;
             let behind = if float.wrap == Wrap::BehindText { "1" } else { "0" };
@@ -759,8 +771,8 @@ impl Writer<'_> {
                 &[
                     ("distT", &dt),
                     ("distB", &db),
-                    ("distL", &d),
-                    ("distR", &d),
+                    ("distL", &dl),
+                    ("distR", &dr),
                     ("simplePos", "0"),
                     ("relativeHeight", &self.z.to_string()),
                     ("behindDoc", behind),
@@ -803,10 +815,10 @@ impl Writer<'_> {
         w.empty("wp:effectExtent", &[("l", &el), ("t", &et), ("r", &er), ("b", &eb)]);
         match float.wrap {
             Wrap::Inline => {}
-            Wrap::Square => w.empty("wp:wrapSquare", &[("wrapText", "bothSides")]),
+            Wrap::Square => w.empty("wp:wrapSquare", &[("wrapText", float.wrap_side.ooxml())]),
             Wrap::Tight | Wrap::Through => {
                 let tag = if float.wrap == Wrap::Tight { "wp:wrapTight" } else { "wp:wrapThrough" };
-                w.open(tag, &[("wrapText", "bothSides")]);
+                w.open(tag, &[("wrapText", float.wrap_side.ooxml())]);
                 w.open("wp:wrapPolygon", &[("edited", "0")]);
                 w.empty("wp:start", &[("x", "0"), ("y", "0")]);
                 for (x, y) in [("0", "21600"), ("21600", "21600"), ("21600", "0"), ("0", "0")] {

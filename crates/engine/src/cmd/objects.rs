@@ -4,7 +4,7 @@
 //! caret). Picture adjustments re-encode the bitmap (originals are kept for Reset Picture).
 
 use serde_json::{Value, json};
-use wordcraft_doc::para::{Float, InlineObject, Wrap};
+use wordcraft_doc::para::{Float, InlineObject, Wrap, WrapSide};
 use wordcraft_doc::props::Rgb;
 use wordcraft_doc::{Pos, StoryRef};
 use wordcraft_geom::Spin;
@@ -224,10 +224,38 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"degrees": number, "flipH"?: bool, "flipV"?: bool}  (the exact angle, clockwise, of the selected picture, shape or text box; normalised to 0–360)"#)
         .when(has_movable),
         CommandSpec::new("arrange.wrap", "Wrap Text", "Layout › Arrange", |s, v| {
-            let wrap: Wrap = serde_json::from_value(v.get("wrap").cloned().unwrap_or(json!("square"))).map_err(|e| CmdError::Params(e.to_string()))?;
-            with_float(s, |f| f.wrap = wrap)
+            let wrap: Option<Wrap> = v.get("wrap").map(|w| serde_json::from_value(w.clone())).transpose().map_err(|e| CmdError::Params(e.to_string()))?;
+            let side: Option<WrapSide> = v.get("side").map(|w| serde_json::from_value(w.clone())).transpose().map_err(|e| CmdError::Params(e.to_string()))?;
+            let dist = p::f32(v, "dist");
+            let dist_top = p::f32(v, "distTop");
+            let dist_bottom = p::f32(v, "distBottom");
+            let dist_left = p::f32(v, "distLeft");
+            let dist_right = p::f32(v, "distRight");
+
+            with_float(s, |f| {
+                if let Some(w) = wrap {
+                    f.wrap = w;
+                } else if side.is_none() && dist.is_none() && dist_top.is_none() && dist_bottom.is_none() && dist_left.is_none() && dist_right.is_none() {
+                    f.wrap = Wrap::Square;
+                }
+                if let Some(s) = side {
+                    f.wrap_side = s;
+                }
+                if let Some(d) = dist_left.or(dist) {
+                    f.dist = d.clamp(0.0, 1584.0);
+                }
+                if let Some(dr) = dist_right.or(dist) {
+                    f.dist_right = Some(dr.clamp(0.0, 1584.0));
+                }
+                if let Some(dt) = dist_top {
+                    f.dist_top = dt.clamp(0.0, 1584.0);
+                }
+                if let Some(db) = dist_bottom {
+                    f.dist_bottom = db.clamp(0.0, 1584.0);
+                }
+            })
         })
-        .params(r#"{"wrap": "inline|square|tight|through|topAndBottom|behindText|inFrontOfText"}"#)
+        .params(r#"{"wrap"?: "inline|square|tight|through|topAndBottom|behindText|inFrontOfText", "side"?: "bothSides|left|right|largest", "dist"?: pt, "distTop"?: pt, "distBottom"?: pt, "distLeft"?: pt, "distRight"?: pt}"#)
         .when(has_movable),
         CommandSpec::new("arrange.position", "Position", "Layout › Arrange", |s, v| {
             let preset = p::str(v, "preset").unwrap_or("middleCenter").to_string();
@@ -503,8 +531,9 @@ fn bounds(s: &mut Session, v: &Value) -> CmdResult {
     if (w, h) != (w0, h0) {
         with_obj(s, |o| o.set_size(w, h))?;
     }
+    let keep_wrap = p::bool(v, "keepWrap").unwrap_or(false);
     let pos = match to {
-        Some((x, y)) => move_object(s, pos, p::u64(v, "page"), x, y, (w, h))?,
+        Some((x, y)) => move_object(s, pos, p::u64(v, "page"), x, y, (w, h), keep_wrap)?,
         None => pos,
     };
     s.sel = Selection { anchor: pos.clone(), focus: Pos { off: pos.off + wordcraft_doc::para::OBJ.len_utf8(), ..pos.clone() } };
@@ -513,15 +542,42 @@ fn bounds(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 /// Put the object at `pos` with its top-left at (x, y) on `page` (default: where it is), as a
-/// drag does in Word: it floats (an inline object gets Square wrapping) and anchors to the
-/// paragraph under its top edge, positioned relative to that paragraph's column and top. So the
-/// text it lands on flows around it, and it moves with that text. On a page where no paragraph
-/// starts, it anchors to the nearest line and is positioned on the page. Returns the object's
-/// position afterwards.
-fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w, h): (f32, f32)) -> Result<Pos, CmdError> {
+/// drag does in Word: it floats (an inline object gets Square wrapping unless keep_wrap is set)
+/// and anchors to the paragraph under its top edge, positioned relative to that paragraph's column
+/// and top. So the text it lands on flows around it, and it moves with that text. On a page where
+/// no paragraph starts, it anchors to the nearest line and is positioned on the page. Returns the
+/// object's position afterwards.
+fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w, h): (f32, f32), keep_wrap: bool) -> Result<Pos, CmdError> {
     use wordcraft_doc::para::Anchor;
     if pos.story != StoryRef::Body || pos.path.depth() > 0 {
         return Err(CmdError::Disabled("only objects in the body text can be moved".into()));
+    }
+    let is_inline = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).and_then(|o| o.float()).is_some_and(|f| f.wrap == Wrap::Inline);
+    if keep_wrap && is_inline {
+        let layout = s.layout();
+        let cur = layout.object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the object isn't laid out".into()))?;
+        let page_idx = page.map_or(cur.page, |n| usize::try_from(n).unwrap_or(usize::MAX));
+        let target = layout
+            .hit(page_idx, x, y, StoryRef::Body)
+            .or_else(|| match anchor_paragraph(&layout, page_idx, y) {
+                Some(path) => Some(Pos { story: StoryRef::Body, path, off: 0 }),
+                None => nearest_line(&layout, page_idx, y),
+            })
+            .ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?;
+
+        let len = wordcraft_doc::para::OBJ.len_utf8();
+        if target.path == pos.path && (target.off == pos.off || target.off == pos.off + len) {
+            return Ok(pos);
+        }
+        let obj = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned().ok_or_else(|| CmdError::Failed("object vanished".into()))?;
+        s.doc.delete_range(&pos, &Pos { off: pos.off + len, ..pos.clone() })?;
+        let mut at = target;
+        if at.path == pos.path && at.off > pos.off {
+            at.off = at.off.saturating_sub(len);
+        }
+        let at = s.doc.clamp(&at);
+        s.doc.insert_object(&at, obj, &wordcraft_doc::CharProps::default())?;
+        return Ok(at);
     }
     let layout = s.layout();
     let cur = layout.object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the object isn't laid out".into()))?;
@@ -997,7 +1053,7 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
     let at = s.doc.clamp(&first);
     s.doc.insert_object(&at, grouped, &wordcraft_doc::CharProps::default())?;
     s.touch();
-    let pos = move_object(s, at, Some(page as u64), x0, y0, (w, h))?;
+    let pos = move_object(s, at, Some(page as u64), x0, y0, (w, h), false)?;
     s.also_selected.clear();
     s.sel = Selection { anchor: pos.clone(), focus: Pos { off: pos.off + len, ..pos.clone() } };
     let o = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned();
@@ -1016,7 +1072,7 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
             return Err(CmdError::Disabled("only groups in the body text can be ungrouped in line with text".into()));
         }
         let hit = s.layout().object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the object isn't laid out".into()))?;
-        move_object(s, pos, Some(hit.page as u64), hit.rect.x, hit.rect.y, (*w, *h))?
+        move_object(s, pos, Some(hit.page as u64), hit.rect.x, hit.rect.y, (*w, *h), false)?
     } else {
         unalign(s)?;
         pos
@@ -1195,6 +1251,11 @@ mod tests {
         assert_eq!(obj_size(&selected(&s).unwrap().1), (100.0, 50.0));
         s.run("picture.reset", &json!({})).unwrap();
         s.run("arrange.wrap", &json!({"wrap": "square"})).unwrap();
+        s.run("arrange.wrap", &json!({"side": "left", "distLeft": 12.0, "distRight": 18.0})).unwrap();
+        let (_, o) = selected(&s).unwrap();
+        assert_eq!(o.float().unwrap().wrap_side, wordcraft_doc::para::WrapSide::Left);
+        assert_eq!(o.float().unwrap().dist_left(), 12.0);
+        assert_eq!(o.float().unwrap().dist_right(), 18.0);
         s.run("arrange.position", &json!({"preset": "topRight"})).unwrap();
         let l = s.run("arrange.selectionPane", &json!({})).unwrap();
         assert_eq!(l.as_array().unwrap().len(), 1);

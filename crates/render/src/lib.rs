@@ -777,7 +777,54 @@ pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
         ShapeKind::RoundedRectangle => kurbo::RoundedRect::from_rect(r, r.width().min(r.height()) * 0.16).to_path(0.1),
         ShapeKind::Ellipse => kurbo::Ellipse::from_rect(r).to_path(0.1),
         ShapeKind::Triangle => poly(&[(cx, r.y0), (r.x1, r.y1), (r.x0, r.y1)]),
+        ShapeKind::RightTriangle => poly(&[(r.x0, r.y0), (r.x1, r.y1), (r.x0, r.y1)]),
         ShapeKind::Diamond => poly(&[(cx, r.y0), (r.x1, cy), (cx, r.y1), (r.x0, cy)]),
+        ShapeKind::Parallelogram => {
+            let w = r.width();
+            poly(&[(r.x0 + w * 0.25, r.y0), (r.x1, r.y0), (r.x1 - w * 0.25, r.y1), (r.x0, r.y1)])
+        }
+        ShapeKind::Trapezoid => {
+            let w = r.width();
+            poly(&[(r.x0 + w * 0.2, r.y0), (r.x1 - w * 0.2, r.y0), (r.x1, r.y1), (r.x0, r.y1)])
+        }
+        ShapeKind::Pentagon => {
+            let (w, h) = (r.width(), r.height());
+            poly(&[(cx, r.y0), (r.x1, r.y0 + h * 0.38), (r.x0 + w * 0.81, r.y1), (r.x0 + w * 0.19, r.y1), (r.x0, r.y0 + h * 0.38)])
+        }
+        ShapeKind::Hexagon => {
+            let w = r.width();
+            poly(&[(r.x0 + w * 0.25, r.y0), (r.x1 - w * 0.25, r.y0), (r.x1, cy), (r.x1 - w * 0.25, r.y1), (r.x0 + w * 0.25, r.y1), (r.x0, cy)])
+        }
+        ShapeKind::Octagon => {
+            let (w, h) = (r.width(), r.height());
+            poly(&[
+                (r.x0 + w * 0.29, r.y0),
+                (r.x1 - w * 0.29, r.y0),
+                (r.x1, r.y0 + h * 0.29),
+                (r.x1, r.y1 - h * 0.29),
+                (r.x1 - w * 0.29, r.y1),
+                (r.x0 + w * 0.29, r.y1),
+                (r.x0, r.y1 - h * 0.29),
+                (r.x0, r.y0 + h * 0.29),
+            ])
+        }
+        ShapeKind::Cross => {
+            let (w, h) = (r.width(), r.height());
+            let (x0, x1, x2, x3) = (r.x0, cx - w * 0.15, cx + w * 0.15, r.x1);
+            let (y0, y1, y2, y3) = (r.y0, cy - h * 0.15, cy + h * 0.15, r.y1);
+            poly(&[(x1, y0), (x2, y0), (x2, y1), (x3, y1), (x3, y2), (x2, y2), (x2, y3), (x1, y3), (x1, y2), (x0, y2), (x0, y1), (x1, y1)])
+        }
+        ShapeKind::Cloud => {
+            let (w, h) = (r.width(), r.height());
+            let mut p = BezPath::new();
+            p.move_to((r.x0 + w * 0.2, r.y1 - h * 0.15));
+            p.curve_to((r.x0, r.y1 - h * 0.15), (r.x0, cy), (r.x0 + w * 0.15, cy - h * 0.1));
+            p.curve_to((r.x0 + w * 0.1, r.y0 + h * 0.1), (cx - w * 0.15, r.y0), (cx, r.y0 + h * 0.15));
+            p.curve_to((cx + w * 0.15, r.y0), (r.x1 - w * 0.1, r.y0 + h * 0.1), (r.x1 - w * 0.15, cy - h * 0.1));
+            p.curve_to((r.x1, cy), (r.x1, r.y1 - h * 0.15), (r.x1 - w * 0.2, r.y1 - h * 0.15));
+            p.close_path();
+            p
+        }
         ShapeKind::Line => {
             let mut p = BezPath::new();
             p.move_to((r.x0, r.y1));
@@ -794,6 +841,42 @@ pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
                 (r.x1 - h * 0.5, r.y1),
                 (r.x1 - h * 0.5, cy + h * 0.2),
                 (r.x0, cy + h * 0.2),
+            ])
+        }
+        ShapeKind::LeftArrow => {
+            let h = r.height();
+            poly(&[
+                (r.x0, cy),
+                (r.x0 + h * 0.5, r.y0),
+                (r.x0 + h * 0.5, cy - h * 0.2),
+                (r.x1, cy - h * 0.2),
+                (r.x1, cy + h * 0.2),
+                (r.x0 + h * 0.5, cy + h * 0.2),
+                (r.x0 + h * 0.5, r.y1),
+            ])
+        }
+        ShapeKind::UpArrow => {
+            let w = r.width();
+            poly(&[
+                (cx, r.y0),
+                (r.x1, r.y0 + w * 0.5),
+                (cx + w * 0.2, r.y0 + w * 0.5),
+                (cx + w * 0.2, r.y1),
+                (cx - w * 0.2, r.y1),
+                (cx - w * 0.2, r.y0 + w * 0.5),
+                (r.x0, r.y0 + w * 0.5),
+            ])
+        }
+        ShapeKind::DownArrow => {
+            let w = r.width();
+            poly(&[
+                (cx - w * 0.2, r.y0),
+                (cx + w * 0.2, r.y0),
+                (cx + w * 0.2, r.y1 - w * 0.5),
+                (r.x1, r.y1 - w * 0.5),
+                (cx, r.y1),
+                (r.x0, r.y1 - w * 0.5),
+                (cx - w * 0.2, r.y1 - w * 0.5),
             ])
         }
         ShapeKind::Star => {

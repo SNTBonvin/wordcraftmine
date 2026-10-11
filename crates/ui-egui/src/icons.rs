@@ -566,6 +566,65 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.frect(7.5, 6.0, 12.5, 14.0, a);
             pen.lines(14.0, 17.0, &[7.0, 10.0, 13.0]);
         }
+        "wrapInline" => {
+            pen.lines(3.0, 17.0, &[4.0, 16.0]);
+            pen.lines(3.0, 7.0, &[10.0]);
+            pen.frect(8.0, 7.5, 12.0, 12.5, a);
+            pen.lines(13.0, 17.0, &[10.0]);
+        }
+        "wrapSquare" => {
+            pen.lines(3.0, 17.0, &[3.0, 17.0]);
+            pen.lines(3.0, 6.5, &[7.0, 10.0, 13.0]);
+            pen.frect(7.5, 6.0, 12.5, 14.0, a);
+            pen.lines(13.5, 17.0, &[7.0, 10.0, 13.0]);
+        }
+        "wrapTight" => {
+            pen.lines(3.0, 17.0, &[3.0, 17.0]);
+            pen.lines(3.0, 7.5, &[6.5, 10.0, 13.5]);
+            pen.fill(&[(10.0, 6.0), (13.5, 10.0), (10.0, 14.0), (6.5, 10.0)], a);
+            pen.lines(12.5, 17.0, &[6.5, 10.0, 13.5]);
+        }
+        "wrapThrough" => {
+            pen.lines(3.0, 17.0, &[3.0, 17.0]);
+            pen.lines(3.0, 8.5, &[7.0, 13.0]);
+            pen.fill(&[(10.0, 7.0), (13.0, 10.0), (10.0, 13.0), (7.0, 10.0)], a);
+            pen.line(&[(3.0, 10.0), (6.5, 10.0)]);
+            pen.line(&[(13.5, 10.0), (17.0, 10.0)]);
+        }
+        "wrapTopBottom" => {
+            pen.lines(3.0, 17.0, &[3.0, 5.5, 14.5, 17.0]);
+            pen.frect(7.0, 7.0, 13.0, 13.0, a);
+        }
+        "wrapBehind" => {
+            let faint = Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 90);
+            pen.frect(6.0, 5.0, 14.0, 15.0, faint);
+            pen.lines(3.0, 17.0, &[4.0, 8.0, 12.0, 16.0]);
+        }
+        "wrapInFront" => {
+            pen.lines(3.0, 17.0, &[4.0, 8.0, 12.0, 16.0]);
+            pen.frect(6.5, 5.5, 13.5, 14.5, a);
+        }
+        "wrapBothSides" => {
+            pen.lines(2.5, 6.5, &[6.0, 10.0, 14.0]);
+            pen.frect(7.5, 5.0, 12.5, 15.0, a);
+            pen.lines(13.5, 17.5, &[6.0, 10.0, 14.0]);
+        }
+        "wrapLeftOnly" => {
+            pen.lines(2.5, 7.0, &[6.0, 10.0, 14.0]);
+            pen.frect(8.0, 5.0, 17.0, 15.0, a);
+        }
+        "wrapRightOnly" => {
+            pen.frect(3.0, 5.0, 12.0, 15.0, a);
+            pen.lines(13.0, 17.5, &[6.0, 10.0, 14.0]);
+        }
+        "wrapLargestOnly" => {
+            pen.lines(2.5, 8.0, &[5.0, 8.5, 12.0, 15.5]);
+            pen.frect(9.0, 5.0, 16.5, 15.0, a);
+        }
+        "noColor" | "noFill" => {
+            pen.rect(3.0, 3.0, 17.0, 17.0, c);
+            pen.line_c(&[(3.0, 17.0), (17.0, 3.0)], red);
+        }
         "bringForward" => {
             pen.rect(3.0, 3.0, 12.0, 12.0, c);
             pen.frect(8.0, 8.0, 17.0, 17.0, a);

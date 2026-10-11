@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use wordcraft_doc::effects::{Glow, Shadow, ShapeEffects};
 use wordcraft_doc::graphic::{Embedded, Graphic, GraphicItem, GraphicKind};
-use wordcraft_doc::para::{Anchor, Float, FloatAlign, NoteKind, ShapeKind, Wrap};
+use wordcraft_doc::para::{Anchor, Float, FloatAlign, NoteKind, ShapeKind, Wrap, WrapSide};
 use wordcraft_doc::props::{CharProps, NumChange, PropChange, Rgb};
 use wordcraft_doc::table::{Cell, MAX_COLS, MAX_ROWS, Row, Table};
 use wordcraft_doc::{Block, Blocks, InlineObject, Paragraph, PartKind, RevisionKind, Run, para_block};
@@ -870,10 +870,21 @@ impl Reader<'_> {
         let mut kind = match prst {
             "roundRect" => ShapeKind::RoundedRectangle,
             "ellipse" => ShapeKind::Ellipse,
-            "triangle" | "rtTriangle" => ShapeKind::Triangle,
+            "triangle" => ShapeKind::Triangle,
+            "rtTriangle" => ShapeKind::RightTriangle,
             "diamond" => ShapeKind::Diamond,
+            "parallelogram" => ShapeKind::Parallelogram,
+            "trapezoid" => ShapeKind::Trapezoid,
+            "homePlate" | "pentagon" => ShapeKind::Pentagon,
+            "hexagon" => ShapeKind::Hexagon,
+            "octagon" => ShapeKind::Octagon,
+            "mathPlus" | "plus" | "cross" => ShapeKind::Cross,
+            "cloud" => ShapeKind::Cloud,
             "line" | "straightConnector1" => ShapeKind::Line,
-            "rightArrow" | "leftArrow" | "upArrow" | "downArrow" => ShapeKind::Arrow,
+            "rightArrow" => ShapeKind::Arrow,
+            "leftArrow" => ShapeKind::LeftArrow,
+            "upArrow" => ShapeKind::UpArrow,
+            "downArrow" => ShapeKind::DownArrow,
             "star5" | "star4" | "star6" => ShapeKind::Star,
             "heart" => ShapeKind::Heart,
             _ => ShapeKind::Rectangle,
@@ -1042,9 +1053,24 @@ fn anchor_float(c: &El) -> Float {
     let behind = on_off_attr(c, "behindDoc");
     for k in c.els() {
         match k.name.as_str() {
-            "wp:wrapSquare" => f.wrap = Wrap::Square,
-            "wp:wrapTight" => f.wrap = Wrap::Tight,
-            "wp:wrapThrough" => f.wrap = Wrap::Through,
+            "wp:wrapSquare" => {
+                f.wrap = Wrap::Square;
+                if let Some(wt) = k.attr("wrapText").and_then(WrapSide::from_ooxml) {
+                    f.wrap_side = wt;
+                }
+            }
+            "wp:wrapTight" => {
+                f.wrap = Wrap::Tight;
+                if let Some(wt) = k.attr("wrapText").and_then(WrapSide::from_ooxml) {
+                    f.wrap_side = wt;
+                }
+            }
+            "wp:wrapThrough" => {
+                f.wrap = Wrap::Through;
+                if let Some(wt) = k.attr("wrapText").and_then(WrapSide::from_ooxml) {
+                    f.wrap_side = wt;
+                }
+            }
             "wp:wrapTopAndBottom" => f.wrap = Wrap::TopAndBottom,
             "wp:wrapNone" => f.wrap = if behind { Wrap::BehindText } else { Wrap::InFrontOfText },
             "wp:positionH" | "wp:positionV" => {
@@ -1080,7 +1106,12 @@ fn anchor_float(c: &El) -> Float {
         }
     }
     let dist = |n: &str| c.attr(n).and_then(|v| measure(v, 12_700.0)).unwrap_or(0.0).clamp(0.0, 1584.0);
-    f.dist = dist("distL").max(dist("distR"));
+    let dl = dist("distL");
+    let dr = dist("distR");
+    f.dist = dl.max(dr);
+    if c.attr("distL").is_some() && c.attr("distR").is_some() && (dl - dr).abs() > 0.01 {
+        f.dist_right = Some(dr);
+    }
     f.dist_top = dist("distT");
     f.dist_bottom = dist("distB");
     f
