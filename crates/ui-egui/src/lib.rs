@@ -534,6 +534,9 @@ impl WordApp {
 
     fn after_command(&mut self, id: &str) {
         self.canvas.caret_visible_since = now_ms();
+        if id == "view.outline" {
+            self.ui.nav_tab = "headings".into();
+        }
         if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
             self.canvas.scroll_to_caret = true;
         }
@@ -1470,10 +1473,11 @@ mod tests {
     /// Reading Mode: reflowed viewport-height columns, horizontal wheel/navigation, exit restores
     /// Print Layout without editing or changing the document's page setup.
     #[test]
-    fn reading_mode_columns_wheel_turns_and_escape() {
+    fn reading_mode_columns_wheel_turns_and_navigation() {
         let ctx = egui::Context::default();
         let mut a = app();
         a.run("text.insert", json!({"text": "One readable paragraph in many narrow columns. ".repeat(300)})).unwrap();
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 0)})).unwrap();
         let original = a.session.doc.settings.clone();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 740.0));
         let mut t = 0.0;
@@ -1512,19 +1516,46 @@ mod tests {
             }],
             screen,
         );
-        assert!(a.canvas.scroll_offset.x >= 64.0, "vertical wheel becomes horizontal");
+        let step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!(
+            (a.canvas.scroll_offset.x - step).abs() < 1.0,
+            "one wheel event turns one whole column: x={}, step={}, columns={}",
+            a.canvas.scroll_offset.x,
+            step,
+            a.canvas.cols
+        );
         assert_eq!(a.canvas.scroll_offset.y, 0.0);
         let x = a.canvas.scroll_offset.x;
         canvas::turn_read_page(&mut a, 1.0);
         frame(&mut a, vec![], screen);
-        assert!(a.canvas.scroll_offset.x > x);
+        assert!((a.canvas.scroll_offset.x - x - step).abs() < 1.0);
+        let x = a.canvas.scroll_offset.x;
+        // A heading navigation request must position its column at the leading edge,
+        // not wherever egui's generic scroll_to_rect decides the caret is visible.
+        let target = wordcraft_doc::Pos::body(0, 5000);
+        a.run("view.outline", json!({})).unwrap();
+        a.run("caret.set", json!({"pos": target})).unwrap();
+        a.canvas.nav_to_caret = true;
+        a.canvas.scroll_to_caret = false;
+        frame(&mut a, vec![], screen);
+        let page = a.session.layout().caret_on(&a.session.sel.focus, a.session.page_hint).unwrap().page;
+        let step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!((a.canvas.scroll_offset.x - (page as f32 * step)).abs() < 1.0, "heading must align its column beside the navigation pane");
+        assert!(a.canvas.scroll_offset.x != x);
         // Resizing changes the content width (reflow), not the zoom or the print paper width.
         let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(850.0, 740.0));
         frame(&mut a, vec![], narrow);
         assert_ne!(a.session.view.read_width, initial_width);
         assert!((a.canvas.scale - canvas::PX_PER_PT).abs() < 0.01);
-        let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
-        frame(&mut a, vec![esc], narrow);
+        a.run("view.readColumnWidth", json!({"value": "page"})).unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!(a.session.view.read_width <= 612.0);
+        a.run("view.readTextSize", json!({"value": 125})).unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!((a.canvas.scale / canvas::PX_PER_PT - 1.25).abs() < 0.01);
+        // The Edit Document button works even when the navigation pane owns focus.
+        a.run("view.printLayout", json!({})).unwrap();
+        frame(&mut a, vec![], narrow);
         assert!(!a.session.view.read_mode);
         assert_eq!(a.session.view.mode, wordcraft_layout::ViewMode::Print);
         assert_eq!(a.session.doc.settings, original);

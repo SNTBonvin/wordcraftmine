@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Reading Mode now reflows into viewport-height horizontal columns with page navigation and returns to Print Layout; previously: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Reading toolbar, transient width/size/spacing, column-locked wheel scrolling and aligned headings; previously: Reading Mode reflow; previously: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -26,7 +26,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Selection: word/sentence/paragraph clicks, Shift extend, F8 extend mode, column (Alt+drag, #237) | ✅ | ✅ | 85% | 1 |
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251) | ✅ | ✅ | 85% | — |
 | Touchpad smooth/inertial scroll | ✅ (#252) | ✅ | 90% | — |
-| Reading Mode | Reflows document text into 3–5 narrow, viewport-height columns on a typical window; horizontal paging with vertical wheel/touchpad, arrows/Page Up/Down and on-screen controls; Escape / Edit Document restores Print Layout. Print paper and document sections remain untouched. Advanced reader tools not yet replicated | reading-optimized view and navigation | 75% | 1–2 |
+| Reading Mode | Reflows text into narrow, viewport-height columns. Replaces the editing ribbon with transient width (up to standard page), text-size and line-spacing controls plus headings; every wheel tick turns one aligned column, touchpads accumulate towards column turns, and heading navigation aligns its page beside the pane without switching view. Escape / Edit Document restores Print Layout. Changes never affect document/page setup or saved view preferences. Advanced reader tools not yet replicated | reading-optimized view and navigation | 75% | 1–2 |
 | Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ | ✅ | 80% | — |
 | Interface themes (light, dark, system #249, follows OS changes live #311), dark page separate from the interface theme (#194, #312) | ✅ | ✅ | 90% | — |
 | Interface size (File › Options › General, 80–200 %, on top of the system display scale; `ui.interfaceSize`) (#475) | ✅ | system display scaling only | 100% | — |
@@ -38,6 +38,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Reading toolbar, ephemeral width, text zoom and line spacing; snapped wheel navigation, aligned headings and Outline keeps the current view |
 | 2026-10-12 | minor | Reading Mode reflows to viewport-height horizontal columns; wheel, page controls and keyboard navigation; exit preserves print layout |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
 | 2026-10-11 | trivial | Customize Keyboard dialog (Tools › Customize Keyboard, File › Options › Keyboard shortcuts): custom keys override built-ins and persist (#368) |
