@@ -24,6 +24,7 @@ pub mod objects;
 pub mod page;
 pub mod para;
 pub mod paste;
+pub mod protect;
 pub mod phonetic;
 pub mod references;
 pub mod review;
@@ -73,6 +74,7 @@ pub fn registry() -> Registry {
     v.extend(draw::specs());
     v.extend(canvas::specs());
     v.extend(tools::specs());
+    v.extend(protect::specs());
     v.extend(speech::specs());
     Registry::new(v)
 }

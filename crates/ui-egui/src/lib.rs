@@ -27,6 +27,7 @@ pub mod dialogs_lists;
 pub mod dialogs_notes;
 pub mod dialogs_para;
 pub mod dialogs_refs;
+pub mod dialogs_review;
 pub mod dialogs_ribbon;
 pub mod equation_tab;
 pub mod file_dialogs;
@@ -185,6 +186,8 @@ pub struct WordApp {
     pub services: Services,
     pub canvas: canvas::CanvasState,
     pub dialog: Option<dialogs::Dialog>,
+    /// The Restrict Editing pane (#412).
+    pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
@@ -267,6 +270,7 @@ impl WordApp {
             services,
             canvas: canvas::CanvasState::default(),
             dialog: None,
+            restrict: Default::default(),
             status_msg: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
@@ -1204,6 +1208,12 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         // Define New Multilevel List and Track Changes Options without settings show their dialogs.
         "list.define" if params.get("levels").is_none() => Some("defineList"),
         "review.trackingOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("trackChangesOptions"),
+        // Compare / Combine without a revised document, AutoCorrect Options without settings and
+        // Restrict Editing without settings show their dialogs or pane (#412).
+        "review.compare" if !has("path") && !has("text") => Some("compare"),
+        "review.combine" if !has("path") && !has("text") => Some("combine"),
+        "tools.autocorrect" if params.as_object().is_none_or(|m| m.is_empty()) => Some("autoCorrect"),
+        "review.restrict" | "file.protect" if params.as_object().is_none_or(|m| m.is_empty()) => Some("restrictEditing"),
         "insert.bookmark" if !has("name") => Some("bookmark"),
         // Word Count from the keyboard or command search shows its dialog, as the ribbon does.
         "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
