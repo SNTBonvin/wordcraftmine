@@ -1,6 +1,8 @@
 //! `wordcraft-cli`: WordCraft from the command line.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use std::fmt;
+use std::io::Write;
 use std::process::ExitCode;
 
 use serde_json::{Value, json};
@@ -16,10 +18,12 @@ USAGE:
   wordcraft-cli inspect <file>                document structure (JSON)
   wordcraft-cli render <file> <out.png> [--page N] [--scale S]
   wordcraft-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
-                                              run commands headlessly, then save
+                    [--author NAME]           run commands headlessly, then save (--author names
+                                              who tracked changes and comments are by)
   wordcraft-cli commands [--json]             list every command
   wordcraft-cli parity [--markdown]           feature-catalog parity
-  wordcraft-cli mcp [--connect HOST:PORT]     MCP server on stdio (headless, or bridged to the app)
+  wordcraft-cli mcp [--connect HOST:PORT | --author NAME]
+                                              MCP server on stdio (headless, or bridged to the app)
   wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
                                               run a Zotero command on a document (Zotero must be
                                               running): addEditCitation, addEditBibliography,
@@ -33,6 +37,11 @@ fn open(path: &str) -> Result<Session, String> {
     let mut s = Session::new(doc);
     s.path = Some(path.into());
     Ok(s)
+}
+
+/// `--author NAME`: the author recorded on tracked changes and comments (`file.setAuthor`).
+fn set_author(s: &mut Session, name: &str) -> Result<(), String> {
+    s.run("file.setAuthor", &json!({"name": name})).map(|_| ()).map_err(|e| format!("--author: {e}"))
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
@@ -74,10 +83,11 @@ const RUN_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--page", takes_value: true },
     OptionSpec { name: "--scale", takes_value: true },
     OptionSpec { name: "--print", takes_value: false },
+    OptionSpec { name: "--author", takes_value: true },
 ];
 const COMMANDS_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--json", takes_value: false }];
 const PARITY_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--markdown", takes_value: false }];
-const MCP_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--connect", takes_value: true }];
+const MCP_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--connect", takes_value: true }, OptionSpec { name: "--author", takes_value: true }];
 const ZOTERO_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--cmd", takes_value: true },
     OptionSpec { name: "--save", takes_value: true },
@@ -85,7 +95,53 @@ const ZOTERO_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--port", takes_value: true },
 ];
 
-fn run(args: &[String]) -> Result<(), String> {
+/// Why a CLI run stopped early.
+#[derive(Debug, PartialEq)]
+enum Failure {
+    /// A real error, reported on stderr with a failing exit status.
+    Error(String),
+    /// Whoever read stdout closed it (`wordcraft-cli commands --json | head`): there is nobody left
+    /// to write to, so stop quietly and exit 0 like other command-line tools.
+    StdoutClosed,
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Failure::Error(e) => f.write_str(e),
+            Failure::StdoutClosed => f.write_str("stdout closed"),
+        }
+    }
+}
+
+impl From<String> for Failure {
+    fn from(e: String) -> Self {
+        Failure::Error(e)
+    }
+}
+
+impl From<&str> for Failure {
+    fn from(e: &str) -> Self {
+        Failure::Error(e.into())
+    }
+}
+
+impl From<std::io::Error> for Failure {
+    fn from(e: std::io::Error) -> Self {
+        if e.kind() == std::io::ErrorKind::BrokenPipe { Failure::StdoutClosed } else { Failure::Error(e.to_string()) }
+    }
+}
+
+/// Write to stdout through one locked handle and flush. Unlike `println!`, a closed stdout comes
+/// back as an error (`Failure::StdoutClosed`) instead of a panic.
+fn write_stdout(write: impl FnOnce(&mut std::io::StdoutLock<'static>) -> std::io::Result<()>) -> Result<(), Failure> {
+    let mut out = std::io::stdout().lock();
+    write(&mut out)?;
+    out.flush()?;
+    Ok(())
+}
+
+fn run(args: &[String]) -> Result<(), Failure> {
     let cmd = args.first().map(String::as_str).unwrap_or("");
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
     let pos = |i: usize| rest.iter().filter(|a| !a.starts_with("--")).nth(i).cloned().ok_or_else(|| format!("missing argument\n\n{USAGE}"));
@@ -106,20 +162,19 @@ fn run(args: &[String]) -> Result<(), String> {
         "info" => {
             validate_options("info", &rest, NO_OPTIONS)?;
             let mut s = open(&pos(0)?)?;
-            println!("{}", serde_json::to_string_pretty(&s.run("file.info", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default());
-            Ok(())
+            let info = serde_json::to_string_pretty(&s.run("file.info", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default();
+            write_stdout(|o| writeln!(o, "{info}"))
         }
         "text" => {
             validate_options("text", &rest, NO_OPTIONS)?;
             let s = open(&pos(0)?)?;
-            println!("{}", s.doc.plain_text(wordcraft_doc::StoryRef::Body));
-            Ok(())
+            write_stdout(|o| writeln!(o, "{}", s.doc.plain_text(wordcraft_doc::StoryRef::Body)))
         }
         "inspect" => {
             validate_options("inspect", &rest, NO_OPTIONS)?;
             let mut s = open(&pos(0)?)?;
-            println!("{}", serde_json::to_string_pretty(&s.run("document.inspect", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default());
-            Ok(())
+            let tree = serde_json::to_string_pretty(&s.run("document.inspect", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default();
+            write_stdout(|o| writeln!(o, "{tree}"))
         }
         "render" => {
             validate_options("render", &rest, RENDER_OPTIONS)?;
@@ -128,8 +183,7 @@ fn run(args: &[String]) -> Result<(), String> {
             let page = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()).unwrap_or(1);
             let scale = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()).unwrap_or(2.0);
             let r = s.run("file.exportPng", &json!({"path": o, "page": page, "scale": scale})).map_err(|e| e.to_string())?;
-            println!("{r}");
-            Ok(())
+            write_stdout(|o| writeln!(o, "{r}"))
         }
         "run" => {
             validate_options("run", &rest, RUN_OPTIONS)?;
@@ -142,6 +196,9 @@ fn run(args: &[String]) -> Result<(), String> {
                 }
                 _ => Session::new(wordcraft_doc::Document::new()),
             };
+            if let Some(name) = arg_value(&rest, "--author") {
+                set_author(&mut s, &name)?;
+            }
             let mut i = 0;
             while i < rest.len() {
                 if rest.get(i).map(String::as_str) == Some("--cmd") {
@@ -152,7 +209,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     };
                     let r = s.run(&id, &params).map_err(|e| format!("{id}: {e}"))?;
                     if rest.iter().any(|a| a == "--print") {
-                        println!("{id}: {r}");
+                        write_stdout(|o| writeln!(o, "{id}: {r}"))?;
                     }
                     i += 2;
                 } else {
@@ -181,28 +238,35 @@ fn run(args: &[String]) -> Result<(), String> {
             validate_options("commands", &rest, COMMANDS_OPTIONS)?;
             let s = Session::new(wordcraft_doc::Document::new());
             if rest.iter().any(|a| a == "--json") {
-                println!("{}", serde_json::to_string_pretty(&s.registry.describe()).unwrap_or_default());
+                let list = serde_json::to_string_pretty(&s.registry.describe()).unwrap_or_default();
+                write_stdout(|o| writeln!(o, "{list}"))
             } else {
-                for c in s.registry.all() {
-                    println!("{:<32} {:<36} {:<24} {}", c.id, c.label, c.shortcut, c.location);
-                }
+                write_stdout(|o| {
+                    for c in s.registry.all() {
+                        writeln!(o, "{:<32} {:<36} {:<24} {}", c.id, c.label, c.shortcut, c.location)?;
+                    }
+                    Ok(())
+                })
             }
-            Ok(())
         }
         "parity" => {
             validate_options("parity", &rest, PARITY_OPTIONS)?;
             let s = Session::new(wordcraft_doc::Document::new());
             let p = wordcraft_engine::catalog::parity(&s.registry);
             if rest.iter().any(|a| a == "--markdown") {
-                print!("{}", parity_markdown(&p));
+                write_stdout(|o| write!(o, "{}", parity_markdown(&p)))
             } else {
-                println!("{}", serde_json::to_string_pretty(&p).unwrap_or_default());
+                write_stdout(|o| writeln!(o, "{}", serde_json::to_string_pretty(&p).unwrap_or_default()))
             }
-            Ok(())
         }
         "mcp" => {
             validate_options("mcp", &rest, MCP_OPTIONS)?;
+            let author = arg_value(&rest, "--author");
             let backend: Box<dyn wordcraft_mcp::Backend> = match arg_value(&rest, "--connect") {
+                // The app's user name is the person's own setting; don't rewrite it from a flag.
+                Some(_) if author.is_some() => {
+                    return Err("mcp: --author applies to the headless server; with --connect, run file.setAuthor".into());
+                }
                 Some(addr) => {
                     let remote = wordcraft_mcp::Remote::connect(&addr).map_err(|e| format!("can't reach the WordCraft app at {addr}: {e}"))?;
                     if let Some(w) = remote.key_warning() {
@@ -210,11 +274,18 @@ fn run(args: &[String]) -> Result<(), String> {
                     }
                     Box::new(remote)
                 }
-                None => Box::new(wordcraft_mcp::Headless::default()),
+                None => {
+                    let mut headless = wordcraft_mcp::Headless::default();
+                    if let Some(name) = author {
+                        set_author(&mut headless.session, &name)?;
+                    }
+                    Box::new(headless)
+                }
             };
             let mut server = wordcraft_mcp::Server::new(backend);
             let stdin = std::io::stdin();
-            server.serve(stdin.lock(), std::io::stdout()).map_err(|e| e.to_string())
+            // A client that closes our stdout has hung up: `serve` returns BrokenPipe and we end cleanly.
+            Ok(server.serve(stdin.lock(), std::io::stdout())?)
         }
         "zotero" => {
             validate_options("zotero", &rest, ZOTERO_OPTIONS)?;
@@ -255,15 +326,9 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        "--version" | "-V" => {
-            println!("wordcraft-cli {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
-        "" | "help" | "--help" | "-h" => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        other => Err(format!("unknown command `{other}`\n\n{USAGE}")),
+        "--version" | "-V" => write_stdout(|o| writeln!(o, "wordcraft-cli {}", env!("CARGO_PKG_VERSION"))),
+        "" | "help" | "--help" | "-h" => write_stdout(|o| write!(o, "{USAGE}")),
+        other => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
     }
 }
 
@@ -304,8 +369,8 @@ fn parity_markdown(p: &Value) -> String {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
+        Ok(()) | Err(Failure::StdoutClosed) => ExitCode::SUCCESS,
+        Err(Failure::Error(e)) => {
             eprintln!("wordcraft-cli: {e}");
             ExitCode::FAILURE
         }
@@ -344,5 +409,18 @@ mod tests {
         assert_eq!(run(&args(&["info", "missing.docx", "--passwrod", "x"])), Err("info: unknown option --passwrod".into()));
         assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])), Err("render: unknown option --sclae".into()));
         assert_eq!(run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])), Err("zotero: unknown option --prot".into()));
+    }
+
+    #[test]
+    fn author_flag_names_the_headless_session() {
+        assert!(validate_options("run", &args(&["--author", "Claude (copyedit)", "--cmd", "edit.undo"]), RUN_OPTIONS).is_ok());
+        assert!(validate_options("mcp", &args(&["--author", "Claude"]), MCP_OPTIONS).is_ok());
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        assert!(set_author(&mut s, " Claude (copyedit) ").is_ok());
+        assert_eq!(s.author, "Claude (copyedit)");
+        assert!(set_author(&mut s, "   ").is_err_and(|e| e.starts_with("--author:")));
+        assert!(run(&args(&["run", "--author", "Claude", "--cmd", "review.trackChanges={\"value\":true}"])).is_ok());
+        // The app's user name is the person's own; a bridge flag must not rewrite it.
+        assert!(run(&args(&["mcp", "--connect", "127.0.0.1:9", "--author", "Claude"])).is_err_and(|e| e.to_string().contains("--author")));
     }
 }

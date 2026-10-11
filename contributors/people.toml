@@ -26,3 +26,17 @@ sync_github_name = false
 real_name = "Chiranjeevi Uddanti"
 display_name = "Chiranjeevi U"
 sync_github_name = false
+
+[people.saeedemperor]
+real_name = "Saeed Azarehgar"
+
+[people.vangel76]
+sync_github_name = true
+
+[people.dkhlapov]
+real_name = "Dmitrii Khlapov"
+display_name = "Dima Khlapov"
+sync_github_name = false
+
+[people.henno]
+sync_github_name = true

@@ -10,9 +10,18 @@
 //! compare in document order.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod bidi;
 pub mod edit;
+pub mod effects;
 pub mod encoding;
 pub mod fields;
+pub mod freeform;
+pub mod graphic;
+pub mod math;
+pub mod math_edit;
+pub mod math_latex;
+pub mod math_linear;
+pub mod math_symbols;
 pub mod numbering;
 pub mod para;
 pub mod props;
@@ -20,6 +29,7 @@ pub mod resolve;
 pub mod section;
 pub mod styles;
 pub mod table;
+pub mod wrap;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -73,6 +83,54 @@ impl Block {
 }
 
 pub type Blocks = Vec<Arc<Block>>;
+
+/// Text boxes inside text boxes count (and show) this many levels deep.
+pub const MAX_TEXT_BOX_DEPTH: usize = 4;
+
+/// Bounds the work of expanding text boxes inside text boxes (layout, walks, saving), whatever a
+/// document says: a box isn't expanded inside itself, nesting stops at [`MAX_TEXT_BOX_DEPTH`], and
+/// an outermost box expands at most [`BoxBudget::MAX_NESTED`] boxes inside it. (A box whose
+/// shapes all show that same box, or chains of boxes each showing the next many times, would
+/// otherwise grow exponentially.) Outermost boxes aren't capped: their number is the document's
+/// (or its pages', for headers), so the work stays linear and no box is left blank for budget.
+#[derive(Debug, Default)]
+pub struct BoxBudget {
+    open: Vec<u32>,
+    nested: usize,
+    total: usize,
+}
+
+impl BoxBudget {
+    /// Boxes expanded inside one outermost box.
+    pub const MAX_NESTED: usize = 64;
+
+    /// Start expanding text box story `id`; false if it mustn't be (pair a true with `leave`).
+    pub fn enter(&mut self, id: u32) -> bool {
+        if self.open.contains(&id) || self.open.len() >= MAX_TEXT_BOX_DEPTH {
+            return false;
+        }
+        if self.open.is_empty() {
+            self.nested = 0;
+        } else if self.nested >= Self::MAX_NESTED {
+            return false;
+        } else {
+            self.nested += 1;
+        }
+        self.total += 1;
+        self.open.push(id);
+        true
+    }
+
+    /// Done expanding the box last entered.
+    pub fn leave(&mut self) {
+        self.open.pop();
+    }
+
+    /// Boxes expanded so far.
+    pub fn total(&self) -> usize {
+        self.total
+    }
+}
 
 pub fn para_block(p: Paragraph) -> Arc<Block> {
     Arc::new(Block::Para(p))
@@ -272,6 +330,12 @@ pub struct Settings {
     /// 2013 and later, which places a table's border at the margin rather than its text and lets
     /// justified lines shrink their spaces to fit more text.
     pub compat_mode: u32,
+    /// Drawing grid spacing in points, across and down (View › Gridlines); ECMA-376's default is 1/8 inch.
+    pub grid_h: f32,
+    pub grid_v: f32,
+    /// Equation options (`m:mathPr`), when the document has them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub math: Option<math::MathProps>,
 }
 
 /// Word's compatibility mode for documents that don't state one.
@@ -279,6 +343,9 @@ pub const LEGACY_COMPAT_MODE: u32 = 12;
 
 /// The compatibility mode of documents created by Word 2013 and later, and by WordCraft.
 pub const COMPAT_MODE_CURRENT: u32 = 15;
+
+/// ECMA-376 §17.15.1.44/45: 180 twentieths of a point when a document doesn't say.
+pub const DEFAULT_GRID: f32 = 9.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -330,6 +397,9 @@ impl Default for Settings {
             endnote_format: section::NumFormat::LowerRoman,
             protection: None,
             compat_mode: COMPAT_MODE_CURRENT,
+            grid_h: DEFAULT_GRID,
+            grid_v: DEFAULT_GRID,
+            math: None,
         }
     }
 }
@@ -525,6 +595,23 @@ impl Document {
         Pos { story: s, path, off }
     }
 
+    /// The position just after the shape that owns text box story `part` (body first, then the
+    /// other parts), for leaving the text box.
+    pub fn text_box_anchor(&self, part: u32) -> Option<Pos> {
+        let stories = std::iter::once(StoryRef::Body).chain(self.parts.keys().filter(|k| **k != part).map(|k| StoryRef::Part(*k)));
+        for story in stories {
+            for path in self.para_paths(story) {
+                let Some(p) = self.para(story, &path) else { continue };
+                for off in p.object_offsets() {
+                    if p.object_at(off).is_some_and(|o| o.text_boxes().contains(&part)) {
+                        return Some(Pos { story, path, off: off + para::OBJ.len_utf8() });
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// The next / previous paragraph path in document order.
     pub fn next_para(&self, s: StoryRef, path: &Path) -> Option<Path> {
         let all = self.para_paths(s);
@@ -609,6 +696,115 @@ impl Document {
     /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit).
     pub fn word_count(&self) -> usize {
         count_words(&self.plain_text(StoryRef::Body))
+    }
+
+    /// Word's default count: the body plus its text boxes, footnotes and endnotes.
+    pub fn word_count_including_notes(&self) -> usize {
+        self.counted_stories().iter().map(|s| count_words(&self.plain_text(*s))).sum()
+    }
+
+    /// The body, then the text boxes, footnotes and endnotes it shows (nested ones too), in
+    /// document order. Headers, footers, comments and stories nothing points at aren't included.
+    pub fn counted_stories(&self) -> Vec<StoryRef> {
+        self.reachable(vec![StoryRef::Body], &|o| match o {
+            InlineObject::NoteRef { id, .. } => vec![(*id, &[PartKind::Footnote, PartKind::Endnote][..])],
+            o => o.text_boxes().into_iter().map(|id| (id, &[PartKind::TextBox][..])).collect(),
+        })
+    }
+
+    /// Drop the text box stories no box shows any more (a deleted or cut box's text), nested
+    /// ones too. Undo snapshots and the clipboard keep their own copies. Free for a document
+    /// without text boxes; otherwise one pass over its paragraphs. Returns how many went.
+    pub fn prune_text_boxes(&mut self) -> usize {
+        if !self.parts.values().any(|p| p.kind == PartKind::TextBox) {
+            return 0;
+        }
+        let roots = std::iter::once(StoryRef::Body)
+            .chain(self.parts.iter().filter(|(_, p)| p.kind != PartKind::TextBox).map(|(id, _)| StoryRef::Part(*id)))
+            .collect();
+        let live = self.reachable(roots, &|o| o.text_boxes().into_iter().map(|id| (id, &[PartKind::TextBox][..])).collect());
+        let before = self.parts.len();
+        self.parts.retain(|id, p| p.kind != PartKind::TextBox || live.contains(&StoryRef::Part(*id)));
+        before - self.parts.len()
+    }
+
+    /// Every inline object in reading order: the body's, with each text box's objects where the
+    /// box is (nested boxes too, within a [`BoxBudget`]).
+    pub fn objects_in_reading_order(&self, f: &mut dyn FnMut(&InlineObject)) {
+        self.walk_objects(&self.body, &mut BoxBudget::default(), &mut |p, k| {
+            if let Some(o) = p.objects.get(k) {
+                f(o);
+            }
+            true
+        });
+    }
+
+    /// Like [`Document::objects_in_reading_order`], with each object's paragraph and index;
+    /// `f` returns whether to go into the object's text box (false: the box is left out).
+    pub fn objects_in_reading_order_at(&self, f: &mut dyn FnMut(&Paragraph, usize) -> bool) {
+        self.walk_objects(&self.body, &mut BoxBudget::default(), f);
+    }
+
+    /// The footnotes and endnotes referenced inside text box story `part` (nested boxes too), in
+    /// reading order.
+    pub fn notes_in_text_box(&self, part: u32) -> Vec<u32> {
+        let mut out = Vec::new();
+        let mut budget = BoxBudget::default();
+        if let Some(p) = self.parts.get(&part).filter(|p| p.kind == PartKind::TextBox)
+            && budget.enter(part)
+        {
+            self.walk_objects(&p.blocks, &mut budget, &mut |p, k| {
+                if let Some(InlineObject::NoteRef { id, .. }) = p.objects.get(k) {
+                    out.push(*id);
+                }
+                true
+            });
+            budget.leave();
+        }
+        out
+    }
+
+    fn walk_objects(&self, blocks: &Blocks, budget: &mut BoxBudget, f: &mut dyn FnMut(&Paragraph, usize) -> bool) {
+        for b in blocks {
+            edit::each_para(b, 0, &mut |p| {
+                for (k, o) in p.objects.iter().enumerate() {
+                    if !f(p, k) {
+                        continue;
+                    }
+                    for id in o.text_boxes() {
+                        if let Some(part) = self.parts.get(&id).filter(|p| p.kind == PartKind::TextBox)
+                            && budget.enter(id)
+                        {
+                            self.walk_objects(&part.blocks, budget, f);
+                            budget.leave();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// `roots`, then every story their objects lead to (`follow`: an object's story id and the
+    /// part kinds that count), transitively, in the order found.
+    fn reachable(&self, roots: Vec<StoryRef>, follow: &dyn Fn(&InlineObject) -> Vec<(u32, &'static [PartKind])>) -> Vec<StoryRef> {
+        let mut out = roots;
+        let mut seen: std::collections::BTreeSet<StoryRef> = out.iter().copied().collect();
+        let mut i = 0;
+        while let Some(s) = out.get(i).copied() {
+            i += 1;
+            let mut found = Vec::new();
+            for b in self.story(s).into_iter().flatten() {
+                edit::each_para(b, 0, &mut |p| {
+                    found.extend(p.objects.iter().flat_map(follow));
+                });
+            }
+            for (id, kinds) in found {
+                if self.parts.get(&id).is_some_and(|p| kinds.contains(&p.kind)) && seen.insert(StoryRef::Part(id)) {
+                    out.push(StoryRef::Part(id));
+                }
+            }
+        }
+        out
     }
 
     /// Number of paragraphs in the body (all depths).

@@ -13,12 +13,34 @@ pub const SIZES: [f32; 17] = [8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("format.bold", "Bold", "Home › Font", |s, v| toggle(s, v, |r| r.bold, |c, on| c.bold = Some(on)))
-            .key("Mod+B")
-            .params(r#"{"value"?: bool}"#),
-        CommandSpec::new("format.italic", "Italic", "Home › Font", |s, v| toggle(s, v, |r| r.italic, |c, on| c.italic = Some(on)))
-            .key("Mod+I")
-            .params(r#"{"value"?: bool}"#),
+        CommandSpec::new("format.bold", "Bold", "Home › Font", |s, v| {
+            // Like Word's button, for complex-script (Persian, Arabic) text too: an unset `bold_cs`
+            // follows `bold`.
+            toggle(
+                s,
+                v,
+                |r| r.bold,
+                |c, on| {
+                    c.bold = Some(on);
+                    c.bold_cs = None;
+                },
+            )
+        })
+        .key("Mod+B")
+        .params(r#"{"value"?: bool}"#),
+        CommandSpec::new("format.italic", "Italic", "Home › Font", |s, v| {
+            toggle(
+                s,
+                v,
+                |r| r.italic,
+                |c, on| {
+                    c.italic = Some(on);
+                    c.italic_cs = None;
+                },
+            )
+        })
+        .key("Mod+I")
+        .params(r#"{"value"?: bool}"#),
         CommandSpec::new("format.underline", "Underline", "Home › Font", underline)
             .key("Mod+U")
             .params(r#"{"value"?: bool, "style"?: "single|double|thick|dotted|dash|dotDash|dotDotDash|wave|words"}"#),
@@ -79,9 +101,12 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("format.growFont1", "Grow Font 1 Point", "Home › Font", |s, _| nudge_size(s, 1.0)).key("Mod+]"),
         CommandSpec::new("format.shrinkFont1", "Shrink Font 1 Point", "Home › Font", |s, _| nudge_size(s, -1.0)).key("Mod+["),
         CommandSpec::new("format.color", "Font Color", "Home › Font", color).params(r#"{"color": "RRGGBB" | "auto"}"#),
-        CommandSpec::new("format.highlight", "Text Highlight Color", "Home › Font", highlight).params(
-            r#"{"color": "yellow|brightGreen|turquoise|pink|blue|red|darkBlue|teal|green|violet|darkRed|darkYellow|gray50|gray25|black|none"}"#,
-        ),
+        CommandSpec::new("format.highlight", "Text Highlight Color", "Home › Font", highlight)
+            .params(
+                r#"{"color": "yellow|brightGreen|turquoise|pink|blue|red|darkBlue|teal|green|violet|darkRed|darkYellow|gray50|gray25|black|none"}"#,
+            )
+            // ⌘⌥H hides other apps on macOS.
+            .key(super::non_mac("Mod+Alt+H")),
         CommandSpec::new("format.shading", "Character Shading", "Home › Font", |s, v| {
             let c = p::str(v, "color").and_then(Rgb::parse);
             apply(s, &|x| x.shading = c)
@@ -90,7 +115,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("format.changeCase", "Change Case", "Home › Font", change_case)
             .key("Shift+F3")
             .params(r#"{"mode"?: "sentence|lower|upper|title|toggle"}"#),
-        CommandSpec::new("format.clear", "Clear All Formatting", "Home › Font", clear).key("Mod+Space"),
+        CommandSpec::new("format.clear", "Clear All Formatting", "Home › Font", clear),
+        // Word's Ctrl+Space; ⌘Space is Spotlight, so Word for Mac uses ⌃Space.
+        CommandSpec::new("format.resetChar", "Reset Character Formatting", "Home › Font", reset_char).key(super::mac_or("Ctrl+Space", "Mod+Space")),
         CommandSpec::new("format.spacing", "Character Spacing", "Home › Font › Font › Advanced", |s, v| {
             let x = p::req_f32(v, "points")?.clamp(-100.0, 100.0);
             apply(s, &|c| c.spacing = Some(x))
@@ -138,8 +165,28 @@ fn target(s: &Session) -> Option<(Pos, Pos)> {
     None
 }
 
+/// The non-empty rows of a column selection, if one is active.
+fn column_rows(s: &Session) -> Option<Vec<(Pos, Pos)>> {
+    let segs = s.column_segments()?;
+    let rows: Vec<(Pos, Pos)> = segs
+        .iter()
+        .map(|(a, b)| (s.doc.clamp(a), s.doc.clamp(b)))
+        .filter(|(a, b)| a != b && a.path == b.path && a.story == b.story)
+        .map(|(a, b)| if a <= b { (a, b) } else { (b, a) })
+        .collect();
+    // An empty block (column mode just started) formats like a caret.
+    (!rows.is_empty()).then_some(rows)
+}
+
 /// Apply a change to the selection (or the pending caret formatting).
 pub fn apply(s: &mut Session, f: &dyn Fn(&mut CharProps)) -> CmdResult {
+    // A column selection formats each row's piece.
+    if let Some(rows) = column_rows(s) {
+        for (a, b) in rows {
+            s.doc.format_range(&a, &b, f)?;
+        }
+        return sel_result(s);
+    }
     match target(s) {
         Some((a, b)) => {
             s.doc.format_range(&a, &b, f)?;
@@ -164,6 +211,22 @@ pub fn apply(s: &mut Session, f: &dyn Fn(&mut CharProps)) -> CmdResult {
 /// Resolved formatting of every character in the target (or the caret).
 fn resolved(s: &Session) -> Vec<ResolvedChar> {
     let mut out = Vec::new();
+    if let Some(rows) = column_rows(s) {
+        for (a, b) in rows {
+            let Some(p) = s.doc.para_at(&a) else { continue };
+            for (r, c) in p.run_ranges() {
+                if r.end > a.off && r.start < b.off {
+                    out.push(s.doc.styles.resolve_char(p.props.style.as_deref(), c));
+                }
+            }
+            if out.len() > 10_000 {
+                break;
+            }
+        }
+        if !out.is_empty() {
+            return out;
+        }
+    }
     let Some((a, b)) = target(s) else {
         let f = &s.sel.focus;
         let style = s.doc.para_at(f).and_then(|p| p.props.style.clone());
@@ -214,7 +277,11 @@ fn font(s: &mut Session, v: &Value) -> CmdResult {
     if name.is_empty() || name.len() > 128 {
         return Err(CmdError::Params("bad font name".into()));
     }
-    apply(s, &|c| c.font = Some(name.clone()))
+    // The font applies to Persian/Arabic text in the selection too (its complex-script font).
+    apply(s, &|c| {
+        c.font = Some(name.clone());
+        c.font_cs = Some(name.clone());
+    })
 }
 
 fn size(s: &mut Session, v: &Value) -> CmdResult {
@@ -224,7 +291,10 @@ fn size(s: &mut Session, v: &Value) -> CmdResult {
     }
     // Word rounds to half points.
     let sz = (sz * 2.0).round() / 2.0;
-    apply(s, &|c| c.size = Some(sz))
+    apply(s, &|c| {
+        c.size = Some(sz);
+        c.size_cs = None;
+    })
 }
 
 fn current_size(s: &Session) -> f32 {
@@ -240,12 +310,18 @@ fn step_size(s: &mut Session, dir: i32) -> CmdResult {
     };
     let next = next.clamp(1.0, 1638.0);
     // Each run steps from its own size when the selection mixes sizes.
-    apply(s, &|c| c.size = Some(next))
+    apply(s, &|c| {
+        c.size = Some(next);
+        c.size_cs = None;
+    })
 }
 
 fn nudge_size(s: &mut Session, d: f32) -> CmdResult {
     let next = (current_size(s) + d).clamp(1.0, 1638.0);
-    apply(s, &|c| c.size = Some(next))
+    apply(s, &|c| {
+        c.size = Some(next);
+        c.size_cs = None;
+    })
 }
 
 fn color(s: &mut Session, v: &Value) -> CmdResult {
@@ -379,6 +455,15 @@ fn clear(s: &mut Session, _: &Value) -> CmdResult {
             let f = s.sel.focus.clone();
             s.doc.format_paragraphs(&f, &f, &|p| *p = Default::default())?;
         }
+    }
+    sel_result(s)
+}
+
+/// Remove direct character formatting, keeping the paragraph and any character style.
+fn reset_char(s: &mut Session, _: &Value) -> CmdResult {
+    match target(s) {
+        Some((a, b)) => s.doc.format_range(&a, &b, &|c| *c = CharProps { style: c.style.clone(), ..c.cleared() })?,
+        None => s.pending = Some(CharProps::default()),
     }
     sel_result(s)
 }

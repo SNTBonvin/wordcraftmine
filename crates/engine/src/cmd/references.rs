@@ -57,8 +57,10 @@ pub fn specs() -> Vec<CommandSpec> {
         .pure(),
         CommandSpec::new("references.caption", "Insert Caption", "References › Captions", caption)
             .params(r#"{"label"?: "Figure|Table|Equation", "text"?: string}"#),
+        // F9: update fields; the selected ones that showed their code show their result again.
         CommandSpec::new("references.updateFields", "Update Field", "References", |s, _| {
             update_fields(s)?;
+            super::fields::show_results(s)?;
             sel_result(s)
         })
         .key("F9"),
@@ -142,7 +144,7 @@ fn insert_toc(s: &mut Session, v: &Value) -> CmdResult {
     let mut head = Paragraph::with_text(&title, CharProps::default()).styled("TOCHeading");
     head.insert_object(
         head.len(),
-        InlineObject::Field { instr: format!("TOC \\o \"1-{levels}\" \\h \\z \\u"), result: String::new(), locked: false },
+        InlineObject::Field { instr: format!("TOC \\o \"1-{levels}\" \\h \\z \\u"), result: String::new(), locked: false, code: false },
         &CharProps::default(),
     )?;
     let i = if s.doc.para_at(&at).is_some_and(|p| p.is_empty()) { at.path.last() } else { s.doc.split_paragraph(&at)?.path.last() };
@@ -253,7 +255,7 @@ fn caption(s: &mut Session, v: &Value) -> CmdResult {
     para.insert_text(0, &base, &CharProps::default())?;
     para.insert_object(
         base.len(),
-        InlineObject::Field { instr: format!("SEQ {label} \\* ARABIC"), result: n.to_string(), locked: false },
+        InlineObject::Field { instr: format!("SEQ {label} \\* ARABIC"), result: n.to_string(), locked: false, code: false },
         &CharProps::default(),
     )?;
     let end = para.len();
@@ -265,9 +267,15 @@ fn caption(s: &mut Session, v: &Value) -> CmdResult {
     sel_result(s)
 }
 
-/// Update fields in the body: dates, SEQ numbering, TOC.
+/// Update fields in the body: dates, SEQ numbering, cross-references, TOC.
 pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
     let mut seq: std::collections::HashMap<String, u32> = Default::default();
+    let mut pages: std::collections::HashMap<String, u32> = Default::default();
+    for (name, pos) in s.doc.bookmarks() {
+        let l = s.layout();
+        let page = l.caret(&pos).and_then(|c| l.pages.get(c.page)).map(|p| p.number).unwrap_or(1);
+        pages.entry(name).or_insert(page);
+    }
     for path in s.doc.para_paths(StoryRef::Body) {
         let Some(p) = s.doc.para(StoryRef::Body, &path) else { continue };
         if !p.objects.iter().any(|o| matches!(o, InlineObject::Field { .. })) {
@@ -279,11 +287,7 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
             let name = wordcraft_layout::fields::field_name(instr);
             match name.as_str() {
                 "DATE" | "TIME" | "CREATEDATE" | "SAVEDATE" | "PRINTDATE" => {
-                    let pic = instr
-                        .split("\\@")
-                        .nth(1)
-                        .map(|x| x.trim().trim_matches('"').to_string())
-                        .unwrap_or_else(|| if name == "TIME" { "h:mm am/pm".into() } else { "M/d/yyyy".into() });
+                    let pic = date_picture(instr).unwrap_or_else(|| if name == "TIME" { "h:mm am/pm".into() } else { "M/d/yyyy".into() });
                     updates.push((k, super::insert::format_date(&pic)));
                 }
                 "SEQ" => {
@@ -291,6 +295,13 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
                     let n = seq.entry(id).or_insert(0);
                     *n += 1;
                     updates.push((k, n.to_string()));
+                }
+                "REF" | "PAGEREF" => {
+                    let target = instr.split_whitespace().nth(1).unwrap_or("");
+                    let r = if name == "REF" { bookmark_text(&s.doc, target) } else { pages.get(target).map(u32::to_string) };
+                    if let Some(r) = r {
+                        updates.push((k, r));
+                    }
                 }
                 "TITLE" => updates.push((k, s.doc.core.title.clone())),
                 "AUTHOR" => updates.push((k, s.doc.core.creator.clone())),
@@ -311,4 +322,27 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
     }
     super::citations::update_citations(s)?;
     update_toc(s)
+}
+
+/// A field's `\@` date picture: the quoted text after it (switches may follow), or one word.
+pub fn date_picture(instr: &str) -> Option<String> {
+    let rest = instr.split_once("\\@")?.1.trim_start();
+    let pic = match rest.strip_prefix('"') {
+        Some(q) => q.split('"').next().unwrap_or(""),
+        None => rest.split_whitespace().next().unwrap_or(""),
+    };
+    (!pic.is_empty()).then(|| pic.to_string())
+}
+
+/// The text a bookmark marks (field results included), up to its end in the same paragraph or
+/// the paragraph's end. `None` when there is no such bookmark.
+pub fn bookmark_text(doc: &wordcraft_doc::Document, name: &str) -> Option<String> {
+    let (_, start) = doc.bookmarks().into_iter().find(|(n, _)| n == name)?;
+    let para = doc.para(start.story, &start.path)?;
+    let end = para
+        .object_offsets()
+        .into_iter()
+        .find(|o| *o > start.off && matches!(para.object_at(*o), Some(InlineObject::BookmarkEnd { name: n }) if n == name))
+        .unwrap_or(para.len());
+    Some(doc.copy_range(&start, &Pos { off: end, ..start.clone() }).plain_text().trim().to_string())
 }

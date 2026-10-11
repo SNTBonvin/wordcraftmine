@@ -27,7 +27,13 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture).params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string}"#),
         CommandSpec::new("insert.shape", "Shapes", "Insert › Illustrations", shape)
             .params(r#"{"kind": "rectangle|roundedRectangle|ellipse|triangle|diamond|line|arrow|star|heart", "width"?: pt, "height"?: pt, "fill"?: "RRGGBB", "stroke"?: "RRGGBB"}"#),
-        CommandSpec::new("insert.textBox", "Text Box", "Insert › Text", text_box).params(r#"{"text"?: string, "width"?: pt, "height"?: pt}"#),
+        CommandSpec::new("insert.textBox", "Text Box", "Insert › Text", text_box)
+            .params(r#"{"text"?: string, "width"?: pt, "height"?: pt}"#)
+            .when(|s| {
+                // As in Word: no text box inside a text box.
+                matches!(s.sel.focus.story, StoryRef::Part(id) if s.doc.parts.get(&id).is_some_and(|p| p.kind == PartKind::TextBox))
+                    .then_some("text boxes can't go inside a text box")
+            }),
         CommandSpec::new("insert.link", "Link", "Insert › Links", link).key("Mod+K").params(r#"{"url": string, "text"?: string}"#),
         CommandSpec::new("insert.removeLink", "Remove Hyperlink", "Insert › Links", |s, _| super::format::apply(s, &|c| {
             c.link = None;
@@ -35,7 +41,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 c.style = None;
             }
         })),
-        CommandSpec::new("insert.bookmark", "Bookmark", "Insert › Links", bookmark).params(r#"{"name": string}"#),
+        CommandSpec::new("insert.bookmark", "Bookmark", "Insert › Links", bookmark).params(r#"{"name": string}"#).key("Mod+Shift+F5"),
         CommandSpec::new("insert.header", "Header", "Insert › Header & Footer", |s, v| header_footer(s, v, true)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|title"}"#),
         CommandSpec::new("insert.footer", "Footer", "Insert › Header & Footer", |s, v| header_footer(s, v, false)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|pageNumber"}"#),
         CommandSpec::new("insert.pageNumber", "Page Number", "Insert › Header & Footer", page_number).params(r#"{"position"?: "top|bottom|current", "align"?: "left|center|right", "format"?: "x of y"}"#),
@@ -63,23 +69,15 @@ pub fn specs() -> Vec<CommandSpec> {
             sel_result(s)
         }),
         CommandSpec::new("insert.dateTime", "Date & Time", "Insert › Text", date_time).params(r#"{"format"?: "M/d/yyyy", "update"?: bool}"#),
-        CommandSpec::new("insert.symbol", "Symbol", "Insert › Symbols", |s, v| {
-            let c = p::req_str(v, "char")?;
-            type_text(s, c)?;
-            sel_result(s)
-        })
-        .params(r#"{"char": string}"#),
-        CommandSpec::new("insert.equation", "Equation", "Insert › Symbols", |s, v| {
-            let lin = p::str(v, "linear").unwrap_or("a^2+b^2=c^2").to_string();
-            let props = s.typing_props();
-            let at = delete_selection(s)?;
-            let end = s.doc.insert_object(&at, InlineObject::Equation { linear: lin, display: false }, &props)?;
-            s.sel = Selection::caret(end);
-            sel_result(s)
-        })
-        .key("Alt+=")
-        .params(r#"{"linear"?: string}"#),
+        CommandSpec::new("insert.symbol", "Symbol", "Insert › Symbols", symbol).params(r#"{"char": string, "font"?: family (the symbol's own font)}"#),
         CommandSpec::new("insert.field", "Field", "Insert › Text › Quick Parts", field).key("Mod+F9").params(r#"{"instr": string, "result"?: string}"#),
+        // Word's Alt+Shift+D / T / P (Control+Shift+… in Word for Mac): DATE, TIME and PAGE fields.
+        CommandSpec::new("insert.dateField", "Insert Date Field", "Insert › Text › Quick Parts", |s, _| field(s, &json!({"instr": "DATE"})))
+            .key(super::mac_or("Ctrl+Shift+D", "Alt+Shift+D")),
+        CommandSpec::new("insert.timeField", "Insert Time Field", "Insert › Text › Quick Parts", |s, _| field(s, &json!({"instr": "TIME"})))
+            .key(super::mac_or("Ctrl+Shift+T", "Alt+Shift+T")),
+        CommandSpec::new("insert.pageField", "Insert Page Field", "Insert › Text › Quick Parts", |s, _| field(s, &json!({"instr": "PAGE"})))
+            .key(super::mac_or("Ctrl+Shift+P", "Alt+Shift+P")),
         CommandSpec::new("insert.dropCap", "Drop Cap", "Insert › Text", |s, v| {
             let lines = p::u64(v, "lines").unwrap_or(3).min(10) as u8;
             super::para::fmt(s, &|p| p.drop_cap = Some(lines))
@@ -101,7 +99,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.textFromFile", "Text from File", "Insert › Text › Object", |s, v| {
             let path = p::req_str(v, "path")?;
             let doc = crate::io::open_path(std::path::Path::new(path)).map_err(CmdError::Failed)?;
-            let frag = wordcraft_doc::edit::Fragment { blocks: doc.body.iter().map(|b| (**b).clone()).collect() };
+            let frag = doc.body_fragment();
             let at = delete_selection(s)?;
             let end = s.doc.insert_fragment(&at, &frag)?;
             s.sel = Selection::caret(end);
@@ -236,8 +234,15 @@ fn picture(s: &mut Session, v: &Value) -> CmdResult {
     }
     let props = s.typing_props();
     let at = delete_selection(s)?;
-    let obj =
-        InlineObject::Image { media: key.clone(), w, h, alt: p::str(v, "alt").unwrap_or("").to_string(), float: Float::default(), crop: [0.0; 4] };
+    let obj = InlineObject::Image {
+        media: key.clone(),
+        w,
+        h,
+        alt: p::str(v, "alt").unwrap_or("").to_string(),
+        float: Float::default(),
+        crop: [0.0; 4],
+        ole: None,
+    };
     let end = s.doc.insert_object(&at, obj, &props)?;
     s.sel = Selection { anchor: at, focus: end };
     Ok(json!({"media": key, "width": w, "height": h}))
@@ -256,8 +261,18 @@ fn shape(s: &mut Session, v: &Value) -> CmdResult {
     let stroke = p::str(v, "stroke").and_then(Rgb::parse).or(Some(Rgb(0x0E, 0x40, 0x5A)));
     let props = s.typing_props();
     let at = delete_selection(s)?;
-    let obj =
-        InlineObject::Shape { kind, w, h, fill, stroke, stroke_width: 1.0, float: Float { wrap: Wrap::Inline, ..Default::default() }, story: None };
+    let obj = InlineObject::Shape {
+        kind,
+        w,
+        h,
+        fill,
+        stroke,
+        stroke_width: 1.0,
+        float: Float { wrap: Wrap::Inline, ..Default::default() },
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+    };
     let end = s.doc.insert_object(&at, obj, &props)?;
     s.sel = Selection { anchor: at, focus: end };
     sel_result(s)
@@ -279,9 +294,12 @@ fn text_box(s: &mut Session, v: &Value) -> CmdResult {
         stroke_width: 0.75,
         float: Float::default(),
         story: Some(id),
+        freeform: None,
+        effects: Default::default(),
     };
-    let end = s.doc.insert_object(&at, obj, &props)?;
-    s.sel = Selection::caret(end);
+    s.doc.insert_object(&at, obj, &props)?;
+    // Like Word, type straight into the new box.
+    s.sel = Selection::caret(s.doc.end_of(StoryRef::Part(id)));
     Ok(json!({"story": id}))
 }
 
@@ -371,7 +389,11 @@ fn header_footer(s: &mut Session, v: &Value, header: bool) -> CmdResult {
             }
             "pageNumber" => {
                 para.props.align = Some(Align::Center);
-                para.insert_object(0, InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false }, &CharProps::default())?;
+                para.insert_object(
+                    0,
+                    InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false, code: false },
+                    &CharProps::default(),
+                )?;
             }
             _ => {
                 para.insert_text(0, "[Type here]", &CharProps::default())?;
@@ -398,7 +420,7 @@ fn page_number(s: &mut Session, v: &Value) -> CmdResult {
         _ => Align::Center,
     };
     let x_of_y = p::str(v, "format").is_some_and(|f| f.contains("of"));
-    let field = InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false };
+    let field = InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false, code: false };
     if position == "current" {
         let props = s.typing_props();
         let at = delete_selection(s)?;
@@ -417,7 +439,7 @@ fn page_number(s: &mut Session, v: &Value) -> CmdResult {
         let end = para.len();
         para.insert_object(
             end,
-            InlineObject::Field { instr: "NUMPAGES".into(), result: "1".into(), locked: false },
+            InlineObject::Field { instr: "NUMPAGES".into(), result: "1".into(), locked: false, code: false },
             &CharProps { bold: Some(true), ..Default::default() },
         )?;
     } else {
@@ -433,7 +455,11 @@ fn date_time(s: &mut Session, v: &Value) -> CmdResult {
     if p::bool(v, "update").unwrap_or(false) {
         let props = s.typing_props();
         let at = delete_selection(s)?;
-        let end = s.doc.insert_object(&at, InlineObject::Field { instr: format!("DATE \\@ \"{fmt}\""), result: text, locked: false }, &props)?;
+        let end = s.doc.insert_object(
+            &at,
+            InlineObject::Field { instr: format!("DATE \\@ \"{fmt}\""), result: text, locked: false, code: false },
+            &props,
+        )?;
         s.sel = Selection::caret(end);
     } else {
         type_text(s, &text)?;
@@ -449,23 +475,12 @@ pub fn format_date(fmt: &str) -> String {
     let d: u32 = iso.get(8..10).and_then(|x| x.parse().ok()).unwrap_or(1);
     let hh: u32 = iso.get(11..13).and_then(|x| x.parse().ok()).unwrap_or(0);
     let mm: u32 = iso.get(14..16).and_then(|x| x.parse().ok()).unwrap_or(0);
+    let ss: u32 = iso.get(17..19).and_then(|x| x.parse().ok()).unwrap_or(0);
     const MONTHS: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const DAYS: [&str; 7] = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
-    let days_since = {
-        // Days since epoch for weekday.
-        let secs = {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                0u64
-            }
-        };
-        (secs / 86_400) as usize
-    };
+    // Days since the epoch, for the weekday.
+    let days_since = (super::now_unix() / 86_400) as usize;
     let month = MONTHS.get(m.saturating_sub(1)).copied().unwrap_or("January");
     let day = DAYS.get(days_since % 7).copied().unwrap_or("Monday");
     let mut out = String::new();
@@ -473,6 +488,12 @@ pub fn format_date(fmt: &str) -> String {
     let mut i = 0;
     while i < chars.len() {
         let c = chars.get(i).copied().unwrap_or(' ');
+        // `am/pm` (any case) is one token: AM or PM.
+        if chars.get(i..i + 5).is_some_and(|w| w.iter().collect::<String>().eq_ignore_ascii_case("am/pm")) {
+            out.push_str(if hh < 12 { "AM" } else { "PM" });
+            i += 5;
+            continue;
+        }
         let mut n = 1;
         while chars.get(i + n) == Some(&c) {
             n += 1;
@@ -493,6 +514,8 @@ pub fn format_date(fmt: &str) -> String {
             ('h', _) => out.push_str(&(if hh.is_multiple_of(12) { 12 } else { hh % 12 }).to_string()),
             ('m', 2..) => out.push_str(&format!("{mm:02}")),
             ('m', _) => out.push_str(&mm.to_string()),
+            ('s', 2..) => out.push_str(&format!("{ss:02}")),
+            ('s', _) => out.push_str(&ss.to_string()),
             ('a' | 'A', _) => out.push_str(if hh < 12 { "AM" } else { "PM" }),
             _ => {
                 for _ in 0..n {
@@ -505,6 +528,32 @@ pub fn format_date(fmt: &str) -> String {
     out
 }
 
+/// Insert › Symbol: the character at the caret, in its own font when `font` names one (the rest of
+/// the text keeps the caret's font).
+fn symbol(s: &mut Session, v: &Value) -> CmdResult {
+    let c = p::req_str(v, "char")?;
+    if c.is_empty() || c.chars().count() > 64 {
+        return Err(CmdError::Params("char: 1–64 characters".into()));
+    }
+    let font = p::str(v, "font").map(str::trim).filter(|f| !f.is_empty());
+    let Some(font) = font else {
+        type_text(s, c)?;
+        return sel_result(s);
+    };
+    if font.len() > 256 {
+        return Err(CmdError::Params("font: a family name".into()));
+    }
+    let base = s.typing_props();
+    let mut props = base.clone();
+    props.font = Some(font.to_string());
+    s.pending = Some(props);
+    let r = type_text(s, c);
+    // Typing on after the symbol goes on in the text's own font.
+    s.pending = Some(base);
+    r?;
+    sel_result(s)
+}
+
 fn field(s: &mut Session, v: &Value) -> CmdResult {
     let instr = p::req_str(v, "instr")?.trim().to_string();
     if instr.is_empty() || instr.len() > 4096 {
@@ -513,7 +562,7 @@ fn field(s: &mut Session, v: &Value) -> CmdResult {
     let result = p::str(v, "result").unwrap_or("").to_string();
     let props = s.typing_props();
     let at = delete_selection(s)?;
-    let end = s.doc.insert_object(&at, InlineObject::Field { instr, result, locked: false }, &props)?;
+    let end = s.doc.insert_object(&at, InlineObject::Field { instr, result, locked: false, code: false }, &props)?;
     s.sel = Selection::caret(end);
     let _ = super::references::update_fields(s);
     sel_result(s)
@@ -544,7 +593,7 @@ fn cover_page(s: &mut Session, v: &Value) -> CmdResult {
     let mut date = Paragraph::with_text(&format_date("MMMM d, yyyy"), CharProps::default());
     date.insert_text(date.len(), "\u{000C}", &CharProps::default())?;
     blocks.push(Block::Para(date));
-    let frag = wordcraft_doc::edit::Fragment { blocks };
+    let frag = wordcraft_doc::edit::Fragment { blocks, ..Default::default() };
     let start = s.doc.start_of(StoryRef::Body);
     let at = s.doc.split_paragraph(&start)?;
     let _ = at;
@@ -564,10 +613,31 @@ mod tests {
         assert!(base64_decode("!!!").is_none());
     }
 
+    /// Insert › Symbol with a font: only the symbol takes it, the caret's font carries on after.
+    #[test]
+    fn symbol_takes_its_own_font() {
+        let mut s = Session::new(wordcraft_doc::Document::from_text("ab"));
+        s.run("caret.docEnd", &json!({})).unwrap();
+        s.run("insert.symbol", &json!({"char": "\u{2665}", "font": "DejaVu Sans"})).unwrap();
+        s.run("text.insert", &json!({"text": "c"})).unwrap();
+        let p = s.doc.para(StoryRef::Body, &Path::top(0)).unwrap();
+        assert_eq!(p.text, "ab\u{2665}c");
+        assert_eq!(p.props_of_char(2).font.as_deref(), Some("DejaVu Sans"), "the symbol");
+        assert_eq!(p.props_of_char(5).font, None, "typing after it (byte offsets)");
+        assert!(s.run("insert.symbol", &json!({"char": ""})).is_err());
+    }
+
     #[test]
     fn date_pictures() {
         let d = format_date("yyyy-MM-dd");
         assert_eq!(d.len(), 10);
         assert!(format_date("MMMM d, yyyy").contains(", "));
+        let t = format_date("h:mm:ss am/pm");
+        assert!(t.ends_with(" AM") || t.ends_with(" PM"), "{t}");
+        assert_eq!(t.matches(':').count(), 2, "{t}");
+        use super::super::references::date_picture;
+        assert_eq!(date_picture(r#"DATE \@ "MMMM d, yyyy" \* MERGEFORMAT"#).as_deref(), Some("MMMM d, yyyy"));
+        assert_eq!(date_picture(r#"TIME \@ HH:mm"#).as_deref(), Some("HH:mm"));
+        assert_eq!(date_picture("DATE"), None);
     }
 }

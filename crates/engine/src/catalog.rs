@@ -1,6 +1,6 @@
 //! The word-processor feature catalog: the incumbent's ribbon and menu commands (feature names
 //! only) mapped to our command ids. `parity()` compares it with the registry; the gap is the
-//! work list (`cargo xtask parity` → docs/parity.md).
+//! work list (`cargo xtask parity` → docs/parity-checklist.md).
 
 use serde_json::{Value, json};
 
@@ -76,6 +76,7 @@ Home|Font|Enclose Characters|format.enclose
 Home|Paragraph|Bullets|para.bullets
 Home|Paragraph|Numbering|para.numbering
 Home|Paragraph|Multilevel List|para.multilevel
+Home|Paragraph|Define New Multilevel List|list.define
 Home|Paragraph|Change List Level|para.listLevel
 Home|Paragraph|Restart Numbering|para.restartNumbering
 Home|Paragraph|Define New Bullet|para.defineBullet
@@ -104,7 +105,8 @@ Home|Paragraph|Page Break Before|para.pageBreakBefore
 Home|Paragraph|Widow/Orphan Control|para.widowControl
 Home|Paragraph|Outline Level|para.outlineLevel
 Home|Paragraph|Hanging Indent|para.hangingIndent
-Home|Paragraph|Text Direction RTL|para.rtl
+Home|Paragraph|Right-to-Left Text Direction|para.rtl
+Home|Paragraph|Left-to-Right Text Direction|para.ltr
 Home|Paragraph|Asian Typography|para.asianTypography
 Home|Styles|Styles Gallery|para.style
 Home|Styles|Normal|para.normal
@@ -284,6 +286,7 @@ Review|Tracking|Track Changes|review.trackChanges
 Review|Tracking|Display for Review|review.markup
 Review|Tracking|Show Markup|review.showMarkup
 Review|Tracking|Reviewing Pane|review.changes
+Review|Tracking|Track Changes Options|review.trackingOptions
 Review|Changes|Accept|review.accept
 Review|Changes|Reject|review.reject
 Review|Changes|Accept All|review.acceptAll
@@ -326,13 +329,16 @@ View|Macros|Record Macro|tools.recordMacro
 View|SharePoint|Properties|file.properties
 Table Design|Table Style Options|Table Style Options|table.look
 Table Design|Table Styles|Table Styles|table.style
+Table Design|Table Styles|New Table Style|table.newStyle
+Table Design|Table Styles|Modify Table Style|table.modifyStyle
+Table Design|Table Styles|Delete Table Style|table.deleteStyle
 Table Design|Table Styles|Shading|table.shading
 Table Design|Borders|Borders|table.borders
 Table Design|Borders|Border Painter|table.borderPainter
 Table Layout|Table|Select Table|table.selectTable
 Table Layout|Table|Select Row|table.selectRow
 Table Layout|Table|Select Cell|table.selectCell
-Table Layout|Table|View Gridlines|view.gridlines
+Table Layout|Table|View Gridlines|table.viewGridlines
 Table Layout|Table|Properties|table.properties
 Table Layout|Draw|Draw Table|table.draw
 Table Layout|Draw|Eraser|table.eraser
@@ -359,6 +365,28 @@ Table Layout|Data|Sort|table.sort
 Table Layout|Data|Repeat Header Rows|table.repeatHeader
 Table Layout|Data|Convert to Text|table.toText
 Table Layout|Data|Formula|table.formula
+Equation|Tools|Equation|insert.equation
+Equation|Tools|Ink Equation|insert.inkEquation
+Equation|Conversions|Unicode|equation.inputFormat
+Equation|Conversions|LaTeX|equation.inputFormat
+Equation|Conversions|Convert|equation.convert
+Equation|Conversions|Normal Text|equation.normalText
+Equation|Symbols|Symbols|equation.insertSymbol
+Equation|Structures|Fraction|equation.insertStructure
+Equation|Structures|Script|equation.insertStructure
+Equation|Structures|Radical|equation.insertStructure
+Equation|Structures|Integral|equation.insertStructure
+Equation|Structures|Large Operator|equation.insertStructure
+Equation|Structures|Bracket|equation.insertStructure
+Equation|Structures|Function|equation.insertStructure
+Equation|Structures|Accent|equation.insertStructure
+Equation|Structures|Limit and Log|equation.insertStructure
+Equation|Structures|Operator|equation.insertStructure
+Equation|Structures|Matrix|equation.insertStructure
+Equation|Equation Options|Change to Inline / Display|equation.display
+Equation|Equation Options|Justification|equation.justify
+Equation|Equation Options|Equation Number (#)|equation.number
+Equation|Equation Options|Structure Commands|equation.structure
 Picture Format|Adjust|Remove Background|picture.removeBackground
 Picture Format|Adjust|Corrections|picture.corrections
 Picture Format|Adjust|Color|picture.color
@@ -372,6 +400,7 @@ Picture Format|Picture Styles|Picture Border|picture.border
 Picture Format|Accessibility|Alt Text|picture.altText
 Picture Format|Size|Crop|picture.crop
 Picture Format|Size|Size|picture.size
+Picture Format|Size|Rotation|arrange.rotation
 Shape Format|Shape Styles|Shape Fill|shape.fill
 Shape Format|Shape Styles|Shape Outline|shape.outline
 Shape Format|Shape Styles|Shape Effects|shape.effects
@@ -392,6 +421,11 @@ Editing|Keyboard|Backspace|text.backspace
 Editing|Keyboard|Delete|text.delete
 Editing|Keyboard|Delete Previous Word|text.deleteWordBack
 Editing|Keyboard|Delete Next Word|text.deleteWordForward
+Editing|Keyboard|Move Paragraph Up|para.moveUp
+Editing|Keyboard|Move Paragraph Down|para.moveDown
+Editing|Keyboard|Promote|para.promote
+Editing|Keyboard|Demote|para.demote
+Editing|Keyboard|Toggle Unicode Character|text.toggleUnicode
 Editing|Navigation|Word Left|caret.wordLeft
 Editing|Navigation|Word Right|caret.wordRight
 Editing|Navigation|Line Start|caret.home
@@ -402,11 +436,20 @@ Editing|Navigation|Document Start|caret.docStart
 Editing|Navigation|Document End|caret.docEnd
 Editing|Navigation|Page Up|caret.pageUp
 Editing|Navigation|Page Down|caret.pageDown
+Editing|Navigation|Go Back|edit.goBack
 Editing|Selection|Select Word|select.word
 Editing|Selection|Select Sentence|select.sentence
 Editing|Selection|Select Paragraph|select.paragraph
 Editing|Selection|Extend Selection (F8)|select.extend
 Editing|Selection|Column Selection|select.column
+Editing|Fields|Show Field Codes|view.fieldCodes
+Editing|Fields|Toggle Field Codes|fields.toggleCode
+Editing|Fields|Edit Field Code|fields.setCode
+Editing|Fields|Unlink Fields|fields.unlink
+Editing|Fields|Lock Fields|fields.lock
+Editing|Fields|Unlock Fields|fields.unlock
+Editing|Fields|Next Field|fields.next
+Editing|Fields|Previous Field|fields.previous
 Tools|Proofing|AutoCorrect Options|tools.autocorrect
 Tools|Proofing|Set Proofing Language|review.language
 Tools|Customize|Customize Ribbon|tools.customizeRibbon
@@ -477,6 +520,6 @@ mod tests {
         let p = parity(&reg);
         let pct = p["percent"].as_f64().unwrap();
         // The floor only ever rises.
-        assert!(pct >= 60.0, "parity {pct}%");
+        assert!(pct >= 90.4, "parity {pct}%");
     }
 }

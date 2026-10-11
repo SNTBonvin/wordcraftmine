@@ -54,6 +54,8 @@ pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
         "pages": app.canvas.page_rects.iter().map(|r| [r.left(), r.top(), r.width(), r.height()]).collect::<Vec<_>>(),
         "scale": app.canvas.scale,
         "caret": caret,
+        "balloons": app.canvas.balloon_rects.iter().map(|(id, r)| json!({"id": id, "rect": [r.left(), r.top(), r.width(), r.height()]})).collect::<Vec<_>>(),
+        "balloon": app.canvas.balloon,
         "focused": app.canvas.focused,
         "title": app.title_stem(),
         "dirty": app.session.dirty,
@@ -150,6 +152,18 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         "ui.move" => {
             let (Some(x), Some(y)) = (f("x"), f("y")) else { return err("missing x/y") };
             app.synthetic.push(egui::Event::PointerMoved(egui::pos2(x, y)));
+            ok(json!({"queued": true}))
+        }
+        "ui.press" | "ui.release" => {
+            let (Some(x), Some(y)) = (f("x"), f("y")) else { return err("missing x/y") };
+            let pos = egui::pos2(x, y);
+            app.synthetic.push(egui::Event::PointerMoved(pos));
+            app.synthetic.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: req.method == "ui.press",
+                modifiers: mods(p),
+            });
             ok(json!({"queued": true}))
         }
         "ui.drag" => {

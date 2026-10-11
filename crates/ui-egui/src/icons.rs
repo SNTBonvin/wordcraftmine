@@ -141,6 +141,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.text(8.0, 9.0, 13.0, "A", c, false);
             pen.fill(&[(10.0, 15.0), (14.0, 11.0), (18.0, 15.0), (14.0, 19.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
         }
+        // Small letters over a large one: text with a reading above it.
+        "phonetic" => {
+            pen.text(10.0, 5.0, 7.5, "abc", a, false);
+            pen.text(10.0, 13.5, 12.5, "A", c, false);
+        }
         "highlight" => {
             pen.fill(&[(5.0, 12.0), (11.0, 4.0), (14.0, 7.0), (8.0, 15.0)], c);
             pen.line(&[(5.0, 12.0), (3.5, 15.0), (8.0, 15.0)]);
@@ -205,6 +210,19 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             ().then_lines(&pen, 8.0, 17.0, &[7.0, 13.0])
         }
         "justify" => pen.lines(3.0, 17.0, &[4.0, 7.0, 10.0, 13.0, 16.0]),
+        // Text direction: lines set from the start edge, an arrow in the reading direction.
+        "textLtr" => {
+            pen.lines(3.0, 14.0, &[4.0, 8.0]);
+            pen.lines(3.0, 10.0, &[12.0]);
+            pen.line_c(&[(3.0, 16.5), (16.5, 16.5)], a);
+            pen.line_c(&[(13.5, 14.0), (16.5, 16.5), (13.5, 19.0)], a);
+        }
+        "textRtl" => {
+            pen.lines(6.0, 17.0, &[4.0, 8.0]);
+            pen.lines(10.0, 17.0, &[12.0]);
+            pen.line_c(&[(17.0, 16.5), (3.5, 16.5)], a);
+            pen.line_c(&[(6.5, 14.0), (3.5, 16.5), (6.5, 19.0)], a);
+        }
         "lineSpacing" => {
             pen.lines(9.0, 17.0, &[5.0, 10.0, 15.0]);
             pen.line_c(&[(4.5, 3.0), (4.5, 17.0)], a);
@@ -277,6 +295,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 18.0), (4.0, 13.0), (16.0, 13.0), (16.0, 18.0)]);
             pen.line_c(&[(2.0, 10.0), (18.0, 10.0)], a);
         }
+        "drawTable" => {
+            pen.rect(2.5, 3.0, 14.0, 14.5, c);
+            pen.line(&[(2.5, 8.5), (14.0, 8.5)]);
+            pen.line(&[(8.0, 3.0), (8.0, 14.5)]);
+            pen.line(&[(9.5, 18.0), (17.0, 10.5), (18.5, 12.0), (11.0, 19.5), (9.0, 19.8), (9.5, 18.0)]);
+            pen.fill(&[(17.0, 10.5), (18.0, 9.5), (19.5, 11.0), (18.5, 12.0)], a);
+        }
         "table" => {
             pen.frect(3.0, 3.0, 17.0, 7.0, a);
             pen.rect(3.0, 3.0, 17.0, 17.0, c);
@@ -298,6 +323,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "shapes" => {
             pen.rect(3.0, 3.0, 11.0, 11.0, c);
             pen.fcircle(13.0, 13.0, 4.5, a);
+        }
+        // Shape Effects: a square casting a soft shadow down and to the right.
+        "shapeEffects" => {
+            for (k, alpha) in [(2.0, 30), (1.0, 50), (0.0, 80)] {
+                pen.frect(7.0 - k, 7.0 - k, 18.0 + k, 18.0 + k, Color32::from_rgba_unmultiplied(0, 0, 0, alpha));
+            }
+            pen.frect(3.0, 3.0, 14.0, 14.0, a);
+            pen.rect(3.0, 3.0, 14.0, 14.0, c);
         }
         "icons" => {
             pen.circle(10.0, 10.0, 7.5, c);
@@ -434,6 +467,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "eraser" => {
             pen.closed(&[(3.0, 13.0), (11.0, 5.0), (17.0, 11.0), (11.0, 17.0), (7.0, 17.0)], c);
             pen.fill(&[(3.0, 13.0), (7.0, 9.0), (13.0, 15.0), (11.0, 17.0), (7.0, 17.0)], Color32::from_rgb(0xE8, 0x6F, 0xA0));
+        }
+        // Ink thickness: three strokes, thin to thick.
+        "thickness" => {
+            pen.frect(3.0, 4.5, 17.0, 5.5, c);
+            pen.frect(3.0, 9.0, 17.0, 11.0, c);
+            pen.frect(3.0, 14.0, 17.0, 17.0, a);
         }
         "lasso" => {
             pen.closed(&[(4.0, 7.0), (9.0, 3.0), (16.0, 5.0), (16.0, 11.0), (10.0, 13.0), (4.0, 11.0)], c);
@@ -847,6 +886,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(6.0, 8.5), (11.0, 8.5)]);
             pen.line(&[(8.5, 6.0), (8.5, 11.0)]);
         }
+        "zoomIn" | "zoomOut" => {
+            pen.circle(8.5, 8.5, 5.5, c);
+            pen.line_c(&[(12.5, 12.5), (17.5, 17.5)], a);
+            pen.line(&[(6.0, 8.5), (11.0, 8.5)]);
+            if name == "zoomIn" {
+                pen.line(&[(8.5, 6.0), (8.5, 11.0)]);
+            }
+        }
         "zoom100" => pen.text(10.0, 10.0, 7.5, "100", a, true),
         "onePage" => pen.page(5.0, 2.0, 15.0, 18.0),
         "multiplePages" => {
@@ -860,6 +907,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "darkMode" => {
             pen.fcircle(10.0, 10.0, 7.0, c);
             pen.fcircle(13.0, 8.0, 6.0, Color32::from_rgba_unmultiplied(255, 255, 255, 230));
+        }
+        "interfaceTheme" => {
+            // A window, its right half dark: light, dark or both (follow the system).
+            pen.frect(10.0, 3.5, 17.5, 16.5, c);
+            pen.rect(2.5, 3.5, 17.5, 16.5, c);
+            pen.line_c(&[(2.5, 6.5), (10.0, 6.5)], a);
         }
         "newWindow" => {
             pen.rect(2.5, 5.0, 13.0, 15.0, c);
@@ -1079,6 +1132,19 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fill(&[(3.0, 6.0), (7.0, 3.5), (13.0, 3.5), (17.0, 6.0), (17.5, 14.0), (13.5, 16.5), (6.5, 16.5), (2.5, 14.0)], a);
             pen.fcircle(7.5, 10.5, 1.5, Color32::WHITE);
             pen.fcircle(12.5, 10.5, 1.5, Color32::WHITE);
+        }
+        // Open: a folder with its flap lifted.
+        "open" => {
+            pen.closed(&[(2.5, 5.0), (7.5, 5.0), (9.0, 6.5), (15.5, 6.5), (15.5, 9.0)], c);
+            pen.line(&[(2.5, 5.0), (2.5, 16.0)]);
+            pen.closed(&[(2.5, 16.0), (5.0, 9.0), (18.0, 9.0), (15.5, 16.0)], a);
+        }
+        // Print: a printer with a sheet coming out.
+        "print" => {
+            pen.rect(6.0, 2.5, 14.0, 7.0, c);
+            pen.rect(2.5, 7.0, 17.5, 14.0, c);
+            pen.closed(&[(6.0, 11.5), (14.0, 11.5), (14.0, 17.5), (6.0, 17.5)], a);
+            pen.fcircle(15.0, 9.5, 0.8, c);
         }
         "help" => {
             pen.circle(10.0, 10.0, 7.0, c);

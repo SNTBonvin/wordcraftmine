@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use wordcraft_doc::props::{
     Align, Border, BorderStyle, Borders, CellProps, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign,
-    TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, Underline, VAlign, VMerge, VertAlign,
+    TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
 use wordcraft_doc::section::{Columns, LineNumberRestart, LineNumbering, NumFormat, SectionProps, SectionStart};
 
@@ -55,9 +55,15 @@ impl PropCtx {
                             .filter(|f| !f.is_empty())
                             .map(str::to_string)
                         });
+                    // The complex-script font (Persian, Arabic, Hebrew text). A `w:cstheme` font is
+                    // left to inherit: the theme's per-script fonts aren't read.
+                    c.font_cs = k.attr("w:cs").filter(|f| !f.is_empty() && f.len() < 256).map(str::to_string);
                 }
                 "w:b" => c.bold = Some(on_off(k)),
+                "w:bCs" => c.bold_cs = Some(on_off(k)),
                 "w:i" => c.italic = Some(on_off(k)),
+                "w:iCs" => c.italic_cs = Some(on_off(k)),
+                "w:cs" => c.cs = Some(on_off(k)),
                 "w:caps" => c.caps = Some(on_off(k)),
                 "w:smallCaps" => c.small_caps = Some(on_off(k)),
                 "w:strike" => c.strike = Some(on_off(k)),
@@ -81,6 +87,7 @@ impl PropCtx {
                 "w:kern" => c.kern = k.attr("w:val").and_then(|v| measure(v, 2.0)).map(|v| v.clamp(0.0, 1638.0)),
                 "w:position" => c.position = k.attr("w:val").and_then(|v| measure(v, 2.0)).map(|v| v.clamp(-1584.0, 1584.0)),
                 "w:sz" => c.size = k.attr("w:val").and_then(|v| measure(v, 2.0)).filter(|v| *v > 0.0).map(|v| v.clamp(1.0, 1638.0)),
+                "w:szCs" => c.size_cs = k.attr("w:val").and_then(|v| measure(v, 2.0)).filter(|v| *v > 0.0).map(|v| v.clamp(1.0, 1638.0)),
                 "w:highlight" => c.highlight = k.attr("w:val").map(Highlight::from_ooxml),
                 "w:u" => {
                     if let Some(v) = k.attr("w:val") {
@@ -99,9 +106,23 @@ impl PropCtx {
                         _ => VertAlign::Baseline,
                     })
                 }
-                "w:lang" => c.lang = k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string),
+                "w:lang" => {
+                    c.lang = k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
+                    c.lang_bidi = k.attr("w:bidi").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
+                }
                 _ => {}
             }
+        }
+        // A complex-script value equal to its plain one is the same as none (see
+        // `CharProps::overlay`), which keeps documents round-tripping exactly.
+        if c.size_cs.is_some() && c.size_cs == c.size {
+            c.size_cs = None;
+        }
+        if c.bold_cs.is_some() && c.bold_cs == c.bold {
+            c.bold_cs = None;
+        }
+        if c.italic_cs.is_some() && c.italic_cs == c.italic {
+            c.italic_cs = None;
         }
         c
     }
@@ -121,6 +142,12 @@ impl PropCtx {
                 "w:suppressAutoHyphens" => p.suppress_hyphens = Some(on_off(k)),
                 "w:suppressLineNumbers" => p.suppress_line_numbers = Some(on_off(k)),
                 "w:bidi" => p.bidi = Some(on_off(k)),
+                "w:kinsoku" => p.kinsoku = Some(on_off(k)),
+                "w:wordWrap" => p.word_wrap = Some(on_off(k)),
+                "w:overflowPunct" => p.overflow_punct = Some(on_off(k)),
+                "w:topLinePunct" => p.top_line_punct = Some(on_off(k)),
+                "w:autoSpaceDE" => p.auto_space_de = Some(on_off(k)),
+                "w:autoSpaceDN" => p.auto_space_dn = Some(on_off(k)),
                 "w:framePr" => {
                     if matches!(k.attr("w:dropCap"), Some("drop") | Some("margin")) {
                         p.drop_cap = Some(k.attr("w:lines").and_then(u32_of).unwrap_or(3).clamp(1, 10) as u8);
@@ -248,7 +275,7 @@ pub fn borders(e: &El) -> Borders {
 }
 
 /// Margins element (`w:tblCellMar`, `w:tcMar`) → [top, left, bottom, right].
-fn margins(e: &El) -> [f32; 4] {
+pub fn margins(e: &El) -> [f32; 4] {
     let get = |names: &[&str]| names.iter().find_map(|n| e.child(n)).and_then(|c| tw(c, "w:w")).unwrap_or(0.0).clamp(0.0, 1584.0);
     [get(&["w:top"]), get(&["w:left", "w:start"]), get(&["w:bottom"]), get(&["w:right", "w:end"])]
 }
@@ -354,11 +381,16 @@ pub fn tcpr(e: &El) -> (CellProps, bool) {
     let mut hcont = false;
     for k in e.els() {
         match k.name.as_str() {
-            "w:tcW" => {
-                if matches!(k.attr("w:type"), None | Some("dxa")) {
-                    c.width = tw(k, "w:w").filter(|v| *v > 0.0);
+            "w:tcW" => match k.attr("w:type") {
+                None | Some("dxa") => c.width = tw(k, "w:w").filter(|v| *v > 0.0),
+                Some("pct") => {
+                    let w = k.attr("w:w").unwrap_or("0");
+                    c.width_pct = if let Some(p) = w.strip_suffix('%') { measure(p, 1.0) } else { measure(w, 50.0) }
+                        .map(|v| v.clamp(0.0, 100.0))
+                        .filter(|v| *v > 0.0);
                 }
-            }
+                _ => {}
+            },
             "w:gridSpan" => c.span = k.attr("w:val").and_then(u32_of).unwrap_or(1).clamp(1, 63),
             "w:hMerge" => hcont = k.attr("w:val") != Some("restart"),
             "w:vMerge" => c.vmerge = if k.attr("w:val") == Some("restart") { VMerge::Restart } else { VMerge::Continue },
@@ -366,7 +398,7 @@ pub fn tcpr(e: &El) -> (CellProps, bool) {
             "w:shd" => c.shading = shd_fill(k),
             "w:noWrap" => c.no_wrap = on_off(k),
             "w:tcMar" => c.margins = Some(margins(k)),
-            "w:textDirection" => c.vertical_text = !matches!(k.attr("w:val"), None | Some("lrTb") | Some("lrTbV") | Some("tb")),
+            "w:textDirection" => c.text_direction = TextDirection::from_ooxml(k.attr("w:val").unwrap_or("")),
             "w:vAlign" => {
                 c.valign = match k.attr("w:val") {
                     Some("center") => VAlign::Center,
