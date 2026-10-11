@@ -227,6 +227,7 @@
 	Cancel	取消
 	Capitalize Each Word	每個單字字首大寫
 	Captions	標號
+	Cell Alignment	儲存格對齊方式
 	Cell Margins	儲存格邊界
 	Cell Size	儲存格大小
 	Cell\nMargins	儲存格邊界
@@ -859,6 +860,7 @@
 	Table of Contents	目錄
 	Table of\nContents	目錄
 	Table Properties	表格內容
+	Table Properties…	表格內容…
 	Table Row Height	表格列高
 	Table Style Options	表格樣式選項
 	Table Styles	表格樣式

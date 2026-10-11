@@ -207,6 +207,7 @@
 	Cancel	Cancelar
 	Capitalize Each Word	Capitalizar cada palavra
 	Captions	Legendas
+	Cell Alignment	Alinhamento da célula
 	Cell Margins	Margens das células
 	Cell Size	Tamanho das células
 	Cell\nMargins	Margens\ndas células
@@ -859,6 +860,7 @@
 	Table of Contents	Sumário
 	Table of\nContents	Sumário
 	Table Properties	Propriedades da tabela
+	Table Properties…	Propriedades da tabela…
 	Table Row Height	Altura da linha da tabela
 	Table Style Options	Opções de estilo de tabela
 	Table Styles	Estilos de tabela

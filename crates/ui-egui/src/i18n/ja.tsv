@@ -226,6 +226,7 @@
 	Cancel	キャンセル
 	Capitalize Each Word	各単語の先頭を大文字にする
 	Captions	図表番号
+	Cell Alignment	セルの配置
 	Cell Margins	セルの余白
 	Cell Size	セルのサイズ
 	Cell\nMargins	セルの余白
@@ -858,6 +859,7 @@
 	Table of Contents	目次
 	Table of\nContents	目次
 	Table Properties	表のプロパティ
+	Table Properties…	表のプロパティ…
 	Table Row Height	表の行の高さ
 	Table Style Options	表スタイルのオプション
 	Table Styles	表のスタイル

@@ -102,6 +102,7 @@
 	Caption	Подпись
 	Captions	Подписи
 	Category	Категория
+	Cell Alignment	Выравнивание в ячейке
 	Cell Margins	Поля ячеек
 	Cell Size	Размер ячейки
 	Cell\nMargins	Поля\nячеек
@@ -728,6 +729,7 @@
 	Table of Figures	Список иллюстраций
 	Table of\nContents	Оглавление
 	Table Properties	Свойства таблицы
+	Table Properties…	Свойства таблицы…
 	Table Row Height	Высота строки таблицы
 	Table Style Options	Параметры стилей таблиц
 	Table Styles	Стили таблиц

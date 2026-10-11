@@ -908,6 +908,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     // A click on a check box ticks it; on a list's button opens the list.
     crate::content_controls::clicks(app, &resp);
+    // Selected table cells: a right-click off them drops them, even between the selection's ends
+    // (beside a selected column), so the menu acts on the cell clicked.
+    if resp.secondary_clicked()
+        && let Some(range) = app.session.cell_range()
+        && let Some(p) = resp.interact_pointer_pos()
+        && let Some((page, x, y)) = page_at(&rects, &layout, geo.scale, p)
+    {
+        let at = wordcraft_geom::Point::new(x, y);
+        let on_cells =
+            wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &app.session.doc, range).iter().any(|(pi, r)| *pi == page && r.contains(at));
+        if !on_cells && let Some(pos) = layout.hit(page, x, y, app.session.sel.focus.story) {
+            app.session.sel = wordcraft_engine::Selection::caret(pos);
+        }
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
     if resp.secondary_clicked()
@@ -2076,11 +2090,35 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
         });
         ui.menu_button(tl!("Delete"), |ui| {
+            item(ui, app, "Delete Cells", "table.deleteCells", json!({}));
             item(ui, app, "Delete Rows", "table.deleteRow", json!({}));
             item(ui, app, "Delete Columns", "table.deleteColumn", json!({}));
             item(ui, app, "Delete Table", "table.deleteTable", json!({}));
         });
+        ui.menu_button(tl!("Select"), |ui| {
+            item(ui, app, "Select Cell", "table.selectCell", json!({}));
+            item(ui, app, "Select Column", "table.selectColumn", json!({}));
+            item(ui, app, "Select Row", "table.selectRow", json!({}));
+            item(ui, app, "Select Table", "table.selectTable", json!({}));
+        });
         item(ui, app, "Merge Cells", "table.merge", json!({}));
+        item(ui, app, "Split Cells", "table.split", json!({}));
+        ui.separator();
+        item(ui, app, "Distribute Rows", "table.distributeRows", json!({}));
+        item(ui, app, "Distribute Columns", "table.distributeColumns", json!({}));
+        ui.menu_button(tl!("AutoFit"), |ui| {
+            item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
+            item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
+            item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
+        });
+        item(ui, app, "Text Direction", "table.textDirection", json!({}));
+        ui.menu_button(tl!("Cell Alignment"), |ui| {
+            for (v, label) in crate::ribbon::CELL_ALIGN.into_iter().flatten() {
+                item(ui, app, label, "table.cellAlign", json!({"value": v}));
+            }
+        });
+        ui.separator();
+        item(ui, app, "Table Properties…", "table.properties", json!({}));
     }
 }
 
@@ -2127,6 +2165,7 @@ fn is_followable_link(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::table_resize::tests::{H, cell, screen, steps, table_window};
 
     /// #167: dragging a ruler's margin edge sets that margin, snapped, never negative, and
     /// always leaving an inch of text.
@@ -2423,6 +2462,90 @@ mod tests {
         assert_eq!(clamped_scroll(vec2(0.0, 400.0), vec2(0.0, -50.0), max).y, 400.0, "never past the bottom");
         assert_eq!(clamped_scroll(vec2(0.0, 300.0), vec2(0.0, 50.0), max).y, 250.0);
         assert_eq!(clamped_scroll(egui::Vec2::ZERO, vec2(0.0, 50.0), egui::Vec2::ZERO).y, 0.0, "nothing to scroll");
+    }
+
+    /// A right-click at `at`, the button pressed and released a frame apart.
+    fn right_click(h: &mut H, at: Pos2) {
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        steps(h, 2);
+    }
+
+    /// Where the open context menu's entry holding `label` is (an entry's label also has its
+    /// shortcut or submenu arrow, and the ribbon above the page may show the same name).
+    fn menu_entry(h: &H, label: &str) -> Option<Pos2> {
+        use egui_kittest::kittest::Queryable;
+        let top = h.state().canvas.page_rects.first().map_or(0.0, |r| r.min.y);
+        h.query_all_by_label_contains(label).map(|n| n.rect()).find(|r| r.min.y >= top).map(|r| r.center())
+    }
+
+    /// Picks `path` in the open context menu with the mouse: over each submenu on the way, then a
+    /// click on the last entry.
+    fn pick(h: &mut H, path: &[&str]) {
+        let Some((last, submenus)) = path.split_last() else { return };
+        for label in submenus {
+            let at = menu_entry(h, label).expect(label);
+            h.event(egui::Event::PointerMoved(at));
+            steps(h, 2);
+        }
+        let at = menu_entry(h, last).expect(last);
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        steps(h, 2);
+    }
+
+    /// Right-clicking a table cell puts the caret there, and the menu has the table's commands:
+    /// Select › Select Column selects that column's cells.
+    #[test]
+    fn the_context_menu_in_a_table_has_its_commands() {
+        let mut h = table_window();
+        let b = cell(&mut h, 1, 2);
+        let at = screen(&mut h, b.x + b.w / 2.0, b.y + b.h / 2.0);
+        right_click(&mut h, at);
+        assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((1, 2)), "the caret moved to the cell");
+        for label in
+            ["Insert", "Delete", "Merge Cells", "Split Cells", "Distribute Rows", "AutoFit", "Text Direction", "Cell Alignment", "Table Properties…"]
+        {
+            assert!(menu_entry(&h, label).is_some(), "the menu has {label}");
+        }
+        let depth = h.state().session.undo_depth();
+        pick(&mut h, &["Select", "Select Column"]);
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (2, 2))));
+        assert_eq!(h.state().session.undo_depth(), depth, "selecting isn't an undo step");
+    }
+
+    /// With a column's cells selected, a right-click on one of them keeps them, so the menu's Cell
+    /// Alignment aligns just the column (one undo step); one on a cell beside them drops them,
+    /// though that cell lies between the selection's ends in the text.
+    #[test]
+    fn a_right_click_keeps_selected_cells_only_on_them() {
+        use wordcraft_doc::props::VAlign;
+        let mut h = table_window();
+        h.state_mut().run("table.selectColumn", json!({})).unwrap();
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (0, 0))));
+        let on = cell(&mut h, 1, 0);
+        let at = screen(&mut h, on.x + on.w / 2.0, on.y + on.h / 2.0);
+        right_click(&mut h, at);
+        assert_eq!(h.state().session.cell_range().map(|r| r.cols), Some((0, 0)), "still the column");
+        let depth = h.state().session.undo_depth();
+        pick(&mut h, &["Cell Alignment", "Align Bottom Right"]);
+        assert_eq!(h.state().session.undo_depth(), depth + 1);
+        let t = h.state().session.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+        let valign = |r: usize, c: usize| t.rows[r].cells[c].props.valign;
+        assert_eq!([valign(0, 0), valign(1, 0), valign(0, 1), valign(1, 2)], [VAlign::Bottom, VAlign::Bottom, VAlign::Top, VAlign::Top]);
+        let beside = cell(&mut h, 0, 2);
+        let at = screen(&mut h, beside.x + beside.w / 2.0, beside.y + beside.h / 2.0);
+        right_click(&mut h, at);
+        assert!(h.state().session.cell_range().is_none(), "the column is no longer selected");
+        assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((0, 2)));
     }
 
     /// Issue #123: zoomed out, pages sit side by side in rows when the width allows; at 100% a

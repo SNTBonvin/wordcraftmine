@@ -97,6 +97,7 @@
 	Capitalize Each Word	Iga sõna suure algustähega
 	Captions	Pealdised
 	Category	Kategooria
+	Cell Alignment	Lahtri joondus
 	Cell Margins	Lahtri veerised
 	Cell Size	Lahtri suurus
 	Cell\nMargins	Lahtri\nveerised
@@ -776,6 +777,7 @@
 	Table Design	Tabeli kujundus
 	Table Layout	Tabeli paigutus
 	Table Properties	Tabeli atribuudid
+	Table Properties…	Tabeli atribuudid…
 	Table Row Height	Tabeli reakõrgus
 	Table Style Options	Tabelistiili valikud
 	Table Styles	Tabelistiilid

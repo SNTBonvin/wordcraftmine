@@ -209,6 +209,7 @@
 	Cancel	Скасувати
 	Capitalize Each Word	Кожне слово з великої літери
 	Captions	Підписи
+	Cell Alignment	Вирівнювання в клітинці
 	Cell Margins	Поля клітинки
 	Cell Size	Розмір клітинки
 	Cell\nMargins	Поля\nклітинки
@@ -883,6 +884,7 @@
 	Table of Contents	Зміст
 	Table of\nContents	Зміст
 	Table Properties	Властивості таблиці
+	Table Properties…	Властивості таблиці…
 	Table Row Height	Висота рядка таблиці
 	Table Style Options	Параметри стилю таблиці
 	Table Styles	Стилі таблиць

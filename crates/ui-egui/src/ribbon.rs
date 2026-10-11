@@ -2232,6 +2232,14 @@ fn cell_size_boxes(ui: &mut Ui, app: &mut WordApp) {
     });
 }
 
+/// Table Layout › Alignment's nine cell alignments (`table.cellAlign` value, label), row by row
+/// as the grid shows them; the table's context menu lists them too.
+pub(crate) const CELL_ALIGN: [[(&str, &str); 3]; 3] = [
+    [("topLeft", "Align Top Left"), ("topCenter", "Align Top Center"), ("topRight", "Align Top Right")],
+    [("centerLeft", "Align Center Left"), ("center", "Align Center"), ("centerRight", "Align Center Right")],
+    [("bottomLeft", "Align Bottom Left"), ("bottomCenter", "Align Bottom Center"), ("bottomRight", "Align Bottom Right")],
+];
+
 fn table_layout(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Table", None, app, |ui, app| {
         stack(ui, |ui| {
@@ -2287,11 +2295,7 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Alignment", None, app, |ui, app| {
         egui::Grid::new("cellalign").spacing(vec2(1.0, 1.0)).show(ui, |ui| {
-            for row in [
-                [("topLeft", "Align Top Left"), ("topCenter", "Align Top Center"), ("topRight", "Align Top Right")],
-                [("centerLeft", "Align Center Left"), ("center", "Align Center"), ("centerRight", "Align Center Right")],
-                [("bottomLeft", "Align Bottom Left"), ("bottomCenter", "Align Bottom Center"), ("bottomRight", "Align Bottom Right")],
-            ] {
+            for row in CELL_ALIGN {
                 for (v, tip) in row {
                     small(ui, app, "cellAlign", None, tip, "table.cellAlign", json!({"value": v}), false);
                 }
