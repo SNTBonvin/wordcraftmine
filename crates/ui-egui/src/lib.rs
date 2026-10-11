@@ -537,6 +537,12 @@ impl WordApp {
         if id == "view.outline" {
             self.ui.nav_tab = "headings".into();
         }
+        if matches!(id, "view.readColumnWidth" | "view.readTextSize" | "view.readLineSpacing") {
+            self.canvas.read_force_reflow = true;
+        }
+        if id == "view.readMode" {
+            self.canvas.read_first_visible = None;
+        }
         if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
             self.canvas.scroll_to_caret = true;
         }
@@ -1517,18 +1523,20 @@ mod tests {
             screen,
         );
         let step = a.session.view.read_width * a.canvas.scale + 18.0;
-        assert!(
-            (a.canvas.scroll_offset.x - step).abs() < 1.0,
-            "one wheel event turns one whole column: x={}, step={}, columns={}",
-            a.canvas.scroll_offset.x,
-            step,
-            a.canvas.cols
-        );
-        assert_eq!(a.canvas.scroll_offset.y, 0.0);
-        let x = a.canvas.scroll_offset.x;
-        canvas::turn_read_page(&mut a, 1.0);
+        assert!(a.canvas.scroll_offset.x > 0.0 && a.canvas.scroll_offset.x < step, "a wheel turn animates instead of jumping");
+        let first = a.canvas.scroll_offset.x;
         frame(&mut a, vec![], screen);
-        assert!((a.canvas.scroll_offset.x - x - step).abs() < 1.0);
+        assert!(a.canvas.scroll_offset.x > first, "smooth motion continues after the wheel event");
+        for _ in 0..23 {
+            frame(&mut a, vec![], screen);
+        }
+        assert!((a.canvas.scroll_offset.x - step).abs() < 1.0, "animation settles exactly on column boundary");
+        assert_eq!(a.canvas.scroll_offset.y, 0.0);
+        canvas::turn_read_page(&mut a, 1.0);
+        for _ in 0..25 {
+            frame(&mut a, vec![], screen);
+        }
+        assert!((a.canvas.scroll_offset.x - 2.0 * step).abs() < 1.0);
         let x = a.canvas.scroll_offset.x;
         // A heading navigation request must position its column at the leading edge,
         // not wherever egui's generic scroll_to_rect decides the caret is visible.
@@ -1543,9 +1551,25 @@ mod tests {
         assert!((a.canvas.scroll_offset.x - (page as f32 * step)).abs() < 1.0, "heading must align its column beside the navigation pane");
         assert!(a.canvas.scroll_offset.x != x);
         // Resizing changes the content width (reflow), not the zoom or the print paper width.
-        let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(850.0, 740.0));
+        let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(850.0, 630.0));
+        let before_resize = a.canvas.scroll_offset.x;
+        let before_layout = a.session.layout();
+        let anchor = a.canvas.read_first_visible.clone().unwrap();
         frame(&mut a, vec![], narrow);
+        assert!(std::sync::Arc::ptr_eq(&before_layout, &a.session.layout()), "resize frames reuse cached pagination");
+        assert!((a.canvas.scroll_offset.x - before_resize).abs() < 1.0, "no jump while resize is in progress");
+        assert_eq!(a.session.view.read_width, initial_width, "expensive repagination is deferred during resizing");
+        for _ in 0..15 {
+            frame(&mut a, vec![], narrow);
+        }
         assert_ne!(a.session.view.read_width, initial_width);
+        assert!(!std::sync::Arc::ptr_eq(&before_layout, &a.session.layout()), "stable viewport commits one repagination");
+        let target_page = a.session.layout().caret_on(&anchor, 0).unwrap().page;
+        let new_step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!(
+            (a.canvas.scroll_offset.x - target_page as f32 * new_step).abs() < 1.0,
+            "resize must preserve visible text anchor, not jump to editing caret"
+        );
         assert!((a.canvas.scale - canvas::PX_PER_PT).abs() < 0.01);
         a.run("view.readColumnWidth", json!({"value": "page"})).unwrap();
         frame(&mut a, vec![], narrow);

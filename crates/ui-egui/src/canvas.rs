@@ -25,6 +25,16 @@ pub struct CanvasState {
     pub(crate) nav_to_caret: bool,
     /// Touchpad travel not yet converted to an entire reading-column turn.
     read_wheel_accum: f32,
+    /// Last actual viewport seen during a resize, distinct from the committed reading page size.
+    read_viewport: Option<egui::Vec2>,
+    read_resized_at: f64,
+    /// Reading controls (as opposed to window resizes) must reflow without debounce.
+    pub(crate) read_force_reflow: bool,
+    /// First text position on the column currently leading the reading viewport, captured from
+    /// last frame's layout. Survives changing page sizes, even when the caret stays elsewhere.
+    pub(crate) read_first_visible: Option<Pos>,
+    /// An animated column-turn destination; intermediate offsets are allowed during the motion.
+    read_target_page: Option<usize>,
     pub caret_visible_since: f64,
     dragging: bool,
     /// Alt+drag: where the column (block) selection started (page, x, y) and its last end.
@@ -100,6 +110,11 @@ impl Default for CanvasState {
             scroll_to_caret: true,
             nav_to_caret: false,
             read_wheel_accum: 0.0,
+            read_viewport: None,
+            read_resized_at: 0.0,
+            read_force_reflow: false,
+            read_first_visible: None,
+            read_target_page: None,
             caret_visible_since: 0.0,
             dragging: false,
             column_drag: None,
@@ -247,14 +262,45 @@ fn place_read_pages(sizes: &[(f32, f32)], scale: f32, avail: egui::Vec2) -> (Vec
     (rects, vec2(x.max(end).max(avail.x), avail.y.max(0.0)))
 }
 
-/// Turn one reading column left/right; normal editing keys keep their existing behaviour.
+/// Text at the start of a reading page. Unlike the editing caret, this records what the reader
+/// can currently see, even when the caret is elsewhere in the document.
+fn reading_page_start(layout: &DocLayout, page: usize) -> Option<Pos> {
+    let p = layout.pages.get(page)?;
+    p.items
+        .iter()
+        .find_map(|item| match item {
+            Placed::Lines { story: StoryRef::Body, path, para, l0, .. } => Some(Pos::new(StoryRef::Body, path.clone(), para.lines.get(*l0)?.start)),
+            _ => None,
+        })
+        .or_else(|| Some(Pos::body(p.first_block, 0)))
+}
+
+/// Resolve a reading anchor after page breaks change. Preserves the first visible text instead
+/// of jumping to the editing caret (which may be thousands of columns away).
+fn reading_anchor_page(layout: &DocLayout, anchor: &Pos) -> Option<usize> {
+    layout.caret_on(anchor, 0).map(|c| c.page)
+}
+
+/// Turn one reading column left/right. Multiple ticks during an animation queue additional
+/// columns, rather than rounding the partially animated position and losing a tick.
 pub(crate) fn turn_read_page(app: &mut WordApp, direction: f32) {
     let step = app.session.view.read_width * app.canvas.scale + GAP;
     if step.is_finite() && step > 0.0 {
-        let current = app.canvas.scroll_request.map_or(app.canvas.scroll_offset.x, |r| r.x);
-        let x = ((current / step).round() + direction).max(0.0) * step;
-        app.canvas.scroll_request = Some(vec2(x.min(app.canvas.scroll_max.x), 0.0));
+        let current = app.canvas.read_target_page.unwrap_or_else(|| (app.canvas.scroll_offset.x / step).round().max(0.0) as usize);
+        let next = if direction < 0.0 { current.saturating_sub(1) } else { current.saturating_add(1) };
+        app.canvas.read_target_page = Some(next.min(app.canvas.cols.saturating_sub(1)));
     }
+}
+
+/// Ease toward an exact column boundary; a late frame never overshoots. The final offset
+/// is snapped exactly, so stopping leaves no partially visible column.
+fn reading_animation_step(current: f32, target: f32, dt: f32) -> f32 {
+    if !current.is_finite() || !target.is_finite() {
+        return target.max(0.0);
+    }
+    let t = 1.0 - (-18.0 * dt.clamp(0.0, 0.1)).exp();
+    let next = current + (target - current) * t;
+    if (target - next).abs() <= 0.5 { target } else { next }
 }
 
 /// One mechanical wheel notch turns one column; precise touchpads accumulate to a turn.
@@ -437,19 +483,51 @@ fn drawing_grid_step(spacing: f32, scale: f32) -> f32 {
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    // Reading layout depends on the actual viewport dimensions. Set them before pagination so
-    // resize/zoom produces new columns without changing document section properties.
     let full = ui.available_rect_before_wrap();
+    // Full pagination is expensive. During a resize keep the already laid-out columns and
+    // reflow once the viewport has been stable briefly; ordinary reading controls update now.
+    const RESIZE_SETTLE: f64 = 0.16;
+    let mut reflow_anchor: Option<Pos> = None;
     if app.session.view.read_mode {
+        let now = ui.input(|i| i.time);
+        let resized = app.canvas.read_viewport.is_none_or(|v| (v - full.size()).length_sq() > 0.5);
+        let entering = app.canvas.read_viewport.is_none();
+        if resized {
+            app.canvas.read_viewport = Some(full.size());
+            app.canvas.read_resized_at = now;
+        }
         let scale = app.session.view.read_zoom.clamp(0.75, 1.5) * PX_PER_PT;
         let (w, h) = reading_size(full.size(), scale, app.session.view.read_column_width);
-        if (app.session.view.read_width - w).abs() > 0.5 || (app.session.view.read_height - h).abs() > 0.5 {
-            app.canvas.scroll_to_caret = true;
+        let changed = (app.session.view.read_width - w).abs() > 0.5 || (app.session.view.read_height - h).abs() > 0.5;
+        let forced = std::mem::take(&mut app.canvas.read_force_reflow) || entering;
+        if changed && (forced || now - app.canvas.read_resized_at >= RESIZE_SETTLE) {
+            if !entering {
+                reflow_anchor = app.canvas.read_first_visible.clone();
+            }
+            app.session.view.read_width = w;
+            app.session.view.read_height = h;
+            app.canvas.scroll_to_caret = entering;
+        } else if changed {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(170));
         }
-        app.session.view.read_width = w;
-        app.session.view.read_height = h;
+        if forced && !entering && reflow_anchor.is_none() {
+            // A spacing change can repaginate without changing physical page dimensions.
+            reflow_anchor = app.canvas.read_first_visible.clone();
+        }
+    } else {
+        app.canvas.read_viewport = None;
+        app.canvas.read_force_reflow = false;
+        app.canvas.read_first_visible = None;
+        app.canvas.read_target_page = None;
     }
     let layout = app.session.layout();
+    if let Some(anchor) = reflow_anchor {
+        if let Some(page) = reading_anchor_page(&layout, &anchor) {
+            let step = app.session.view.read_width * app.session.view.read_zoom.clamp(0.75, 1.5) * PX_PER_PT + GAP;
+            app.canvas.read_target_page = None;
+            app.canvas.scroll_request = Some(vec2(page as f32 * step, 0.0));
+        }
+    }
     // View › Switch Modes: dark paper, inverted document colours, a white caret.
     let dark_page = app.session.view.dark_mode;
     let caret_color = if dark_page { Color32::WHITE } else { t.caret };
@@ -485,7 +563,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     // moved, so bring it back into view rather than leave the reader somewhere else.
     if geo.cols != app.canvas.cols {
         app.canvas.cols = geo.cols;
-        app.canvas.scroll_to_caret = true;
+        if !app.session.view.read_mode {
+            app.canvas.scroll_to_caret = true;
+        }
     }
     let caret = layout.caret_on(&app.session.sel.focus, app.session.page_hint);
     // Editing a header/footer (or a note) dims the body; once per frame, for every page.
@@ -495,6 +575,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     let mut scroll_target: Option<Rect> = None;
     if app.canvas.nav_to_caret {
+        app.canvas.read_target_page = None;
         if let Some(c) = caret
             && let Some(pr) = geo.rects.get(c.page)
         {
@@ -503,7 +584,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.canvas.scroll_request = Some(vec2(x, y));
         }
         app.canvas.nav_to_caret = false;
-    } else if app.canvas.scroll_to_caret && app.session.view.read_mode {
+    } else if app.canvas.scroll_to_caret && app.session.view.read_mode && app.canvas.scroll_request.is_none() {
+        app.canvas.read_target_page = None;
         if let Some(c) = caret
             && let Some(pr) = geo.rects.get(c.page)
         {
@@ -531,6 +613,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let turns = ui.input(|i| read_wheel_turns(&i.events, hovered, &mut app.canvas.read_wheel_accum));
         for _ in 0..turns.unsigned_abs() {
             turn_read_page(app, turns.signum() as f32);
+        }
+        if let Some(page) = app.canvas.read_target_page {
+            let step = app.session.view.read_width * geo.scale + GAP;
+            let x = (page as f32 * step).min(app.canvas.scroll_max.x);
+            let dt = ui.input(|i| i.stable_dt);
+            let next = reading_animation_step(app.canvas.scroll_offset.x, x, dt);
+            app.canvas.scroll_request = Some(vec2(next, 0.0));
+            if next == x {
+                app.canvas.read_target_page = None;
+            } else {
+                ui.ctx().request_repaint();
+            }
         }
         // Discard any pixel-scroll inertia left from editing mode.
         app.canvas.wheel = Default::default();
@@ -582,6 +676,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let sr = pr.translate(content_origin.to_vec2());
             let Some(page) = layout.pages.get(i) else { continue };
             let scale_px = (geo.scale * ppp).min(max_tex / page.w.max(1.0)).min(max_tex / page.h.clamp(1.0, 1e6)).max(0.05);
+            // Most reading documents have many columns; skip expensive page hashing for offscreen
+            // pages. We still emit their rectangles for hit testing and the control channel.
+            if !sr.intersects(ui.clip_rect().expand(200.0)) {
+                rects.push(sr);
+                continue;
+            }
             let key = page_key(app, page, scale_px, dim_body);
             let fresh = app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             let current_scale = geo.scale * ppp;
@@ -591,9 +691,6 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 sr
             };
             rects.push(visual_sr);
-            if !sr.intersects(ui.clip_rect().expand(200.0)) {
-                continue;
-            }
             // Shadow and paper.
             painter.rect_filled(visual_sr.translate(vec2(0.0, 2.0)).expand(1.5), 1.0, t.page_shadow);
             painter.rect_filled(visual_sr, 0.0, if dark_page { Color32::from_gray(dark_paper) } else { Color32::WHITE });
@@ -807,6 +904,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     });
     app.canvas.scroll_offset = out.state.offset;
     app.canvas.scroll_max = (out.content_size - out.inner_rect.size()).max(egui::Vec2::ZERO);
+    if app.session.view.read_mode {
+        let step = app.session.view.read_width * geo.scale + GAP;
+        if step.is_finite() && step > 0.0 {
+            let page = (app.canvas.scroll_offset.x / step).round().max(0.0) as usize;
+            app.canvas.read_first_visible = reading_page_start(&layout, page.min(layout.pages.len().saturating_sub(1)));
+        }
+    }
     let (resp, rects) = out.inner;
     // A click on the page leaves the selected comment balloon.
     if app.canvas.balloon.is_some() && ui.input(|i| i.pointer.any_pressed()) && resp.contains_pointer() {
@@ -1868,6 +1972,21 @@ fn is_followable_link(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_animation_eases_then_lands_exactly_on_column_start() {
+        let goal = 330.0;
+        let one = reading_animation_step(0.0, goal, 1.0 / 60.0);
+        assert!(one > 0.0 && one < goal);
+        let mut pos = one;
+        for _ in 0..60 {
+            let next = reading_animation_step(pos, goal, 1.0 / 60.0);
+            assert!((pos..=goal).contains(&next));
+            pos = next;
+        }
+        assert_eq!(pos, goal);
+        assert_eq!(reading_animation_step(500.0, goal, 0.1).is_finite(), true);
+    }
 
     #[test]
     fn reading_wheel_snaps_one_column_per_tick_and_respects_touchpads() {
