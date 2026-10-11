@@ -99,6 +99,11 @@ pub struct UiState {
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
+    /// The light and the dark theme the interface uses when `theme` picks that side (or follows the
+    /// system): an id from [`appearance::LIGHT_THEMES`] / [`appearance::DARK_THEMES`]. An unknown
+    /// saved id reads as the first theme.
+    pub light_theme: String,
+    pub dark_theme: String,
     /// Interface size in percent (#475): scales the whole interface on top of the system's
     /// display scale. Junk or out-of-range saved values read as 100 % or are clamped to 80–200 %.
     pub interface_size: theme::InterfaceSize,
@@ -140,6 +145,8 @@ impl Default for UiState {
             recent: Vec::new(),
             recent_symbols: Vec::new(),
             theme: theme::Appearance::default(),
+            light_theme: appearance::LIGHT_THEMES[0].0.to_string(),
+            dark_theme: appearance::DARK_THEMES[0].0.to_string(),
             interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
@@ -622,6 +629,22 @@ impl WordApp {
                     }
                 }
                 json!({"theme": self.ui.theme.code(), "dark": self.ui_is_dark()})
+            }
+            "ui.lightTheme" | "ui.darkTheme" => {
+                // The theme used on that side: an id from the theme cards; no value reads it.
+                let light = id == "ui.lightTheme";
+                let (themes, slot) =
+                    if light { (appearance::LIGHT_THEMES, &mut self.ui.light_theme) } else { (appearance::DARK_THEMES, &mut self.ui.dark_theme) };
+                if let Some(v) = s("value") {
+                    match themes.iter().find(|(id, _)| id.eq_ignore_ascii_case(v.trim())) {
+                        Some((id, _)) => *slot = (*id).to_string(),
+                        None => {
+                            let ids: Vec<_> = themes.iter().map(|(id, _)| *id).collect();
+                            return Some(Err(format!("unknown theme {v:?}; use {}", ids.join(", "))));
+                        }
+                    }
+                }
+                json!({"theme": appearance::picked(slot, themes)})
             }
             "ui.interfaceSize" => {
                 // Interface size in percent, 80–200 (clamped); no value reads it. Document zoom is

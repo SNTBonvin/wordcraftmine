@@ -1,5 +1,6 @@
-//! File ▸ Options ▸ Interface theme: the appearance mode (follow the system, Light or Dark) above a
-//! light and a dark theme card, each with a small picture of WordCraft in that theme.
+//! File ▸ Options ▸ Interface theme: the mode (follow the system, Light or Dark) above a light and a
+//! dark theme card, each with a small picture of WordCraft in that theme. The cards pick which
+//! light theme and which dark theme the app uses; the mode only switches between those two picks.
 
 use egui::{Rect, RichText, Ui, pos2, vec2};
 use serde_json::json;
@@ -7,9 +8,15 @@ use serde_json::json;
 use crate::WordApp;
 use crate::theme::{Appearance, Tokens, semibold};
 
-/// The themes each card offers. One of each today; a new theme is one more row here.
-pub const LIGHT_THEMES: &[Appearance] = &[Appearance::Light];
-pub const DARK_THEMES: &[Appearance] = &[Appearance::Dark];
+/// The themes each card offers, as (id, English label). One of each today; a new theme is one more
+/// row here (and its palette where the tokens are built).
+pub const LIGHT_THEMES: &[(&str, &str)] = &[("light", "Light")];
+pub const DARK_THEMES: &[(&str, &str)] = &[("dark", "Dark")];
+
+/// The id of the theme picked in `slot`, the first one when it names none of `themes`.
+pub fn picked<'a>(slot: &str, themes: &'a [(&'a str, &'a str)]) -> &'a str {
+    themes.iter().map(|(id, _)| *id).find(|id| *id == slot).unwrap_or(themes[0].0)
+}
 
 /// A miniature WordCraft window in `dark` or light colours: title bar, ribbon tabs and groups, the
 /// ruler, a page on the canvas and the status bar.
@@ -69,7 +76,10 @@ fn preview(ui: &mut Ui, dark: bool, width: f32) {
 
 /// One theme card: its title, Active when it is what shows now, a preview of the chosen theme and
 /// a radio row per theme.
-fn card(ui: &mut Ui, app: &mut WordApp, t: &Tokens, title: &str, active: bool, themes: &[Appearance]) {
+fn card(ui: &mut Ui, app: &mut WordApp, t: &Tokens, title: &str, active: bool, dark: bool) {
+    let (themes, slot, command) =
+        if dark { (DARK_THEMES, app.ui.dark_theme.clone(), "ui.darkTheme") } else { (LIGHT_THEMES, app.ui.light_theme.clone(), "ui.lightTheme") };
+    let chosen = picked(&slot, themes).to_string();
     egui::Frame::new()
         .fill(t.panel)
         .stroke(egui::Stroke::new(1.0, if active { t.accent } else { t.border }))
@@ -84,13 +94,12 @@ fn card(ui: &mut Ui, app: &mut WordApp, t: &Tokens, title: &str, active: bool, t
                 }
             });
             ui.add_space(4.0);
-            let shown = themes.first().copied().unwrap_or(Appearance::Light);
-            preview(ui, shown == Appearance::Dark, ui.available_width());
+            preview(ui, dark, ui.available_width());
             ui.add_space(4.0);
-            for a in themes {
-                // Picking a card's theme shows it now (one theme per card today).
-                if ui.radio(app.ui.theme == *a, tl!(a.label())).clicked() {
-                    let _ = app.run("ui.theme", json!({"value": a.code()}));
+            for (id, label) in themes {
+                // Picks the theme for this side; the mode above decides which side shows.
+                if ui.radio(chosen == *id, tl!(label)).clicked() {
+                    let _ = app.run(command, json!({"value": id}));
                 }
             }
         });
@@ -114,8 +123,8 @@ pub fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
     ui.allocate_ui(vec2(ui.available_width().min(560.0), 0.0), |ui| {
         ui.columns(2, |cols| {
             let [light, dark] = cols else { return };
-            card(light, app, &t, tl!("Light theme"), light_active, LIGHT_THEMES);
-            card(dark, app, &t, tl!("Dark theme"), !light_active, DARK_THEMES);
+            card(light, app, &t, tl!("Light theme"), light_active, false);
+            card(dark, app, &t, tl!("Dark theme"), !light_active, true);
         });
     });
     ui.add_space(4.0);
@@ -154,16 +163,40 @@ mod tests {
             h.render().unwrap().save(path).unwrap();
         }
 
+        // A card's radio picks the theme for its side; it never changes the mode.
         let radios: Vec<_> = h.query_all_by_role(egui::accesskit::Role::RadioButton).collect();
         assert_eq!(radios.len(), 2, "one theme on each card");
         radios[1].click();
         h.run();
-        assert_eq!(h.state().ui.theme, Appearance::Dark);
+        assert_eq!(h.state().ui.theme, Appearance::Light, "picking a dark theme leaves the mode alone");
+        assert_eq!(h.state().ui.dark_theme, "dark");
 
         h.get_by_role(egui::accesskit::Role::ComboBox).click();
         h.run();
         h.get_by_label("Use system setting").click();
         h.run();
         assert_eq!(h.state().ui.theme, Appearance::System);
+        h.get_by_role(egui::accesskit::Role::ComboBox).click();
+        h.run();
+        // "Dark" is also the dark card's radio; the drop-down's entry comes last.
+        h.query_all_by_label("Dark").last().expect("the drop-down lists Dark").click();
+        h.run();
+        assert_eq!(h.state().ui.theme, Appearance::Dark, "the mode switches to the dark pick");
+        assert_eq!(h.query_all_by_label("Active").count(), 1);
+    }
+
+    /// The picks are validated, saved with the other settings, and an unknown saved id reads as the
+    /// first theme.
+    #[test]
+    fn picked_themes_are_validated_and_saved() {
+        let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+        assert_eq!(app.run("ui.lightTheme", json!({})).unwrap()["theme"], "light");
+        assert_eq!(app.run("ui.darkTheme", json!({"value": "Dark"})).unwrap()["theme"], "dark");
+        assert!(app.run("ui.darkTheme", json!({"value": "purple"})).is_err());
+        assert!(app.run("ui.lightTheme", json!({"value": "dark"})).is_err(), "a dark theme is not a light one");
+        let saved = serde_json::to_string(&app.prefs()).unwrap();
+        assert!(saved.contains(r#""lightTheme":"light""#) && saved.contains(r#""darkTheme":"dark""#), "{saved}");
+        let odd: crate::UiState = serde_json::from_str(r#"{"darkTheme": "sepia"}"#).unwrap();
+        assert_eq!(picked(&odd.dark_theme, DARK_THEMES), "dark");
     }
 }
