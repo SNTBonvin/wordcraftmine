@@ -347,7 +347,11 @@ fn insert_toc(s: &mut Session, v: &Value) -> CmdResult {
     }
     // Title paragraph carrying the TOC field marker.
     let mut head = Paragraph::with_text(&title, CharProps::default()).styled("TOCHeading");
-    head.insert_object(head.len(), InlineObject::Field { instr: toc_instr(v), result: String::new(), locked: false, code: false }, &CharProps::default())?;
+    head.insert_object(
+        head.len(),
+        InlineObject::Field { instr: toc_instr(v), result: String::new(), locked: false, code: false },
+        &CharProps::default(),
+    )?;
     let i = if s.doc.para_at(&at).is_some_and(|p| p.is_empty()) {
         if placeholder {
             s.doc.remove_block(StoryRef::Body, &at.path)?;
