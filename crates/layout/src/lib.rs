@@ -8,6 +8,7 @@
 //! - [`hit`]: point ↔ position, caret geometry, line navigation, selection rectangles.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod contour;
 pub mod display;
 pub mod fields;
 pub mod hit;
@@ -21,11 +22,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use wordcraft_doc::numbering::{Counters, Level};
-use wordcraft_doc::para::{Anchor, Float, FloatAlign, InlineObject, Wrap};
+use wordcraft_doc::para::{Anchor, Float, FloatAlign, InlineObject, Wrap, WrapText};
 use wordcraft_doc::props::{Border, CharProps, Rgb, TableFloat, TextDirection};
 use wordcraft_doc::section::{SectionProps, SectionStart};
 use wordcraft_doc::{Block, Blocks, Document, Paragraph, Path, StoryRef};
-use wordcraft_geom::{Point, Rect};
+use wordcraft_geom::{Point, Rect, Spin};
 
 pub use fields::FieldCtx;
 pub use hit::VisualStep;
@@ -54,6 +55,9 @@ pub struct LayoutOptions {
     pub hide_deleted: bool,
     /// Check spelling and grammar (squiggles).
     pub proofing: bool,
+    /// Show field codes (`{ PAGE }`, shaded) instead of field results (View › Field Codes, Alt+F9).
+    /// A field whose own `code` flag is set shows the other one.
+    pub field_codes: bool,
 }
 
 /// Something placed on a page (page coordinates, points, y down).
@@ -83,6 +87,7 @@ pub enum Placed {
         y1: f32,
         border: Border,
     },
+    /// A picture in `rect`, turned about the rect's centre by `spin` (as are shapes and charts).
     Image {
         rect: Rect,
         media: String,
@@ -90,6 +95,7 @@ pub enum Placed {
         story: StoryRef,
         path: Path,
         off: usize,
+        spin: Spin,
     },
     Shape {
         rect: Rect,
@@ -97,7 +103,10 @@ pub enum Placed {
         fill: Option<Rgb>,
         stroke: Option<Rgb>,
         stroke_width: f32,
+        /// A freeform's paths (ink strokes among them).
+        freeform: Option<Arc<wordcraft_doc::freeform::Freeform>>,
         effects: wordcraft_doc::effects::ShapeEffects,
+        spin: Spin,
     },
     /// A floating chart or diagram, drawn from its items inside `rect`. The object is the U+FFFC at
     /// byte `off` of paragraph `path` (its alt text).
@@ -107,6 +116,7 @@ pub enum Placed {
         story: StoryRef,
         path: Path,
         off: usize,
+        spin: Spin,
     },
     /// A table cell's area (for hit testing and cell selection).
     Cell {
@@ -118,9 +128,10 @@ pub enum Placed {
     },
     /// The area of a picture, shape or text box, for hit testing, selection handles and dragging
     /// (drawn by `Image`/`Shape`/`Lines`). The object is the U+FFFC at byte `off` of paragraph
-    /// `path` in `story`.
+    /// `path` in `story`. `rect` is its unrotated frame; `spin` turns it about the centre.
     Object {
         rect: Rect,
+        spin: Spin,
         story: StoryRef,
         path: Path,
         off: usize,
@@ -286,6 +297,9 @@ struct Key {
 #[derive(Default)]
 pub struct LayoutCache {
     paras: HashMap<Key, Arc<ParaLayout>>,
+    /// Outlines of pictures' opaque pixels (Tight and Through wrapping), by media key, the
+    /// media's bytes (address and length) and crop.
+    outlines: HashMap<(String, usize, usize, [u32; 4]), Option<Arc<Vec<(f32, f32)>>>>,
     env: u64,
     used: HashSet<Key>,
     pub hits: u64,
@@ -304,6 +318,7 @@ impl LayoutCache {
     }
     pub fn clear(&mut self) {
         self.paras.clear();
+        self.outlines.clear();
     }
 }
 
@@ -315,7 +330,15 @@ fn hash_of<T: Hash>(t: &T) -> u64 {
 
 fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
     let s = serde_json::to_string(&(&doc.styles, &doc.numbering, doc.settings.default_tab, &doc.settings.footnote_format)).unwrap_or_default();
-    hash_of(&(s, opts.show_hidden, opts.hide_deleted, opts.proofing, wordcraft_proof::user_dictionary().len(), doc.settings.auto_hyphenation))
+    hash_of(&(
+        s,
+        opts.show_hidden,
+        opts.hide_deleted,
+        opts.proofing,
+        opts.field_codes,
+        wordcraft_proof::user_dictionary().len(),
+        doc.settings.auto_hyphenation,
+    ))
 }
 
 fn has_page_fields(p: &Paragraph) -> bool {
@@ -343,6 +366,25 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    /// The outline Tight and Through wrapping follow around `o` (see [`contour::wrap_outline`]);
+    /// pictures' are worked out once per picture and crop.
+    fn wrap_outline(&mut self, o: &InlineObject) -> Option<Arc<Vec<(f32, f32)>>> {
+        let (doc, cache) = (self.doc, &mut *self.cache);
+        contour::wrap_outline(o, |media, crop| {
+            let bytes = doc.media.get(media)?;
+            let key = (media.to_string(), Arc::as_ptr(bytes) as usize, bytes.len(), crop.map(f32::to_bits));
+            if let Some(o) = cache.outlines.get(&key) {
+                return o.clone();
+            }
+            if cache.outlines.len() >= 256 {
+                cache.outlines.clear();
+            }
+            let outline = contour::picture_outline(bytes, crop).map(Arc::new);
+            cache.outlines.insert(key, outline.clone());
+            outline
+        })
+    }
+
     /// A laid-out line number (cached).
     fn number_para(&mut self, n: u32) -> Arc<ParaLayout> {
         if let Some(p) = self.numbers.get(&n) {
@@ -360,6 +402,7 @@ impl Ctx<'_> {
             label: None,
             fields: &self.fields,
             show_hidden: false,
+            field_codes: false,
             hide_deleted: false,
             table: None,
             proofing: false,
@@ -403,7 +446,7 @@ impl Ctx<'_> {
         let key = Key {
             rev: p.rev,
             width: width.to_bits(),
-            label: label.as_ref().map(|(t, l)| format!("{t}|{}|{}|{:?}", l.indent, l.hanging, l.suffix)),
+            label: label.as_ref().map(|(t, l)| format!("{t}|{}|{}|{:?}|{:?}|{:?}|{:?}", l.indent, l.hanging, l.suffix, l.align, l.tab, l.chr)),
             page,
             table: table.map(|t| hash_of(&format!("{t:?}"))).unwrap_or(0),
             notes: if p.objects.iter().any(|o| matches!(o, InlineObject::NoteRef { .. })) { self.notes_hash } else { 0 },
@@ -422,6 +465,7 @@ impl Ctx<'_> {
             label,
             fields: &self.fields,
             show_hidden: self.opts.show_hidden,
+            field_codes: self.opts.field_codes,
             hide_deleted: self.opts.hide_deleted,
             table,
             proofing: self.opts.proofing,
@@ -524,7 +568,7 @@ fn layout_box(
     // Pictures behind the text go first; `behind` counts them.
     let mut behind = 0;
     // Wrap areas of the box's floating objects.
-    let mut excl: Vec<(Rect, bool)> = Vec::new();
+    let mut excl: Vec<WrapArea> = Vec::new();
     // Areas of the box's floating tables, which other floating tables may have to avoid.
     let mut float_tables: Vec<Rect> = Vec::new();
     let mut y = 0.0f32;
@@ -555,7 +599,8 @@ fn layout_box(
                         continue;
                     }
                     let r = float_rect(frame, (0.0, width), y, w, h, float);
-                    excl.extend(wrap_area(r, float));
+                    let outline = ctx.wrap_outline(o);
+                    excl.extend(wrap_area(r, float, outline.as_deref().map(|v| v.as_slice())));
                     floats.insert(oi, r);
                 }
                 let rel = rel_exclusions(&excl, 0.0, y);
@@ -588,7 +633,7 @@ fn layout_box(
                     Some(f) => {
                         let legacy = if ctx.doc.settings.compat_mode < 15 { table::first_cell_left_margin(ctx, t) } else { 0.0 };
                         let (r, area) = box_float_table_rect(frame, width, y, &tl, &f, legacy, &float_tables);
-                        excl.push((area, false));
+                        excl.push((area, false, None, WrapText::BothSides));
                         float_tables.push(area);
                         (r.x, r.y)
                     }
@@ -787,14 +832,17 @@ struct PageBuilder<'a> {
     bottom: f32,
     number: u32,
     web: bool,
-    /// Footnotes waiting for the bottom of the current page: (part id, items, height).
-    notes: Vec<(u32, Vec<Placed>, f32)>,
+    /// Footnotes waiting for the bottom of the current page (first the rest of notes continued
+    /// from the page before).
+    notes: Vec<NoteBox>,
+    /// The parts of footnotes that didn't fit on their page, continued on the next one.
+    carry: Vec<NoteBox>,
     /// Page bottom before footnotes took space.
     orig_bottom: f32,
     /// The previous paragraph: (style, contextual spacing, space after) for contextual spacing.
     prev: Option<(String, bool, f32)>,
     /// Wrap areas of floating objects on this page (see [`wrap_area`]).
-    excl: Vec<(Rect, bool)>,
+    excl: Vec<WrapArea>,
     /// Wrap areas of the floating tables on this page, which others may not overlap.
     float_tables: Vec<Rect>,
     /// Line numbering counter.
@@ -805,35 +853,198 @@ struct PageBuilder<'a> {
 
 /// Gap above the footnote separator and its length.
 const NOTE_SEP: f32 = 12.0;
+/// The most pages added after the body for footnotes still continuing.
+const MAX_NOTE_PAGES: usize = 10_000;
+
+/// A footnote waiting for the bottom of a page: its items laid out from y = 0, and its height.
+struct NoteBox {
+    id: u32,
+    items: Vec<Placed>,
+    h: f32,
+    /// The rest of a note that didn't fit on an earlier page (drawn below the continuation
+    /// separator).
+    cont: bool,
+}
+
+/// The vertical extent of an item laid out in a horizontal frame.
+fn v_span(it: &Placed) -> (f32, f32) {
+    if let Some(r) = it.turned_bounds() {
+        return (r.y, r.y + r.h);
+    }
+    match it {
+        Placed::Lines { para, l0, l1, y, .. } => (*y, item_bottom(*y, para, *l0, *l1).unwrap_or(*y)),
+        Placed::Fill { rect, .. }
+        | Placed::Image { rect, .. }
+        | Placed::Shape { rect, .. }
+        | Placed::Graphic { rect, .. }
+        | Placed::Cell { rect, .. }
+        | Placed::Object { rect, .. } => (rect.y, rect.y + rect.h),
+        Placed::Rule { y0, y1, .. } => (y0.min(*y1), y0.max(*y1)),
+    }
+}
+
+impl NoteBox {
+    /// Lines of the note's own paragraphs, which may be split between pages (not those of its
+    /// tables or text boxes).
+    fn splittable(&self, it: &Placed) -> bool {
+        matches!(it, Placed::Lines { story: StoryRef::Part(s), path, turn: TextDirection::Horizontal, .. } if *s == self.id && path.0.len() == 1)
+    }
+
+    /// Where the note may be split, ascending: the bottoms of its lines that have more lines
+    /// below them and don't cut through a picture, table or other unsplittable item.
+    fn cuts(&self) -> Vec<f32> {
+        let blocked: Vec<(f32, f32)> =
+            self.items.iter().filter(|it| !self.splittable(it) && !matches!(it, Placed::Fill { .. } | Placed::Rule { .. })).map(v_span).collect();
+        let mut last_top = f32::MIN;
+        let mut cuts = Vec::new();
+        for it in &self.items {
+            let Placed::Lines { para, l0, l1, y, .. } = it else { continue };
+            if !self.splittable(it) {
+                continue;
+            }
+            let Some(first) = para.lines.get(*l0) else { continue };
+            for l in para.lines.get(*l0..*l1).unwrap_or(&[]) {
+                last_top = last_top.max(y + l.top - first.top);
+                cuts.push(y + l.top - first.top + l.height);
+            }
+        }
+        cuts.retain(|&b| b > 0.01 && b <= last_top + 0.01 && !blocked.iter().any(|&(t, e)| t < b - 0.01 && e > b + 0.01));
+        cuts.sort_by(f32::total_cmp);
+        cuts.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+        cuts
+    }
+
+    /// The least of the note that must stay with its reference: its first line (all of it if it
+    /// can't be split).
+    fn first_piece(&self) -> f32 {
+        self.cuts().first().copied().unwrap_or(self.h).min(self.h)
+    }
+
+    /// Split the note at line bottom `cut`: the part above (`cut` tall) and the rest, moved up to
+    /// start at 0 and marked as a continuation.
+    fn split(self, cut: f32) -> (NoteBox, NoteBox) {
+        let (mut head, mut tail) = (Vec::new(), Vec::new());
+        for it in self.items {
+            let (top, bottom) = v_span(&it);
+            if bottom <= cut + 0.01 {
+                head.push(it);
+                continue;
+            }
+            if top >= cut - 0.01 {
+                tail.push(it);
+                continue;
+            }
+            match it {
+                Placed::Lines { story, path, para, l0, l1, x, y, turn } => {
+                    let Some(first) = para.lines.get(l0) else { continue };
+                    let ft = first.top;
+                    // The first line that ends below the cut starts the tail.
+                    let k = (l0..l1).find(|&k| para.lines.get(k).is_none_or(|l| y + l.top - ft + l.height > cut + 0.01)).unwrap_or(l1);
+                    let ky = para.lines.get(k).map_or(y, |l| y + l.top - ft);
+                    if k > l0 {
+                        head.push(Placed::Lines { story, path: path.clone(), para: para.clone(), l0, l1: k, x, y, turn });
+                    }
+                    if k < l1 {
+                        tail.push(Placed::Lines { story, path, para, l0: k, l1, x, y: ky, turn });
+                    }
+                }
+                Placed::Fill { rect, color } => {
+                    head.push(Placed::Fill { rect: Rect::new(rect.x, rect.y, rect.w, cut - rect.y), color });
+                    tail.push(Placed::Fill { rect: Rect::new(rect.x, cut, rect.w, rect.y + rect.h - cut), color });
+                }
+                Placed::Rule { x0, y0, x1, y1, border } => {
+                    head.push(Placed::Rule { x0, y0: y0.min(cut), x1, y1: y1.min(cut), border });
+                    tail.push(Placed::Rule { x0, y0: y0.max(cut), x1, y1: y1.max(cut), border });
+                }
+                // Not split (cuts avoid them): stays above.
+                other => head.push(other),
+            }
+        }
+        // The rest starts at its first line (the space between paragraphs goes with the break).
+        let start = tail.iter().filter(|it| matches!(it, Placed::Lines { .. })).map(|it| v_span(it).0).fold(f32::MAX, f32::min);
+        let start = if start == f32::MAX { cut } else { start.max(cut) };
+        for it in &mut tail {
+            it.translate(0.0, -start);
+            // Shading cut at the break starts at the rest's top.
+            if let Placed::Fill { rect, .. } = it
+                && rect.y < 0.0
+            {
+                rect.h = (rect.h + rect.y).max(0.0);
+                rect.y = 0.0;
+            }
+        }
+        let rest = (self.h - start).max(0.0);
+        (NoteBox { id: self.id, items: head, h: cut, cont: self.cont }, NoteBox { id: self.id, items: tail, h: rest, cont: true })
+    }
+}
 
 impl PageBuilder<'_> {
     /// Space footnotes take at the bottom of the page.
     fn notes_h(&self) -> f32 {
-        if self.notes.is_empty() { 0.0 } else { NOTE_SEP + self.notes.iter().map(|n| n.2).sum::<f32>() }
+        if self.notes.is_empty() { 0.0 } else { NOTE_SEP + self.notes.iter().map(|n| n.h).sum::<f32>() }
     }
-    /// Place the collected footnotes at the bottom of the current page.
+    /// The lowest bottom of the body text and tables on the current page.
+    fn body_floor(&self) -> f32 {
+        let Some(pg) = self.pages.last() else { return self.top };
+        pg.items
+            .iter()
+            .skip(self.page_items_start)
+            .filter(|it| matches!(it, Placed::Lines { story: StoryRef::Body, .. } | Placed::Cell { story: StoryRef::Body, .. }))
+            .map(|it| v_span(it).1)
+            .fold(self.top, f32::max)
+    }
+    /// Place the collected footnotes at the bottom of the current page. When they don't all fit
+    /// below the body (`bottom`), the note that doesn't is split at a line and its rest, with
+    /// the notes after it, continues on the next page.
     fn flush_notes(&mut self) {
         if self.notes.is_empty() {
             return;
         }
         let total = self.notes_h();
         let x = self.sect.margin_left + self.sect.gutter;
-        let mut y = self.orig_bottom - total + NOTE_SEP;
+        // The note area starts below the text (a page of continued notes alone: at its top).
+        let area = self.bottom.max(self.body_floor());
+        let fits = total <= self.orig_bottom - area + 0.01;
+        let top = if fits { self.orig_bottom - total } else { area };
+        let mut y = top + NOTE_SEP;
         let notes = std::mem::take(&mut self.notes);
+        // A page that starts with a continued note gets the full-width continuation separator.
+        let cont = notes.first().is_some_and(|n| n.cont);
+        let mut placed = Vec::new();
+        let mut rest = notes.into_iter();
+        while let Some(n) = rest.next() {
+            let room = self.orig_bottom - y;
+            if fits || n.h <= room + 0.01 {
+                let ny = y;
+                y += n.h;
+                placed.push((n, ny));
+                continue;
+            }
+            // Split at the last line that fits. The page's first note always leaves something
+            // here (its first line, or all of it if it can't be split), so continuing ends.
+            let first = placed.is_empty();
+            let cuts = n.cuts();
+            match cuts.iter().rev().find(|&&c| c <= room + 0.01).or(cuts.first().filter(|_| first)).copied() {
+                Some(c) => {
+                    let (head, tail) = n.split(c);
+                    placed.push((head, y));
+                    self.carry.push(tail);
+                }
+                None if first => placed.push((n, y)),
+                None => self.carry.push(n),
+            }
+            self.carry.extend(rest.by_ref());
+            break;
+        }
         if let Some(pg) = self.pages.last_mut() {
-            pg.items.push(Placed::Rule {
-                x0: x,
-                y0: y - NOTE_SEP / 2.0,
-                x1: x + 144.0,
-                y1: y - NOTE_SEP / 2.0,
-                border: Border { style: wordcraft_doc::props::BorderStyle::Single, width: 0.5, color: None, space: 0.0 },
-            });
-            for (_, items, h) in notes {
-                for mut it in items {
-                    it.translate(x, y);
+            let len = if cont { self.sect.text_width() } else { 144.0 };
+            let sy = top + NOTE_SEP / 2.0;
+            pg.items.push(Placed::Rule { x0: x, y0: sy, x1: x + len, y1: sy, border: Border::single(0.5) });
+            for (n, ny) in placed {
+                for mut it in n.items {
+                    it.translate(x, ny);
                     pg.items.push(it);
                 }
-                y += h;
             }
         }
     }
@@ -864,7 +1075,7 @@ impl PageBuilder<'_> {
             self.line_no = 0;
         }
         let s = self.sect;
-        self.number += 1;
+        self.number = self.number.saturating_add(1);
         let (w, h) = if self.web { (s.page_w, f32::MAX / 4.0) } else { (s.page_w, s.page_h) };
         let body = Rect::new(s.margin_left + s.gutter, body_top, s.text_width(), (s.page_h - s.margin_bottom - body_top).max(36.0));
         let mut decor = Vec::new();
@@ -901,6 +1112,11 @@ impl PageBuilder<'_> {
         self.bottom = if self.web { f32::MAX / 8.0 } else { s.page_h - s.margin_bottom };
         self.orig_bottom = self.bottom;
         self.y = self.top;
+        // Notes continued from the page before come first in this page's note area.
+        if !self.carry.is_empty() && !self.web {
+            self.notes = std::mem::take(&mut self.carry);
+            self.bottom -= self.notes_h();
+        }
     }
     fn col_x(&self) -> f32 {
         self.sect.margin_left + self.sect.gutter + self.cols.get(self.col).map(|c| c.0).unwrap_or(0.0)
@@ -992,6 +1208,7 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
         number: 0,
         web,
         notes: Vec::new(),
+        carry: Vec::new(),
         orig_bottom: 0.0,
         prev: None,
         excl: Vec::new(),
@@ -1087,6 +1304,18 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
     }
     pb.apply_valign();
     pb.flush_notes();
+    // Footnotes still continuing after the last page get pages of their own. Each page takes at
+    // least a line of the first note, so this ends; the cap is a backstop.
+    let last_block = doc.body.len().saturating_sub(1);
+    for _ in 0..MAX_NOTE_PAGES {
+        if pb.carry.is_empty() {
+            break;
+        }
+        let top = pb.top;
+        pb.new_page(last_block, top);
+        pb.flush_notes();
+    }
+    pb.carry.clear();
     let mut pages = pb.pages;
     if web && let Some(p) = pages.first_mut() {
         let bottom = p
@@ -1188,42 +1417,89 @@ fn align_in((start, extent): (f32, f32), offset: f32, size: f32, align: Option<F
     }
 }
 
+/// An area text keeps clear of: its bounds, whether text may only go above and below it, and
+/// (Tight and Through wrapping) the outline text follows inside it, and the sides text may go on.
+type WrapArea = (Rect, bool, Option<Arc<contour::Contour>>, WrapText);
+
 /// The area text keeps clear of around a floating object at `r` (its rectangle grown by the
-/// distances from text), and whether text may only go above and below it. `None` when text
-/// flows over or under the object.
-fn wrap_area(r: Rect, float: &Float) -> Option<(Rect, bool)> {
+/// distances from text; Tight and Through: around `outline`, unit coordinates across `r`, when
+/// it has one), and whether text may only go above and below it. `None` when text flows over
+/// or under the object.
+fn wrap_area(r: Rect, float: &Float, outline: Option<&[(f32, f32)]>) -> Option<WrapArea> {
     if matches!(float.wrap, Wrap::Inline | Wrap::BehindText | Wrap::InFrontOfText) {
         return None;
     }
+    if matches!(float.wrap, Wrap::Tight | Wrap::Through)
+        && let Some((area, c)) = outline.and_then(|o| contour::contour_area(r, float, o))
+    {
+        return Some((area, false, Some(Arc::new(c)), float.wrap_text));
+    }
     let d = |v: f32| if v.is_finite() { v.clamp(0.0, 1584.0) } else { 0.0 };
     let (side, top, bottom) = (d(float.dist), d(float.dist_top), d(float.dist_bottom));
-    Some((Rect::new(r.x - side, r.y - top, r.w + side * 2.0, r.h + top + bottom), float.wrap == Wrap::TopAndBottom))
+    // A rotated object keeps text clear of its rotated bounds.
+    let r = float.spin().bounds(r);
+    Some((Rect::new(r.x - side, r.y - top, r.w + side * 2.0, r.h + top + bottom), float.wrap == Wrap::TopAndBottom, None, float.wrap_text))
 }
 
 /// Wrap areas relative to a paragraph whose column starts at `x0` and whose top is `y0`.
-fn rel_exclusions(excl: &[(Rect, bool)], x0: f32, y0: f32) -> Vec<para::Exclusion> {
+fn rel_exclusions(excl: &[WrapArea], x0: f32, y0: f32) -> Vec<para::Exclusion> {
     excl.iter()
-        .map(|(r, tb)| para::Exclusion { top: r.y - y0, bottom: r.bottom() - y0, left: r.x - x0, right: r.right() - x0, top_bottom: *tb })
+        .map(|(r, tb, c, side)| para::Exclusion {
+            top: r.y - y0,
+            bottom: r.bottom() - y0,
+            left: r.x - x0,
+            right: r.right() - x0,
+            top_bottom: *tb,
+            contour: c.clone(),
+            side: *side,
+        })
         .filter(|e| e.bottom > 0.0)
         .collect()
 }
 
-/// The items drawing floating object `o` at `rect` (a group: its members).
-fn float_items(o: &InlineObject, rect: Rect, story: StoryRef, path: &[u32], off: usize) -> Vec<Placed> {
+/// The items drawing floating object `o` at `rect` (a group: its members), turned by its own
+/// spin inside `outer` (its group's, about `outer`'s centre point).
+fn float_items(o: &InlineObject, rect: Rect, outer: (Spin, Point), story: StoryRef, path: &[u32], off: usize) -> Vec<Placed> {
+    let own = o.frame().map(|(_, _, f)| f.spin()).unwrap_or_default();
+    let (ospin, oc) = outer;
+    let rect = carried(rect, ospin, oc);
+    let spin = own.within(ospin);
     match o {
         InlineObject::Image { media, crop, .. } => {
-            vec![Placed::Image { rect, media: media.clone(), crop: *crop, story, path: Path(path.to_vec()), off }]
+            vec![Placed::Image { rect, media: media.clone(), crop: *crop, story, path: Path(path.to_vec()), off, spin }]
         }
-        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, .. } => {
-            vec![Placed::Shape { rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width, effects: *effects }]
+        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, freeform, .. } => {
+            vec![Placed::Shape {
+                rect,
+                kind: *kind,
+                fill: *fill,
+                stroke: *stroke,
+                stroke_width: *stroke_width,
+                effects: *effects,
+                freeform: freeform.clone(),
+                spin,
+            }]
         }
-        InlineObject::Graphic { graphic, .. } => vec![Placed::Graphic { rect, graphic: graphic.clone(), story, path: Path(path.to_vec()), off }],
-        InlineObject::Group { .. } => group_members(o, rect).into_iter().flat_map(|(r, c)| float_items(c, r, story, path, off)).collect(),
+        InlineObject::Graphic { graphic, .. } => {
+            vec![Placed::Graphic { rect, graphic: graphic.clone(), story, path: Path(path.to_vec()), off, spin }]
+        }
+        InlineObject::Group { .. } => {
+            let centre = Point::new(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+            group_members(o, rect).into_iter().flat_map(|(r, c)| float_items(c, r, (spin, centre), story, path, off)).collect()
+        }
         _ => Vec::new(),
     }
 }
 
 /// A group's members, each with its rectangle when the group is at `rect`.
+/// `rect` moved (not turned) to where `spin` about `centre` takes its centre: a group member's
+/// frame inside its turned group.
+fn carried(rect: Rect, spin: Spin, centre: Point) -> Rect {
+    let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+    let (nx, ny) = spin.apply(centre.x, centre.y, cx, cy);
+    Rect::new(rect.x + nx - cx, rect.y + ny - cy, rect.w, rect.h)
+}
+
 fn group_members(o: &InlineObject, rect: Rect) -> Vec<(Rect, &InlineObject)> {
     o.group_rects(rect.x, rect.y, rect.w, rect.h).into_iter().map(|([x, y, w, h], c)| (Rect::new(x, y, w, h), c)).collect()
 }
@@ -1255,7 +1531,8 @@ fn anchor_floats(
             }
             let r = float_rect(Some(frame), (col_x, width), y0, w, h, float);
             rects.insert(oi, r);
-            if let Some(area) = wrap_area(r, float) {
+            let outline = ctx.wrap_outline(o);
+            if let Some(area) = wrap_area(r, float, outline.as_deref().map(|v| v.as_slice())) {
                 pb.excl.push(area);
             }
         }
@@ -1317,7 +1594,7 @@ fn place_objects(
             let layer = if float.wrap == Wrap::BehindText { &mut behind } else { &mut front };
             // Floating ones are drawn here; inline ones with their line.
             if floating {
-                layer.extend(float_items(obj, rect, story, path, c.start));
+                layer.extend(float_items(obj, rect, (Spin::default(), Point::default()), story, path, c.start));
             }
             let text_box = match obj {
                 InlineObject::Shape { story: Some(id), .. } if ctx.doc.parts.get(id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox) => {
@@ -1327,6 +1604,7 @@ fn place_objects(
             };
             front.push(Placed::Object {
                 rect,
+                spin: float.spin(),
                 story,
                 path: Path(path.to_vec()),
                 off: c.start,
@@ -1334,13 +1612,17 @@ fn place_objects(
                 wrap: float.wrap,
                 origin: Point::new(at.col.0, at.para_y),
             });
-            // Its text (a group: its text boxes'), unless the box budget says no (a box inside
-            // itself, too deep, too many).
+            // Its text (a group: its text boxes', each where the group's turn carries it; the
+            // text itself stays upright), unless the box budget says no (a box inside itself,
+            // too deep, too many).
+            let centre = Point::new(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
             let boxes: Vec<(u32, Rect)> = match obj {
                 InlineObject::Group { .. } => group_members(obj, rect)
                     .into_iter()
                     .filter_map(|(r, c)| {
-                        c.text_box().filter(|id| ctx.doc.parts.get(id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox)).map(|id| (id, r))
+                        c.text_box()
+                            .filter(|id| ctx.doc.parts.get(id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox))
+                            .map(|id| (id, carried(r, float.spin(), centre)))
                     })
                     .collect(),
                 _ => text_box.map(|id| (id, rect)).into_iter().collect(),
@@ -1436,7 +1718,7 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
         let lead = if l0 == 0 { first.top.max(0.0) } else { 0.0 };
         let mut l1 = l0;
         let mut forced_break = None;
-        let mut new_notes: Vec<(u32, Vec<Placed>, f32)> = Vec::new();
+        let mut new_notes: Vec<NoteBox> = Vec::new();
         let notes = para_notes(ctx.doc, p, &pl);
         while l1 < n {
             let Some(l) = pl.lines.get(l1) else { break };
@@ -1446,33 +1728,44 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
                 for (ci, id) in &notes {
                     if *ci >= l.c0
                         && *ci < l.c1
-                        && !pb.notes.iter().chain(new_notes.iter()).any(|x| x.0 == *id)
+                        && !pb.notes.iter().chain(new_notes.iter()).any(|x| x.id == *id)
                         && let Some(part) = ctx.doc.parts.get(id).filter(|p| p.kind == wordcraft_doc::PartKind::Footnote)
                     {
                         let blocks = part.blocks.clone();
                         let BoxLayout { items, height: h, .. } =
                             layout_box(ctx, StoryRef::Part(*id), &blocks, &[], pb.sect.text_width(), None, 0, None);
-                        line_notes.push((*id, items, h));
+                        line_notes.push(NoteBox { id: *id, items, h, cont: false });
                     }
                 }
             }
-            let extra: f32 = line_notes.iter().map(|n| n.2).sum::<f32>()
+            let extra: f32 = line_notes.iter().map(|n| n.h).sum::<f32>()
                 + if pb.notes.is_empty() && new_notes.is_empty() && !line_notes.is_empty() { NOTE_SEP } else { 0.0 };
             let limit = pb.bottom
-                - new_notes.iter().map(|n| n.2).sum::<f32>()
+                - new_notes.iter().map(|n| n.h).sum::<f32>()
                 - if pb.notes.is_empty() && !new_notes.is_empty() { NOTE_SEP } else { 0.0 }
                 - extra;
             let bottom = pb.y + lead + (l.top + l.height - first.top);
-            if bottom > limit + 0.01 && l1 > l0 {
+            // Notes too long for the rest of the page continue on the next one: the line still
+            // fits if the notes before its last one, and that one's first line, fit below it.
+            // The notes then take the rest of the page.
+            let split = bottom > limit + 0.01
+                && line_notes.split_last().is_some_and(|(last, others)| {
+                    let before: f32 = pb.notes.iter().chain(&new_notes).chain(others).map(|n| n.h).sum();
+                    pb.body_floor().max(bottom) + NOTE_SEP + before + last.first_piece() <= pb.orig_bottom + 0.01
+                });
+            if bottom > limit + 0.01 && l1 > l0 && !split {
                 break;
             }
-            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() {
+            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split {
                 break;
             }
             new_notes.extend(line_notes);
             l1 += 1;
             if matches!(l.end, LineEnd::PageBreak | LineEnd::ColumnBreak) && !pb.web {
                 forced_break = Some(l.end);
+                break;
+            }
+            if split {
                 break;
             }
         }
@@ -1504,12 +1797,21 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
         }
         // Keep only the notes of the lines that are placed.
         let placed_end = pl.lines.get(l1.saturating_sub(1)).map(|l| l.c1).unwrap_or(0);
-        new_notes.retain(|(id, ..)| notes.iter().any(|(ci, nid)| nid == id && *ci < placed_end));
+        new_notes.retain(|n| notes.iter().any(|(ci, nid)| *nid == n.id && *ci < placed_end));
         let before = pb.notes_h();
         pb.notes.extend(new_notes);
         pb.bottom -= pb.notes_h() - before;
         let x = pb.col_x();
         let y = pb.y + lead;
+        // Notes that no longer fit below the text (a long one, or the rest of one continued from
+        // the page before) get what's left under it and continue on the next page.
+        if !pb.notes.is_empty()
+            && !pb.web
+            && let Some(placed_bottom) = item_bottom(y, &pl, l0, l1)
+            && placed_bottom > pb.bottom + 0.01
+        {
+            pb.bottom = pb.body_floor().max(placed_bottom).min(pb.orig_bottom);
+        }
         let mut items = Vec::new();
         push_para(&mut items, StoryRef::Body, &[block as u32], &pl, l0, l1, x, y, width);
         // Pictures, shapes and text boxes in these lines (web view: floats placed by this piece).
@@ -1527,8 +1829,8 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
         {
             for li in l0..l1 {
                 let Some(line) = pl.lines.get(li).filter(|l| !l.beside) else { continue };
-                pb.line_no += 1;
-                let n = pb.line_no + ln.start.saturating_sub(1);
+                pb.line_no = pb.line_no.saturating_add(1);
+                let n = pb.line_no.saturating_add(ln.start.saturating_sub(1));
                 if ln.count_by > 1 && !n.is_multiple_of(ln.count_by) {
                     continue;
                 }
@@ -1581,6 +1883,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
                 label: None,
                 fields: &ctx.fields,
                 show_hidden: ctx.opts.show_hidden,
+                field_codes: ctx.opts.field_codes,
                 hide_deleted: ctx.opts.hide_deleted,
                 table: None,
                 proofing: false,
@@ -1697,7 +2000,7 @@ fn place_floating_table(pb: &mut PageBuilder, tl: &table::TableLayout, f: &Table
             }
         }
         let area = r.inset(-dl, -dt, -dr, -db);
-        pb.excl.push((area, false));
+        pb.excl.push((area, false, None, WrapText::BothSides));
         pb.float_tables.push(area);
         return;
     }
@@ -1728,10 +2031,10 @@ fn below_floats(pb: &mut PageBuilder, x0: f32, x1: f32) {
 
 /// `y`, moved below the wrap areas in `excl` in the way of something spanning `x0..x1` that
 /// starts there.
-fn below(excl: &[(Rect, bool)], mut y: f32, x0: f32, x1: f32) -> f32 {
+fn below(excl: &[WrapArea], mut y: f32, x0: f32, x1: f32) -> f32 {
     for _ in 0..64 {
-        let in_the_way = excl.iter().filter(|(r, _)| r.y <= y + 0.01 && r.bottom() > y && r.x < x1 && r.right() > x0);
-        let Some(bottom) = in_the_way.map(|(r, _)| r.bottom()).reduce(f32::max) else { break };
+        let in_the_way = excl.iter().filter(|(r, ..)| r.y <= y + 0.01 && r.bottom() > y && r.x < x1 && r.right() > x0);
+        let Some(bottom) = in_the_way.map(|(r, ..)| r.bottom()).reduce(f32::max) else { break };
         y = bottom;
     }
     y

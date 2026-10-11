@@ -57,8 +57,10 @@ pub fn specs() -> Vec<CommandSpec> {
         .pure(),
         CommandSpec::new("references.caption", "Insert Caption", "References › Captions", caption)
             .params(r#"{"label"?: "Figure|Table|Equation", "text"?: string}"#),
+        // F9: update fields; the selected ones that showed their code show their result again.
         CommandSpec::new("references.updateFields", "Update Field", "References", |s, _| {
             update_fields(s)?;
+            super::fields::show_results(s)?;
             sel_result(s)
         })
         .key("F9"),
@@ -142,7 +144,7 @@ fn insert_toc(s: &mut Session, v: &Value) -> CmdResult {
     let mut head = Paragraph::with_text(&title, CharProps::default()).styled("TOCHeading");
     head.insert_object(
         head.len(),
-        InlineObject::Field { instr: format!("TOC \\o \"1-{levels}\" \\h \\z \\u"), result: String::new(), locked: false },
+        InlineObject::Field { instr: format!("TOC \\o \"1-{levels}\" \\h \\z \\u"), result: String::new(), locked: false, code: false },
         &CharProps::default(),
     )?;
     let i = if s.doc.para_at(&at).is_some_and(|p| p.is_empty()) { at.path.last() } else { s.doc.split_paragraph(&at)?.path.last() };
@@ -253,7 +255,7 @@ fn caption(s: &mut Session, v: &Value) -> CmdResult {
     para.insert_text(0, &base, &CharProps::default())?;
     para.insert_object(
         base.len(),
-        InlineObject::Field { instr: format!("SEQ {label} \\* ARABIC"), result: n.to_string(), locked: false },
+        InlineObject::Field { instr: format!("SEQ {label} \\* ARABIC"), result: n.to_string(), locked: false, code: false },
         &CharProps::default(),
     )?;
     let end = para.len();
@@ -285,11 +287,7 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
             let name = wordcraft_layout::fields::field_name(instr);
             match name.as_str() {
                 "DATE" | "TIME" | "CREATEDATE" | "SAVEDATE" | "PRINTDATE" => {
-                    let pic = instr
-                        .split("\\@")
-                        .nth(1)
-                        .map(|x| x.trim().trim_matches('"').to_string())
-                        .unwrap_or_else(|| if name == "TIME" { "h:mm am/pm".into() } else { "M/d/yyyy".into() });
+                    let pic = date_picture(instr).unwrap_or_else(|| if name == "TIME" { "h:mm am/pm".into() } else { "M/d/yyyy".into() });
                     updates.push((k, super::insert::format_date(&pic)));
                 }
                 "SEQ" => {
@@ -324,6 +322,16 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
     }
     super::citations::update_citations(s)?;
     update_toc(s)
+}
+
+/// A field's `\@` date picture: the quoted text after it (switches may follow), or one word.
+pub fn date_picture(instr: &str) -> Option<String> {
+    let rest = instr.split_once("\\@")?.1.trim_start();
+    let pic = match rest.strip_prefix('"') {
+        Some(q) => q.split('"').next().unwrap_or(""),
+        None => rest.split_whitespace().next().unwrap_or(""),
+    };
+    (!pic.is_empty()).then(|| pic.to_string())
 }
 
 /// The text a bookmark marks (field results included), up to its end in the same paragraph or

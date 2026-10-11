@@ -31,23 +31,23 @@ font can't match Word's metrics.
 | Columns, column breaks, separators | 🟡 | **Columns don't balance** at a continuous section break or document end | 4–6 |
 | Section breaks (next page, continuous, even, odd), different first page, odd/even headers | ✅ | Section breaks don't show in Draft view (#42) | 1–2 |
 | Body top below a tall header, footer pushes body up | ✅ | #138 | — |
-| Footnotes at the page bottom, endnotes at the end, note numbering | 🟡 | **A long note doesn't continue onto the next page**; no continuation separator/notice; per-section restart partial | 4–6 |
+| Footnotes at the page bottom, endnotes at the end, note numbering | 🟡 | A long note continues onto the next page at a line boundary (its first line stays with the reference), first in that page's note area under a full-width continuation separator (#352); the document's own `w:continuationSeparator`/`w:continuationNotice` aren't read (default line, no notice); per-section restart partial | 2–4 |
 | Tables: row heights (at least/exact), rows split across pages, header rows repeat, Can't Split | ✅ | 2026-10-06, #138 | — |
 | Tables: autofit to contents/window, fixed widths, Word 2013 edge | 🟡 | #137; #44: AutoFit Contents measures each column's narrowest and widest text and shares the width like Word, once (not live as you type); cell preferred widths and spans still differ | 3–5 |
 | Floating tables (`w:tblpPr`) | 🟡 | #137; overlap rules untested | 2–3 |
 | Nested tables | 🟡 | render; polish missing | 2–4 |
 | Floating pictures/shapes placement (relative to page/margin/column/paragraph/line/character) | ✅ | #136 | — |
 | Text wrap: square, top-and-bottom, behind, in front | ✅ | 2026-10-06 | — |
-| Text wrap: tight, through (contour, wrap polygon) | ❌ | laid out as square | 6–10 |
+| Text wrap: tight, through (contour, wrap polygon) | 🟡 | #354: lines follow the wrap polygon, or the outline worked out from the object (shape geometry; a picture's opaque pixels as a convex hull; otherwise the rectangle), turned and flipped with it, kept the left/right distance from text; Through also uses gaps inside the outline. Wrap side (`wrapText`: both sides, left only, right only, largest side per line) applies to square, tight and through wraps, turned objects included; picture outlines are convex; not compared page-for-page with Word | 1–2 |
 | Text boxes, overflow, linked text boxes | 🟡 | #46; linked text boxes missing | 3–5 |
-| Rotated objects and text | ❌ | no rotation in layout | 4–6 |
+| Rotated objects and text | 🟡 | #332: pictures, shapes, charts and groups drawn turned and flipped about their centre (screen and PDF); square wrap and inline lines keep clear of the rotated bounds; hit testing on the turned shape. Text in a rotated text box stays upright | 2–3 |
 | Page borders (from page edge or text), page colour, watermark | ✅ | | — |
 | Line numbers (restart per page/section, count by) | ✅ | | — |
 | Vertical page alignment | ✅ | | — |
 | Gutter, mirror margins, book fold, 2 pages per sheet | 🟡 | gutter and mirror margins; book fold missing | 2–3 |
 | Document grid (`w:docGrid`, lines per page, characters per line) | ❌ | East Asian documents paginate differently without it | 4–6 |
 | Vertical text (`tbRl`) in sections and text boxes; cell text direction | 🟡 | cell text direction landed (#245); page-level and text-box vertical text missing | 8–12 |
-| Ruby / phonetic guide, enclose characters, combined characters | ❌ | | 4–6 |
+| Ruby / phonetic guide, enclose characters, combined characters | 🟡 | ruby (Phonetic Guide) landed (#288): ruby text over its base by alignment, line grows to fit, in PDF; enclose and combined characters missing; ruby not yet compared with Word page by page | 2–4 |
 | Bidirectional paragraphs, mixed-direction lines | 🟡 | #207; RTL sections and tables (`w:bidiVisual`) missing | 4–6 |
 | Equations: display layout, numbering, wrapping long display equations | ✅ | #191; long display equations break at top-level operators (`m:brkBin`, `m:brkBinSub`), manual breaks and `m:alnAt`, continuation lines indented by `m:wrapIndent` or set right (`m:wrapRight`) (#326) | — |
 | Hidden text excluded from breaking and hyphenation | ✅ | #173 | — |
@@ -68,6 +68,12 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Group and Ungroup keep turned members' orientation and placement (#441, #443); Size resizes a group (#442); the eraser hits turned ink where it is drawn (#445) |
+| 2026-10-10 | trivial | Long footnotes continue onto the next page with a continuation separator (#352) |
+| 2026-10-11 | trivial | Ruby (Phonetic Guide) layout landed (#288) |
+| 2026-10-10 | trivial | Wrap side: text on both sides, left only, right only or the largest side of an object (#354) |
+| 2026-10-10 | trivial | Tight and Through wrapping follow the object's outline (#354) |
+| 2026-10-10 | trivial | Rotated and flipped objects laid out and drawn (#332) |
 | 2026-10-10 | trivial | Long display equations wrap across lines (#326) |
 | 2026-10-10 | trivial | AutoFit Contents measures the text (#44) |
 | 2026-10-10 | major | First version: layout and pagination checklist with evidence from `crates/layout`, PRs and issues |

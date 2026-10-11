@@ -58,6 +58,49 @@ pub enum Wrap {
     InFrontOfText,
 }
 
+/// Which sides of a Square, Tight or Through object text may flow on (`@wrapText`, ECMA-376
+/// Part 1, §20.4.3.7 `ST_WrapText`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum WrapText {
+    /// Both sides of the object.
+    #[default]
+    BothSides,
+    /// Only the left side: the band to the object's right stays empty.
+    Left,
+    /// Only the right side.
+    Right,
+    /// Only whichever side has more room, decided per line.
+    Largest,
+}
+
+impl WrapText {
+    /// From the OOXML value (`bothSides`, `left`, `right`, `largest`).
+    pub fn from_ooxml(v: &str) -> Option<WrapText> {
+        match v {
+            "bothSides" => Some(WrapText::BothSides),
+            "left" => Some(WrapText::Left),
+            "right" => Some(WrapText::Right),
+            "largest" => Some(WrapText::Largest),
+            _ => None,
+        }
+    }
+
+    /// The OOXML value.
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            WrapText::BothSides => "bothSides",
+            WrapText::Left => "left",
+            WrapText::Right => "right",
+            WrapText::Largest => "largest",
+        }
+    }
+
+    pub fn is_both(&self) -> bool {
+        *self == WrapText::BothSides
+    }
+}
+
 /// What a floating object's offset is relative to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -126,10 +169,13 @@ impl FloatAlign {
 }
 
 /// Floating placement (ignored when `wrap` is `Inline`).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Float {
     pub wrap: Wrap,
+    /// The sides text wraps on (Square, Tight and Through).
+    #[serde(skip_serializing_if = "WrapText::is_both")]
+    pub wrap_text: WrapText,
     pub h_rel: Anchor,
     pub v_rel: Anchor,
     /// Offsets, points (used when the matching alignment is `None`).
@@ -146,11 +192,50 @@ pub struct Float {
     pub dist_top: f32,
     pub dist_bottom: f32,
     /// Room around the object for effects such as shadows (left, top, right, bottom, points),
-    /// inline or floating: lines and surrounding text keep clear of it.
+    /// inline or floating: lines and surrounding text keep clear of it. Rotation's own overhang
+    /// is not in here: it follows from [`Float::rot`] (see [`Float::spin_pad`]).
     pub effect: [f32; 4],
+    /// Rotation clockwise about the object's centre, degrees (DrawingML `a:xfrm/@rot`). Offsets
+    /// and the size stay those of the unrotated frame, as in Word; see [`Float::spin`].
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rot: f32,
+    /// Mirrored left to right / top to bottom (`a:xfrm/@flipH`, `@flipV`).
+    #[serde(skip_serializing_if = "is_false")]
+    pub flip_h: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub flip_v: bool,
+    /// The outline Tight and Through wrapping follow (`wp:wrapPolygon`), in the object's own
+    /// (unrotated) frame; `None` = derived from the object (see [`crate::wrap`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrap_polygon: Option<std::sync::Arc<crate::wrap::WrapPolygon>>,
+}
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 impl Float {
+    /// The rotation and flips, the angle normalised to `0..360` (a NaN angle is no rotation).
+    pub fn spin(&self) -> wordcraft_geom::Spin {
+        wordcraft_geom::Spin::new(self.rot, self.flip_h, self.flip_v)
+    }
+    /// Set the rotation and flips (the angle normalised).
+    pub fn set_spin(&mut self, s: wordcraft_geom::Spin) {
+        self.rot = wordcraft_geom::normalize_degrees(s.deg);
+        self.flip_h = s.flip_h;
+        self.flip_v = s.flip_v;
+    }
+    /// How far a `w` × `h` frame's rotated bounds reach past it on each side (x, y): the room a
+    /// rotated object takes beyond its frame (zero unrotated; negative where the turned object
+    /// is narrower than its frame, as a wide picture turned 90° is).
+    pub fn spin_pad(&self, w: f32, h: f32) -> (f32, f32) {
+        let (w, h) = (wordcraft_geom::finite(w).clamp(0.0, 4000.0), wordcraft_geom::finite(h).clamp(0.0, 4000.0));
+        let (bw, bh) = self.spin().extent(w, h);
+        ((bw - w) / 2.0, (bh - h) / 2.0)
+    }
     /// The effect extents, finite and clamped (left, top, right, bottom).
     pub fn effect_extent(&self) -> [f32; 4] {
         self.effect.map(|v| if v.is_finite() { v.clamp(0.0, 1584.0) } else { 0.0 })
@@ -172,6 +257,8 @@ pub enum ShapeKind {
     Heart,
     /// A text box (rectangle with a text story).
     TextBox,
+    /// A shape drawn point by point, such as ink (its geometry is the shape's `freeform`).
+    Freeform,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -180,6 +267,55 @@ pub enum NoteKind {
     #[default]
     Footnote,
     Endnote,
+}
+
+/// How ruby (phonetic guide) text lines up over its base text (ECMA-376 `ST_RubyAlign`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RubyAlign {
+    #[default]
+    Center,
+    /// Letters spread evenly from edge to edge.
+    DistributeLetter,
+    /// Letters spread evenly with half a gap at each edge.
+    DistributeSpace,
+    Left,
+    Right,
+    /// Right-aligned beside vertical text (laid out like `Right` in horizontal text).
+    RightVertical,
+}
+
+impl RubyAlign {
+    pub const ALL: [RubyAlign; 6] =
+        [RubyAlign::Center, RubyAlign::DistributeLetter, RubyAlign::DistributeSpace, RubyAlign::Left, RubyAlign::Right, RubyAlign::RightVertical];
+
+    /// The OOXML name (`center`, `distributeLetter`…), also used by commands.
+    pub fn ooxml(self) -> &'static str {
+        match self {
+            RubyAlign::Center => "center",
+            RubyAlign::DistributeLetter => "distributeLetter",
+            RubyAlign::DistributeSpace => "distributeSpace",
+            RubyAlign::Left => "left",
+            RubyAlign::Right => "right",
+            RubyAlign::RightVertical => "rightVertical",
+        }
+    }
+
+    pub fn from_ooxml(v: &str) -> Option<RubyAlign> {
+        RubyAlign::ALL.into_iter().find(|a| a.ooxml() == v)
+    }
+}
+
+/// Phonetic Guide's Offset for a ruby `raise` (baseline to baseline, points): the gap from the top
+/// of the base text to the bottom of the ruby text, taking letters as rising 0.8 em above their
+/// baseline and dropping 0.2 em below it.
+pub fn ruby_offset(raise: f32, base_size: f32, size: f32) -> f32 {
+    raise - 0.8 * base_size - 0.2 * size
+}
+
+/// The ruby raise (baseline to baseline, points) for a Phonetic Guide Offset (see [`ruby_offset`]).
+pub fn ruby_raise(offset: f32, base_size: f32, size: f32) -> f32 {
+    offset + 0.8 * base_size + 0.2 * size
 }
 
 /// An inline object anchored at a U+FFFC in the paragraph text.
@@ -199,6 +335,10 @@ pub enum InlineObject {
         /// Crop (left, top, right, bottom) fractions 0..1.
         #[serde(default)]
         crop: [f32; 4],
+        /// The OLE object (embedded or linked file) this picture shows, as read from a file:
+        /// saving writes the object back, not only its picture. See [`crate::graphic::Embedded`].
+        #[serde(skip)]
+        ole: Option<std::sync::Arc<crate::graphic::Embedded>>,
     },
     /// A chart or SmartArt diagram (see [`crate::graphic`]).
     Graphic {
@@ -223,6 +363,9 @@ pub enum InlineObject {
         /// Text box content: `Document::parts` id.
         #[serde(default)]
         story: Option<u32>,
+        /// A freeform's geometry (`ShapeKind::Freeform`): its paths, or an ink stroke.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        freeform: Option<std::sync::Arc<crate::freeform::Freeform>>,
         /// Shadow, glow and soft edges.
         #[serde(default, skip_serializing_if = "crate::effects::ShapeEffects::is_empty")]
         effects: crate::effects::ShapeEffects,
@@ -242,13 +385,18 @@ pub enum InlineObject {
         children: Vec<GroupChild>,
     },
     /// A field: `instr` is the field code (`PAGE`, `NUMPAGES`, `DATE \@ "M/d/yyyy"`, `TOC \o "1-3"`…);
-    /// `result` the cached display text.
+    /// `result` the cached display text. A `locked` field keeps its result when fields update.
     Field {
         instr: String,
         #[serde(default)]
         result: String,
         #[serde(default)]
         locked: bool,
+        /// Shows its code (`{ PAGE }`) instead of its result, the other way round from the
+        /// document-wide View › Field Codes setting (`fields.toggleCode`, Shift+F9). A view
+        /// toggle: never written to files.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        code: bool,
     },
     /// The start of a field whose result is ordinary content — formatted, possibly spanning
     /// paragraphs — up to the matching [`InlineObject::FieldEnd`]. Citation managers' `ADDIN`
@@ -290,6 +438,27 @@ pub enum InlineObject {
         /// The structure; empty = parse `linear`.
         #[serde(default, skip_serializing_if = "crate::math::Math::is_empty")]
         math: crate::math::Math,
+    },
+    /// Ruby (Phonetic Guide): small `ruby` text (furigana, pinyin…) set over `base` text. The base
+    /// text takes the formatting of the object's run; it reads as the paragraph's text.
+    Ruby {
+        base: String,
+        ruby: String,
+        #[serde(default)]
+        align: RubyAlign,
+        /// Ruby text size, points (`w:hps`).
+        size: f32,
+        /// From the base text's baseline up to the ruby text's baseline, points (`w:hpsRaise`).
+        raise: f32,
+        /// The base text size the ruby was set for, points (`w:hpsBaseText`).
+        #[serde(default)]
+        base_size: f32,
+        /// Language of the ruby (`w:lid`, e.g. `ja-JP`); empty = unspecified.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        lang: String,
+        /// Formatting of the ruby text over the run's (font, colour…); its size is `size`.
+        #[serde(default, skip_serializing_if = "CharProps::is_empty")]
+        props: Box<CharProps>,
     },
     /// Something we don't model, kept for round-trip (raw XML of the source format).
     Opaque {
@@ -416,11 +585,19 @@ impl InlineObject {
             _ => false,
         }
     }
+    /// The geometry of an ink stroke (a freeform shape drawn with a pen), if this is one.
+    pub fn ink(&self) -> Option<&crate::freeform::Freeform> {
+        match self {
+            InlineObject::Shape { freeform: Some(f), .. } if f.is_ink() => Some(f),
+            _ => None,
+        }
+    }
     /// The text this object contributes to plain-text extraction.
     pub fn plain_text(&self) -> &str {
         match self {
             InlineObject::Field { result, .. } => result,
             InlineObject::Equation { linear, .. } => linear,
+            InlineObject::Ruby { base, .. } => base,
             InlineObject::Opaque { text, .. } => text,
             _ => "",
         }
@@ -535,7 +712,7 @@ impl Paragraph {
         for (i, c) in self.text.char_indices() {
             // By start: once the ranges that end by `i` are skipped, `i` is dropped if the next has begun.
             while next.next_if(|r| r.end <= i).is_some() {}
-            let keep = !next.peek().is_some_and(|r| r.start <= i);
+            let keep = next.peek().is_none_or(|r| r.start > i);
             if c == OBJ {
                 if keep && let Some(o) = self.objects.get(k) {
                     out.push_str(o.plain_text());
@@ -801,7 +978,8 @@ impl Paragraph {
             }
         }
         self.runs = keep;
-        let carry = self.props_at(off).clone();
+        // The new paragraph's mark takes the formatting at the split, but never a hyperlink.
+        let carry = self.props_at(off).unlinked();
         let mut tail = Paragraph {
             text: tail_text,
             runs: tail_runs,
@@ -812,7 +990,7 @@ impl Paragraph {
             rev: next_rev(),
         };
         if tail.text.is_empty() {
-            tail.mark = self.props_at(off).clone();
+            tail.mark = self.props_at(off).unlinked();
         }
         self.normalize();
         tail.normalize();
@@ -964,7 +1142,8 @@ mod tests {
     fn text_without_takes_ranges_in_any_order() {
         // Multi-byte chars at range edges, an object, and ranges unsorted, overlapping, nested and empty.
         let mut p = Paragraph::with_text("añb€c", CharProps::default());
-        p.insert_object(3, InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false }, &CharProps::default()).unwrap();
+        p.insert_object(3, InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false, code: false }, &CharProps::default())
+            .unwrap();
         let text = p.text.clone();
         let naive = |dropped: &[std::ops::Range<usize>]| {
             let mut out = String::new();
@@ -1033,7 +1212,8 @@ mod tests {
     #[test]
     fn objects_track_text() {
         let mut p = Paragraph::with_text("ab", CharProps::default());
-        p.insert_object(1, InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false }, &CharProps::default()).unwrap();
+        p.insert_object(1, InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false, code: false }, &CharProps::default())
+            .unwrap();
         p.insert_object(0, InlineObject::BookmarkStart { name: "x".into() }, &CharProps::default()).unwrap();
         assert_eq!(p.objects.len(), 2);
         assert!(matches!(p.object_at(0), Some(InlineObject::BookmarkStart { .. })));

@@ -6,7 +6,7 @@ use wordcraft_doc::props::{Border, BorderStyle, Rgb, TextColor, TextDirection, U
 use wordcraft_doc::section::SectionStart;
 use wordcraft_doc::{Block, Document, Path, StoryRef};
 use wordcraft_fonts::{BezPath, FaceRef};
-use wordcraft_geom::Rect;
+use wordcraft_geom::{Rect, Spin};
 
 use crate::math::MItem;
 use crate::para::{ClKind, LineEnd, ParaLayout};
@@ -69,6 +69,14 @@ pub enum Draw {
         /// Shadow, glow and soft edges (drawn with [`wordcraft_doc::effects::bands`]).
         effects: wordcraft_doc::effects::ShapeEffects,
     },
+    /// An ink stroke: a line through `pts` (page points) with round ends and joins, `width`
+    /// wide, in `color` at opacity `alpha`.
+    Ink {
+        pts: Vec<(f32, f32)>,
+        color: Rgb,
+        width: f32,
+        alpha: f32,
+    },
     /// A vector path (a chart's or diagram's polygons, slices, lines): filled, then stroked.
     Path {
         segs: Vec<PathSeg>,
@@ -97,6 +105,14 @@ pub enum Draw {
         x: f32,
         y: f32,
         turn: TextDirection,
+        items: Vec<Draw>,
+    },
+    /// A rotated or flipped picture, shape or chart: `items` drawn turned by `spin` about page
+    /// point (`cx`, `cy`) (see [`Spin::matrix`]).
+    Rotated {
+        cx: f32,
+        cy: f32,
+        spin: Spin,
         items: Vec<Draw>,
     },
     /// A formatting-mark label (a section break's name) in the UI's mark colour, left edge at
@@ -132,11 +148,144 @@ pub struct DisplayOptions {
     pub markup: bool,
     /// Show on-screen-only marks: equation placeholders and prompts (never in print or PDF).
     pub placeholders: bool,
+    /// Review › Hide Ink: leave ink strokes out (they stay in the document).
+    pub hide_ink: bool,
+    /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
+    pub revisions: MarkupOptions,
 }
 
 impl Default for DisplayOptions {
     fn default() -> Self {
-        DisplayOptions { marks: false, dim_header: true, dim_body: false, markup: true, placeholders: false }
+        DisplayOptions {
+            marks: false,
+            dim_header: true,
+            dim_body: false,
+            markup: true,
+            placeholders: false,
+            hide_ink: false,
+            revisions: MarkupOptions::default(),
+        }
+    }
+}
+
+/// An option list with stable names for commands and saved preferences.
+macro_rules! named {
+    ($(#[$m:meta])* $name:ident { $($(#[$vm:meta])* $v:ident = $s:literal),+ $(,)? }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub enum $name { $($(#[$vm])* $v),+ }
+        impl $name {
+            /// Every choice with its name, in menu order.
+            pub const ALL: &'static [($name, &'static str)] = &[$(($name::$v, $s)),+];
+            pub fn name(self) -> &'static str {
+                Self::ALL.iter().find(|(v, _)| *v == self).map(|(_, s)| *s).unwrap_or("")
+            }
+            pub fn parse(s: &str) -> Option<Self> {
+                Self::ALL.iter().find(|(_, n)| *n == s).map(|(v, _)| *v)
+            }
+        }
+    };
+}
+
+named! {
+    /// How inserted text is marked.
+    InsertMark {
+        #[default]
+        Underline = "underline",
+        DoubleUnderline = "doubleUnderline",
+        Bold = "bold",
+        Italic = "italic",
+        Strikethrough = "strikethrough",
+        ColorOnly = "colorOnly",
+        None = "none",
+    }
+}
+
+named! {
+    /// How deleted text is marked.
+    DeleteMark {
+        #[default]
+        Strikethrough = "strikethrough",
+        DoubleStrikethrough = "doubleStrikethrough",
+        Hidden = "hidden",
+        Caret = "caret",
+        Hash = "hash",
+        Underline = "underline",
+        ColorOnly = "colorOnly",
+    }
+}
+
+named! {
+    /// Where the bar beside changed lines goes.
+    ChangeBar {
+        #[default]
+        Outside = "outside",
+        Left = "left",
+        Right = "right",
+        None = "none",
+    }
+}
+
+named! {
+    /// What the markup area beside the page shows.
+    BalloonMode {
+        /// Deletions, formatting and comments in balloons (drawn like `CommentsAndFormatting`
+        /// for now: revisions stay inline).
+        Revisions = "revisions",
+        /// Everything inline, no markup area.
+        Inline = "inline",
+        #[default]
+        CommentsAndFormatting = "commentsAndFormatting",
+    }
+}
+
+/// Track Changes Options: what markup shows and how revisions are drawn. A per-user preference,
+/// as in Word (saved with the interface settings, not the document).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MarkupOptions {
+    pub comments: bool,
+    pub ink: bool,
+    pub insertions_deletions: bool,
+    pub formatting: bool,
+    pub balloons: BalloonMode,
+    pub insert_mark: InsertMark,
+    /// `None` = by author.
+    pub insert_color: Option<Rgb>,
+    pub delete_mark: DeleteMark,
+    /// `None` = by author.
+    pub delete_color: Option<Rgb>,
+    pub changed_lines: ChangeBar,
+    /// `None` = automatic (dark grey).
+    pub changed_lines_color: Option<Rgb>,
+    /// Record formatting changes while tracking.
+    pub track_formatting: bool,
+}
+
+impl Default for MarkupOptions {
+    fn default() -> Self {
+        MarkupOptions {
+            comments: true,
+            ink: true,
+            insertions_deletions: true,
+            formatting: true,
+            balloons: BalloonMode::default(),
+            insert_mark: InsertMark::default(),
+            insert_color: None,
+            delete_mark: DeleteMark::default(),
+            delete_color: None,
+            changed_lines: ChangeBar::default(),
+            changed_lines_color: None,
+            track_formatting: true,
+        }
+    }
+}
+
+impl MarkupOptions {
+    /// Tracked deletions take no room: they are hidden, or insertions and deletions aren't shown.
+    pub fn hides_deletions(&self) -> bool {
+        !self.insertions_deletions || self.delete_mark == DeleteMark::Hidden
     }
 }
 
@@ -171,7 +320,50 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
     for it in &page.items {
         item(doc, it, opts, ba, &mut out);
     }
+    if opts.markup && (opts.revisions.insertions_deletions || opts.revisions.formatting) && opts.revisions.changed_lines != ChangeBar::None {
+        change_bars(doc, page, &opts.revisions, ba, &mut out);
+    }
     out
+}
+
+/// The automatic colour of the bars beside changed lines.
+pub const CHANGE_BAR: Rgb = Rgb(0x50, 0x50, 0x50);
+
+/// Bars in the margin beside body lines with tracked insertions or deletions, or (when shown)
+/// tracked formatting changes of their text, paragraph or paragraph mark.
+fn change_bars(doc: &Document, page: &Page, m: &MarkupOptions, alpha: f32, out: &mut Vec<Draw>) {
+    // Outside: the left margin, or the outer one of a right-hand page with mirrored margins.
+    let right = match m.changed_lines {
+        ChangeBar::Right => true,
+        ChangeBar::Outside => doc.settings.mirror_margins && page.number % 2 == 1,
+        _ => false,
+    };
+    let bx = if right { page.body.right() + 9.0 } else { page.body.x - 9.0 };
+    let color = m.changed_lines_color.unwrap_or(CHANGE_BAR);
+    for it in &page.items {
+        let Placed::Lines { story, path, para: pl, l0, l1, y, turn, .. } = it else { continue };
+        if turn.is_turned() {
+            continue;
+        }
+        let Some(first) = pl.lines.get(*l0) else { continue };
+        let (text, fmt) = (m.insertions_deletions, m.formatting);
+        let para = doc.para(*story, path);
+        let mark_rev = para.is_some_and(|p| (text && (p.mark.ins.is_some() || p.mark.del.is_some())) || (fmt && p.mark.fmt_change.is_some()));
+        // A paragraph whose own formatting changed is marked on every line.
+        let para_fmt = fmt && para.is_some_and(|p| p.props.fmt_change.is_some());
+        for li in *l0..*l1 {
+            let Some(line) = pl.lines.get(li) else { continue };
+            let changed = para_fmt
+                || (line.c0..line.c1)
+                    .filter_map(|k| pl.clusters.get(k).and_then(|c| pl.styles.get(c.style as usize)))
+                    .any(|st| (text && (st.rc.ins.is_some() || st.rc.del.is_some())) || (fmt && st.rc.fmt.is_some()))
+                || (mark_rev && line.end == LineEnd::Para);
+            if changed {
+                let top = y + (line.top - first.top);
+                out.push(Draw::Line { x0: bx, y0: top, x1: bx, y1: top + line.height, width: 0.75, color, stroke: Stroke::Solid, alpha });
+            }
+        }
+    }
 }
 
 fn border_stroke(s: BorderStyle) -> Stroke {
@@ -212,11 +404,15 @@ fn item(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, out: &mu
     match it {
         Placed::Fill { rect, color } => out.push(Draw::Fill { rect: *rect, color: *color, alpha }),
         Placed::Rule { x0, y0, x1, y1, border } => out.push(rule(*x0, *y0, *x1, *y1, border, alpha)),
-        Placed::Image { rect, media, crop, .. } => out.push(Draw::Image { rect: *rect, media: media.clone(), crop: *crop, alpha }),
-        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects } => {
-            out.push(Draw::Shape { rect: *rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width, effects: *effects })
+        Placed::Image { rect, media, crop, spin, .. } => {
+            spun(*spin, *rect, vec![Draw::Image { rect: *rect, media: media.clone(), crop: *crop, alpha }], out)
         }
-        Placed::Graphic { rect, graphic, .. } => out.extend(graphic_draws(doc, graphic, *rect, alpha)),
+        Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin } => {
+            let mut items = Vec::new();
+            shape_draws(*rect, *kind, *fill, *stroke, *stroke_width, effects_in(*effects, *spin), freeform.as_deref(), opts, &mut items);
+            spun(*spin, *rect, items, out)
+        }
+        Placed::Graphic { rect, graphic, spin, .. } => spun(*spin, *rect, graphic_draws(doc, graphic, *rect, alpha), out),
         Placed::Cell { .. } | Placed::Object { .. } => {}
         Placed::Lines { story, path, para, l0, l1, x, y, turn } if turn.is_turned() => {
             let mut items = Vec::new();
@@ -255,6 +451,7 @@ fn lines(
         let bottom = top + line.height;
         // Commented text gets a soft shade (comment anchors are object markers).
         if opts.markup
+            && opts.revisions.comments
             && let Some(p) = para
         {
             let mut open: Option<usize> = None;
@@ -420,15 +617,58 @@ fn lines(
             }
             let run_end = k;
             let rc = &st.rc;
-            // Without markup a deletion is never drawn as ordinary text, even in a layout that kept it.
-            if rc.del.is_some() && !opts.markup {
+            let m = &opts.revisions;
+            // Without markup a deletion is never drawn as ordinary text, even in a layout that
+            // kept it; nor when deletions are hidden.
+            if rc.del.is_some() && (!opts.markup || m.hides_deletions()) {
                 continue;
             }
-            let rev = rc.ins.or(rc.del).filter(|_| opts.markup);
-            let color = match rev {
-                Some(r) => revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0)),
-                None => text_color(&rc.color, rc.shading.or(rc.highlight)),
+            let shown = opts.markup && m.insertions_deletions;
+            let del = rc.del.filter(|_| shown);
+            let ins = rc.ins.filter(|_| shown && del.is_none());
+            let author = |r: u32| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0));
+            let color = match (ins, del) {
+                (Some(r), _) => m.insert_color.unwrap_or_else(|| author(r)),
+                (None, Some(r)) => m.delete_color.unwrap_or_else(|| author(r)),
+                _ => text_color(&rc.color, rc.shading.or(rc.highlight)),
             };
+            let ins_mark = ins.map(|_| m.insert_mark);
+            let del_mark = del.map(|_| m.delete_mark);
+            if del_mark == Some(DeleteMark::Caret) {
+                // A caret where the text was, instead of the text.
+                if let Some(cx) = line.cl_left(run_start).map(|c| x + c) {
+                    let h = st.size * 0.3;
+                    let w = (st.size / 18.0).max(0.6);
+                    out.push(Draw::Line {
+                        x0: cx - h * 0.6,
+                        y0: base + 1.0,
+                        x1: cx,
+                        y1: base + 1.0 - h,
+                        width: w,
+                        color,
+                        stroke: Stroke::Solid,
+                        alpha,
+                    });
+                    out.push(Draw::Line {
+                        x0: cx,
+                        y0: base + 1.0 - h,
+                        x1: cx + h * 0.6,
+                        y1: base + 1.0,
+                        width: w,
+                        color,
+                        stroke: Stroke::Solid,
+                        alpha,
+                    });
+                }
+                continue;
+            }
+            if del_mark == Some(DeleteMark::Hash) {
+                // Each deleted character shows as #.
+                let gid = st.face.glyph_for('#');
+                for g in &mut glyphs {
+                    g.0 = gid;
+                }
+            }
             if !glyphs.is_empty() {
                 out.push(Draw::Glyphs {
                     face: st.face,
@@ -436,8 +676,8 @@ fn lines(
                     glyphs,
                     color,
                     alpha,
-                    synth_bold: st.synth_bold,
-                    synth_italic: st.synth_italic,
+                    synth_bold: st.synth_bold || ins_mark == Some(InsertMark::Bold),
+                    synth_italic: st.synth_italic || ins_mark == Some(InsertMark::Italic),
                     text,
                     link: rc.link.clone(),
                     ranges,
@@ -453,8 +693,13 @@ fn lines(
                 end_k -= 1;
             }
             let thick = (st.size / 18.0).max(0.5);
-            let underline = if rc.ins.is_some() && opts.markup { Underline::Single } else { rc.underline };
-            let struck = rc.strike || rc.double_strike || (rc.del.is_some() && opts.markup);
+            let underline = match (ins_mark, del_mark) {
+                (Some(InsertMark::Underline), _) | (_, Some(DeleteMark::Underline)) => Underline::Single,
+                (Some(InsertMark::DoubleUnderline), _) => Underline::Double,
+                _ => rc.underline,
+            };
+            let double = rc.double_strike || del_mark == Some(DeleteMark::DoubleStrikethrough);
+            let struck = rc.strike || double || ins_mark == Some(InsertMark::Strikethrough) || del_mark == Some(DeleteMark::Strikethrough);
             let spans = if underline != Underline::None || struck { line.spans(run_start, end_k) } else { Vec::new() };
             for (x0, x1) in spans.into_iter().map(|(a, b)| (x + a, x + b)).filter(|(a, b)| b > a) {
                 if underline != Underline::None {
@@ -480,7 +725,7 @@ fn lines(
                 }
                 if struck {
                     let sy = base - st.shift - st.size * 0.28;
-                    let stroke = if rc.double_strike { Stroke::Double } else { Stroke::Solid };
+                    let stroke = if double { Stroke::Double } else { Stroke::Solid };
                     out.push(Draw::Line { x0, y0: sy, x1, y1: sy, width: thick, color, stroke, alpha });
                 }
             }
@@ -546,30 +791,15 @@ fn lines(
             let cx = x + line.cl_left(k).unwrap_or(0.0);
             let obj = para.and_then(|p| p.objects.get(oi));
             let rect = inline_rect(obj, cx, base, c.adv, c.obj_h);
+            let spin = obj.and_then(InlineObject::frame).map(|(_, _, f)| f.spin()).unwrap_or_default();
             match obj {
-                Some(InlineObject::Image { media, crop, .. }) => out.push(Draw::Image { rect, media: media.clone(), crop: *crop, alpha }),
-                Some(InlineObject::Shape { kind, fill, stroke, stroke_width, effects, .. }) => {
-                    out.push(Draw::Shape { rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width, effects: *effects })
-                }
-                Some(g @ InlineObject::Group { .. }) => {
-                    for ([x, y, w, h], c) in g.group_rects(rect.x, rect.y, rect.w, rect.h) {
-                        let rect = Rect::new(x, y, w, h);
-                        match c {
-                            InlineObject::Image { media, crop, .. } => out.push(Draw::Image { rect, media: media.clone(), crop: *crop, alpha }),
-                            InlineObject::Shape { kind, fill, stroke, stroke_width, effects, .. } => out.push(Draw::Shape {
-                                rect,
-                                kind: *kind,
-                                fill: *fill,
-                                stroke: *stroke,
-                                stroke_width: *stroke_width,
-                                effects: *effects,
-                            }),
-                            _ => {}
-                        }
-                    }
+                Some(o @ (InlineObject::Image { .. } | InlineObject::Shape { .. } | InlineObject::Group { .. })) => {
+                    object_draws(o, rect, Spin::default(), alpha, opts, out)
                 }
                 Some(InlineObject::Graphic { graphic, alt, .. }) => {
-                    out.push(Draw::Figure { alt: alt.clone(), kind: graphic.kind, draws: graphic_draws(doc, graphic, rect, alpha) })
+                    let mut draws = Vec::new();
+                    spun(spin, rect, graphic_draws(doc, graphic, rect, alpha), &mut draws);
+                    out.push(Draw::Figure { alt: alt.clone(), kind: graphic.kind, draws })
                 }
                 Some(InlineObject::Equation { .. }) => {
                     if let Some((_, ml)) = pl.maths.iter().find(|(k, _)| *k == oi) {
@@ -577,6 +807,35 @@ fn lines(
                     }
                 }
                 _ => {}
+            }
+        }
+        // Ruby (Phonetic Guide) text over its base text, in runs of one style.
+        for r in pl.rubies.iter().filter(|r| (line.c0..line.c1).contains(&r.cluster)) {
+            let Some(bst) = pl.clusters.get(r.cluster).and_then(|c| pl.styles.get(c.style as usize)) else { continue };
+            if bst.rc.del.is_some() && !opts.markup {
+                continue;
+            }
+            let cx = x + line.cl_left(r.cluster).unwrap_or(0.0);
+            let y = base - bst.shift - r.raise;
+            let mut i = 0;
+            while let Some(&(style, _)) = r.glyphs.get(i) {
+                let n = r.glyphs.get(i..).map_or(0, |g| g.iter().take_while(|(s, _)| *s == style).count()).max(1);
+                let run = r.glyphs.get(i..i + n).unwrap_or(&[]);
+                let ranges = r.ranges.get(i..i + n).map(<[_]>::to_vec).unwrap_or_default();
+                i += n;
+                let Some(st) = pl.styles.get(style as usize) else { continue };
+                out.push(Draw::Glyphs {
+                    face: st.face,
+                    size: st.size,
+                    glyphs: run.iter().map(|(_, g)| (g.gid, cx + g.dx, y - g.dy)).collect(),
+                    color: text_color(&st.rc.color, st.rc.shading.or(st.rc.highlight)),
+                    alpha,
+                    synth_bold: st.synth_bold,
+                    synth_italic: st.synth_italic,
+                    text: r.text.clone(),
+                    link: None,
+                    ranges,
+                });
             }
         }
         // Formatting marks.
@@ -621,10 +880,18 @@ fn lines(
                 // A right-to-left paragraph's mark sits at its end, on the left.
                 let mx = if line.rtl { ex - 1.0 - size * 0.6 } else { ex + 1.0 };
                 // A tracked (inserted or deleted) paragraph mark is drawn in its author's colour.
-                let color = para
-                    .and_then(|p| p.mark.ins.or(p.mark.del))
-                    .filter(|_| opts.markup)
-                    .map(|r| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0)));
+                let m = &opts.revisions;
+                let color = para.filter(|_| opts.markup && m.insertions_deletions).and_then(|p| match (p.mark.ins, p.mark.del) {
+                    (_, Some(r)) => Some(
+                        m.delete_color
+                            .unwrap_or_else(|| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0))),
+                    ),
+                    (Some(r), None) => Some(
+                        m.insert_color
+                            .unwrap_or_else(|| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0))),
+                    ),
+                    _ => None,
+                });
                 // The last paragraph of a section ends in a section break instead of a plain ¶.
                 if let Some(start) = section_break_after(doc, story, path) {
                     let (x0, x1) = if line.rtl { (x + line.left, ex - 2.0) } else { (ex + 2.0, x + line.right) };
@@ -805,6 +1072,50 @@ fn page_segs(segs: &[PathSeg], map: impl Fn(f32, f32) -> (f32, f32)) -> Vec<Path
 }
 
 /// A path of clean segments (see [`page_segs`]) as a kurbo path, for the rasteriser and PDF.
+/// The draws of a shape at `rect`: a preset outline, or a freeform's paths (an ink stroke left out
+/// under Review › Hide Ink).
+#[allow(clippy::too_many_arguments)]
+fn shape_draws(
+    rect: Rect,
+    kind: ShapeKind,
+    fill: Option<Rgb>,
+    stroke: Option<Rgb>,
+    stroke_width: f32,
+    effects: wordcraft_doc::effects::ShapeEffects,
+    freeform: Option<&wordcraft_doc::freeform::Freeform>,
+    opts: &DisplayOptions,
+    out: &mut Vec<Draw>,
+) {
+    let Some(f) = freeform.filter(|_| kind == ShapeKind::Freeform) else {
+        out.push(Draw::Shape { rect, kind, fill, stroke, stroke_width, effects });
+        return;
+    };
+    if f.is_ink() && opts.hide_ink {
+        return;
+    }
+    let width = if stroke_width.is_finite() { stroke_width.clamp(0.0, 200.0) } else { 0.75 };
+    for (pts, closed) in f.placed(rect.x, rect.y, rect.w, rect.h) {
+        if f.is_ink() || (!closed && fill.is_none()) {
+            if let Some(color) = stroke {
+                let mut pts: Vec<(f32, f32)> = pts.iter().map(|[x, y]| (*x, *y)).collect();
+                if closed && let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+                out.push(Draw::Ink { pts, color, width: width.max(0.25), alpha: f.alpha });
+            }
+            continue;
+        }
+        let mut segs: Vec<PathSeg> = Vec::with_capacity(pts.len() + 1);
+        for (i, [x, y]) in pts.iter().enumerate() {
+            segs.push(if i == 0 { PathSeg::Move(*x, *y) } else { PathSeg::Line(*x, *y) });
+        }
+        if closed {
+            segs.push(PathSeg::Close);
+        }
+        out.push(Draw::Path { segs, fill: if closed { fill } else { None }, stroke, stroke_width: width });
+    }
+}
+
 pub fn seg_path(segs: &[PathSeg]) -> BezPath {
     let mut p = BezPath::new();
     for s in segs {
@@ -888,9 +1199,64 @@ pub fn text_color(c: &TextColor, background: Option<Rgb>) -> Rgb {
     }
 }
 
+/// `items` turned by `spin` about the centre of `rect` (as they are, unturned).
+fn spun(spin: Spin, rect: Rect, items: Vec<Draw>, out: &mut Vec<Draw>) {
+    if spin.is_identity() {
+        out.extend(items);
+    } else {
+        out.push(Draw::Rotated { cx: rect.x + rect.w / 2.0, cy: rect.y + rect.h / 2.0, spin, items });
+    }
+}
+
+/// A picture, shape or group drawn in `rect` (its unturned frame), turned by its own spin about
+/// the rect's centre; a group's members are turned inside it. `outer` is the spin it is already
+/// drawn inside (its group's). Nothing for anything else.
+fn object_draws(o: &InlineObject, rect: Rect, outer: Spin, alpha: f32, opts: &DisplayOptions, out: &mut Vec<Draw>) {
+    let own = o.frame().map(|(_, _, f)| f.spin()).unwrap_or_default();
+    match o {
+        InlineObject::Image { media, crop, .. } => spun(own, rect, vec![Draw::Image { rect, media: media.clone(), crop: *crop, alpha }], out),
+        InlineObject::Shape { kind, fill, stroke, stroke_width, effects, freeform, .. } => {
+            let effects = effects_in(*effects, own.within(outer));
+            let mut items = Vec::new();
+            shape_draws(rect, *kind, *fill, *stroke, *stroke_width, effects, freeform.as_deref(), opts, &mut items);
+            spun(own, rect, items, out)
+        }
+        InlineObject::Group { .. } => {
+            let mut members = Vec::new();
+            for ([x, y, w, h], c) in o.group_rects(rect.x, rect.y, rect.w, rect.h) {
+                object_draws(c, Rect::new(x, y, w, h), own.within(outer), alpha, opts, &mut members);
+            }
+            spun(own, rect, members, out)
+        }
+        _ => {}
+    }
+}
+
+/// A shape's `effects` as drawn turned by `spin` (all the turns it is drawn inside): glows and
+/// soft edges turn with the shape, and so does a shadow's offset when it rotates with the shape
+/// (`rotWithShape`); one that doesn't keeps its direction on the page, so its angle is turned back.
+pub(crate) fn effects_in(effects: wordcraft_doc::effects::ShapeEffects, spin: Spin) -> wordcraft_doc::effects::ShapeEffects {
+    let mut e = effects;
+    if let Some(s) = e.shadow.as_mut().filter(|s| !s.rot_with_shape && !spin.is_identity()) {
+        let a = s.angle.to_radians();
+        let (dx, dy) = spin.unapply(0.0, 0.0, a.cos(), a.sin());
+        s.angle = wordcraft_geom::normalize_degrees(dy.atan2(dx).to_degrees());
+    }
+    e
+}
+
 /// Where inline object `obj` is drawn, given its cluster's box (`adv` × `obj_h` standing on the
 /// baseline at `cx`): inside the room kept for its effects.
+/// A rotated one's unrotated frame, centred in that room.
 pub(crate) fn inline_rect(obj: Option<&InlineObject>, cx: f32, base: f32, adv: f32, obj_h: f32) -> Rect {
-    let [l, t, r, b] = obj.and_then(InlineObject::frame).map_or([0.0; 4], |(_, _, float)| float.effect_extent());
-    Rect::new(cx + l, base - obj_h + t, (adv - l - r).max(0.0), (obj_h - t - b).max(0.0))
+    let frame = obj.and_then(InlineObject::frame);
+    let [l, t, r, b] = frame.map_or([0.0; 4], |(_, _, float)| float.effect_extent());
+    let room = Rect::new(cx + l, base - obj_h + t, (adv - l - r).max(0.0), (obj_h - t - b).max(0.0));
+    let Some((w, h, float)) = frame.filter(|(_, _, f)| f.rot != 0.0) else { return room };
+    // The room is the rotated bounds of the (possibly scaled-down) frame: undo the rotation.
+    let (w, h) = (wordcraft_geom::finite(w).clamp(1.0, 4000.0), wordcraft_geom::finite(h).clamp(1.0, 4000.0));
+    let (bw, _) = float.spin().extent(w, h);
+    let k = if bw > 0.0 { room.w / bw } else { 1.0 };
+    let (fw, fh) = (w * k, h * k);
+    Rect::new(room.x + (room.w - fw) / 2.0, room.y + (room.h - fh) / 2.0, fw, fh)
 }

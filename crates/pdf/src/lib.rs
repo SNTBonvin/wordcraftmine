@@ -389,7 +389,8 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
         pb.close();
     };
     match kind {
-        ShapeKind::Rectangle | ShapeKind::TextBox => poly(&mut pb, &[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
+        // A freeform is drawn from its own paths; without them, its frame.
+        ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => poly(&mut pb, &[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
         ShapeKind::RoundedRectangle => {
             let rad = r.w.min(r.h) * 0.16;
             let k = rad * (1.0 - K);
@@ -598,7 +599,14 @@ impl Exporter<'_> {
         {
             self.tagged(s, Role::Artifact(ArtifactType::Watermark), None, |me, s| me.watermark(s, &wm, w, h));
         }
-        let dopts = DisplayOptions { marks: false, dim_header: false, dim_body: false, markup: self.opts.include_markup, placeholders: false };
+        let dopts = DisplayOptions {
+            marks: false,
+            dim_header: false,
+            dim_body: false,
+            markup: self.opts.include_markup,
+            placeholders: false,
+            ..Default::default()
+        };
         for it in page.header.iter().chain(page.footer.iter()) {
             let draws = self.draws(page, it, &dopts);
             self.tagged(s, Role::Artifact(ArtifactType::Other), None, |me, s| {
@@ -616,6 +624,10 @@ impl Exporter<'_> {
                         match d {
                             Draw::Glyphs { .. } | Draw::Turned { .. } => self.tagged(s, Role::Para(idx), None, |me, s| me.draw(s, d)),
                             Draw::Image { .. } => self.tagged(s, Role::Figure, None, |me, s| me.draw(s, d)),
+                            // A rotated inline picture.
+                            Draw::Rotated { items, .. } if items.iter().any(|i| matches!(i, Draw::Image { .. })) => {
+                                self.tagged(s, Role::Figure, None, |me, s| me.draw(s, d))
+                            }
                             // An inline chart or diagram: its text is part of the figure, not the paragraph.
                             Draw::Figure { alt, kind, draws: inner } => self.tagged(s, Role::Figure, Some(graphic_alt(alt, *kind)), |me, s| {
                                 for d in inner {
@@ -744,6 +756,36 @@ impl Exporter<'_> {
                 s.set_fill(None);
                 s.set_stroke(None);
             }
+            Draw::Ink { pts, color, width, alpha } => {
+                let mut pb = PathBuilder::new();
+                let mut used = 0usize;
+                let mut last = (0.0, 0.0);
+                for &(x, y) in pts.iter().filter(|(x, y)| ok(*x) && ok(*y)) {
+                    if used > 0 {
+                        pb.line_to(x, y);
+                    } else {
+                        pb.move_to(x, y);
+                    }
+                    used += 1;
+                    last = (x, y);
+                }
+                // A tap (one usable point): a zero-length line, which round caps draw as a dot.
+                if used == 1 {
+                    pb.line_to(last.0, last.1);
+                }
+                let Some(p) = pb.finish() else { return };
+                s.set_fill(None);
+                s.set_stroke(Some(Stroke {
+                    paint: rgb::Color::new(color.0, color.1, color.2).into(),
+                    width: if width.is_finite() { width.clamp(0.25, 200.0) } else { 1.0 },
+                    opacity: norm(*alpha),
+                    line_cap: LineCap::Round,
+                    line_join: LineJoin::Round,
+                    ..Default::default()
+                }));
+                s.draw_path(&p);
+                s.set_stroke(None);
+            }
             Draw::Shape { rect, kind, fill: f, stroke, stroke_width, effects } => {
                 let Some(p) = shape_path(*kind, rect) else { return };
                 let can_fill = *kind != ShapeKind::Line;
@@ -782,6 +824,17 @@ impl Exporter<'_> {
                     return;
                 }
                 let [a, b, c, d, e, f] = Draw::turn_matrix(*turn, *x, *y);
+                s.push_transform(&Transform::from_row(a, b, c, d, e, f));
+                for it in items {
+                    self.draw(s, it);
+                }
+                s.pop();
+            }
+            Draw::Rotated { cx, cy, spin, items } => {
+                if !ok(*cx) || !ok(*cy) {
+                    return;
+                }
+                let [a, b, c, d, e, f] = spin.matrix(*cx, *cy);
                 s.push_transform(&Transform::from_row(a, b, c, d, e, f));
                 for it in items {
                     self.draw(s, it);

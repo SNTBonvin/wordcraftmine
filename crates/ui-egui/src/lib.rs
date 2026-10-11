@@ -27,11 +27,17 @@ pub mod control;
 pub mod credits;
 pub mod desktop_theme;
 pub mod dialogs;
+pub mod dialogs_insert;
+pub mod dialogs_keyboard;
+pub mod dialogs_lists;
+pub mod dialogs_para;
+pub mod dialogs_ribbon;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
 pub mod i18n;
 pub mod icons;
+pub mod ink;
 pub mod keys;
 pub mod keytips;
 pub mod mini_toolbar;
@@ -42,6 +48,7 @@ pub mod previews;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
+pub mod table_pen;
 pub mod theme;
 pub mod widgets;
 pub mod window_geometry;
@@ -97,8 +104,13 @@ pub struct UiState {
     pub backstage_page: String,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
+    /// Symbols inserted from the Symbol dialog, most recent first (#321).
+    pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
+    /// Interface size in percent (#475): scales the whole interface on top of the system's
+    /// display scale. Junk or out-of-range saved values read as 100 % or are clamped to 80–200 %.
+    pub interface_size: theme::InterfaceSize,
     /// The dark-mode switch `ui.json` held before `theme` (#115): read once to migrate, never written.
     #[serde(rename = "dark", skip_serializing)]
     pub(crate) legacy_dark: Option<bool>,
@@ -125,6 +137,11 @@ pub struct UiState {
     /// View › Switch Modes: show pages dark (white text on black), kept between runs. Only the
     /// pages: the interface follows [`UiState::theme`] (#312).
     pub dark_page: bool,
+    /// Custom keyboard shortcuts (Customize Keyboard, #368); the session owns them while running.
+    pub keyboard: wordcraft_engine::KeyMap,
+    /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
+    /// #379); the session owns them while running.
+    pub ribbon: wordcraft_engine::RibbonLayout,
 }
 
 impl Default for UiState {
@@ -135,7 +152,9 @@ impl Default for UiState {
             backstage_page: "home".into(),
             ribbon_collapsed: false,
             recent: Vec::new(),
+            recent_symbols: Vec::new(),
             theme: theme::Appearance::default(),
+            interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
             show_discord: true,
@@ -148,6 +167,8 @@ impl Default for UiState {
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
+            keyboard: wordcraft_engine::KeyMap::default(),
+            ribbon: wordcraft_engine::RibbonLayout::default(),
         }
     }
 }
@@ -295,6 +316,8 @@ impl WordApp {
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
+        ui.keyboard = self.session.keymap.clone();
+        ui.ribbon = self.session.ribbon.clone();
         ui
     }
 
@@ -315,6 +338,13 @@ impl WordApp {
         self.session.read_aloud.set_rate(self.ui.read_aloud_rate);
         self.session.read_aloud.skip_citations = self.ui.read_aloud_skip_citations;
         self.session.view.dark_mode = self.ui.dark_page;
+        // Keys for commands this version doesn't have are dropped.
+        self.session.keymap = std::mem::take(&mut self.ui.keyboard);
+        let reg = self.session.registry.clone();
+        self.session.keymap.retain_known(&reg);
+        // So are ribbon and toolbar commands.
+        self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
+        self.session.ribbon.retain_known(&reg);
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -367,6 +397,9 @@ impl WordApp {
         }
         if id == "file.autosave" {
             return self.set_autosave(&params);
+        }
+        if let Some(r) = table_pen::toggle(self, id, &params) {
+            return r;
         }
         let ctx = self.ctx.clone();
         if let Some(r) = zotero::command(self, id, &params, ctx.as_ref()) {
@@ -621,6 +654,23 @@ impl WordApp {
                 }
                 json!({"theme": self.ui.theme.code(), "dark": self.ui_is_dark()})
             }
+            "ui.interfaceSize" => {
+                // Interface size in percent, 80–200 (clamped); no value reads it. Document zoom is
+                // `view.zoom` and stays as it is.
+                if let Some(v) = p.get("percent").or_else(|| p.get("value")) {
+                    match v.as_f64().and_then(theme::InterfaceSize::from_percent) {
+                        Some(size) => self.ui.interface_size = size,
+                        None => {
+                            return Some(Err(format!(
+                                "`percent` must be a number from {} to {}",
+                                theme::InterfaceSize::MIN,
+                                theme::InterfaceSize::MAX
+                            )));
+                        }
+                    }
+                }
+                json!({"percent": self.ui.interface_size.percent()})
+            }
             "ui.language" => {
                 // `auto` (follow the system) or a language code; anything else is an error.
                 if let Some(v) = s("value") {
@@ -749,13 +799,14 @@ impl WordApp {
         }
     }
 
-    /// Document title for the title bar.
+    /// Document title for the title bar (and the suggested file name). An untitled document is
+    /// named in the interface language, as `Document1` is in English.
     pub fn title_stem(&self) -> String {
         match &self.session.path {
-            Some(p) => p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Document1".into()),
+            Some(p) => p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| tl!("Document1").into()),
             None => {
                 if self.session.doc.core.title.is_empty() {
-                    "Document1".into()
+                    tl!("Document1").into()
                 } else {
                     self.session.doc.core.title.clone()
                 }
@@ -798,6 +849,13 @@ impl WordApp {
         if self.applied_theme != Some(effective) {
             theme::apply(ctx, effective);
             self.applied_theme = Some(effective);
+        }
+        // Interface size (#475): egui's zoom factor multiplies the display scale the system reports
+        // (native pixels per point), so it adds to it rather than replacing it. Keyboard zoom is
+        // off (above), so nothing else changes the factor; `set_zoom_factor` repaints only on change.
+        let zoom = self.ui.interface_size.zoom_factor();
+        if ctx.zoom_factor() != zoom {
+            ctx.set_zoom_factor(zoom);
         }
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
@@ -1091,8 +1149,8 @@ fn keeps_everything(name: &str) -> bool {
 /// The dialog a user-run command opens when it lacks the input it needs (scripts and agents get
 /// the command's own error or default instead): Select Recipients and Edit Recipient List without
 /// data, Insert Merge Field without a field, Find Recipient without text, the If and Skip
-/// Record If rules (or Rules with no rule at all) without a field, and Table Properties without
-/// settings.
+/// Record If rules (or Rules with no rule at all) without a field, Table Properties without
+/// settings, and Symbol and Field without a character or code.
 fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     let has = |k: &str| params.get(k).is_some_and(|v| !v.is_null());
     let rule = params.get("rule").and_then(Value::as_str).map(str::to_ascii_uppercase);
@@ -1106,10 +1164,25 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "mailings.editRecipients" if !has("rows") => Some("recipientList"),
         "mailings.insertField" if !has("field") => Some("insertMergeField"),
         "mailings.findRecipient" if !has("text") => Some("findRecipient"),
+        // Symbol without a character and Field without a code show their dialogs (#321).
+        "insert.symbol" if !has("char") => Some("symbol"),
+        "insert.field" if !has("instr") => Some("field"),
+        // Edit Field Code shows the selected field's code (#339).
+        "fields.setCode" if !has("code") => Some("editFieldCode"),
         // Table Properties without settings shows the dialog (with settings it applies them).
         "table.properties" if params.as_object().is_none_or(|m| m.is_empty()) => Some("tableProperties"),
+        // Tabs, Borders and Shading, and Page Borders without settings show their dialogs (#320).
+        "para.tabs" if params.as_object().is_none_or(|m| m.is_empty()) => Some("tabs"),
+        "para.borders" if params.as_object().is_none_or(|m| m.is_empty()) => Some("borders"),
+        "design.pageBorders" if params.as_object().is_none_or(|m| m.is_empty()) => Some("pageBorders"),
         // `null` is an answer here: it removes the password.
         "file.encrypt" if params.get("password").is_none() => Some("encryptPassword"),
+        // Define New Multilevel List and Track Changes Options without settings show their dialogs.
+        "list.define" if params.get("levels").is_none() => Some("defineList"),
+        "review.trackingOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("trackChangesOptions"),
+        "insert.bookmark" if !has("name") => Some("bookmark"),
+        // Word Count from the keyboard or command search shows its dialog, as the ribbon does.
+        "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
         _ => None,
     }
 }
@@ -1731,6 +1804,36 @@ mod tests {
         assert_eq!(reported.get(), Some(true), "the host was told before the frame ended");
     }
 
+    /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
+    /// an Alt shortcut doesn't also type the character its key would produce.
+    #[test]
+    fn word_shortcuts_run_from_the_keyboard() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        h.event(egui::Event::Text("Kilns".into()));
+        h.step();
+        h.event(key(egui::Key::Num1, egui::Modifiers::COMMAND | egui::Modifiers::ALT));
+        h.step();
+        let style =
+            |h: &egui_kittest::Harness<WordApp>| h.state().session.doc.para_at(&wordcraft_doc::Pos::body(0, 0)).and_then(|p| p.props.style.clone());
+        assert_eq!(style(&h).as_deref(), Some("Heading1"));
+        // Alt+F7 (next misspelling) can come with key text on some platforms; none is typed.
+        h.event(key(egui::Key::F7, egui::Modifiers::ALT));
+        h.event(egui::Event::Text("x".into()));
+        h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
+    }
+
     /// Save writes the document first, then carries on with what the user asked for.
     #[test]
     fn save_then_continue() {
@@ -2234,6 +2337,52 @@ mod tests {
         assert_eq!((odd.theme, odd.tab.as_str()), (Appearance::Light, "Insert"));
     }
 
+    /// #475: the interface size is kept between runs; junk saved values read as 100 % and
+    /// out-of-range ones are clamped, without losing the other preferences.
+    #[test]
+    fn interface_size_survives_a_restart_and_clamps_junk() {
+        let mut a = app();
+        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap()["percent"], 100);
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 150})).unwrap()["percent"], 150);
+        let saved = serde_json::to_string(&a.prefs()).unwrap();
+        assert!(saved.contains(r#""interfaceSize":150"#), "{saved}");
+        let mut b = app();
+        b.apply_prefs(serde_json::from_str(&saved).unwrap());
+        assert_eq!(b.ui.interface_size.percent(), 150);
+        for (raw, want) in [("1000", 200), ("10", 80), ("-5", 80), ("124.6", 125), (r#""big""#, 100), ("null", 100), ("[1]", 100)] {
+            let ui: UiState = serde_json::from_str(&format!(r#"{{"interfaceSize": {raw}, "tab": "Insert"}}"#)).unwrap();
+            assert_eq!((ui.interface_size.percent(), ui.tab.as_str()), (want, "Insert"), "{raw}");
+        }
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 500})).unwrap()["percent"], 200);
+        assert!(a.run("ui.interfaceSize", json!({"percent": "huge"})).is_err());
+        assert!(a.run("ui.interfaceSize", json!({"percent": null})).is_err());
+        assert_eq!(a.ui.interface_size.percent(), 200, "a rejected value keeps the setting");
+    }
+
+    /// #475: the interface size multiplies the display scale the system reports (egui's zoom
+    /// factor) and leaves document zoom alone.
+    #[test]
+    fn interface_size_scales_on_top_of_the_system_scale() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let doc_zoom = a.session.view.zoom;
+        a.run("ui.interfaceSize", json!({"percent": 150})).unwrap();
+        let frame = |a: &mut WordApp, native: f32| {
+            let mut input = egui::RawInput::default();
+            input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            ctx.run_ui(input, |ui| a.logic(ui.ctx())).drop_without_applying_deltas();
+        };
+        // The new factor applies from the next pass.
+        frame(&mut a, 2.0);
+        frame(&mut a, 2.0);
+        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (1.5, 3.0));
+        a.run("ui.interfaceSize", json!({"percent": 80})).unwrap();
+        frame(&mut a, 1.0);
+        frame(&mut a, 1.0);
+        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (0.8, 0.8));
+        assert_eq!(a.session.view.zoom, doc_zoom, "document zoom is a separate setting");
+    }
+
     /// #115: System follows the OS appearance (light when unknown); the manual choices ignore it.
     #[test]
     fn interface_theme_resolves_against_the_os_appearance() {
@@ -2314,7 +2463,7 @@ mod tests {
         let mut a = app();
         a.session.run("review.wordCount", &json!({"includeTextBoxes": false})).unwrap();
         let saved = serde_json::to_string(&a.prefs()).unwrap();
-        assert!(saved.contains(r#""editing":{"countNotes":false}"#), "{saved}");
+        assert!(saved.contains(r#""editing":{"countNotes":false,"#), "{saved}");
         let mut b = app();
         b.apply_prefs(serde_json::from_str(&saved).unwrap());
         assert!(!b.session.prefs.count_notes);
@@ -2430,6 +2579,24 @@ mod tests {
         // Programmatic calls never open dialogs.
         let mut b = app();
         assert!(b.execute("mailings.recipients", json!({})).is_err());
+        assert!(b.dialog.is_none());
+    }
+
+    /// #339: Ctrl+F9 opens the Field dialog (#321) and Edit Field… shows the selected field's code;
+    /// scripts and agents get an error instead of a dialog.
+    #[test]
+    fn field_code_dialogs_open_for_users_only() {
+        let mut a = app();
+        assert_eq!(a.run("insert.field", json!({})).unwrap(), json!({"pending": "field"}));
+        a.dialog = None;
+        a.run("insert.field", json!({"instr": "PAGE"})).unwrap();
+        a.run("caret.docStart", json!({})).unwrap();
+        assert_eq!(a.run("fields.setCode", json!({})).unwrap(), json!({"pending": "editFieldCode"}));
+        let Some(dialogs::Dialog::FieldCode { code, edit: true, .. }) = &a.dialog else { panic!("{:?}", a.dialog) };
+        assert_eq!(code, "PAGE");
+        let mut b = app();
+        assert!(b.execute("insert.field", json!({})).is_err());
+        assert!(b.execute("fields.setCode", json!({})).is_err());
         assert!(b.dialog.is_none());
     }
 

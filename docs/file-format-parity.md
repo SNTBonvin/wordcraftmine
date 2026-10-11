@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -19,10 +19,10 @@ Weights are the share of a Word user's file traffic (estimate). Read/write: ✅ 
 
 | Format | Weight | Word | WordCraft read | WordCraft write | Fidelity | Hours | How it's tested | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `.docx` Word Document (ECMA-376 Transitional) | 70% | R/W | ✅ | ✅ | ~65% | 70–110 | `crates/docx/tests` (roundtrip 28, fixtures 21, malformed 8, bidi 4, citations 5); synthetic fixtures only | Word opens our files. Untested on a real-world corpus. Details below |
+| `.docx` Word Document (ECMA-376 Transitional) | 70% | R/W | ✅ | ✅ | ~65% | 70–110 | `crates/docx/tests` (roundtrip 34, fixtures 29, malformed 8, bidi 4, citations 5); synthetic fixtures only | Word opens our files. Untested on a real-world corpus. Details below |
 | `.docx` Strict Open XML | 1% | R/W | ✅ (namespace mapping in `xml.rs`) | ❌ | ~60% | 2–4 | one fixture | Writing Strict is rare |
 | `.docm` / `.dotx` / `.dotm` | 3% | R/W | ✅ | ✅ | ~65% | incl. above | `macro_packages.rs` | Macros and signatures kept on save (#172); macros never run |
-| `.doc` Word 97-2003 (and `.dot`) | 8% | R/W | 🟡 | ❌ | ~55% | 25–40 | `crates/docbin/src/tests.rs` (50) | Spec-based reader ([MS-DOC]): text, formatting, styles, sections, headers/footers, tables, lists, notes, fields, bookmarks, pictures. Metafile (WMF/EMF) pictures, Word 6/95 files and encrypted files are refused or dropped. No writer |
+| `.doc` Word 97-2003 (and `.dot`) | 8% | R/W | 🟡 | ❌ | ~55% | 25–40 | `crates/docbin/src/tests.rs` (56) | Spec-based reader ([MS-DOC]): text, formatting, styles, sections, headers/footers, tables, lists, notes, fields, bookmarks, pictures. Metafile (WMF/EMF) pictures, Word 6/95 files and encrypted files are refused or dropped. No writer |
 | PDF export | 8% | W | — | ✅ | ~80% | 6–10 | `crates/pdf/src/tests.rs` | krilla: embedded subsets, selectable text incl. field results (#133), links, outline, tagging. Fonts it can't subset become outlines (#132). No PDF/A option, no "best for printing/online" choice |
 | PDF open (PDF Reflow, Word for Windows) | 1% | R | ❌ | — | 0% | 30–50 | — | Converting a PDF into an editable document. A sibling app (PdfCraft) may supply the parser |
 | `.rtf` Rich Text Format | 3% | R/W | 🟡 | 🟡 | ~50% | 10–15 | `crates/formats/src/tests.rs` | ~1,500 lines: text, character/paragraph formatting, styles, lists, tables, pictures (`\shppict`, #154), fields, bookmarks. Thin: comments, notes, revisions, sections, RTL |
@@ -50,20 +50,24 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Headers/footers (first, even/odd), page borders, line numbers, gutter, mirror margins | ✅ | ✅ | |
 | Footnotes, endnotes, comments | ✅ | ✅ | `commentsExtended` written; `commentsIds`, modern threaded comments (`w16cex`) partly |
 | Tracked insertions and deletions (`w:ins`/`w:del`), paragraph-mark revisions | ✅ | ✅ | #125, #244 |
-| Formatting revisions (`w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`) | ❌ | ❌ | Lost on open. Issue #41 |
+| Formatting revisions (`w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:numberingChange`) | ✅ | ✅ | #41: kept on open and save, schema order (change element last); changes inside `styles.xml` are dropped. RTF/ODT ignore them |
 | Move tracking (`w:moveFrom`/`w:moveTo`) | 🟡 | ❌ | Read as plain insert/delete |
 | Fields (`w:fldChar`, `w:fldSimple`), TOC, cross-references, `ADDIN` citations | ✅ | ✅ | Field codes Word supports but we don't evaluate keep their cached result |
 | Content controls (`w:sdt`) | 🟡 | ❌ | Content kept, the control (type, binding, placeholder, lock) dropped |
 | Legacy form fields (`w:ffData`), check boxes, drop-downs | ❌ | ❌ | |
-| DrawingML pictures inline and anchored (`wp:anchor`), wrap square/tight/through/top-bottom | ✅ | ✅ | Tight/through read and written, laid out as square |
-| DrawingML shapes and text boxes (`wps:`) | ✅ | ✅ | Preset geometries subset |
-| Group shapes (`wpg:`), drawing canvas | ❌ | ❌ | Dropped |
+| DrawingML pictures inline and anchored (`wp:anchor`), wrap square/tight/through/top-bottom | ✅ | ✅ | Tight/through read and written with their `wp:wrapPolygon` (and `edited`); without one, a shape's outline is written (a picture's rectangle). `wrapText` (both sides, left, right, largest) read and written for square, tight and through |
+| Group shapes (`wpg:`), drawing canvas | 🟡 | 🟡 | Group shapes read and written (#267); drawing canvas (`wpc:`) dropped |
+| DrawingML shapes and text boxes (`wps:`) | ✅ | ✅ | Preset geometries subset; rotation and flips (`a:xfrm` `rot`/`flipH`/`flipV`, pictures and groups too, #332), the effect extent covering the rotated bounds |
+| Freeform shapes (`a:custGeom`: `a:moveTo`, `a:lnTo`, Bézier curves flattened) and WordCraft ink | ✅ | ✅ | Ink is written as a freeform `wps:wsp` in a `wp:anchor` (round caps, alpha for highlighter) and recognised again by its drawing name (#307). It is saved as a custom-geometry shape, not as Word's own ink (InkML in `w14:contentPart`), so Word shows WordCraft ink as a freeform shape it can move and recolour but not erase with its ink eraser; arcs drawn straight |
 | VML (`w:pict`, `v:shape`, `v:textbox`) | 🟡 | ❌ | Pictures and text boxes, best effort (#242) |
-| Charts (`c:chart`), SmartArt (`dgm`), ink, 3D models, OLE objects (`w:object`) | ❌ | ❌ | Dropped on read, not preserved on save. A document with a chart loses it silently |
+| Charts (`c:chart`), SmartArt (`dgm`) | ✅ | ✅ | Drawn from the chart's cached data and SmartArt's stored drawing (#292); not editable. Saved back as read, with every part they reach (chart, embedded workbook, colours and style; diagram data, layout, quick style, colours and drawing) and their content types; a moved or resized one keeps its new frame, and a pasted copy gets its own parts (#319) |
+| OLE objects (`w:object`: embedded or linked files, ActiveX) | 🟡 | ✅ | Shown as their picture (VML or DrawingML); saved back whole with the embedding and picture parts, at the size, rotation and flips set in WordCraft (#319, #332). Can't be opened or edited |
+| Word ink (`w14:contentPart`, InkML), 3D models | ❌ | ❌ | Dropped on read, not preserved on save |
 | Equations (OMML `m:oMath`) | ✅ | ✅ | #191; manual breaks (`m:brk`) and the settings' `m:mathPr` wrapping options (#326) |
 | Themes, font table, settings, compatibility mode | ✅ | ✅ | Embedded fonts (`w:embedRegular`) not read |
 | Custom XML parts, document properties, bibliography sources | 🟡 | 🟡 | Custom properties round-trip; bibliography sources pending (#169) |
-| Ruby, `w:eastAsianLayout`, `w:fitText`, document grid (`w:docGrid`) | ❌ | ❌ | East Asian layout |
+| Ruby (`w:ruby`: `w:rubyPr`, `w:rt`, `w:rubyBase`) | ✅ | ✅ | #288; base and ruby text with their run formatting, alignment, sizes, raise, language |
+| `w:eastAsianLayout`, `w:fitText`, document grid (`w:docGrid`) | ❌ | ❌ | East Asian layout |
 | Glossary document (building blocks), `w:altChunk`, sub-documents | ❌ | ❌ | |
 | Hostile input | ✅ | — | `malformed.rs`, capped allocations, never-crash standard |
 
@@ -71,8 +75,8 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 1. A **real-world DOCX corpus** opened, rendered and round-tripped, compared page by page with
    Word (local only: Word output can't be committed; keep a manifest and our own renders).
-2. **Preserve what we can't render**: charts, SmartArt, OLE, ink and content controls survive a
-   round trip (keep the parts and the run), and charts/SmartArt show their fallback picture.
+2. **Preserve what we can't render**: ink, group shapes and content controls survive a round trip
+   (keep the parts and the run). Charts, SmartArt and OLE objects do (#292, #319).
 3. Formatting revisions and content controls read and written.
 4. Encrypted `.docx` opens with a password.
 
@@ -80,6 +84,16 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Import/export fixes (#433–#440): TXT opens through the encoding-sniffing reader (Windows-1252, unmarked UTF-16) and saves list labels; RTF `\uN` in document info, bookmark names and field instructions; ODT common paragraph styles' text formatting and table-cell background colours; HTML borderless tables export without cell borders and `white-space:pre` keeps edge spaces; LaTeX brace groups scope `\centering`/`\raggedleft`/`\raggedright` |
+| 2026-10-11 | trivial | `.doc` import fixes per [MS-DOC]: piece Prm0/Prm1 decoding (#458), section-break kinds (#459), explicit orientation (#460), negative `sprmPIlfo` list references (#461), zero-based `istdBase` style inheritance (#462), font-table entries with alternate names (#463) |
+| 2026-10-11 | trivial | Formatting revisions (`w:rPrChange`, `w:pPrChange`, table, row, cell, section and numbering changes) read and written (#41) |
+| 2026-10-10 | trivial | OLE objects turned or flipped in WordCraft keep the turn on save (VML `rotation`/`flip`, DrawingML `a:xfrm` with the rotated effect extent); test counts refreshed |
+| 2026-10-10 | trivial | Charts, SmartArt and OLE objects written back on save with their parts (#319); chart/SmartArt reading (#292) recorded |
+| 2026-10-11 | trivial | Ruby (`w:ruby`) read and written (#288) |
+| 2026-10-10 | trivial | `wrapText` on square, tight and through wraps read and written (#354) |
+| 2026-10-10 | trivial | Wrap polygons for Tight and Through wrapping read and written (#354) |
+| 2026-10-10 | trivial | DrawingML rotation and flips read and written (#332) |
 | 2026-10-10 | trivial | Equation breaks and `m:mathPr` wrapping options round-trip (#326) |
 | 2026-10-10 | trivial | Custom table styles round-trip (#256 merged) |
 | 2026-10-10 | major | First version: Word's full format list, read/write status, DOCX element coverage from the source, fidelity and hours |
+| 2026-10-10 | trivial | Freeform shapes and ink as DrawingML custom geometry, read and written (#307) |
