@@ -46,7 +46,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Feature | Read | Write | Notes |
 |---|---|---|---|
-| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111) |
+| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534). `w:beforeLines`/`w:afterLines` not kept (the points are) |
 | Tables incl. floating (`w:tblpPr`), table styles and conditional formatting | ✅ | ✅ | Custom table styles round-trip (#256); right-to-left tables (`w:bidiVisual`) and sections (`w:bidi`) round-trip (#362) |
 | Headers/footers (first, even/odd), page borders, line numbers, gutter, mirror margins | ✅ | ✅ | |
 | Footnotes, endnotes, comments | ✅ | ✅ | The document's own note separators and continuation notice (`w:type` `separator`, `continuationSeparator`, `continuationNotice`) round-trip as ids -1, 0 and 1 (#352); note options (`w:pos`, `w:numFmt`, `w:numStart`, `w:numRestart`) round-trip in the settings and in each `w:sectPr` (#385); `commentsExtended` written; `commentsIds`, modern threaded comments (`w16cex`) partly |
@@ -87,6 +87,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | #534: DOCX indents in characters read and written; `.doc` first-line indents (`sprmPDxaLeft1`, its two-byte operand, and `sprmPDxaLeft1_80`), indents in characters (`sprmPDxc*`) and exact/at-least line spacing (LSPD) read correctly |
 | 2026-10-11 | trivial | Alt text, titles and the decorative mark for every drawing, table captions and descriptions round-trip (#386) |
 | 2026-10-11 | trivial | Document grid (`w:docGrid`) and paragraph `w:snapToGrid` read and written (#391) |
 | 2026-10-11 | trivial | Move tracking (`w:moveFrom`/`w:moveTo` and their ranges) read and written (#400) |
