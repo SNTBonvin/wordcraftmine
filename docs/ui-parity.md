@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -22,7 +22,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Task panes (Navigation, Styles, Comments, Reviewing, Format Picture/Shape, Thesaurus, Accessibility, Clipboard, Selection) | Navigation, Styles, Comments, Thesaurus, Restrict Editing, Accessibility (grouped findings, jump-to, fixes) and Alt Text (#386), Read Aloud, Zotero; Style Inspector (#236); Clipboard pane (#264) open | all | 70% | 4–6 |
 | Context menus (right-click) | text, spelling suggestions, fields (Update Field, Edit Field…, Toggle Field Codes, #339); right-click selects a picture, shape or text box and offers Wrap Text (styles, Move with Text / Fix Position on Page, #513); tables partial | rich per context | 60% | 3–5 |
 | Backstage (Home, New, Open, Info, Save As, Print, Share, Export, Options) | Home and New separate (#254), Info properties kept (#268), Options in Word's panes with working settings (#485), Print page with preview, page range and copies (#641) | | 68% | 4–6 |
-| Rulers: indents, tabs, margins, table columns | indents draggable (one undo, #62); tabs; table column drag pending (#49) | ✅ | 70% | 2–3 |
+| Rulers: indents, tabs, margins, table columns | indents draggable (one undo, #62); tabs; table column and row markers drag their borders (one undo) and in a cell the indents are measured from it (#700) | ✅ | 85% | 1–2 |
 | On-canvas objects: select, drag, resize handles, nudge | ✅ tested (#228) | ✅ | 75% | — |
 | Tables on the page: drag column and row borders, resize handle past the bottom-right corner | ✅ resize cursors, dashed guide, one undo step per drag, selection kept; Shift moves one column; Esc cancels (#217). Missing: Ctrl and Alt drags, the left edge, borders of selected cells only, double-click AutoFit | ✅ | 80% | 1–2 |
 | Rotation handle, crop handles on canvas, alignment guides, smart guides | rotation handle (Shift: 15° steps), turned frames resize along their axes (#332); crop handles and guides missing | ✅ | 25% | 3–5 |
@@ -43,6 +43,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Tables on the page: column and row borders and the resize handle drag, with a dashed guide and one undo step per drag (#217) |
 | 2026-10-11 | trivial | Animation effects › Use system setting also reads macOS (Reduce motion) and the Linux/BSD desktops (settings portal: the cross-desktop reduced-motion preference, GNOME's switch, KDE's animation speed; the GTK and KDE settings files where no portal answers), and follows a change without a restart |
 | 2026-10-11 | trivial | Animation effects setting in File › Options › Accessibility (Use system setting, On, Off), kept between runs: the app eased wheel scrolling, zooming and its fades whatever the system's setting was; off, they land at once. Follows the system's setting on Windows and in browsers; `ui.animations` for agents |
