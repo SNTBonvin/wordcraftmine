@@ -251,7 +251,7 @@ fn controls(tab: &str) -> Vec<Control> {
             c("Researcher", "references.researcher"),
             c("Insert Citation", "references.citation"),
             c("Manage Sources", "references.sources"),
-            c("Style: APA", "references.citationStyle"),
+            m("Citation Style", "references.citationStyle"),
             c("Bibliography", "references.bibliography"),
             c("Insert Caption", "references.caption"),
             c("Insert Table of Figures", "references.tableOfFigures"),
@@ -630,7 +630,7 @@ pub fn logic(app: &mut WordApp, ctx: &egui::Context) {
         if let egui::Event::Key { key, pressed: true, modifiers, .. } = e
             && app.ui.keytips != Phase::Off
             && !is_alt(*key)
-            && !(*key == egui::Key::F10 && !modifiers.any())
+            && (*key != egui::Key::F10 || modifiers.any())
         {
             handle_key(app, *key);
         }

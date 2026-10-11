@@ -612,7 +612,8 @@ fn table_without_style_stays_borderless() {
 fn headers_and_page_fields() {
     let mut d = Document::from_text(&"para\n".repeat(120));
     let mut hp = wordcraft_doc::Paragraph::new();
-    hp.insert_object(0, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false }, &Default::default()).unwrap();
+    hp.insert_object(0, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+        .unwrap();
     let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(hp)]);
     d.last_section.footers.default = Some(id);
     let l = lay(&d);
@@ -857,7 +858,11 @@ fn runs_differing_only_in_link_or_decoration_keep_their_own_style() {
 fn web_view_is_one_page() {
     let d = Document::from_text(&"text ".repeat(3000));
     let mut c = LayoutCache::new();
-    let l = layout(&d, &mut c, &LayoutOptions { view: ViewMode::Web, web_width: 800.0, show_hidden: false, hide_deleted: false, proofing: false });
+    let l = layout(
+        &d,
+        &mut c,
+        &LayoutOptions { view: ViewMode::Web, web_width: 800.0, show_hidden: false, hide_deleted: false, proofing: false, field_codes: false },
+    );
     assert_eq!(l.pages.len(), 1);
     assert!(l.pages[0].h > 800.0);
 }
@@ -1919,7 +1924,7 @@ fn inline_picture_keeps_room_for_its_effects() {
     let mut d = Document::from_text("");
     let shadow = wordcraft_doc::para::Float { effect: [6.0, 12.0, 18.0, 27.0], ..Default::default() };
     if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
-        p.insert_object(0, picture(100.0, 50.0, shadow), &Default::default()).unwrap();
+        p.insert_object(0, picture(100.0, 50.0, shadow.clone()), &Default::default()).unwrap();
     }
     let l = lay(&d);
     let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
@@ -2121,12 +2126,12 @@ fn floats_in_headers_and_table_cells_are_drawn() {
 fn wrap_area_uses_each_distance() {
     use wordcraft_doc::para::{Float, Wrap};
     let f = Float { wrap: Wrap::Square, dist: 9.0, dist_top: 0.0, dist_bottom: 4.0, ..Default::default() };
-    let (r, tb) = wrap_area(Rect::new(10.0, 20.0, 100.0, 50.0), &f).unwrap();
+    let (r, tb, ..) = wrap_area(Rect::new(10.0, 20.0, 100.0, 50.0), &f, None).unwrap();
     assert_eq!((r.x, r.y, r.w, r.h, tb), (1.0, 20.0, 118.0, 54.0, false));
     let hostile = Float { wrap: Wrap::TopAndBottom, dist: f32::NAN, dist_top: -5.0, dist_bottom: f32::INFINITY, ..Default::default() };
-    let (r, tb) = wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &hostile).unwrap();
+    let (r, tb, ..) = wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &hostile, None).unwrap();
     assert!(r.w.is_finite() && r.h.is_finite() && tb, "{r:?}");
-    assert!(wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &Float { wrap: Wrap::BehindText, ..Default::default() }).is_none());
+    assert!(wrap_area(Rect::new(0.0, 0.0, 10.0, 10.0), &Float { wrap: Wrap::BehindText, ..Default::default() }, None).is_none());
 }
 
 #[test]
@@ -2984,4 +2989,294 @@ fn footnote_longer_than_pages_ends() {
     let pieces = note_pieces(&l, id);
     assert!(pieces.len() >= 3 && l.pages.len() == pieces.len(), "{} pages, {pieces:?}", l.pages.len());
     assert!(pieces.windows(2).all(|w| w[0].2 == w[1].1 && w[1].0 == w[0].0 + 1), "{pieces:?}");
+}
+
+/// The first paragraph's lines on page one: (top, bottom, left, right), relative to its column.
+fn line_spans(l: &DocLayout) -> Vec<(f32, f32, f32, f32)> {
+    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { return Vec::new() };
+    para.lines.iter().map(|ln| (ln.top, ln.top + ln.height, ln.left, ln.right)).collect()
+}
+
+/// A shape floating at the column's top-left with `wrap`, beside a long paragraph.
+fn wrapped_shape_doc(kind: wordcraft_doc::para::ShapeKind, w: f32, h: f32, float: wordcraft_doc::para::Float) -> Document {
+    let mut d = Document::from_text(&"Words flow around the shape here. ".repeat(40));
+    let float =
+        wordcraft_doc::para::Float { h_rel: wordcraft_doc::para::Anchor::Column, v_rel: wordcraft_doc::para::Anchor::Paragraph, dist: 9.0, ..float };
+    let shape = InlineObject::Shape {
+        kind,
+        w,
+        h,
+        fill: None,
+        stroke: None,
+        stroke_width: 1.0,
+        float,
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+    };
+    d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
+    d
+}
+
+#[test]
+fn tight_wrap_follows_an_ellipse() {
+    use wordcraft_doc::para::{Float, ShapeKind, Wrap};
+    let spans = |wrap| line_spans(&lay(&wrapped_shape_doc(ShapeKind::Ellipse, 160.0, 160.0, Float { wrap, ..Default::default() })));
+    let (square, tight, through) = (spans(Wrap::Square), spans(Wrap::Tight), spans(Wrap::Through));
+    // Square: every line beside the shape starts past its frame and distance from text.
+    assert!(square.iter().filter(|l| l.0 < 160.0).all(|l| l.2 >= 169.0 - 0.01), "{square:?}");
+    // Tight: no line runs into the ellipse (a 160pt circle at 80, 80) or its distance from text.
+    // Where a line from `top` to `bottom` meets the circle plus that distance: (left, right) edges.
+    let contour = |top: f32, bottom: f32| {
+        let y = if bottom < 80.0 {
+            80.0 - bottom
+        } else if top > 80.0 {
+            top - 80.0
+        } else {
+            0.0
+        };
+        let half = (80.0f32 * 80.0 - y.min(80.0).powi(2)).sqrt();
+        (80.0 - half - 9.0, 80.0 + half + 9.0)
+    };
+    for &(top, bottom, left, right) in tight.iter().filter(|l| l.0 < 160.0) {
+        let (a, b) = contour(top, bottom);
+        assert!(right <= a + 1.5 || left >= b - 1.5, "line {top}..{bottom} at {left}..{right} runs into {a}..{b}: {tight:?}");
+    }
+    // Lines near the ellipse's top and bottom start at the curve, well inside its frame; beside
+    // the middle they don't. Measured against each line's own contour edge, so the check holds
+    // whatever line height the test machine's fonts give.
+    let line = |pred: &dyn Fn(f32) -> bool| *tight.iter().find(|l| pred(l.0) && l.2 > 60.0).unwrap();
+    for (what, l) in [("first line", line(&|top| top < 1.0)), ("near the bottom", line(&|top| top > 140.0 && top < 160.0))] {
+        let edge = contour(l.0, l.1).1;
+        assert!(l.2 <= edge + 3.0 && l.2 < 169.0 - 10.0, "{what} hugs the curve at {edge}: {l:?} in {tight:?}");
+    }
+    assert!(line(&|top| top > 65.0 && top < 80.0).2 >= 160.0, "beside the widest part: {tight:?}");
+    // A convex shape has no gaps for Through to use: it wraps as Tight.
+    assert_eq!(through, tight);
+}
+
+#[test]
+fn contour_wrap_turns_with_the_object() {
+    use wordcraft_doc::para::{Float, ShapeKind, Wrap};
+    use wordcraft_doc::wrap::WrapPolygon;
+    // A wrap polygon covering the left half of a 200 × 100 frame.
+    let poly = WrapPolygon::new(true, [(0, 0), (10_800, 0), (10_800, 21_600), (0, 21_600)]).map(Arc::new);
+    // Where text goes on the first row: (left, right) of each line there.
+    let first_row = |wrap: Wrap, rot: f32, flip_h: bool| {
+        let f = Float { wrap, rot, flip_h, wrap_polygon: poly.clone(), ..Default::default() };
+        let l = line_spans(&lay(&wrapped_shape_doc(ShapeKind::Rectangle, 200.0, 100.0, f)));
+        l.iter().filter(|s| s.0 < 1.0).map(|s| (s.2.round(), s.3.round())).collect::<Vec<_>>()
+    };
+    // Unturned, text comes up to the polygon (half the frame) plus the distance from text.
+    assert_eq!(first_row(Wrap::Tight, 0.0, false)[0].0, 109.0);
+    // Turned half a turn or mirrored, the polygon covers the frame's right half: text goes to
+    // its left and past the frame.
+    for (rot, flip) in [(180.0, false), (0.0, true)] {
+        let row = first_row(Wrap::Tight, rot, flip);
+        assert_eq!((row[0].0, row[0].1, row[1].0), (0.0, 91.0, 209.0), "{rot} {flip}");
+    }
+    // Square wrapping ignores the polygon.
+    assert_eq!(first_row(Wrap::Square, 0.0, false)[0].0, 209.0);
+}
+
+/// Enclosed characters (#297, an `EQ \o\ac` field): the shape is drawn as a vector around the text,
+/// whatever the font has; "shrink text" draws the text smaller inside a one-em shape, "enlarge
+/// symbol" a bigger shape around text at its own size. Plain `\o` overstrikes its arguments.
+#[test]
+fn enclosed_characters_draw_a_shape_around_the_text() {
+    use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
+    let draw = |shape: EncloseShape, style: EncloseStyle| {
+        let mut d = Document::from_text("a  b");
+        let e = Enclosure { shape, style, text: "A".into() };
+        d.insert_object(
+            &Pos::body(0, 2),
+            InlineObject::Field { instr: e.instr(), result: "A".into(), locked: false, code: false },
+            &Default::default(),
+        )
+        .unwrap();
+        let l = lay(&d);
+        let items = display::page_display(&d, &l.pages[0], &Default::default());
+        let shape = items
+            .iter()
+            .find_map(|i| if let display::Draw::Shape { rect, kind, stroke, .. } = i { Some((*rect, *kind, stroke.is_some())) } else { None });
+        // Each glyph's character, size and x.
+        let mut chars = Vec::new();
+        for i in &items {
+            if let display::Draw::Glyphs { text, size, glyphs, ranges, .. } = i {
+                for (g, r) in glyphs.iter().zip(ranges) {
+                    chars.push((text.get(r.clone()).unwrap_or("").to_string(), *size, g.1));
+                }
+            }
+        }
+        let at = |c: &str| chars.iter().find(|x| x.0 == c).map(|x| (x.1, x.2)).unwrap_or_else(|| panic!("{c}: {items:?}"));
+        (shape.expect("a shape"), at("A"), at("b"))
+    };
+    let ((rect, kind, stroked), (size, gx), (base, bx)) = draw(EncloseShape::Circle, EncloseStyle::Shrink);
+    assert_eq!(kind, wordcraft_doc::para::ShapeKind::Ellipse);
+    assert!(stroked);
+    assert!(size < base * 0.8, "the text shrinks: {size} vs {base}");
+    assert!((rect.h - base * 1.05).abs() < 0.1 && (rect.w - rect.h).abs() < 0.1, "{rect:?}");
+    assert!(gx > rect.x && gx < rect.x + rect.w, "the text is inside: {gx} {rect:?}");
+    assert!(bx >= rect.x + rect.w, "the next text follows the shape: {bx} {rect:?}");
+    let ((rect, kind, _), (size, _), (base, _)) = draw(EncloseShape::Diamond, EncloseStyle::Enlarge);
+    assert_eq!(kind, wordcraft_doc::para::ShapeKind::Diamond);
+    assert!((size - base).abs() < 0.01 && rect.h > base * 1.5, "the shape grows: {rect:?}");
+
+    // A general overstrike: both arguments at the same place, no shape.
+    let mut d = Document::from_text("x");
+    d.insert_object(
+        &Pos::body(0, 1),
+        InlineObject::Field { instr: "eq \\o(=,/)".into(), result: String::new(), locked: false, code: false },
+        &Default::default(),
+    )
+    .unwrap();
+    let l = lay(&d);
+    let items = display::page_display(&d, &l.pages[0], &Default::default());
+    assert!(!items.iter().any(|i| matches!(i, display::Draw::Shape { .. })));
+    assert!(items.iter().any(|i| matches!(i, display::Draw::Glyphs { text, .. } if text.contains("=/"))), "{items:?}");
+}
+
+#[test]
+fn ruby_text_sits_over_its_base_and_the_line_grows_to_fit() {
+    use wordcraft_doc::para::RubyAlign;
+    let plain = Document::from_text("Plain words here");
+    let mut d = Document::from_text("Plain  here");
+    let ruby = InlineObject::Ruby {
+        base: "words".into(),
+        ruby: "a much longer reading".into(),
+        align: RubyAlign::Center,
+        size: 6.0,
+        raise: 12.0,
+        base_size: 12.0,
+        lang: String::new(),
+        props: Default::default(),
+    };
+    d.insert_object(&Pos::body(0, 6), ruby, &Default::default()).unwrap();
+    let height = |l: &DocLayout| {
+        l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { para.lines.first().map(|x| x.height) } else { None }).unwrap()
+    };
+    let (lp, lr) = (lay(&plain), lay(&d));
+    assert!(height(&lr) > height(&lp) + 3.0, "ruby line {} vs plain {}", height(&lr), height(&lp));
+    let items = display::page_display(&d, &lr.pages[0], &Default::default());
+    let glyphs_of = |want: &str| {
+        items.iter().find_map(|i| match i {
+            display::Draw::Glyphs { text, glyphs, size, .. } if text.contains(want) => Some((*size, glyphs.clone())),
+            _ => None,
+        })
+    };
+    let (_, line) = glyphs_of("Plain words").expect("base text drawn");
+    let (size, over) = glyphs_of("a much longer reading").expect("ruby text drawn");
+    let w = line[6]; // "Plain " then the base's first letter
+    // Smaller, 12 pt above the base text's baseline, and (being wider) centred over it: it starts
+    // at the base's slot, the base letters move in.
+    assert_eq!(size, 6.0);
+    assert!((w.2 - over[0].2 - 12.0).abs() < 0.01, "{w:?} {over:?}");
+    let slot = lr.caret(&Pos::body(0, 6)).unwrap().x;
+    assert!((over[0].1 - slot).abs() < 0.5 && w.1 > slot + 1.0, "{slot} {w:?} {over:?}");
+    // The plain text reads the base, and the caret steps over the ruby as one character.
+    assert_eq!(d.body[0].as_para().unwrap().plain_text(), "Plain words here");
+    let (a, b) = (lr.caret(&Pos::body(0, 6)).unwrap(), lr.caret(&Pos::body(0, 9)).unwrap());
+    assert!(b.x - a.x > 30.0, "{a:?} {b:?}");
+}
+
+/// #354: `wrapText`. Left: text only to the left of a centred object (Square or Tight); Right:
+/// only to its right; Largest: only on its wider side.
+#[test]
+fn wrap_text_keeps_text_on_one_side() {
+    use wordcraft_doc::para::{Float, ShapeKind, Wrap, WrapText};
+    // A 100pt shape at `x` in the 468pt column; the lines beside it.
+    let beside = |kind, wrap, x: f32, side| {
+        let f = Float { wrap, wrap_text: side, x, ..Default::default() };
+        line_spans(&lay(&wrapped_shape_doc(kind, 100.0, 100.0, f))).into_iter().filter(|l| l.0 < 100.0).collect::<Vec<_>>()
+    };
+    for (kind, wrap) in [(ShapeKind::Rectangle, Wrap::Square), (ShapeKind::Ellipse, Wrap::Tight)] {
+        let both = beside(kind, wrap, 184.0, WrapText::BothSides);
+        assert!(both.iter().any(|l| l.2 < 1.0) && both.iter().any(|l| l.2 > 200.0), "{both:?}");
+        let left = beside(kind, wrap, 184.0, WrapText::Left);
+        // Nothing right of the object (Tight: lines come up to the outline, short of its middle).
+        let mid = if wrap == Wrap::Square { 175.0 } else { 234.0 };
+        assert!(!left.is_empty() && left.iter().all(|l| l.2 < 1.0 && l.3 <= mid + 0.01), "{wrap:?}: {left:?}");
+        let right = beside(kind, wrap, 184.0, WrapText::Right);
+        let mid = if wrap == Wrap::Square { 293.0 } else { 234.0 };
+        assert!(!right.is_empty() && right.iter().all(|l| l.2 >= mid - 0.01), "{wrap:?}: {right:?}");
+    }
+    // Nearer the left edge the right side is wider, nearer the right edge the left.
+    let near_left = beside(ShapeKind::Rectangle, Wrap::Square, 100.0, WrapText::Largest);
+    assert!(!near_left.is_empty() && near_left.iter().all(|l| l.2 >= 209.0 - 0.01), "{near_left:?}");
+    let near_right = beside(ShapeKind::Rectangle, Wrap::Square, 268.0, WrapText::Largest);
+    assert!(!near_right.is_empty() && near_right.iter().all(|l| l.2 < 1.0 && l.3 <= 259.0 + 0.01), "{near_right:?}");
+}
+
+/// Ten short paragraphs in a two-column section (`widths`: unequal columns), then one paragraph
+/// in a one-column section starting `start`.
+fn two_column_section(start: wordcraft_doc::section::SectionStart, widths: Vec<(f32, f32)>) -> Document {
+    use wordcraft_doc::section::SectionProps;
+    let text: Vec<String> = (0..10).map(|i| format!("Short paragraph {i}")).chain(["After the break".to_string()]).collect();
+    let mut d = Document::from_text(&text.join("\n"));
+    let mut s = SectionProps::default();
+    s.columns.count = 2;
+    s.columns.widths = widths;
+    d.para_mut(StoryRef::Body, &Path::top(9)).unwrap().section = Some(Box::new(s));
+    d.last_section.start = start;
+    d
+}
+
+/// Each top-level paragraph's first piece: (page, x, top, bottom).
+fn para_boxes(l: &DocLayout) -> Vec<(usize, f32, f32, f32)> {
+    let mut v: Vec<(usize, usize, f32, f32, f32)> = Vec::new();
+    for (pi, p) in l.pages.iter().enumerate() {
+        for it in &p.items {
+            if let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, x, y, .. } = it
+                && let [b] = path.0[..]
+                && !v.iter().any(|e| e.0 == b as usize)
+            {
+                v.push((b as usize, pi, *x, *y, item_bottom(*y, para, *l0, *l1).unwrap()));
+            }
+        }
+    }
+    v.sort_by_key(|e| e.0);
+    v.into_iter().map(|(_, pi, x, t, b)| (pi, x, t, b)).collect()
+}
+
+/// Bottoms of the two columns (paragraphs 0–9 by their x) and the top of paragraph 10.
+fn column_bottoms(l: &DocLayout) -> (usize, f32, usize, f32, (usize, f32)) {
+    let b = para_boxes(l);
+    let x0 = b[0].1;
+    let (left, right): (Vec<_>, Vec<_>) = b[..10].iter().partition(|e| (e.1 - x0).abs() < 1.0);
+    let bottom = |v: &[&(usize, f32, f32, f32)]| v.iter().map(|e| e.3).fold(0.0f32, f32::max);
+    (left.len(), bottom(&left), right.len(), bottom(&right), (b[10].0, b[10].2))
+}
+
+#[test]
+fn columns_before_a_continuous_break_are_balanced() {
+    use wordcraft_doc::section::SectionStart;
+    for widths in [vec![], vec![(150.0, 36.0), (282.0, 0.0)]] {
+        let l = lay(&two_column_section(SectionStart::Continuous, widths.clone()));
+        let (nl, bl, nr, br, (page, after)) = column_bottoms(&l);
+        // Filled left to right, level: five paragraphs each (the left one may hold one more).
+        assert!(nl == 5 || nl == 6, "{widths:?}: {nl} left, {nr} right");
+        assert!(bl >= br - 0.5 && bl - br < 20.0, "{widths:?}: columns end at {bl} and {br}");
+        // The next section starts right below, on the same page.
+        assert_eq!(page, 0);
+        assert!(after >= bl - 0.5 && after < bl + 30.0, "{widths:?}: next section at {after}, columns end at {bl}");
+    }
+}
+
+#[test]
+fn columns_before_a_page_break_or_a_column_break_are_not_balanced() {
+    use wordcraft_doc::section::SectionStart;
+    // Next-page break: the ten paragraphs fill the first column; the next section is on page 2.
+    let l = lay(&two_column_section(SectionStart::NextPage, vec![]));
+    let (nl, _, nr, _, (page, _)) = column_bottoms(&l);
+    assert_eq!((nl, nr, page), (10, 0, 1));
+    // An explicit column break after paragraph 1 decides where the first column ends.
+    let mut d = two_column_section(SectionStart::Continuous, vec![]);
+    let p = d.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
+    let end = p.text.len();
+    p.insert_text(end, &wordcraft_doc::para::COLUMN_BREAK.to_string(), &Default::default()).unwrap();
+    let l = lay(&d);
+    let (nl, bl, nr, br, (page, after)) = column_bottoms(&l);
+    assert_eq!((nl, nr, page), (2, 8, 0));
+    // The next section starts below the taller column.
+    assert!(br > bl + 50.0 && after >= br - 0.5, "columns end at {bl} and {br}, next section at {after}");
 }

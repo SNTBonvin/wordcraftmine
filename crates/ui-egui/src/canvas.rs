@@ -73,6 +73,9 @@ pub struct CanvasState {
     pub table_tool: Option<crate::table_pen::TableTool>,
     /// The Draw Table stroke (or eraser press) in progress.
     pub(crate) table_stroke: Option<crate::table_pen::PenStroke>,
+    /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
+    /// isn't typed. The next key press clears it.
+    pub(crate) swallow_text: bool,
 }
 
 impl CanvasState {
@@ -109,6 +112,7 @@ impl Default for CanvasState {
             context_menu_open: false,
             mini_anchor: None,
             pasted: false,
+            swallow_text: false,
             wheel: Default::default(),
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
@@ -1083,6 +1087,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             }
             return;
         }
+        // Double-click a field showing its code: edit the code.
+        if let Some(pos) = layout.hit(page, x, y, story)
+            && let Some(field) = field_showing_code(app, &pos)
+        {
+            app.session.sel = wordcraft_engine::Selection::caret(field);
+            let _ = app.run("fields.setCode", json!({}));
+            return;
+        }
         let _ = app.run("select.word", json!({}));
         return;
     }
@@ -1123,7 +1135,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         let Some(pos) = layout.hit(page, x, y, story) else { return };
         // Ctrl/⌘+click follows a hyperlink.
         if mods.command
-            && let Some(link) = app.session.doc.para_at(&pos).and_then(|pp| pp.props_of_char(pos.off).link.clone())
+            && let Some(link) = link_under(app, layout, page, x, y, &pos)
         {
             if let Some(name) = link.strip_prefix('#') {
                 let _ = app.run("edit.goto", json!({"bookmark": name}));
@@ -1183,7 +1195,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     if resp.hovered()
         && !app.canvas.dragging
         && let Some(pos) = layout.hit(page, x, y, story)
-        && let Some(link) = app.session.doc.para_at(&pos).and_then(|pp| pp.props_of_char(pos.off).link.clone())
+        && let Some(link) = link_under(app, layout, page, x, y, &pos)
     {
         let key = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" };
         let tip = format!("{link}\n{}", crate::i18n::fmt(tl!("{key}+Click to follow link"), &[("key", key)]));
@@ -1608,6 +1620,12 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
+    if !wordcraft_engine::cmd::fields::selected(&app.session).is_empty() {
+        ui.separator();
+        item(ui, app, tl!("Update Field"), "references.updateFields", json!({}));
+        item(ui, app, tl!("Edit Field…"), "fields.setCode", json!({}));
+        item(ui, app, tl!("Toggle Field Codes"), "fields.toggleCode", json!({}));
+    }
     if crate::ribbon::has_picture_selected(&app.session) {
         ui.separator();
         item(ui, app, "Change Picture…", "ui.changePicture", json!({}));
@@ -1631,10 +1649,38 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     }
 }
 
+/// The simple field at or just before `pos` when it shows its code (View › Field Codes, or its
+/// own toggle): where it is.
+fn field_showing_code(app: &WordApp, pos: &wordcraft_doc::Pos) -> Option<wordcraft_doc::Pos> {
+    let para = app.session.doc.para_at(pos)?;
+    let width = wordcraft_doc::para::OBJ.len_utf8();
+    [Some(pos.off), pos.off.checked_sub(width)].into_iter().flatten().find_map(|off| match para.object_at(off) {
+        Some(wordcraft_doc::para::InlineObject::Field { code, .. }) if *code != app.session.view.field_codes => {
+            Some(wordcraft_doc::Pos { off, ..pos.clone() })
+        }
+        _ => None,
+    })
+}
+
 /// Render options for page rasters shown on screen: on macOS, text is darkened the way the system
 /// draws it, so a page looks as it does in other Mac apps (exports never are).
 pub(crate) fn screen_render_options() -> wordcraft_render::RenderOptions {
     wordcraft_render::RenderOptions { text_darkening: cfg!(target_os = "macos"), ..Default::default() }
+}
+
+/// The hyperlink under the pointer at (x, y) on `page`, where `pos` is the caret position the
+/// point hits. The hit snaps to the nearest text, so the link only counts when the point is on
+/// the linked character itself, not beside, above or below it (issue #413).
+fn link_under(app: &WordApp, layout: &DocLayout, page: usize, x: f32, y: f32, pos: &Pos) -> Option<String> {
+    let doc = &app.session.doc;
+    let para = doc.para_at(pos)?;
+    let at = wordcraft_geom::Point::new(x, y);
+    // The caret falls between characters: the one under the point is on either side of it.
+    [(pos.off, para.next_boundary(pos.off)), (para.prev_boundary(pos.off), pos.off)].into_iter().filter(|(a, b)| a < b).find_map(|(a, b)| {
+        let link = para.props_of_char(a).link.clone()?;
+        let (from, to) = (Pos { off: a, ..pos.clone() }, Pos { off: b, ..pos.clone() });
+        layout.selection_rects(doc, &from, &to, page).into_iter().any(|(pi, r)| pi == page && r.contains(at)).then_some(link)
+    })
 }
 
 /// Whether Ctrl/⌘+click may hand a document's hyperlink to the system: web and email links only,

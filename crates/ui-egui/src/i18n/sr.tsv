@@ -166,6 +166,14 @@
 	Shadow, glow and soft edges	Сенка, сјај и меке ивице
 	Shape Effects	Ефекти облика
 	Show all revisions inline	Прикажи све измене у тексту
+	Base text:	Основни текст:
+	Distribute letters	Распореди слова
+	Distribute spacing	Распореди размак
+	Offset (pt):	Помак (пт):
+	Phonetic Guide	Фонетски водич
+	Remove	Уклони
+	Right (vertical)	Десно (вертикално)
+	Ruby text:	Руби текст:
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	Прикажи документе са инвертованим бојама, као код Приказ › Промени режим. Чување, штампање и PDF нису погођени.
 	AutoSave saves every change to the file (needs a saved document)	Аутоматско чување уписује сваку измену у фајл (документ мора бити већ сачуван)
 	AutoSave isn't available in the browser: it can't write to your files. Save downloads a copy.	Аутоматско чување није доступно у прегледачу: не може да уписује у ваше фајлове. Чување преузима копију.
@@ -591,6 +599,16 @@
 	Open	Отвори
 	OpenDocument Text (*.odt)	OpenDocument текст (*.odt)
 	Optional Hyphen	Опционална цртица
+	Copyright Sign	Знак ауторског права
+	Ellipsis	Три тачке
+	Em Dash	Дуга црта
+	Insert Date Field	Уметни поље датума
+	Insert Page Field	Уметни поље стране
+	Insert Time Field	Уметни поље времена
+	Registered Sign	Знак регистрованог жига
+	Reset Character Formatting	Поништи форматирање знакова
+	Reset Paragraph Formatting	Поништи форматирање пасуса
+	Trademark Sign	Знак жига
 	Options	Опције
 	Orientation	Оријентација
 	Outline	Контура
@@ -783,6 +801,7 @@
 	Single	Једноструко
 	Single Spacing	Једноструко проређење
 	Size	Величина папира
+	Size (pt):	Величина (пт):
 	Size:	Величина:
 	Small Caps	Капителке
 	Small caps	капителке
@@ -818,7 +837,7 @@
 	Style	Стил
 	Style based on:	Стил заснован на:
 	Style Set	Скуп стилова
-	Style: APA	Стил: APA
+	Style: {style}	Стил: {style}
 	Styles	Стилови
 	Styles Pane	Окно стилова
 	Subscript	Индекс доле
@@ -1157,6 +1176,8 @@
 	Type at least one recipient.	Унесите бар једног примаоца.
 	Type the recipients, or load them from a file.	Унесите примаоце или их учитајте из фајла.
 	Use an Existing List…	Користи постојећу листу…
+	Choose the sheet that holds the recipients.	Изаберите лист на коме су примаоци.
+	First row of data contains column headers	Први ред података садржи заглавља колона
 	A file dialog is already open.	Дијалог за фајлове је већ отворен.
 	Height:	Висина:
 	Width:	Ширина:
@@ -1239,6 +1260,9 @@
 	South	Југ
 	West	Запад
 	Total	Укупно
+
+# Table Layout › Draw (#308)
+	Draw\nTable	Нацртај\nтабелу
 # Columns, Symbol and Field dialogs (#321).
 	(All)	(Све)
 	(none)	(нема)
@@ -1258,8 +1282,6 @@
 	Document Information	Информације о документу
 	Double Closing Quote	Затворени двоструки наводник
 	Double Opening Quote	Отворени двоструки наводник
-	Ellipsis	Три тачке
-	Em Dash	Дуга црта
 	En Dash	Средња црта
 	Em Space	Em размак
 	En Space	En размак
@@ -1324,4 +1346,84 @@
 	Rotate Left 90°	Ротирај улево за 90°
 	Flip Vertical	Окрени вертикално
 	Flip Horizontal	Окрени хоризонтално
+	Move Paragraph Up	Помери пасус нагоре
+	Move Paragraph Down	Помери пасус надоле
+	Promote	Подигни ниво
+	Demote	Спусти ниво
+	Go Back	Врати се назад
+	Toggle Unicode Character	Пребаци Unicode знак
+	Toggle Field Codes	Укључи/искључи кодове поља
+	Edit Field Code	Уреди код поља
+	Unlink Fields	Раскини везу поља
+	Lock Fields	Закључај поља
+	Unlock Fields	Откључај поља
+	Next Field	Следеће поље
+	Previous Field	Претходно поље
+	Selected Fields	Изабрана поља
+	Edit Field…	Уреди поље…
 	Formatted	Форматирано
+	Interface size:	Величина интерфејса:
+	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.
+	In Line with Text	У равни са текстом
+	Square	Квадратно
+	Through	Кроз
+	Top and Bottom	Изнад и испод
+	Behind Text	Иза текста
+	In Front of Text	Испред текста
+	Wrap Text Sides	Стране прелома текста
+	Both Sides	Обе стране
+	Left Only	Само лево
+	Right Only	Само десно
+	Largest Only	Само шира страна
+	Customize Keyboard	Прилагођавање тастатуре
+	Choose a command	Изаберите команду
+	Choose a shortcut	Изаберите пречицу
+	All Commands	Све команде
+	Commands:	Команде:
+	Keys for this command:	Тастери за ову команду:
+	New shortcut:	Нова пречица:
+	Now used by {command}	Сада користи: {command}
+	Not used by any command	Ниједна команда је не користи
+	Remove every custom shortcut and restore the built-in keys?	Уклонити све прилагођене пречице и вратити уграђене тастере?
+	Assign	Додели
+	Reset All…	Ресетуј све…
+	Press a key combination	Притисните комбинацију тастера
+	Customize	Прилагођавање
+	Keyboard shortcuts:	Пречице на тастатури:
+	Customize…	Прилагоди…
+	Customize Ribbon	Прилагоди траку
+	Add to Quick Access Toolbar	Додај на траку са алаткама за брзи приступ
+	Remove from Quick Access Toolbar	Уклони са траке са алаткама за брзи приступ
+	Customize the Ribbon…	Прилагоди траку…
+	Customize Quick Access Toolbar…	Прилагоди траку са алаткама за брзи приступ…
+	More Commands…	Још команди…
+	Ribbon	Трака
+	(Custom)	(Прилагођено)
+	Remove every custom tab and group and show all tabs again?	Уклонити све прилагођене картице и групе и поново приказати све картице?
+	Put the default commands back on the Quick Access Toolbar?	Вратити подразумеване команде на траку са алаткама за брзи приступ?
+	Reset…	Ресетуј…
+	Add >>	Додај >>
+	<< Remove	<< Уклони
+	Pick a custom group (New Group makes one)	Изаберите прилагођену групу (Нова група прави једну)
+	Ribbon tabs	Картице траке
+	New Tab	Нова картица
+	New Group	Нова група
+	Rename…	Преименуј…
+	Ribbon and Quick Access Toolbar:	Трака и трака са алаткама за брзи приступ:
+	Arrows	Стрелице
+	Communication	Комуникација
+	Office	Канцеларија
+	People	Људи
+	Nature	Природа
+	Weather	Време
+	Technology	Технологија
+	Transport	Превоз
+	Icon Color	Боја иконице
+	Search icons	Претражи иконице
+	No icons match your search.	Ниједна иконица не одговара претрази.
+	Recolor a one-color picture, such as an icon	Промени боју једнобојне слике, као што је иконица
+	Enclose Characters	Уоквири знакове
+	Shrink text	Смањи текст
+	Enlarge symbol	Увећај симбол
+	Enclosure	Оквир
+	Circle	Круг

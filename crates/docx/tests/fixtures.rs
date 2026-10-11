@@ -66,8 +66,8 @@ fn toc_complex_field_spanning_paragraphs() {
     let p = paras(&d);
     assert_eq!(p.len(), 5);
     assert_eq!(p[0].text, "\u{FFFC}Intro\t\u{FFFC}");
-    assert_eq!(p[0].objects[0], InlineObject::Field { instr: r#"TOC \o "1-3" \h \z \u"#.into(), result: String::new(), locked: false });
-    assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false });
+    assert_eq!(p[0].objects[0], InlineObject::Field { instr: r#"TOC \o "1-3" \h \z \u"#.into(), result: String::new(), locked: false, code: false });
+    assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false, code: false });
     assert_eq!(p[0].props_of_char(3).link.as_deref(), Some("#_Toc1"));
     assert_eq!(p[0].props.style.as_deref(), Some("TOC1"));
     assert_eq!(p[1].text, "Body\t2");
@@ -75,7 +75,7 @@ fn toc_complex_field_spanning_paragraphs() {
     assert_eq!(p[2].text, "");
     assert_eq!(p[3].objects, vec![InlineObject::BookmarkStart { name: "_Toc1".into() }, InlineObject::BookmarkEnd { name: "_Toc1".into() }]);
     assert_eq!(p[4].plain_text(), "Page 7");
-    assert_eq!(p[4].objects[0], InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false });
+    assert_eq!(p[4].objects[0], InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false, code: false });
     // And it writes back out and reads the same.
     let again = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
     assert_eq!(again.body, d.body);
@@ -96,7 +96,9 @@ fn hyperlink_runs_and_wrappers() {
     let bytes = docx(body, &[("rId5", "hyperlink", "https://example.org/")], &[]);
     let d = wordcraft_docx::read(&bytes).unwrap();
     let p = paras(&d);
-    assert_eq!(p[0].text, "siteXABC\u{F04A}\u{2011}\u{AD}\n\u{C}\u{E} e&T");
+    // The inline content control keeps start and end markers (object characters) around "C".
+    let obj = wordcraft_doc::para::OBJ;
+    assert_eq!(p[0].text, format!("siteXAB{obj}C{obj}\u{F04A}\u{2011}\u{AD}\n\u{C}\u{E} e&T"));
     assert_eq!(p[0].props_of_char(0).link.as_deref(), Some("https://example.org/"));
     assert_eq!(p[0].props_of_char(0).style.as_deref(), Some("Hyperlink"));
     assert_eq!(p[0].props_of_char(4).link.as_deref(), Some("https://example.org/#frag"));
@@ -159,6 +161,97 @@ fn inline_content_control_properties_survive_round_trip() {
     assert_eq!(round_trip_para.plain_text(), "before Jordan after");
     let text_offset = round_trip_para.text.find("Jordan").unwrap();
     assert_eq!(round_trip_para.props_of_char(text_offset).bold, Some(true));
+}
+
+/// `document.xml` of `d` once written, asserting it's well-formed XML (every tag closed in order).
+fn written_well_formed(d: &Document) -> String {
+    let xml = text(&unzip(&wordcraft_docx::write(d).unwrap()), "word/document.xml");
+    let mut r = quick_xml::Reader::from_str(&xml);
+    let mut depth = 0i64;
+    loop {
+        match r.read_event() {
+            Ok(quick_xml::events::Event::Start(_)) => depth += 1,
+            Ok(quick_xml::events::Event::End(_)) => depth -= 1,
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(_) => {}
+            Err(e) => panic!("malformed document.xml ({e}): {xml}"),
+        }
+    }
+    assert_eq!(depth, 0, "unbalanced document.xml: {xml}");
+    assert_eq!(xml.matches("<w:sdt>").count(), xml.matches("</w:sdt>").count(), "{xml}");
+    xml
+}
+
+const CONTROL_PARA: &str = r#"<w:p><w:r><w:t xml:space="preserve">before </w:t></w:r><w:sdt><w:sdtPr><w:alias w:val="Name"/></w:sdtPr><w:sdtContent><w:r><w:t>Jordan</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>"#;
+
+fn para_mut(d: &mut Document, i: usize) -> &mut Paragraph {
+    match std::sync::Arc::make_mut(d.body.get_mut(i).unwrap()) {
+        Block::Para(p) => p,
+        _ => panic!("block {i} is not a paragraph"),
+    }
+}
+
+#[test]
+fn content_control_with_one_marker_deleted_writes_well_formed_xml() {
+    let obj = wordcraft_doc::para::OBJ.len_utf8();
+    for which in 0..2 {
+        let mut d = read_body(CONTROL_PARA);
+        let p = para_mut(&mut d, 0);
+        let offs = p.object_offsets();
+        assert_eq!(offs.len(), 2, "start and end markers");
+        let at = offs[which];
+        p.delete(at, at + obj).unwrap();
+        let xml = written_well_formed(&d);
+        assert!(xml.contains("Jordan"), "{xml}");
+        // A lone start is closed at the paragraph end; a lone end is dropped.
+        assert_eq!(xml.matches("<w:sdt>").count(), usize::from(which == 1), "{xml}");
+    }
+}
+
+#[test]
+fn enter_inside_a_content_control_writes_well_formed_xml() {
+    let mut d = read_body(CONTROL_PARA);
+    let at = paras(&d)[0].text.find("Jor").unwrap() + "Jor".len();
+    d.split_paragraph(&wordcraft_doc::Pos::body(0, at)).unwrap();
+    assert_eq!(paras(&d).len(), 2);
+    let xml = written_well_formed(&d);
+    assert!(xml.contains("<w:alias w:val=\"Name\"/>"), "{xml}");
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    let texts: Vec<String> = paras(&back).iter().map(|p| p.plain_text()).collect();
+    assert_eq!(texts, ["before Jor", "dan after"]);
+}
+
+#[test]
+fn content_control_overlapping_a_hyperlink_writes_well_formed_xml() {
+    // The control starts inside a link and ends outside it, and the reverse.
+    let mut d = read_body(CONTROL_PARA);
+    let p = para_mut(&mut d, 0);
+    let a = p.text.find("before").unwrap() + 3;
+    let b = p.text.find("Jordan").unwrap() + 3;
+    p.format(a, b, &|c| c.link = Some("https://example.com/".into())).unwrap();
+    let c = p.text.find("after").unwrap() + 2;
+    p.format(b + 1, c, &|c| c.link = Some("#here".into())).unwrap();
+    let xml = written_well_formed(&d);
+    assert!(xml.contains("<w:hyperlink"), "{xml}");
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(paras(&back)[0].plain_text(), "before Jordan after");
+}
+
+#[test]
+fn content_control_crossing_a_tracked_insert_writes_well_formed_xml() {
+    let body = r#"<w:p><w:ins w:id="1" w:author="A"><w:r><w:t xml:space="preserve">new </w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="t"/></w:sdtPr><w:sdtContent><w:r><w:t>Jor</w:t></w:r></w:sdtContent></w:sdt></w:ins><w:sdt><w:sdtPr/><w:sdtContent><w:ins w:id="2" w:author="A"><w:r><w:t>dan</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> old</w:t></w:r></w:sdtContent></w:sdt></w:p>"#;
+    let mut d = read_body(body);
+    // Track an insert that spans a control boundary too.
+    let p = para_mut(&mut d, 0);
+    let ins = p.props_of_char(0).ins;
+    assert!(ins.is_some());
+    let end = p.text.len();
+    p.format(0, end, &|c| c.ins = ins).unwrap();
+    let xml = written_well_formed(&d);
+    assert!(xml.contains("<w:ins "), "{xml}");
+    assert!(xml.contains("<w:tag w:val=\"t\"/>"), "{xml}");
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(paras(&back)[0].plain_text(), "new Jordan old");
 }
 
 #[test]
@@ -527,7 +620,7 @@ fn unbalanced_fields_and_markers() {
     let d = read_body(body);
     let p = paras(&d);
     assert_eq!(p[0].text, "a");
-    assert_eq!(p[1].objects, vec![InlineObject::Field { instr: "IF X = \"y\"".into(), result: String::new(), locked: false }]);
+    assert_eq!(p[1].objects, vec![InlineObject::Field { instr: "IF X = \"y\"".into(), result: String::new(), locked: false, code: false }]);
     assert_eq!(p[2].objects, vec![InlineObject::BookmarkStart { name: "between".into() }, InlineObject::BookmarkEnd { name: "between".into() }]);
     assert_eq!(p[2].plain_text(), "after");
 }
@@ -628,7 +721,8 @@ fn anchor_alignment_reference_areas_and_distances() {
     );
     let d = read_body(&body);
     let p = paras(&d);
-    let floats: Vec<_> = p[0].objects.iter().filter_map(|o| if let InlineObject::Shape { float, .. } = o { Some(*float) } else { None }).collect();
+    let floats: Vec<_> =
+        p[0].objects.iter().filter_map(|o| if let InlineObject::Shape { float, .. } = o { Some(float.clone()) } else { None }).collect();
     let [a, b] = floats.as_slice() else { panic!("{floats:?}") };
     assert_eq!((a.h_rel, a.h_align, a.v_rel, a.v_align, a.y), (Anchor::Margin, Some(FloatAlign::Center), Anchor::TopMargin, None, -1.0));
     assert_eq!((a.dist, a.dist_top, a.dist_bottom), (9.0, 2.0, 4.0));
@@ -690,7 +784,9 @@ fn absolute_vml_text_box_in_header_floats() {
             .iter()
             .filter_map(|b| b.as_para())
             .flat_map(|p| &p.objects)
-            .filter_map(|o| if let InlineObject::Shape { kind, w, h, float, story, .. } = o { Some((*kind, *w, *h, *float, *story)) } else { None })
+            .filter_map(|o| {
+                if let InlineObject::Shape { kind, w, h, float, story, .. } = o { Some((*kind, *w, *h, float.clone(), *story)) } else { None }
+            })
             .collect();
         let [(k0, w0, h0, f0, s0), (_, w1, h1, f1, _), (_, _, _, f2, _), (_, _, _, f3, _)] = shapes.as_slice() else { panic!("{shapes:?}") };
         assert_eq!(*k0, ShapeKind::TextBox);
