@@ -4143,3 +4143,68 @@ fn bulgarian_text_is_hyphenated_by_its_own_rules() {
         assert!(wordcraft_proof::hyphen::hyphen_points_in(&word, &lim, wordcraft_proof::ProofLang::Bg).contains(&at), "{head}-{tail}");
     }
 }
+
+/// Spaces and tabs never make a line taller in Word, whatever their size (measured in Word for
+/// Windows: 9 pt text with 11–20 pt tabs, spaces and ideographic spaces kept the 9 pt line; a
+/// line of only big spaces took the paragraph mark's height; a big letter or no-break space did
+/// grow it). Tables of contents with big tab runs were a third taller than Word's.
+#[test]
+fn spaces_and_tabs_do_not_make_a_line_taller() {
+    use wordcraft_doc::props::CharProps;
+    let small = CharProps { size: Some(9.0), ..Default::default() };
+    let big = CharProps { size: Some(20.0), ..Default::default() };
+    let pitch = |middle: &str, middle_props: &CharProps| {
+        let mut d = Document::new();
+        d.body = (0..3)
+            .map(|i| {
+                let mut p = wordcraft_doc::Paragraph::with_text(&format!("L{i}A"), small.clone());
+                let n = p.len();
+                p.insert_text(n, middle, middle_props).unwrap();
+                let n = p.len();
+                p.insert_text(n, "B", &small).unwrap();
+                p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+                p.mark = small.clone();
+                wordcraft_doc::para_block(p)
+            })
+            .collect();
+        let l = lay(&d);
+        l.caret(&Pos::body(1, 0)).unwrap().top - l.caret(&Pos::body(0, 0)).unwrap().top
+    };
+    let plain = pitch(" ", &small);
+    for (what, middle) in [("a tab", "\t"), ("a space", " "), ("two spaces", "  "), ("an ideographic space", "\u{3000}")] {
+        assert!((pitch(middle, &big) - plain).abs() < 0.01, "{what} at 20 pt: {} vs {plain}", pitch(middle, &big));
+    }
+    assert!(pitch("x", &big) > plain + 5.0, "a 20 pt letter does make it taller");
+    assert!(pitch("\u{A0}", &big) > plain + 5.0, "so does a no-break space");
+}
+
+/// A list label taller than its text makes the first line taller above the baseline only: Word
+/// keeps the text's descent below it (measured in Word for Windows, `plan/word` R18: a Symbol
+/// bullet's taller ascent counts, a Courier New label's deeper descent doesn't). NIH's bulleted
+/// items each came out a fifth of a point taller, enough to push a paragraph's last lines over
+/// the page bottom.
+#[test]
+fn a_list_label_adds_ascent_but_not_descent() {
+    let first_line = |label_size: Option<f32>| {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        for a in &mut d.numbering.abstracts {
+            for l in &mut a.levels {
+                l.chr.size = label_size;
+            }
+        }
+        let ten = wordcraft_doc::props::CharProps { size: Some(10.0), ..Default::default() };
+        let mut p = wordcraft_doc::Paragraph::with_text("Item", ten.clone());
+        p.props.numbering = Some(wordcraft_doc::props::NumRef { num, level: 0 });
+        p.mark = ten;
+        p.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = lay(&d);
+        l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { para.lines.first().cloned() } else { None }).unwrap()
+    };
+    let plain = first_line(None);
+    let big = first_line(Some(30.0));
+    let below = |l: &crate::para::Line| l.top + l.height - l.baseline;
+    assert!(big.baseline - big.top > plain.baseline - plain.top + 5.0, "the big label raises the baseline");
+    assert!((below(&big) - below(&plain)).abs() < 0.01, "the text's descent: {} vs {}", below(&big), below(&plain));
+}

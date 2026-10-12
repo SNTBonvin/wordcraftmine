@@ -1514,6 +1514,103 @@ fn vml_lines_and_rectangles() {
     assert!(matches!(&objs[1], InlineObject::Shape { kind: ShapeKind::Rectangle, fill: Some(Rgb(255, 0, 0)), stroke: None, w: 30.0, h: 20.0, .. }));
 }
 
+/// #743: a cover page from Word: a group holding a rectangle filled through its style, a
+/// freeform band and a title box, beside a box that resizes to fit its two lines and has no
+/// internal margins. The fills, the band's outline, the margins and the resizing are all read
+/// and survive saving.
+#[test]
+fn cover_page_group_fills_freeforms_and_text_box_margins() {
+    let style = r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style>"#;
+    let member = |id: u32, txbox: bool, off: (u32, u32), ext: (u32, u32), geom: &str, paint: &str, inner: &str| {
+        let nv = if txbox { r#"<wps:cNvSpPr txBox="1"/>"# } else { "<wps:cNvSpPr/>" };
+        format!(
+            r#"<wps:wsp><wps:cNvPr id="{id}" name="Member {id}"/>{nv}<wps:spPr><a:xfrm><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/></a:xfrm>{geom}{paint}</wps:spPr>{style}{inner}</wps:wsp>"#,
+            off.0, off.1, ext.0, ext.1
+        )
+    };
+    let rect = r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>"#;
+    let band = r#"<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst><a:path w="100" h="100"><a:moveTo><a:pt x="0" y="100"/></a:moveTo><a:lnTo><a:pt x="100" y="0"/></a:lnTo><a:lnTo><a:pt x="100" y="100"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>"#;
+    let title = r#"<wps:txbx><w:txbxContent><w:p><w:r><w:t>Cover Title</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></wps:bodyPr>"#;
+    let members = [
+        member(11, false, (0, 0), (5486400, 5486400), rect, r#"<a:ln><a:noFill/></a:ln>"#, "<wps:bodyPr/>"),
+        member(
+            12,
+            false,
+            (914400, 4572000),
+            (4572000, 914400),
+            band,
+            r#"<a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln><a:noFill/></a:ln>"#,
+            "<wps:bodyPr/>",
+        ),
+        member(13, true, (457200, 457200), (4572000, 1828800), rect, r#"<a:noFill/><a:ln><a:noFill/></a:ln>"#, title),
+    ]
+    .concat();
+    let group = format!(
+        r##"<w:r><mc:AlternateContent><mc:Choice Requires="wpg"><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH><wp:positionV relativeFrom="margin"><wp:align>top</wp:align></wp:positionV><wp:extent cx="5486400" cy="5486400"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1" name="Group 1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="5486400" cy="5486400"/><a:chOff x="0" y="0"/><a:chExt cx="5486400" cy="5486400"/></a:xfrm></wpg:grpSpPr>{members}</wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:rect style="width:10pt;height:10pt" fillcolor="#156082 [3204]" stroked="f"/></w:pict></mc:Fallback></mc:AlternateContent></w:r>"##
+    );
+    let subtitle = anchored_wsp(
+        "Subtitle",
+        5753100,
+        420000,
+        r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln>"#,
+        "",
+        r#"<wps:cNvSpPr txBox="1"/><wps:txbx><w:txbxContent><w:p><w:r><w:t>Plan</w:t></w:r></w:p><w:p><w:r><w:t>Author</w:t></w:r></w:p></w:txbxContent></wps:txbx>"#,
+    )
+    // `anchored_wsp` writes an empty `wps:bodyPr`: give this one margins and Resize to fit.
+    .replace("<wps:bodyPr/>", r#"<wps:bodyPr lIns="0" tIns="12700" rIns="0" bIns="0"><a:spAutoFit/></wps:bodyPr>"#);
+    let check = |d: &Document| {
+        let theme = &d.settings.theme_colors;
+        let objs = &paras(d)[0].objects;
+        let InlineObject::Group { children, .. } = &objs[0] else { panic!("{:?}", objs[0]) };
+        assert_eq!(children.len(), 3);
+        let shape = |i: usize| match &children[i].obj {
+            InlineObject::Shape { kind, fill, freeform, story, .. } => (*kind, *fill, freeform.is_some(), *story),
+            o => panic!("{o:?}"),
+        };
+        let (kind, fill, free, _) = shape(0);
+        assert_eq!((kind, fill, free), (ShapeKind::Rectangle, Some(theme[4]), false), "the style's accent fill");
+        let (kind, fill, free, _) = shape(1);
+        assert_eq!((kind, fill, free), (ShapeKind::Freeform, Some(theme[1]), true), "a freeform in a group keeps its outline");
+        let (kind, _, _, story) = shape(2);
+        assert_eq!(kind, ShapeKind::TextBox);
+        let body = d.parts[&story.unwrap()].body;
+        assert_eq!((body.inset, body.auto_fit), (Some([0; 4]), false), "the title box has no margins");
+        let InlineObject::Shape { story: Some(sub), .. } = &objs[1] else { panic!("{:?}", objs[1]) };
+        let body = d.parts[sub].body;
+        assert_eq!((body.inset, body.auto_fit), (Some([0, 12700, 0, 0]), true), "the subtitle resizes to fit its text");
+    };
+    let d = read_body(&format!("<w:p>{group}{subtitle}</w:p>"));
+    check(&d);
+    check(&wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap());
+}
+
+#[test]
+fn embedded_fonts_survive_a_round_trip() {
+    let table = r#"<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:font w:name="Roboto"><w:embedRegular r:id="rId1"/><w:embedBold r:id="rId2"/></w:font></w:fonts>"#;
+    let table_rels = rels(&[("rId1", "font", "fonts/Roboto-regular.ttf"), ("rId2", "font", "fonts/Roboto-bold.ttf")]);
+    let bytes = docx(
+        "<w:p><w:r><w:t>Hi</w:t></w:r></w:p>",
+        &[("rId9", "fontTable", "fontTable.xml")],
+        &[
+            ("word/fontTable.xml", table),
+            ("word/_rels/fontTable.xml.rels", &table_rels),
+            ("word/fonts/Roboto-regular.ttf", "regular font bytes"),
+            ("word/fonts/Roboto-bold.ttf", "bold font bytes"),
+        ],
+    );
+    let out = wordcraft_docx::write(&wordcraft_docx::read(&bytes).unwrap()).unwrap();
+    let files = unzip(&out);
+    assert_eq!(text(&files, "word/fontTable.xml"), table);
+    assert_eq!(text(&files, "word/fonts/Roboto-regular.ttf"), "regular font bytes");
+    assert_eq!(text(&files, "word/fonts/Roboto-bold.ttf"), "bold font bytes");
+    let table_rels = text(&files, "word/_rels/fontTable.xml.rels");
+    assert!(table_rels.contains(r#"Id="rId1""#) && table_rels.contains("fonts/Roboto-regular.ttf"), "{table_rels}");
+    assert!(text(&files, "word/_rels/document.xml.rels").contains("fontTable.xml"));
+    // A second save keeps them too.
+    let again = unzip(&wordcraft_docx::write(&wordcraft_docx::read(&out).unwrap()).unwrap());
+    assert_eq!(text(&again, "word/fonts/Roboto-bold.ttf"), "bold font bytes");
+}
+
 // ---- native Word ink: opaque preservation, never re-encoded as WordCraft freeforms ----
 
 const INK_NS: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingInk";
@@ -1717,4 +1814,71 @@ fn native_ink_preserves_inner_transform_and_rotation_padding_on_unrelated_saves(
         assert_eq!(attr_values(&body, "w14:xfrm", "rot"), ["2700000"]);
         d = wordcraft_docx::read(&out).unwrap();
     }
+}
+
+/// Word draws a table of contents' entry links without the Hyperlink character style (measured in
+/// Word for Windows); the import drops the style from them, keeping the link. A Hyperlink-styled run
+/// outside a hyperlink, and a hyperlink in another field, keep it.
+#[test]
+fn toc_entry_links_lose_the_hyperlink_style() {
+    let styles = format!(
+        r#"<w:styles {W_NS}><w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/></w:style>
+        <w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="0066FF"/><w:u w:val="single"/></w:rPr></w:style></w:styles>"#
+    );
+    let field = |instr: &str, inner: &str| {
+        format!(
+            r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{instr}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>{inner}</w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#
+        )
+    };
+    let link =
+        |t: &str| format!(r#"<w:hyperlink w:anchor="_Toc1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>{t}</w:t></w:r></w:hyperlink>"#);
+    let body = [
+        field(r#" TOC \o "1-3" \h \z \u "#, &link("entry")),
+        field(" TOC ", r#"<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>styled</w:t></w:r>"#),
+        field(" QUOTE x ", &link("quoted")),
+        format!("<w:p>{}</w:p>", link("plain")),
+        r#"<w:p><w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Target</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#.to_string(),
+    ]
+    .concat();
+    let d = wordcraft_docx::read(&docx(&body, &[("rId1", "styles", "styles.xml")], &[("word/styles.xml", &styles)])).unwrap();
+    let run = |word: &str| {
+        paras(&d).into_iter().find_map(|p| p.text.find(word).map(|at| p.props_of_char(at).clone())).unwrap_or_else(|| panic!("no run with {word}"))
+    };
+    let entry = run("entry");
+    assert_eq!((entry.style.as_deref(), entry.link.as_deref()), (None, Some("#_Toc1")), "a TOC entry: plain, still a link");
+    assert_eq!(run("styled").style.as_deref(), Some("Hyperlink"), "not in a hyperlink: kept");
+    assert_eq!(run("quoted").style.as_deref(), Some("Hyperlink"), "another field: kept");
+    assert_eq!(run("plain").style.as_deref(), Some("Hyperlink"), "outside fields: kept");
+}
+
+/// A style or paragraph whose `w:numPr` gives only a level (`w:ilvl`) takes the list from its
+/// style chain (ECMA-376 §17.3.1.19): a Heading 3 based on a numbered Heading 2 is level 3 of the
+/// same list. WordCraft dropped the level, so Heading 3s numbered as Heading 2s (6.15 where Word
+/// shows 6.4.5 in NIH's monitoring-plan template).
+#[test]
+fn a_list_level_without_a_list_takes_the_style_s_list() {
+    let styles = format!(
+        r#"<w:styles {W_NS}>
+        <w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="15"/></w:numPr></w:pPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Heading2"/><w:pPr><w:numPr><w:ilvl w:val="2"/></w:numPr></w:pPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading4"><w:name w:val="heading 4"/><w:basedOn w:val="Heading3"/><w:pPr><w:numPr><w:ilvl w:val="3"/></w:numPr></w:pPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Loose"><w:name w:val="Loose"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="4"/></w:numPr></w:pPr></w:style>
+        </w:styles>"#
+    );
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>three</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Heading2"/><w:numPr><w:ilvl w:val="2"/></w:numPr></w:pPr><w:r><w:t>direct level</w:t></w:r></w:p>
+        <w:p><w:pPr><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr><w:r><w:t>no list anywhere</w:t></w:r></w:p>"#;
+    let d = wordcraft_docx::read(&docx(body, &[("rId1", "styles", "styles.xml")], &[("word/styles.xml", &styles)])).unwrap();
+    let num = |id: &str| d.styles.get(id).and_then(|s| s.para.numbering).map(|n| (n.num, n.level));
+    assert_eq!(num("Heading3"), Some((15, 2)), "Heading 3 is level 3 of Heading 2's list");
+    assert_eq!(num("Heading4"), Some((15, 3)), "through two level-only styles");
+    assert_eq!(num("Loose"), None, "no list in the chain: no numbering");
+    let p = paras(&d);
+    assert_eq!(d.styles.resolve_para(&p[0].props).numbering.map(|n| (n.num, n.level)), Some((15, 2)));
+    assert_eq!(p[1].props.numbering.map(|n| (n.num, n.level)), Some((15, 2)), "a paragraph's own level, its style's list");
+    assert_eq!(p[2].props.numbering, None);
+    // Saved and read again it is an ordinary list reference.
+    let again = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(again.styles.get("Heading3").and_then(|s| s.para.numbering).map(|n| (n.num, n.level)), Some((15, 2)));
 }
