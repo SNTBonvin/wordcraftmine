@@ -12,9 +12,9 @@
 //! lines and the stems front-coded, raw-deflated together (the Polish dictionary is under 1 MB).
 //!
 //! Supported: one-character flags (at most 128 distinct, any Unicode character — `FLAG UTF-8`), `PFX`/`SFX` with strip, append and
-//! condition (`.`, letters, `[abc]`, `[^abc]`), cross products, and the suggestion tables `TRY`,
-//! `MAP` and `REP`. Rejected: compounding, continuation classes, long or numeric flags,
-//! `NEEDAFFIX`, `FORBIDDENWORD` and the other directives that change which words are correct.
+//! condition (`.`, letters, `[abc]`, `[^abc]`), cross products, continuation classes (depth-bounded),
+//! `FORBIDDENWORD`, and the suggestion tables `TRY`, `MAP` and `REP`. Rejected: compounding,
+//! long or numeric flags, `NEEDAFFIX` and the other directives that change which words are correct.
 //!
 //! Lookups never panic and never allocate per probe: stems sit in one string, found through an
 //! open-addressing hash table.
