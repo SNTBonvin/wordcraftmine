@@ -126,6 +126,45 @@ fn reset_shortcuts_remove_direct_formatting_but_keep_styles() {
 }
 
 #[test]
+fn custom_dictionary_words_persist_through_their_file() {
+    // #40: adding a word through a command writes it to the session's file, and loading
+    // that file makes the word known (only the desktop app wires this up).
+    let dir = std::env::temp_dir().join(format!("wc-engdict-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("custom-dictionary.txt");
+    let _ = std::fs::remove_file(&path);
+    let mut s = s();
+    s.user_dict_path = Some(path.clone());
+    run(&mut s, "review.addToDictionary", json!({"word": "zxqengpersist"}));
+    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(saved.lines().any(|l| l == "zxqengpersist"), "the word reaches the file: {saved:?}");
+    run(&mut s, "file.options", json!({"removeWords": ["zxqengpersist"]}));
+    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(!saved.lines().any(|l| l == "zxqengpersist"), "removal reaches the file too: {saved:?}");
+
+    // Ignore All is for this session only, as in Word: the word is accepted, never saved.
+    assert!(!wordcraft_proof::is_correct("zxqengignored"));
+    run(&mut s, "review.ignoreAll", json!({"word": "zxqengignored"}));
+    assert!(wordcraft_proof::is_correct("zxqengignored"));
+    assert!(!wordcraft_proof::user_dictionary().contains(&"zxqengignored".to_string()));
+    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(!saved.contains("zxqengignored"), "Ignore All doesn't reach the file: {saved:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn add_to_dictionary_takes_only_words_the_file_keeps() {
+    // #40: the same rule as loading the dictionary file, so nothing added is dropped on the next load.
+    let mut s = s();
+    for bad in ["two words", "tab\tword", "bell\u{7}", &"x".repeat(65)] {
+        assert!(s.run("review.addToDictionary", &json!({"word": bad})).is_err(), "{bad:?}");
+        assert!(!wordcraft_proof::user_dictionary().iter().any(|w| w == &bad.to_lowercase()));
+    }
+    run(&mut s, "review.addToDictionary", json!({"word": " zxqengtrimmed "}));
+    assert!(wordcraft_proof::user_dictionary().contains(&"zxqengtrimmed".to_string()));
+}
+
+#[test]
 fn non_english_runs_are_not_proofed() {
     // #100: runs tagged with a proofing language that has no dictionary are skipped
     // by both proofing paths; English still is proofed.
@@ -3843,6 +3882,50 @@ fn polish_test_dictionary() {
     wordcraft_proof::pl::install_dictionary(aff, dic).unwrap();
 }
 
+/// A tiny synthetic Portuguese Hunspell dictionary (written for these tests). Real dictionaries
+/// are installed on the system, never bundled; every Portuguese test installs this same one.
+fn portuguese_test_dictionary() {
+    let aff = "SET UTF-8\nFLAG UTF-8\nFORBIDDENWORD F\nTRY aeiousrntmdlcpvgqbzfhjxçãõáéíóúâêô\nMAP 2\nMAP aáã\nMAP eé\nREP 1\nREP seje seja\n";
+    let dic = "11\nsaudade\ncoração\ne\nele\ndisse\nnão\né\nque\nseja\nfrequencia/F\nmuito\n";
+    wordcraft_proof::pt::install_dictionary(aff, dic).unwrap();
+}
+
+/// Review › Language and the proofing commands work in Portuguese end to end: the language makes
+/// the document's words Portuguese, F7 and the issue list use the Portuguese dictionary and
+/// grammar, suggestions come from it, and a suggestion fixes the text.
+#[test]
+fn portuguese_proofing_through_the_review_commands() {
+    portuguese_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Saudade coraçao, e ele ele disse."}));
+    // English by default: the Portuguese words are English misspellings.
+    assert!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len() >= 5);
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pt_br", "default": true}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pt-BR"), "the tag is normalized");
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pt-BR");
+    let issues = run(&mut s, "review.issues", json!({}));
+    let arr = issues.as_array().unwrap();
+    let has = |text: &str, kind: &str, sugg: &str| {
+        arr.iter()
+            .any(|i| i["text"] == text && i["kind"] == kind && i["lang"] == "pt" && i["suggestions"].as_array().unwrap().iter().any(|x| x == sugg))
+    };
+    assert!(has("coraçao", "spelling", "coração"), "{issues}");
+    assert!(has("ele ele", "grammar", "ele"), "{issues}");
+    assert_eq!(arr.len(), 2, "{issues}");
+    assert!(arr.iter().any(|i| i["message"] == "Palavra repetida: \"ele\""), "{issues}");
+    // F7 from the start selects the first issue; Change applies a suggestion.
+    run(&mut s, "caret.docStart", json!({}));
+    let first = run(&mut s, "review.spelling", json!({}));
+    assert_eq!(first["text"], "coraçao");
+    run(&mut s, "review.applySuggestion", json!({"text": "coração"}));
+    assert!(text(&s).starts_with("Saudade coração,"), "{}", text(&s));
+    // Add to Dictionary works for Portuguese words too.
+    run(&mut s, "review.addToDictionary", json!({"word": "coraçao"}));
+    let left = run(&mut s, "review.issues", json!({}));
+    assert_eq!(left.as_array().unwrap().len(), 1, "{left}");
+}
+
 /// Review › Language and the proofing commands work in Polish end to end: the language makes
 /// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
 /// suggestions come from it, and a suggestion fixes the text.
@@ -4209,6 +4292,48 @@ fn outline_collapse_hides_descendants_and_expand_restores() {
     // Clicking a symbol selects the heading with what is under it.
     run(&mut s, "outline.selectSubtree", json!({"block": 0}));
     assert_eq!(s.selected_text(), "One\na\nTwo\nb");
+}
+
+/// #745: layout keeps a picture's size, so pictures read from HTML, Markdown, ODT or RTF at
+/// their pixel size are fitted to the text width when the file is opened (and when pasted),
+/// keeping their proportions; small pictures keep their size.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn imported_pictures_fit_the_text_width() {
+    let png = |w: u32, h: u32| {
+        let mut b = Vec::new();
+        image::RgbaImage::from_pixel(w, h, image::Rgba([200, 30, 30, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut b), image::ImageFormat::Png)
+            .unwrap();
+        cmd::insert::base64_encode(&b)
+    };
+    let sizes = |doc: &wordcraft_doc::Document| -> Vec<(f32, f32)> {
+        doc.body
+            .iter()
+            .filter_map(|b| b.as_para())
+            .flat_map(|p| p.objects.iter())
+            .filter_map(|o| match o {
+                wordcraft_doc::InlineObject::Image { w, h, .. } => Some((*w, *h)),
+                _ => None,
+            })
+            .collect()
+    };
+    let md = format!("![wide](data:image/png;base64,{})\n\n![small](data:image/png;base64,{})\n", png(1200, 300), png(40, 20));
+    let doc = crate::io::open_bytes("p.md", md.as_bytes()).unwrap();
+    let max_w = crate::io::text_width(&doc);
+    let got = sizes(&doc);
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert!((got[0].0 - max_w).abs() < 0.01, "wide picture fits: {got:?} (text width {max_w})");
+    assert!((got[0].1 - max_w / 4.0).abs() < 0.01, "and keeps its proportions: {got:?}");
+    assert!((got[1].0 - 30.0).abs() < 0.01 && (got[1].1 - 15.0).abs() < 0.01, "small picture keeps its size: {got:?}");
+
+    // Pasting HTML fits our text width too.
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    let html = format!("<p><img src=\"data:image/png;base64,{}\"></p>", png(1200, 300));
+    s.run("edit.pasteSpecial", &json!({"as": "html", "html": html})).unwrap();
+    let max_w = crate::io::text_width(&s.doc);
+    let got = sizes(&s.doc);
+    assert!(got.iter().any(|(w, _)| (w - max_w).abs() < 0.01), "pasted picture fits: {got:?}");
 }
 
 #[test]
