@@ -29,7 +29,7 @@ const MAX_LEN: f32 = 1584.0;
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![CommandSpec::new("table.resizeDrag", "Resize Table by Dragging", "Table Layout › Cell Size", resize_drag).params(
-        r#"{"page": n, "x": pt, "y": pt, "toX": pt, "toY": pt, "shift"?: bool, "ctrl"?: bool, "reach"?: pt} (a mouse drag in page points, 0-based page, starting on a table border or the resize handle: a column border moves (the column to its right gives or takes the difference, so the table keeps its width; with ctrl the columns right of it share it in proportion; with shift, or on the table's right edge, only the column left of it changes); the table's left edge moves the table's indent, the first column making up the difference; with cells of the table selected, a border of theirs moves only in their rows; a row's bottom border sets that row's height; the handle just outside the bottom-right corner scales every column and the rows on that page. `reach` (default 3) is how near the start has to be.)"#,
+        r#"{"page": n, "x": pt, "y": pt, "toX": pt, "toY": pt, "shift"?: bool, "ctrl"?: bool, "reach"?: pt} (a mouse drag in page points, 0-based page, starting on a table border or the resize handle: a column border moves (the column to its right gives or takes the difference, so the table keeps its width; with ctrl the columns right of it share it in proportion; with shift, or on the table's right edge, only the column left of it changes); the table's left edge moves a left-aligned table's indent, the first column making up the difference (a centred or right-aligned table keeps its alignment: only the first column changes); with cells of the table selected, a border of theirs moves only in their rows; a row's bottom border sets that row's height; the handle just outside the bottom-right corner scales every column and the rows on that page. `reach` (default 3) is how near the start has to be.)"#,
     )]
 }
 
@@ -101,7 +101,9 @@ pub struct Plan {
     pub widths: Option<Vec<f32>>,
     /// New heights (points) of these rows.
     pub heights: Vec<(usize, f32)>,
-    /// How far (points) the table's left edge moves: its indent changes by as much.
+    /// How far (points) the table's left edge moves: a left-aligned table's indent (or a
+    /// floating table's offset) changes by as much; a centred or right-aligned table keeps its
+    /// alignment.
     pub indent_by: Option<f32>,
     /// New cell widths (points, left to right) of the rows whose border moves on its own
     /// (`ResizeTarget::only`).
@@ -499,16 +501,15 @@ fn resize_drag(s: &mut Session, v: &Value) -> CmdResult {
             }
         }
     }
-    if let Some(d) = plan.indent_by {
-        move_left_edge(t, d);
-    }
+    let moved = plan.indent_by.is_some_and(|d| move_left_edge(t, d));
     if !plan.cells.is_empty() {
         regrid(t, &target.cols, &plan.cells)?;
     }
     touch(s, &target)?;
-    // Where a centred or right-aligned (or floating) table's left edge lands isn't its indent
-    // alone: measure where it came to and put it right once.
-    if let Some(d) = plan.indent_by
+    // Where a moved left edge lands isn't always its indent or offset alone (a floating table's
+    // anchor): measure where it came to and put it right once.
+    if moved
+        && let Some(d) = plan.indent_by
         && let Some(got) = drawn_left(&s.layout(), page, &target)
         && (got - (target.left() + d)).abs() > 0.05
     {
@@ -552,19 +553,20 @@ fn resize_drag(s: &mut Session, v: &Value) -> CmdResult {
     sel_result(s)
 }
 
-/// Moves `t`'s left edge `by` points: its indent, or a floating table's offset. A centred or
-/// right-aligned table becomes left-aligned, so that its indent counts.
-fn move_left_edge(t: &mut Table, by: f32) {
+/// Moves `t`'s left edge `by` points: its indent, or a floating table's offset; whether it did.
+/// A centred or right-aligned table keeps its alignment, as in Word: the first column's new width
+/// is all that changes, and the table stays centred or on its right edge.
+fn move_left_edge(t: &mut Table, by: f32) -> bool {
     match t.props.float.as_mut() {
         Some(f) => {
             f.h_align = None;
             f.x = (f.x + by).clamp(-MAX_LEN, MAX_LEN);
+            true
         }
+        None if matches!(t.props.align, Some(Align::Center | Align::Right)) => false,
         None => {
-            if matches!(t.props.align, Some(Align::Center | Align::Right)) {
-                t.props.align = Some(Align::Left);
-            }
             t.props.indent = Some((t.props.indent.unwrap_or(0.0) + by).clamp(-MAX_LEN, MAX_LEN));
+            true
         }
     }
 }
@@ -825,7 +827,8 @@ mod tests {
 
     /// The table's left edge, grabbed from just outside it, moves the table in or out: its
     /// indent changes and the first column makes up the difference, so the other borders stay.
-    /// A centred table is left-aligned where the edge was dropped.
+    /// A centred or right-aligned table keeps its alignment, as in Word: only the first column
+    /// changes, and the table stays centred or on its right edge.
     #[test]
     fn the_left_edge_moves_the_indent_and_the_first_column() {
         let mut s = table_session(2, 3);
@@ -844,11 +847,21 @@ mod tests {
         s.run("edit.undo", &json!({})).unwrap();
         assert_eq!(first_table(&s), start, "one undo step");
         s.run("table.properties", &json!({"align": "center", "width": 300})).unwrap();
-        let c = cell_rect(&mut s, 0, 0);
+        let (c, e) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 2));
+        let y = c.y + c.h / 2.0;
         s.run("table.resizeDrag", &json!({"page": 0, "x": c.x, "y": y, "toX": c.x - 20.0, "toY": y})).unwrap();
-        let c1 = cell_rect(&mut s, 0, 0);
-        assert!((c1.x - (c.x - 20.0)).abs() < 0.1 && (c1.right() - c.right()).abs() < 0.1, "{c:?} → {c1:?}");
-        assert_eq!(first_table(&s).props.align, Some(Align::Left));
+        let (c1, e1) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 2));
+        assert!((c1.w - (c.w + 20.0)).abs() < 0.5, "the first column takes the drag: {c:?} → {c1:?}");
+        assert!((e1.w - e.w).abs() < 0.5, "the other columns keep their widths");
+        assert!(((c1.x + e1.right()) - (c.x + e.right())).abs() < 1.0, "the table stays centred: {c:?} {e:?} → {c1:?} {e1:?}");
+        assert_eq!(first_table(&s).props.align, Some(Align::Center));
+        s.run("edit.undo", &json!({})).unwrap();
+        s.run("table.properties", &json!({"align": "right"})).unwrap();
+        let (c, e) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 2));
+        s.run("table.resizeDrag", &json!({"page": 0, "x": c.x, "y": y, "toX": c.x - 20.0, "toY": y})).unwrap();
+        let (c1, e1) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 2));
+        assert!((c1.x - (c.x - 20.0)).abs() < 0.5 && (e1.right() - e.right()).abs() < 0.5, "only the left edge moves: {c:?} → {c1:?}");
+        assert_eq!(first_table(&s).props.align, Some(Align::Right));
     }
 
     /// With the selection across cells, a border of theirs moves only in their rows: the grid
