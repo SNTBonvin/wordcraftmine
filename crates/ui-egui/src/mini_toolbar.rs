@@ -128,9 +128,11 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
 
     row(ui, app, &|ui, app| {
         let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
+        let font = app.previews.font_shown(&font);
         let fams = app.previews.families();
         let prev = app.previews.font_preview_fn();
         if let Some(f) = widgets::font_combo(ui, "mini_font", COMBO_FONT_W, &font, &fams, Some(&*prev)) {
+            let f = app.previews.font_stored(&f);
             let _ = app.run("format.font", json!({"name": f}));
         }
         let size =
