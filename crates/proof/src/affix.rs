@@ -44,7 +44,6 @@ const UNSUPPORTED: &[&str] = &[
     "COMPOUNDMIN",
     "COMPOUNDPERMITFLAG",
     "COMPOUNDRULE",
-    "FORBIDDENWORD",
     "FULLSTRIP",
     "ICONV",
     "IGNORE",
@@ -160,6 +159,8 @@ pub struct AffixDict {
     flags: Vec<u16>,
     /// Distinct flag masks.
     sets: Vec<u128>,
+    /// The `FORBIDDENWORD` flag's bit; stems carrying it are not words (0: none declared).
+    forbidden: u128,
     /// Open-addressing hash table of stem indices (`EMPTY` = free).
     table: Vec<u32>,
     /// Flag char of each bit.
@@ -237,6 +238,8 @@ struct Rules {
     try_chars: String,
     map: Vec<Vec<char>>,
     rep: Vec<(String, String)>,
+    /// The `FORBIDDENWORD` flag: stems carrying it are listed but never correct.
+    forbidden: Option<char>,
 }
 
 /// `0` means empty in Hunspell's strip and append fields.
@@ -265,6 +268,13 @@ fn parse_aff(aff: &str) -> Result<Rules, String> {
                 // with the one-character parsing here; only the multi-character encodings differ.
                 if !matches!(at(1), "UTF-8" | "DEFAULT" | "utf-8" | "default" | "UTF8" | "") {
                     return Err(format!("line {}: FLAG {} is not supported (one-character flags only)", n + 1, at(1)));
+                }
+            }
+            "FORBIDDENWORD" => {
+                let mut it = at(1).chars();
+                match (it.next(), it.next()) {
+                    (Some(c), None) if !c.is_whitespace() => r.forbidden = Some(c),
+                    _ => return Err(format!("line {}: FORBIDDENWORD needs one flag character", n + 1)),
                 }
             }
             "TRY" => r.try_chars = at(1).to_string(),
@@ -363,12 +373,14 @@ impl AffixDict {
             return Err(format!("{} distinct flags; at most 128 are supported", flag_chars.len()));
         }
         let bit_of = |c: char| flag_chars.iter().position(|&x| x == c).map_or(0, |i| 1u128 << i);
+        let forbidden = rules.forbidden.map_or(0, bit_of);
         // Stems sorted by bytes; homonyms (the same word twice) are merged.
         stems.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
         let mut d = AffixDict {
             words: String::with_capacity(stems.iter().map(|s| s.0.len()).sum()),
             offs: Vec::with_capacity(stems.len() + 1),
             flag_chars: flag_chars.clone(),
+            forbidden,
             try_chars: rules.try_chars,
             map: rules.map,
             rep: rules.rep,
@@ -494,7 +506,10 @@ impl AffixDict {
             }
             if self.word(t as usize) == Some(w) {
                 let id = *self.flags.get(t as usize)?;
-                return self.sets.get(usize::from(id)).copied();
+                let mask = self.sets.get(usize::from(id)).copied();
+                // A stem carrying FORBIDDENWORD is listed but is not a word: no direct hit,
+                // and (this is the only stem lookup) no affixed form is built on it either.
+                return mask.filter(|m| m & self.forbidden == 0);
             }
             slot = (slot + 1) & mask;
         }
@@ -852,6 +867,18 @@ mod tests {
         assert!(d.contains("verboa") && d.contains("verboz") && d.contains("verbo9"));
         assert!(d.contains("verboç") && d.contains("verboã"), "multi-byte UTF-8 flags");
         assert!(!d.contains("verboß"), "ß is not a flag and not a stem");
+    }
+
+    #[test]
+    fn forbidden_words_are_rejected() {
+        // VERO pt_BR marks spellings it must reject (flag ý under FLAG UTF-8) as stems carrying
+        // FORBIDDENWORD: listed, but never correct and never inflected.
+        let aff = "SET UTF-8\nFLAG UTF-8\nFORBIDDENWORD ý\nSFX a Y 1\nSFX a   0   y   [^y]\n";
+        let d = AffixDict::from_hunspell(aff, "2\nkot/a\nimundo/ý\n", &[]).unwrap();
+        assert!(d.check("kot") && d.check("koty") && d.check("Kot") && d.check("KOT"));
+        assert!(!d.check("imundo") && !d.check("Imundo") && !d.check("IMUNDO"));
+        assert!(!d.contains("imundoy"), "a forbidden stem must not inflect");
+        assert!(d.forms("imundo").is_empty());
     }
 
     #[test]
