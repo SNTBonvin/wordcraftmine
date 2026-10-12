@@ -45,6 +45,30 @@ fn long_paragraph_wraps_and_paginates() {
 }
 
 #[test]
+fn reading_layout_reflows_into_viewport_height_pages_without_changing_print_layout() {
+    let d = Document::from_text(&"A moderately long sentence that should wrap across reading columns. ".repeat(250));
+    let opts = LayoutOptions { view: ViewMode::Read, web_width: 230.0, read_height: 390.0, ..Default::default() };
+    let read = layout(&d, &mut LayoutCache::new(), &opts);
+    assert!(read.pages.len() > 5, "reading column count: {}", read.pages.len());
+    assert!(read.pages.iter().all(|p| p.w == 230.0 && p.h == 390.0));
+    assert!(read.pages.iter().all(|p| p.body.w < p.w && p.body.h < p.h));
+    assert_eq!(
+        lines_of(&read),
+        lines_of(&layout(&d, &mut LayoutCache::new(), &LayoutOptions { view: ViewMode::Web, web_width: 230.0, ..Default::default() }))
+    );
+    let print = lay(&d);
+    assert_eq!(print.pages[0].w, d.sections()[0].1.page_w);
+    assert_eq!(print.pages[0].h, d.sections()[0].1.page_h);
+    // Window height changes page breaks, not the text, and a malformed dimension stays bounded.
+    let short = layout(&d, &mut LayoutCache::new(), &LayoutOptions { read_height: 260.0, ..opts.clone() });
+    assert!(short.pages.len() > read.pages.len());
+    let spaced = layout(&d, &mut LayoutCache::new(), &LayoutOptions { read_line_spacing: Some(2.0), ..opts.clone() });
+    assert!(spaced.pages.len() > read.pages.len(), "reader-only line spacing repaginates text");
+    let invalid = layout(&d, &mut LayoutCache::new(), &LayoutOptions { web_width: f32::NAN, read_height: f32::INFINITY, ..opts });
+    assert!(invalid.pages.iter().all(|p| p.w.is_finite() && p.h.is_finite()));
+}
+
+#[test]
 fn hit_and_caret_agree() {
     let d = Document::from_text("Hello world, this is WordCraft.\nSecond paragraph here.");
     let l = lay(&d);
@@ -166,27 +190,55 @@ fn hidden_text_adds_no_line_break_opportunity_when_not_shown() {
     }
 }
 
-/// How much longer laying out `doc(4n)` takes than `doc(n)` (fastest of three each, after a
-/// warm-up): ~4 when linear, ~16 when quadratic, whatever the machine.
-/// How much bigger the second document is in the linear-time tests. At 8x a linear layout takes
-/// about 8x as long and a quadratic one about 64x, so a limit of 24x stays far from both, however
-/// busy the machine running the tests is.
+/// How much bigger the second document is in the linear-time tests. At 8x a linear layout costs
+/// about 8x as much and a quadratic one about 64x, so a limit of 24x stays far from both.
 const SCALE: usize = 8;
 
-fn layout_time_ratio(doc: impl Fn(usize) -> Document, n: usize, opts: &LayoutOptions) -> (f64, f64, f64) {
-    let fastest = |d: &Document| {
-        (0..3)
-            .map(|_| {
-                let t = std::time::Instant::now();
-                layout(d, &mut LayoutCache::new(), opts);
-                t.elapsed().as_secs_f64()
-            })
-            .fold(f64::INFINITY, f64::min)
+/// The CPU time `f` takes on this thread, in seconds. On Linux it is the scheduler's count of the
+/// time the thread actually ran, so the time it waits while other work on a busy machine has the
+/// CPU is left out; elsewhere, wall-clock time.
+fn cpu_cost(f: &mut impl FnMut()) -> f64 {
+    let ran = || {
+        let s = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+        s.split_whitespace().next()?.parse::<u64>().ok()
     };
-    let (small, big) = (doc(n), doc(SCALE * n));
-    layout(&small, &mut LayoutCache::new(), opts);
-    let (t1, tk) = (fastest(&small), fastest(&big));
+    let (t, before) = (std::time::Instant::now(), ran());
+    f();
+    match (before, ran()) {
+        (Some(a), Some(b)) => b.saturating_sub(a) as f64 * 1e-9,
+        _ => t.elapsed().as_secs_f64(),
+    }
+}
+
+/// How much more `big` costs than `small`, for `big` an input `scale` times the size of `small`'s:
+/// (small, big, big / small), ~`scale` when linear and ~`scale`² when quadratic. Each is the
+/// cheapest of several runs after a warm-up, the runs alternating so a busy spell slows both sizes
+/// alike; `small` is timed `scale` times over per run, so both timings are long against the clock's
+/// resolution.
+fn cost_ratio(scale: usize, mut small: impl FnMut(), mut big: impl FnMut()) -> (f64, f64, f64) {
+    small();
+    big();
+    let mut small_scaled = || (0..scale).for_each(|_| small());
+    let (mut t1, mut tk) = (f64::INFINITY, f64::INFINITY);
+    for _ in 0..5 {
+        t1 = t1.min(cpu_cost(&mut small_scaled) / scale as f64);
+        tk = tk.min(cpu_cost(&mut big));
+    }
     (t1, tk, tk / t1.max(1e-9))
+}
+
+/// [`cost_ratio`] of laying out `doc(SCALE * n)` against `doc(n)`.
+fn layout_time_ratio(doc: impl Fn(usize) -> Document, n: usize, opts: &LayoutOptions) -> (f64, f64, f64) {
+    let (small, big) = (doc(n), doc(SCALE * n));
+    cost_ratio(
+        SCALE,
+        || {
+            layout(&small, &mut LayoutCache::new(), opts);
+        },
+        || {
+            layout(&big, &mut LayoutCache::new(), opts);
+        },
+    )
 }
 
 #[test]
@@ -2011,6 +2063,40 @@ fn line_spacing_does_not_scale_pictures() {
 }
 
 #[test]
+fn multiple_line_spacing_adds_its_leading_below_the_text() {
+    use wordcraft_doc::props::LineSpacing;
+    // (spacing, expected baseline below the line top as a share of the ascent)
+    for (spacing, share) in [(LineSpacing::Multiple(1.15), 1.0), (LineSpacing::Multiple(2.0), 1.0), (LineSpacing::Multiple(0.8), 0.8)] {
+        let mut d = Document::from_text(&"Several words wrap onto more lines. ".repeat(30));
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(spacing);
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        let asc = para.styles[0].ascent;
+        assert!(para.lines.len() > 1);
+        for line in &para.lines {
+            // Word's 1.15-spaced Times New Roman 12pt sits one ascent below the line top; the
+            // 0.15 extra goes below the descent (docxide-pdf's hyphenation fixtures).
+            assert!(
+                (line.baseline - line.top - asc * share).abs() < 0.01,
+                "{spacing:?}: baseline {} below the top, ascent {asc}",
+                line.baseline - line.top
+            );
+        }
+    }
+    // Exact spacing still keeps the descent below the baseline.
+    let mut d = Document::from_text("Exact");
+    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+        p.props.line_spacing = Some(LineSpacing::Exactly(30.0));
+    }
+    let l = lay(&d);
+    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+    let line = &para.lines[0];
+    assert!((line.top + line.height - line.baseline - para.styles[0].descent).abs() < 0.01);
+}
+
+#[test]
 fn body_starts_right_below_a_tall_header() {
     let mut d = Document::from_text("Body");
     let mut hp = wordcraft_doc::Paragraph::with_text("", Default::default());
@@ -2761,10 +2847,10 @@ fn graphic_paths_drop_segments_that_cannot_be_drawn() {
 }
 
 #[test]
-fn oversized_graphic_draws_shrunk_with_its_items() {
+fn graphic_items_scale_with_their_frame() {
     use wordcraft_doc::graphic::{Graphic, GraphicItem, GraphicKind};
     use wordcraft_doc::props::Rgb;
-    // A 1000 x 500 pt chart is wider than the text: layout shrinks it, and its items with it.
+    // A chart drawn for 1000 x 500 pt in a 500 x 250 pt frame: its items and strokes scale by half.
     let items = vec![GraphicItem::Shape {
         rect: [0.0, 0.0, 1000.0, 500.0],
         kind: wordcraft_doc::para::ShapeKind::Rectangle,
@@ -2773,7 +2859,7 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         stroke_width: 4.0,
     }];
     let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None, smart_art: None };
-    let obj = InlineObject::Graphic { w: 1000.0, h: 500.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
+    let obj = InlineObject::Graphic { w: 500.0, h: 250.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
     let mut d = Document::from_text("Chart");
     d.insert_object(&Pos::body(0, 0), obj, &Default::default()).unwrap();
     let draws = flat(display::page_display(&d, &lay(&d).pages[0], &Default::default()));
@@ -2781,9 +2867,59 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         .iter()
         .find_map(|x| if let display::Draw::Shape { rect, stroke_width, .. } = x { Some((*rect, *stroke_width)) } else { None })
         .expect("a shape");
-    assert!(r.w < 1000.0, "{r:?}");
-    assert!((r.h / r.w - 0.5).abs() < 1e-3, "{r:?}");
-    assert!((stroke / r.w - 4.0 / 1000.0).abs() < 1e-5, "stroke {stroke} at width {}", r.w);
+    assert!((r.w - 500.0).abs() < 1e-3 && (r.h - 250.0).abs() < 1e-3, "{r:?}");
+    assert!((stroke - 2.0).abs() < 1e-5, "stroke {stroke}");
+}
+
+#[test]
+fn inline_picture_wider_than_a_text_box_is_fitted_to_it() {
+    // Text boxes don't clip what runs past their sides, so a 400 x 100 pt picture in a 144 pt box
+    // is fitted to the box's 129.6 pt inside its margins instead of spilling over the page.
+    let mut d = Document::from_text("Before");
+    let mut p = wordcraft_doc::Paragraph::with_text("", Default::default());
+    p.insert_object(0, picture(400.0, 100.0, Default::default()), &Default::default()).unwrap();
+    let id = d.add_part(wordcraft_doc::PartKind::TextBox, vec![wordcraft_doc::para_block(p)]);
+    let shape = InlineObject::Shape {
+        kind: wordcraft_doc::para::ShapeKind::TextBox,
+        w: 144.0,
+        h: 72.0,
+        fill: None,
+        stroke: None,
+        stroke_width: 0.75,
+        float: Default::default(),
+        story: Some(id),
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    d.insert_object(&Pos::body(0, 0), shape, &Default::default()).unwrap();
+    let l = lay(&d);
+    let draws = flat(display::page_display(&d, &l.pages[0], &Default::default()));
+    let r = draws
+        .iter()
+        .find_map(|x| match x {
+            display::Draw::Shape { rect, kind: wordcraft_doc::para::ShapeKind::Rectangle, .. } => Some(*rect),
+            _ => None,
+        })
+        .expect("the picture");
+    assert!((r.w - 129.6).abs() < 0.1 && (r.h - 32.4).abs() < 0.1, "{r:?}");
+}
+
+#[test]
+fn inline_picture_wider_than_the_text_keeps_its_size() {
+    // A 1000 x 100 pt picture in 468 pt of text: Word draws it at its size, past the margin, and the
+    // page edge clips it; the line is as tall as the picture (docxide-pdf's case179).
+    let mut d = Document::from_text("");
+    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+        p.insert_object(0, picture(1000.0, 100.0, Default::default()), &Default::default()).unwrap();
+    }
+    let l = lay(&d);
+    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+    let line = &para.lines[0];
+    assert!((line.baseline - line.top - 100.0).abs() < 0.01, "the picture keeps its height: {line:?}");
+    let draws = flat(display::page_display(&d, &l.pages[0], &Default::default()));
+    let r = draws.iter().find_map(|x| if let display::Draw::Shape { rect, .. } = x { Some(*rect) } else { None }).expect("the picture");
+    assert!((r.w - 1000.0).abs() < 0.01 && (r.h - 100.0).abs() < 0.01, "{r:?}");
 }
 
 /// The paragraph at `path` on page 0: its first line's x, its y and its line count.
@@ -3797,6 +3933,64 @@ fn endnotes_at_section_end_and_footnotes_below_text() {
     assert!(below > text.top + text.height && below < bottom - 100.0, "{below} {bottom} {text:?}");
 }
 
+/// Each run is hyphenated and proofed in its own language (`w:lang`, resolved through the
+/// styles): Polish patterns and dictionary for Polish runs, English ones for English runs.
+#[test]
+fn hyphenation_and_proofing_follow_each_runs_language() {
+    // A tiny synthetic Polish dictionary (real ones are installed on the system, not bundled).
+    wordcraft_proof::pl::install_dictionary("SET UTF-8\nSFX B Y 1\nSFX B y ego y\n", "2\nkonstytucyjny/B\npłynie\n").unwrap();
+    let text = "Konstytucyjnego żeka typography beautifull";
+    let mut d = Document::from_text(text);
+    d.settings.auto_hyphenation = true;
+    let eng = text.find("typography").unwrap();
+    d.format_range(&Pos::body(0, 0), &Pos::body(0, eng), &|c| c.lang = Some("pl-PL".into())).unwrap();
+    d.format_range(&Pos::body(0, eng), &Pos::body(0, text.len()), &|c| c.lang = Some("en-US".into())).unwrap();
+    let mut c = LayoutCache::new();
+    let l = layout(&d, &mut c, &LayoutOptions { proofing: true, ..LayoutOptions::default() });
+    let para = l.pages[0].items.iter().find_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None }).expect("a paragraph");
+    // Byte offsets after which a hyphen may go.
+    let ends: Vec<usize> = para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end)).collect();
+    for prefix in ["Kon", "Konsty", "Konstytu", "Konstytucyj", "Konstytucyjne"] {
+        assert!(ends.contains(&prefix.len()), "Polish kon-sty-tu-cyj-ne-go: no break after {prefix:?} in {ends:?}");
+    }
+    for prefix in ["ty", "typog", "typogra"] {
+        assert!(ends.contains(&(eng + prefix.len())), "English ty-pog-ra-phy: no break after {prefix:?} in {ends:?}");
+    }
+    // Spelling: the Polish misspelling and the English one; Polish words aren't English errors.
+    let flagged: Vec<&str> = para.issues.iter().filter(|i| !i.2).map(|i| &text[i.0..i.1]).collect();
+    assert_eq!(flagged, ["żeka", "beautifull"]);
+    // The layout and the Review commands report the same issues.
+    let p = d.para(StoryRef::Body, &Path::top(0)).unwrap();
+    let issues = para::paragraph_issues(p, &para::proof_runs(&d, p, None), &Default::default(), true);
+    assert_eq!(issues.iter().map(|i| (i.start, i.end, i.kind == wordcraft_proof::IssueKind::Grammar)).collect::<Vec<_>>(), para.issues);
+    assert_eq!(issues[0].lang, wordcraft_proof::ProofLang::Pl);
+    assert_eq!(issues[1].lang, wordcraft_proof::ProofLang::En);
+}
+
+/// Text in a language WordCraft can't proof gets no spelling marks, and "Do not check spelling
+/// or grammar" text none either; the document default language applies to text without its own.
+#[test]
+fn unproofed_languages_and_no_proof_runs_are_not_marked() {
+    // A tiny synthetic Polish dictionary (real ones are installed on the system, not bundled).
+    wordcraft_proof::pl::install_dictionary("SET UTF-8\nSFX B Y 1\nSFX B y ego y\n", "2\nkonstytucyjny/B\npłynie\n").unwrap();
+    let opts = LayoutOptions { proofing: true, ..LayoutOptions::default() };
+    let issues = |d: &Document| -> usize {
+        let l = layout(d, &mut LayoutCache::new(), &opts);
+        l.pages[0].items.iter().map(|i| if let Placed::Lines { para, .. } = i { para.issues.len() } else { 0 }).sum()
+    };
+    let text = "Nous écrivons beaucoup aujourd'hui.";
+    let mut d = Document::from_text(text);
+    assert!(issues(&d) > 0, "French words are English misspellings in an English document");
+    d.styles.default_chr.lang = Some("fr-FR".into());
+    assert_eq!(issues(&d), 0, "no French dictionary: no marks");
+    d.styles.default_chr.lang = Some("pl-PL".into());
+    let mut pl = Document::from_text("Płynie żeka.");
+    pl.styles.default_chr.lang = Some("pl-PL".into());
+    assert_eq!(issues(&pl), 1);
+    pl.format_range(&Pos::body(0, 0), &Pos::body(0, "Płynie żeka.".len()), &|c| c.no_proof = Some(true)).unwrap();
+    assert_eq!(issues(&pl), 0);
+}
+
 /// #451: page totals in the body show the document's page count (the stale cached result is
 /// ignored), on every page, like the same fields in the footer.
 #[test]
@@ -3888,4 +4082,29 @@ fn east_asian_text_takes_the_asian_font_and_latin_text_the_latin_font() {
         let want = if ch.is_ascii() { latin_face } else { asian_face };
         assert_eq!(face, want, "{ch:?} in {}", if ch.is_ascii() { latin } else { &asian });
     }
+}
+
+/// A page total in the footer ("Page X of Y") is filled in after pagination, so it doesn't make
+/// the body lay out a second time; one in the body still does.
+#[test]
+fn footer_page_total_needs_one_body_pass() {
+    let field = || InlineObject::Field { instr: "NUMPAGES".into(), result: "9".into(), locked: false, code: false };
+    let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
+    for i in 1..3 {
+        d.para_mut(StoryRef::Body, &Path::top(i)).unwrap().props.page_break_before = Some(true);
+    }
+    let mut fp = wordcraft_doc::Paragraph::new();
+    fp.insert_object(0, field(), &Default::default()).unwrap();
+    let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(fp)]);
+    d.last_section.footers.default = Some(id);
+    let first = |d: &Document| {
+        let totals = Totals::first_guess(d.sections().len());
+        layout_pass(d, &mut LayoutCache::new(), &LayoutOptions::default(), &HashMap::new(), &totals, true)
+    };
+    assert!(matches!(first(&d), Pass::Done(l) if l.pages.len() == 3), "the footer's total asked for another pass");
+    // The same field in the body is only known once every page is laid out.
+    let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    let n = p.len();
+    p.insert_object(n, field(), &Default::default()).unwrap();
+    assert!(matches!(first(&d), Pass::Again(t) if t.pages == 3));
 }

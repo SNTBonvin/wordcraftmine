@@ -1,13 +1,22 @@
 //! The editing session: document, selection, undo/redo, layout, view state.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+/// The system locale (BCP 47 tag) the shell found at startup, for Numeral › System.
+static SYSTEM_LOCALE: OnceLock<String> = OnceLock::new();
+
+/// Tell the engine the system locale (the shell calls this once at startup; layout never reads
+/// the environment). Headless sessions without it show Western digits for Numeral › System.
+pub fn set_system_locale(tag: &str) {
+    let _ = SYSTEM_LOCALE.set(tag.to_string());
+}
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wordcraft_doc::edit::Fragment;
 use wordcraft_doc::props::CharProps;
 use wordcraft_doc::{Document, Path, Pos, StoryRef};
-use wordcraft_layout::{DocLayout, LayoutCache, LayoutOptions, ViewMode};
+use wordcraft_layout::{DocLayout, LayoutCache, LayoutOptions, NumeralMode, ViewMode};
 
 use crate::{CmdError, Registry};
 
@@ -81,11 +90,27 @@ pub struct ViewState {
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
     pub web_width: f32,
+    /// Transient viewport metrics for reading pagination; never saved in a document or preferences.
+    #[serde(skip, default = "default_read_width")]
+    pub read_width: f32,
+    #[serde(skip, default = "default_read_height")]
+    pub read_height: f32,
+    /// Reader-only layout controls; they are neither document formatting nor saved UI prefs.
+    /// `None` chooses responsive column width and keeps the document's line spacing.
+    #[serde(skip)]
+    pub read_column_width: Option<f32>,
+    #[serde(skip, default = "default_read_zoom")]
+    pub read_zoom: f32,
+    #[serde(skip)]
+    pub read_line_spacing: Option<f32>,
     pub dark_mode: bool,
     pub show_markup: bool,
     pub track_changes_pane: bool,
     /// Check spelling and grammar as you type.
     pub proofing: bool,
+    /// How digits look on screen (Word › File › Options › Advanced › Numeral).
+    #[serde(default)]
+    pub numeral: NumeralMode,
     /// Review › Hide Ink: ink strokes aren't shown on screen (they stay in the document).
     #[serde(default)]
     pub hide_ink: bool,
@@ -95,6 +120,11 @@ pub struct ViewState {
     /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
     #[serde(default)]
     pub field_codes: bool,
+    /// Print Layout › Hide White Space: pages run together, the top and bottom margins (with
+    /// headers and footers) between pages collapse to a thin line. On screen only; the layout
+    /// and page count are unchanged.
+    #[serde(default)]
+    pub hide_white_space: bool,
     /// Outline view: collapsed headings, Show Level, first lines, text formatting.
     #[serde(default)]
     pub outline: crate::cmd::outline::OutlineState,
@@ -105,6 +135,18 @@ pub struct ViewState {
 
 fn on() -> bool {
     true
+}
+
+fn default_read_width() -> f32 {
+    300.0
+}
+
+fn default_read_height() -> f32 {
+    500.0
+}
+
+fn default_read_zoom() -> f32 {
+    1.0
 }
 
 impl Default for ViewState {
@@ -129,13 +171,20 @@ impl Default for ViewState {
             multi_page: false,
             fit: String::new(),
             web_width: 800.0,
+            read_width: default_read_width(),
+            read_height: default_read_height(),
+            read_column_width: None,
+            read_zoom: default_read_zoom(),
+            read_line_spacing: None,
             dark_mode: false,
             show_markup: true,
             track_changes_pane: false,
             proofing: true,
+            numeral: NumeralMode::default(),
             hide_ink: false,
             draw: Default::default(),
             field_codes: false,
+            hide_white_space: false,
             outline: Default::default(),
             design_mode: false,
         }
@@ -262,7 +311,21 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    layout: Option<(u64, f32, ViewMode, Arc<DocLayout>, bool, Option<wordcraft_layout::outline::OutlineView>)>,
+    /// (revision, width, read height, view, read line spacing, layout, proofing, outline,
+    /// (deletions left out, body deletions in balloons), numeral display).
+    #[allow(clippy::type_complexity)]
+    layout: Option<(
+        u64,
+        f32,
+        f32,
+        ViewMode,
+        Option<u32>,
+        Arc<DocLayout>,
+        bool,
+        Option<wordcraft_layout::outline::OutlineView>,
+        (bool, bool),
+        NumeralMode,
+    )>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -289,6 +352,10 @@ pub struct Session {
     pub keymap: crate::KeyMap,
     /// Custom ribbon and Quick Access Toolbar (`tools.customizeRibbon`); the front end saves it too.
     pub ribbon: crate::RibbonLayout,
+    /// The language new blank documents (and opened plain text) are written in, a BCP 47 tag;
+    /// `None` is WordCraft's default, US English. The front end sets it from the interface
+    /// language with [`Session::set_editing_language`] (a Polish interface writes Polish).
+    pub editing_lang: Option<String>,
     /// Editing inside an equation: which one and the caret in it.
     pub math: Option<MathEdit>,
     /// Equations are typed in LaTeX rather than the linear format.
@@ -394,12 +461,19 @@ impl Prefs {
     }
 }
 
+/// The citation style a document records (References › Style), APA when it records none or
+/// one we don't know.
+fn doc_bib_style(doc: &Document) -> String {
+    doc.settings.bib_style.as_deref().and_then(crate::cmd::citations::find_style).map_or("APA", |st| st.name).to_string()
+}
+
 /// Maximum undo depth.
 const MAX_UNDO: usize = 500;
 
 impl Session {
     pub fn new(doc: Document) -> Self {
         let start = doc.start_of(StoryRef::Body);
+        let bib_style = doc_bib_style(&doc);
         Session {
             doc,
             sel: Selection::caret(start),
@@ -435,7 +509,7 @@ impl Session {
             versions: Vec::new(),
             building_blocks: Default::default(),
             autosave: true,
-            bib_style: "APA".into(),
+            bib_style,
             merge: Default::default(),
             ui_requests: Vec::new(),
             math: None,
@@ -445,6 +519,7 @@ impl Session {
             prefs: Prefs::default(),
             keymap: crate::KeyMap::default(),
             ribbon: crate::RibbonLayout::default(),
+            editing_lang: None,
             read_aloud: Default::default(),
             password: None,
             column: None,
@@ -517,6 +592,27 @@ impl Session {
         self.find.highlights.as_ref().map(|(_, v)| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Whether the markup area beside the page can show balloons: markup shown in Print Layout
+    /// (not Read Mode or pages side by side), comments not listed in the Comments pane instead,
+    /// and Track Changes Options not set to show every revision inline.
+    pub fn balloons_shown(&self) -> bool {
+        let v = &self.view;
+        v.show_markup
+            && !v.comments_pane
+            && !v.read_mode
+            && !v.multi_page
+            && v.mode == ViewMode::Print
+            && self.prefs.markup.balloons != wordcraft_layout::display::BalloonMode::Inline
+    }
+
+    /// Show revisions in balloons, with the balloons on screen: tracked deletions in the body leave
+    /// the text for balloons in the markup area. Where no balloons can be shown they stay inline,
+    /// as in Word; so do deletions in headers, footers, notes and text boxes, which get no balloons.
+    pub fn revisions_in_balloons(&self) -> bool {
+        let m = &self.prefs.markup;
+        self.balloons_shown() && m.balloons == wordcraft_layout::display::BalloonMode::Revisions && m.insertions_deletions
+    }
+
     /// Initials for new comments: the ones set in File › Options, else the user name's.
     pub fn user_initials(&self) -> String {
         let set = self.initials.trim();
@@ -525,30 +621,45 @@ impl Session {
 
     /// The current layout (recomputed when the document or view changed).
     pub fn layout(&mut self) -> Arc<DocLayout> {
-        let ww = self.view.web_width;
-        let outline = (self.view.mode == ViewMode::Outline).then(|| self.view.outline.view());
-        if let Some((r, w, m, l, pf, o)) = &self.layout
+        let mode = if self.view.read_mode { ViewMode::Read } else { self.view.mode };
+        let width = if self.view.read_mode { self.view.read_width } else { self.view.web_width };
+        let height = if self.view.read_mode { self.view.read_height } else { 0.0 };
+        let spacing = if self.view.read_mode { self.view.read_line_spacing.map(f32::to_bits) } else { None };
+        // Deletions in balloons depend on the view (the Comments pane, Read Mode, side by side), so
+        // a view change that moves them in or out of the text lays it out again.
+        let hide_deleted = !self.view.show_markup || self.prefs.markup.hides_deletions();
+        let deleted = (hide_deleted, self.revisions_in_balloons());
+        let outline = (mode == ViewMode::Outline).then(|| self.view.outline.view());
+        if let Some((r, w, h, m, sp, l, pf, o, hd, n)) = &self.layout
             && *r == self.rev
-            && (*w == ww || self.view.mode == ViewMode::Print)
-            && *m == self.view.mode
+            && (*w == width || mode == ViewMode::Print)
+            && *h == height
+            && *m == mode
+            && *sp == spacing
             && *pf == self.view.proofing
+            && *n == self.view.numeral
+            && *hd == deleted
             && *o == outline
         {
             return l.clone();
         }
         let opts = LayoutOptions {
-            view: self.view.mode,
-            web_width: ww,
+            view: mode,
+            web_width: width,
+            read_height: height,
+            read_line_spacing: spacing.map(f32::from_bits),
             show_hidden: self.view.marks || self.prefs.marks.hidden,
-            hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
+            hide_deleted,
+            deletions_in_balloons: deleted.1,
             proofing: self.view.proofing,
+            numeral: self.view.numeral.resolve(SYSTEM_LOCALE.get().map(String::as_str)),
             comment_balloons: false,
             field_codes: self.view.field_codes,
             outline: outline.clone(),
             proof: wordcraft_layout::ProofOptions { grammar: self.prefs.mark_grammar, spelling: self.prefs.spelling() },
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing, outline));
+        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing, outline, deleted, self.view.numeral));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
@@ -567,6 +678,24 @@ impl Session {
     pub fn relayout(&mut self) {
         self.layout = None;
         self.cache.clear();
+    }
+
+    /// Set the language new documents are written in ([`Session::editing_lang`]; `None` or a
+    /// malformed tag: US English). A document nobody has touched yet — untitled, unchanged, no
+    /// undo steps, no text — switches too, so the blank document a session starts with follows
+    /// the interface language. Nothing else changes and no undo step is added.
+    pub fn set_editing_language(&mut self, tag: Option<&str>) {
+        let tag = tag.and_then(wordcraft_proof::lang::normalize_tag);
+        if self.editing_lang == tag {
+            return;
+        }
+        self.editing_lang = tag;
+        let untouched = self.path.is_none() && !self.dirty && self.history.is_empty() && self.redo.is_empty();
+        if untouched && self.doc.plain_text(StoryRef::Body).trim().is_empty() && self.doc.paragraph_count() <= 1 {
+            self.doc.styles.default_chr.lang = Some(self.editing_lang.clone().unwrap_or_else(|| "en-US".into()));
+            self.rev = self.rev.wrapping_add(1);
+            self.relayout();
+        }
     }
 
     /// Snapshot for undo before a change.
@@ -674,6 +803,7 @@ impl Session {
     /// Replace the document (open/new).
     pub fn set_document(&mut self, doc: Document) {
         self.document_id = self.document_id.wrapping_add(1);
+        self.bib_style = doc_bib_style(&doc);
         self.doc = doc;
         self.doc.ensure_nonempty();
         self.password = None;
@@ -751,6 +881,8 @@ impl Session {
             prefs: _,
             keymap: _,
             ribbon: _,
+            // A preference for new documents, like `prefs`: not part of this document.
+            editing_lang: _,
             // Equation editing mode, like `view`: not part of the document or its history.
             math: _,
             math_latex: _,
