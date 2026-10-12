@@ -319,7 +319,8 @@ pub(crate) mod tests {
     }
 
     /// A double-click on a column border fits the column left of it to its text, the next
-    /// column taking the room, in one undo step.
+    /// column keeping its width and moving along (the table narrows, as in Word), in one undo
+    /// step.
     #[test]
     fn double_clicking_a_column_border_fits_the_column() {
         let mut h = table_window_stepping(1.0 / 60.0);
@@ -337,7 +338,7 @@ pub(crate) mod tests {
         steps(&mut h, 2);
         let (a1, b1) = (cell(&mut h, 0, 0), cell(&mut h, 0, 1));
         assert!(a1.w < a.w - 40.0, "{a:?} → {a1:?}");
-        assert!((a1.w + b1.w - (a.w + b.w)).abs() < 1.0, "the table keeps its width");
+        assert!((b1.w - b.w).abs() < 1.0 && (b1.x - b.x - (a1.w - a.w)).abs() < 1.0, "the next column keeps its width and moves along");
         assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
     }
 }

@@ -14,7 +14,7 @@ use wordcraft_doc::{Document, Path, Pos, StoryRef, Table};
 use wordcraft_geom::Rect;
 use wordcraft_layout::{DocLayout, Placed};
 
-use super::table_resize::{self, CellBox, Edge, MIN_COL, REACH, ResizeTarget};
+use super::table_resize::{self, CellBox, Edge, REACH, ResizeTarget};
 use super::{sel_result, table};
 use crate::{CellRange, CmdError, CmdResult, CommandSpec, Selection, Session, p};
 
@@ -46,13 +46,13 @@ pub fn specs() -> Vec<CommandSpec> {
             )
             .pure(),
         CommandSpec::new("table.insertAt", "Insert Row or Column by Clicking", "Table Layout › Rows & Columns", insert_at).params(
-            r#"{"page": n, "x": pt, "y": pt, "reach"?: pt} (a click on a table's insert button: left of a row border adds a row there, above a column border a column; the caret goes into it)"#,
+            r#"{"page": n, "x": pt, "y": pt, "reach"?: pt} (a click on a table's insert button: left of a row border adds a row there, above a column border a column; the new row or column is selected, as in Word)"#,
         ),
         CommandSpec::new("table.moveDrag", "Move Table by Dragging", "Table Layout › Table", move_drag).params(
             r#"{"page": n, "x": pt, "y": pt, "toX": pt, "toY": pt, "reach"?: pt} (a drag from the move handle past a table's top-left corner: the table floats where it's dropped, the text wrapping around it; tables in the main text only)"#,
         ),
         CommandSpec::new("table.fitColumn", "AutoFit Column by Double-Clicking", "Table Layout › Cell Size", fit_column).params(
-            r#"{"page": n, "x": pt, "y": pt, "reach"?: pt} (a double-click on a column border: the column left of it fits its contents, the column right of it giving or taking the difference; on the table's right edge the table's width changes, up to the right margin)"#,
+            r#"{"page": n, "x": pt, "y": pt, "reach"?: pt} (a double-click on a column border: the column left of it fits its contents and the columns right of it keep their widths, moving with the border, so the table narrows or widens (up to the right margin), as in Word)"#,
         ),
     ]
 }
@@ -317,24 +317,35 @@ fn insert_at(s: &mut Session, v: &Value) -> CmdResult {
     let Target { spot, geom } = target(s, page, x, y, reach)?;
     let story = geom.story;
     // The row or column goes beside a cell at the border, as Insert Above / Below / Left / Right
-    // would put it there, and the caret goes into it.
-    let (r, c, after, rows) = match spot {
+    // would put it there, so it takes the border's index (`line`); then, as in Word, it's selected.
+    let (r, c, after, rows, line) = match spot {
         Spot::InsertRow(line) => match line.checked_sub(1) {
-            Some(above) => (above, 0, true, true),
-            None => (0, 0, false, true),
+            Some(above) => (above, 0, true, true, line),
+            None => (0, 0, false, true, line),
         },
         Spot::InsertColumn(line) => {
             let t = s.doc.table(story, &geom.table).ok_or_else(|| CmdError::Failed("there's no table there".into()))?;
             let (r, c, after) = beside_line(t, line).ok_or_else(|| CmdError::Failed("there's no column border there".into()))?;
-            (r, c, after, false)
+            (r, c, after, false, line)
         }
         _ => return Err(CmdError::Failed("there's a selection area there, not an insert button".into())),
     };
+    let size = |s: &Session| s.doc.table(story, &geom.table).map(|t| (t.rows.len(), t.cols()));
+    let before = size(s);
     let mut path = geom.table.0.clone();
     path.extend([r as u32, c as u32, 0]);
     s.column = None;
     s.sel = Selection::caret(Pos { story, path: Path(path), off: 0 });
-    if rows { table::row(s, after) } else { table::col(s, after) }
+    if rows {
+        table::row(s, after)?;
+    } else {
+        table::col(s, after)?;
+    }
+    if size(s) == before {
+        return Err(CmdError::Failed("the table can't take another row or column".into()));
+    }
+    let (sel_rows, sel_cols) = if rows { ((line, line), (0, usize::MAX)) } else { ((0, usize::MAX), (line, line)) };
+    table::select_range(s, story, &geom.table, sel_rows, sel_cols)
 }
 
 /// Where table `table` of `story` is first drawn: its page and top-left corner.
@@ -405,16 +416,12 @@ fn fit_column(s: &mut Session, v: &Value) -> CmdResult {
     let g = line.checked_sub(1).ok_or_else(|| CmdError::Failed("there's no column left of that border".into()))?;
     let (narrowest, widest) =
         wordcraft_layout::measure_table_columns(&s.doc, t).get(g).copied().ok_or_else(|| CmdError::Failed("there's no such column".into()))?;
-    let widths = target.widths();
-    let current = widths.get(g).copied().unwrap_or(0.0);
-    // The room it has: up to its right neighbour's least width or, on the table's right edge, to
-    // the right margin; never less than its narrowest content.
-    let room = match widths.get(g + 1) {
-        Some(next) => current + next - MIN_COL,
-        None => current + l.pages.get(page).map_or(0.0, |pg| (pg.body.right() - target.right()).max(0.0)),
-    };
+    let current = target.widths().get(g).copied().unwrap_or(0.0);
+    // As in Word, the columns right of it keep their widths and move with the border, so the
+    // table narrows or widens: up to the right margin, never below the column's narrowest content.
+    let room = current + l.pages.get(page).map_or(0.0, |pg| (pg.body.right() - target.right()).max(0.0));
     let want = widest.min(room.max(narrowest));
-    if let Some(w) = target.plan(want - current, 0.0, false).widths {
+    if let Some(w) = target.plan(want - current, 0.0, true).widths {
         let t = s.doc.table_mut(target.story, &target.table)?;
         table_resize::set_widths(t, w);
         table_resize::touch(s, &target)?;
@@ -637,7 +644,8 @@ mod tests {
         assert_eq!(s.cell_range().map(|r| (r.rows, r.cols, r.stream)), Some(((2, 2), (0, 2), true)));
     }
 
-    /// The insert buttons add a row or column at their border, one undo step, the caret in it.
+    /// The insert buttons add a row or column at their border, one undo step, and select it (as
+    /// Word does); typing then goes into its first cell.
     #[test]
     fn the_insert_buttons_add_rows_and_columns() {
         let mut s = table_session(2, 3);
@@ -647,12 +655,17 @@ mod tests {
         let t = first_table(&s);
         assert_eq!(t.rows.len(), 3);
         assert!(para(&s, 1, 0).is_empty() && para(&s, 2, 0).plain_text() == "r1c0", "the new row is the second");
-        assert_eq!(s.sel.focus.path.cell().map(|(_, r, _)| r), Some(1), "the caret is in it");
+        assert_eq!(s.cell_range().map(|r| (r.rows, r.cols)), Some(((1, 1), (0, 2))), "it's selected");
+        s.run("text.insert", &json!({"text": "x"})).unwrap();
+        assert_eq!(para(&s, 1, 0).plain_text(), "x");
+        assert_eq!((first_table(&s).rows.len(), para(&s, 2, 0).plain_text()), (3, "r1c0".to_string()));
+        s.run("edit.undo", &json!({})).unwrap();
         s.run("edit.undo", &json!({})).unwrap();
         assert_eq!(first_table(&s).rows.len(), 2);
         // Above the first row.
         s.run("table.insertAt", &json!({"page": 0, "x": a.x - 10.0, "y": a.y})).unwrap();
         assert!(para(&s, 0, 0).is_empty() && para(&s, 1, 0).plain_text() == "r0c0");
+        assert_eq!(s.cell_range().map(|r| r.rows), Some((0, 0)));
         s.run("edit.undo", &json!({})).unwrap();
         // A column at the border between the first two, the table keeping its width.
         let width: f32 = first_table(&s).grid.iter().sum();
@@ -662,11 +675,13 @@ mod tests {
         assert_eq!(t.cols(), 4);
         assert!(para(&s, 0, 1).is_empty() && para(&s, 0, 2).plain_text() == "r0c1");
         assert!((t.grid.iter().sum::<f32>() - width).abs() < 0.5);
+        assert_eq!(s.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (1, 1))), "it's selected");
         // And at the right edge.
         let e = cell_rect(&mut s, 0, 3);
         s.run("table.insertAt", &json!({"page": 0, "x": e.right(), "y": a.y - 8.0})).unwrap();
         assert_eq!(first_table(&s).cols(), 5);
         assert!(para(&s, 0, 4).is_empty() && para(&s, 0, 3).plain_text() == "r0c2");
+        assert_eq!(s.cell_range().map(|r| r.cols), Some((4, 4)));
     }
 
     /// Dragging the move handle floats the table where it's dropped; one undo puts it back; a
@@ -701,8 +716,9 @@ mod tests {
         assert!(!movable(&nested));
     }
 
-    /// A double-click on a column border fits the column left of it to its text; the neighbour
-    /// makes up the difference. On the right edge the table narrows.
+    /// A double-click on a column border fits the column left of it to its text; as in Word, the
+    /// columns right of it keep their widths and move along, so the table narrows. The right
+    /// edge's column fits the same way.
     #[test]
     fn a_double_click_on_a_border_fits_the_column() {
         let mut s = table_session(1, 3);
@@ -711,12 +727,13 @@ mod tests {
         let (a, b, c) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 1), cell_rect(&mut s, 0, 2));
         let fit = wordcraft_layout::measure_table_columns(&s.doc, &first_table(&s));
         s.run("table.fitColumn", &json!({"page": 0, "x": a.right(), "y": mid_y(a)})).unwrap();
-        let (a1, b1) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 1));
+        let (a1, b1, c1) = (cell_rect(&mut s, 0, 0), cell_rect(&mut s, 0, 1), cell_rect(&mut s, 0, 2));
         assert!((a1.w - fit[0].1).abs() < 0.5 && a1.w < a.w - 50.0, "{a:?} → {a1:?}, {fit:?}");
-        assert!((a1.w + b1.w - (a.w + b.w)).abs() < 0.5, "the table keeps its width");
-        s.run("table.fitColumn", &json!({"page": 0, "x": c.right(), "y": mid_y(c)})).unwrap();
-        let c1 = cell_rect(&mut s, 0, 2);
-        assert!((c1.w - fit[2].1).abs() < 0.5 && c1.w < c.w, "{c:?} → {c1:?}");
+        assert!((b1.w - b.w).abs() < 0.5 && (c1.w - c.w).abs() < 0.5, "the columns right of it keep their widths");
+        assert!((b1.x - b.x - (a1.w - a.w)).abs() < 0.5 && (c1.right() - c.right() - (a1.w - a.w)).abs() < 0.5, "and move along");
+        s.run("table.fitColumn", &json!({"page": 0, "x": c1.right(), "y": mid_y(c1)})).unwrap();
+        let c2 = cell_rect(&mut s, 0, 2);
+        assert!((c2.w - fit[2].1).abs() < 0.5 && c2.w < c.w, "{c:?} → {c2:?}");
     }
 
     /// Pasting formatting onto a selected column leaves its text (it used to clear it).

@@ -71,13 +71,19 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
             }
             return true;
         }
-        // A selection area: the selection follows the pointer until the button goes up.
+        // A selection area: the selection follows the pointer until the button goes up. A
+        // double-click along a cell's left edge selects its row, as in Word.
         if down {
             if d.to != d.sent {
                 d.sent = d.to;
                 let _ = app.run("table.selectAt", at);
             }
             app.canvas.table_drag = Some(d);
+        } else if matches!(d.target.spot, Spot::Cell(..))
+            && resp.double_clicked()
+            && let Err(e) = app.run("table.selectRow", json!({}))
+        {
+            app.status(e);
         }
         return true;
     }
@@ -227,7 +233,7 @@ fn arrow(painter: &egui::Painter, tip: Pos2, spot: Spot) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::table_resize::tests::{H, button, cell, screen, steps, table_window};
+    use crate::table_resize::tests::{H, button, cell, screen, steps, table_window, table_window_stepping};
 
     fn click(h: &mut H, at: Pos2) {
         h.event(egui::Event::PointerMoved(at));
@@ -281,8 +287,8 @@ mod tests {
         assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (0, 2))));
     }
 
-    /// The "+" left of a row border adds a row there, in one undo step; over it the pointer is
-    /// the plain arrow.
+    /// The "+" left of a row border adds a row there and selects it, in one undo step; over it
+    /// the pointer is the plain arrow.
     #[test]
     fn the_plus_button_adds_a_row() {
         let mut h = table_window();
@@ -295,7 +301,28 @@ mod tests {
         click(&mut h, at);
         let rows = h.state().session.doc.body.iter().find_map(|b| b.as_table()).map(|t| t.rows.len());
         assert_eq!(rows, Some(3));
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((1, 1), (0, 2))), "the new row is selected");
         assert_eq!(h.state().session.undo_depth(), depth + 1);
+    }
+
+    /// A double-click along a cell's left edge selects its row, as in Word.
+    #[test]
+    fn a_double_click_by_a_cells_edge_selects_its_row() {
+        let mut h = table_window_stepping(1.0 / 60.0);
+        let c = cell(&mut h, 1, 1);
+        let at = screen(&mut h, c.x + 4.5, c.y + c.h / 2.0);
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        button(&h, at, true);
+        h.step();
+        button(&h, at, false);
+        h.step();
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((1, 1), (1, 1))), "a click selects the cell");
+        button(&h, at, true);
+        h.step();
+        button(&h, at, false);
+        steps(&mut h, 2);
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((1, 1), (0, 2))), "a double-click its row");
     }
 
     /// Dragging the move handle: the move arrows over it, nothing changes while dragging, then
