@@ -71,3 +71,6 @@ sync_github_name = false
 sync_github_name = true
 
 [people.odedigo]
+
+[people.ms-youssef]
+sync_github_name = true
