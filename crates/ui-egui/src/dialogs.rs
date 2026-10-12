@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use wordcraft_engine::Password;
 
 use crate::WordApp;
+use crate::options::MeasureExt;
 use crate::theme::{Tokens, semibold};
 
 /// The Find and Replace dialog's search options beyond the first row (#543).
@@ -319,6 +320,9 @@ pub enum Dialog {
         choice: usize,
         #[serde(skip)]
         payload: Value,
+        /// Shown when nothing can be pasted: what the clipboard holds, or that it is empty (#833).
+        #[serde(skip)]
+        note: String,
     },
     /// Tabs: 0 About, 1 Contributors, 2 Models.
     About {
@@ -1167,12 +1171,13 @@ impl Dialog {
     pub fn paste_special(app: &WordApp, payload: &Value) -> Dialog {
         let formats: Vec<String> = wordcraft_engine::cmd::paste::available(&app.session, payload).into_iter().map(str::to_string).collect();
         let mut kept = json!({});
-        for k in ["text", "html", "rtf"] {
+        for k in ["text", "html", "rtf", "picture"] {
             if let Some(t) = payload.get(k).and_then(Value::as_str) {
                 kept[k] = json!(t);
             }
         }
-        Dialog::PasteSpecial { formats, choice: 0, payload: kept }
+        let note = if formats.is_empty() { crate::system_clipboard::nothing_to_paste(app) } else { String::new() };
+        Dialog::PasteSpecial { formats, choice: 0, payload: kept, note }
     }
 
     pub fn modify_style(app: &WordApp, id: &str) -> Option<Dialog> {
@@ -1245,35 +1250,41 @@ pub fn table_grid_picker(ui: &mut Ui, app: &mut WordApp) {
     }
 }
 
-/// Where the open dialog's top edge sits, as (window id, offset below the top of the screen).
+/// The open dialog, as (window id, frames it has been centred for).
 fn dialog_top_key() -> egui::Id {
     egui::Id::new("dialog_top")
 }
 
-/// Anchors a dialog: centred on the frame it opens, then with its top edge held where that put
-/// it, so a taller or shorter tab (Paragraph, Font, Borders and Shading…) only moves the bottom
-/// edge and the tab strip stays under the mouse (#507). egui keeps it on screen if it grows past
-/// the bottom.
+/// Frames a dialog stays centred: the first one measures it, the second centres that size.
+const DIALOG_CENTRED_FRAMES: u8 = 2;
+
+/// Places a dialog: centred for its first frames, then left where it is with its top-centre point
+/// as the pivot, so a taller or shorter tab (Paragraph, Font, Borders and Shading…) only moves
+/// the bottom edge and the tab strip stays under the mouse (#507). It is no longer anchored after
+/// that, so dragging the title bar moves it (#732). egui keeps it on screen if it grows past the
+/// bottom.
 fn place_dialog<'a>(ctx: &egui::Context, id: egui::Id, w: egui::Window<'a>) -> egui::Window<'a> {
-    match ctx.data(|d| d.get_temp::<(egui::Id, f32)>(dialog_top_key())) {
-        Some((open, top)) if open == id => w.anchor(egui::Align2::CENTER_TOP, vec2(0.0, top)),
+    let w = w.pivot(egui::Align2::CENTER_TOP);
+    match ctx.data(|d| d.get_temp::<(egui::Id, u8)>(dialog_top_key())) {
+        Some((open, frames)) if open == id && frames >= DIALOG_CENTRED_FRAMES => w,
         _ => w.anchor(egui::Align2::CENTER_CENTER, vec2(0.0, -40.0)),
     }
 }
 
-/// After a dialog's first frame: holds its top edge where centring its measured size put it.
-fn remember_dialog_top(ctx: &egui::Context, id: egui::Id, rect: egui::Rect) {
-    if ctx.data(|d| d.get_temp::<(egui::Id, f32)>(dialog_top_key())).is_some_and(|(open, _)| open == id) {
-        return;
+/// After a frame of a dialog: counts the frames it has been centred for.
+fn count_dialog_frame(ctx: &egui::Context, id: egui::Id) {
+    let frames = match ctx.data(|d| d.get_temp::<(egui::Id, u8)>(dialog_top_key())) {
+        Some((open, frames)) if open == id => frames,
+        _ => 0,
+    };
+    if frames < DIALOG_CENTRED_FRAMES {
+        ctx.data_mut(|d| d.insert_temp(dialog_top_key(), (id, frames + 1)));
     }
-    let screen = ctx.content_rect();
-    let top = (screen.center().y - 40.0 - rect.height() / 2.0 - screen.top()).max(0.0);
-    ctx.data_mut(|d| d.insert_temp(dialog_top_key(), (id, top)));
 }
 
 pub fn show(app: &mut WordApp, ctx: &egui::Context) {
     let Some(mut d) = app.dialog.take() else {
-        ctx.data_mut(|d| d.remove::<(egui::Id, f32)>(dialog_top_key()));
+        ctx.data_mut(|d| d.remove::<(egui::Id, u8)>(dialog_top_key()));
         return;
     };
     let mut open = true;
@@ -1336,8 +1347,8 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         ui.set_min_width(340.0);
         close = body(app, ui, &mut d);
     });
-    if let Some(r) = shown {
-        remember_dialog_top(ctx, id, r.response.rect);
+    if shown.is_some() {
+        count_dialog_frame(ctx, id);
     }
     if open && !close {
         app.dialog = Some(d);
@@ -1356,7 +1367,7 @@ pub(crate) fn buttons(ui: &mut Ui, ok: &str) -> (bool, bool) {
             if ui.button(tl!("Cancel")).clicked() || (keys && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
                 r.1 = true;
             }
-            let okb = ui.add(egui::Button::new(egui::RichText::new(ok).color(egui::Color32::WHITE)).fill(crate::theme::APP_COLOR));
+            let okb = ui.add(crate::widgets::primary_button(ui, ok));
             if okb.clicked() || (keys && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                 r.0 = true;
             }
@@ -1568,14 +1579,14 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         ui.add(
                             egui::DragValue::new(left)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.label(tl!(r_label));
                         ui.add(
                             egui::DragValue::new(right)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.end_row();
@@ -1583,7 +1594,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         ui.add(
                             egui::DragValue::new(first)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.end_row();
@@ -1837,34 +1848,16 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.label(egui::RichText::new(tl!("Margins")).font(semibold(12.5)));
             egui::Grid::new("ps").num_columns(4).show(ui, |ui| {
                 ui.label(tl!("Top:"));
-                ui.add(
-                    egui::DragValue::new(top)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(top).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.label(tl!("Bottom:"));
                 ui.add(
-                    egui::DragValue::new(bottom)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
+                    egui::DragValue::new(bottom).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2),
                 );
                 ui.end_row();
                 ui.label(tl!("Left:"));
-                ui.add(
-                    egui::DragValue::new(left)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(left).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.label(tl!("Right:"));
-                ui.add(
-                    egui::DragValue::new(right)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(right).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.end_row();
             });
             ui.label(egui::RichText::new(tl!("Orientation")).font(semibold(12.5)));
@@ -2250,10 +2243,17 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             close || ui.input(|i| i.key_pressed(egui::Key::Escape))
         }
         Dialog::Icons { query, category, selected } => icons_body(app, ui, query, category, selected),
-        Dialog::PasteSpecial { formats, choice, payload } => {
+        Dialog::PasteSpecial { formats, choice, payload, note } => {
             ui.label(egui::RichText::new(tl!("Paste as:")).font(semibold(12.5)));
             if formats.is_empty() {
-                ui.label(egui::RichText::new(tl!("The clipboard is empty.")).weak());
+                // The engine's wording, sentence-cased; the format names in it aren't translated.
+                let text = if note.is_empty() || note == "the clipboard is empty" {
+                    tl!("The clipboard is empty.").to_string()
+                } else {
+                    let mut c = note.chars();
+                    c.next().map(|f| f.to_uppercase().chain(c).collect::<String>() + ".").unwrap_or_default()
+                };
+                ui.label(egui::RichText::new(text).weak());
             }
             for (i, f) in formats.iter().enumerate() {
                 let label = wordcraft_engine::cmd::paste::FORMATS.iter().find(|(id, _)| id == f).map(|(_, l)| *l).unwrap_or(f.as_str());
@@ -2266,6 +2266,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     "formatted" => "Keeps the fonts and formatting of the copied text.",
                     "rtf" => "Reads the clipboard's rich text and keeps its formatting.",
                     "html" => "Reads the clipboard's web content and keeps its formatting.",
+                    "picture" => "Pastes the clipboard's picture.",
                     _ => "Drops all formatting and pastes plain text.",
                 };
                 ui.label(egui::RichText::new(tl!(hint)).weak());
@@ -2322,7 +2323,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let cancel = ui.button(tl!("Cancel"));
                     let dont_save = ui.button(tl!("Don't Save"));
-                    let save = ui.add(egui::Button::new(egui::RichText::new(tl!("Save")).color(egui::Color32::WHITE)).fill(crate::theme::APP_COLOR));
+                    let save = ui.add(crate::widgets::primary_button(ui, tl!("Save")));
                     [(cancel, "cancel"), (dont_save, "dontSave"), (save, "save")]
                 })
                 .inner
@@ -2708,7 +2709,7 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
 fn table_properties(ui: &mut Ui, f: &mut TableForm) {
     let unit = crate::options::unit();
     fn len(v: &mut f32, lo: f32, unit: wordcraft_geom::Unit) -> egui::DragValue<'_> {
-        egui::DragValue::new(v).speed(0.01).range(lo..=22.0).suffix(unit.suffix()).max_decimals(2)
+        egui::DragValue::new(v).speed(0.01).range(lo..=22.0).measure(unit).max_decimals(2)
     }
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
@@ -2727,7 +2728,7 @@ fn table_properties(ui: &mut Ui, f: &mut TableForm) {
         });
         ui.end_row();
         ui.label(tl!("Indent from left:"));
-        ui.add_enabled(f.align == "left", egui::DragValue::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).suffix(unit.suffix()).max_decimals(2));
+        ui.add_enabled(f.align == "left", egui::DragValue::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).measure(unit).max_decimals(2));
         ui.end_row();
         ui.label(tl!("Table direction:"));
         ui.horizontal(|ui| {
@@ -2940,7 +2941,7 @@ fn close_button(ui: &mut Ui) -> bool {
     ui.add_space(8.0);
     let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        close |= ui.add(egui::Button::new(egui::RichText::new(tl!("Close")).color(egui::Color32::WHITE)).fill(crate::theme::APP_COLOR)).clicked();
+        close |= ui.add(crate::widgets::primary_button(ui, tl!("Close"))).clicked();
     });
     close
 }
@@ -3420,5 +3421,44 @@ mod tests {
         apply_font(&mut app, &d);
         let c = app.session.doc.para_at(&wordcraft_doc::Pos::body(0, 0)).map(|p| p.props_of_char(0).clone()).unwrap_or_default();
         assert_eq!((c.small_caps, c.caps, c.size), (Some(false), Some(true), Some(14.0)));
+    }
+
+    /// A dialog was pinned by its anchor, so dragging its title bar did nothing (#732).
+    #[test]
+    fn dragging_a_dialog_title_bar_moves_it() {
+        let mut app = app_with("Some text");
+        app.dialog = Dialog::open("paragraph", &mut app);
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        for _ in 0..4 {
+            h.step();
+        }
+        let id = egui::Id::new(("dialog", "Paragraph"));
+        let before = h.ctx.memory(|m| m.area_rect(id)).expect("dialog is open");
+        let screen = h.ctx.content_rect();
+        assert!((before.center().x - screen.center().x).abs() <= 1.0, "opens centred: {before:?} in {screen:?}");
+        let grab = egui::pos2(before.center().x, before.top() + 10.0);
+        let drop = grab + vec2(-200.0, 120.0);
+        let button =
+            |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        h.event(egui::Event::PointerMoved(grab));
+        h.step();
+        h.event(button(grab, true));
+        h.step();
+        h.event(egui::Event::PointerMoved(drop));
+        h.step();
+        h.event(button(drop, false));
+        for _ in 0..4 {
+            h.step();
+        }
+        let after = h.ctx.memory(|m| m.area_rect(id)).expect("dialog is still open");
+        assert!((after.min.x - (before.min.x - 200.0)).abs() <= 1.0, "moved left: {before:?} -> {after:?}");
+        assert!((after.min.y - (before.min.y + 120.0)).abs() <= 1.0, "moved down: {before:?} -> {after:?}");
     }
 }
