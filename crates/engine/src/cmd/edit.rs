@@ -14,12 +14,18 @@ fn has_sel(s: &Session) -> Option<&'static str> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("edit.undo", "Undo", "Quick Access Toolbar", |s, _| {
+            if s.step_lifts_protection(false) {
+                return Err(CmdError::Disabled("edit.undo: use Stop Protection to lift the document's protection".into()));
+            }
             s.undo();
             sel_result(s)
         })
         .key("Mod+Z")
         .pure(),
         CommandSpec::new("edit.redo", "Redo", "Quick Access Toolbar", |s, _| {
+            if s.step_lifts_protection(true) {
+                return Err(CmdError::Disabled("edit.redo: use Stop Protection to lift the document's protection".into()));
+            }
             s.redo();
             sel_result(s)
         })
@@ -113,6 +119,7 @@ fn cut(s: &mut Session, v: &Value) -> CmdResult {
     if !super::moves::cut_tracked(s)? {
         delete_selection(s)?;
     }
+    super::controls::restore_placeholder(s)?;
     Ok(r)
 }
 
@@ -267,7 +274,7 @@ fn paste_text(s: &mut Session, v: &Value) -> CmdResult {
         Some(t) => t.to_string(),
         None => s.clipboard.as_ref().map(Fragment::plain_text).unwrap_or_default(),
     };
-    super::type_text(s, &text.replace("\r\n", "\r").replace('\n', "\r"))?;
+    super::paste_text(s, &text.replace("\r\n", "\r").replace('\n', "\r"))?;
     sel_result(s)
 }
 
@@ -543,7 +550,7 @@ fn replace(s: &mut Session, v: &Value) -> CmdResult {
     let (a, b) = s.sel.ordered();
     // Replace the current match if selected, then move to the next.
     if let Some(f) = results.into_iter().find(|f| f.a == a && f.b == b) {
-        super::type_text(s, &f.rep.unwrap_or_default())?;
+        super::paste_text(s, &f.rep.unwrap_or_default())?;
     }
     let _ = step(s, 1);
     Ok(json!({"remaining": search(s, story)?.len()}))
@@ -561,7 +568,7 @@ fn replace_all(s: &mut Session, v: &Value) -> CmdResult {
         if s.doc.settings.track_changes {
             // Same path as a single replace, so the change is a reviewable revision.
             s.sel = Selection { anchor: a, focus: b };
-            super::type_text(s, &with)?;
+            super::paste_text(s, &with)?;
             continue;
         }
         let props = s.doc.para_at(&a).map(|p| p.props_of_char(a.off).clone()).unwrap_or_default();
