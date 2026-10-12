@@ -123,7 +123,7 @@ refused, so check the spelling. Lengths are points; `[r, g, b]` is a colour as t
 | `bold`, `italic`, `strike`, `doubleStrike`, `caps`, `smallCaps`, `hidden`, `outline`, `shadow`, `emboss`, `engrave`, `noProof` | bool | |
 | `underline` | string | `none`, `single`, `words`, `double`, `thick`, `dotted`, `dash`, `dotDash`, `dotDotDash`, `wave`, `doubleWave` |
 | `underlineColor` | `[r, g, b]` | |
-| `color` | `"Auto"` or `{"Rgb": [r, g, b]}` | `Auto` is black on light backgrounds, white on dark |
+| `color` | `"Auto"`, a hex string `"RRGGBB"` or `"#RRGGBB"`, or `{"Rgb": [r, g, b]}` | `Auto` (also `"auto"`) is black on light backgrounds, white on dark; read back as `"Auto"` or `{"Rgb": …}` (#865) |
 | `highlight` | string | `none`, `yellow`, `brightGreen`, `turquoise`, `pink`, `blue`, `red`, `darkBlue`, `teal`, `green`, `violet`, `darkRed`, `darkYellow`, `gray50`, `gray25`, `black`, `white` |
 | `shading` | `[r, g, b]` | background fill |
 | `border` | Border | character border; `"style": "none"` is explicitly no border |
