@@ -72,7 +72,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-12 | minor | #880: .doc huge-PAPX properties, 0x0C section marks, TOC field results, per-row table grids and EMF text labels read, verified end-to-end against a 285-page 3GPP TS; still open in #14: table cells spanning union-grid columns wrap mid-value (change-history TDocs), body pagination runs ~15% longer than the reference render, and the writer and Word 6/95 support remain |
+| 2026-10-12 | minor | #880: .doc huge-PAPX properties, 0x0C section marks, TOC field results, per-row table grids and EMF text labels read, cells span their union-grid columns, fixed table layout, per-table cell margins, verified end-to-end against a 285-page 3GPP TS; still open in #14: body pagination runs ~15% longer than the reference render, and the writer and Word 6/95 support remain |
 | 2026-10-12 | trivial | Custom dictionary persists across sessions (`custom-dictionary.txt` in the settings folder; #40) |
 | 2026-10-11 | trivial | #8 narrowed: runs in a proofing language without a dictionary are skipped instead of flagged against the English dictionary (#100); dictionaries still English-only |
 | 2026-10-11 | trivial | #16: DOCX open/save preserves independent complex-script formatting inheritance; RTL sections, tables and typography remain open |
