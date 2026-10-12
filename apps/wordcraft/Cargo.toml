@@ -51,8 +51,9 @@ zbus = { version = "5", default-features = false, features = ["async-io", "block
 # The system's Animation effects setting (Settings › Accessibility › Visual effects), read through
 # the Windows Runtime's UISettings: a safe API, where the Win32 call needs unsafe, which our
 # workspace forbids. Already in the build through wgpu and AccessKit, at this version; this adds
-# only the `UI_ViewManagement` bindings.
-windows = { version = "0.62", features = ["UI_ViewManagement"] }
+# only the `UI_ViewManagement` bindings, and `System_UserProfile` for the home region new
+# documents take their paper and units from (#838).
+windows = { version = "0.62", features = ["UI_ViewManagement", "System_UserProfile"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rfd = { workspace = true }

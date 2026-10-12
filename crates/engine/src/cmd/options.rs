@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.options", "Options", "File", options)
             .params(
-                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "units"?: "inches|centimeters|millimeters|points|picas", "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
+                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL: the paper File › New starts on, the default units and the decimal separator), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
             )
             .pure(),
         CommandSpec::new("text.overtype", "Overtype", "File › Options › Advanced", |s, v| {
@@ -95,10 +95,17 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
     };
     let units = match v.get("units") {
         None | Some(Value::Null) => None,
-        Some(u) => Some(
+        // `auto` forgets the choice: lengths follow the region again (#838).
+        Some(Value::String(a)) if a == "auto" => Some(None),
+        Some(u) => Some(Some(
             serde_json::from_value::<wordcraft_geom::Unit>(u.clone())
-                .map_err(|_| CmdError::Params("`units` is one of inches, centimeters, millimeters, points, picas".into()))?,
-        ),
+                .map_err(|_| CmdError::Params("`units` is one of inches, centimeters, millimeters, points, picas, auto".into()))?,
+        )),
+    };
+    let region = match v.get("region") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(t)) => Some(wordcraft_geom::Region::from_tag(t)),
+        Some(_) => return Err(CmdError::Params("`region` must be a locale tag like pl-PL".into())),
     };
     let mut flag_values = Vec::new();
     for (k, f) in flags() {
@@ -125,6 +132,7 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
     let setting = author.is_some()
         || initials.is_some()
         || units.is_some()
+        || region.is_some()
         || !flag_values.is_empty()
         || !mark_values.is_empty()
         || check_spelling.is_some()
@@ -138,6 +146,9 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
     }
     if let Some(u) = units {
         s.prefs.units = u;
+    }
+    if let Some(r) = region {
+        s.region = r;
     }
     for (f, b) in flag_values {
         *f(&mut s.prefs) = b;
@@ -173,7 +184,9 @@ pub fn current(s: &Session) -> Value {
     json!({
         "author": s.author,
         "initials": s.user_initials(),
-        "units": pr.units,
+        "units": s.units(),
+        "unitsFromRegion": pr.units.is_none(),
+        "region": {"language": s.region.language, "territory": s.region.territory, "paper": s.region.paper().0, "decimal": s.region.decimal().to_string()},
         "typingReplacesSelection": pr.typing_replaces_selection,
         "insertKeyOvertype": pr.insert_key_overtype,
         "overtype": pr.overtype,

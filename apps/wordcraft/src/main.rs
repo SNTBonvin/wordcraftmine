@@ -19,6 +19,7 @@ mod file_dialogs;
 mod graphics;
 mod logging;
 mod print;
+mod region;
 
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{
@@ -287,9 +288,14 @@ fn main() -> eframe::Result {
         "WordCraft",
         options,
         Box::new(move |cc| {
-            let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_doc::Document::new() };
+            // The system region picks the new document's paper, the units and the decimal
+            // separator (#838).
+            let region = region::system();
+            let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_engine::blank_document(&region) };
             let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
-            let mut app = WordApp::new(Session::new(doc), services(file_dialog, &cc.egui_ctx));
+            let mut session = Session::new(doc);
+            session.region = region;
+            let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
             app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;

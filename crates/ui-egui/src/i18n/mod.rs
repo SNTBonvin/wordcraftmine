@@ -269,6 +269,32 @@ fn detect_system_lang() -> Lang {
     first_supported(tags.iter().map(String::as_str)).unwrap_or(Lang::EN)
 }
 
+/// The system region (#838): it picks the paper File › New starts on, the default measurement
+/// unit and the decimal separator, independently of the interface language (an English
+/// interface in Germany still gets A4 and centimetres). `en-US` in tests.
+pub fn system_region() -> wordcraft_engine::Region {
+    if cfg!(test) {
+        return wordcraft_engine::Region::default();
+    }
+    wordcraft_engine::Region::from_tag(&system_region_tag())
+}
+
+/// The locale tag the region comes from: `WORDCRAFT_REGION`, then on Unix the paper,
+/// measurement and number locales (`LC_ALL`, `LC_PAPER`, `LC_MEASUREMENT`, `LC_NUMERIC`,
+/// `LANG`), then the platform's first preferred locale (on macOS it carries the region, as in
+/// `en-PL`; on the web it is the browser's language).
+fn system_region_tag() -> String {
+    for var in ["WORDCRAFT_REGION", "LC_ALL", "LC_PAPER", "LC_MEASUREMENT", "LC_NUMERIC", "LANG"] {
+        if let Ok(v) = std::env::var(var) {
+            let v = v.trim();
+            if !v.is_empty() && !v.eq_ignore_ascii_case("c") && !v.eq_ignore_ascii_case("posix") && !v.starts_with("C.") {
+                return v.to_string();
+            }
+        }
+    }
+    sys_locale::get_locale().unwrap_or_default()
+}
+
 thread_local! {
     // Per thread: parallel test harnesses must not change each other's language.
     static CURRENT: Cell<Lang> = const { Cell::new(Lang::EN) };

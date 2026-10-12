@@ -20,16 +20,52 @@ thread_local! {
     // The unit dialogs and the ribbon show lengths in: File › Options › Advanced, copied from the
     // session each frame so dialog code without the app can read it.
     static UNIT: Cell<Unit> = const { Cell::new(Unit::Inches) };
+    // The region's decimal separator (#838).
+    static DECIMAL: Cell<char> = const { Cell::new('.') };
 }
 
-/// The unit lengths are shown in (File › Options › Advanced › Measurement units).
+/// The unit lengths are shown in (File › Options › Advanced › Measurement units, else the
+/// region's).
 pub fn unit() -> Unit {
     UNIT.get()
 }
 
+/// The decimal separator lengths are written with (the region's: `,` in Poland).
+pub fn decimal() -> char {
+    DECIMAL.get()
+}
+
+/// `pt` in [`unit`], written the region's way (`2,54 cm`).
+pub fn length(pt: f32) -> String {
+    unit().format_with(pt, decimal())
+}
+
 /// Copy the session's settings the UI reads without the app.
 pub(crate) fn sync(app: &WordApp) {
-    UNIT.set(app.session.prefs.units);
+    UNIT.set(app.session.units());
+    DECIMAL.set(app.session.region.decimal());
+}
+
+/// A length field: the unit's suffix, and numbers written and read with the region's decimal
+/// separator (`2,54 cm`). Typing either separator works, and so does another unit (`1 in` in a
+/// centimetre field).
+pub trait MeasureExt {
+    fn measure(self, unit: Unit) -> Self;
+}
+
+impl MeasureExt for egui::DragValue<'_> {
+    fn measure(self, unit: Unit) -> Self {
+        let sep = decimal();
+        self.suffix(unit.suffix())
+            .custom_formatter(move |n, decimals| {
+                let s = egui::emath::format_with_decimals_in_range(n, decimals);
+                if sep == '.' { s } else { s.replace('.', &sep.to_string()) }
+            })
+            .custom_parser(move |text| {
+                let text: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+                wordcraft_geom::parse_measure(&text, unit).map(|pt| f64::from(pt / unit.pt_per_unit()))
+            })
+    }
 }
 
 /// The units offered, with their names.
@@ -309,10 +345,12 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         }
         ui.end_row();
         ui.label(tl!("Measurement units:"));
-        let name = UNITS.iter().find(|(u, _)| *u == pr.units).map_or("Inches", |(_, n)| n);
+        // The user's choice, else the region's (#838).
+        let units = app.session.units();
+        let name = UNITS.iter().find(|(u, _)| *u == units).map_or("Inches", |(_, n)| n);
         egui::ComboBox::from_id_salt("options_units").selected_text(tl!(name)).width(160.0).show_ui(ui, |ui| {
             for (u, label) in UNITS {
-                if ui.selectable_label(pr.units == u, tl!(label)).clicked() {
+                if ui.selectable_label(units == u, tl!(label)).clicked() {
                     set(app, json!({"units": u}));
                 }
             }
@@ -510,6 +548,8 @@ mod tests {
     use serde_json::json;
     use wordcraft_geom::Unit;
 
+    use super::{decimal, length, unit};
+
     use crate::theme::Appearance;
     use crate::{Services, UiState, WordApp};
 
@@ -533,18 +573,18 @@ mod tests {
         let mut b = app();
         b.apply_prefs(UiState::from_json(&saved).unwrap());
         assert_eq!(b.session.prefs, a.session.prefs);
-        assert_eq!(b.session.prefs.units, Unit::Centimeters);
+        assert_eq!(b.session.prefs.units, Some(Unit::Centimeters));
         assert_eq!(b.session.initials, "VK");
         assert_eq!((b.ui.recent_count, b.ui.print_backgrounds), (30, true));
         assert!(wordcraft_engine::proof::user_dictionary().contains(&"zqxoptionsword".to_string()));
 
         let junk = br#"{"theme": "dark", "recentCount": "lots", "printBackgrounds": 7, "optionsPane": ["x"], "dark": true,
-            "editing": {"units": "furlongs", "typingReplacesSelection": false, "marks": {"tabs": "yes", "spaces": true}}}"#;
+            "editing": {"measurementUnits": "furlongs", "typingReplacesSelection": false, "marks": {"tabs": "yes", "spaces": true}}}"#;
         let ui = UiState::from_json(junk).unwrap();
         assert_eq!(ui.theme, Appearance::Dark);
         assert_eq!((ui.recent_count, ui.print_backgrounds, ui.options_pane.as_str()), (12, false, "general"));
         assert_eq!(ui.legacy_dark, Some(true));
-        assert_eq!(ui.editing.units, Unit::Inches);
+        assert_eq!(ui.editing.units, None);
         assert!(!ui.editing.typing_replaces_selection);
         assert!(ui.editing.marks.spaces && !ui.editing.marks.tabs);
         assert!(UiState::from_json(b"[1, 2]").is_none() && UiState::from_json(b"not json").is_none());
@@ -638,5 +678,38 @@ mod tests {
         h.state_mut().run("ui.language", json!({"value": "es"})).unwrap();
         h.run_steps(4);
         assert!(h.query_by_label("Animación").is_some() && h.query_by_label("Animation").is_none());
+    }
+
+    /// #838: in a Polish region the Page Setup margins read `2,54 cm` (the region's unit and
+    /// decimal comma), a typed `3,5` or `1 in` is understood, and the Options page shows the
+    /// region's unit until the user picks another.
+    #[test]
+    fn length_fields_follow_the_region() {
+        let mut a = app();
+        a.run("file.options", json!({"region": "pl-PL"})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        assert_eq!(wordcraft_geom::paper_name(a.session.doc.last_section.page_w, a.session.doc.last_section.page_h), Some("A4"));
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(2);
+        // The dialog reads the unit when it opens, after a frame has picked up the region.
+        h.state_mut().run("ui.dialog", json!({"name": "pageSetup"})).unwrap();
+        h.run_steps(4);
+        assert_eq!((unit(), decimal()), (Unit::Centimeters, ','));
+        assert_eq!(length(72.0), "2,54 cm");
+        assert_eq!(h.query_all_by_value("2,54 cm").count(), 4, "four margins in centimetres with a decimal comma");
+
+        h.state_mut().run("file.options", json!({"units": "inches"})).unwrap();
+        h.run_steps(4);
+        assert_eq!(length(108.0), "1,5\"", "the user's unit, still the region's decimal comma");
+        h.state_mut().run("file.options", json!({"units": "auto", "region": "en-US"})).unwrap();
+        h.run_steps(4);
+        assert_eq!(length(72.0), "1\"");
     }
 }

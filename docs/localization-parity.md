@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (new documents follow the system region: A4 or Letter, centimetres or inches, the region's decimal separator, #838; previously minor: Polish interface; previously minor: font list shows fonts by their names in the interface language, #505; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -88,6 +88,21 @@ the others plus 51 strings that are wrapped in `tl!` but were in no catalog yet 
 properties, the File › Home greeting, list levels, Equation tab gallery and tooltips). Ribbon tabs,
 groups and command names use the names Italian Word users know (feature names, as `AGENTS.md`
 allows); all other text is written from the meaning of the English. No Italian proofing yet.
+
+## Region conventions (#838)
+
+As in Word, a new blank document takes its paper from the system **region**, not the interface
+language: US Letter in the territories CLDR lists for it (US, Canada, Mexico, the Philippines,
+Chile, Colombia, Venezuela and a few Central American ones), A4 everywhere else. Lengths are shown
+in inches in the US (and Liberia, Myanmar) and centimetres elsewhere, written with the region's
+decimal separator (`2,54 cm` in Poland, Germany, France…); fields take either separator and any
+unit (`1 in` in a centimetre field). An explicit File › Options › Advanced › Measurement units
+choice still wins. The region comes from `WORDCRAFT_REGION`, the Unix `LC_PAPER`/`LC_MEASUREMENT`/
+`LC_NUMERIC` locales, the Windows home location, the macOS preferred locale or the browser's
+language; agents set it with `file.options {"region": "pl-PL"}`. Templates (Letter, Resume, Report)
+keep their own size. Not yet: Word's "Default paper size" preference of its own, and Word's
+locale-specific Normal margins (2,5 cm in some regions; WordCraft keeps 2,54 cm).
+
 ## Shared work (not in the per-language hours)
 
 | Item | Hours | Notes |
@@ -102,6 +117,7 @@ allows); all other text is written from the meaning of the English. No Italian p
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |
 | 2026-10-11 | minor | Czech (`cs`) interface catalog added |
 | 2026-10-11 | minor | Polish interface (13 languages) and Polish proofing: SJP.PL spelling with suggestions, Polish grammar rules, TeX Polish hyphenation; proofing language per run; dimension ~25% → ~27% |
 | 2026-10-11 | minor | German interface catalog (#574): 2,021 entries covering the full zh-hans key set; locale, saved-preference and bundled-font tests; no German proofing |
