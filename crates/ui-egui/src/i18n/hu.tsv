@@ -2457,3 +2457,7 @@
 	Automatic ({region})	Automatikus ({region})
 	Picture	Kép
 	Pastes the clipboard's picture.	Beilleszti a vágólapon lévő képet.
+	Minimize	Kis méret
+	Maximize	Teljes méret
+	Restore	Előző méret
+	Use the system title bar (after restarting WordCraft)	A rendszer címsorának használata (a WordCraft újraindítása után)

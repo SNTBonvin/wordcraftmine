@@ -122,7 +122,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
     let mac = app.integrated_titlebar;
     let left = if mac { MAC_CONTENT_LEFT as i8 } else { 8 };
     let control_h = if mac { 22.0 } else { 26.0 };
-    egui::Panel::top("title_bar")
+    let bar = egui::Panel::top("title_bar")
         .exact_size(if mac { MAC_TITLE_BAR } else { 38.0 })
         .frame(egui::Frame::NONE.fill(t.title_bar).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 0 }))
         .show(ui, |ui| {
@@ -174,6 +174,11 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                 quick_access(ui, app);
                 qat_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Room for the caption buttons, which sit flush with the window's edge, past
+                    // the bar's right margin (#523).
+                    if app.custom_titlebar {
+                        ui.add_space(crate::titlebar::WIDTH - 10.0 + 8.0);
+                    }
                     // Account / community.
                     let (r, resp) = ui.allocate_exact_size(vec2(control_h, control_h), Sense::click());
                     ui.painter().circle_filled(r.center(), control_h / 2.0 - 1.0, t.accent);
@@ -253,6 +258,10 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                 );
             }
         });
+    // After the bar's contents, so the buttons take clicks over its drag area.
+    if app.custom_titlebar {
+        crate::titlebar::caption_buttons(ui, bar.response.rect);
+    }
 }
 
 pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {

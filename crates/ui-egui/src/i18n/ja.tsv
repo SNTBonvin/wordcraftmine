@@ -2059,3 +2059,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。
 	Region:	地域:
 	Automatic ({region})	自動 ({region})
+	Minimize	最小化
+	Maximize	最大化
+	Restore	元に戻す (縮小)
+	Use the system title bar (after restarting WordCraft)	システムのタイトル バーを使う (WordCraft の再起動後)

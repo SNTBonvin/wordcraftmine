@@ -2073,3 +2073,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Систем не пријављује подешавање анимације, па ефекти анимације остају укључени.
 	Region:	Регион:
 	Automatic ({region})	Аутоматски ({region})
+	Minimize	Умањи
+	Maximize	Увећај
+	Restore	Врати
+	Use the system title bar (after restarting WordCraft)	Користи системску траку наслова (након поновног покретања WordCraft-а)

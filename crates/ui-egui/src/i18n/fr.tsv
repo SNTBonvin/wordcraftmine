@@ -2067,3 +2067,7 @@
 	Automatic ({region})	Automatique ({region})
 	Picture	Image
 	Pastes the clipboard's picture.	Colle l'image du Presse-papiers.
+	Minimize	Réduire
+	Maximize	Agrandir
+	Restore	Niveau inférieur
+	Use the system title bar (after restarting WordCraft)	Utiliser la barre de titre du système (après le redémarrage de WordCraft)

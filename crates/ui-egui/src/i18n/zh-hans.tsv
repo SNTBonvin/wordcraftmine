@@ -2071,3 +2071,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	系统未提供动画设置，因此动画效果保持打开。
 	Region:	区域：
 	Automatic ({region})	自动（{region}）
+	Minimize	最小化
+	Maximize	最大化
+	Restore	向下还原
+	Use the system title bar (after restarting WordCraft)	使用系统标题栏 (重新启动 WordCraft 后生效)

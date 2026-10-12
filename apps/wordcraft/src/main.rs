@@ -21,6 +21,7 @@ mod graphics;
 mod logging;
 mod print;
 mod region;
+mod window_frame;
 
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{
@@ -30,19 +31,21 @@ use wordcraft_ui_egui::{
 
 /// The app, the restored window geometry until the first frame has checked it, the control
 /// server's key file (removed on exit), the file dialogs the app asked for and, on macOS, the
-/// documents opened from Finder.
+/// documents opened from Finder. The last field keeps the custom title bar's window borderless
+/// on Windows (`window_frame`).
 struct App(
     WordApp,
     Option<WindowGeometry>,
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
+    Option<window_frame::WindowFrameFn>,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
 );
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        apple_events::poll(&self.4, &mut self.0, ctx);
+        apple_events::poll(&self.5, &mut self.0, ctx);
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -71,6 +74,11 @@ impl eframe::App for App {
         }
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // Before the frame is laid out: winit puts the caption styles back on every window state
+        // change (maximize, restore…).
+        if let Some(keep_borderless) = self.4.as_mut() {
+            keep_borderless();
+        }
         self.0.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -178,6 +186,17 @@ fn saved_window() -> Option<WindowGeometry> {
     UiState::from_json(&bytes)?.window?.sanitized()
 }
 
+/// Windows draws WordCraft's own title bar, with caption buttons, unless File › Options asks for
+/// the system's (#523). macOS has its integrated title bar; Linux keeps the system's for now
+/// (#282). Read from `ui.json` before the window opens; an unreadable file keeps the default.
+fn custom_titlebar() -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    let saved = if prefs_enabled() { prefs_path().and_then(|p| std::fs::read(p).ok()).and_then(|b| UiState::from_json(&b)) } else { None };
+    !saved.is_some_and(|ui| ui.system_title_bar)
+}
+
 fn save_prefs(app: &WordApp) {
     if !prefs_enabled() {
         return;
@@ -258,6 +277,7 @@ fn main() -> eframe::Result {
             None => logger.no_file(),
         }
     }
+    let custom_titlebar = custom_titlebar();
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("WordCraft")
@@ -265,6 +285,7 @@ fn main() -> eframe::Result {
             .with_inner_size([1440.0, 920.0])
             .with_min_inner_size([760.0, 480.0])
             .with_drag_and_drop(true)
+            .with_decorations(!custom_titlebar)
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false),
@@ -322,6 +343,8 @@ fn main() -> eframe::Result {
             app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;
             app.integrated_titlebar = cfg!(target_os = "macos");
+            app.custom_titlebar = custom_titlebar;
+            let keep_borderless = window_frame::service(cc, custom_titlebar);
             let mut key_file = None;
             if let Some(port) = control_port
                 && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
@@ -339,6 +362,7 @@ fn main() -> eframe::Result {
                 restored,
                 key_file,
                 dialogs,
+                keep_borderless,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
             )))

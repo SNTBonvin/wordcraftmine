@@ -2450,3 +2450,7 @@ preview	Title	Örnek
 	Your system doesn't report an animation setting, so animation effects stay on.	Sisteminiz bir animasyon ayarı bildirmiyor, bu nedenle animasyon efektleri açık kalır.
 	Region:	Bölge:
 	Automatic ({region})	Otomatik ({region})
+	Minimize	Simge durumuna küçült
+	Maximize	Ekranı kapla
+	Restore	Önceki boyuta getir
+	Use the system title bar (after restarting WordCraft)	Sistem başlık çubuğunu kullan (WordCraft yeniden başlatıldıktan sonra)

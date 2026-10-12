@@ -2071,3 +2071,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не повідомляє про налаштування анімації, тому ефекти анімації залишаються ввімкненими.
 	Region:	Регіон:
 	Automatic ({region})	Автоматично ({region})
+	Minimize	Згорнути
+	Maximize	Розгорнути
+	Restore	Відновити
+	Use the system title bar (after restarting WordCraft)	Використовувати системний заголовок вікна (після перезапуску WordCraft)

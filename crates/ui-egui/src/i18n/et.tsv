@@ -2093,3 +2093,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Süsteem ei teata animatsiooniseadet, seega jäävad animatsiooniefektid sisse.
 	Region:	Piirkond:
 	Automatic ({region})	Automaatne ({region})
+	Minimize	Minimeeri
+	Maximize	Maksimeeri
+	Restore	Taasta
+	Use the system title bar (after restarting WordCraft)	Kasuta süsteemi tiitliriba (pärast WordCrafti taaskäivitamist)
