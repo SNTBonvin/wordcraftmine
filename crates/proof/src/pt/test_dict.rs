@@ -33,7 +33,7 @@ PFX X 0 des .
 ";
 
 /// Stems (the count line first, as in Hunspell files).
-pub const DIC: &str = "68
+pub const DIC: &str = "73
 coração
 saudade
 pássaro
@@ -96,6 +96,11 @@ ver
 dar
 e
 o
+é
+água
+ela
+da
+do
 de
 em
 no
