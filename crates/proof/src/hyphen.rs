@@ -121,6 +121,9 @@ fn core_breaks(core: &[char], lang: ProofLang) -> (Vec<usize>, Source) {
     if lang == ProofLang::Pt {
         return core_breaks_pt(core);
     }
+    if lang == ProofLang::Ru && core.iter().all(|&c| crate::ru::is_cyrillic(c)) {
+        return (crate::ru::hyphen::points(core), Source::Heuristic);
+    }
     let dict = Dictionary::en_us();
     let s: String = core.iter().collect();
     let from_mask = |m: u64, len: usize| (1..len.min(64)).filter(|&i| m & (1 << i) != 0).collect::<Vec<_>>();
