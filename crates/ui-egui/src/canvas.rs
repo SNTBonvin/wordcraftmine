@@ -1938,7 +1938,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
         // Dragging the left-indent marker.
         let id = ui.id().with("ruler_left");
         let mr = Rect::from_center_size(pos2(left, bar.max.y - 3.0), vec2(12.0, 12.0));
-        let r = ui.interact(mr, id, Sense::drag());
+        let r = ui.interact(mr, id, Sense::click_and_drag());
         if r.dragged()
             && let Some(pp) = r.interact_pointer_pos()
         {
@@ -1950,7 +1950,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             let _ = app.run("para.indents", json!({"left": snapped}));
         }
         let fr = Rect::from_center_size(pos2(first, bar.min.y + 3.0), vec2(12.0, 10.0));
-        let r = ui.interact(fr, ui.id().with("ruler_first"), Sense::drag());
+        let r = ui.interact(fr, ui.id().with("ruler_first"), Sense::click_and_drag());
         if r.dragged()
             && let Some(pp) = r.interact_pointer_pos()
         {
@@ -1961,7 +1961,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             let _ = app.run("para.indents", json!({"firstLine": (pt / 4.5).round() * 4.5}));
         }
         let rr = Rect::from_center_size(pos2(right, bar.max.y - 3.0), vec2(12.0, 12.0));
-        let r = ui.interact(rr, ui.id().with("ruler_right"), Sense::drag());
+        let r = ui.interact(rr, ui.id().with("ruler_right"), Sense::click_and_drag());
         if r.dragged()
             && let Some(pp) = r.interact_pointer_pos()
         {
@@ -2944,6 +2944,111 @@ mod tests {
         assert!(after1 > centre && after1 > after2, "right to left: the numbers rise away from the right margin");
         assert!((after1 - (2.0 * centre - before1)).abs() < 1.0, "1 mirrors about the page centre: {before1} → {after1}");
         assert!((after2 - (2.0 * centre - before2)).abs() < 1.0, "2 mirrors about the page centre: {before2} → {after2}");
+    }
+
+    /// Ruler tab gestures are safe: a click on an indent marker places nothing, only the
+    /// primary button places or moves stops, Escape cancels a drag, and a drag whose paragraph
+    /// the caret leaves is abandoned instead of applied there.
+    #[test]
+    fn ruler_tab_gestures_are_primary_only_and_cancellable() {
+        use egui::{Event, Key, PointerButton};
+        use wordcraft_doc::props::TabAlign;
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "Name\tScore\rSecond"})).unwrap();
+        a.run("view.ruler", json!({"value": true})).unwrap();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let area = h.state().canvas.canvas_rect.expect("the canvas is laid out");
+        let ruler_x = |h: &mut egui_kittest::Harness<'_, WordApp>, d: f32| {
+            let body_x = h.state_mut().session.layout().pages[0].body.x;
+            page_to_screen(h.state_mut(), 0, body_x + d, 0.0).expect("on screen").x
+        };
+        let on_ruler = |h: &mut egui_kittest::Harness<'_, WordApp>, d: f32| pos2(ruler_x(h, d), area.min.y - 7.0);
+        let button = |at: Pos2, b: PointerButton, pressed: bool| Event::PointerButton { pos: at, button: b, pressed, modifiers: Default::default() };
+        let drag_events = |h: &mut egui_kittest::Harness<'_, WordApp>, from: Pos2, to: Pos2, b: PointerButton| {
+            h.event(Event::PointerMoved(from));
+            h.event(button(from, b, true));
+            h.step();
+            for k in 1..=4 {
+                h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 4.0)));
+                h.step();
+            }
+            h.event(button(to, b, false));
+            for _ in 0..3 {
+                h.step();
+            }
+        };
+        let stops_of = |h: &egui_kittest::Harness<'_, WordApp>, block: usize| {
+            let s = &h.state().session;
+            let para = s.doc.para_at(&Pos::body(block, 0)).expect("a paragraph");
+            s.doc.styles.resolve_para(&para.props).tabs.iter().map(|t| (t.pos, t.align)).collect::<Vec<_>>()
+        };
+
+        // A plain click on the left-indent marker (at the paragraph's start edge) places nothing.
+        let marker = pos2(ruler_x(&mut h, 0.0), area.min.y - 6.0);
+        h.event(Event::PointerMoved(marker));
+        h.event(button(marker, PointerButton::Primary, true));
+        h.step();
+        h.event(button(marker, PointerButton::Primary, false));
+        for _ in 0..3 {
+            h.step();
+        }
+        assert!(stops_of(&h, 1).is_empty(), "an indent-marker click placed a stop: {:?}", stops_of(&h, 1));
+
+        // A right-button drag across the ruler places nothing.
+        let (from, to) = (on_ruler(&mut h, 72.0), on_ruler(&mut h, 144.0));
+        drag_events(&mut h, from, to, PointerButton::Secondary);
+        assert!(stops_of(&h, 1).is_empty(), "a right-drag placed a stop: {:?}", stops_of(&h, 1));
+
+        // Set a stop at 2" the intended way, then prove Escape cancels a move.
+        let at = on_ruler(&mut h, 144.0);
+        h.event(Event::PointerMoved(at));
+        h.event(button(at, PointerButton::Primary, true));
+        h.step();
+        h.event(button(at, PointerButton::Primary, false));
+        for _ in 0..32 {
+            h.step();
+        }
+        assert_eq!(stops_of(&h, 1), vec![(144.0, TabAlign::Left)]);
+        let (from, to) = (on_ruler(&mut h, 144.0), on_ruler(&mut h, 216.0));
+        h.event(Event::PointerMoved(from));
+        h.event(button(from, PointerButton::Primary, true));
+        h.step();
+        h.event(Event::PointerMoved(from + (to - from) * 0.5));
+        h.step();
+        h.event(Event::Key { key: Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        h.step();
+        h.event(button(to, PointerButton::Primary, false));
+        for _ in 0..32 {
+            h.step();
+        }
+        assert_eq!(stops_of(&h, 1), vec![(144.0, TabAlign::Left)], "Escape left the stop where it was");
+
+        // A drag abandoned by moving the caret to another paragraph applies nowhere.
+        let (from, to) = (on_ruler(&mut h, 144.0), on_ruler(&mut h, 216.0));
+        h.event(Event::PointerMoved(from));
+        h.event(button(from, PointerButton::Primary, true));
+        h.step();
+        h.event(Event::PointerMoved(from + (to - from) * 0.5));
+        h.step();
+        h.state_mut().run("caret.docStart", json!({})).unwrap();
+        h.step();
+        h.event(button(to, PointerButton::Primary, false));
+        for _ in 0..3 {
+            h.step();
+        }
+        assert_eq!(stops_of(&h, 1), vec![(144.0, TabAlign::Left)], "the old paragraph keeps its stop");
+        assert!(stops_of(&h, 0).is_empty(), "the caret's new paragraph gained nothing: {:?}", stops_of(&h, 0));
     }
 
     /// Tab stops on the ruler: the corner selector picks the kind, a click sets a stop, dragging

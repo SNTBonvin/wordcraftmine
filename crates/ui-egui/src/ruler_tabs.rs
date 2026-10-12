@@ -4,7 +4,8 @@
 //! once when the button is released, so it is one undo step.
 use egui::{Painter, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
-use wordcraft_doc::props::{TabAlign, TabLeader, TabStop};
+use wordcraft_doc::Pos;
+use wordcraft_doc::props::{TAB_POS_EPS, TabAlign, TabLeader, TabStop};
 
 use crate::WordApp;
 use crate::theme::Tokens;
@@ -12,15 +13,18 @@ use crate::theme::Tokens;
 /// How far (screen points) past the ruler's edge the pointer takes a dragged stop off it.
 const DROP_OFF: f32 = 18.0;
 
-/// The kinds of stop the corner selector cycles through, in Word's order.
-const KINDS: [TabAlign; 5] = [TabAlign::Left, TabAlign::Center, TabAlign::Right, TabAlign::Decimal, TabAlign::Bar];
+/// The kinds of stop the corner selector cycles through (and the Tabs dialog lists), in Word's order.
+pub(crate) const KINDS: [TabAlign; 5] = [TabAlign::Left, TabAlign::Center, TabAlign::Right, TabAlign::Decimal, TabAlign::Bar];
 
 /// A tab stop being placed or dragged on the ruler.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TabDrag {
     /// Where the stop was before the drag (points from the paragraph's start edge); `None` for a
     /// stop being placed.
     pub from: Option<f32>,
+    /// The caret paragraph the gesture started on: it is abandoned if the caret leaves it
+    /// (the keyboard still works mid-drag), rather than applied to another paragraph.
+    pub para: Pos,
     pub align: TabAlign,
     pub leader: TabLeader,
     /// Where it lands if the button is released now.
@@ -68,7 +72,7 @@ pub(crate) fn release_params(d: &TabDrag) -> Option<Value> {
         (None, true) => None,
         (None, false) => Some(json!({ "set": stop })),
         (Some(from), true) => Some(json!({ "clear": [from] })),
-        (Some(from), false) if (from - d.at).abs() < 0.5 => None,
+        (Some(from), false) if (from - d.at).abs() < TAB_POS_EPS => None,
         (Some(from), false) => Some(json!({ "clear": [from], "set": stop })),
     }
 }
@@ -161,47 +165,59 @@ pub(crate) fn stops(app: &mut WordApp, ui: &Ui, hp: &Painter, g: &Ruler<'_>, tab
     let units = app.session.units();
     let decimal = crate::options::decimal();
 
+    // The paragraph the ruler is editing; a drag that outlives it is abandoned.
+    let para = app.session.sel.focus.clone();
+
     // A click on an empty stretch over the text sets a stop of the selector's kind there; pressing
-    // and dragging places it where the button is released. The edges stay with the margin handles.
+    // and dragging places it where the button is released. The edges stay with the margin handles
+    // and indent markers, and only the primary button places stops.
     let add = ui.interact(g.text.shrink2(vec2(4.0, 0.0)), ui.id().with("ruler_tab_add"), Sense::click_and_drag());
     let kind = app.canvas.tab_kind;
-    let placing = |x: f32| TabDrag { from: None, align: kind, leader: TabLeader::None, at: snap(x), off: false };
+    let placing = |x: f32| TabDrag { from: None, para: para.clone(), align: kind, leader: TabLeader::None, at: snap(x), off: false };
     if add.clicked()
         && let Some(pp) = add.interact_pointer_pos()
         && let Some(params) = release_params(&placing(pp.x))
     {
         let _ = app.run("para.tabs", params);
-    } else if add.drag_started()
+    } else if add.drag_started_by(egui::PointerButton::Primary)
         && let Some(pp) = add.interact_pointer_pos()
     {
         app.canvas.tab_drag = Some(placing(pp.x));
     }
 
-    let dragging = app.canvas.tab_drag.and_then(|d| d.from);
+    let dragging = app.canvas.tab_drag.as_ref().and_then(|d| d.from);
     let mut open_dialog = false;
     for (i, tab) in tabs.iter().enumerate() {
         let x = (g.x_of)(tab.pos);
         let r =
             ui.interact(Rect::from_center_size(pos2(x, g.bar.max.y - 4.0), vec2(9.0, 10.0)), ui.id().with(("ruler_tab", i)), Sense::click_and_drag());
-        // The stop being dragged is drawn where it would land instead.
-        if dragging.is_none_or(|from| (from - tab.pos).abs() > 0.01) {
+        let starts = r.drag_started_by(egui::PointerButton::Primary);
+        if starts {
+            app.canvas.tab_drag =
+                Some(TabDrag { from: Some(tab.pos), para: para.clone(), align: tab.align, leader: tab.leader, at: tab.pos, off: false });
+        }
+        // The stop being dragged is drawn where it would land instead (from this frame on).
+        if !starts && dragging.is_none_or(|from| (from - tab.pos).abs() > TAB_POS_EPS) {
             draw_tab_glyph(hp, x, base, tab.align, g.rtl, stroke);
         }
         open_dialog |= r.double_clicked();
-        if r.drag_started() {
-            app.canvas.tab_drag = Some(TabDrag { from: Some(tab.pos), align: tab.align, leader: tab.leader, at: tab.pos, off: false });
-        } else if app.canvas.tab_drag.is_none() {
+        if !starts && app.canvas.tab_drag.is_none() {
             r.on_hover_text(format!("{} {}", tl!(kind_label(tab.align)), units.format_with(tab.pos, decimal)));
         }
     }
 
-    if let Some(mut d) = app.canvas.tab_drag {
-        if ui.input(|i| i.pointer.primary_down()) {
+    if let Some(mut d) = app.canvas.tab_drag.clone() {
+        let (esc, down, released) = ui.input(|i| (i.key_pressed(egui::Key::Escape), i.pointer.primary_down(), i.pointer.primary_released()));
+        if esc || d.para.story != para.story || d.para.path != para.path {
+            // Escape cancels (like a table-border drag, #217), and a drag whose paragraph the
+            // caret has left is abandoned, never applied to the new one.
+            app.canvas.tab_drag = None;
+        } else if down {
             if let Some(pp) = ui.input(|i| i.pointer.interact_pos()) {
                 d.at = snap(pp.x);
                 d.off = dropped_off(pp.y, g.bar);
             }
-            app.canvas.tab_drag = Some(d);
+            app.canvas.tab_drag = Some(d.clone());
             let label = if d.off {
                 tl!("Clear").to_string()
             } else {
@@ -220,7 +236,9 @@ pub(crate) fn stops(app: &mut WordApp, ui: &Ui, hp: &Painter, g: &Ruler<'_>, tab
             });
         } else {
             app.canvas.tab_drag = None;
-            if let Some(params) = release_params(&d) {
+            // Only a release seen on this frame applies; one missed while the ruler wasn't
+            // drawn (a view change mid-drag) is dropped rather than fired late.
+            if released && let Some(params) = release_params(&d) {
                 let _ = app.run("para.tabs", params);
             }
         }
@@ -269,7 +287,7 @@ mod tests {
 
     #[test]
     fn gestures_become_one_para_tabs_call() {
-        let d = |from, at, off| TabDrag { from, align: TabAlign::Center, leader: TabLeader::Dot, at, off };
+        let d = |from, at, off| TabDrag { from, para: Pos::body(0, 0), align: TabAlign::Center, leader: TabLeader::Dot, at, off };
         assert_eq!(release_params(&d(None, 72.0, false)), Some(json!({"set": [{"pos": 72.0, "align": "center", "leader": "dot"}]})));
         assert_eq!(release_params(&d(None, 72.0, true)), None, "a new stop dragged off is never set");
         assert_eq!(release_params(&d(Some(72.0), 72.2, false)), None, "a stop dropped where it was");

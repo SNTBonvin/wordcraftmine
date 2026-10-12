@@ -13,14 +13,24 @@ use crate::options::MeasureExt;
 use crate::theme::{Tokens, semibold};
 
 /// Stops closer than this (points) are the same stop.
-const SAME_POS: f32 = 0.5;
+/// A leader choice: the value, its menu label (translated), and the fill the closed box shows.
+const LEADERS: [(TabLeader, &str, &str); 5] = [
+    (TabLeader::None, "None", ""),
+    (TabLeader::Dot, "1 ……", "……"),
+    (TabLeader::Hyphen, "2 ------", "------"),
+    (TabLeader::Underscore, "3 ______", "______"),
+    (TabLeader::MiddleDot, "4 ······", "······"),
+];
+
+/// [`wordcraft_doc::props::TAB_POS_EPS`]: the engine replaces stops within this tolerance.
+const SAME_POS: f32 = wordcraft_doc::props::TAB_POS_EPS;
 
 fn unit() -> wordcraft_geom::Unit {
     crate::options::unit()
 }
 
-/// The Tabs dialog's fields. Positions in `stops` and `cleared` are points; `pos` and
-/// `default_tab` are in the interface unit.
+/// The Tabs dialog's fields. Positions in `stops` and `cleared` are points; `default_tab` is in
+/// the interface unit.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabsForm {
@@ -48,7 +58,6 @@ impl TabsForm {
         let stops: Vec<TabStop> = rp.tabs.iter().copied().filter(|t| t.align != TabAlign::Clear && t.pos.is_finite()).take(64).collect();
         let first = stops.first().copied();
         let default_tab = s.doc.settings.default_tab / k;
-        let _ = k;
         Some(TabsForm {
             basis: stops.clone(),
             stops,
@@ -112,6 +121,11 @@ impl TabsForm {
     /// Restore position order after in-place edits, merging stops moved onto one another
     /// (the edited row wins), and keep the selection on its stop.
     pub fn normalize(&mut self) {
+        // Only an in-place position edit (set_pos) can disorder the list; without one this is
+        // a no-op, so the dialog may call it every frame.
+        if self.last_edit.is_none() {
+            return;
+        }
         let followed = self.selected.and_then(|i| self.stops.get(i)).copied();
         let edited = self.last_edit.take();
         let mut merged: Vec<(usize, TabStop)> = Vec::with_capacity(self.stops.len());
@@ -227,14 +241,8 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                                 egui::ComboBox::from_id_salt("tab_align").width(86.0).selected_text(tl!(crate::ruler_tabs::kind_label(a))).show_ui(
                                     ui,
                                     |ui| {
-                                        for (v, l) in [
-                                            (TabAlign::Left, "Left"),
-                                            (TabAlign::Center, "Center"),
-                                            (TabAlign::Right, "Right"),
-                                            (TabAlign::Decimal, "Decimal"),
-                                            (TabAlign::Bar, "Bar"),
-                                        ] {
-                                            ui.selectable_value(&mut a, v, tl!(l));
+                                        for v in crate::ruler_tabs::KINDS {
+                                            ui.selectable_value(&mut a, v, tl!(crate::ruler_tabs::kind_label(v)));
                                         }
                                     },
                                 );
@@ -244,21 +252,13 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                                 }
                                 // Leader, picked in place; the closed box shows just the fill.
                                 let mut l = t.leader;
-                                let shown = match l {
-                                    TabLeader::None => tl!("None").to_string(),
-                                    TabLeader::Dot => "……".into(),
-                                    TabLeader::Hyphen => "------".into(),
-                                    TabLeader::Underscore => "______".into(),
-                                    TabLeader::MiddleDot => "······".into(),
-                                };
+                                let shown = LEADERS
+                                    .iter()
+                                    .find(|(v, _, _)| *v == l)
+                                    .map(|(_, _, fill)| if fill.is_empty() { tl!("None").to_string() } else { (*fill).to_string() })
+                                    .unwrap_or_default();
                                 egui::ComboBox::from_id_salt("tab_leader").width(64.0).selected_text(shown).show_ui(ui, |ui| {
-                                    for (v, label) in [
-                                        (TabLeader::None, "None"),
-                                        (TabLeader::Dot, "1 ……"),
-                                        (TabLeader::Hyphen, "2 ------"),
-                                        (TabLeader::Underscore, "3 ______"),
-                                        (TabLeader::MiddleDot, "4 ······"),
-                                    ] {
+                                    for (v, label, _) in LEADERS {
                                         ui.selectable_value(&mut l, v, tl!(label));
                                     }
                                 });
