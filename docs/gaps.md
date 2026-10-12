@@ -11,7 +11,7 @@ first (`gh pr list`), and update this file and the parity doc when a gap closes.
 
 Native save reliability: synthetic cases on macOS reproduced loss through the predictable temporary-file name. Saves now use owned, exclusively created siblings, synchronize before replacement and clean up on failure; originals survive pre-replacement errors. This narrows save-path reliability under gap #3; the listed field failures and broader stability work remain open. See [save-path guarantees](file-format-parity.md#native-save-path-guarantees).
 
-Document title opens Rename Document; the account badge opens Options › General for user name and initials. Saved documents retain their format and refuse conflicting names; desktop renaming requires a filesystem that supports hard links. Web renaming changes the next download name. An unsaved document's name is only the name Save suggests: its Title property is left alone.
+Document renaming: desktop renaming requires a filesystem that supports hard links (exFAT/FAT drives and some network shares refuse it). Behaviour: [UI parity](ui-parity.md).
 
 ## Ranked
 
