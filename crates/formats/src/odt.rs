@@ -1390,11 +1390,21 @@ fn read_meta(xml: &[u8]) -> Meta {
 
 /// Parse an `.odt` package into the flow model.
 pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
-    read(bytes).map(|(flow, _)| flow)
+    read(bytes).map(|r| r.flow)
+}
+
+/// What [`read`] takes from a package.
+struct Package {
+    /// The body.
+    flow: Flow,
+    /// The headers and footers of the first master page.
+    parts: Vec<(Slot, Vec<FBlock>)>,
+    /// `styles.xml`, when the package has one (for the page layout).
+    styles_xml: Option<Vec<u8>>,
 }
 
 /// The body as a flow, plus the headers and footers of the first master page.
-fn read(bytes: &[u8]) -> Result<(Flow, Vec<(Slot, Vec<FBlock>)>), String> {
+fn read(bytes: &[u8]) -> Result<Package, String> {
     let mut z = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("ODT: not a valid package ({e})"))?;
     if let Some(mt) = read_entry(&mut z, "mimetype") {
         let mt = String::from_utf8_lossy(&mt);
@@ -1431,7 +1441,7 @@ fn read(bytes: &[u8]) -> Result<(Flow, Vec<(Slot, Vec<FBlock>)>), String> {
         }
         parts.push((slot, b.finish()));
     }
-    Ok((Flow { blocks, meta }, parts))
+    Ok(Package { flow: Flow { blocks, meta }, parts, styles_xml })
 }
 
 /// A header or footer of a master page (ODF 1.3 §16.10): `style:header`/`style:footer` on every
@@ -1514,8 +1524,11 @@ fn master_page_parts(xml: &[u8]) -> Vec<(Slot, Vec<Ev>)> {
 
 /// Parse an `.odt` package into a document.
 pub fn import(bytes: &[u8]) -> Result<Document, String> {
-    let (flow, parts) = read(bytes)?;
+    let Package { flow, parts, styles_xml } = read(bytes)?;
     let mut doc = model::to_doc(&flow);
+    if let Some(s) = &styles_xml {
+        apply_page_layout(s, &mut doc.last_section);
+    }
     for (slot, blocks) in parts {
         let kind = if slot.is_footer() { wordcraft_doc::PartKind::Footer } else { wordcraft_doc::PartKind::Header };
         let blocks = model::part_blocks(&mut doc, &blocks);
@@ -1535,6 +1548,56 @@ pub fn import(bytes: &[u8]) -> Result<Document, String> {
         }
     }
     Ok(doc)
+}
+
+/// Read the page size, orientation and margins of the first master page in `styles.xml` into `sec`.
+fn apply_page_layout(xml: &[u8], sec: &mut wordcraft_doc::SectionProps) {
+    let mut layouts: HashMap<String, Attrs> = HashMap::new();
+    let mut cur: Option<String> = None;
+    let mut master: Option<String> = None;
+    events(xml, |ev| match ev {
+        Ev::Start(q, a) => match local(&q) {
+            "page-layout" if q.starts_with("style:") => cur = get(&a, "style:name").map(String::from),
+            "page-layout-properties" => {
+                if let Some(n) = &cur {
+                    layouts.insert(n.clone(), a);
+                }
+            }
+            "master-page" if master.is_none() => master = get(&a, "style:page-layout-name").map(String::from),
+            _ => {}
+        },
+        Ev::End(q) => {
+            if local(&q) == "page-layout" {
+                cur = None;
+            }
+        }
+        Ev::Text(_) => {}
+    });
+    let Some(a) = master.and_then(|m| layouts.remove(&m)) else { return };
+    let len = |k: &str| get(&a, k).and_then(length).filter(|v| *v >= 0.0);
+    // Like the DOCX reader: a page is at least half an inch; at most 22 inches (Word's limit), so a hostile
+    // `1e30pt` can't reach layout.
+    let page = |k: &str| len(k).filter(|v| *v >= 36.0).map(|v| v.min(1584.0));
+    if let (Some(w), Some(h)) = (page("fo:page-width"), page("fo:page-height")) {
+        sec.page_w = w;
+        sec.page_h = h;
+    }
+    sec.landscape = match get(&a, "style:print-orientation") {
+        Some("landscape") => true,
+        Some("portrait") => false,
+        _ => sec.page_w > sec.page_h,
+    };
+    for (k, slot) in [
+        ("fo:margin-top", &mut sec.margin_top),
+        ("fo:margin-bottom", &mut sec.margin_bottom),
+        ("fo:margin-left", &mut sec.margin_left),
+        ("fo:margin-right", &mut sec.margin_right),
+    ] {
+        if let Some(v) = len(k) {
+            // No margin is larger than the page's longer side (as `w:pgMar` in the DOCX reader).
+            *slot = v.min(sec.page_w.max(sec.page_h));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1596,6 +1659,67 @@ mod tests {
     }
 
     #[test]
+    fn page_size_orientation_and_margins_round_trip() {
+        // #810: the page setup written on export is read back on import.
+        let mut doc = Document::new();
+        doc.last_section.page_w = 841.0;
+        doc.last_section.page_h = 595.0;
+        doc.last_section.landscape = true;
+        doc.last_section.margin_left = 36.0;
+        doc.last_section.margin_top = 54.0;
+        let back = import(&export(&doc).unwrap()).unwrap();
+        let s = &back.last_section;
+        assert!(s.landscape);
+        assert_eq!((s.page_w, s.page_h), (841.0, 595.0));
+        assert_eq!((s.margin_left, s.margin_top), (36.0, 54.0));
+    }
+
+    #[test]
+    fn page_layout_follows_the_first_master_page() {
+        let xml = br#"<office:document-styles><office:automatic-styles>
+            <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+            <style:page-layout style:name="pm2">
+            <style:page-layout-properties fo:page-width="10in" fo:page-height="5in" fo:margin-left="1in" style:print-orientation="landscape"/>
+            </style:page-layout>
+            </office:automatic-styles><office:master-styles>
+            <style:master-page style:name="Standard" style:page-layout-name="pm2"/>
+            <style:master-page style:name="Other" style:page-layout-name="pm1"/>
+            </office:master-styles></office:document-styles>"#;
+        let mut sec = wordcraft_doc::SectionProps::default();
+        apply_page_layout(xml, &mut sec);
+        assert!(sec.landscape);
+        assert_eq!((sec.page_w, sec.page_h, sec.margin_left, sec.margin_top), (720.0, 360.0, 72.0, 72.0));
+    }
+
+    #[test]
+    fn hostile_page_layout_values_are_clamped() {
+        let styles = |w: &str, h: &str, m: &str| {
+            format!(
+                r#"<office:document-styles><office:automatic-styles><style:page-layout style:name="pm1">
+                <style:page-layout-properties fo:page-width="{w}" fo:page-height="{h}" fo:margin-top="{m}"
+                fo:margin-bottom="{m}" fo:margin-left="{m}" fo:margin-right="{m}"/></style:page-layout>
+                </office:automatic-styles><office:master-styles>
+                <style:master-page style:name="Standard" style:page-layout-name="pm1"/></office:master-styles>
+                </office:document-styles>"#
+            )
+        };
+        // Huge values: the page is capped at 22 inches and margins at the page's longer side.
+        let mut sec = wordcraft_doc::SectionProps::default();
+        apply_page_layout(styles("1e30pt", "1e30in", "1e30pt").as_bytes(), &mut sec);
+        assert_eq!((sec.page_w, sec.page_h), (1584.0, 1584.0));
+        assert_eq!((sec.margin_top, sec.margin_left), (1584.0, 1584.0));
+        // Negative, zero, tiny and non-numeric values leave the defaults alone.
+        let def = wordcraft_doc::SectionProps::default();
+        for (w, h, m) in [("-10in", "-5in", "-1in"), ("0pt", "0pt", "NaNpt"), ("1pt", "2pt", "infpt"), ("NaN", "inf", "x")] {
+            let mut sec = wordcraft_doc::SectionProps::default();
+            apply_page_layout(styles(w, h, m).as_bytes(), &mut sec);
+            assert_eq!((sec.page_w, sec.page_h), (def.page_w, def.page_h), "{w} {h}");
+            assert_eq!((sec.margin_top, sec.margin_right), (def.margin_top, def.margin_right), "{m}");
+            assert!(sec.page_w.is_finite() && sec.margin_left.is_finite());
+        }
+    }
+
+    #[test]
     fn table_cell_style_background_is_shading() {
         // #437: `fo:background-color` on `style:table-cell-properties` is the cell's shading.
         let content = format!(
@@ -1637,6 +1761,23 @@ mod tests {
         let id = s.headers.default.unwrap();
         let Some(wordcraft_doc::Block::Para(p)) = d.parts[&id].blocks.first().map(|b| &**b) else { panic!("no header paragraph") };
         assert!(p.runs.iter().all(|r| r.props.bold == Some(true)), "{:?}", p.runs);
+    }
+
+    #[test]
+    fn page_layout_and_headers_come_from_the_same_master_page() {
+        // #829's page layout and #863's headers both read the first master page of styles.xml.
+        let styles = format!(
+            r#"<office:document-styles {NS_T}><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="10in" fo:page-height="5in" fo:margin-left="1in" style:print-orientation="landscape"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"><style:header><text:p>Top</text:p></style:header><style:footer><text:p>Bottom</text:p></style:footer></style:master-page></office:master-styles></office:document-styles>"#
+        );
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:body><office:text><text:p>Body</text:p></office:text></office:body></office:document-content>"#
+        );
+        let d = import(&package(&content, Some(&styles))).unwrap();
+        let s = &d.last_section;
+        assert!(s.landscape);
+        assert_eq!((s.page_w, s.page_h, s.margin_left), (720.0, 360.0, 72.0));
+        assert_eq!(part_text(&d, s.headers.default), "Top");
+        assert_eq!(part_text(&d, s.footers.default), "Bottom");
     }
 
     #[test]

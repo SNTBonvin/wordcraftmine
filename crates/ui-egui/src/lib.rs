@@ -66,6 +66,7 @@ pub mod print_page;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
+pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
 pub mod theme;
@@ -120,6 +121,15 @@ pub struct Services {
     /// Desktop: the text on the system clipboard, if any. Ctrl+V gets it from egui's paste event;
     /// the ribbon and context-menu Paste read it here (#584).
     pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the HTML on the system clipboard — another program's formatted copy (a Word
+    /// document, a web page) — if any. Paste keeps its formatting (#687); see [`system_clipboard`].
+    pub clipboard_html: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the RTF on the system clipboard, where the platform offers it (#687).
+    pub clipboard_rtf: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the names of the formats on the system clipboard (MIME types, Windows format
+    /// names), where the platform lists them, so a paste that finds nothing it can use says what
+    /// is there instead of "empty" (#833).
+    pub clipboard_formats: Option<Box<dyn Fn() -> Vec<String>>>,
     /// Web: keep a font the user added (stored file name, original bytes) for the next visit
     /// (#582). Desktop fonts are stored by the font database itself, in the app's font folder.
     pub store_font: Option<Box<dyn Fn(&str, &[u8])>>,
@@ -185,9 +195,17 @@ pub struct UiState {
     /// Read Aloud speed (1 = normal) and whether it skips citations and bibliographies.
     pub read_aloud_rate: f32,
     pub read_aloud_skip_citations: bool,
+    /// Show ribbon and Quick Access Toolbar KeyTips on Alt/F10 (#620).
+    pub keytips_enabled: bool,
+    /// Digits entered for a multi-key Quick Access Toolbar badge; never persisted.
+    #[serde(skip)]
+    pub keytip_prefix: String,
     /// Keytips (Alt) state; not persisted, it resets each session.
     #[serde(skip)]
     pub keytips: crate::keytips::Phase,
+    /// Alt is held according to key or modifier events; never persisted.
+    #[serde(skip)]
+    pub alt_pressed: bool,
     /// Since the last Alt press, another key or a mouse button was pressed: the Alt release
     /// that follows ends a chord (Alt+click, Alt+drag column selection), not a keytip tap.
     #[serde(skip)]
@@ -256,7 +274,10 @@ impl Default for UiState {
             editing: wordcraft_engine::Prefs::default(),
             read_aloud_rate: 1.0,
             read_aloud_skip_citations: true,
+            keytips_enabled: true,
+            keytip_prefix: String::new(),
             keytips: crate::keytips::Phase::Off,
+            alt_pressed: false,
             alt_chord_used: false,
             dark_page: false,
             caret_animation: true,
@@ -280,13 +301,32 @@ impl UiState {
     /// version's idea of it) falls back to its default instead of discarding every setting.
     /// `None` only when the file isn't a JSON object.
     pub fn from_json(bytes: &[u8]) -> Option<UiState> {
-        let v: Value = serde_json::from_slice(bytes).ok()?;
-        v.is_object().then(|| options::lenient(&v))
+        let mut v: Value = serde_json::from_slice(bytes).ok()?;
+        if !v.is_object() {
+            return None;
+        }
+        migrate_units(&mut v);
+        Some(options::lenient(&v))
     }
 
     /// How many recent documents to list.
     pub fn recent_shown(&self) -> usize {
         self.recent_count.min(MAX_RECENT)
+    }
+}
+
+/// Settings saved before #838 kept the measurement unit as `editing.units`, which defaulted to
+/// inches; it now lives in `editing.measurementUnits`, and no value there follows the region. A
+/// unit other than inches under the old key was the user's own choice, so it carries over (an
+/// inch value can't be told from the old default, so it follows the region).
+fn migrate_units(v: &mut Value) {
+    let Some(editing) = v.get_mut("editing").and_then(Value::as_object_mut) else { return };
+    if editing.contains_key("measurementUnits") {
+        return;
+    }
+    if let Some(old) = editing.get("units").and_then(Value::as_str).filter(|u| *u != "inches") {
+        let old = Value::String(old.to_string());
+        editing.insert("measurementUnits".into(), old);
     }
 }
 
@@ -404,6 +444,10 @@ impl SaveChoice {
 
 impl WordApp {
     pub fn new(session: Session, services: Services) -> Self {
+        // Numeral › System follows the system locale, found here rather than in layout.
+        if let Some(tag) = sys_locale::get_locale() {
+            wordcraft_engine::set_system_locale(&tag);
+        }
         WordApp {
             session,
             ui: UiState::default(),
@@ -534,23 +578,11 @@ impl WordApp {
             return Ok(json!({"pending": "saveChanges"}));
         }
         // The ribbon and context-menu Paste commands send no text: read the system clipboard's, as
-        // Ctrl+V's paste event carries it (#584).
+        // Ctrl+V's paste event carries it (#584), and its HTML and RTF, which egui's paste event
+        // doesn't carry (#687).
         let mut params = params;
-        if matches!(id, "edit.paste" | "edit.pasteText" | "edit.pasteMerge" | "edit.pasteSpecial")
-            && params.get("text").is_none()
-            && let Some(text) = self.services.clipboard_text.as_ref().and_then(|f| f()).filter(|t| !t.is_empty())
-            && let Some(o) = params.as_object_mut()
-        {
-            // Picture files copied in a file manager reach us as their paths: paste the pictures,
-            // as Ctrl+V does.
-            if id == "edit.paste"
-                && self.session.math.is_none()
-                && paste_picture::names_picture_files(&text)
-                && let Some(r) = paste_picture::paste(self)
-            {
-                return r;
-            }
-            o.insert("text".into(), Value::String(text));
+        if let Some(r) = system_clipboard::fill(self, id, &mut params) {
+            return r;
         }
         // Paste without system clipboard text: a picture there is newer than our own copy (copying
         // here replaces it with text), so it wins (#45).
@@ -561,6 +593,7 @@ impl WordApp {
             return r;
         }
         let r = self.execute_user(id, params);
+        let r = system_clipboard::explain(self, id, r);
         // Check Accessibility shows its findings in the Accessibility pane, kept up to date there.
         if id == "file.accessibility" && r.is_ok() {
             self.session.view.accessibility_pane = true;
@@ -782,6 +815,15 @@ impl WordApp {
     fn after_command(&mut self, id: &str) {
         options::sync(self);
         self.canvas.caret_visible_since = now_ms();
+        if id == "view.outline" {
+            self.ui.nav_tab = "headings".into();
+        }
+        if matches!(id, "view.readColumnWidth" | "view.readTextSize" | "view.readLineSpacing") {
+            self.canvas.read_force_reflow = true;
+        }
+        if id == "view.readMode" {
+            self.canvas.read_first_visible = None;
+        }
         if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
             self.canvas.scroll_to_caret = true;
         }
@@ -918,6 +960,17 @@ impl WordApp {
             "ui.collapseRibbon" => {
                 self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
                 json!({"collapsed": self.ui.ribbon_collapsed})
+            }
+            "ui.keytips" => {
+                if let Some(v) = p.get("value") {
+                    let Some(enabled) = v.as_bool() else { return Some(Err("`value` must be a boolean".into())) };
+                    self.ui.keytips_enabled = enabled;
+                    if !enabled {
+                        self.ui.keytips = keytips::Phase::Off;
+                        self.ui.keytip_prefix.clear();
+                    }
+                }
+                json!({"enabled": self.ui.keytips_enabled})
             }
             "ui.dark" => {
                 // A manual Light/Dark switch (toggles what is shown when no value is given).
@@ -1561,7 +1614,7 @@ impl AutoSaveBlock {
 /// Whether saving to `name` keeps the whole document (the formats `file.save` treats as the
 /// document's own file, including macro-enabled documents and templates); anything else is a
 /// copy that leaves it unsaved. AutoSave writes only these formats.
-fn keeps_everything(name: &str) -> bool {
+pub fn keeps_everything(name: &str) -> bool {
     let ext = std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json" | "xml")
 }
@@ -1672,6 +1725,7 @@ pub fn now_ms() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
 
     fn mod_key(key: egui::Key) -> egui::Event {
         egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND }
@@ -1807,6 +1861,35 @@ mod tests {
         assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
+    /// Issue #772: Ctrl/⌘+F left focus on the document, so typing didn't go into Find what.
+    #[test]
+    fn find_shortcut_focuses_find_what() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let frame = |a: &mut WordApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput { events, ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        // The first frames install fonts; the canvas appears after them.
+        for _ in 0..3 {
+            frame(&mut a, Vec::new());
+        }
+        let key = egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        frame(&mut a, vec![key]);
+        for _ in 0..2 {
+            frame(&mut a, Vec::new());
+        }
+        assert!(ctx.memory(|m| m.has_focus(egui::Id::new("find_what"))), "Find what has the focus");
+        frame(&mut a, vec![egui::Event::Text("abc".into())]);
+        let Some(dialogs::Dialog::Find { query, .. }) = &a.dialog else { panic!("no Find dialog") };
+        assert!(query.ends_with("abc"), "typing went into Find what: {query:?}");
+        assert!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).is_empty(), "nothing was typed into the document");
+    }
+
     /// Issue #139: Ctrl+wheel over the page didn't zoom.
     #[test]
     fn ctrl_wheel_over_canvas_zooms() {
@@ -1932,6 +2015,138 @@ mod tests {
         let notch = crate::scroll::notch_px(a.canvas.scale / crate::canvas::PX_PER_PT);
         assert!(first > 0.0 && first < notch, "a notch eases in: {first}");
         assert!((a.canvas.scroll_offset.y - at - notch).abs() < 0.5, "a notch scrolls {notch}: {}", a.canvas.scroll_offset.y - at);
+    }
+
+    /// Reading Mode: reflowed viewport-height columns, horizontal wheel/navigation, exit restores
+    /// Print Layout without editing or changing the document's page setup.
+    #[test]
+    fn reading_mode_columns_wheel_turns_and_navigation() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.run("text.insert", json!({"text": "One readable paragraph in many narrow columns. ".repeat(300)})).unwrap();
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 0)})).unwrap();
+        let original = a.session.doc.settings.clone();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 740.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp, events: Vec<egui::Event>, screen| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { events, time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a, vec![], screen);
+        }
+        a.run("view.readMode", json!({})).unwrap();
+        for _ in 0..3 {
+            frame(&mut a, vec![], screen);
+        }
+        let rects = &a.canvas.page_rects;
+        assert!(rects.len() > 5, "reading should reflow: {}", rects.len());
+        assert_eq!(a.canvas.cols, rects.len(), "one unwrapped row");
+        assert!((rects[0].top() - rects[1].top()).abs() < 0.1);
+        assert!(rects[1].left() > rects[0].right());
+        assert!((rects[0].height() - (a.canvas.canvas_rect.unwrap().height() - 36.0)).abs() < 2.0);
+        let initial_width = a.session.view.read_width;
+        // A simple mouse click in a later visible column must neither pull that column
+        // to the leading edge nor select text under the stationary, held pointer.
+        let click = a.canvas.page_rects[2].center();
+        assert!(a.canvas.canvas_rect.unwrap().contains(click));
+        let initial_scroll = a.canvas.scroll_offset.x;
+        let button =
+            |pressed| egui::Event::PointerButton { pos: click, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        frame(&mut a, vec![egui::Event::PointerMoved(click), button(true)], screen);
+        assert_eq!(a.session.layout().caret_on(&a.session.sel.focus, a.session.page_hint).unwrap().page, 2);
+        frame(&mut a, vec![], screen); // mouse is still held at the same coordinates
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5, "click must not scroll a later column to the left");
+        assert!(a.session.sel.is_collapsed(), "stationary click must not create a selection");
+        frame(&mut a, vec![button(false)], screen);
+        frame(&mut a, vec![], screen);
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5);
+        assert!(a.session.sel.is_collapsed());
+        // An explicit caret move outside the visible columns must still reveal its destination.
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 5000)})).unwrap();
+        frame(&mut a, vec![], screen);
+        assert!(a.canvas.scroll_offset.x > initial_scroll + a.session.view.read_width * a.canvas.scale);
+        a.run("caret.set", json!({"pos": wordcraft_doc::Pos::body(0, 0)})).unwrap();
+        frame(&mut a, vec![], screen);
+        assert!((a.canvas.scroll_offset.x - initial_scroll).abs() < 0.5);
+        let over = a.canvas.canvas_rect.unwrap().center();
+        frame(&mut a, vec![egui::Event::PointerMoved(over)], screen);
+        frame(
+            &mut a,
+            vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -65.0),
+                phase: egui::TouchPhase::Start,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            screen,
+        );
+        let step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!(a.canvas.scroll_offset.x > 0.0 && a.canvas.scroll_offset.x < step, "a wheel turn animates instead of jumping");
+        let first = a.canvas.scroll_offset.x;
+        frame(&mut a, vec![], screen);
+        assert!(a.canvas.scroll_offset.x > first, "smooth motion continues after the wheel event");
+        for _ in 0..23 {
+            frame(&mut a, vec![], screen);
+        }
+        assert!((a.canvas.scroll_offset.x - step).abs() < 1.0, "animation settles exactly on column boundary");
+        assert_eq!(a.canvas.scroll_offset.y, 0.0);
+        canvas::turn_read_page(&mut a, 1.0);
+        for _ in 0..25 {
+            frame(&mut a, vec![], screen);
+        }
+        assert!((a.canvas.scroll_offset.x - 2.0 * step).abs() < 1.0);
+        let x = a.canvas.scroll_offset.x;
+        // A heading navigation request must position its column at the leading edge,
+        // not wherever egui's generic scroll_to_rect decides the caret is visible.
+        let target = wordcraft_doc::Pos::body(0, 5000);
+        a.run("view.navigationPane", json!({"value": true})).unwrap();
+        a.run("caret.set", json!({"pos": target})).unwrap();
+        a.canvas.nav_to_caret = true;
+        a.canvas.scroll_to_caret = false;
+        frame(&mut a, vec![], screen);
+        let page = a.session.layout().caret_on(&a.session.sel.focus, a.session.page_hint).unwrap().page;
+        let step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!((a.canvas.scroll_offset.x - (page as f32 * step)).abs() < 1.0, "heading must align its column beside the navigation pane");
+        assert!(a.canvas.scroll_offset.x != x);
+        // Resizing changes the content width (reflow), not the zoom or the print paper width.
+        let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(850.0, 630.0));
+        let before_resize = a.canvas.scroll_offset.x;
+        let before_layout = a.session.layout();
+        let anchor = a.canvas.read_first_visible.clone().unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!(std::sync::Arc::ptr_eq(&before_layout, &a.session.layout()), "resize frames reuse cached pagination");
+        assert!((a.canvas.scroll_offset.x - before_resize).abs() < 1.0, "no jump while resize is in progress");
+        assert_eq!(a.session.view.read_width, initial_width, "expensive repagination is deferred during resizing");
+        for _ in 0..15 {
+            frame(&mut a, vec![], narrow);
+        }
+        assert_ne!(a.session.view.read_width, initial_width);
+        assert!(!std::sync::Arc::ptr_eq(&before_layout, &a.session.layout()), "stable viewport commits one repagination");
+        let target_page = a.session.layout().caret_on(&anchor, 0).unwrap().page;
+        let new_step = a.session.view.read_width * a.canvas.scale + 18.0;
+        assert!(
+            (a.canvas.scroll_offset.x - target_page as f32 * new_step).abs() < 1.0,
+            "resize must preserve visible text anchor, not jump to editing caret"
+        );
+        assert!((a.canvas.scale - canvas::PX_PER_PT).abs() < 0.01);
+        a.run("view.readColumnWidth", json!({"value": "page"})).unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!(a.session.view.read_width <= 612.0);
+        a.run("view.readTextSize", json!({"value": 125})).unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!((a.canvas.scale / canvas::PX_PER_PT - 1.25).abs() < 0.01);
+        // The Edit Document button works even when the navigation pane owns focus.
+        a.run("view.printLayout", json!({})).unwrap();
+        frame(&mut a, vec![], narrow);
+        assert!(!a.session.view.read_mode);
+        assert_eq!(a.session.view.mode, wordcraft_layout::ViewMode::Print);
+        assert_eq!(a.session.doc.settings, original);
     }
 
     /// An app whose host reports the system's animation setting as `system` holds it.
@@ -2535,7 +2750,9 @@ mod tests {
             assert_eq!(h.query_by_label(BLURB).is_some(), hook, "hook {hook}: the Print button's blurb");
             assert!(h.query_by_label("PDF document (*.pdf)").is_some(), "hook {hook}: the page rendered its export choices");
             if hook {
-                h.get_by_role_and_label(egui::accesskit::Role::Button, "Print").click();
+                // The page's own Print button (the backstage list has a Print entry too): the last.
+                let buttons: Vec<_> = h.query_all(egui_kittest::kittest::By::new().role(egui::accesskit::Role::Button).label("Print")).collect();
+                buttons.last().expect("a Print button").click();
                 h.step();
                 h.step();
                 assert_eq!(printed.get(), 1, "the button printed");
@@ -2633,6 +2850,46 @@ mod tests {
         h.step();
         assert!(h.state().session.dirty, "the keystroke reached the document");
         assert_eq!(reported.get(), Some(true), "the host was told before the frame ended");
+    }
+
+    #[test]
+    fn paragraph_alignment_keeps_the_canvas_focused_for_typing() {
+        use wordcraft_doc::Align;
+
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            typed(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+
+        for (label, alignment, text) in
+            [("Align Left", Align::Left, " left"), ("Center", Align::Center, " center"), ("Align Right", Align::Right, " right")]
+        {
+            h.get_by_role_and_label(egui::accesskit::Role::Button, label).click();
+            h.step();
+
+            assert!(h.state().canvas.focused, "{label}: the canvas keeps keyboard focus");
+            let paragraph = h.state().session.doc.para_at(&h.state().session.sel.focus).expect("the caret remains in its paragraph");
+            assert_eq!(h.state().session.doc.styles.resolve_para(&paragraph.props).align, alignment);
+
+            h.event(egui::Event::Text(text.into()));
+            h.step();
+            assert!(body_text(h.state()).ends_with(text), "{label}: typing continues in the document");
+        }
+
+        // Every command button does the same, not only alignment: Bold, then type.
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Bold").click();
+        h.step();
+        assert!(h.state().canvas.focused, "Bold: the canvas keeps keyboard focus");
+        h.event(egui::Event::Text(" bold".into()));
+        h.step();
+        assert!(body_text(h.state()).ends_with(" bold"), "Bold: typing continues in the document");
     }
 
     /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
