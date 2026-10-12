@@ -3057,8 +3057,9 @@ fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: boo
 
 /// Height of the first line of the block after `block` (for keep-with-next).
 /// The room the paragraphs after `block` need on its page for keep with next: the next one's
-/// first line, or all of it and what it keeps with in turn when it is kept with the next too
-/// (a chain moves together in Word).
+/// first line (its first two with widow/orphan control, which moves a first line that would end
+/// the page alone, #966), or all of it and what it keeps with in turn when it is kept with the
+/// next too (a chain moves together in Word).
 fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32 {
     match ctx.doc.body.get(block + 1).map(|b| &**b) {
         Some(Block::Para(p)) => {
@@ -3086,7 +3087,12 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32
             if pl.rp.keep_next && depth < 8 {
                 pl.rp.space_before + pl.height + pl.rp.space_after + next_first_line(ctx, block + 1, width, depth + 1)
             } else {
-                pl.rp.space_before + pl.lines.first().map(|l| l.height).unwrap_or(0.0)
+                // As `place_para` breaks it: orphan control needs two lines here, unless the
+                // first one ends the page itself.
+                let first = pl.lines.first();
+                let orphan = pl.rp.widow_control && first.is_some_and(|l| !matches!(l.end, LineEnd::PageBreak | LineEnd::ColumnBreak));
+                let last = if orphan { pl.lines.get(1).or(first) } else { first };
+                pl.rp.space_before + first.zip(last).map(|(f, l)| l.top + l.height - f.top).unwrap_or(0.0)
             }
         }
         Some(Block::Table(_)) => 24.0,
