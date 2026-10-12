@@ -74,6 +74,8 @@ pub static LANGUAGES: [LangInfo; 13] = [
     // Russian; `ru`, `ru-RU`, `ru_RU.UTF-8` and other regions resolve here.
     LangInfo { code: "ru", name: "Русский", source: include_str!("ru.tsv"), prefer_hans: false, catalog: OnceLock::new() },
     LangInfo { code: "tr", name: "Türkçe", source: include_str!("tr.tsv"), prefer_hans: false, catalog: OnceLock::new() },
+    // Italian; `it-IT`, `it-CH` and `it-*` resolve here.
+    LangInfo { code: "it", name: "Italiano", source: include_str!("it.tsv"), prefer_hans: false, catalog: OnceLock::new() },
 ];
 
 impl LangInfo {
