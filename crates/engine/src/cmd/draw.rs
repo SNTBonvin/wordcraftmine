@@ -458,6 +458,7 @@ fn stroke(s: &mut Session, v: &Value) -> CmdResult {
         story: None,
         freeform: Some(Arc::new(Freeform { order: Some(order), ..Freeform::ink(tool, fw, fh, local) })),
         effects: Default::default(),
+        extra: Default::default(),
     };
     let at = place(s, &layout, obj, page, (fx, fy), first[1])?;
     // Ink to Shape: a stroke that looks like a shape becomes it (in the same undo step).
@@ -469,11 +470,13 @@ fn stroke(s: &mut Session, v: &Value) -> CmdResult {
 /// under `anchor_y` (positioned from its column and top), or, where no paragraph starts on the
 /// page, to the nearest line and positioned on the page. Returns where its character went.
 fn place(s: &mut Session, layout: &DocLayout, obj: InlineObject, page: usize, (x, y): (f32, f32), anchor_y: f32) -> Result<Pos, CmdError> {
-    let (at, on_page) = match super::objects::anchor_paragraph(layout, page, anchor_y) {
+    let (at, on_page) = match super::objects::anchor_paragraph(layout, page, anchor_y, StoryRef::Body) {
         Some(path) => (Pos { story: StoryRef::Body, path, off: 0 }, false),
-        None => {
-            (super::objects::nearest_line(layout, page, anchor_y).ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?, true)
-        }
+        None => (
+            super::objects::nearest_line(layout, page, anchor_y, StoryRef::Body)
+                .ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?,
+            true,
+        ),
     };
     s.doc.insert_object(&at, obj, &CharProps::default())?;
     let len = OBJ.len_utf8();
