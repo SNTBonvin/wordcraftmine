@@ -963,7 +963,7 @@ fn layout_box(
                 // Automatic space after: none after the last paragraph of a cell or box.
                 let after = if pl.rp.after_auto && i + 1 == blocks.len() { 0.0 } else { pl.rp.space_after };
                 y += pl.height + after;
-                prev_after = if same && ctxl { 0.0 } else { after };
+                prev_after = after;
                 prev_after_auto = pl.rp.after_auto;
                 prev_listed = listed;
                 prev_style = Some((pl.rp.style.clone(), ctxl));
