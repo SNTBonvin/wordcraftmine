@@ -13,7 +13,7 @@ The generated ribbon checklist is [`parity-checklist.md`](parity-checklist.md).
 
 | Number | Value | Kind |
 |---|---|---|
-| Ribbon/menu catalog coverage | **487 / 502 (97.0%)** | **measured**: `cargo xtask parity` (re-derived this pass from `crates/engine/src/catalog.rs` against every `CommandSpec::new` id in the source; identical to the checked-in `parity-checklist.md`) |
+| Ribbon/menu catalog coverage | **491 / 502 (97.8%)** | **measured**: `cargo xtask parity` (re-derived this pass from `crates/engine/src/catalog.rs` against every `CommandSpec::new` id in the source; identical to the checked-in `parity-checklist.md`) |
 | Feature breadth (weighted, beyond the ribbon: dialog options, citation styles, proofing languages, chart types, UI languages) | **~80%** | estimated |
 | Feature depth (weighted by use, table below) | **~68%** | estimated |
 | **Ready for real work** (full target) | **~60%** (range 55–63%) | estimated: weighted sum over the dimension table ([By dimension](#by-dimension)) |
@@ -251,7 +251,7 @@ can be used without committing Word output.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | trivial | View › Window across WordCraft windows (#322): catalog 402/434 → 406/434 (93.5%); View row text only, percentages unchanged |
+| 2026-10-11 | trivial | View › Window across WordCraft windows (#322): catalog 487/502 → 491/502 (97.8%); View row text only, percentages unchanged |
 | 2026-10-11 | trivial | Tables: Ctrl, Alt, left-edge and selected-cells border drags (#711); Tables row updated, no percentage change |
 | 2026-10-11 | trivial | Tables: column and row markers on the rulers (#700); Tables row updated, no percentage change |
 | 2026-10-11 | trivial | Tables: the table context menu, its items following the selection as in Word (Delete Cells, Rows, Columns or Table, Merge and Split Cells, Distribute, AutoFit, Text Direction, Insert Caption…, Table Properties…); Tables row updated, no percentage change |

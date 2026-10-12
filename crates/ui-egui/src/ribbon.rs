@@ -1676,7 +1676,7 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
         let w = app.session.windows.clone();
         stack(ui, |ui| {
             if w.side_by_side.is_none() && w.others.len() > 1 {
-                menu_button(ui, app, "sideBySide", Some("View Side by Side"), "View Side by Side", false, |ui, app| {
+                menu_button(ui, app, "sideBySide", Some("View Side by Side"), "View Side by Side", false, "view.sideBySide", |ui, app| {
                     window_list(ui, app, &w.others, "view.sideBySide")
                 });
             } else {
@@ -1684,7 +1684,7 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
             }
             small(ui, app, "syncScroll", Some("Synchronous Scrolling"), "Synchronous Scrolling", "view.syncScroll", json!({}), w.sync_scroll);
         });
-        menu_button(ui, app, "switchWindows", Some("Switch\nWindows"), "Switch Windows", true, |ui, app| {
+        menu_button(ui, app, "switchWindows", Some("Switch\nWindows"), "Switch Windows", true, "view.switchWindows", |ui, app| {
             window_list(ui, app, &w.others, "view.switchWindows")
         });
     });
