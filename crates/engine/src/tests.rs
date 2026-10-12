@@ -1601,6 +1601,39 @@ fn set_author_names_tracked_changes_headlessly() {
 }
 
 #[test]
+fn privacy_options_strip_names_and_dates_from_the_saved_docx_only() {
+    // Issue #1062: Remove personal information / date and time apply to the saved file.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "original"}));
+    run(&mut s, "file.setAuthor", json!({"name": "Mira Calloway"}));
+    run(&mut s, "file.properties", json!({"author": "Mira Calloway"}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "text.insert", json!({"text": " added"}));
+    run(&mut s, "select.text", json!({"text": "added"}));
+    run(&mut s, "review.newComment", json!({"text": "Tightened."}));
+    let off = run(&mut s, "file.privacyOptions", json!({}));
+    assert_eq!(off, json!({"removePersonalInfo": false, "removeDateTime": false}));
+    let plain = wordcraft_docx::write(&s.doc).unwrap();
+    let back = wordcraft_docx::read(&plain).unwrap();
+    assert!(back.comments.values().all(|c| c.author == "Mira Calloway" && !c.date.is_empty()));
+    let on = run(&mut s, "file.privacyOptions", json!({"removePersonalInfo": true, "removeDateTime": true}));
+    assert_eq!(on, json!({"removePersonalInfo": true, "removeDateTime": true}));
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert!(back.settings.remove_personal_info && back.settings.remove_date_time);
+    assert!(back.comments.values().all(|c| c.author == "Author" && c.date.is_empty()), "{:?}", back.comments);
+    assert!(!back.revisions.is_empty());
+    assert!(back.revisions.iter().all(|r| r.author == "Author" && r.date.is_empty()), "{:?}", back.revisions);
+    assert!(back.core.creator.is_empty() && back.core.last_modified_by.is_empty());
+    // The open document keeps the real names and dates.
+    assert!(s.doc.comments.values().all(|c| c.author == "Mira Calloway" && !c.date.is_empty()));
+    assert!(s.doc.revisions.iter().any(|r| r.author == "Mira Calloway"));
+    assert_eq!(s.doc.core.creator, "Mira Calloway");
+    // Undoable like any document change.
+    run(&mut s, "edit.undo", json!({}));
+    assert!(!s.doc.settings.remove_personal_info);
+}
+
+#[test]
 fn set_author_refuses_blank_names_and_clamps_long_ones() {
     let mut s = s();
     for bad in [json!(null), json!({}), json!({"name": 5}), json!({"name": ""}), json!({"name": " \t\n "}), json!({"name": "\u{0}\u{7}"})] {
