@@ -119,6 +119,7 @@ pub fn shape_outline(kind: ShapeKind, w: f32, h: f32) -> Option<Vec<(f32, f32)>>
             }
             pts
         }
+        _ => return None,
     };
     Some(pts)
 }
