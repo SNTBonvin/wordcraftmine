@@ -1294,10 +1294,35 @@ impl Reader<'_> {
         let stroke = on("stroked").then(|| shape.attr("strokecolor").map_or(Some(Rgb::BLACK), vml_color)).flatten();
         let stroke_width = shape.attr("strokeweight").and_then(|v| measure(v, 1.0)).unwrap_or(0.75).clamp(0.0, 100.0);
         let fill = on("filled").then(|| shape.attr("fillcolor").map_or(Some(Rgb::WHITE), vml_color)).flatten();
-        if let Some(t) = shape.find("w:txbxContent")
+        if let Some((tb, t)) = vml_textbox(shape, 0)
             && sc.story_depth < MAX_STORY_DEPTH
         {
-            let story = Some(self.read_textbox(sc, t, rels));
+            let id = self.read_textbox(sc, t, rels);
+            if let Some(part) = self.doc.parts.get_mut(&id) {
+                // Internal margins `inset="l,t,r,b"` (ECMA-376 Part 4 §19.1.2.22), each one left
+                // out keeping Word's default; a bare number is in EMUs, VML's base unit.
+                // `o:insetmode="auto"` leaves them to the application.
+                let mut inset = wordcraft_doc::TEXT_BOX_INSET;
+                let custom = tb.attr("o:insetmode").is_none_or(|m| !m.eq_ignore_ascii_case("auto"));
+                for (slot, v) in inset.iter_mut().zip(tb.attr("inset").filter(|_| custom).unwrap_or("").split(',')) {
+                    if let Some(pt) = measure(v, 12_700.0) {
+                        *slot = (pt.max(0.0) * 12_700.0).round().min(wordcraft_doc::MAX_TEXT_BOX_INSET as f32) as u32;
+                    }
+                }
+                part.body.inset = (inset != wordcraft_doc::TEXT_BOX_INSET).then_some(inset);
+                // Resize shape to fit text (DrawingML's `a:spAutoFit`).
+                let fit = vml_style(tb.attr("style").unwrap_or(""), "mso-fit-shape-to-text");
+                part.body.auto_fit = fit.is_some_and(|v| v.eq_ignore_ascii_case("t") || v.eq_ignore_ascii_case("true"));
+                // Where the text sits between the box's top and bottom (DrawingML's `anchor`).
+                if let Some(a) = vml_style(style, "v-text-anchor") {
+                    part.body.anchor = match a {
+                        a if a.starts_with("middle") => wordcraft_doc::props::VAlign::Center,
+                        a if a.starts_with("bottom") => wordcraft_doc::props::VAlign::Bottom,
+                        _ => wordcraft_doc::props::VAlign::Top,
+                    };
+                }
+            }
+            let story = Some(id);
             return Some(InlineObject::Shape {
                 kind: ShapeKind::TextBox,
                 w,
@@ -1574,6 +1599,18 @@ fn wrap_polygon(e: &El) -> Option<wordcraft_doc::wrap::WrapPolygon> {
 }
 
 /// The value of property `key` in a VML `style` attribute (CSS declarations; the last one wins).
+/// The first `v:textbox` under `e` holding text, with its `w:txbxContent` (depth-first, bounded
+/// like `El::find`): in a group, a member's margins go with that member's text.
+fn vml_textbox(e: &El, depth: usize) -> Option<(&El, &El)> {
+    if depth > crate::xml::MAX_DEPTH {
+        return None;
+    }
+    e.els().find_map(|c| match c.child("w:txbxContent") {
+        Some(t) if c.name == "v:textbox" => Some((c, t)),
+        _ => vml_textbox(c, depth + 1),
+    })
+}
+
 fn vml_style<'a>(style: &'a str, key: &str) -> Option<&'a str> {
     style.rsplit(';').filter_map(|d| d.split_once(':')).find(|(k, _)| k.trim().eq_ignore_ascii_case(key)).map(|(_, v)| v.trim())
 }

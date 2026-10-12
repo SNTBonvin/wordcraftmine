@@ -108,3 +108,46 @@ fn hostile_links_read_without_chains_running_wild() {
     let b = r.parts.get(&got[0]).unwrap().body;
     assert_eq!((b.vert, b.anchor), (TextVert::Vert, VAlign::Center));
 }
+
+#[test]
+fn vml_text_boxes_keep_their_inset_fit_and_anchor() {
+    // ECMA-376 Part 4 §19.1.2.22: `inset="l,t,r,b"`, each one left out keeping the default
+    // (0.1in, 0.05in); `mso-fit-shape-to-text` resizes the shape to its text; `v-text-anchor`
+    // places the text between the box's top and bottom.
+    let content = r#"<w:txbxContent><w:p><w:r><w:t>Boxed</w:t></w:r></w:p></w:txbxContent>"#;
+    let shape = |style: &str, textbox: &str| {
+        format!(
+            r#"<w:p><w:r><w:pict><v:shape style="width:100pt;height:40pt;{style}"><v:textbox {textbox}>{content}</v:textbox></v:shape></w:pict></w:r></w:p>"#
+        )
+    };
+    let body = [
+        shape("", r#"inset="0,0,0,0""#),
+        shape("v-text-anchor:middle", r#"inset="1mm,,2pt" style="mso-fit-shape-to-text:T""#),
+        shape("", ""),
+        // A bare number is in EMUs; one that doesn't parse keeps the default; negative is 0;
+        // too large is the most a margin may be.
+        shape("v-text-anchor:bottom-baseline", r#"inset="12700,bogus,-5pt,99in""#),
+        // `o:insetmode="auto"` leaves the margins to the application.
+        shape("", r#"o:insetmode="auto" inset="0,0,0,0""#),
+        // In a group, a member's margins go with that member's text, not an empty box's before it.
+        format!(r#"<w:p><w:r><w:pict><v:group style="width:100pt;height:40pt"><v:shape><v:textbox inset="9pt,9pt,9pt,9pt"/></v:shape><v:shape><v:textbox inset="0,0,0,0">{content}</v:textbox></v:shape></v:group></w:pict></w:r></w:p>"#),
+    ]
+    .concat();
+    let doc = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"><w:body>{body}</w:body></w:document>"#
+    );
+    let rels = br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let d = wordcraft_docx::read(&zip(&[("_rels/.rels", rels), ("word/document.xml", doc.as_bytes())])).unwrap();
+    let bodies: Vec<TextBody> = boxes(&d).iter().map(|id| d.parts[id].body).collect();
+    assert_eq!(bodies.len(), 6);
+    assert_eq!(bodies[0].inset, Some([0, 0, 0, 0]));
+    assert_eq!((bodies[1].inset, bodies[1].auto_fit, bodies[1].anchor), (Some([36_000, 45_720, 25_400, 45_720]), true, VAlign::Center));
+    assert_eq!(bodies[2], TextBody::default());
+    assert_eq!((bodies[3].inset, bodies[3].anchor), (Some([12_700, 45_720, 0, wordcraft_doc::MAX_TEXT_BOX_INSET]), VAlign::Bottom));
+    assert_eq!(bodies[4].inset, None);
+    assert_eq!(bodies[5].inset, Some([0, 0, 0, 0]));
+    // Saved and read again, they stay.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    let again: Vec<TextBody> = boxes(&back).iter().map(|id| back.parts[id].body).collect();
+    assert_eq!(again, bodies);
+}
