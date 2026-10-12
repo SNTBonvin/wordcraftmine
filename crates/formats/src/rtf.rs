@@ -482,6 +482,38 @@ enum Dest {
     Bookmark,
 }
 
+/// Which header or footer a `\header…`/`\footer…` group is: footer or header, and the pages
+/// (`\headerf` first, `\headerl` left = even, `\header`/`\headerr` the others).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HeaderFooter {
+    footer: bool,
+    pages: HfPages,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum HfPages {
+    Default,
+    First,
+    Even,
+}
+
+/// The reader's output so far, set aside while a header or footer is read.
+#[derive(Default)]
+struct Output {
+    body: Vec<FBlock>,
+    para: Para,
+    para_has: bool,
+    table: Vec<Vec<Cell>>,
+    row: Vec<Cell>,
+    cell: Vec<FBlock>,
+    defs: Vec<CellDef>,
+    def_cur: CellDef,
+    row_header: bool,
+    rule_pending: bool,
+    table_rights: Vec<Vec<i32>>,
+    table_side_borders: bool,
+}
+
 #[derive(Clone, Debug)]
 struct St {
     dest: Dest,
@@ -617,6 +649,13 @@ struct Reader {
     /// The default font (`\deff`), whose charset applies before any `\f`.
     deff: i32,
     page: PageGeom,
+    /// The header or footer being read: the group depth it started at, which one, and the
+    /// body's output, put back when the group closes.
+    hf: Option<(usize, HeaderFooter, Box<Output>)>,
+    /// Headers and footers read, in order.
+    hf_parts: Vec<(HeaderFooter, Vec<FBlock>)>,
+    /// `\titlepg`: the first page has its own header and footer.
+    title_page: bool,
     /// The cell border side being described (`\clbrdrl` … `\clbrdrr`), until its line style.
     cell_side: Option<char>,
     /// Each table row's cell right edges (`\cellx`, twips), for the table's column grid.
@@ -671,6 +710,46 @@ impl Reader {
         self.stack.len()
     }
 
+    /// Set the output aside (a header or footer starts) or put it back (it ended), returning the
+    /// other one.
+    fn swap_output(&mut self, mut o: Output) -> Output {
+        std::mem::swap(&mut o.body, &mut self.body);
+        std::mem::swap(&mut o.para, &mut self.para);
+        std::mem::swap(&mut o.para_has, &mut self.para_has);
+        std::mem::swap(&mut o.table, &mut self.table);
+        std::mem::swap(&mut o.row, &mut self.row);
+        std::mem::swap(&mut o.cell, &mut self.cell);
+        std::mem::swap(&mut o.defs, &mut self.defs);
+        std::mem::swap(&mut o.def_cur, &mut self.def_cur);
+        std::mem::swap(&mut o.row_header, &mut self.row_header);
+        std::mem::swap(&mut o.rule_pending, &mut self.rule_pending);
+        std::mem::swap(&mut o.table_rights, &mut self.table_rights);
+        std::mem::swap(&mut o.table_side_borders, &mut self.table_side_borders);
+        o
+    }
+
+    /// A header or footer group starts: read it into an output of its own.
+    fn start_header_footer(&mut self, which: HeaderFooter) {
+        let body = self.swap_output(Output::default());
+        self.hf = Some((self.depth(), which, Box::new(body)));
+        self.st.intbl = false;
+    }
+
+    /// The header or footer group closed: keep what it held and go back to the body.
+    fn end_header_footer(&mut self) {
+        let Some((_, which, body)) = self.hf.take() else { return };
+        if self.para_has || !self.para.inlines.is_empty() {
+            self.end_para(false);
+        }
+        self.close_table();
+        let part = self.swap_output(*body);
+        // A document names each one once; a repeat (another section's) replaces it.
+        self.hf_parts.retain(|(w, _)| *w != which);
+        if self.hf_parts.len() < 16 {
+            self.hf_parts.push((which, part.body));
+        }
+    }
+
     fn open(&mut self) {
         self.skip_chars = 0;
         if self.stack.len() >= MAX_GROUPS {
@@ -721,6 +800,9 @@ impl Reader {
             }
         }
         self.st = prev;
+        if self.hf.as_ref().is_some_and(|(d, _, _)| self.depth() < *d) {
+            self.end_header_footer();
+        }
     }
 
     fn commit_font(&mut self) {
@@ -1047,6 +1129,18 @@ impl Reader {
             "shppict" => return,
             "pict" => Some(Dest::Pict),
             "bkmkstart" => Some(Dest::Bookmark),
+            "header" | "footer" | "headerl" | "headerr" | "headerf" | "footerl" | "footerr" | "footerf"
+                if self.hf.is_none() && self.st.dest == Dest::Body && !self.st.intbl =>
+            {
+                let footer = w.starts_with("footer");
+                let pages = match w.strip_prefix(if footer { "footer" } else { "header" }) {
+                    Some("f") => HfPages::First,
+                    Some("l") => HfPages::Even,
+                    _ => HfPages::Default,
+                };
+                self.start_header_footer(HeaderFooter { footer, pages });
+                return;
+            }
             "header" | "footer" | "headerl" | "headerr" | "headerf" | "footerl" | "footerr" | "footerf" | "footnote" | "annotation" | "pntext"
             | "listtext" | "object" | "nonshppict" | "xe" | "tc" | "txe" | "private" | "bkmkend" | "atnid" | "atnauthor" | "comment" | "shpinst"
             | "do" | "operator" | "company" | "manager" | "category" | "hlinkbase" | "revtime" | "printim" | "buptim" | "version" | "nofpages"
@@ -1329,6 +1423,7 @@ impl Reader {
                 self.def_cur.side_border = true;
             }
             "brdrnone" | "brdrnil" | "brdrtbl" => self.cell_side = None,
+            "titlepg" => self.title_page = on,
             "paperw" | "pgwsxn" => self.page.w = Some(pv),
             "paperh" | "pghsxn" => self.page.h = Some(pv),
             "margl" | "marglsxn" => self.page.left = Some(pv),
@@ -1397,6 +1492,19 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
 /// The flow, the page, and the default font (`\deff`, font 0 when the file names none), which
 /// is the font of all text that doesn't select one.
 fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom, Option<String>), String> {
+    parse_full(bytes).map(|r| (r.flow, r.page, r.default_font))
+}
+
+/// Everything an import takes from an RTF file.
+struct Parsed {
+    flow: Flow,
+    page: PageGeom,
+    default_font: Option<String>,
+    headers_footers: Vec<(HeaderFooter, Vec<FBlock>)>,
+    title_page: bool,
+}
+
+fn parse_full(bytes: &[u8]) -> Result<Parsed, String> {
     let start = bytes.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(0);
     if !bytes.get(start..).is_some_and(|b| b.starts_with(b"{\\rtf")) {
         return Err("not an RTF document (it doesn't start with {\\rtf)".into());
@@ -1551,6 +1659,8 @@ fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom, Option<String>), Str
             }
         }
     }
+    // A header or footer left open by a truncated file ends here.
+    r.end_header_footer();
     if r.para_has || !r.para.inlines.is_empty() {
         r.end_para(false);
     }
@@ -1565,7 +1675,7 @@ fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom, Option<String>), Str
         blocks.push(FBlock::Para(Para::default()));
     }
     let default_font = r.fonts.get(&r.deff).filter(|n| !model::is_mono(n)).cloned();
-    Ok((Flow { blocks, meta: r.meta }, r.page, default_font))
+    Ok(Parsed { flow: Flow { blocks, meta: r.meta }, page: r.page, default_font, headers_footers: r.hf_parts, title_page: r.title_page })
 }
 
 /// The column grid of a table from its rows' cell right edges: every distinct edge starts a grid
@@ -1607,8 +1717,19 @@ fn column_grid(rows: &mut [Vec<Cell>], rights: &[Vec<i32>]) -> Vec<f32> {
 
 /// Parse RTF bytes into a document.
 pub fn import(bytes: &[u8]) -> Result<Document, String> {
-    let (flow, page, default_font) = parse_with_page(bytes)?;
+    let Parsed { flow, page, default_font, headers_footers, title_page } = parse_full(bytes)?;
     let mut doc = model::to_doc_in(&flow, page.section());
+    for (which, blocks) in &headers_footers {
+        let blocks = model::part_blocks(&mut doc, blocks);
+        let id = doc.add_part(if which.footer { wordcraft_doc::PartKind::Footer } else { wordcraft_doc::PartKind::Header }, blocks);
+        let set = if which.footer { &mut doc.last_section.footers } else { &mut doc.last_section.headers };
+        match which.pages {
+            HfPages::Default => set.default = Some(id),
+            HfPages::First => set.first = Some(id),
+            HfPages::Even => set.even = Some(id),
+        }
+    }
+    doc.last_section.title_page = title_page;
     // RTF's paragraph defaults are single spacing and no space around paragraphs; what a file
     // wants beyond that it states on each paragraph.
     let dp = &mut doc.styles.default_para;
@@ -1660,6 +1781,41 @@ mod tests {
         assert!(p.inlines.iter().any(|i| matches!(i, Inline::Text(t, f) if t == "red" && f.color == Some(Rgb(255, 0, 0)))));
         let FBlock::Para(l) = &f.blocks[2] else { panic!() };
         assert!(matches!(&l.inlines[0], Inline::Text(_, f) if f.link.as_deref() == Some("http://a.b")));
+    }
+
+    #[test]
+    fn headers_and_footers() {
+        let rtf = br"{\rtf1\ansi\titlepg
+{\header \pard\qr Running head\par}
+{\headerf \pard First head {\b bold}\par}
+{\footer \pard Page \chpgn\par}
+\pard Body text\par
+\trowd\cellx2000\pard\intbl cell\cell\row
+\pard after\par}";
+        let d = import(rtf).unwrap();
+        let s = &d.last_section;
+        assert!(s.title_page);
+        let text = |id: Option<u32>| {
+            let p = id.and_then(|id| d.parts.get(&id)).unwrap();
+            p.blocks
+                .iter()
+                .filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.text.clone()) } else { None })
+                .collect::<Vec<_>>()
+                .join("|")
+        };
+        assert_eq!(text(s.headers.default), "Running head");
+        assert_eq!(text(s.headers.first), "First head bold");
+        assert!(text(s.footers.default).starts_with("Page"));
+        assert!(s.footers.first.is_none() && s.headers.even.is_none());
+        // The body keeps only its own text, and its table survives the header groups.
+        let f = parse(rtf).unwrap();
+        let t = texts(&f);
+        assert_eq!(t, ["Normal:Body text", "table1x1:cell", "Normal:after"]);
+        // Without \titlepg there is no separate first page.
+        let d = import(br"{\rtf1\ansi{\headerf x\par} y\par}").unwrap();
+        assert!(!d.last_section.title_page && d.last_section.headers.first.is_some());
+        // An unterminated header still ends, and the body text after it isn't lost.
+        assert!(import(br"{\rtf1\ansi{\header x").is_ok());
     }
 
     #[test]

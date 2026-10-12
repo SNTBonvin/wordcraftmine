@@ -594,6 +594,16 @@ pub fn to_doc_in(flow: &Flow, section: wordcraft_doc::SectionProps) -> Document 
     doc
 }
 
+/// `blocks` as document blocks of `doc` (their pictures go into its media), for a header,
+/// footer or other part an importer adds itself.
+pub fn part_blocks(doc: &mut Document, blocks: &[FBlock]) -> Blocks {
+    let mut out = Builder { doc }.blocks(blocks, 0);
+    if out.is_empty() {
+        out.push(para_block(Paragraph::new()));
+    }
+    out
+}
+
 fn uses_kind(blocks: &[FBlock], k: Kind, depth: usize) -> bool {
     depth <= MAX_DEPTH
         && blocks.iter().any(|b| match b {
