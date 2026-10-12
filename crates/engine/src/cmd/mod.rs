@@ -14,6 +14,7 @@ pub mod edit;
 pub mod equation;
 pub mod fields;
 pub mod file;
+pub mod find_pattern;
 pub mod fmt_revisions;
 pub mod font;
 pub mod format;
@@ -292,6 +293,8 @@ pub fn leave_list(para: &mut wordcraft_doc::Paragraph) {
     }
     para.props.indent_left = None;
     para.props.indent_first = None;
+    para.props.indent_left_chars = None;
+    para.props.indent_first_chars = None;
     para.touch();
 }
 
