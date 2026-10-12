@@ -402,6 +402,8 @@ pub struct Session {
     pub merge: crate::cmd::mailings::MergeState,
     /// Requests from commands to the UI (open a dialog, scroll…), drained by the front end.
     pub ui_requests: Vec<Value>,
+    /// View › Window: the other WordCraft windows and Side by Side (#322).
+    pub windows: crate::cmd::view::Windows,
     /// Read Aloud player (Review › Speech).
     pub read_aloud: crate::speech::ReadAloud,
     /// Preferences the front end saves between runs.
@@ -613,6 +615,7 @@ impl Session {
             editing_lang: None,
             read_aloud: Default::default(),
             password: None,
+            windows: Default::default(),
             column: None,
             column_mode: false,
             widened: None,
@@ -1034,6 +1037,8 @@ impl Session {
             ui_requests: _,
             document_id: _,
             read_aloud: _,
+            // The other windows, like `view`: not part of the document or its history.
+            windows: _,
             prefs: _,
             system_region: _,
             keymap: _,
