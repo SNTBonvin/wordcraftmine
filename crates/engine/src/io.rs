@@ -20,15 +20,18 @@ pub const OPEN_EXTS: &[&str] = &[
     "tex",
     "latex",
     "ltx",
+    "xml",
     "wcraft.json",
     "json",
 ];
 /// Formats WordCraft saves (Save As).
-pub const SAVE_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "pdf", "txt", "md", "html", "rtf", "odt", "tex", "png", "json"];
+pub const SAVE_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "pdf", "txt", "md", "html", "rtf", "odt", "tex", "png", "json", "xml"];
 
+/// The extension of a file name or path, lower-case; empty when the file name has none (a dot
+/// in a folder name doesn't count).
 fn ext_of(name: &str) -> String {
-    let lower = name.to_ascii_lowercase();
-    lower.rsplit('.').next().unwrap_or("").to_string()
+    let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    file.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()).unwrap_or_default()
 }
 
 /// Is `ext` one of Word's package formats (.docx/.docm/.dotx/.dotm), which save without loss?
@@ -93,23 +96,54 @@ pub fn open_bytes_with(name: &str, bytes: &[u8], password: Option<&str>) -> Resu
         doc.ensure_nonempty();
         return Ok((doc, true));
     }
+    if ext.is_empty() {
+        return open_by_content(name, &ext, bytes, password);
+    }
     let mut doc = match ext.as_str() {
-        "txt" | "text" | "" => Document::from_text(&decode_text(bytes)),
+        // Plain text goes through the formats importer: BOMs, unmarked UTF-16, Windows-1252.
+        "txt" | "text" | "" => wordcraft_formats::txt::import(bytes),
         "json" => serde_json::from_slice::<Document>(bytes).map_err(|e| format!("{name}: {e}"))?,
         other => match crate::io_ext::open(other, bytes) {
             Some(r) => r?,
-            None => return Err(format!("{name}: unsupported format `.{other}`")),
+            None => return open_by_content(name, other, bytes, password),
         },
     };
     doc.ensure_nonempty();
     Ok((doc, false))
 }
 
+/// A file whose extension names no format WordCraft knows (`.m3u`, `.log`, `.ini`, none…),
+/// opened by what it holds, as Word does: a Word document or RTF file by its signature, any
+/// other text through the plain-text import with encoding detection (#569). Anything else is
+/// refused with a clear error rather than shown as garbage.
+fn open_by_content(name: &str, ext: &str, bytes: &[u8], password: Option<&str>) -> Result<(Document, bool), String> {
+    const ZIP: &[u8] = b"PK\x03\x04";
+    const OLE: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    let (mut doc, encrypted) = if bytes.starts_with(OLE) && wordcraft_docx::is_encrypted(bytes) {
+        (wordcraft_docx::read_with_password(bytes, password).map_err(|e| e.to_string())?, true)
+    } else if bytes.starts_with(ZIP) {
+        (wordcraft_docx::read(bytes).map_err(|e| format!("{name}: not a document WordCraft can open ({e})"))?, false)
+    } else if bytes.starts_with(OLE) {
+        (wordcraft_docbin::read(bytes).map_err(|e| format!("{name}: not a document WordCraft can open ({e})"))?, false)
+    } else if bytes.starts_with(b"{\\rtf") {
+        (wordcraft_formats::rtf::import(bytes)?, false)
+    } else if wordcraft_formats::txt::is_text(bytes) {
+        (wordcraft_formats::txt::import(bytes), false)
+    } else if ext.is_empty() {
+        return Err(format!("{name}: not a document or text file WordCraft can open"));
+    } else {
+        return Err(format!("{name}: unsupported format `.{ext}` (not a document or text file)"));
+    };
+    doc.ensure_nonempty();
+    Ok((doc, encrypted))
+}
+
 /// Serialise a document; `name` gives the format by extension.
 pub fn save_bytes(name: &str, doc: &Document) -> Result<Vec<u8>, String> {
     let ext = ext_of(name);
     match ext.as_str() {
-        "txt" | "text" => Ok(doc.plain_text(wordcraft_doc::StoryRef::Body).replace('\n', "\r\n").into_bytes()),
+        // List paragraphs get their label and a tab, as in Word's plain-text save.
+        "txt" | "text" => Ok(wordcraft_formats::txt::export(doc)),
         "json" => serde_json::to_vec_pretty(doc).map_err(|e| e.to_string()),
         other => match crate::io_ext::save(other, doc) {
             Some(r) => r,
@@ -278,19 +312,8 @@ pub fn save_path_with(path: &std::path::Path, _doc: &Document, _password: Option
     Err(format!("{}: files are saved through the browser on the web", path.display()))
 }
 
-/// UTF-8 (with or without BOM), UTF-16 with BOM, else Latin-1.
+/// Decode text bytes: UTF-8 (with or without BOM), UTF-16 LE/BE (BOM or sniffed), else
+/// Windows-1252 (see [`wordcraft_formats::txt::decode`]).
 pub fn decode_text(b: &[u8]) -> String {
-    if let Some(rest) = b.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(rest).into_owned();
-    }
-    if b.len() >= 2 && (b[0] == 0xFF && b[1] == 0xFE || b[0] == 0xFE && b[1] == 0xFF) {
-        let le = b[0] == 0xFF;
-        let units: Vec<u16> =
-            b[2..].as_chunks::<2>().0.iter().map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) }).collect();
-        return String::from_utf16_lossy(&units);
-    }
-    match std::str::from_utf8(b) {
-        Ok(s) => s.to_string(),
-        Err(_) => b.iter().map(|c| *c as char).collect(),
-    }
+    wordcraft_formats::txt::decode(b)
 }

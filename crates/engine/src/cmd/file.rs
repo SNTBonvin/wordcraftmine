@@ -12,7 +12,7 @@ pub const MAX_AUTHOR_CHARS: usize = 255;
 /// Sets the user name that new tracked changes and comments are recorded under. The name is
 /// trimmed, stripped of control characters (they can't go into the saved XML) and cut to
 /// [`MAX_AUTHOR_CHARS`]; a blank name is refused so revisions always carry an author.
-fn set_author(s: &mut Session, v: &Value) -> CmdResult {
+pub(crate) fn set_author(s: &mut Session, v: &Value) -> CmdResult {
     let name: String = p::req_str(v, "name")?.trim().chars().filter(|c| !c.is_control()).take(MAX_AUTHOR_CHARS).collect();
     let name = name.trim_end();
     if name.is_empty() {
@@ -30,11 +30,11 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|letter|resume|report"}"#).pure(),
         CommandSpec::new("file.open", "Open", "File", open)
-            .key("Mod+O")
+            .key("Mod+O / Mod+F12")
             .params(r#"{"path": string, "data"?: base64 (the file's bytes; `path` then only names it), "password"?: string (for a password-protected Word document)}"#)
             .pure(),
         CommandSpec::new("file.save", "Save", "File", save)
-            .key("Mod+S")
+            .key("Mod+S / Shift+F12")
             .params(r#"{"path"?: string, "password"?: string (encrypt this and later saves with it, as file.encrypt does)}"#)
             .pure(),
         CommandSpec::new("file.saveAs", "Save As", "File", save_as).key("F12").params(r#"{"path": string, "password"?: string}"#).pure(),
@@ -58,22 +58,17 @@ pub fn specs() -> Vec<CommandSpec> {
             s.ui_requests.push(json!({"open": "print"}));
             sel_result(s)
         })
-        .key("Mod+P")
+        .key("Mod+P / Mod+Shift+F12 / Mod+F2")
         .pure(),
         CommandSpec::new("file.close", "Close", "File", |s, _| {
             s.ui_requests.push(json!({"close": true}));
             sel_result(s)
         })
-        .key("Mod+W")
+        .key("Mod+W / Mod+F4")
         .pure(),
         CommandSpec::new("file.properties", "Properties", "File › Info", properties)
             .params(r#"{"title"?, "subject"?, "author"?, "keywords"?, "comments"?, "category"?, "custom"?: {name: string | null (removes)}}"#),
         CommandSpec::new("file.info", "Info", "File", info).pure(),
-        CommandSpec::new("file.options", "Options", "File", |s, _| {
-            s.ui_requests.push(json!({"open": "options"}));
-            sel_result(s)
-        })
-        .pure(),
         CommandSpec::new("file.setAuthor", "User Name", "File › Options › General", set_author)
             .params(r#"{"name": string (author of new tracked changes and comments)}"#)
             .pure(),
@@ -181,7 +176,7 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
     crate::io::save_path_with(&path, &s.doc, password).map_err(CmdError::Failed)?;
     let encrypted = password.is_some() && crate::io::can_encrypt(&path.to_string_lossy());
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ["docx", "docm", "dotx", "dotm", "odt", "rtf", "json"].contains(&ext.as_str()) {
+    if ["docx", "docm", "dotx", "dotm", "odt", "rtf", "json", "xml"].contains(&ext.as_str()) {
         s.path = Some(path.clone());
         s.dirty = false;
     }
