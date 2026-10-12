@@ -47,8 +47,12 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.header", "Header", "Insert › Header & Footer", |s, v| header_footer(s, v, true)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|title"}"#),
         CommandSpec::new("insert.footer", "Footer", "Insert › Header & Footer", |s, v| header_footer(s, v, false)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|pageNumber"}"#),
         CommandSpec::new("insert.pageNumber", "Page Number", "Insert › Header & Footer", page_number).params(r#"{"position"?: "top|bottom|current", "align"?: "left|center|right", "format"?: "x of y"}"#),
-        CommandSpec::new("insert.editHeader", "Edit Header", "Insert › Header & Footer › Header", |s, _| edit_hf(s, true)).pure(),
-        CommandSpec::new("insert.editFooter", "Edit Footer", "Insert › Header & Footer › Footer", |s, _| edit_hf(s, false)).pure(),
+        CommandSpec::new("insert.editHeader", "Edit Header", "Insert › Header & Footer › Header", |s, v| edit_hf(s, v, true))
+            .params(r#"{"section"?: int (which section's header, by index; default: the caret's section, or the first when the caret is in another part)}"#)
+            .pure(),
+        CommandSpec::new("insert.editFooter", "Edit Footer", "Insert › Header & Footer › Footer", |s, v| edit_hf(s, v, false))
+            .params(r#"{"section"?: int (which section's footer, by index; default: the caret's section, or the first when the caret is in another part)}"#)
+            .pure(),
         CommandSpec::new("insert.closeHeader", "Close Header and Footer", "Header & Footer", |s, _| {
             s.sel = Selection::caret(s.doc.start_of(StoryRef::Body));
             sel_result(s)
@@ -393,8 +397,20 @@ fn bookmark(s: &mut Session, v: &Value) -> CmdResult {
     sel_result(s)
 }
 
-fn hf_part(s: &mut Session, header: bool) -> u32 {
-    let block = s.sel.focus.path.0.first().copied().unwrap_or(0) as usize;
+/// The body block whose section a header/footer command works on: the `section` param (the
+/// clicked page's section, from the UI), else the caret's block — which is a body index only
+/// while the caret is in the body; in any other story (a header after a band switch, a footnote)
+/// its path is no body index, so the first section stands in.
+fn hf_block(s: &Session, v: &Value) -> usize {
+    if let Some(i) = p::u64(v, "section")
+        && let Some((block, _)) = s.doc.sections().get(i as usize)
+    {
+        return *block;
+    }
+    if s.sel.focus.story == StoryRef::Body { s.sel.focus.path.0.first().copied().unwrap_or(0) as usize } else { 0 }
+}
+
+fn hf_part(s: &mut Session, header: bool, block: usize) -> u32 {
     let sect = s.doc.section_mut(block).clone();
     let existing = if header { sect.headers.default } else { sect.footers.default };
     if let Some(id) = existing.filter(|id| s.doc.parts.contains_key(id)) {
@@ -412,7 +428,7 @@ fn hf_part(s: &mut Session, header: bool) -> u32 {
 }
 
 fn header_footer(s: &mut Session, v: &Value, header: bool) -> CmdResult {
-    let id = hf_part(s, header);
+    let id = hf_part(s, header, hf_block(s, v));
     let style = if header { "Header" } else { "Footer" };
     if let Some(text) = p::str(v, "text") {
         let blocks = text.split('\n').map(|l| para_block(Paragraph::with_text(l, CharProps::default()).styled(style))).collect();
@@ -445,8 +461,8 @@ fn header_footer(s: &mut Session, v: &Value, header: bool) -> CmdResult {
     Ok(json!({"story": id}))
 }
 
-fn edit_hf(s: &mut Session, header: bool) -> CmdResult {
-    let id = hf_part(s, header);
+fn edit_hf(s: &mut Session, v: &Value, header: bool) -> CmdResult {
+    let id = hf_part(s, header, hf_block(s, v));
     s.touch();
     s.sel = Selection::caret(s.doc.end_of(StoryRef::Part(id)));
     Ok(json!({"story": id}))
@@ -469,7 +485,7 @@ fn page_number(s: &mut Session, v: &Value) -> CmdResult {
         return sel_result(s);
     }
     let header = position == "top";
-    let id = hf_part(s, header);
+    let id = hf_part(s, header, hf_block(s, v));
     let mut para = Paragraph::new().styled(if header { "Header" } else { "Footer" });
     para.props.align = Some(align);
     para.props.tabs = Some(vec![TabStop { pos: 0.0, align: TabAlign::Clear, leader: Default::default() }]);
@@ -647,6 +663,32 @@ fn cover_page(s: &mut Session, v: &Value) -> CmdResult {
 
 #[cfg(test)]
 mod tests {
+
+    /// `insert.editHeader {"section"}` edits that section's header, wherever the caret is (the
+    /// UI passes the double-clicked page's section); without it, a caret in another part's story
+    /// falls back to the first section instead of misreading its path as a body block.
+    #[test]
+    fn edit_header_follows_the_clicked_section() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("text.insert", &json!({"text": "one"})).unwrap();
+        s.run("layout.break", &json!({"kind": "nextPage"})).unwrap();
+        s.run("text.insert", &json!({"text": "two"})).unwrap();
+        assert_eq!(s.doc.sections().len(), 2);
+        // Caret sits in section 2; edit section 2's header by index.
+        let id2 = s.run("insert.editHeader", &json!({"section": 1})).unwrap()["story"].as_u64().unwrap() as u32;
+        let blocks: Vec<usize> = s.doc.sections().iter().map(|(b, _)| *b).collect();
+        assert_eq!(s.doc.sections()[1].1.headers.default, Some(id2));
+        assert_eq!(s.doc.sections()[0].1.headers.default, None, "section 1 is untouched");
+        // The caret is now in the header's story: a parameterless call must not read its path
+        // as a body block; it works on the first section.
+        let id1 = s.run("insert.editFooter", &json!({})).unwrap()["story"].as_u64().unwrap() as u32;
+        assert_eq!(s.doc.sections()[0].1.footers.default, Some(id1));
+        assert_ne!(id1, id2);
+        // A section index past the end also falls back rather than panicking.
+        let _ = s.run("insert.editHeader", &json!({"section": 9})).unwrap();
+        let _ = blocks;
+    }
+
     use super::*;
 
     #[test]
