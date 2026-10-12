@@ -314,7 +314,11 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     right_start = ui.min_rect().min.x;
                 });
             });
-            // Centred title.
+            // Centred title, only where this bar replaces the system's (macOS). Elsewhere the
+            // window manager's title bar above already shows the document name (#78).
+            if !mac {
+                return;
+            }
             let title = format!(
                 "{} — {}",
                 app.title_stem(),
@@ -570,6 +574,43 @@ mod tests {
         assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Hello");
         frame(&ctx, &mut n, vec![], &mut a);
         assert!(!egui::Popup::is_id_open(&ctx, popup), "the list closes");
+    }
+
+    fn title_bar_texts(integrated: bool) -> Vec<String> {
+        fn texts(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| texts(s, out)),
+                _ => {}
+            }
+        }
+        let ctx = ctx();
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        a.integrated_titlebar = integrated;
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1440.0, 900.0));
+        let mut drawn = Vec::new();
+        for n in 1..=2 {
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(f64::from(n) / 60.0), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| title_bar(&mut a, ui));
+            drawn.clear();
+            for s in &out.shapes {
+                texts(&s.shape, &mut drawn);
+            }
+            out.textures_delta.clear();
+        }
+        drawn
+    }
+
+    /// #78: under a system title bar (Linux, Windows) the document name isn't repeated in ours;
+    /// macOS, where ours is the only one, keeps it.
+    #[test]
+    fn document_name_is_drawn_only_when_the_title_bar_is_integrated() {
+        let title = |drawn: &[String]| drawn.iter().any(|s| s.contains(" — "));
+        let mac = title_bar_texts(true);
+        assert!(title(&mac), "macOS shows the title: {mac:?}");
+        let system = title_bar_texts(false);
+        assert!(!title(&system), "no second title under the system's: {system:?}");
+        assert!(system.iter().any(|s| s.contains("AutoSave")), "the rest of the bar stays: {system:?}");
     }
 
     #[test]
