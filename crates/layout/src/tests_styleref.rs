@@ -110,3 +110,32 @@ fn headers_follow_heading_edits() {
     assert_eq!(shown(&again.pages[1].header), ["The Middles"]);
     assert_eq!(shown(&again.pages[0].header), ["Beginnings"]);
 }
+
+/// The style index is built once and reused while the body and the styles stay the same (long
+/// documents lay out on every keystroke); an edited heading or a changed style rebuilds it.
+#[test]
+fn style_index_is_reused_until_the_body_or_styles_change() {
+    let mut d = doc(CHAPTERS, &[r#"STYLEREF "Heading 1""#]);
+    let mut c = LayoutCache::new();
+    let index = |c: &LayoutCache| c.styleref.as_ref().map(|(_, _, ix)| ix.clone()).unwrap();
+    let pages =
+        |d: &Document, c: &mut LayoutCache| layout(d, c, &LayoutOptions::default()).pages.iter().map(|p| shown(&p.header)).collect::<Vec<_>>();
+    let before = pages(&d, &mut c);
+    let first = index(&c);
+    assert_eq!(pages(&d, &mut c), before);
+    assert!(Arc::ptr_eq(&first, &index(&c)), "nothing changed: the same index");
+    // Rename the first chapter: rebuilt, and the header shows the new title.
+    let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    p.text = "Openings".into();
+    p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: Default::default() }];
+    let after = pages(&d, &mut c);
+    assert!(!Arc::ptr_eq(&first, &index(&c)), "an edited heading rebuilds it");
+    assert!(after[0].iter().any(|t| t.contains("Openings")), "{after:?}");
+    // A style change rebuilds it too.
+    let second = index(&c);
+    if let Some(st) = d.styles.styles.iter_mut().find(|s| s.id == "Heading1") {
+        st.name = "Chapter Title".into();
+    }
+    let _ = pages(&d, &mut c);
+    assert!(!Arc::ptr_eq(&second, &index(&c)), "a style change rebuilds it");
+}
