@@ -198,7 +198,19 @@ fn leaf(sp: &Sp, w: f32, h: f32, float: Float, b: &Build, pics: &mut Pictures) -
     let stroke = if p.line == Some(false) { None } else { Some(p.line_color.unwrap_or(Rgb::BLACK)) };
     // Line widths are EMUs; Word's default is 0.75 pt.
     let stroke_width = p.line_width.map_or(0.75, |e| (e as f32 / 12_700.0).clamp(0.0, 100.0));
-    Some(InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform: None, effects: Default::default() })
+    Some(InlineObject::Shape {
+        kind,
+        w,
+        h,
+        fill,
+        stroke,
+        stroke_width,
+        float,
+        story,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    })
 }
 
 /// A group: its members flattened into the group's own coordinate space (nested groups mapped

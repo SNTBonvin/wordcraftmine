@@ -281,6 +281,10 @@ pub struct CharProps {
     pub emboss: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub engrave: Option<bool>,
+    /// WordArt text effects: fill, outline, shadow, glow, reflection ([MS-DOCX] `w14:` run
+    /// properties). Overlaid effect by effect.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_effects: Option<Box<crate::wordart::TextEffects>>,
     /// BCP 47 language tag (proofing).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
@@ -295,6 +299,10 @@ pub struct CharProps {
     /// Complex-script font (Arabic, Persian, Hebrew…; OOXML `w:rFonts/@w:cs`). `None` = `font`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_cs: Option<String>,
+    /// East Asian font (Chinese, Japanese and Korean text; OOXML `w:rFonts/@w:eastAsia`). `None` =
+    /// inherit, then `font`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_ea: Option<String>,
     /// Complex-script size, points (`w:szCs`). `None` = the same as `size` (see [`CharProps::overlay`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_cs: Option<f32>,
@@ -390,7 +398,10 @@ impl CharProps {
     pub fn overlay(&mut self, patch: &CharProps) {
         overlay_fields!(self, patch; style, font, size, bold, italic, underline, underline_color, strike, double_strike, color, highlight,
             shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, no_proof, rtl,
-            cs, font_cs, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del, fmt_change);
+            cs, font_cs, font_ea, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del, fmt_change);
+        if let Some(p) = &patch.text_effects {
+            self.text_effects.get_or_insert_with(Default::default).overlay(p);
+        }
         if patch.size.is_some() && patch.size_cs.is_none() {
             self.size_cs = None;
         }
@@ -644,6 +655,18 @@ pub struct ParaProps {
     /// First-line indent, points; negative = hanging.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent_first: Option<f32>,
+    /// Left (start) indent in characters (`w:leftChars` / `w:startChars`, stored by Word in
+    /// hundredths). A non-zero value wins over `indent_left`; one character is the size of the
+    /// paragraph mark's font. `Some(0.0)` cancels an inherited value. Common in East Asian documents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indent_left_chars: Option<f32>,
+    /// Right (end) indent in characters (`w:rightChars` / `w:endChars`), like `indent_left_chars`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indent_right_chars: Option<f32>,
+    /// First-line indent in characters (`w:firstLineChars`; negative = `w:hangingChars`), like
+    /// `indent_left_chars`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indent_first_chars: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub space_before: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -653,6 +676,10 @@ pub struct ParaProps {
     /// Ignore space before/after between paragraphs of the same style.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contextual_spacing: Option<bool>,
+    /// `w:mirrorIndents` (ECMA-376 §17.3.1.18): the left and right indents are the inside and
+    /// outside ones, so they swap sides on even (left-hand) pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mirror_indents: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keep_next: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -716,8 +743,8 @@ pub struct ParaProps {
 
 impl ParaProps {
     pub fn overlay(&mut self, patch: &ParaProps) {
-        overlay_fields!(self, patch; style, align, indent_left, indent_right, indent_first, space_before, space_after, line_spacing,
-            contextual_spacing, keep_next, keep_lines, page_break_before, widow_control, outline_level, numbering, tabs, shading, borders,
+        overlay_fields!(self, patch; style, align, indent_left, indent_right, indent_first, indent_left_chars, indent_right_chars, indent_first_chars, space_before, space_after, line_spacing,
+            contextual_spacing, mirror_indents, keep_next, keep_lines, page_break_before, widow_control, outline_level, numbering, tabs, shading, borders,
             suppress_hyphens, suppress_line_numbers, bidi, drop_cap, kinsoku, word_wrap, overflow_punct, top_line_punct, auto_space_de, auto_space_dn,
             snap_to_grid);
     }
@@ -727,6 +754,15 @@ impl ParaProps {
     }
     pub fn is_empty(&self) -> bool {
         *self == ParaProps::default()
+    }
+    /// After setting indents in points: keep the indents in characters (left, right, first line)
+    /// an inherited style may set from winning over them, as Word does (`w:firstLineChars="0"`).
+    pub fn cancel_char_indents(&mut self, left: bool, right: bool, first: bool) {
+        for (on, chars) in [(left, &mut self.indent_left_chars), (right, &mut self.indent_right_chars), (first, &mut self.indent_first_chars)] {
+            if on {
+                *chars = Some(0.0);
+            }
+        }
     }
     /// Just the formatting: without the tracked changes.
     pub fn formatting(&self) -> ParaProps {
