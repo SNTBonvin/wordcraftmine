@@ -166,7 +166,7 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
             if doc.parts.len() >= MAX_PARTS || tb_stories.contains_key(&spid) {
                 continue;
             }
-            let blocks = table::assemble(walk(&ctx, a, b, &mut pics));
+            let blocks = table::assemble(walk(&ctx, a, b, &[], &mut pics));
             tb_stories.insert(spid, doc.add_part(PartKind::TextBox, blocks));
         }
     }
@@ -191,7 +191,7 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
                 0 | 1 | 4 => PartKind::Header,
                 _ => PartKind::Footer,
             };
-            let blocks = table::assemble(walk(&ctx, a, b, &mut pics));
+            let blocks = table::assemble(walk(&ctx, a, b, &[], &mut pics));
             if !blocks.is_empty() {
                 let id = doc.add_part(kind, blocks);
                 hf_ids.push((si, k, id));
@@ -204,7 +204,7 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
     let mut note_links: Vec<(u32, NoteKind, u32)> = Vec::new();
     for (cp, ab) in notes::parse_notes(&table, &fib, fib::pair::PLCF_FND_REF, fib::pair::PLCF_FND_TXT) {
         let Some((a, b)) = story(ftn_base, fib.ccp.ftn, ab) else { continue };
-        let blocks = table::assemble(walk(&ctx, a, b, &mut pics));
+        let blocks = table::assemble(walk(&ctx, a, b, &[], &mut pics));
         if !blocks.is_empty() && doc.parts.len() < MAX_PARTS {
             let id = doc.add_part(PartKind::Footnote, blocks);
             note_links.push((cp, NoteKind::Footnote, id));
@@ -212,7 +212,7 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
     }
     for (cp, ab) in notes::parse_notes(&table, &fib, fib::pair::PLCF_END_REF, fib::pair::PLCF_END_TXT) {
         let Some((a, b)) = story(edn_base, fib.ccp.edn, ab) else { continue };
-        let blocks = table::assemble(walk(&ctx, a, b, &mut pics));
+        let blocks = table::assemble(walk(&ctx, a, b, &[], &mut pics));
         if !blocks.is_empty() && doc.parts.len() < MAX_PARTS {
             let id = doc.add_part(PartKind::Endnote, blocks);
             note_links.push((cp, NoteKind::Endnote, id));
@@ -225,7 +225,13 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
 
     // Sections: each section's properties attach to the paragraph that ends it (its story of
     // header/footer parts included); the section reaching the end of the text is the final one.
-    let mut paras = walk(&ctx, 0, fib.ccp.text, &mut pics);
+    // A non-final section ends at a 0x0C section-break character, so the walk ends a paragraph
+    // there; the CPs are sorted because the walk binary-searches them.
+    let mut sect_ends: Vec<u32> =
+        sects.iter().enumerate().filter(|&(si, s)| si + 1 < sects.len() && s.end_cp < fib.ccp.text).map(|(_, s)| s.end_cp).collect();
+    sect_ends.sort_unstable();
+    sect_ends.dedup();
+    let mut paras = walk(&ctx, 0, fib.ccp.text, &sect_ends, &mut pics);
     let last = sects.last().map(|s| s.props.clone());
     for (si, sec) in sects.iter().enumerate() {
         let mut props = sec.props.clone();
@@ -236,8 +242,11 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
         if is_final {
             continue; // handled below through `last`
         }
-        for p in paras.iter_mut() {
-            if p.end_cp == sec.end_cp {
+        // The last paragraph ending at or before the section CP carries it: normally the
+        // paragraph the 0x0C ends, and the closest earlier one when a broken file's CP
+        // falls between paragraphs.
+        for p in paras.iter_mut().rev() {
+            if p.end_cp <= sec.end_cp {
                 p.para.section = Some(Box::new(props));
                 break;
             }
@@ -318,14 +327,17 @@ impl ParaBuild {
 
 /// Walk a CP range, splitting paragraphs at 0x0D/0x07 marks, applying the direct character
 /// formatting of each CP and the paragraph formatting of each mark. Works for the main
-/// document and for any subdocument range (headers, footers, notes…). Field characters,
-/// note references, bookmarks and inline pictures become inline objects; pictures go into
-/// `pics`, which shares one media entry per Data-stream location.
+/// document and for any subdocument range (headers, footers, notes…). A 0x0C character ends
+/// its paragraph like a mark when `sect_ends` (the sorted CPs just past the main document's
+/// non-final section breaks, from PlcfSed) lists its CP + 1; every other 0x0C is a plain
+/// page break and stays inline, which is also how subdocument walks see them (`&[]`).
+/// Field characters, note references, bookmarks and inline pictures become inline objects;
+/// pictures go into `pics`, which shares one media entry per Data-stream location.
 ///
 /// The range is clamped to the last piece's CP, and unreadable stretches (gaps, truncated
 /// pieces) are skipped a whole piece at a time, so the work is bounded by the text that
 /// really exists, not by the CP numbers a file claims.
-fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -> Vec<ParaOut> {
+fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut media::Pictures) -> Vec<ParaOut> {
     let cp_end = cp_end.min(ctx.pieces.cp_end());
     let mut out = Vec::new();
     let mut pb = ParaBuild::default();
@@ -357,54 +369,7 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -
             }
         };
         match c {
-            '\r' | '\u{7}' => {
-                // Paragraph mark: its PAPX covers the FC range of the paragraph it ends, so
-                // querying at the mark's own FC finds that paragraph's properties. An
-                // oversized PAPX is swapped for its Data-stream grpprl in `resolve_papx`.
-                let fc_mark = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
-                let (istd, papx) = resolve_papx(ctx.papx_bins, ctx.word, ctx.data, fc_mark);
-                if let Some(st) = ctx.raw_styles.get(istd as usize).filter(|s| !s.name.is_empty()) {
-                    pb.props.style = Some(fmt::style_id(&st.name));
-                }
-                let mut row = table::decode(papx);
-                row.cell_mark = c == '\u{7}';
-                let mut ilvl = 0u8;
-                let mut ilfo = 0i32;
-                for prl in sprm::iter(papx) {
-                    if prl.op == P_ILVL {
-                        ilvl = prl.operand.first().copied().unwrap_or(0).min(8);
-                        continue;
-                    }
-                    if prl.op == P_ILFO {
-                        ilfo = match prl.operand {
-                            [b0, b1, ..] => i16::from_le_bytes([*b0, *b1]) as i32,
-                            _ => 0,
-                        };
-                        continue;
-                    }
-                    if prl.sgc() == 1 {
-                        fmt::apply_para(&mut pb.props, &prl);
-                    }
-                }
-                if let Some(num) = num_of(ilfo) {
-                    pb.props.numbering = Some(NumRef { num, level: ilvl });
-                }
-                let fc = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
-                pb.mark = char_props(ctx.chpx_bins.chpx(ctx.word, fc), ctx.fonts, &CharProps::default());
-                let done = std::mem::take(&mut pb);
-                out.push(ParaOut {
-                    para: Paragraph {
-                        text: done.text,
-                        runs: done.runs,
-                        props: done.props,
-                        mark: done.mark,
-                        objects: done.objects,
-                        ..Default::default()
-                    },
-                    end_cp: cp.saturating_add(1),
-                    row,
-                });
-            }
+            '\r' | '\u{7}' => end_paragraph(ctx, cp, c, &mut pb, &mut out),
             // Field begin/separator/end ([MS-DOC] §2.9.84 Plcfld).
             '\u{13}' => {
                 match field.as_mut() {
@@ -476,6 +441,12 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -
             }
             '\t' => push_formatted(&mut pb, cp, '\t', ctx, field.as_mut()),
             '\u{B}' => push_formatted(&mut pb, cp, '\n', ctx, field.as_mut()),
+            // Section break: the 0x0C whose CP just past it PlcfSed lists ends its
+            // paragraph exactly like a mark, so the section's properties find a paragraph
+            // to attach to in `read`. The character itself is not emitted as text.
+            '\u{C}' if sect_ends.binary_search(&cp.saturating_add(1)).is_ok() => {
+                end_paragraph(ctx, cp, c, &mut pb, &mut out);
+            }
             '\u{C}' => push_formatted(&mut pb, cp, '\u{C}', ctx, field.as_mut()),
             '\u{E}' => push_formatted(&mut pb, cp, '\u{E}', ctx, field.as_mut()),
             '\u{1E}' => push_formatted(&mut pb, cp, '\u{2011}', ctx, field.as_mut()),
@@ -496,6 +467,50 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -
         });
     }
     out
+}
+
+/// End the paragraph at a mark character: 0x0D (paragraph mark), 0x07 (cell/row mark) or a
+/// 0x0C section break listed in PlcfSed. The mark's PAPX covers the FC range of the
+/// paragraph it ends, so querying at the mark's own FC finds that paragraph's properties.
+/// An oversized PAPX is swapped for its Data-stream grpprl in `resolve_papx`. The mark
+/// itself is not emitted as text.
+fn end_paragraph(ctx: &WalkCtx, cp: u32, c: char, pb: &mut ParaBuild, out: &mut Vec<ParaOut>) {
+    let fc_mark = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
+    let (istd, papx) = resolve_papx(ctx.papx_bins, ctx.word, ctx.data, fc_mark);
+    if let Some(st) = ctx.raw_styles.get(istd as usize).filter(|s| !s.name.is_empty()) {
+        pb.props.style = Some(fmt::style_id(&st.name));
+    }
+    let mut row = table::decode(papx);
+    row.cell_mark = c == '\u{7}';
+    let mut ilvl = 0u8;
+    let mut ilfo = 0i32;
+    for prl in sprm::iter(papx) {
+        if prl.op == P_ILVL {
+            ilvl = prl.operand.first().copied().unwrap_or(0).min(8);
+            continue;
+        }
+        if prl.op == P_ILFO {
+            ilfo = match prl.operand {
+                [b0, b1, ..] => i16::from_le_bytes([*b0, *b1]) as i32,
+                _ => 0,
+            };
+            continue;
+        }
+        if prl.sgc() == 1 {
+            fmt::apply_para(&mut pb.props, &prl);
+        }
+    }
+    if let Some(num) = num_of(ilfo) {
+        pb.props.numbering = Some(NumRef { num, level: ilvl });
+    }
+    let fc = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
+    pb.mark = char_props(ctx.chpx_bins.chpx(ctx.word, fc), ctx.fonts, &CharProps::default());
+    let done = std::mem::take(pb);
+    out.push(ParaOut {
+        para: Paragraph { text: done.text, runs: done.runs, props: done.props, mark: done.mark, objects: done.objects, ..Default::default() },
+        end_cp: cp.saturating_add(1),
+        row,
+    });
 }
 
 /// The PAPX of a paragraph mark: the FKP lookup, then the huge-PAPX swap. When the grpprl

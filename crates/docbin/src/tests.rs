@@ -943,6 +943,53 @@ fn two_sections_box_the_first() {
     assert!(!doc.last_section.title_page);
 }
 
+/// #880. Real `.doc` files end every non-final section with a 0x0C character whose CP just
+/// past it is listed in PlcfSed. The walker split paragraphs only at 0x0D/0x07, so no
+/// paragraph ended at the section CP and the section's properties were silently dropped:
+/// the whole document then laid out with the final section's margins.
+#[test]
+fn section_break_char_ends_paragraph() {
+    // "one" + section break (0x0C at CP 3) + "two" + paragraph mark; section 0 ends at CP 4.
+    let text = "one\u{C}two\r";
+    let margins = |tw: u16| grpprl(&[(0xB021, &tw.to_le_bytes()), (0xB022, &tw.to_le_bytes())]);
+    let spec = StructSpec {
+        text,
+        sections: vec![(4, margins(850)), (8, margins(1133))], // 1.5 cm vs 2 cm
+        papx_entries: vec![(0, 0, Vec::new()), (4, 0, Vec::new())],
+        ..structured_spec(text, 8)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    // The 0x0C ends the first paragraph and is not part of its text.
+    assert_eq!(body_texts(&doc), ["one", "two"]);
+    let sec = doc.body.first().and_then(|b| b.as_para()).and_then(|p| p.section.as_ref()).expect("section on the break paragraph");
+    assert_eq!(sec.margin_left, 42.5); // 850 twips = 1.5 cm
+    assert_eq!(sec.margin_right, 42.5);
+    // The final section keeps its own margins (1133 twips = 56.65 pt, float-rounded).
+    assert!((doc.last_section.margin_left - 56.65).abs() < 0.05, "{}", doc.last_section.margin_left);
+    assert!((doc.last_section.margin_right - 56.65).abs() < 0.05, "{}", doc.last_section.margin_right);
+}
+
+/// #880. A 0x0C that PlcfSed does not list is a plain page break inside a paragraph
+/// (Ctrl+Enter): it stays inline in the paragraph's text and creates no section of its own.
+#[test]
+fn page_break_char_stays_inline() {
+    let text = "one\u{C}two\r";
+    let spec = StructSpec {
+        text,
+        // One final section reaching the text end: no PlcfSed entry at CP 4.
+        sections: vec![(8, grpprl(&[(0xB021, &1133u16.to_le_bytes())]))],
+        ..structured_spec(text, 8)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    assert_eq!(body_texts(&doc), ["one\u{C}two"]);
+    for b in &doc.body {
+        if let Some(p) = b.as_para() {
+            assert!(p.section.is_none(), "section props on {p:?}");
+        }
+    }
+    assert!((doc.last_section.margin_left - 56.65).abs() < 0.05, "{}", doc.last_section.margin_left);
+}
+
 #[test]
 fn header_story_becomes_part() {
     let spec = StructSpec {
