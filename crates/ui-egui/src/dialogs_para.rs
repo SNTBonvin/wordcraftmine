@@ -37,6 +37,9 @@ pub struct TabsForm {
     pub cleared: Vec<f32>,
     pub clear_all: bool,
     pub selected: Option<usize>,
+    /// A stop's position being edited in the list (double-click): its index and the typed text.
+    #[serde(skip)]
+    pub editing: Option<(usize, String)>,
 }
 
 impl TabsForm {
@@ -59,6 +62,7 @@ impl TabsForm {
             cleared: Vec::new(),
             clear_all: false,
             selected: first.map(|_| 0),
+            editing: None,
         })
     }
 
@@ -73,6 +77,44 @@ impl TabsForm {
         self.stops.push(TabStop { pos, align: self.align, leader: self.leader });
         self.stops.sort_by(|a, b| a.pos.total_cmp(&b.pos));
         self.selected = self.stops.iter().position(|t| (t.pos - pos).abs() < SAME_POS);
+    }
+
+    /// Move stop `i` to `pos` (points), keeping its alignment and leader: the engine's ±1584
+    /// bound applies, and a stop already at the target is replaced. The fields follow the moved
+    /// stop, and `params` becomes a clear of the old position and a set of the new one.
+    pub fn move_stop(&mut self, i: usize, pos: f32) {
+        if !pos.is_finite() || pos.abs() > 1584.0 || i >= self.stops.len() {
+            return;
+        }
+        let t = self.stops.remove(i);
+        self.stops.retain(|x| (x.pos - pos).abs() >= SAME_POS);
+        self.cleared.retain(|c| (c - pos).abs() >= SAME_POS);
+        self.stops.push(TabStop { pos, ..t });
+        self.stops.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+        self.selected = self.stops.iter().position(|x| (x.pos - pos).abs() < SAME_POS);
+        self.pos = pos / unit().pt_per_unit();
+        self.align = t.align;
+        self.leader = t.leader;
+    }
+
+    /// Stage what the dialog shows when OK is pressed without Set: the fields describe a stop,
+    /// and OK sets it — a new position becomes a new stop (whatever was selected), and a changed
+    /// alignment or leader on an existing position is applied to that stop.
+    pub fn on_ok(&mut self) {
+        let pos = self.pos * unit().pt_per_unit();
+        if self.clear_all || !pos.is_finite() || pos <= 0.0 || self.cleared.iter().any(|c| (c - pos).abs() < SAME_POS) {
+            return;
+        }
+        match self.stops.iter().find(|t| (t.pos - pos).abs() < SAME_POS) {
+            // An existing stop at the shown position: apply the shown alignment and leader.
+            Some(t) => {
+                if t.align != self.align || t.leader != self.leader {
+                    self.set();
+                }
+            }
+            // A position with no stop yet is set on OK, as the field shows it.
+            None => self.set(),
+        }
     }
 
     /// Clear the selected stop (or the one at the position field).
@@ -128,13 +170,35 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
             let mut pick = None;
             egui::Frame::new().stroke(Stroke::new(1.0, Tokens::get(ui.ctx()).input_border)).inner_margin(4.0).show(ui, |ui| {
                 ui.set_min_size(vec2(150.0, 96.0));
+                let mut commit = None;
                 egui::ScrollArea::vertical().max_height(96.0).show(ui, |ui| {
-                    for (i, t) in f.stops.iter().enumerate() {
-                        if ui.selectable_label(f.selected == Some(i), u.format_with(t.pos, crate::options::decimal())).clicked() {
-                            pick = Some(i);
+                    for i in 0..f.stops.len() {
+                        let Some(t) = f.stops.get(i).copied() else { continue };
+                        let edit_id = ui.id().with(("tab_pos_edit", i));
+                        if let Some((_, buf)) = f.editing.as_mut().filter(|(ei, _)| *ei == i) {
+                            let r = ui.add(egui::TextEdit::singleline(&mut *buf).id(edit_id).desired_width(110.0));
+                            if r.lost_focus() {
+                                // Enter (or clicking away) commits; Escape puts the old text back.
+                                let kept = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
+                                commit = Some((i, (!kept).then(|| wordcraft_geom::parse_measure(buf, u)).flatten()));
+                            }
+                        } else {
+                            let r = ui.selectable_label(f.selected == Some(i), u.format_with(t.pos, crate::options::decimal()));
+                            if r.double_clicked() {
+                                f.editing = Some((i, u.number(t.pos, crate::options::decimal())));
+                                ui.ctx().memory_mut(|m| m.request_focus(edit_id));
+                            } else if r.clicked() {
+                                pick = Some(i);
+                            }
                         }
                     }
                 });
+                if let Some((i, pos)) = commit {
+                    f.editing = None;
+                    if let Some(pos) = pos {
+                        f.move_stop(i, pos);
+                    }
+                }
             });
             if let Some(i) = pick
                 && let Some(t) = f.stops.get(i)
@@ -202,12 +266,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
     });
     let (ok, cancel) = buttons(ui, tl!("OK"));
     if ok {
-        // A position typed but not Set is set on OK, as the field shows it.
-        let pos = f.pos * k;
-        let typed = f.selected.is_none() && !f.clear_all && f.cleared.iter().all(|c| (c - pos).abs() >= SAME_POS) && pos > 0.0;
-        if typed && !f.stops.iter().any(|t| (t.pos - pos).abs() < SAME_POS) {
-            f.set();
-        }
+        f.on_ok();
         if let Some(params) = f.params() {
             let _ = app.run("para.tabs", params);
         }
@@ -717,5 +776,90 @@ mod tests {
         assert!(f.params().is_none());
         f.clear_all();
         assert_eq!(f.params(), Some(json!({"clearAll": true})));
+    }
+
+    /// Selecting a stop, changing its alignment or leader and pressing OK applies the change
+    /// without Set, the same way a typed position is set on OK: the dialog does what it shows.
+    #[test]
+    fn tabs_ok_applies_the_selected_stops_alignment_without_set() {
+        let mut app = app_with("a\tb");
+        let k = unit().pt_per_unit();
+        let _ = app.run("para.tabs", json!({"set": [{"pos": 72.0}, {"pos": 144.0, "align": "right"}]}));
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        // The user's steps: select the first stop, pick Center, OK.
+        f.selected = Some(0);
+        f.pos = 72.0 / k;
+        f.align = TabAlign::Center;
+        f.on_ok();
+        let params = f.params().unwrap_or_else(|| panic!("the change is applied"));
+        let _ = app.run("para.tabs", params);
+        let props = app.session.doc.para_at(&app.session.sel.focus).map(|p| p.props.clone()).unwrap_or_default();
+        assert_eq!(
+            props.tabs,
+            Some(vec![
+                TabStop { pos: 72.0, align: TabAlign::Center, leader: TabLeader::None },
+                TabStop { pos: 144.0, align: TabAlign::Right, leader: TabLeader::None },
+            ])
+        );
+
+        // Nothing changed: OK runs nothing.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.on_ok();
+        assert!(f.params().is_none(), "no change, no call");
+
+        // A new position typed with a stop still selected adds a stop there on OK — adding
+        // doesn't require leaving the dialog for the ruler, and the selected stop is kept.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.selected = Some(0);
+        f.pos = 99.0 / k;
+        f.align = TabAlign::Bar;
+        f.on_ok();
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 99.0, "align": "bar", "leader": "none"}]})));
+
+        // A typed position with no selection is still set on OK.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.selected = None;
+        f.pos = 216.0 / k;
+        f.align = TabAlign::Decimal;
+        f.on_ok();
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 216.0, "align": "decimal", "leader": "none"}]})));
+
+        // A cleared position re-typed on OK stays cleared only if Clear was the last word:
+        // typing it again sets it, since the field shows it.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.selected = Some(0);
+        f.clear();
+        f.pos = 72.0 / k;
+        f.on_ok();
+        assert_eq!(f.params(), Some(json!({"clear": [72.0]})), "Clear wins over the field it emptied");
+    }
+
+    /// Double-clicking a stop in the list edits its position in place: the commit moves the
+    /// stop (one clear + one set), keeping its alignment and leader, and junk changes nothing.
+    #[test]
+    fn tabs_list_edit_moves_the_stop() {
+        let mut app = app_with("a\tb");
+        let k = unit().pt_per_unit();
+        let _ = app.run("para.tabs", json!({"set": [{"pos": 72.0, "align": "right", "leader": "dot"}, {"pos": 144.0}]}));
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.move_stop(0, 108.0);
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 108.0, "align": "right", "leader": "dot"}], "clear": [72.0]})));
+        assert_eq!(f.selected, Some(0), "the fields follow the moved stop");
+        assert_eq!((f.pos * k, f.align, f.leader), (108.0, TabAlign::Right, TabLeader::Dot));
+
+        // Moving onto another stop replaces it; junk positions and indexes change nothing.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.move_stop(0, 144.0);
+        assert_eq!(f.stops.len(), 1);
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 144.0, "align": "right", "leader": "dot"}], "clear": [72.0]})));
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        for (i, pos) in [(0, f32::NAN), (0, 2000.0), (5, 72.0)] {
+            f.move_stop(i, pos);
+            assert!(f.params().is_none(), "junk move {i} -> {pos} changed nothing");
+        }
+
+        // What the list editor parses: the interface unit by default, any unit spelled out.
+        assert_eq!(wordcraft_geom::parse_measure("1.5", wordcraft_geom::Unit::Inches), Some(108.0));
+        assert_eq!(wordcraft_geom::parse_measure("2,54 cm", wordcraft_geom::Unit::Inches), Some(72.0));
     }
 }
