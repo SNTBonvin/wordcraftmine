@@ -567,6 +567,15 @@ pub fn to_doc(flow: &Flow) -> Document {
     doc
 }
 
+/// `blocks` built into `doc`'s styles and numbering, for a story other than the body (a header,
+/// footer or note).
+pub fn part_blocks(doc: &mut Document, blocks: &[FBlock]) -> Blocks {
+    if uses_kind(blocks, Kind::Code, 0) {
+        doc.styles.upsert(code_style());
+    }
+    Builder { doc }.blocks(blocks, 0)
+}
+
 fn uses_kind(blocks: &[FBlock], k: Kind, depth: usize) -> bool {
     depth <= MAX_DEPTH
         && blocks.iter().any(|b| match b {

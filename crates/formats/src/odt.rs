@@ -947,6 +947,66 @@ struct Body<'a> {
     in_desc: bool,
 }
 
+impl<'a> Body<'a> {
+    fn new(styles: &'a Styles, zip: &'a mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Self {
+        Body {
+            styles,
+            zip,
+            containers: vec![Vec::new()],
+            fmt: Vec::new(),
+            para: None,
+            para_cont: false,
+            lists: Vec::new(),
+            lists_saved: Vec::new(),
+            item_used: Vec::new(),
+            tables: Vec::new(),
+            cells: Vec::new(),
+            in_text: false,
+            skip: 0,
+            depth: 0,
+            frame: None,
+            in_desc: false,
+        }
+    }
+
+    /// Take one XML event; elements nested deeper than `MAX_XML_DEPTH` are only counted.
+    fn feed(&mut self, ev: Ev) {
+        match ev {
+            Ev::Start(q, a) => {
+                if self.depth < MAX_XML_DEPTH {
+                    self.start(&q, &a);
+                } else {
+                    self.depth += 1;
+                }
+            }
+            Ev::End(q) => {
+                if self.depth <= MAX_XML_DEPTH {
+                    self.end(&q);
+                } else {
+                    self.depth -= 1;
+                }
+            }
+            Ev::Text(t) => self.text(&t),
+        }
+    }
+
+    /// The blocks read, with anything still open closed.
+    fn finish(mut self) -> Vec<FBlock> {
+        self.end_para();
+        while self.containers.len() > 1 {
+            let c = self.containers.pop().unwrap_or_default();
+            self.container().extend(c);
+        }
+        let mut blocks = self.containers.pop().unwrap_or_default();
+        for t in self.tables.drain(..) {
+            if !t.rows.is_empty() {
+                blocks.push(FBlock::Table(FTable { rows: t.rows, widths: Vec::new(), borderless: false }));
+            }
+        }
+        blocks
+    }
+}
+
 impl Body<'_> {
     fn container(&mut self) -> &mut Vec<FBlock> {
         if self.containers.is_empty() {
@@ -1330,6 +1390,11 @@ fn read_meta(xml: &[u8]) -> Meta {
 
 /// Parse an `.odt` package into the flow model.
 pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
+    read(bytes).map(|(flow, _)| flow)
+}
+
+/// The body as a flow, plus the headers and footers of the first master page.
+fn read(bytes: &[u8]) -> Result<(Flow, Vec<(Slot, Vec<FBlock>)>), String> {
     let mut z = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("ODT: not a valid package ({e})"))?;
     if let Some(mt) = read_entry(&mut z, "mimetype") {
         let mt = String::from_utf8_lossy(&mt);
@@ -1339,8 +1404,9 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
     }
     let content = read_entry(&mut z, "content.xml").ok_or("ODT: content.xml is missing")?;
     let mut styles = Styles::default();
-    if let Some(s) = read_entry(&mut z, "styles.xml") {
-        styles.read(&s, false);
+    let styles_xml = read_entry(&mut z, "styles.xml");
+    if let Some(s) = &styles_xml {
+        styles.read(s, false);
     }
     styles.read(&content, true);
     let meta = read_entry(&mut z, "meta.xml").map(|m| read_meta(&m)).unwrap_or_default();
@@ -1350,61 +1416,125 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
         total += d.len() as u64;
         (total <= MAX_ENTRY).then_some(d)
     };
-    let mut body = Body {
-        styles: &styles,
-        zip: &mut fetch,
-        containers: vec![Vec::new()],
-        fmt: Vec::new(),
-        para: None,
-        para_cont: false,
-        lists: Vec::new(),
-        lists_saved: Vec::new(),
-        item_used: Vec::new(),
-        tables: Vec::new(),
-        cells: Vec::new(),
-        in_text: false,
-        skip: 0,
-        depth: 0,
-        frame: None,
-        in_desc: false,
-    };
-    events(&content, |ev| match ev {
-        Ev::Start(q, a) => {
-            if body.depth < MAX_XML_DEPTH {
-                body.start(&q, &a);
-            } else {
-                body.depth += 1;
-            }
-        }
-        Ev::End(q) => {
-            if body.depth <= MAX_XML_DEPTH {
-                body.end(&q);
-            } else {
-                body.depth -= 1;
-            }
-        }
-        Ev::Text(t) => body.text(&t),
-    });
-    body.end_para();
-    while body.containers.len() > 1 {
-        let c = body.containers.pop().unwrap_or_default();
-        body.container().extend(c);
-    }
-    let mut blocks = body.containers.pop().unwrap_or_default();
-    for t in body.tables.drain(..) {
-        if !t.rows.is_empty() {
-            blocks.push(FBlock::Table(FTable { rows: t.rows, widths: Vec::new(), borderless: false }));
-        }
-    }
+    let mut body = Body::new(&styles, &mut fetch);
+    events(&content, |ev| body.feed(ev));
+    let mut blocks = body.finish();
     if blocks.is_empty() {
         blocks.push(FBlock::Para(Para::default()));
     }
-    Ok(Flow { blocks, meta })
+    let mut parts = Vec::new();
+    for (slot, evs) in styles_xml.as_deref().map(master_page_parts).unwrap_or_default() {
+        let mut b = Body::new(&styles, &mut fetch);
+        b.in_text = true;
+        for ev in evs {
+            b.feed(ev);
+        }
+        parts.push((slot, b.finish()));
+    }
+    Ok((Flow { blocks, meta }, parts))
+}
+
+/// A header or footer of a master page (ODF 1.3 §16.10): `style:header`/`style:footer` on every
+/// page, `-left` on left (even) pages, `-first` on the first page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    Header,
+    HeaderLeft,
+    HeaderFirst,
+    Footer,
+    FooterLeft,
+    FooterFirst,
+}
+
+impl Slot {
+    fn of(q: &str) -> Option<Slot> {
+        Some(match q {
+            "style:header" => Slot::Header,
+            "style:header-left" => Slot::HeaderLeft,
+            "style:header-first" | "loext:header-first" => Slot::HeaderFirst,
+            "style:footer" => Slot::Footer,
+            "style:footer-left" => Slot::FooterLeft,
+            "style:footer-first" | "loext:footer-first" => Slot::FooterFirst,
+            _ => return None,
+        })
+    }
+
+    fn is_footer(self) -> bool {
+        matches!(self, Slot::Footer | Slot::FooterLeft | Slot::FooterFirst)
+    }
+}
+
+/// The content events of each header and footer of the first master page in `styles.xml` (the
+/// page style the body uses when its paragraphs name none). Hidden ones (`style:display="false"`)
+/// are left out.
+fn master_page_parts(xml: &[u8]) -> Vec<(Slot, Vec<Ev>)> {
+    let mut out: Vec<(Slot, Vec<Ev>)> = Vec::new();
+    let mut pages = 0usize;
+    let mut in_first = false;
+    // The slot being read, the nesting depth inside it, and whether its content is kept.
+    let mut cur: Option<(Slot, usize, bool)> = None;
+    events(xml, |ev| {
+        if let Some((slot, depth, keep)) = &mut cur {
+            match &ev {
+                Ev::Start(..) => *depth += 1,
+                Ev::End(q) if *depth == 0 => {
+                    if Slot::of(q) == Some(*slot) {
+                        cur = None;
+                    }
+                    return;
+                }
+                Ev::End(_) => *depth -= 1,
+                Ev::Text(_) => {}
+            }
+            if *keep && let Some((_, evs)) = out.last_mut() {
+                evs.push(ev);
+            }
+            return;
+        }
+        match ev {
+            Ev::Start(q, _) if q == "style:master-page" => {
+                pages += 1;
+                in_first = pages == 1;
+            }
+            Ev::End(q) if q == "style:master-page" => in_first = false,
+            Ev::Start(q, a) if in_first => {
+                if let Some(slot) = Slot::of(&q) {
+                    let keep = get(&a, "style:display") != Some("false") && !out.iter().any(|(s, _)| *s == slot);
+                    if keep {
+                        out.push((slot, Vec::new()));
+                    }
+                    cur = Some((slot, 0, keep));
+                }
+            }
+            _ => {}
+        }
+    });
+    out
 }
 
 /// Parse an `.odt` package into a document.
 pub fn import(bytes: &[u8]) -> Result<Document, String> {
-    Ok(model::to_doc(&parse(bytes)?))
+    let (flow, parts) = read(bytes)?;
+    let mut doc = model::to_doc(&flow);
+    for (slot, blocks) in parts {
+        let kind = if slot.is_footer() { wordcraft_doc::PartKind::Footer } else { wordcraft_doc::PartKind::Header };
+        let blocks = model::part_blocks(&mut doc, &blocks);
+        let id = doc.add_part(kind, blocks);
+        let sec = &mut doc.last_section;
+        let set = if slot.is_footer() { &mut sec.footers } else { &mut sec.headers };
+        match slot {
+            Slot::Header | Slot::Footer => set.default = Some(id),
+            Slot::HeaderLeft | Slot::FooterLeft => {
+                set.even = Some(id);
+                doc.settings.even_odd_headers = true;
+            }
+            Slot::HeaderFirst | Slot::FooterFirst => {
+                set.first = Some(id);
+                sec.title_page = true;
+            }
+        }
+    }
+    Ok(doc)
 }
 
 #[cfg(test)]
@@ -1475,5 +1605,66 @@ mod tests {
         let Some(FBlock::Table(t)) = f.blocks.iter().find(|b| matches!(b, FBlock::Table(_))) else { panic!("no table") };
         let row: Vec<_> = t.rows[0].iter().map(|c| (c.text(), c.shading)).collect();
         assert_eq!(row, vec![("Red".to_string(), Some(Rgb(255, 0, 0))), ("Plain".to_string(), None)]);
+    }
+
+    /// The text of the header or footer part `id`.
+    fn part_text(d: &Document, id: Option<u32>) -> String {
+        d.plain_text(wordcraft_doc::StoryRef::Part(id.expect("part")))
+    }
+
+    #[test]
+    fn master_page_headers_and_footers_are_imported() {
+        // #863: a header or footer (a name or logo at the top of every page) lives on the master
+        // page in styles.xml, not in content.xml.
+        let styles = format!(
+            r#"<office:document-styles {NS_T}><office:automatic-styles><style:style style:name="MP1" style:family="paragraph"><style:text-properties fo:font-weight="bold"/></style:style></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"><style:header><text:p text:style-name="MP1">ACME <text:span>Letterhead</text:span></text:p></style:header><style:header-left><text:p>Left page</text:p></style:header-left><style:header-first><text:p>First page</text:p></style:header-first><style:footer><text:p>Page <text:page-number text:select-page="current">1</text:page-number></text:p></style:footer><style:footer-left style:display="false"><text:p>Hidden</text:p></style:footer-left></style:master-page><style:master-page style:name="Other"><style:header><text:p>Other master</text:p></style:header></style:master-page></office:master-styles></office:document-styles>"#
+        );
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:body><office:text><text:p>Body</text:p></office:text></office:body></office:document-content>"#
+        );
+        let d = import(&package(&content, Some(&styles))).unwrap();
+        assert_eq!(d.plain_text(wordcraft_doc::StoryRef::Body), "Body");
+        let s = &d.last_section;
+        assert_eq!(part_text(&d, s.headers.default), "ACME Letterhead");
+        assert_eq!(part_text(&d, s.headers.even), "Left page");
+        assert_eq!(part_text(&d, s.headers.first), "First page");
+        assert_eq!(part_text(&d, s.footers.default), "Page 1");
+        assert!(s.title_page && d.settings.even_odd_headers);
+        // The hidden left footer and the second master page are not read.
+        assert_eq!((s.footers.even, s.footers.first), (None, None));
+        assert_eq!(d.parts.len(), 4);
+        // The header's paragraph keeps its automatic style from styles.xml.
+        let id = s.headers.default.unwrap();
+        let Some(wordcraft_doc::Block::Para(p)) = d.parts[&id].blocks.first().map(|b| &**b) else { panic!("no header paragraph") };
+        assert!(p.runs.iter().all(|r| r.props.bold == Some(true)), "{:?}", p.runs);
+    }
+
+    #[test]
+    fn documents_without_headers_get_none() {
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:body><office:text><text:p>Body</text:p></office:text></office:body></office:document-content>"#
+        );
+        let styles = format!(
+            r#"<office:document-styles {NS_T}><office:master-styles><style:master-page style:name="Standard"/></office:master-styles></office:document-styles>"#
+        );
+        for d in [import(&package(&content, Some(&styles))).unwrap(), import(&package(&content, None)).unwrap()] {
+            assert!(d.parts.is_empty());
+            assert_eq!(d.last_section.headers, Default::default());
+            assert!(!d.last_section.title_page && !d.settings.even_odd_headers);
+        }
+    }
+
+    #[test]
+    fn deeply_nested_header_content_does_not_panic() {
+        let (open, close) = ("<text:span>".repeat(4 * MAX_XML_DEPTH), "</text:span>".repeat(4 * MAX_XML_DEPTH));
+        let styles = format!(
+            r#"<office:document-styles {NS_T}><office:master-styles><style:master-page style:name="Standard"><style:header><text:p>{open}Deep{close}</text:p></style:header><style:footer><text:p>After</text:p></style:footer></style:master-page></office:master-styles></office:document-styles>"#
+        );
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:body><office:text><text:p>Body</text:p></office:text></office:body></office:document-content>"#
+        );
+        let d = import(&package(&content, Some(&styles))).unwrap();
+        assert!(d.last_section.headers.default.is_some());
+        assert_eq!(part_text(&d, d.last_section.footers.default), "After");
     }
 }
