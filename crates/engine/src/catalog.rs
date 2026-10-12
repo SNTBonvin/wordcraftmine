@@ -13,12 +13,14 @@ File|Backstage|Open|file.open
 File|Backstage|Save|file.save
 File|Backstage|Save As|file.saveAs
 File|Backstage|Print|file.print
+File|Backstage|Print Markup|file.printMarkup
 File|Backstage|Close|file.close
 File|Backstage|Info|file.info
 File|Backstage|Properties|file.properties
 File|Backstage|Export PDF|file.exportPdf
 File|Backstage|Export Image|file.exportPng
 File|Backstage|Options|file.options
+File|Options|Numerals|view.numeral
 File|Backstage|Share|file.share
 File|Backstage|Protect Document|file.protect
 File|Backstage|Inspect Document|file.inspect
@@ -254,6 +256,7 @@ References|Index|Insert Index|references.index
 References|Index|Update Index|references.updateIndex
 References|Table of Authorities|Mark Citation|references.markCitation
 References|Table of Authorities|Insert Table of Authorities|references.tableOfAuthorities
+References|Table of Authorities|Update Table|references.updateAuthorities
 References|Fields|Update Fields|references.updateFields
 Mailings|Create|Envelopes|mailings.envelopes
 Mailings|Create|Labels|mailings.labels
@@ -433,6 +436,13 @@ Shape Format|Accessibility|Alt Text|object.altText
 Picture Format|Size|Crop|picture.crop
 Picture Format|Size|Size|picture.size
 Picture Format|Size|Rotation|arrange.rotation
+SmartArt Design|Create Graphic|Add Shape|smartArt.addShape
+SmartArt Design|Create Graphic|Promote|smartArt.promote
+SmartArt Design|Create Graphic|Demote|smartArt.demote
+SmartArt Design|Create Graphic|Text Pane|smartArt.textPane
+SmartArt Design|Layouts|Layouts|smartArt.layout
+SmartArt Design|SmartArt Styles|Change Colors|smartArt.colors
+SmartArt Design|Reset|Reset Graphic|smartArt.reset
 Chart Design|Type|Change Chart Type|chart.type
 Chart Design|Data|Edit Data|chart.editData
 Chart Design|Chart Layouts|Chart Title|chart.title

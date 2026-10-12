@@ -354,6 +354,40 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(10.0, 6.5), (10.0, 10.0), (5.0, 10.0), (5.0, 13.0)]);
             pen.line(&[(10.0, 10.0), (15.0, 10.0), (15.0, 13.0)]);
         }
+        "addShape" => {
+            pen.frect(2.5, 3.0, 9.5, 8.0, a);
+            pen.rect(2.5, 12.0, 9.5, 17.0, c);
+            pen.line(&[(6.0, 8.0), (6.0, 12.0)]);
+            pen.line_c(&[(14.5, 10.5), (14.5, 17.5)], green);
+            pen.line_c(&[(11.0, 14.0), (18.0, 14.0)], green);
+        }
+        "promote" => {
+            pen.lines(9.0, 17.5, &[5.0, 10.0, 15.0]);
+            pen.line_c(&[(6.5, 7.5), (3.0, 10.0), (6.5, 12.5)], a);
+        }
+        "demote" => {
+            pen.lines(9.0, 17.5, &[5.0, 10.0, 15.0]);
+            pen.line_c(&[(3.0, 7.5), (6.5, 10.0), (3.0, 12.5)], a);
+        }
+        "textPane" => {
+            pen.rect(2.5, 3.0, 17.5, 17.0, c);
+            pen.line(&[(9.0, 3.0), (9.0, 17.0)]);
+            pen.lines(4.0, 7.5, &[6.5, 10.0, 13.5]);
+            pen.frect(11.0, 6.0, 16.0, 9.0, a);
+            pen.frect(11.0, 11.5, 16.0, 14.5, a);
+        }
+        "smartArtColors" => {
+            pen.fcircle(7.0, 7.5, 4.0, a);
+            pen.fcircle(13.0, 7.5, 4.0, orange);
+            pen.fcircle(10.0, 13.0, 4.0, green);
+            pen.circle(10.0, 10.0, 8.0, c);
+        }
+        "resetGraphic" => {
+            pen.rect(7.5, 6.5, 16.5, 15.5, c);
+            pen.frect(9.5, 8.5, 14.5, 13.5, a);
+            pen.line(&[(3.5, 13.0), (3.5, 4.0), (11.0, 4.0)]);
+            pen.line(&[(1.5, 6.0), (3.5, 4.0), (5.5, 6.0)]);
+        }
         "chart" => {
             pen.frect(3.5, 11.0, 6.5, 17.0, a);
             pen.frect(8.5, 6.0, 11.5, 17.0, orange);
@@ -1163,7 +1197,9 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(5.0, 5.0), (15.0, 15.0)]);
             pen.line(&[(15.0, 5.0), (5.0, 15.0)]);
         }
-        "dropdown" => pen.arrow_down(10.0, 10.0, c),
+        // A triangle filling most of its box: it is drawn at 9–12 pt beside combos and split
+        // buttons, where a smaller one shrank to a dot (#535).
+        "dropdown" => pen.fill(&[(3.0, 7.0), (17.0, 7.0), (10.0, 14.0)], c),
         "more" => {
             for x in [5.0, 10.0, 15.0] {
                 pen.fcircle(x, 10.0, 1.3, c);
@@ -1260,6 +1296,22 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             if name == "textBoxUnlink" {
                 pen.line_c(&[(6.5, 16.5), (9.0, 11.5)], c);
             }
+        }
+
+        // The built-in file browser (#576): a folder, a file and the home folder.
+        "folder" => {
+            pen.frect(2.5, 4.5, 8.5, 7.0, yellow);
+            pen.frect(2.5, 6.5, 17.5, 16.0, yellow);
+            pen.closed(&[(2.5, 4.5), (8.0, 4.5), (9.5, 6.5), (17.5, 6.5), (17.5, 16.0), (2.5, 16.0)], c);
+        }
+        "file" => {
+            pen.page(4.5, 2.0, 15.5, 18.0);
+            pen.lines(7.0, 13.0, &[9.0, 12.0, 15.0]);
+        }
+        "homeFolder" => {
+            pen.closed(&[(3.0, 9.5), (10.0, 3.5), (17.0, 9.5)], c);
+            pen.closed(&[(5.0, 8.5), (5.0, 17.0), (15.0, 17.0), (15.0, 8.5)], c);
+            pen.frect(8.5, 12.0, 11.5, 17.0, a);
         }
 
         // Outlining tab: arrows moving a paragraph between outline levels and along the outline.

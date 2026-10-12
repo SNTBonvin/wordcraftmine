@@ -258,6 +258,59 @@ fn border_line_autoformat() {
 }
 
 #[test]
+fn undo_right_after_a_border_line_brings_the_characters_back() {
+    let mut s = typed("Above\n---\n");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "Above\n");
+    run(&mut s, "edit.undo", json!({}));
+    // The AutoFormat is undone on its own: the characters are back, the Enter stays.
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "Above\n---\n");
+    assert!(s.doc.body.iter().filter_map(|b| b.as_para()).all(|p| p.props.borders.is_none()));
+    assert_eq!(s.sel.focus, Pos::body(2, 0));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "Above\n---");
+}
+
+#[test]
+fn plus_and_hyphen_line_becomes_a_table() {
+    let mut s = typed("+--+------+\nA");
+    let Some(wordcraft_doc::Block::Table(t)) = s.doc.body.first().map(|b| &**b) else { panic!("no table: {:?}", paras(&s)) };
+    assert_eq!(t.rows.len(), 1);
+    assert_eq!(t.grid.len(), 2);
+    assert!((t.grid[1] / t.grid[0] - 3.0).abs() < 0.01, "widths follow the hyphens: {:?}", t.grid);
+    assert_eq!(t.rows[0].cells[0].blocks[0].as_para().map(|p| p.text.as_str()), Some("A"), "the caret is in the first cell");
+    assert!(s.doc.body.get(1).and_then(|b| b.as_para()).is_some_and(|p| p.is_empty()), "a paragraph follows the table");
+    // Undo right after brings the typed characters back, the Enter stays.
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "+--+------+\n");
+    assert!(s.doc.body.iter().all(|b| b.as_para().is_some()));
+    // Not a table: text around it, or more columns than a table can hold.
+    let s = typed("x +--+--+\n");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "X +--+--+\n");
+    let s = typed(&format!("+{}\n", "-+".repeat(64)));
+    assert!(s.doc.body.iter().all(|b| b.as_para().is_some()));
+}
+
+#[test]
+fn arrow_bullets() {
+    for (keys, bullet) in [("> ", "\u{27A2}"), ("-> ", "\u{2794}"), ("=> ", "\u{21E8}")] {
+        let s = typed(&format!("{keys}item\nnext"));
+        assert_eq!(paras(&s), vec![para("Item", Some(0)), para("next", Some(0))], "{keys}");
+        assert_eq!(label_at(&s, 0), bullet, "{keys}");
+    }
+    // An arrow list doesn't join a plain bullet list.
+    let s = typed("* a\n\n> b");
+    assert_eq!(label_at(&s, 0), "\u{2022}");
+    assert_eq!(label_at(&s, 1), "\u{27A2}");
+}
+
+#[test]
+fn smileys_are_replaced_inside_words_too() {
+    let s = typed("so ok:) sad:( meh:| :) fine:-) ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "So ok\u{263A} sad\u{2639} meh\u{1F610} \u{263A} fine\u{263A} ");
+}
+
+#[test]
 fn a_large_mixed_document_types_like_word() {
     // The corpus typed into Word and WordCraft side by side; the paragraph structure must match.
     let mut s = s();
@@ -436,6 +489,47 @@ fn undoing_bold_at_the_caret_turns_bold_typing_off_again() {
     assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props_of_char(0).bold, Some(true));
 }
 
+/// Myanmar (#604): typed in memory order (consonant, medial, then the prevowel ေ that is drawn
+/// before it), the caret steps over whole syllables and Backspace removes one sign at a time.
+#[test]
+fn myanmar_typing_steps_by_syllable_and_backspaces_by_sign() {
+    // ကြေး ("money"): က + ြ + ေ + း, then မြန်မာ.
+    let word = "\u{1000}\u{103C}\u{1031}\u{1038}";
+    let mut s = typed(word);
+    assert_eq!(paras(&s), vec![para(word, None)]);
+    // Backspace takes the visarga, then the vowel sign: the consonant and medial stay.
+    typ(&mut s, "\u{8}");
+    assert_eq!(paras(&s)[0].0, "\u{1000}\u{103C}\u{1031}");
+    typ(&mut s, "\u{8}\u{1031}\u{1038}");
+    assert_eq!(paras(&s)[0].0, word, "retyped");
+    // Left from the end skips the whole syllable (the visarga and aa signs aren't grapheme
+    // extenders, so a grapheme step would stop inside it).
+    let mut s = typed("\u{1019}\u{102C}\u{1005}\u{102C}"); // မာစာ
+    run(&mut s, "caret.left", json!({}));
+    assert_eq!(s.sel.focus.off, 6);
+    run(&mut s, "caret.left", json!({}));
+    assert_eq!(s.sel.focus.off, 0);
+    run(&mut s, "caret.right", json!({}));
+    assert_eq!(s.sel.focus.off, 6);
+    // Delete removes the whole syllable after the caret.
+    run(&mut s, "text.delete", json!({}));
+    assert_eq!(paras(&s)[0].0, "\u{1019}\u{102C}");
+}
+
+/// Devanagari and Khmer: Backspace removes the last character (a matra), not the conjunct.
+#[test]
+fn indic_and_khmer_backspace_removes_one_character() {
+    let mut s = typed("\u{0915}\u{094D}\u{0937}\u{093F}\u{8}"); // क्षि ⌫
+    assert_eq!(paras(&s)[0].0, "\u{0915}\u{094D}\u{0937}");
+    typ(&mut s, "\u{8}");
+    assert_eq!(paras(&s)[0].0, "\u{0915}\u{094D}");
+    let s = typed("\u{1781}\u{17D2}\u{1798}\u{17C2}\u{8}"); // ខ្មែ ⌫
+    assert_eq!(paras(&s)[0].0, "\u{1781}\u{17D2}\u{1798}");
+    // Latin keeps grapheme Backspace: e + combining acute goes as one.
+    let s = typed("ae\u{301}\u{8}");
+    assert_eq!(paras(&s)[0].0, "a");
+}
+
 /// Press a shortcut the way the keyboard does: run the command bound to it.
 fn press(s: &mut Session, combo: &str) -> Result<serde_json::Value, crate::CmdError> {
     let id = s.registry.by_shortcut(combo).map(|c| c.id).unwrap_or_else(|| panic!("nothing bound to {combo}"));
@@ -610,4 +704,40 @@ fn plain_text_paste_keeps_an_empty_paragraph_in_a_list() {
     run(&mut s, "para.bullets", json!({}));
     typ(&mut s, "A\n\nB");
     assert_eq!(paras(&s), vec![para("A", Some(0)), para("B", None)]);
+}
+
+/// #713: Arabic or Hebrew typed into an empty paragraph makes it right-to-left; a paragraph that
+/// already has letters, or whose style sets a direction, keeps its own.
+#[test]
+fn typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl() {
+    let bidi = |s: &Session, i: usize| s.doc.body.iter().filter_map(|b| b.as_para()).nth(i).and_then(|p| p.props.bidi);
+    // Empty paragraph: the first Arabic letter flips it, the rest keep it.
+    let s = typed("سلام");
+    assert_eq!(bidi(&s, 0), Some(true));
+    // Digits first, then Arabic: still no letters before, so it flips.
+    let s = typed("1. سلام");
+    assert_eq!(bidi(&s, 0), Some(true));
+    // Latin first: Arabic typed later doesn't flip the paragraph.
+    let s = typed("Hello سلام");
+    assert_eq!(bidi(&s, 0), None);
+    // A new paragraph after an RTL one starts its own detection.
+    let s = typed("سلام\nHello");
+    assert_eq!(bidi(&s, 1), Some(true), "Enter carries the paragraph's direction on, as in Word");
+    // A style that sets left-to-right wins.
+    let mut doc = Session::new(wordcraft_doc::Document::new());
+    if let Some(st) = doc.doc.styles.get_mut("Normal") {
+        st.para.bidi = Some(false);
+    }
+    typ(&mut doc, "سلام");
+    assert_eq!(bidi(&doc, 0), None);
+    // An opened paragraph without w:bidi lays out left-to-right whatever its text: the caret
+    // after the Arabic word sits near the left margin, not the right one.
+    let mut doc = typed("سلام");
+    let path = doc.sel.focus.path.clone();
+    if let Ok(p) = doc.doc.para_mut(StoryRef::Body, &path) {
+        p.props.bidi = None;
+        p.touch();
+    }
+    let x = doc.layout().caret(&doc.sel.focus).map(|c| c.x).unwrap_or(f32::MAX);
+    assert!(x < 300.0, "left-to-right paragraph: caret at {x}");
 }

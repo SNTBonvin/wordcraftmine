@@ -13,7 +13,9 @@ use wordcraft_doc::graphic::Embedded;
 use wordcraft_doc::para::Float;
 
 use super::PartRels;
-use crate::package::{EMBEDDED_PARTS, EmbeddedManifest, MAX_EMBEDDED_PARTS, VBA_PROJECT_PART, VBA_RELATED, relative};
+use crate::package::{
+    CUSTOM_XML_ROOTS, EMBEDDED_PARTS, EmbeddedManifest, MAX_EMBEDDED_PARTS, MAX_EMBEDDED_RELS, VBA_PROJECT_PART, VBA_RELATED, rel_is, relative, rt,
+};
 use crate::units::emu;
 use crate::xml::{self, El, MAX_DEPTH};
 
@@ -64,6 +66,10 @@ impl<'d> EmbedWriter<'d> {
         .map(|s| s.to_string())
         .collect();
         taken.insert(VBA_PROJECT_PART.to_ascii_lowercase());
+        // The bibliography writer uses these names when sources are present (#532).
+        if !doc.sources.is_empty() {
+            taken.extend(["customxml/item1.xml".into(), "customxml/itemprops1.xml".into()]);
+        }
         // The macro project's parts keep their names (see `write_as`).
         if let Some(m) = doc.passthrough.get(VBA_RELATED) {
             for line in String::from_utf8_lossy(m).lines() {
@@ -101,6 +107,9 @@ impl<'d> EmbedWriter<'d> {
 
     /// A free part name for (a copy of) `orig`: `orig` itself if free, else `stem_N.ext`.
     fn alloc(&mut self, orig: &str) -> String {
+        // Suffixes cannot escape reserved directories or a .rels extension. Such a kept
+        // part needs a different base name, otherwise every candidate would be reserved.
+        let orig = if Self::reserved(&orig.to_ascii_lowercase()) { "word/embeddings/part.xml" } else { orig };
         let lower = orig.to_ascii_lowercase();
         if !Self::reserved(&lower) && self.taken.insert(lower) {
             return orig.to_string();
@@ -121,6 +130,24 @@ impl<'d> EmbedWriter<'d> {
         }
     }
 
+    /// A number `n` for which every `{stem}{n}{ext}` is a free part name, with those names taken.
+    fn fresh_set(&mut self, stems: &[&str], ext: &str) -> Vec<String> {
+        let mut n: u32 = 1;
+        loop {
+            let names: Vec<String> = stems.iter().map(|s| format!("{s}{n}{ext}")).collect();
+            if names.iter().all(|name| {
+                let lower = name.to_ascii_lowercase();
+                !Self::reserved(&lower) && !self.taken.contains(&lower)
+            }) {
+                for name in &names {
+                    self.taken.insert(name.to_ascii_lowercase());
+                }
+                return names;
+            }
+            n = n.saturating_add(1);
+        }
+    }
+
     /// A free part name `{stem}{n}{ext}` for a new part, from n = 1 up.
     fn fresh(&mut self, stem: &str, ext: &str) -> String {
         let mut n: u32 = 1;
@@ -137,6 +164,25 @@ impl<'d> EmbedWriter<'d> {
     /// Can part `name` be written (bytes and manifest entry both kept)?
     fn available(&self, name: &str) -> bool {
         self.manifest.parts.contains_key(name) && self.passthrough.contains_key(name)
+    }
+
+    /// Reattach implicit custom XML roots, sharing their kept parts across both owners.
+    pub fn custom_xml_rels(&mut self, owner: &str, rels: &mut PartRels) {
+        let Some(roots) = self.passthrough.get(CUSTOM_XML_ROOTS).cloned() else { return };
+        let mut memo = std::mem::take(&mut self.first);
+        let mut written = Vec::new();
+        for line in String::from_utf8_lossy(&roots).lines().take(MAX_EMBEDDED_RELS * 2) {
+            let fields: Vec<&str> = line.split('\t').collect();
+            let [source, kind, target] = fields.as_slice() else { continue };
+            if *source != owner || !rel_is(kind, rt::CUSTOM_XML) {
+                continue;
+            }
+            if let Some(name) = self.copy_tree(target, &mut memo, &mut written) {
+                let source_part = if owner == "P" { "" } else { STORY_PART };
+                rels.add(kind, &relative(source_part, &name), false);
+            }
+        }
+        self.first = memo;
     }
 
     /// What copying the parts reached from `roots` costs against the copy budget.
@@ -260,6 +306,51 @@ impl super::Writer<'_> {
             self.resize_object(&mut root, w, h, float, alt, 0);
         }
         Some(root.to_xml())
+    }
+
+    /// The `a:graphic` of a SmartArt graphic written from its model, laid out `w` × `h` points:
+    /// new diagram parts (`word/diagrams/{data,layout,quickStyle,colors,drawing}N.xml`) related
+    /// from the story part through `rels`.
+    pub(super) fn smart_art_graphic(&mut self, spec: &wordcraft_doc::smart_art::SmartArtSpec, w: f32, h: f32, rels: &mut PartRels) -> String {
+        use crate::package::rt;
+        use crate::smart_art as sa;
+        let names = self.embeds.fresh_set(
+            &["word/diagrams/data", "word/diagrams/layout", "word/diagrams/quickStyle", "word/diagrams/colors", "word/diagrams/drawing"],
+            ".xml",
+        );
+        let [data, layout, style, colors, drawing] = names.as_slice() else { return String::new() };
+        // The drawing first: the data part names it by the story part's relationship id.
+        let drawing_id = rels.add(rt::DIAGRAM_DRAWING, &relative(STORY_PART, drawing), false);
+        let parts = [
+            (data, sa::data_xml(spec, &drawing_id), sa::DATA_CT, rt::DIAGRAM_DATA),
+            (layout, sa::layout_xml(spec.layout), sa::LAYOUT_CT, rt::DIAGRAM_LAYOUT),
+            (style, sa::quick_style_xml(), sa::STYLE_CT, rt::DIAGRAM_QUICK_STYLE),
+            (colors, sa::colors_xml(spec.colors), sa::COLORS_CT, rt::DIAGRAM_COLORS),
+            (drawing, sa::drawing_xml(spec, w, h), sa::DRAWING_CT, rt::DIAGRAM_DRAWING),
+        ];
+        let mut ids = Vec::new();
+        for (name, xml, ct, kind) in parts {
+            self.embeds.parts.push((name.clone(), xml.into_bytes(), ct.to_string(), PartRels::default()));
+            ids.push(rels.add(kind, &relative(STORY_PART, name), false));
+        }
+        let id = |i: usize| ids.get(i).cloned().unwrap_or_default();
+        let mut x = xml::W::default();
+        x.open("a:graphic", &[("xmlns:a", "http://schemas.openxmlformats.org/drawingml/2006/main")]);
+        x.open("a:graphicData", &[("uri", sa::DIAGRAM_URI)]);
+        x.empty(
+            "dgm:relIds",
+            &[
+                ("xmlns:dgm", "http://schemas.openxmlformats.org/drawingml/2006/diagram"),
+                ("xmlns:r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"),
+                ("r:dm", &id(0)),
+                ("r:lo", &id(1)),
+                ("r:qs", &id(2)),
+                ("r:cs", &id(3)),
+            ],
+        );
+        x.close("a:graphicData");
+        x.close("a:graphic");
+        x.s
     }
 
     /// The `a:graphic` of a chart written from its model: a new chart part (`word/charts/chartN.xml`)
@@ -436,9 +527,9 @@ fn vml_style_with(style: &str, w: f32, h: f32, float: &Float) -> String {
         .split(';')
         .filter(|d| {
             let key = d.split_once(':').map_or("", |(k, _)| k).trim().to_ascii_lowercase();
-            !d.trim().is_empty()
-                && !matches!(key.as_str(), "width" | "height" | "rotation" | "flip")
-                && !(absolute && matches!(key.as_str(), "left" | "top" | "margin-left" | "margin-top"))
+            !(d.trim().is_empty()
+                || matches!(key.as_str(), "width" | "height" | "rotation" | "flip")
+                || (absolute && matches!(key.as_str(), "left" | "top" | "margin-left" | "margin-top")))
         })
         .map(|d| d.trim().to_string())
         .collect();
