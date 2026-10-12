@@ -603,7 +603,10 @@ fn estonian_covers_the_interface_catalog_and_keeps_count_labels_neutral() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let et = lang("et");
-    assert_eq!(keys(et.0.source), keys(lang("es").0.source));
+    // Estonian and Turkish carry the same interface catalog; Spanish adds the equation gallery and
+    // built-in style names on top (see the Turkish test).
+    assert_eq!(keys(et.0.source), keys(lang("tr").0.source));
+    assert!(keys(et.0.source).is_subset(&keys(lang("es").0.source)));
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(et.0.source)));
     assert_eq!(tr(et, "Home"), "Avaleht");
     assert_eq!(tr(et, "Save"), "Salvesta");
@@ -658,8 +661,16 @@ fn turkish_locales_and_saved_preference_work_without_changing_the_document() {
 fn turkish_covers_the_entire_existing_interface_catalog_and_preserves_templates() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
-    // Spanish carries every key the interface looks up; Chinese lacks only a few newer labels.
-    assert_eq!(keys(lang("tr").0.source), keys(lang("es").0.source));
+    // Spanish carries every key the interface looks up, plus the equation gallery and built-in style
+    // names that Italian and Russian also translate. Those extras are keys German doesn't have, so a
+    // shared interface key missing from Turkish still fails here. Chinese lacks only a few newer labels.
+    let (tr_keys, es_keys) = (keys(lang("tr").0.source), keys(lang("es").0.source));
+    assert!(tr_keys.is_subset(&es_keys));
+    let de_keys = keys(lang("de").0.source);
+    let it_keys = keys(lang("it").0.source);
+    for extra in es_keys.difference(&tr_keys) {
+        assert!(!de_keys.contains(extra) && it_keys.contains(extra), "Turkish lacks {extra:?}");
+    }
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("tr").0.source)));
     let tr = lang("tr");
     for (source, expected) in [
@@ -736,9 +747,9 @@ fn polish_covers_every_key_of_every_other_catalog() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let polish = keys(lang("pl").0.source);
-    // Russian and Italian also translate the built-in style names and the equation gallery,
+    // Russian, Italian and Spanish also translate the built-in style names and the equation gallery,
     // which the others don't yet; Polish matches every other catalog.
-    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "ru" | "it")) {
+    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "ru" | "it" | "es")) {
         let mut missing: Vec<String> = keys(other.0.source).difference(&polish).cloned().collect();
         missing.sort();
         assert!(missing.is_empty(), "pl lacks {}'s {missing:?}", other.code());
