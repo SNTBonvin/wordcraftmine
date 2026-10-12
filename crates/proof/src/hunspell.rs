@@ -32,12 +32,9 @@ pub fn set_dictionary_dir(dir: Option<PathBuf>) {
 fn lo_ext_dirs(name: &str) -> Vec<String> {
     let primary = name.split(['-', '_']).next().unwrap_or(name);
     let dashed = name.replace('_', "-");
-    let mut out = vec![format!("dict-{primary}")];
+    let first = format!("dict-{primary}");
     let full = format!("dict-{dashed}");
-    if full != out[0] {
-        out.push(full);
-    }
-    out
+    if full == first { vec![first] } else { vec![first, full] }
 }
 
 /// Directories that may hold Hunspell dictionaries, most specific first. `lo_exts`, when a
