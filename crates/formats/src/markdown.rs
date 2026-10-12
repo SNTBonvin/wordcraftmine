@@ -1113,7 +1113,7 @@ fn inlines_md(inlines: &[Inline]) -> String {
                 pieces.push((String::new(), Fmt::default(), Some(format!("<a id=\"{safe}\"></a>"))));
             }
             Inline::Figure(alt) => pieces.push((String::new(), Fmt::default(), Some(format!("![{}]()", escape(alt))))),
-            Inline::Equation { .. } => {}
+            Inline::Equation { .. } | Inline::Note { .. } => {}
         }
     }
     let mut out = String::new();
