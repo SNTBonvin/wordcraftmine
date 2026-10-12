@@ -64,6 +64,7 @@ pub mod panes;
 pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
+pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -90,6 +91,10 @@ pub use file_dialogs::{FileDialogAnswer, FileDialogRequest, open_filters};
 pub struct Services {
     /// Desktop host's native menus. The ribbon remains available on every platform.
     pub native_menu: Option<native_menu::NativeMenu>,
+    /// Desktop: discover configured printers on a worker.
+    pub printers: Option<printing::Discover>,
+    /// Desktop: submit the PDF with the chosen settings on a worker.
+    pub print_native: Option<printing::Submit>,
     /// Pick a file to open; the argument says what for (`document`, `picture`).
     pub pick_open: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Pick a path to save to, given a suggested name.
@@ -110,9 +115,8 @@ pub struct Services {
     /// Web: told whether the document has unsaved changes after each pass, for the browser's
     /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
     pub on_dirty: Option<Box<dyn Fn(bool)>>,
-    /// Hand PDF bytes to the system's print flow. Web: the browser's print dialog on that PDF (no
-    /// download, no intermediate file). Desktop: the PDF opens in the system's viewer (a temporary
-    /// file), where the user prints (#15). An error means nothing was opened.
+    /// Web: hand PDF bytes to the browser's print dialog (no download or intermediate file).
+    /// Desktop uses `print_native` instead. An error means nothing was opened.
     pub print: Option<Box<dyn Fn(&[u8]) -> Result<(), String>>>,
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
@@ -344,6 +348,8 @@ pub struct WordApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    pub printing: printing::State,
+    print_feedback_seen: Option<printing::Feedback>,
     pub canvas: canvas::CanvasState,
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
@@ -463,6 +469,8 @@ impl WordApp {
             session,
             ui: UiState::default(),
             services,
+            printing: Default::default(),
+            print_feedback_seen: None,
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
@@ -831,6 +839,10 @@ impl WordApp {
     /// The window's close button (or the system) asked to quit. Returns true to let the window
     /// close; with unsaved changes it asks first and returns false.
     pub fn close_requested(&mut self) -> bool {
+        if self.printing.busy() {
+            self.status(tl!("Wait for the print job to finish submitting before closing."));
+            return false;
+        }
         if self.quit_requested || !self.session.dirty {
             return true;
         }
@@ -850,7 +862,8 @@ impl WordApp {
         if id == "view.readMode" {
             self.canvas.read_first_visible = None;
         }
-        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
+        // Drawing leaves the caret where it was: following it would pull the view off the ink.
+        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") && !id.starts_with("draw.") {
             self.canvas.scroll_to_caret = true;
         }
         for req in std::mem::take(&mut self.session.ui_requests) {
@@ -1091,10 +1104,9 @@ impl WordApp {
                 self.pick_recipient_list();
                 json!({"pending": self.recipient_list_pending})
             }
-            // Send the document to the system print flow (web, desktop). `file.print` opens the Print
-            // page; this is the button on it, and the one programmatic call that opens system UI
-            // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system(p)),
+            // Native printing submits the selected queue on a worker; the browser owns its dialog.
+            "ui.printSettings" => return Some(printing::settings(&mut self.printing, p, self.services.printers.as_ref())),
+            "ui.print" | "ui.printSubmit" => return Some(self.print_to_system(p)),
             // File › Options › General › Make WordCraft the default… changes the user's system
             // default apps (Linux) or opens system settings (Windows), so only a click on that
             // button does it ([`WordApp::make_default_app`]); scripts, the control channel and
@@ -1142,38 +1154,9 @@ impl WordApp {
         }))
     }
 
-    /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
-    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
-    /// `file.printPdf`); without any, every page prints once.
-    /// An error when the host can't print (File › Print then only saves a PDF).
+    /// Submit the selected print job; the implementation lives beside its localized controls.
     fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
-        if self.services.print.is_none() {
-            return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
-        }
-        // File › Options › Display: fields first, and the page colour only when asked for.
-        if self.ui.update_fields_before_print
-            && let Err(e) = self.session.run("references.updateFields", &json!({}))
-        {
-            log::warn!("updating fields before printing: {e}");
-        }
-        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
-        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
-        if colour.is_some() {
-            self.session.doc.settings.page_color = colour;
-        }
-        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
-        match result {
-            Ok(len) => {
-                self.status(tl!("Opening print dialog…"));
-                Ok(json!({"printing": true, "bytes": len}))
-            }
-            Err(e) => {
-                log::error!("print failed: {e}");
-                let msg = i18n::fmt(tl!("Print failed: {error}"), &[("error", &e)]);
-                self.status(msg.clone());
-                Err(msg)
-            }
-        }
+        printing::submit(self, p)
     }
 
     /// File › Options › General › Make WordCraft the default…: hand over to the host's
@@ -1310,6 +1293,22 @@ impl WordApp {
         }
     }
 
+    /// Terminal feedback also reaches the normal window when printing starts through control.
+    pub fn poll_printing(&mut self, ctx: &egui::Context) {
+        self.printing.poll(ctx);
+        if self.printing.message == self.print_feedback_seen {
+            return;
+        }
+        self.print_feedback_seen = self.printing.message.clone();
+        let Some(message @ (printing::Feedback::Submitted(_) | printing::Feedback::Failed(_) | printing::Feedback::WorkerStopped)) =
+            self.printing.message.clone()
+        else {
+            return;
+        };
+        let text = printing::feedback(&message, |label| i18n::t(label).to_owned());
+        self.status(text);
+    }
+
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
         let lang = i18n::Lang::from_pref(&self.ui.language);
@@ -1365,6 +1364,7 @@ impl WordApp {
             self.ctx = Some(ctx.clone());
         }
         native_menu::run(self, ctx);
+        self.poll_printing(ctx);
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
@@ -1386,7 +1386,7 @@ impl WordApp {
             {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
-                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
+                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lp.ends_with(e));
                 let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
                 let _ = if img {
                     self.run("insert.picture", json!({"path": path}))
@@ -1560,7 +1560,7 @@ impl WordApp {
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
-            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
+            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lower.ends_with(e));
             // Any recipient file ends the pending picker request, so a later .txt drop opens normally.
             let asked = std::mem::take(&mut self.recipient_list_pending);
             let list = lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && asked);
@@ -4180,6 +4180,27 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
         assert!(!a.recipient_list_pending);
+    }
+
+    /// Issue #859: lifting the pen jumped the view back to the caret, usually on page 1. Drawing
+    /// leaves the caret where it was, so the view stays on the ink; typing still follows the caret.
+    #[test]
+    fn drawing_ink_keeps_the_view_where_it_is() {
+        let mut a = typed();
+        let keeps_view = |a: &mut WordApp, id: &str, params: Value| {
+            a.canvas.scroll_to_caret = false;
+            let r = a.run(id, params);
+            assert!(r.is_ok(), "{id}: {r:?}");
+            assert!(!a.canvas.scroll_to_caret, "{id} scrolled to the caret");
+        };
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[100, 300], [200, 320]], "tool": "pen"}));
+        keeps_view(&mut a, "draw.lasso", json!({"page": 0, "points": [[80, 280], [220, 280], [220, 340], [80, 340]]}));
+        keeps_view(&mut a, "draw.lassoMove", json!({"dx": 10, "dy": 10}));
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[300, 500], [400, 500]], "tool": "pencil"}));
+        keeps_view(&mut a, "draw.erase", json!({"page": 0, "x": 350, "y": 500}));
+        a.canvas.scroll_to_caret = false;
+        a.run("text.insert", json!({"text": "x"})).unwrap();
+        assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
     }
 
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of

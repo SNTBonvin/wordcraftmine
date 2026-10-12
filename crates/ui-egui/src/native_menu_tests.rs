@@ -146,6 +146,43 @@ fn quit_new_and_open_keep_the_save_cancel_flow() {
 }
 
 #[test]
+fn print_menu_and_shortcut_open_settings_without_submitting() {
+    for shortcut in [false, true] {
+        let (mut app, ctx, state) = setup();
+        app.services.print_native = Some(Box::new(|_, _, _| panic!("opening Print must not submit a job")));
+        app.printing.printers.push(crate::printing::Printer { name: "Test queue".into(), default: true });
+        app.run("ui.printSettings", json!({"printer": "Test queue", "copies": 3, "grayscale": true})).unwrap();
+        assert!(menu_bar(&app, &ctx).find("file.print").unwrap().enabled);
+        if shortcut {
+            key(&state, "Mod+P");
+        } else {
+            click(&state, "file.print");
+        }
+        frame(&mut app, &ctx, Default::default());
+        assert!(app.ui.backstage && app.ui.backstage_page == "print");
+        assert_eq!(app.printing.settings.printer, "Test queue");
+        assert_eq!(app.printing.settings.copies, 3);
+        assert!(app.printing.settings.grayscale);
+        assert!(!app.printing.busy());
+    }
+}
+
+#[test]
+fn native_quit_keeps_the_host_print_submission_guard() {
+    let (mut app, ctx, state) = setup();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.printing.begin(rx).unwrap();
+    key(&state, "Mod+Q");
+    frame(&mut app, &ctx, Default::default());
+    assert!(app.quit_requested);
+    assert!(!app.close_requested(), "the host must keep the window alive until submission completes");
+    tx.send(Ok("test job submitted".into())).unwrap();
+    app.poll_printing(&ctx);
+    assert!(!app.printing.busy());
+    assert!(app.close_requested());
+}
+
+#[test]
 fn modal_blocks_queued_clicks_and_stale_enabled_rows() {
     let (mut app, ctx, state) = setup();
     let ruler = app.session.view.ruler;

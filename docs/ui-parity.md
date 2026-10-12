@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (native macOS menus alongside the ribbon, with command state, focus and shortcut routing; estimates unchanged) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (native macOS menus alongside the ribbon, with command state, focus and shortcut routing; estimates unchanged) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -28,6 +28,8 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Rotation handle, crop handles on canvas, alignment guides, smart guides | rotation handle (Shift: 15° steps), turned frames resize along their axes (#332); crop handles and guides missing | ✅ | 25% | 3–5 |
 | Selection: word/sentence/paragraph clicks, dragging after a double-click/triple-click/Ctrl+click extends by whole words/paragraphs/sentences (#549), Shift extend, F8 extend mode, column (Alt+drag, #237) | ✅ | ✅ | 90% | 1 |
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251), still one per row after One Page or Page Width (#768) | ✅ | ✅ | 85% | — |
+| Selection: word/sentence/paragraph clicks, dragging after a double-click/triple-click/Ctrl+click extends by whole words/paragraphs/sentences (#549), Shift extend, F8 extend mode, column (Alt+drag, #237), selection bar in the left margin (click a line, double-click a paragraph, triple-click or Ctrl+click everything, drag by lines, Shift+click extends; #856) | ✅ Missing: the selection bar in the right margin for right-to-left paragraphs, beside table rows, and Word's right-pointing arrow cursor (egui has none; the plain arrow shows) | ✅ | 92% | 1 |
+| Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251) | ✅ | ✅ | 85% | — |
 | Touchpad smooth/inertial scroll | ✅ (#252) | ✅ | 90% | — |
 | Reading Mode | Existing Read Mode ribbon button opens a read-only, viewport-column layout with animated horizontal paging, transient width/text/spacing controls, heading navigation (Navigation pane) and resize anchoring; print/export layout unchanged | reading-optimized view and navigation | 75% | 1–2 |
 | Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ (the language is the caret's; a click sets the proofing language) | ✅ | 85% | — |
@@ -44,7 +46,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-12 | minor | Native macOS menus expose existing common commands, retaining the ribbon. Command/state and AppKit integration regressions cover shortcuts, modal state, text-field clipboard, one-time image paste, and save/cancel. Broader UI parity and readiness estimates unchanged; native-speaker and VoiceOver review remain. |
+| 2026-10-13 | minor | Native macOS menus expose existing common commands, retaining the ribbon. Command/state and AppKit integration regressions cover shortcuts, modal state, text-field clipboard, one-time image paste, and save/cancel. Broader UI parity and readiness estimates unchanged; native-speaker and VoiceOver review remain. |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |
@@ -82,6 +84,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Screen readers: the document canvas exposes paragraphs, headings, lists, tables, links, pictures and the caret through AccessKit (#488); 25% → 50% |
 | 2026-10-11 | trivial | More Colors… in every colour drop-down and a Colors dialog (Standard and Custom tabs, RGB/HSL numbers, hex box) with Recent Colors (#606) |
 | 2026-10-11 | trivial | Selection by units: double-click and drag extends by whole words, triple-click and drag by paragraphs, Ctrl/⌘+click and drag by sentences; `select.dragUnit` (#549) |
+| 2026-10-12 | trivial | Selection bar: clicks in the left margin select the line, paragraph or document, drags select whole lines, Shift+click extends by lines; `select.line {"pos"}`, `select.dragUnit` units `line` and `document` (#856) |
 | 2026-10-11 | trivial | Compare / Combine Documents (original and revised document, label changes with, comparison settings, word or character level, show changes in) and AutoCorrect Options (replacement list, capitalization, exceptions, AutoFormat As You Type, Math AutoCorrect) dialogs; Restrict Editing pane (formatting and editing restrictions, exceptions for everyone, password); modal dialog rows merged into one (#412) |
 | 2026-10-11 | trivial | Line Numbers, Hyphenation (with Manual Hyphenation), Language, Envelopes and Labels dialogs (#407); the three duplicated modal-dialog rows merged into one |
 | 2026-10-11 | trivial | Accessibility pane (errors/warnings/tips, jump-to, fixes) and Alt Text pane, opened from Picture/Shape Format › Accessibility and right-click › View Alt Text… (#386) |

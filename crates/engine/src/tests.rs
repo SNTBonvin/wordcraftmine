@@ -813,6 +813,22 @@ fn clipboard_round_trip() {
     assert_eq!(text(&s), "plain\ntext");
 }
 
+#[test]
+fn copying_symbol_font_text_puts_the_unicode_symbols_on_the_clipboard() {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "ok J\u{F0FC}"}));
+    s.doc.format_range(&Pos::body(0, 3), &Pos::body(0, 7), &|c| c.font = Some("Wingdings".into())).unwrap();
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "edit.copy", json!({}));
+    assert_eq!(s.clipboard_text, "ok \u{263A}\u{2713}");
+    // Pasting our own copy back (the system clipboard holds the mapped text) keeps the stored
+    // Wingdings characters, not the Unicode ones.
+    run(&mut s, "caret.docEnd", json!({}));
+    let clip = s.clipboard_text.clone();
+    run(&mut s, "edit.paste", json!({"text": clip}));
+    assert_eq!(text(&s), "ok J\u{F0FC}ok J\u{F0FC}");
+}
+
 fn bold_at(s: &Session, block: usize, off: usize) -> bool {
     let pos = Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(block), off };
     s.doc.para_at(&pos).and_then(|p| p.props_of_char(off).bold).unwrap_or(false)
@@ -1433,6 +1449,55 @@ fn accept_all_keeps_a_tracked_paragraph_break() {
     assert_eq!(run(&mut s, "review.changes", json!({})), json!([]));
 }
 
+/// Issue #864: five paragraphs, a tracked deletion from the end of the first to the end of the
+/// third. The two breaks inside the range and the text of the second and third paragraphs are
+/// deleted; the third paragraph's own break is not.
+fn tracked_delete_from_paragraph_end() -> Session {
+    let mut s = s();
+    for (i, word) in ["Alpha", "Bravo", "Charlie", "Delta", "Echo"].iter().enumerate() {
+        if i > 0 {
+            run(&mut s, "text.newParagraph", json!({}));
+        }
+        run(&mut s, "text.insert", json!({"text": word}));
+    }
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    let range = json!({"anchor": {"path": [0], "off": 5, "story": "body"}, "focus": {"path": [2], "off": 7, "story": "body"}});
+    run(&mut s, "select.range", range);
+    run(&mut s, "text.delete", json!({}));
+    s
+}
+
+#[test]
+fn accept_all_after_a_tracked_delete_from_a_paragraph_end_keeps_the_next_paragraph() {
+    let mut s = tracked_delete_from_paragraph_end();
+    assert_eq!(body_texts(&s), ["Alpha", "Bravo", "Charlie", "Delta", "Echo"], "tracked deletions stay in the text");
+    run(&mut s, "review.acceptAll", json!({}));
+    assert_eq!(body_texts(&s), ["Alpha", "Delta", "Echo"]);
+    assert!(s.doc.revisions.is_empty());
+    assert!(s.doc.body.iter().filter_map(|b| b.as_para()).all(|p| p.mark.ins.is_none() && p.mark.del.is_none()));
+    // Rejecting instead restores everything, as it already did.
+    let mut s = tracked_delete_from_paragraph_end();
+    run(&mut s, "review.rejectAll", json!({}));
+    assert_eq!(body_texts(&s), ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]);
+}
+
+#[test]
+fn reject_all_after_typing_into_an_empty_paragraph_keeps_the_paragraph() {
+    // Same cause as #864 seen from the other side: rejecting the typed text emptied the
+    // paragraph, and its mark picked up the text's insertion, so it was rejected as well.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "One"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "Three"}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "caret.set", json!({"pos": {"block": 1, "off": 0}}));
+    run(&mut s, "text.insert", json!({"text": "Two"}));
+    assert_eq!(body_texts(&s), ["One", "Two", "Three"]);
+    run(&mut s, "review.rejectAll", json!({}));
+    assert_eq!(body_texts(&s), ["One", "", "Three"]);
+}
+
 #[test]
 fn reject_one_paragraph_break_and_rejecting_a_typed_paragraph() {
     // Reject with the caret on the break (Next Change selects it), or at the end of its paragraph.
@@ -1939,6 +2004,25 @@ fn word_count_includes_text_boxes_by_default() {
     run(&mut s, "select.range", json!({"anchor": Pos::body(0, 8), "focus": Pos::body(0, 8 + 3)}));
     run(&mut s, "text.delete", json!({}));
     assert_eq!(s.word_count(), 2);
+}
+
+#[test]
+fn word_count_includes_numbered_list_labels_in_words_but_not_characters() {
+    let mut d = wordcraft_doc::Document::new();
+    let num_id = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+    let mut p = wordcraft_doc::Paragraph::with_text("Apple", wordcraft_doc::CharProps::default());
+    p.props.numbering = Some(wordcraft_doc::props::NumRef { num: num_id, level: 0 });
+    d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Para(p))];
+    let mut s = Session::new(d);
+
+    let v = run(&mut s, "review.wordCount", json!({}));
+    // Generated label "1." + "Apple" = 2 words.
+    assert_eq!(v["words"].as_u64(), Some(2));
+    assert_eq!(s.word_count(), 2);
+    // Generated list label "1." is formatting metadata and not run characters,
+    // so Word excludes it from character counts: "Apple" has 5 characters.
+    assert_eq!(v["characters"].as_u64(), Some(5));
+    assert_eq!(v["charactersWithSpaces"].as_u64(), Some(5));
 }
 
 /// The laid-out area of the only text box.
@@ -2452,6 +2536,35 @@ fn styles_apply_multi_paragraph_selection() {
     run(&mut s, "edit.undo", json!({}));
     for i in 0..3 {
         assert_eq!(para_style(&s, i), None, "paragraph {i}");
+    }
+}
+
+/// #865: `styles.modify` takes a colour the way `format.color` does (`RRGGBB`, `#RRGGBB`, `auto`),
+/// still reads the serialized forms, and rejects a bad colour without touching the style.
+#[test]
+fn modify_style_takes_hex_colours_like_format_color() {
+    use wordcraft_doc::{CharProps, Rgb, TextColor};
+    let mut s = s();
+    let color = |s: &Session| s.doc.styles.get("Heading1").and_then(|st| st.chr.color);
+    let modify = |s: &mut Session, c: serde_json::Value| s.run("styles.modify", &json!({"style": "Heading1", "chr": {"color": c}}));
+
+    modify(&mut s, json!("1B1611")).unwrap();
+    assert_eq!(color(&s), Some(TextColor::Rgb(Rgb(0x1B, 0x16, 0x11))));
+    modify(&mut s, json!("auto")).unwrap();
+    assert_eq!(color(&s), Some(TextColor::Auto));
+    modify(&mut s, json!("#1B1611")).unwrap();
+    assert_eq!(color(&s), Some(TextColor::Rgb(Rgb(0x1B, 0x16, 0x11))));
+    modify(&mut s, json!("Auto")).unwrap();
+    assert_eq!(color(&s), Some(TextColor::Auto));
+    modify(&mut s, json!({"Rgb": [192, 0, 0]})).unwrap();
+    let red = TextColor::Rgb(Rgb(0xC0, 0, 0));
+    assert_eq!(color(&s), Some(red));
+    assert_eq!(s.doc.styles.resolve_char(Some("Heading1"), &CharProps::default()).color, red);
+
+    for bad in [json!("1B16"), json!("not a colour"), json!({"Rgb": "1B1611"}), json!(7)] {
+        let r = modify(&mut s, bad.clone());
+        assert!(matches!(r, Err(crate::CmdError::Params(_))), "{bad}: {r:?}");
+        assert_eq!(color(&s), Some(red), "{bad} leaves the style alone");
     }
 }
 
@@ -3716,6 +3829,31 @@ fn colour_commands_take_any_custom_hex() {
     assert_eq!(s.doc.settings.page_color, wordcraft_doc::Rgb::parse("123ABC"));
 }
 
+/// A document whose content is another format than its extension says opens by what it holds,
+/// as in Word: RTF saved as `.doc` (accounting systems and report generators save their documents
+/// that way), a `.docx` package renamed `.doc`, and RTF renamed `.docx`.
+#[test]
+fn documents_open_by_content_when_the_extension_is_wrong() {
+    let text = |doc: &wordcraft_doc::Document| doc.plain_text(StoryRef::Body);
+    let rtf = b"{\\rtf1\\ansi\\ansicpg1251\\deff0{\\fonttbl{\\f0 Times New Roman;}}\\f0 \\'d1\\'f7\\'e5\\'f2 \\'b9 12\\par Invoice line\\par}";
+    for name in ["Счет 12.doc", "report.DOC", "letter.dot", "renamed.docx"] {
+        let doc = crate::io::open_bytes(name, rtf).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let t = text(&doc);
+        assert!(t.contains("Счет № 12") && t.contains("Invoice line"), "{name}: {t:?}");
+    }
+    // A Word package renamed `.doc` or `.rtf`.
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "Packaged text"}));
+    let docx = crate::io::save_bytes("a.docx", &s.doc).unwrap();
+    for name in ["package.doc", "package.rtf"] {
+        let doc = crate::io::open_bytes(name, &docx).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(text(&doc).contains("Packaged text"), "{name}");
+    }
+    // Matching content still goes the usual way, and garbage stays an error.
+    assert!(text(&crate::io::open_bytes("plain.rtf", rtf).unwrap()).contains("Invoice line"));
+    assert!(crate::io::open_bytes("broken.doc", b"\x00\x01not a document").is_err());
+}
+
 /// #569: a playlist (.m3u / .m3u8) — or any file with an extension WordCraft doesn't know —
 /// opens as plain text with its encoding detected, like Word's text import; a binary file is a
 /// clean error, never garbage or a panic.
@@ -3815,13 +3953,46 @@ fn drag_after_multi_click_extends_by_units() {
     let before = text(&s);
     for v in [
         json!({}),
-        json!({"unit": "line", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
+        json!({"unit": "page", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
         json!({"unit": "word", "start": Pos::body(99, 999), "end": Pos::body(0, 0), "pos": Pos::body(77, usize::MAX)}),
         json!({"unit": "word", "start": {"block": 0, "off": 9_999}, "end": {"block": 0, "off": 1}, "pos": {"block": 5}}),
     ] {
         let _ = s.run("select.dragUnit", &v);
     }
     assert_eq!(text(&s), before);
+}
+
+/// #856: a click in the selection bar selects the whole line (its trailing space; the
+/// paragraph mark on the last line); dragging extends by lines; triple-click takes the document.
+#[test]
+fn selection_bar_selects_and_drags_by_lines() {
+    let mut s = s();
+    let long = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+    run(&mut s, "text.insert", json!({"text": format!("{}\rShort one.\rLast.", long.trim_end())}));
+    let l = s.layout();
+    let c = l.caret(&Pos::body(0, 0)).unwrap();
+    let line2 = l.selection_bar_at(c.page, 20.0, c.top + c.height * 1.5).unwrap();
+    assert!(line2.off > 0);
+    run(&mut s, "select.line", json!({"pos": line2.clone()}));
+    let (a, b) = s.sel.ordered();
+    assert_eq!(a, line2);
+    assert_eq!(b.path, wordcraft_doc::Path::top(0));
+    assert!(b.off > a.off && b.off < long.trim_end().len());
+    assert_eq!(s.doc.para_at(&b).unwrap().text.as_bytes()[b.off - 1], b' ', "the trailing space is in");
+    // The last line of a paragraph takes its mark.
+    run(&mut s, "select.line", json!({"pos": Pos::body(1, 3)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(1, 0), Pos::body(2, 0)));
+    // Drag from the "Short one." line down to "Last." and back up into the first paragraph.
+    let (a, b) = s.sel.ordered();
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": Pos::body(2, 0)}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(1, 0), Pos::body(2, 5)));
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": line2.clone()}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(2, 0), line2));
+    run(&mut s, "select.dragUnit", json!({"unit": "document", "start": a.clone(), "end": b.clone(), "pos": Pos::body(0, 0)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(0, 0), Pos::body(2, 5)));
+    // Junk positions never panic.
+    let _ = s.run("select.line", &json!({"pos": {"block": 99, "off": usize::MAX}}));
+    let _ = s.run("select.line", &json!({"pos": 5}));
 }
 
 /// Home › Font › Enclose Characters (#297): the selection becomes an `EQ \o\ac` field, saved the
@@ -4783,4 +4954,55 @@ fn find_replace_and_go_to_open_like_word() {
     run(&mut s, "edit.goto", json!({"pageBy": -99}));
     assert_eq!(page(&mut s), 1, "before the start: the first page");
     assert!(s.run("edit.goto", &json!({"pageBy": i64::MIN})).is_ok(), "hostile numbers never panic");
+}
+
+/// #802: Insert › Picture takes Windows Metafiles (and EMF) at their own frame size, stored under
+/// their own extension so a save writes them as WMF/EMF parts.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn insert_picture_takes_a_windows_metafile() {
+    use wordcraft_doc::para::InlineObject;
+    // One WMF record: size in words, function, parameters.
+    let rec = |func: u16, params: &[i16]| {
+        let mut v = ((3 + params.len()) as u32).to_le_bytes().to_vec();
+        v.extend(func.to_le_bytes());
+        params.iter().for_each(|p| v.extend(p.to_le_bytes()));
+        v
+    };
+    // A placeable WMF, 1440 × 720 units at 1440 per inch (72 × 36 points), drawing a rectangle.
+    let body = [rec(0x041B, &[720, 1440, 0, 0]), rec(0, &[])].concat();
+    let mut wmf = 0x9AC6_CDD7u32.to_le_bytes().to_vec();
+    for v in [0i16, 0, 0, 1440, 720] {
+        wmf.extend(v.to_le_bytes());
+    }
+    wmf.extend(1440u16.to_le_bytes());
+    wmf.extend([0u8; 6]);
+    let words = ((wmf.len() + 18 + body.len()) / 2) as u32;
+    for v in [1u16, 9, 0x300] {
+        wmf.extend(v.to_le_bytes());
+    }
+    wmf.extend(words.to_le_bytes());
+    wmf.extend(0u16.to_le_bytes());
+    wmf.extend(5u32.to_le_bytes());
+    wmf.extend(0u16.to_le_bytes());
+    wmf.extend(body);
+    let dir = scratch_dir("insert-wmf");
+    let path = dir.join("logo.wmf");
+    std::fs::write(&path, &wmf).unwrap();
+
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    let r = run(&mut s, "insert.picture", json!({"path": path.to_string_lossy()}));
+    assert_eq!((r["width"].as_f64(), r["height"].as_f64()), (Some(72.0), Some(36.0)), "{r}");
+    let key = r["media"].as_str().unwrap().to_string();
+    assert!(key.ends_with(".wmf"), "{key}");
+    assert_eq!(s.doc.media.get(&key).map(|b| b.len()), Some(wmf.len()));
+    let mut placed = false;
+    s.doc.objects_in_reading_order(&mut |o| placed |= matches!(o, InlineObject::Image { media, .. } if *media == key));
+    assert!(placed, "the picture is in the text");
+
+    // Neither a picture nor a metafile: the same error as before, naming the formats.
+    std::fs::write(&path, b"not a picture").unwrap();
+    let err = s.run("insert.picture", &json!({"path": path.to_string_lossy()})).unwrap_err();
+    assert!(err.to_string().contains("WMF, EMF"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

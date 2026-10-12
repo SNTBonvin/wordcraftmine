@@ -38,6 +38,7 @@ pub mod resolve;
 pub mod section;
 pub mod smart_art;
 pub mod styles;
+pub mod symbol_fonts;
 pub mod table;
 pub mod wordart;
 pub mod wrap;
@@ -801,9 +802,19 @@ impl Document {
 
     /// The whole text of a story, paragraphs separated by `\n` (tables: cells by `\t`).
     pub fn plain_text(&self, s: StoryRef) -> String {
+        self.story_text(s, false)
+    }
+
+    /// [`Self::plain_text`] as it reads on screen: symbol-font characters (Wingdings…) as their
+    /// Unicode equivalents ([`Paragraph::shown_text`]).
+    pub fn shown_text(&self, s: StoryRef) -> String {
+        self.story_text(s, true)
+    }
+
+    fn story_text(&self, s: StoryRef, shown: bool) -> String {
         let mut out = String::new();
         if let Some(bl) = self.story(s) {
-            text_of(bl, &mut out, 0);
+            text_of(bl, &mut out, 0, shown);
         }
         if out.ends_with('\n') {
             out.pop();
@@ -881,14 +892,22 @@ impl Document {
         id
     }
 
-    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit).
+    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit,
+    /// including generated numbered-list labels).
     pub fn word_count(&self) -> usize {
-        count_words(&self.plain_text(StoryRef::Body))
+        self.story_word_count(StoryRef::Body)
     }
 
     /// Word's default count: the body plus its text boxes, footnotes and endnotes.
     pub fn word_count_including_notes(&self) -> usize {
-        self.counted_stories().iter().map(|s| count_words(&self.plain_text(*s))).sum()
+        self.counted_stories().iter().map(|s| self.story_word_count(*s)).sum()
+    }
+
+    /// Word count of one story, including generated numbered-list labels.
+    pub fn story_word_count(&self, s: StoryRef) -> usize {
+        let Some(bl) = self.story(s) else { return 0 };
+        let mut counters = numbering::Counters::default();
+        story_word_count_of(bl, &self.numbering, &self.styles, &mut counters, 0)
     }
 
     /// The body, then the text boxes, footnotes and endnotes it shows (nested ones too), in
@@ -1276,14 +1295,14 @@ fn walk(bl: &Blocks, prefix: &mut Vec<u32>, out: &mut Vec<Path>, depth: usize) {
     }
 }
 
-fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
+fn text_of(bl: &Blocks, out: &mut String, depth: usize, shown: bool) {
     if depth > 16 {
         return;
     }
     for b in bl {
         match &**b {
             Block::Para(p) => {
-                out.push_str(&p.plain_text());
+                out.push_str(&if shown { p.shown_text() } else { p.plain_text() });
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -1291,7 +1310,7 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
                     let mut cells = Vec::new();
                     for c in &row.cells {
                         let mut s = String::new();
-                        text_of(&c.blocks, &mut s, depth + 1);
+                        text_of(&c.blocks, &mut s, depth + 1, shown);
                         cells.push(s.trim_end_matches('\n').replace('\n', " "));
                     }
                     out.push_str(&cells.join("\t"));
@@ -1300,6 +1319,35 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
             }
         }
     }
+}
+
+fn story_word_count_of(bl: &Blocks, numbering: &Numbering, styles: &styles::StyleSheet, counters: &mut numbering::Counters, depth: usize) -> usize {
+    if depth > 16 {
+        return 0;
+    }
+    let mut total = 0usize;
+    for b in bl {
+        match &**b {
+            Block::Para(p) => {
+                let n = p.props.numbering.or_else(|| styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0);
+                if let Some(n) = n
+                    && let Some((label, def)) = counters.next_label(numbering, n.num, n.level)
+                    && !matches!(def.format, section::NumFormat::Bullet | section::NumFormat::None)
+                {
+                    total = total.saturating_add(count_words(&label));
+                }
+                total = total.saturating_add(count_words(&p.plain_text()));
+            }
+            Block::Table(t) => {
+                for row in &t.rows {
+                    for c in &row.cells {
+                        total = total.saturating_add(story_word_count_of(&c.blocks, numbering, styles, counters, depth + 1));
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 #[cfg(test)]

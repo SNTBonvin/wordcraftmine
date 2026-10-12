@@ -27,6 +27,10 @@ Quit calls the same `file.close` flow as the window's close button: Save, Don't 
 for dirty work, and the existing deferred AppKit termination only after the close is accepted.
 The native backend does not install a predefined Quit selector that bypasses this flow.
 
+File > Print and Command-P open the existing Print page, preserving the selected printer and
+settings without submitting a job. Native printing still requires the existing Print action.
+Quit also preserves the desktop host's guard that waits for a pending print submission.
+
 Dialog-open state disables document actions and is checked again when queued actions run.
 Read Mode disables insertion and formatting. Focused egui text fields receive their own
 copy/cut/paste/select-all/undo/redo events, including in dialogs; these do not edit the document.
