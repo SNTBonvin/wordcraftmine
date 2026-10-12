@@ -61,7 +61,7 @@ Turkish works the same way (`tr-TR` and `tr-CY` system locales, `{"value":"tr"}`
 entries. Command search folds the Turkish dotted and dotless I (`italik` finds İtalik, `YAZI TİPİ`
 finds Yazı Tipi) while English labels and ASCII command ids keep their usual matching. Turkish
 proofing is not included; terminology and checks: [`localization-tr.md`](localization-tr.md).
-Bulgarian (`bg-BG` system locales, `{"value":"bg"}`) has 2,386 entries: every key of the reference
+Bulgarian (`bg-BG` system locales, `{"value":"bg"}`) has 2,401 entries: every key of the reference
 catalog, the equation gallery's labels and everything the interface audit finds (the audit checks
 Bulgarian as it does Russian). Counts use count-neutral wording (`Думи: 21`). Bulgarian proofing
 and hyphenation are not included.
@@ -84,7 +84,7 @@ and hyphenation are not included.
 | 2026-10-11 | minor | Font list shows installed fonts by their names in the interface language (宋体 for SimSun in Chinese, Japanese and Korean names likewise) and finds them by either name; a Chinese, Japanese or Korean font is stored as `w:eastAsia` too (#505) |
 | 2026-10-11 | minor | Chinese/Japanese interface fonts: a test checks every catalog character has a glyph; an installed CJK font follows the embedded faces whenever they miss one; macOS font asset folders searched for PingFang (#486) |
 | 2026-10-10 | minor | Russian interface (#300; 1,524 entries, built-in style names shown translated; covers everything the interface audit finds) |
-| 2026-10-12 | minor | Bulgarian interface catalog (2,386 entries), locale selection, saved preference, audit coverage and font checks |
+| 2026-10-12 | minor | Bulgarian interface catalog (2,401 entries), locale selection, saved preference, audit coverage and font checks |
 | 2026-10-11 | minor | Turkish interface catalog (1,307 entries), locale selection, saved preference, Turkish casing in command search and font coverage checks; catalog sizes re-counted |
 | 2026-10-11 | trivial | English spelling (#520): our supplement `assets/spelling/en-extra.txt` adds ~220 common modern words the Moby list lacks ("desktop", "download", "email"…) |
 | 2026-10-10 | minor | Estonian interface catalog, locale selection, saved preference and font coverage checks |
