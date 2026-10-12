@@ -40,3 +40,9 @@ sync_github_name = false
 
 [people.henno]
 sync_github_name = true
+
+[people.yeniufuklar-com]
+real_name = "Ufuk Efe"
+display_name = "Ufuk Efe"
+sync_github_name = true
+

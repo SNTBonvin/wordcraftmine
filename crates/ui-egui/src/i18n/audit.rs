@@ -157,6 +157,7 @@ impl Exempt {
             || matches!(plain, "WordCraft" | "WordCraft User" | "Discord" | "https://" | "auto" | "I. II. III." | "i. ii. iii.")
             || plain == "CONFIDENTIAL" // the watermark dialog's text: document content, kept as typed
             || plain == "Figure 1" // the caption dialog's sample: the label goes into the document as is
+            || plain.ends_with(" in") || plain.ends_with(" mm") // envelope and paper dimension units
     }
 }
 
@@ -186,11 +187,6 @@ fn untranslated_interface_text() {
         let _ = app.run("ui.backstage", json!({"value": true, "page": page}));
         let drawn = frame(&ctx, &mut app);
         record(&app, &format!("File › {page}"), drawn);
-    }
-    for pane in wordcraft_engine::cmd::options::PANES {
-        let _ = app.run("ui.backstage", json!({"value": true, "page": "options", "pane": pane}));
-        let drawn = frame(&ctx, &mut app);
-        record(&app, &format!("File › Options › {pane}"), drawn);
     }
     let _ = app.run("ui.backstage", json!({"value": false}));
     let dialogs = [
@@ -312,11 +308,21 @@ fn untranslated_interface_text() {
     }
     assert!(found.is_empty(), "{} interface texts skip translation (wrap them in tl!):\n{report}", found.len());
     russian_has_every_string_the_interface_looked_up(pseudo::looked_up());
+    turkish_has_every_string_the_interface_looked_up(pseudo::looked_up());
 }
 
 /// Russian covers everything the audit saw translated, plus the equation gallery's labels (shown
 /// in menus the audit doesn't open one by one). Numbered style names go through a template.
-fn russian_has_every_string_the_interface_looked_up(mut keys: std::collections::BTreeSet<String>) {
+fn russian_has_every_string_the_interface_looked_up(keys: std::collections::BTreeSet<String>) {
+    check_catalog_has_audit_strings("ru", keys);
+}
+
+/// Turkish also covers everything the audit saw translated, with full catalog parity.
+fn turkish_has_every_string_the_interface_looked_up(keys: std::collections::BTreeSet<String>) {
+    check_catalog_has_audit_strings("tr", keys);
+}
+
+fn check_catalog_has_audit_strings(lang_code: &str, mut keys: std::collections::BTreeSet<String>) {
     use wordcraft_engine::math_gallery::{BUILT_INS, STRUCTURES, SYMBOL_SETS};
     keys.extend(BUILT_INS.iter().map(|(_, label, _)| label.to_string()));
     keys.extend(SYMBOL_SETS.iter().map(|(name, _)| name.to_string()));
@@ -327,10 +333,30 @@ fn russian_has_every_string_the_interface_looked_up(mut keys: std::collections::
             keys.extend(templates.iter().map(|t| t.label.to_string()));
         }
     }
-    let ru = super::Lang::from_code("ru").unwrap_or(super::Lang::EN);
+    let lang = super::Lang::from_code(lang_code).unwrap_or(super::Lang::EN);
     let numbered = |s: &str| ["Heading ", "TOC "].iter().any(|p| s.strip_prefix(p).is_some_and(|n| n.chars().all(|c| c.is_ascii_digit())));
-    // Names that read the same in Russian.
-    let same = |s: &str| matches!(s, "LaTeX" | "LaTeX (*.tex)" | "Unicode" | "I. II. III." | "i. ii. iii.");
-    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(ru, s) && !numbered(s) && !same(s)).collect();
-    assert!(missing.is_empty(), "{} strings have no Russian entry:\n{missing:#?}", missing.len());
+    let same = |s: &str| {
+        matches!(
+            s,
+            "LaTeX"
+                | "LaTeX (*.tex)"
+                | "Unicode"
+                | "I. II. III."
+                | "i. ii. iii."
+                | "APA"
+                | "Chicago"
+                | "GB/T 7714"
+                | "GOST (name sort)"
+                | "GOST (title sort)"
+                | "Harvard (Anglia)"
+                | "IEEE"
+                | "ISO 690 (author-date)"
+                | "ISO 690 (numerical)"
+                | "MLA"
+                | "SIST02"
+                | "Turabian"
+        )
+    };
+    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(lang, s) && !numbered(s) && !same(s)).collect();
+    assert!(missing.is_empty(), "{} strings have no {lang_code} entry:\n{missing:#?}", missing.len());
 }

@@ -593,8 +593,9 @@ fn turkish_locales_and_saved_preference_work_without_changing_the_document() {
 fn turkish_covers_the_entire_existing_interface_catalog_and_preserves_templates() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
-    // Spanish carries every key the interface looks up; Chinese lacks only a few newer labels.
-    assert_eq!(keys(lang("tr").0.source), keys(lang("es").0.source));
+    // Full parity with the Russian catalog: covers all UI strings, styles, math gallery, and presets.
+    assert_eq!(keys(lang("tr").0.source), keys(lang("ru").0.source));
+    assert!(keys(lang("es").0.source).is_subset(&keys(lang("tr").0.source)));
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("tr").0.source)));
     let tr = lang("tr");
     for (source, expected) in [
@@ -607,6 +608,10 @@ fn turkish_covers_the_entire_existing_interface_catalog_and_preserves_templates(
         ("Save", "Kaydet"),
         ("UPPERCASE", "BÜYÜK HARF"),
         ("lowercase", "küçük harf"),
+        ("Square Root", "Karekök"),
+        ("Euler's identity", "Euler Özdeşliği"),
+        ("Default Paragraph Font", "Varsayılan Paragraf Yazı Tipi"),
+        ("CONFIDENTIAL", "GİZLİ"),
         ("WordCraft", "WordCraft"),
         ("unknown future label", "unknown future label"),
     ] {

@@ -594,7 +594,8 @@ fn product_label(i: usize) -> String {
         "return" => tl!("Return address labels"),
         _ => tl!("Address labels"),
     };
-    format!("{kind}, {} × {}, {} ({})", p.cols, p.rows, p.size_text(), p.paper)
+    let paper = tl!(p.paper);
+    format!("{kind}, {} × {}, {} ({paper})", p.cols, p.rows, p.size_text())
 }
 
 fn labels_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LabelsForm) -> bool {
