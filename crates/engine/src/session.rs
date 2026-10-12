@@ -123,9 +123,25 @@ pub struct ViewState {
     #[serde(default)]
     pub alt_text_pane: bool,
     pub multi_page: bool,
+    /// One Page or Page Width was chosen last: keep one page per row when a typed or wheel zoom replaces the fit mode.
+    #[serde(default)]
+    pub single_column: bool,
     /// Zoom to fit: "pageWidth", "onePage", "multiplePages", or empty.
     pub fit: String,
     pub web_width: f32,
+    /// Transient viewport metrics for reading pagination; never saved in a document or preferences.
+    #[serde(skip, default = "default_read_width")]
+    pub read_width: f32,
+    #[serde(skip, default = "default_read_height")]
+    pub read_height: f32,
+    /// Reader-only layout controls; they are neither document formatting nor saved UI prefs.
+    /// `None` chooses responsive column width and keeps the document's line spacing.
+    #[serde(skip)]
+    pub read_column_width: Option<f32>,
+    #[serde(skip, default = "default_read_zoom")]
+    pub read_zoom: f32,
+    #[serde(skip)]
+    pub read_line_spacing: Option<f32>,
     pub dark_mode: bool,
     pub show_markup: bool,
     pub track_changes_pane: bool,
@@ -160,6 +176,18 @@ fn on() -> bool {
     true
 }
 
+fn default_read_width() -> f32 {
+    300.0
+}
+
+fn default_read_height() -> f32 {
+    500.0
+}
+
+fn default_read_zoom() -> f32 {
+    1.0
+}
+
 impl Default for ViewState {
     fn default() -> Self {
         ViewState {
@@ -180,8 +208,14 @@ impl Default for ViewState {
             accessibility_pane: false,
             alt_text_pane: false,
             multi_page: false,
+            single_column: false,
             fit: String::new(),
             web_width: 800.0,
+            read_width: default_read_width(),
+            read_height: default_read_height(),
+            read_column_width: None,
+            read_zoom: default_read_zoom(),
+            read_line_spacing: None,
             dark_mode: false,
             show_markup: true,
             track_changes_pane: false,
@@ -284,6 +318,11 @@ pub struct Session {
     pub pending: Option<CharProps>,
     pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
+    /// Where the custom dictionary is kept on disk, if the host wired one up. Only the desktop
+    /// app does: headless sessions (MCP, `wordcraft-cli run`), tests and the web build leave
+    /// `None`, so an agent's words stay in memory and never change the person's dictionary.
+    /// Add to Dictionary and File › Options › Proofing save through it (#40).
+    pub user_dict_path: Option<std::path::PathBuf>,
     pub clipboard: Option<Fragment>,
     /// A tracked cut the next paste can turn into a move (see `cmd::moves`).
     pub pending_move: Option<crate::cmd::moves::PendingMove>,
@@ -320,9 +359,21 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    /// (revision, web width, view, layout, proofing, outline, (deletions left out, body
-    /// deletions in balloons), numeral display).
-    layout: Option<(u64, f32, ViewMode, Arc<DocLayout>, bool, Option<wordcraft_layout::outline::OutlineView>, (bool, bool), NumeralMode)>,
+    /// (revision, width, read height, view, read line spacing, layout, proofing, outline,
+    /// (deletions left out, body deletions in balloons), numeral display).
+    #[allow(clippy::type_complexity)]
+    layout: Option<(
+        u64,
+        f32,
+        f32,
+        ViewMode,
+        Option<u32>,
+        Arc<DocLayout>,
+        bool,
+        Option<wordcraft_layout::outline::OutlineView>,
+        (bool, bool),
+        NumeralMode,
+    )>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -345,6 +396,11 @@ pub struct Session {
     pub read_aloud: crate::speech::ReadAloud,
     /// Preferences the front end saves between runs.
     pub prefs: Prefs,
+    /// The system region (#838): the paper a new blank document starts on, the default
+    /// measurement unit and the decimal separator. The front end sets it from the platform (the
+    /// browser's locale on the web); headless sessions keep `en-US`. A region the user chose
+    /// ([`Prefs::region`]) wins: read it with [`Session::region`].
+    pub system_region: wordcraft_geom::Region,
     /// Custom keyboard shortcuts (`tools.customizeKeyboard`); the front end saves them too.
     pub keymap: crate::KeyMap,
     /// Custom ribbon and Quick Access Toolbar (`tools.customizeRibbon`); the front end saves it too.
@@ -411,8 +467,14 @@ pub struct Prefs {
     pub insert_key_overtype: bool,
     /// Overtype: typed characters replace the ones after the caret.
     pub overtype: bool,
-    /// The unit rulers and dialogs show lengths in.
-    pub units: wordcraft_geom::Unit,
+    /// The unit rulers and dialogs show lengths in, when the user chose one (File › Options ›
+    /// Advanced › Measurement units); `None` follows the region ([`Session::units`]). Saved under
+    /// a new key; an older `units` value other than inches (the old default) carries over on load.
+    #[serde(rename = "measurementUnits")]
+    pub units: Option<wordcraft_geom::Unit>,
+    /// The region the user chose for new documents, units and the decimal separator (a locale
+    /// tag like `pl-PL`, File › Options › Advanced › Region); `None` follows the system.
+    pub region: Option<String>,
     /// Formatting marks shown even while Show/Hide ¶ is off.
     pub marks: wordcraft_layout::display::FormattingMarks,
     /// Mark grammar errors as you type (with Check spelling as you type on).
@@ -436,6 +498,7 @@ impl Default for Prefs {
             insert_key_overtype: false,
             overtype: false,
             units: Default::default(),
+            region: None,
             marks: Default::default(),
             mark_grammar: true,
             ignore_uppercase: true,
@@ -466,8 +529,24 @@ fn doc_bib_style(doc: &Document) -> String {
 
 /// Maximum undo depth.
 const MAX_UNDO: usize = 500;
+/// How many steps the Undo button's list shows (#701); `edit.undoTo` reaches no further.
+pub const UNDO_LIST_MAX: usize = 100;
 
 impl Session {
+    /// File name of the persisted custom dictionary inside the settings folder.
+    pub const USER_DICT_FILE: &str = "custom-dictionary.txt";
+
+    /// Save the custom dictionary through [`Session::user_dict_path`], if the host wired one up,
+    /// with `removed` (words just taken out) left out of the merge with the file. A failed save
+    /// keeps the words in memory and never fails the command (#40).
+    pub(crate) fn persist_user_dictionary(&self, removed: &[String]) {
+        if let Some(path) = self.user_dict_path.as_deref()
+            && let Err(e) = wordcraft_proof::save_user_dictionary(path, removed)
+        {
+            log::warn!("custom dictionary: save failed: {e}");
+        }
+    }
+
     pub fn new(doc: Document) -> Self {
         let start = doc.start_of(StoryRef::Body);
         let bib_style = doc_bib_style(&doc);
@@ -477,6 +556,7 @@ impl Session {
             view: ViewState::default(),
             pending: None,
             path: None,
+            user_dict_path: None,
             dirty: false,
             clipboard: None,
             pending_move: None,
@@ -514,6 +594,7 @@ impl Session {
             math_normal_text: false,
             also_selected: Vec::new(),
             prefs: Prefs::default(),
+            system_region: Default::default(),
             keymap: crate::KeyMap::default(),
             ribbon: crate::RibbonLayout::default(),
             editing_lang: None,
@@ -624,16 +705,21 @@ impl Session {
 
     /// The current layout (recomputed when the document or view changed).
     pub fn layout(&mut self) -> Arc<DocLayout> {
-        let ww = self.view.web_width;
+        let mode = if self.view.read_mode { ViewMode::Read } else { self.view.mode };
+        let width = if self.view.read_mode { self.view.read_width } else { self.view.web_width };
+        let height = if self.view.read_mode { self.view.read_height } else { 0.0 };
+        let spacing = if self.view.read_mode { self.view.read_line_spacing.map(f32::to_bits) } else { None };
         // Deletions in balloons depend on the view (the Comments pane, Read Mode, side by side), so
         // a view change that moves them in or out of the text lays it out again.
         let hide_deleted = !self.view.show_markup || self.prefs.markup.hides_deletions();
         let deleted = (hide_deleted, self.revisions_in_balloons());
-        let outline = (self.view.mode == ViewMode::Outline).then(|| self.view.outline.view());
-        if let Some((r, w, m, l, pf, o, hd, n)) = &self.layout
+        let outline = (mode == ViewMode::Outline).then(|| self.view.outline.view());
+        if let Some((r, w, h, m, sp, l, pf, o, hd, n)) = &self.layout
             && *r == self.rev
-            && (*w == ww || self.view.mode == ViewMode::Print)
-            && *m == self.view.mode
+            && (*w == width || mode == ViewMode::Print)
+            && *h == height
+            && *m == mode
+            && *sp == spacing
             && *pf == self.view.proofing
             && *n == self.view.numeral
             && *hd == deleted
@@ -642,8 +728,10 @@ impl Session {
             return l.clone();
         }
         let opts = LayoutOptions {
-            view: self.view.mode,
-            web_width: ww,
+            view: mode,
+            web_width: width,
+            read_height: height,
+            read_line_spacing: spacing.map(f32::from_bits),
             show_hidden: self.view.marks || self.prefs.marks.hidden,
             hide_deleted,
             deletions_in_balloons: deleted.1,
@@ -655,7 +743,7 @@ impl Session {
             proof: wordcraft_layout::ProofOptions { grammar: self.prefs.mark_grammar, spelling: self.prefs.spelling() },
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing, outline, deleted, self.view.numeral));
+        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing, outline, deleted, self.view.numeral));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
@@ -764,6 +852,21 @@ impl Session {
     pub fn undo_labels(&self) -> Vec<String> {
         self.history.iter().rev().map(|u| u.label.clone()).collect()
     }
+    /// The Undo button's list (#701): the undo steps' labels (English, as commands name them),
+    /// newest first, at most [`UNDO_LIST_MAX`].
+    pub fn undo_history(&self) -> Vec<&str> {
+        self.history.iter().rev().take(UNDO_LIST_MAX).map(|u| u.label.as_str()).collect()
+    }
+    /// Undo the newest `count` steps in one go, as picking an entry in the Undo list does (#701).
+    /// More than the undo depth undoes everything; a step that would take the document's
+    /// protection away stops it (only Stop Protection lifts it). Returns the steps undone.
+    pub fn undo_steps(&mut self, count: usize) -> usize {
+        let mut done = 0;
+        while done < count && !self.step_lifts_protection(false) && self.undo() {
+            done += 1;
+        }
+        done
+    }
     pub fn undo(&mut self) -> bool {
         self.typing_open = false;
         let Some(u) = self.history.pop().map(Arc::unwrap_or_clone) else { return false };
@@ -802,6 +905,31 @@ impl Session {
         self.history.clear();
         self.redo.clear();
         self.typing_open = false;
+    }
+
+    /// The region in effect (#838): the one the user chose ([`Prefs::region`]), else the
+    /// system's.
+    pub fn region(&self) -> wordcraft_geom::Region {
+        match self.prefs.region.as_deref() {
+            Some(tag) => wordcraft_geom::Region::from_tag(tag),
+            None => self.system_region.clone(),
+        }
+    }
+
+    /// The unit rulers and dialogs show lengths in: the user's choice, else the region's.
+    pub fn units(&self) -> wordcraft_geom::Unit {
+        self.prefs.units.unwrap_or_else(|| self.region().units())
+    }
+
+    /// `pt` in [`Session::units`], written the region's way (`2,54 cm` in Poland).
+    pub fn format_length(&self, pt: f32) -> String {
+        self.region().format(self.units(), pt)
+    }
+
+    /// A new blank document (the Normal template) on the region's paper: Letter in the US and
+    /// other Letter regions, A4 elsewhere (#838). Margins stay 2.54 cm (1") all round.
+    pub fn blank_document(&self) -> Document {
+        blank_document(&self.region())
     }
 
     /// Replace the document (open/new).
@@ -848,6 +976,8 @@ impl Session {
             view: _,
             pending: _,
             path: _,
+            // The custom dictionary file, like the file path: host wiring, not an edit.
+            user_dict_path: _,
             dirty,
             clipboard: _,
             // Like the clipboard: what the next paste can make a move of.
@@ -883,6 +1013,7 @@ impl Session {
             document_id: _,
             read_aloud: _,
             prefs: _,
+            system_region: _,
             keymap: _,
             ribbon: _,
             // A preference for new documents, like `prefs`: not part of this document.
@@ -1028,7 +1159,8 @@ impl Session {
             self.typing_open = false;
         }
         // Only the paste right after a tracked cut makes it a move.
-        if (spec.mutates || matches!(id, "edit.undo" | "edit.redo")) && !matches!(id, "edit.cut" | "edit.paste" | "edit.pasteSpecial") {
+        if (spec.mutates || matches!(id, "edit.undo" | "edit.undoTo" | "edit.redo")) && !matches!(id, "edit.cut" | "edit.paste" | "edit.pasteSpecial")
+        {
             self.pending_move = None;
         }
         let sel_before = self.sel.clone();
@@ -1135,4 +1267,13 @@ impl Session {
         let (a, b) = self.sel.ordered();
         self.doc.copy_range(&a, &b).plain_text()
     }
+}
+
+/// A new blank document on `region`'s paper (see [`Session::blank_document`]).
+pub fn blank_document(region: &wordcraft_geom::Region) -> Document {
+    let mut d = Document::new();
+    let (_, w, h) = region.paper();
+    d.last_section.page_w = w;
+    d.last_section.page_h = h;
+    d
 }

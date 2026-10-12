@@ -706,6 +706,8 @@
 	Read\nMode	Режим\nчитання
 	Reads the clipboard's rich text and keeps its formatting.	Читає форматований текст (RTF) із буфера обміну та зберігає його форматування.
 	Reads the clipboard's web content and keeps its formatting.	Читає вебвміст із буфера обміну та зберігає його форматування.
+	Picture	Зображення
+	Pastes the clipboard's picture.	Вставляє зображення з буфера обміну.
 	Reading Highlight	Виділення під час читання
 	Recent	Останні
 	Record Macro	Записати макрос
@@ -934,6 +936,10 @@
 	Underline Words Only	Підкреслити лише слова
 	Undo	Скасувати
 	Undo {action}	Скасувати {action}
+	Undo Actions	Скасувати дії
+	Undo History	Журнал скасування
+	Undo 1 Action	Скасувати 1 дію
+	Undo {n} Actions	Скасувати дій: {n}
 	Ungroup	Розгрупувати
 	Unformatted Text	Неформатований текст
 	Up	Угору
@@ -1442,6 +1448,8 @@
 	Border lines	Лінії меж
 	Capitalize first letter of sentences	Перша літера речення велика
 	Capitalize first letter of table cells	Перша літера в клітинках таблиці велика
+	Correct TWo INitial CApitals	Виправляти ДВі ВЕликі літери на початку слова
+	Correct accidental usage of cAPS LOCK key	Виправляти випадкове натискання cAPS LOCK
 	Capitalize names of days	Назви днів із великої літери
 	Case changes	Зміни регістру
 	Character level	Рівень символів
@@ -1705,6 +1713,7 @@
 	Middle	Посередині
 	Click the empty text box the text should continue in (Esc cancels)	Клацніть порожнє текстове поле, у якому має продовжитися текст (Esc — скасувати)
 	Not linked: click a text box	Не зв'язано: клацніть текстове поле
+	Show KeyTips (Alt or F10)	Показувати підказки клавіш (Alt або F10)
 	Location	Розташування
 	Endnotes	Кінцеві виноски
 	Below text	Під текстом
@@ -1717,6 +1726,10 @@
 	Continuous numbering	Наскрізна нумерація
 	Apply	Застосувати
 	Convert Notes	Перетворити примітки
+	Reading	Читання
+	Reading Column Width	Ширина стовпця для читання
+	Reading Line Spacing	Міжрядковий інтервал для читання
+	Reading Text Size	Розмір тексту для читання
 	English (United Kingdom)	Англійська (Велика Британія)
 	Polish	Польська
 	Do Not Check Spelling or Grammar	Не перевіряти правопис і граматику
@@ -2067,3 +2080,8 @@
 	Insert Row or Column by Clicking	Вставити рядок або стовпець клацанням
 	Move Table by Dragging	Перемістити таблицю перетягуванням
 	AutoFit Column by Double-Clicking	Добір ширини стовпця подвійним клацанням
+	Region:	Регіон:
+	Automatic ({region})	Автоматично ({region})
+	Start-up	Запуск
+	Show the Start screen when WordCraft starts	Показувати початковий екран під час запуску WordCraft
+	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Увімкнено: WordCraft відкривається на сторінці Файл › Основне з порожнім документом, шаблонами та нещодавніми документами. Вимкнено: відкривається порожній документ.
