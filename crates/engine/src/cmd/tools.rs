@@ -60,6 +60,11 @@ pub const AUTOCORRECT: &[(&str, &str)] = &[
     ("3/4", "¾"),
 ];
 
+/// A built-in entry that is an English word (letters and apostrophes only), not a symbol.
+fn is_english_entry(from: &str) -> bool {
+    from.chars().any(char::is_alphabetic) && from.chars().all(|c| c.is_alphabetic() || c == '\'')
+}
+
 /// Compare and Combine take the same settings.
 const COMPARE_PARAMS: &str = r#"{"path"?: string (revised document), "text"?: string (revised text), "original"?: string (original document; default: this one), "author"?: string (label changes with), "caseChanges"?: bool, "whiteSpace"?: bool, "formatting"?: bool (default true: differences count), "level"?: "word|character", "showIn"?: "original|revised|new" (revised/new: an untitled document), "moves"|"comments"|"tables"|"headersFooters"|"footnotes"|"textBoxes"|"fields"?: bool (accepted; not honoured yet except tables, always compared)}"#;
 
@@ -162,14 +167,23 @@ impl AutoCorrectPrefs {
         self
     }
 
-    /// The replacement for `word`, if any: the user's entry, else a built-in one not deleted.
-    /// Built-in lowercase entries also match a capitalised word ("Teh" → "The").
+    /// The replacement for `word` in English text, if any: the user's entry, else a built-in
+    /// one not deleted. Built-in lowercase entries also match a capitalised word ("Teh" → "The").
     pub fn replacement(&self, word: &str) -> Option<String> {
+        self.replacement_in(word, true)
+    }
+
+    /// The replacement for `word` in text that is (`english`) or isn't English: the built-in
+    /// English words ("teh", "i", "dont") apply only to English text, as Word keeps a list per
+    /// language (#835: Polish "i" means "and"); symbols, fractions and the user's entries apply
+    /// whatever the language.
+    pub fn replacement_in(&self, word: &str, english: bool) -> Option<String> {
         if let Some((_, b)) = self.entries.iter().find(|(a, _)| a == word) {
             return Some(b.clone());
         }
         AUTOCORRECT
             .iter()
+            .filter(|(a, _)| english || !is_english_entry(a))
             .filter(|(a, _)| !self.removed.iter().any(|r| r == a) && !self.entries.iter().any(|(e, _)| e == a))
             .filter(|(a, _)| self.fractions || !FRACTIONS.contains(a))
             .find(|(a, _)| {
@@ -363,6 +377,11 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(
                 r#"{"hide"?: tab, "show"?: tab, "newTab"?: {"name"?, "after"?: tab}, "newGroup"?: {"tab", "name"?}, "add"?: {"tab", "group", "command", "after"?: id}, "remove"?: {"tab", "group"?, "command"?}, "rename"?: {"tab", "group"?, "to"}, "move"?: {"tab", "group"?, "command"?, "by": int}, "qatAdd"?: id, "qatRemove"?: id, "qatMove"?: {"command", "by": int}, "reset"?: true | "ribbon" | "qat", "layout"?: object} → {tabs: [{name, custom?, hidden?, groups?: [{name, commands}]}], qat: [id]}; only custom tabs and groups can be renamed or removed (built-in tabs can be hidden and moved); no params opens the dialog"#,
             )
+            .pure(),
+        // Word's Search box in the title bar ("Tell me what you want to do"), Alt+Q (#819).
+        CommandSpec::new("tools.search", "Search", "Title Bar", search_commands)
+            .key(super::non_mac("Alt+Q"))
+            .params(r#"{"query"?: string} → {matches: [{id, label, location, shortcut}]} (every word of the query in the label, location or id; at most 50); no query opens the Search box"#)
             .pure(),
         CommandSpec::new("review.compare", "Compare", "Review › Compare", compare).params(COMPARE_PARAMS),
         CommandSpec::new("review.combine", "Combine", "Review › Compare", compare).params(COMPARE_PARAMS),
@@ -651,6 +670,7 @@ pub fn specs() -> Vec<CommandSpec> {
         .pure(),
         CommandSpec::new("view.sideToSide", "Side to Side", "View › Page Movement", |s, _| {
             s.view.multi_page = true;
+            s.view.single_column = false;
             s.view.fit = "multiplePages".into();
             Ok(json!({"pageMovement": "sideToSide"}))
         })
@@ -778,7 +798,15 @@ pub fn autocorrect_word(s: &mut Session, on_enter: bool) -> Result<(), CmdError>
         word = format!("{}{fixed}{}", word.get(..at).unwrap_or(""), word.get(at + letters.len()..).unwrap_or(""));
     }
     // A whole-word replacement, else "wait..." → "wait…".
-    let found = if ac.replace_text { ac.replacement(&word) } else { None };
+    // The word's language (run, paragraph style, document default) picks the list (#835).
+    // Text with no language at all is in the editing language (a Polish interface writes Polish),
+    // else English. Proofing decides what is English the same way.
+    let english = s.doc.para_at(&f).is_none_or(|p| {
+        let rc = s.doc.styles.resolve_char(p.props.style.as_deref(), p.props_of_char(start));
+        let lang = rc.lang.as_deref().or(s.editing_lang.as_deref());
+        wordcraft_proof::ProofLang::from_tag(lang) == wordcraft_proof::ProofLang::En
+    });
+    let found = if ac.replace_text { ac.replacement_in(&word, english) } else { None };
     let (from, rep) = match found {
         Some(r) => (start, Some(r)),
         None if ac.replace_text && word.len() > 3 && word.ends_with("...") => (start + word.len() - 3, Some("…".to_string())),
@@ -1388,6 +1416,31 @@ fn customize_keyboard(s: &mut Session, v: &Value) -> CmdResult {
         s.ui_requests.push(json!({"open": "customizeKeyboard"}));
     }
     Ok(Value::Object(out))
+}
+
+/// `tools.search`: the commands whose label, location or id hold every word of `query`, or,
+/// with no query, the Search box (`ui_requests` → the UI's command search).
+fn search_commands(s: &mut Session, v: &Value) -> CmdResult {
+    let Some(query) = p::str(v, "query") else {
+        s.ui_requests.push(json!({"open": "commands"}));
+        return Ok(json!({"matches": []}));
+    };
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    let matches: Vec<Value> = if words.is_empty() {
+        Vec::new()
+    } else {
+        s.registry
+            .all()
+            .iter()
+            .filter(|c| {
+                let hay = format!("{} {} {}", c.label, c.location, c.id).to_lowercase();
+                words.iter().all(|w| hay.contains(w.as_str()))
+            })
+            .take(50)
+            .map(|c| json!({"id": c.id, "label": c.label, "location": c.location, "shortcut": c.shortcut}))
+            .collect()
+    };
+    Ok(json!({"matches": matches}))
 }
 
 /// Tools › Customize Ribbon: read and change the ribbon's tabs, custom groups and the Quick Access
