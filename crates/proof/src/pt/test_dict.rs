@@ -36,6 +36,7 @@ PFX X 0 des .
 pub const DIC: &str = "76
 coração
 saudade
+saudê
 pássaro
 saúde
 árvore
@@ -80,7 +81,6 @@ sim
 que
 com
 para
-uma
 dos
 das
 pela

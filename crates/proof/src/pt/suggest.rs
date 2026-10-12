@@ -15,7 +15,7 @@
 //!    folded) and share the most letter pairs with it, whose forms are ranked by an edit distance
 //!    in which an accent slip costs half (two typos at most).
 //!
-//! The input is bounded (40 letters), and so is every round, so a call costs a few thousand
+//! The input is bounded (40 letters), and so is every round, so a call costs ten-odd thousand
 //! dictionary lookups at most.
 
 use std::collections::{HashMap, HashSet};
@@ -286,7 +286,10 @@ pub fn suggest_in(d: &AffixDict, word: &str, max: usize) -> Vec<String> {
         scan(&mut col, &chars);
     }
     let mut found: Vec<(String, (u32, usize))> = col.found.into_iter().collect();
-    found.sort_by_key(|(_, k)| *k);
+    // Among equal costs, the change nearest the word's start is the likelier intent
+    // (`saúde` before `saudê`: both add an accent, but at the first difference).
+    let diff_at = |text: &str| chars.iter().zip(text.chars()).position(|(a, b)| *a != b).unwrap_or(n);
+    found.sort_by_key(|(text, (cost, seq))| (*cost, diff_at(text), *seq));
     let mut out: Vec<String> = Vec::new();
     for (text, _) in found {
         let t = match case {
@@ -391,7 +394,11 @@ mod tests {
     fn the_likeliest_fix_comes_first() {
         crate::pt::test_dict::install();
         assert_eq!(suggest("coraçao", 3).first().map(String::as_str), Some("coração"));
-        assert_eq!(suggest("saude", 3).first().map(String::as_str), Some("saúde"));
+        assert_eq!(
+            suggest("saude", 3).first().map(String::as_str),
+            Some("saúde"),
+            "an accent at the first difference beats one further right (saudê is a word too)"
+        );
         assert_eq!(suggest("seje", 3).first().map(String::as_str), Some("seja"));
     }
 

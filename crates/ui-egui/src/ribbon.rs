@@ -306,7 +306,7 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
 
 /// The proofing languages the Language menu offers: tag and English name (translated when drawn).
 pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 4] =
-    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("pt-BR", "Portuguese (Brasil)")];
+    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("pt-BR", "Portuguese (Brazil)")];
 
 /// The English name of a proofing language tag, as the status bar shows it (no tag: WordCraft's
 /// default, US English; a tag without a name here: the tag).
@@ -1880,9 +1880,9 @@ mod tests {
     #[test]
     fn portuguese_has_a_name_in_the_language_menu() {
         assert!(PROOFING_LANGUAGES.iter().any(|(t, _)| *t == "pt-BR"));
-        assert_eq!(language_name(Some("pt-BR")), "Portuguese (Brasil)");
+        assert_eq!(language_name(Some("pt-BR")), "Portuguese (Brazil)");
         assert_eq!(language_name(Some("pt")), "Portuguese (Brazil)");
-        assert_eq!(language_name(Some("PT-BR".to_string().as_str())), "Portuguese (Brasil)");
+        assert_eq!(language_name(Some("PT-BR".to_string().as_str())), "Portuguese (Brazil)");
     }
 
     #[test]
