@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Insert › SmartArt landed, #497: catalog 429/451 → 437/458 (95.4%); previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (any text file opens, #569; previously trivial: Insert › SmartArt landed, #497: catalog 429/451 → 437/458 (95.4%); previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 WordCraft aims for complete parity with Microsoft Word, then goes further on speed, openness and
 agent control. This page is the summary; the assessment is
@@ -130,7 +130,9 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 ## Progress log
 
 | Date | What landed |
+| 2026-10-11 | Fonts: Palatino Linotype and Book Antiqua fall back to Palatino (macOS) or TeX Gyre Pagella / P052 / URW Palladio (Linux) before generic serif (#670) |
 |---|---|
+| 2026-10-11 | A vertically merged table cell (eraser on a horizontal border) lays out, shows and clicks as one cell spanning its rows (#640) |
 | 2026-10-11 | Word XML files (#548): Word XML Document (Flat OPC `.xml`) opens and saves through the DOCX reader and writer; Word 2003 XML opens (styles, lists, tables, sections, notes, comments, pictures, hyperlinks) |
 | 2026-10-11 | Font fallback indexes which characters each installed font maps, reading each font file once (#605): text in a script no installed font covers no longer re-reads every system font per distinct character (200 such characters: 13 s → 0.2 s) |
 | 2026-10-11 | Find and Replace special characters (`^p`, `^t`, `^#`, `^&` …) and Use wildcards (ranges, counts, word anchors, groups with `\1` in Replace); `^p` finds and splits paragraphs; Special ▾ menu and search options in the dialog (#543) |
@@ -143,6 +145,8 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Right-click Wrap Text submenu on pictures, shapes and text boxes: wrapping styles, Move with Text / Fix Position on Page (#513) |
 | 2026-10-11 | Paragraph dialog options (#512): mirror indents (`w:mirrorIndents`, laid out on even pages), same-style spacing, suppress line numbers, don't hyphenate |
 | 2026-10-11 | Screen readers can read the document canvas (#488): paragraphs, headings, lists, tables, links, pictures and the caret exposed through AccessKit |
+| 2026-10-11 | Any text file opens (#569): `.m3u`/`.m3u8` playlists and other unknown extensions open as plain text with encoding detection (UTF-8, BOMs, UTF-16, Windows-1252), misnamed Word/RTF files by their signature; binary files give a clear error |
+| 2026-10-11 | Select by dragging whole units (#549): after a double-click the drag grows by words, after a triple-click by paragraphs, after Ctrl/⌘+click by sentences, as in Word |
 | 2026-10-11 | Compare / Combine dialog with comparison settings, Restrict Editing pane (exceptions, SHA-512 password, locked styles; DOCX round trip), AutoCorrect Options dialog saved per user (#412) |
 | 2026-10-11 | DOCX diagrams (#611): lines, connectors and boxes styled by the theme now show (they were invisible); callouts and flowchart boxes drawn as the nearest shape; VML lines, rectangles and ovals |
 | 2026-10-11 | WordArt (#416): text fill/outline/shadow/glow/reflection, Transform warps, our own styles; straight/elbow/curved connectors glued to shapes that re-route; DOCX round trip |
@@ -167,6 +171,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Turkish (`tr`) interface: all 1,307 catalog entries, `tr-TR`/`tr-CY` system locales and a saved language choice; command search keeps Turkish dotted and dotless I apart (`italik` finds İtalik); locale, catalog, search and bundled-font tests; no Turkish proofing resources |
 | 2026-10-11 | Citations and bibliography in all 12 of Word's styles: Harvard, ISO 690 (author-date and numerical), Turabian, GB/T 7714, GOST (name and title sort) and SIST02 join APA, MLA, Chicago and IEEE; numbered styles count in order of first citation (#383) |
 | 2026-10-11 | Interface size setting (#475): File › Options › General scales the interface 80–200 % on top of the system display scale, kept between runs; `ui.interfaceSize` for agents |
+| 2026-10-11 | DOCX paragraph defaults: preserve omission separately from explicit empty defaults, with repeated-save and default-edit regressions |
 | 2026-10-11 | Formatting revisions (#41): `w:rPrChange`/`w:pPrChange`, table/row/cell, section and numbering changes kept in DOCX; formatting recorded as revisions while tracking; accept/reject, Reviewing Pane descriptions, "Formatted: …" balloons and change bars |
 | 2026-10-11 | Draw: Lasso Select (move, recolour, delete the strokes inside a loop), Add Pen gallery kept between runs, Ink to Shape (own recogniser: line, rectangle/square, ellipse/circle, triangle, polygon), Ink Replay in drawing order with play/pause/rewind/forward; drawing order kept in DOCX (#395); catalog 406/434 (93.5%) |
 | 2026-10-10 | Estonian (`et`) interface (#294): 1,161 translated entries, locale and saved-preference tests, bundled-font checks; no Estonian proofing resources |
@@ -190,6 +195,8 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | trivial | Progress log: Outline view (#493) |
 | 2026-10-11 | trivial | Progress log: vertical sections (#491) |
 | 2026-10-11 | trivial | Progress log: Paragraph dialog options, mirror indents (#512) |
+| 2026-10-11 | trivial | Progress log: unknown text extensions open as text (#569) |
+| 2026-10-11 | trivial | Progress log: drag-select by words/paragraphs/sentences (#549) |
 | 2026-10-11 | trivial | Progress log: content controls (#381) |
 | 2026-10-11 | trivial | Progress log: Insert › Chart (#409); catalog 408/439 (92.9%) |
 | 2026-10-11 | trivial | Progress log: Line Numbers, Hyphenation, Language, Envelopes and Labels dialogs (#407) |
@@ -202,6 +209,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | trivial | Insert › Icons landed (#309): catalog 402/434 → 403/434 (92.9%) |
 | 2026-10-11 | trivial | Enclose Characters (#297): catalog 403/434 (92.9%) |
 | 2026-10-11 | trivial | Progress log: Customize Ribbon and the Quick Access Toolbar (#379) |
+| 2026-10-11 | trivial | Omitted `w:pPrDefault` stays omitted across saves; explicit empty/default properties and later spacing edits remain writable. Synthetic preservation checks only; readiness estimates unchanged |
 | 2026-10-11 | trivial | Progress log: Customize Keyboard (#368) |
 | 2026-10-11 | trivial | Word's common keyboard shortcuts (#330): 125 of ~250 |
 | 2026-10-11 | trivial | Collapsed duplicate rows left by parallel merges |
