@@ -321,14 +321,24 @@ impl DocLayout {
 
     /// Which header/footer (if any) is at (x, y) on a page — for double-click editing.
     pub fn header_footer_at(&self, page: usize, y: f32) -> Option<(StoryRef, bool)> {
+        let header = self.header_footer_band_at(page, y)?;
+        let p = self.pages.get(page)?;
+        let id = if header { p.header_story } else { p.footer_story }?;
+        Some((StoryRef::Part(id), header))
+    }
+
+    /// The header (`true`) or footer (`false`) margin band at `y` — the area above or below the
+    /// body — whether or not the page has that part yet: a double-click there starts one (Word),
+    /// so the band exists on every page.
+    pub fn header_footer_band_at(&self, page: usize, y: f32) -> Option<bool> {
         let p = self.pages.get(page)?;
         if y < p.body.y {
-            return p.header_story.map(|id| (StoryRef::Part(id), true));
+            Some(true)
+        } else if y > p.body.bottom() {
+            Some(false)
+        } else {
+            None
         }
-        if y > p.body.bottom() {
-            return p.footer_story.map(|id| (StoryRef::Part(id), false));
-        }
-        None
     }
 
     /// Pieces of a paragraph: (page, item index).
