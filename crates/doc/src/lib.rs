@@ -11,8 +11,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod bidi;
-mod cjk_numbers;
 pub mod chart;
+mod cjk_numbers;
 pub mod connector;
 pub mod control;
 pub mod edit;
