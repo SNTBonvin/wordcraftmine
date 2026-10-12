@@ -13,6 +13,10 @@ pub enum ProofLang {
     /// Polish (`pl`, `pl-PL`): the installed Hunspell dictionary (when there is one), the Polish grammar rules and the Polish
     /// hyphenation patterns.
     Pl,
+    /// Danish (`da`, `da-DK`): Retskrivningsordbogen's forms with compound analysis ([`crate::da`])
+    /// and the Danish split-compound and present-tense rules. Hyphenation uses the English
+    /// patterns.
+    Da,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without
     /// the language's proofing tools: no spelling or grammar marks, so its words are never
     /// flagged as English misspellings. Hyphenation keeps using the English patterns, as before
@@ -22,7 +26,7 @@ pub enum ProofLang {
 
 impl ProofLang {
     /// Every language with a spelling dictionary, in display order.
-    pub const PROOFED: [ProofLang; 2] = [ProofLang::En, ProofLang::Pl];
+    pub const PROOFED: [ProofLang; 3] = [ProofLang::En, ProofLang::Pl, ProofLang::Da];
 
     /// The proofing language of a BCP 47 tag (`pl-PL`, `en_GB`, `PL`…). Only the primary subtag
     /// counts. No tag (or an empty one) is English, WordCraft's default editing language.
@@ -33,16 +37,19 @@ impl ProofLang {
             ProofLang::En
         } else if primary.eq_ignore_ascii_case("pl") || primary.eq_ignore_ascii_case("pol") {
             ProofLang::Pl
+        } else if primary.eq_ignore_ascii_case("da") || primary.eq_ignore_ascii_case("dan") {
+            ProofLang::Da
         } else {
             ProofLang::Other
         }
     }
 
-    /// The primary language subtag (`en`, `pl`); empty for [`ProofLang::Other`].
+    /// The primary language subtag (`en`, `pl`, `da`); empty for [`ProofLang::Other`].
     pub fn code(self) -> &'static str {
         match self {
             ProofLang::En => "en",
             ProofLang::Pl => "pl",
+            ProofLang::Da => "da",
             ProofLang::Other => "",
         }
     }
@@ -116,6 +123,9 @@ mod tests {
         for t in ["pl", "pl-PL", "PL-pl", "pl_PL", "pl_PL.UTF-8", " pl-PL ", "pol"] {
             assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::Pl, "{t}");
         }
+        for t in ["da", "da-DK", "DA_dk", "dan"] {
+            assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::Da, "{t}");
+        }
         for t in ["en", "en-US", "en-GB", "EN_au", "en-Latn-US"] {
             assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::En, "{t}");
         }
@@ -127,5 +137,6 @@ mod tests {
         assert_eq!(ProofLang::from_tag(Some("  ")), ProofLang::En);
         assert!(ProofLang::Pl.is_proofed() && !ProofLang::Other.is_proofed());
         assert_eq!(ProofLang::Pl.code(), "pl");
+        assert_eq!(ProofLang::Da.code(), "da");
     }
 }

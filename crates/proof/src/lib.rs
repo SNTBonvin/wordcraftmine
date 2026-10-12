@@ -12,6 +12,10 @@
 //!   spelling marks), read by the affix engine ([`affix`]), suggestions tuned for Polish
 //!   (diacritics, `ż`/`rz`, `u`/`ó`, missing spaces), and Polish grammar rules with Polish
 //!   messages.
+//! - **Danish** ([`ProofLang::Da`], module [`da`]): every form in Retskrivningsordbogen and Den
+//!   Danske Ordbog's lemma list (COR, CC0) in a [`lexicon`], Danish places and names, compound
+//!   analysis, corpus frequencies for suggestions, and two grammar rules with Danish messages:
+//!   compounds written apart (*tog station*) and present tense after *at* or a modal verb.
 //! - **Other languages** ([`ProofLang::Other`]): no spelling or grammar marks, like Word without
 //!   the language's proofing tools.
 //! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns (English, Polish), heuristic.
@@ -20,10 +24,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod affix;
+pub mod da;
 pub mod dict;
 pub mod hunspell;
 pub mod hyphen;
 pub mod lang;
+pub mod lexicon;
 pub mod patterns;
 pub mod pl;
 
@@ -278,7 +284,7 @@ pub fn suggest(word: &str, max: usize) -> Vec<String> {
 }
 
 /// Optimal string alignment distance, early-exit at 3.
-fn damerau(a: &[char], b: &str) -> usize {
+pub(crate) fn damerau(a: &[char], b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let (n, m) = (a.len(), b.len());
     let mut prev2 = vec![0usize; m + 1];
@@ -373,6 +379,7 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang, opts: &Option
     }
     let message = match lang {
         ProofLang::Pl => "Możliwy błąd pisowni",
+        ProofLang::Da => "Mulig stavefejl",
         _ => "Possible spelling mistake",
     };
     Some(Issue { start: a, end: b, kind: IssueKind::Spelling, message: message.into(), suggestions: Vec::new(), lang })
@@ -388,6 +395,7 @@ pub fn is_correct_in_with(word: &str, lang: ProofLang, opts: &Options) -> bool {
     match lang {
         ProofLang::En => is_correct_with(word, opts),
         ProofLang::Pl => accepted_by_options(word, opts) || pl::is_correct(word),
+        ProofLang::Da => accepted_by_options(word, opts) || da::is_correct(word),
         ProofLang::Other => true,
     }
 }
@@ -397,16 +405,18 @@ pub fn suggest_in(word: &str, max: usize, lang: ProofLang) -> Vec<String> {
     match lang {
         ProofLang::En => suggest(word, max),
         ProofLang::Pl => pl::suggest(word, max),
+        ProofLang::Da => da::suggest(word, max),
         ProofLang::Other => Vec::new(),
     }
 }
 
 /// Grammar issues in a paragraph of text in `lang`: the English rules, the Polish ones
-/// ([`pl::grammar`]), or none for a language WordCraft doesn't proof.
+/// ([`pl::grammar`]), the Danish ones ([`da::check_grammar`]), or none for a language WordCraft doesn't proof.
 pub fn check_grammar_in(text: &str, lang: ProofLang) -> Vec<Issue> {
     match lang {
         ProofLang::En => check_grammar(text),
         ProofLang::Pl => pl::grammar::check(text),
+        ProofLang::Da => da::check_grammar(text),
         ProofLang::Other => Vec::new(),
     }
 }
