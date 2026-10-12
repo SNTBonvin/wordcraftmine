@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (font list shows fonts by their names in the interface language, #505; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Korean interface catalog added; previously minor: font list shows fonts by their names in the interface language, #505; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -18,9 +18,9 @@ other ~18 languages Word ships, plus native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **12 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr` and Russian `ru`. Catalogs have 1,305–1,450 entries
-  each. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
+- **13 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `ko`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr` and Russian `ru`. The Korean catalog has 2,386 entries and covers every key in the existing
+  catalogs. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
   catalog covers **661 (98%)**. Some newer dialog and pane strings (Equation tab tooltips, Zotero,
@@ -49,7 +49,7 @@ shared items below.
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
 | Japanese | ja | ~930; 98% / ~95% | most | CJK ✅, IME ✅; no vertical text, ruby or document grid | no | partial | 3–5 |
 | German | de | 0 (PR #203 open) | ❌ | Latin ✅ | no | none | 1–2 |
-| Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
+| Korean | ko | 2,386 entries; all existing catalog keys | existing catalogs covered; uncatalogued literals still English | Hangul fonts checked; macOS IME verification pending (separate from UI translation) | no | partial | 1–3 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
 Other shipped languages: **7** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
@@ -61,6 +61,12 @@ Turkish works the same way (`tr-TR` and `tr-CY` system locales, `{"value":"tr"}`
 entries. Command search folds the Turkish dotted and dotless I (`italik` finds İtalik, `YAZI TİPİ`
 finds Yazı Tipi) while English labels and ASCII command ids keep their usual matching. Turkish
 proofing is not included; terminology and checks: [`localization-tr.md`](localization-tr.md).
+
+Korean follows `ko-KR`, `ko_KR.UTF-8` and other Korean system locales, and can be selected
+in Options or with `ui.language` and `{"value":"ko"}`. The catalog translates menus, commands,
+dialogs, tooltips and built-in style names while preserving document contents and command IDs.
+Korean spelling/grammar and changes to IME handling are outside this translation. Terminology,
+font requirements and validation: [`localization-ko.md`](localization-ko.md).
 
 ## Shared work (not in the per-language hours)
 
@@ -76,6 +82,7 @@ proofing is not included; terminology and checks: [`localization-tr.md`](localiz
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Korean interface catalog (2,386 entries), locale and preference tests, Hangul font coverage and native font fallback candidates |
 | 2026-10-11 | minor | Font dialog sets the Asian text font (`w:eastAsia`) and the Latin text font separately; the Asian list holds the installed Chinese, Japanese and Korean fonts by their interface-language names (#505) |
 | 2026-10-11 | minor | Font list shows installed fonts by their names in the interface language (宋体 for SimSun in Chinese, Japanese and Korean names likewise) and finds them by either name; a Chinese, Japanese or Korean font is stored as `w:eastAsia` too (#505) |
 | 2026-10-11 | minor | Chinese/Japanese interface fonts: a test checks every catalog character has a glyph; an installed CJK font follows the embedded faces whenever they miss one; macOS font asset folders searched for PingFang (#486) |
