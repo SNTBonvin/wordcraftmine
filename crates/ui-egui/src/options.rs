@@ -70,9 +70,8 @@ impl MeasureExt for egui::DragValue<'_> {
 
 /// Regions offered in File › Options › Advanced › Region (any locale tag works through
 /// `file.options`): Letter and A4 countries, decimal point and decimal comma.
-const REGIONS: [&str; 16] = [
-    "en-US", "en-CA", "en-GB", "en-AU", "en-IN", "es-MX", "es-ES", "pt-BR", "fr-FR", "de-DE", "it-IT", "pl-PL", "ru-RU", "ja-JP", "zh-CN", "ko-KR",
-];
+const REGIONS: [&str; 16] =
+    ["en-US", "en-CA", "en-GB", "en-AU", "en-IN", "es-MX", "es-ES", "pt-BR", "fr-FR", "de-DE", "it-IT", "pl-PL", "ru-RU", "ja-JP", "zh-CN", "ko-KR"];
 
 /// The units offered, with their names.
 pub const UNITS: [(Unit, &str); 5] = [
