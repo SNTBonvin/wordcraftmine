@@ -706,6 +706,7 @@
 	Style based on:	Alapstílus:
 	Style Set	Stíluskészlet
 	Style: {style}	Stílus: {style}
+	Style: APA	Stílus: APA
 	Styles	Stílusok
 	Styles Pane	Stílusok panel
 	Subject	Tárgy
@@ -1122,9 +1123,19 @@
 	Change to Level 3	Áthelyezés a 3. szintre
 	Change to Level 4	Áthelyezés a 4. szintre
 	Change to Level 5	Áthelyezés az 5. szintre
+	Change to Level 6	Áthelyezés a 6. szintre
+	Change to Level 7	Áthelyezés a 7. szintre
+	Change to Level 8	Áthelyezés a 8. szintre
+	Change to Level 9	Áthelyezés a 9. szintre
 	Level 1	1. szint
 	Level 2	2. szint
 	Level 3	3. szint
+	Level 4	4. szint
+	Level 5	5. szint
+	Level 6	6. szint
+	Level 7	7. szint
+	Level 8	8. szint
+	Level 9	9. szint
 	ASAP	SÜRGŐS
 	CONFIDENTIAL	BIZALMAS
 	DO NOT COPY	NEM MÁSOLHATÓ
@@ -1589,6 +1600,8 @@
 	Tab characters	Tabulátorok
 	These marks show even when Show/Hide ¶ is off.	Ezek a jelek akkor is látszanak, ha a Megjelenítés/elrejtés ¶ ki van kapcsolva.
 	Typing replaces selected text	A gépelés felülírja a kijelölt szöveget
+	Typing	Gépelés
+	Resize Table by Dragging	Táblázat átméretezése húzással
 	Update fields before printing	Mezők frissítése nyomtatás előtt
 	Use the Insert key to switch overtype on and off	Az Insert billentyű ki- és bekapcsolja a felülírást
 	Asian text font:	Ázsiai szöveg betűtípusa:
