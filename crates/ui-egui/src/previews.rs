@@ -26,6 +26,93 @@ pub struct Previews {
     /// Previews rendered this frame (rendering is spread over frames).
     budget: std::cell::Cell<u32>,
     frame: u64,
+    /// The Equation tab's pictures, packed into one texture (#1002).
+    math: MathAtlas,
+}
+
+/// Side of the square texture the equation pictures share, in pixels.
+const MATH_ATLAS: usize = 2048;
+/// Transparent pixels between pictures, so linear filtering never bleeds one into the next.
+const MATH_ATLAS_GAP: usize = 2;
+
+/// Every equation picture (gallery tiles, structure buttons, symbols) packed into a single
+/// texture, row by row, and drawn as a part of it (#1002).
+///
+/// They used to be a texture each: hundreds of small textures, created as galleries opened and
+/// all freed at once when the preview cache filled. On Windows (DirectX 12) the tiles then
+/// showed other textures' memory: inverted pictures, red and teal fills, and even damaged
+/// interface letters. One texture written in place is what egui does for its own glyphs; it
+/// creates and frees nothing while galleries are browsed. When it fills up it starts over.
+#[derive(Default)]
+struct MathAtlas {
+    tex: Option<TextureHandle>,
+    /// Picture key → its part of the texture (UV coordinates).
+    uv: HashMap<String, Rect>,
+    /// Where the next picture goes: the current row's left edge and top, and the row's height.
+    x: usize,
+    y: usize,
+    row_h: usize,
+    /// The frame the atlas last started over in (at most once a frame, so a gallery bigger than
+    /// the atlas shows its linear text instead of re-rendering forever).
+    reset_frame: Option<u64>,
+}
+
+impl MathAtlas {
+    /// A free spot for a `w`×`h` picture, or `None` when the atlas is full or it can't fit.
+    fn place(&mut self, w: usize, h: usize) -> Option<[usize; 2]> {
+        if w == 0 || h == 0 || w > MATH_ATLAS || h > MATH_ATLAS {
+            return None;
+        }
+        if self.x.saturating_add(w) > MATH_ATLAS {
+            self.x = 0;
+            self.y = self.y.saturating_add(self.row_h).saturating_add(MATH_ATLAS_GAP);
+            self.row_h = 0;
+        }
+        if self.y.saturating_add(h) > MATH_ATLAS {
+            return None;
+        }
+        let at = [self.x, self.y];
+        self.x = self.x.saturating_add(w).saturating_add(MATH_ATLAS_GAP);
+        self.row_h = self.row_h.max(h);
+        Some(at)
+    }
+
+    /// Forget every picture and clear the texture.
+    fn reset(&mut self) {
+        self.uv.clear();
+        self.x = 0;
+        self.y = 0;
+        self.row_h = 0;
+        if let Some(tex) = &mut self.tex {
+            tex.set(egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT), egui::TextureOptions::LINEAR);
+        }
+    }
+
+    /// Add `img` under `key`; its texture and UV rectangle, or `None` if it can't be placed.
+    fn add(&mut self, ctx: &egui::Context, frame: u64, key: &str, img: egui::ColorImage) -> Option<(egui::TextureId, Rect)> {
+        let [w, h] = img.size;
+        let at = match self.place(w, h) {
+            Some(at) => at,
+            None if self.reset_frame != Some(frame) && self.tex.is_some() => {
+                self.reset_frame = Some(frame);
+                self.reset();
+                self.place(w, h)?
+            }
+            None => return None,
+        };
+        let tex = self.tex.get_or_insert_with(|| {
+            ctx.load_texture(
+                "math_atlas",
+                egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT),
+                egui::TextureOptions::LINEAR,
+            )
+        });
+        tex.set_partial(at, img, egui::TextureOptions::LINEAR);
+        let s = MATH_ATLAS as f32;
+        let uv = Rect::from_min_max(pos2(at[0] as f32 / s, at[1] as f32 / s), pos2((at[0] + w) as f32 / s, (at[1] + h) as f32 / s));
+        self.uv.insert(key.to_string(), uv);
+        Some((tex.id(), uv))
+    }
 }
 
 impl Previews {
@@ -182,8 +269,9 @@ impl Previews {
 }
 
 /// An equation rasterised for a gallery tile or a button (`pt`: font size; `size`: the tile in
-/// points), with its empty slots shown. Cached by `key`; `None` while waiting for this frame's
-/// rendering budget.
+/// points), with its empty slots shown: the shared texture and the picture's UV rectangle in it
+/// ([`MathAtlas`]). An ink mask, drawn tinted with the theme's text colour. `None` while waiting
+/// for this frame's rendering budget.
 pub fn math_texture(
     app: &mut WordApp,
     ctx: &egui::Context,
@@ -192,10 +280,25 @@ pub fn math_texture(
     display: bool,
     pt: f32,
     size: egui::Vec2,
-) -> Option<TextureHandle> {
+) -> Option<(egui::TextureId, Rect)> {
     let ppp = ctx.pixels_per_point();
     let k = format!("math:{key}:{pt}:{}x{}:{ppp}", size.x, size.y);
-    app.previews.get_or(ctx, &k, || math_image(nodes, display, pt, size.x, size.y, ppp))
+    let p = &mut app.previews;
+    if let (Some(tex), Some(uv)) = (&p.math.tex, p.math.uv.get(&k)) {
+        return Some((tex.id(), *uv));
+    }
+    let frame = ctx.cumulative_frame_nr();
+    if frame != p.frame {
+        p.frame = frame;
+        p.budget.set(0);
+    }
+    if p.budget.get() > 8 {
+        ctx.request_repaint();
+        return None;
+    }
+    p.budget.set(p.budget.get() + 1);
+    let img = math_image(nodes, display, pt, size.x, size.y, ppp)?;
+    p.math.add(ctx, frame, &k, img)
 }
 
 fn math_image(nodes: &wordcraft_doc::math::Arg, display: bool, pt: f32, w: f32, h: f32, ppp: f32) -> Option<egui::ColorImage> {
@@ -600,6 +703,124 @@ mod tests {
         assert!(img.pixels.iter().any(|p| p.a() == 0), "paper is transparent");
         assert!(img.pixels.iter().any(|p| p.a() > 0), "ink is kept");
         assert!(img.pixels.iter().all(|p| *p == egui::Color32::from_white_alpha(p.a())), "ink is white, to be tinted");
+    }
+
+    /// Every picture the Equation tab and Insert › Equation draw: (key, nodes, display, pt, tile size).
+    fn equation_pictures() -> Vec<(String, wordcraft_doc::math::Arg, bool, f32, egui::Vec2)> {
+        use wordcraft_doc::math::{MNode, MRun, parse_linear};
+        use wordcraft_engine::math_gallery::{BUILT_INS, STRUCTURES, SYMBOL_SETS};
+        let mut out = Vec::new();
+        for g in STRUCTURES {
+            let pic = crate::equation_tab::button_picture(g.id);
+            out.push((format!("btn:{pic}"), parse_linear(pic), false, 12.0, vec2(40.0, 32.0)));
+            for (_, templates) in g.sections {
+                for t in templates.iter() {
+                    out.push((format!("tpl:{}", t.id), t.nodes(), true, 14.0, vec2(56.0, 52.0)));
+                    out.push((format!("tpl:{}", t.id), t.nodes(), true, 13.0, vec2(154.0, 56.0)));
+                }
+            }
+        }
+        for (id, _, lin) in BUILT_INS {
+            out.push((format!("builtin:{id}"), parse_linear(lin), true, 11.0, vec2(346.0, 60.0)));
+        }
+        for (_, chars) in SYMBOL_SETS {
+            for c in chars.chars() {
+                let nodes = vec![MNode::Run(MRun { text: c.to_string(), lit: true, ..Default::default() })];
+                out.push((format!("sym:{c}"), nodes, false, 11.0, vec2(22.0, 22.0)));
+            }
+        }
+        out
+    }
+
+    /// #1002: drawn the way the Equation tab draws them (the picture tinted with the theme's text
+    /// colour on an input-coloured tile), every gallery tile, button and symbol is the theme's
+    /// greys only: its background is the tile colour and its ink no darker or lighter than the
+    /// text, in light and dark mode, with no red or teal anywhere.
+    #[test]
+    fn equation_pictures_follow_the_theme() {
+        let mix = |fg: u8, bg: u8, a: u8| ((u32::from(fg) * u32::from(a) + u32::from(bg) * (255 - u32::from(a))) / 255) as u8;
+        for (key, nodes, display, pt, size) in equation_pictures() {
+            let img = math_image(&nodes, display, pt, size.x, size.y, 1.0).unwrap_or_else(|| panic!("{key} renders"));
+            assert!(img.pixels.iter().all(|p| *p == egui::Color32::from_white_alpha(p.a())), "{key}: an ink mask");
+            assert_eq!(img.pixels.first().map(|p| p.a()), Some(0), "{key}: transparent paper in the corner");
+            for t in [Tokens::light(), Tokens::dark()] {
+                let (bg, fg) = (t.input, t.text);
+                let (lo, hi) = (bg.r().min(fg.r()), bg.r().max(fg.r()));
+                for p in &img.pixels {
+                    let a = p.a();
+                    let c = [mix(fg.r(), bg.r(), a), mix(fg.g(), bg.g(), a), mix(fg.b(), bg.b(), a)];
+                    assert!(c[0] == c[1] && c[1] == c[2], "{key}: a grey, not {c:?}");
+                    assert!((lo..=hi).contains(&c[0]), "{key}: between the tile and the text colour, not {c:?}");
+                }
+            }
+        }
+    }
+
+    /// #1002: the pictures share one texture, written in place: browsing every gallery creates no
+    /// texture per tile and frees none (hundreds of small textures, freed in bulk, showed other
+    /// textures' memory on DirectX 12).
+    #[test]
+    fn equation_pictures_share_one_texture() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+        let pictures = equation_pictures();
+        // Symbols repeat across sets (∀, ≠…): each is drawn once.
+        let unique = pictures.iter().map(|(key, _, _, pt, size)| format!("{key}:{pt}:{size:?}")).collect::<std::collections::HashSet<_>>().len();
+        let mut drawn: HashMap<String, (egui::TextureId, Rect)> = HashMap::new();
+        let mut freed = 0;
+        for _ in 0..200 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let ctx = ui.ctx().clone();
+                for (key, nodes, display, pt, size) in &pictures {
+                    let k = format!("{key}:{pt}:{size:?}");
+                    if let std::collections::hash_map::Entry::Vacant(e) = drawn.entry(k)
+                        && let Some(t) = math_texture(&mut app, &ctx, key, nodes, *display, *pt, *size)
+                    {
+                        e.insert(t);
+                    }
+                }
+            });
+            freed += out.textures_delta.free.len();
+            out.textures_delta.clear();
+            if drawn.len() == unique {
+                break;
+            }
+        }
+        assert_eq!(drawn.len(), unique, "every picture is drawn");
+        let ids: std::collections::HashSet<_> = drawn.values().map(|(id, _)| *id).collect();
+        assert_eq!(ids.len(), 1, "one texture for every picture");
+        assert_eq!(freed, 0, "no texture freed while browsing");
+        // No two pictures overlap, and each lies inside the texture.
+        let rects: Vec<Rect> = drawn.values().map(|(_, uv)| *uv).collect();
+        for (i, a) in rects.iter().enumerate() {
+            assert!(a.min.x >= 0.0 && a.min.y >= 0.0 && a.max.x <= 1.0 && a.max.y <= 1.0, "{a:?} inside");
+            for b in rects.iter().skip(i + 1) {
+                assert!(!a.intersects(*b) || a.intersect(*b).area() <= 0.0, "{a:?} overlaps {b:?}");
+            }
+        }
+    }
+
+    /// #1002: a full atlas starts over (once a frame), and pictures that can never fit are refused.
+    #[test]
+    fn math_atlas_packs_rows_and_starts_over_when_full() {
+        let mut a = MathAtlas::default();
+        assert_eq!(a.place(100, 40), Some([0, 0]));
+        assert_eq!(a.place(100, 20), Some([100 + MATH_ATLAS_GAP, 0]));
+        assert_eq!(a.place(MATH_ATLAS, 10), Some([0, 40 + MATH_ATLAS_GAP]), "a new row under the tallest");
+        assert_eq!(a.place(MATH_ATLAS + 1, 10), None);
+        assert_eq!(a.place(10, 0), None);
+        assert_eq!(a.place(10, MATH_ATLAS), None, "full");
+        let ctx = egui::Context::default();
+        let img = || egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut a = MathAtlas::default();
+            assert!(a.add(ui.ctx(), 1, "a", img()).is_some());
+            assert!(a.add(ui.ctx(), 1, "b", img()).is_some(), "started over");
+            assert!(!a.uv.contains_key("a"), "the old pictures are forgotten");
+            assert!(a.add(ui.ctx(), 1, "c", img()).is_none(), "not twice in one frame");
+            assert!(a.add(ui.ctx(), 2, "c", img()).is_some(), "again next frame");
+        });
+        out.textures_delta.clear();
     }
 
     #[test]
