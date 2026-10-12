@@ -499,6 +499,15 @@ struct St {
     field: Option<usize>,
     /// The code page of the current font's charset (`\fcharset`), when it names one.
     cp: Option<u16>,
+    /// Space before/after (`\sb`, `\sa`), line spacing (`\sl`, `\slmult`) and indents
+    /// (`\li`, `\ri`, `\fi`), twips.
+    sb: Option<i32>,
+    sa: Option<i32>,
+    sl: i32,
+    slmult: bool,
+    li: Option<i32>,
+    ri: Option<i32>,
+    fi: Option<i32>,
 }
 
 impl Default for St {
@@ -517,6 +526,13 @@ impl Default for St {
             pagebb: false,
             field: None,
             cp: None,
+            sb: None,
+            sa: None,
+            sl: 0,
+            slmult: false,
+            li: None,
+            ri: None,
+            fi: None,
         }
     }
 }
@@ -863,6 +879,7 @@ impl Reader {
         self.rule_pending = false;
         p.align = self.st.align;
         p.page_break = self.st.pagebb;
+        p.spacing = self.spacing();
         if let Some(ls) = self.st.ls {
             let list = self.overrides.get(&ls).and_then(|id| self.lists.get(id));
             let lv = self.st.ilvl.min(8);
@@ -897,6 +914,32 @@ impl Reader {
         } else {
             self.close_table();
             self.body.push(FBlock::Para(p));
+        }
+    }
+
+    /// The current paragraph's spacing and indents in points.
+    fn spacing(&self) -> model::Spacing {
+        use wordcraft_doc::props::LineSpacing;
+        let pt = |v: i32| (v as f32 / 20.0).clamp(-1584.0, 1584.0);
+        let gap = |v: Option<i32>| v.map(|v| pt(v).max(0.0));
+        let sl = self.st.sl;
+        let line = if sl == 0 {
+            None
+        } else if sl < 0 {
+            Some(LineSpacing::Exactly(pt(sl.saturating_neg()).max(1.0)))
+        } else if self.st.slmult {
+            // \sl240\slmult1 is single spacing.
+            Some(LineSpacing::Multiple((sl as f32 / 240.0).clamp(0.06, 132.0)))
+        } else {
+            Some(LineSpacing::AtLeast(pt(sl)))
+        };
+        model::Spacing {
+            before: gap(self.st.sb),
+            after: gap(self.st.sa),
+            line,
+            left: self.st.li.map(pt),
+            right: self.st.ri.map(pt),
+            first: self.st.fi.map(pt),
         }
     }
 
@@ -1269,6 +1312,13 @@ impl Reader {
             "clmgf" => self.def_cur.hmerge = 1,
             "clmrg" => self.def_cur.hmerge = 2,
             "clcbpat" => self.def_cur.shading = self.colors.get(pv.max(0) as usize).copied().flatten(),
+            "sb" => self.st.sb = Some(pv),
+            "sa" => self.st.sa = Some(pv),
+            "sl" => self.st.sl = pv,
+            "slmult" => self.st.slmult = on,
+            "li" | "lin" => self.st.li = Some(pv),
+            "ri" | "rin" => self.st.ri = Some(pv),
+            "fi" => self.st.fi = Some(pv),
             "clbrdrl" => self.cell_side = Some('l'),
             "clbrdrr" => self.cell_side = Some('r'),
             "clbrdrt" | "clbrdrb" => self.cell_side = Some('h'),
@@ -1341,10 +1391,12 @@ fn hyperlink(instr: &str) -> Option<String> {
 
 /// Parse RTF bytes into the flow model.
 pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
-    parse_with_page(bytes).map(|(f, _)| f)
+    parse_with_page(bytes).map(|(f, _, _)| f)
 }
 
-fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom), String> {
+/// The flow, the page, and the default font (`\deff`, font 0 when the file names none), which
+/// is the font of all text that doesn't select one.
+fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom, Option<String>), String> {
     let start = bytes.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(0);
     if !bytes.get(start..).is_some_and(|b| b.starts_with(b"{\\rtf")) {
         return Err("not an RTF document (it doesn't start with {\\rtf)".into());
@@ -1512,7 +1564,8 @@ fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom), String> {
     if blocks.is_empty() {
         blocks.push(FBlock::Para(Para::default()));
     }
-    Ok((Flow { blocks, meta: r.meta }, r.page))
+    let default_font = r.fonts.get(&r.deff).filter(|n| !model::is_mono(n)).cloned();
+    Ok((Flow { blocks, meta: r.meta }, r.page, default_font))
 }
 
 /// The column grid of a table from its rows' cell right edges: every distinct edge starts a grid
@@ -1554,8 +1607,18 @@ fn column_grid(rows: &mut [Vec<Cell>], rights: &[Vec<i32>]) -> Vec<f32> {
 
 /// Parse RTF bytes into a document.
 pub fn import(bytes: &[u8]) -> Result<Document, String> {
-    let (flow, page) = parse_with_page(bytes)?;
-    Ok(model::to_doc_in(&flow, page.section()))
+    let (flow, page, default_font) = parse_with_page(bytes)?;
+    let mut doc = model::to_doc_in(&flow, page.section());
+    // RTF's paragraph defaults are single spacing and no space around paragraphs; what a file
+    // wants beyond that it states on each paragraph.
+    let dp = &mut doc.styles.default_para;
+    dp.space_before = Some(0.0);
+    dp.space_after = Some(0.0);
+    dp.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
+    if default_font.is_some() {
+        doc.styles.default_chr.font = default_font;
+    }
+    Ok(doc)
 }
 
 #[cfg(test)]
@@ -1597,6 +1660,45 @@ mod tests {
         assert!(p.inlines.iter().any(|i| matches!(i, Inline::Text(t, f) if t == "red" && f.color == Some(Rgb(255, 0, 0)))));
         let FBlock::Para(l) = &f.blocks[2] else { panic!() };
         assert!(matches!(&l.inlines[0], Inline::Text(_, f) if f.link.as_deref() == Some("http://a.b")));
+    }
+
+    #[test]
+    fn paragraph_spacing_and_indents() {
+        use wordcraft_doc::props::LineSpacing;
+        let rtf = br"{\rtf1\ansi
+\pard\sb120\sa150\sl360\slmult1\li720\ri360\fi-360 a\par
+\pard\sl-280 b\par
+\pard\sl300\slmult0 c\par
+\pard d\par}";
+        let f = parse(rtf).unwrap();
+        let sp: Vec<model::Spacing> = f.blocks.iter().filter_map(|b| if let FBlock::Para(p) = b { Some(p.spacing) } else { None }).collect();
+        assert_eq!(sp[0].before, Some(6.0));
+        assert_eq!(sp[0].after, Some(7.5));
+        assert_eq!(sp[0].line, Some(LineSpacing::Multiple(1.5)));
+        assert_eq!((sp[0].left, sp[0].right, sp[0].first), (Some(36.0), Some(18.0), Some(-18.0)));
+        assert_eq!(sp[1].line, Some(LineSpacing::Exactly(14.0)));
+        assert_eq!(sp[2].line, Some(LineSpacing::AtLeast(15.0)));
+        // \pard resets them.
+        assert_eq!(sp[3], model::Spacing::default());
+        // The document's defaults are RTF's: single, no space after; the paragraph's own win.
+        let d = import(rtf).unwrap();
+        assert_eq!(d.styles.default_para.space_after, Some(0.0));
+        assert_eq!(d.styles.default_para.line_spacing, Some(LineSpacing::Multiple(1.0)));
+        let first = d.body.iter().find_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p) } else { None }).unwrap();
+        assert_eq!(first.props.space_after, Some(7.5));
+        assert_eq!(first.props.indent_first, Some(-18.0));
+    }
+
+    #[test]
+    fn default_font_is_deff_or_font_zero() {
+        // Text that never selects a font is in the default font: \deff, else font 0.
+        let d = import(br"{\rtf1\ansi{\fonttbl{\f0\fnil Times New Roman Cyr;}{\f1 Arial;}}\plain x\par}").unwrap();
+        assert_eq!(d.styles.default_chr.font.as_deref(), Some("Times New Roman Cyr"));
+        let d = import(br"{\rtf1\ansi\deff1{\fonttbl{\f0 Times New Roman;}{\f1 Arial;}} x\par}").unwrap();
+        assert_eq!(d.styles.default_chr.font.as_deref(), Some("Arial"));
+        // No font table: our default stays.
+        let d = import(br"{\rtf1\ansi x\par}").unwrap();
+        assert_eq!(d.styles.default_chr.font, wordcraft_doc::StyleSheet::builtin().default_chr.font);
     }
 
     #[test]

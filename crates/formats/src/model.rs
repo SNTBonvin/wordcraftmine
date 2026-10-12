@@ -89,6 +89,19 @@ pub struct ListInfo {
     pub level: u8,
 }
 
+/// Paragraph spacing and indents (points) that a source states on the paragraph itself (RTF);
+/// left out, they come from the style.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spacing {
+    pub before: Option<f32>,
+    pub after: Option<f32>,
+    pub line: Option<wordcraft_doc::props::LineSpacing>,
+    pub left: Option<f32>,
+    pub right: Option<f32>,
+    /// First-line indent; negative = hanging.
+    pub first: Option<f32>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Para {
     pub kind: Kind,
@@ -96,6 +109,7 @@ pub struct Para {
     pub align: Option<Align>,
     pub page_break: bool,
     pub inlines: Vec<Inline>,
+    pub spacing: Spacing,
 }
 
 impl Para {
@@ -373,6 +387,13 @@ impl Builder<'_> {
             out.props.numbering = Some(NumRef { num, level: li.level.min(8) });
         }
         out.props.align = p.align;
+        let sp = p.spacing;
+        out.props.space_before = sp.before.or(out.props.space_before);
+        out.props.space_after = sp.after.or(out.props.space_after);
+        out.props.line_spacing = sp.line.or(out.props.line_spacing);
+        out.props.indent_left = sp.left.or(out.props.indent_left);
+        out.props.indent_right = sp.right.or(out.props.indent_right);
+        out.props.indent_first = sp.first.or(out.props.indent_first);
         if p.page_break {
             out.props.page_break_before = Some(true);
         }
@@ -680,7 +701,14 @@ fn media_ext(key: &str, data: &[u8]) -> String {
 pub fn flow_paras(doc: &Document, p: &Paragraph) -> Vec<Para> {
     let (kind, list) = para_kind(doc, p);
     let mut done: Vec<Para> = Vec::new();
-    let mut out = Para { kind, list, align: p.props.align, page_break: p.props.page_break_before.unwrap_or(false), inlines: Vec::new() };
+    let mut out = Para {
+        kind,
+        list,
+        align: p.props.align,
+        page_break: p.props.page_break_before.unwrap_or(false),
+        inlines: Vec::new(),
+        spacing: Spacing::default(),
+    };
     let in_code = kind == Kind::Code;
     let mut k = 0usize;
     for (range, props) in p.run_ranges() {
@@ -692,7 +720,7 @@ pub fn flow_paras(doc: &Document, p: &Paragraph) -> Vec<Para> {
             if c == PAGE_BREAK {
                 if !hidden {
                     out.push_text(&std::mem::take(&mut buf), &f);
-                    let next = Para { kind, list: None, align: p.props.align, page_break: true, inlines: Vec::new() };
+                    let next = Para { kind, list: None, align: p.props.align, page_break: true, inlines: Vec::new(), spacing: Spacing::default() };
                     let prev = std::mem::replace(&mut out, next);
                     if prev.inlines.is_empty() {
                         out.page_break |= prev.page_break;
