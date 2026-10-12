@@ -93,7 +93,8 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.textFromFile", "Text from File", "Insert › Text › Object", |s, v| {
             let path = p::req_str(v, "path")?;
             let doc = crate::io::open_path(std::path::Path::new(path)).map_err(CmdError::Failed)?;
-            let frag = doc.body_fragment();
+            // The file's pictures, lists and styles come along (its own keys and ids mean nothing here).
+            let frag = s.doc.adopt(doc);
             let at = delete_selection(s)?;
             let end = s.doc.insert_fragment(&at, &frag)?;
             s.sel = Selection::caret(end);

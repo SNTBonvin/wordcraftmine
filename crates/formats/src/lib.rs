@@ -1,5 +1,5 @@
 //! WordCraft import/export for the "other" text formats: plain text, Markdown (CommonMark subset
-//! plus GFM tables and strikethrough), HTML, RTF, OpenDocument Text and LaTeX — and, read-only,
+//! plus GFM tables and strikethrough), HTML (and MHT web archives, read-only), RTF, OpenDocument Text and LaTeX — and, read-only,
 //! spreadsheet cells for mail-merge recipient lists ([`sheet`]: .xlsx/.xlsm/.ods).
 //!
 //! Every format maps to a small flow model ([`model::Flow`]: paragraphs with a kind, list
@@ -13,6 +13,7 @@ pub mod comments;
 pub mod html;
 pub mod latex;
 pub mod markdown;
+pub mod mht;
 pub mod model;
 pub mod odt;
 pub mod rtf;
@@ -22,7 +23,7 @@ pub mod txt;
 use wordcraft_doc::Document;
 
 /// Extensions this crate handles.
-pub const EXTENSIONS: &[&str] = &["txt", "text", "md", "markdown", "html", "htm", "xhtml", "rtf", "odt", "tex", "latex", "ltx"];
+pub const EXTENSIONS: &[&str] = &["txt", "text", "md", "markdown", "html", "htm", "xhtml", "mht", "mhtml", "rtf", "odt", "tex", "latex", "ltx"];
 
 /// Import `bytes` in the format named by `ext` (no dot, any case). `None` = not our format.
 pub fn import(ext: &str, bytes: &[u8]) -> Option<Result<Document, String>> {
@@ -30,7 +31,8 @@ pub fn import(ext: &str, bytes: &[u8]) -> Option<Result<Document, String>> {
     let r = match ext.as_str() {
         "txt" | "text" => Ok(txt::import(bytes)),
         "md" | "markdown" => Ok(markdown::import(&txt::decode(bytes))),
-        "html" | "htm" | "xhtml" => Ok(html::import(&html::decode(bytes))),
+        "html" | "htm" | "xhtml" => Ok(html::import_page(&html::decode(bytes), &|_| None)),
+        "mht" | "mhtml" => Ok(mht::import(bytes)),
         "rtf" => rtf::import(bytes),
         "odt" => odt::import(bytes),
         "tex" | "latex" | "ltx" => Ok(latex::import(bytes)),
