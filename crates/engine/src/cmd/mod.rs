@@ -290,12 +290,34 @@ fn insert_text(s: &mut Session, text: &str, enter: bool) -> Result<(), CmdError>
         first = false;
         let part = part.replace('\u{000B}', "\n");
         if !part.is_empty() {
+            let starts_para = direction_unset(s, &at);
             at = s.doc.insert_text(&at, &part, &props)?;
+            // Typing Arabic, Hebrew… as the first letters of a paragraph whose direction nothing
+            // sets makes it a right-to-left paragraph, so the caret and text start at the right
+            // margin. Paragraphs that already have letters, or a direction, keep theirs.
+            if starts_para
+                && let Ok(p) = s.doc.para_mut(at.story, &at.path)
+                && wordcraft_doc::bidi::first_strong_is_rtl(&p.text)
+            {
+                p.props.bidi = Some(true);
+                p.touch();
+            }
         }
     }
     s.sel = crate::Selection::caret(at);
     s.goal_x = None;
     Ok(())
+}
+
+/// Is the paragraph at `at` still without letters (empty, or only spaces, digits and
+/// punctuation), with no direction set on it, its style chain or the document defaults?
+fn direction_unset(s: &Session, at: &Pos) -> bool {
+    let Some(p) = s.doc.para_at(at) else { return false };
+    if p.props.bidi.is_some() || p.text.chars().any(char::is_alphabetic) || s.doc.styles.default_para.bidi.is_some() {
+        return false;
+    }
+    let style = p.props.style.as_deref().unwrap_or("Normal");
+    !s.doc.styles.chain(style).iter().any(|st| st.para.bidi.is_some())
 }
 
 /// Take a paragraph out of its list like Word does when Enter or Backspace ends a list: a
@@ -411,6 +433,24 @@ pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
 /// Story given in params (`"story": "body"` / `{"part": 3}`), else the caret's.
 pub fn story_param(s: &Session, v: &Value) -> StoryRef {
     v.get("story").and_then(|x| serde_json::from_value(x.clone()).ok()).unwrap_or(s.sel.focus.story)
+}
+
+/// The language (`w:lang`) of a paragraph's text: that of its first run with text (else of the
+/// paragraph mark), through styles and the document defaults. Sorting and number parsing follow it.
+pub fn para_lang(doc: &wordcraft_doc::Document, p: &wordcraft_doc::Paragraph) -> Option<String> {
+    let run = p.runs.iter().find(|r| r.len > 0).map(|r| &r.props).unwrap_or(&p.mark);
+    doc.styles.resolve_char(p.props.style.as_deref(), run).lang
+}
+
+/// The document's default text language (`w:docDefaults`, the Normal style).
+pub fn doc_lang(doc: &wordcraft_doc::Document) -> Option<String> {
+    doc.styles.resolve_char(None, &wordcraft_doc::CharProps::default()).lang
+}
+
+/// The language of text that names none: the document's default, else the editing language (a
+/// Polish interface writes Polish), else none (English). As AutoCorrect decides it.
+pub fn default_lang(s: &Session) -> Option<String> {
+    doc_lang(&s.doc).or_else(|| s.editing_lang.clone())
 }
 
 #[cfg(test)]
