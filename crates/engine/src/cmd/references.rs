@@ -806,7 +806,8 @@ pub fn update_fields(s: &mut Session) -> Result<(), CmdError> {
                 if let Some((tp, r, c)) = path.cell()
                     && let Some(t) = s.doc.table(StoryRef::Body, &tp)
                 {
-                    let text = match super::table_formula::evaluate_field(t, r, c, instr) {
+                    let default_lang = super::default_lang(s);
+                    let text = match super::table_formula::evaluate_field_with(t, Some(&s.doc), default_lang.as_deref(), r, c, instr) {
                         Ok(text) => text,
                         Err(e) => format!("!{e}"),
                     };

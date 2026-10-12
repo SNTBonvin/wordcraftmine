@@ -25,6 +25,17 @@ pub const MAX_CELL_VISITS: usize = 100_000;
 
 /// Evaluate `formula` (with or without its leading `=`) for the cell in row `r`, cell index `c`.
 pub fn evaluate(t: &Table, r: usize, c: usize, formula: &str) -> Result<f64, CmdError> {
+    evaluate_with(t, None, None, r, c, formula)
+}
+
+pub fn evaluate_with(
+    t: &Table,
+    doc: Option<&wordcraft_doc::Document>,
+    default_lang: Option<&str>,
+    r: usize,
+    c: usize,
+    formula: &str,
+) -> Result<f64, CmdError> {
     if formula.len() > MAX_FORMULA {
         return Err(syntax(format!("the formula is longer than {MAX_FORMULA} characters")));
     }
@@ -35,7 +46,7 @@ pub fn evaluate(t: &Table, r: usize, c: usize, formula: &str) -> Result<f64, Cmd
     if parser.pos != parser.toks.len() {
         return Err(syntax("unexpected text after the formula".into()));
     }
-    let here = Here { t, r, c, g: t.grid_col(r, c), visits: std::cell::Cell::new(0) };
+    let here = Here { t, doc, default_lang, r, c, g: t.grid_col(r, c), visits: std::cell::Cell::new(0) };
     match eval(&expr, &here)? {
         Val::Num(x) => finite(x),
         Val::List(_) => Err(syntax("a range or ABOVE/LEFT/RIGHT/BELOW needs a function, such as SUM".into())),
@@ -44,17 +55,48 @@ pub fn evaluate(t: &Table, r: usize, c: usize, formula: &str) -> Result<f64, Cmd
 
 /// The text a formula result shows: a whole number as is, otherwise two decimals.
 pub fn format_result(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 { format!("{}", v as i64) } else { format!("{v:.2}") }
+    wordcraft_doc::locale_number::format_number(v, None)
 }
 
 /// The text a formula field shows: its result under its `\#` numeric picture when it has one (see
 /// [`format_picture`]), otherwise as [`format_result`] shows it.
 pub fn evaluate_field(t: &Table, r: usize, c: usize, instr: &str) -> Result<String, CmdError> {
+    evaluate_field_with(t, None, None, r, c, instr)
+}
+
+pub fn evaluate_field_with(
+    t: &Table,
+    doc: Option<&wordcraft_doc::Document>,
+    default_lang: Option<&str>,
+    r: usize,
+    c: usize,
+    instr: &str,
+) -> Result<String, CmdError> {
     let (formula, switch) = split_switch(instr);
-    let value = evaluate(t, r, c, formula)?;
+    let value = evaluate_with(t, doc, default_lang, r, c, formula)?;
     Ok(match switch.and_then(picture_of) {
         Some(picture) => format_picture(value, &picture),
-        None => format_result(value),
+        None => {
+            let out_lang = doc
+                .and_then(|d| {
+                    t.rows.get(r).and_then(|row| row.cells.get(c)).and_then(|cl| {
+                        cl.blocks.iter().filter_map(|b| b.as_para()).find(|p| !p.plain_text().trim().is_empty()).and_then(|p| super::para_lang(d, p))
+                    })
+                })
+                .or_else(|| {
+                    doc.and_then(|d| {
+                        t.rows.iter().flat_map(|row| row.cells.iter()).take(100).find_map(|cl| {
+                            cl.blocks
+                                .iter()
+                                .filter_map(|b| b.as_para())
+                                .find(|p| !p.plain_text().trim().is_empty())
+                                .and_then(|p| super::para_lang(d, p))
+                        })
+                    })
+                })
+                .or_else(|| default_lang.map(str::to_string));
+            wordcraft_doc::locale_number::format_number(value, out_lang.as_deref())
+        }
     })
 }
 
@@ -144,12 +186,16 @@ fn group_thousands(digits: &str) -> String {
 /// A cell's number as a formula or a sort key reads it: surrounding spaces, currency signs,
 /// thousands separators and `%` are ignored, and accounting negatives in parentheses count as
 /// negative. Anything else (letters included) makes the cell text, not a number.
-pub fn parse_number(text: &str) -> Option<f64> {
+pub fn parse_number(text: &str, lang: Option<&str>) -> Option<f64> {
     let t = text.trim();
     let (t, negative) = match t.strip_prefix('(').and_then(|x| x.strip_suffix(')')) {
-        Some(inner) => (inner, true),
+        Some(inner) => (inner.trim(), true),
         None => (t, false),
     };
+    if let Some(x) = wordcraft_doc::locale_number::parse_number(t, lang) {
+        let x = if negative { -x.abs() } else { x };
+        return x.is_finite().then_some(x);
+    }
     let cleaned: String = t.chars().filter(|c| !matches!(c, ',' | '$' | '€' | '£' | '¥' | '৳' | '%') && !c.is_whitespace()).collect();
     if cleaned.is_empty() || !cleaned.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')) {
         return None;
@@ -160,8 +206,8 @@ pub fn parse_number(text: &str) -> Option<f64> {
 }
 
 /// The number in a cell, if its text is one.
-pub(crate) fn cell_number(c: &Cell) -> Option<f64> {
-    parse_number(&super::table::cell_text(c))
+pub(crate) fn cell_number_in(c: &Cell, lang: Option<&str>) -> Option<f64> {
+    parse_number(&super::table::cell_text(c), lang)
 }
 
 fn syntax(msg: String) -> CmdError {
@@ -435,6 +481,8 @@ fn cell_ref(name: &str) -> Option<(usize, usize)> {
 /// Where the formula's cell sits.
 struct Here<'a> {
     t: &'a Table,
+    doc: Option<&'a wordcraft_doc::Document>,
+    default_lang: Option<&'a str>,
     r: usize,
     c: usize,
     g: usize,
@@ -450,22 +498,37 @@ impl Here<'_> {
         if total > MAX_CELL_VISITS { Err(CmdError::Failed("Formula too complex".into())) } else { Ok(()) }
     }
 
+    fn cell_lang(&self, c: &Cell) -> Option<String> {
+        let para_lang = self.doc.and_then(|doc| {
+            c.blocks.iter().filter_map(|b| b.as_para()).find(|p| !p.plain_text().trim().is_empty()).and_then(|p| super::para_lang(doc, p))
+        });
+        para_lang.or_else(|| self.default_lang.map(str::to_string))
+    }
+
+    fn cell_number(&self, c: &Cell) -> Option<f64> {
+        let lang = self.cell_lang(c);
+        let text = super::table::cell_text(c);
+        parse_number(&text, lang.as_deref())
+    }
+
     /// The number in the cell covering grid column `g` of row `r`, counted against the budget.
     fn number_at(&self, r: usize, g: usize) -> Result<Option<f64>, CmdError> {
         self.visit(1)?;
-        Ok(number_at(self.t, r, g))
+        let ci = match self.t.cell_at_grid(r, g) {
+            Some(ci) => ci,
+            None => return Ok(None),
+        };
+        let c = match self.t.rows.get(r).and_then(|row| row.cells.get(ci)) {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        Ok(self.cell_number(c))
     }
 }
 
 enum Val {
     Num(f64),
     List(Vec<f64>),
-}
-
-/// The number in the cell covering grid column `g` of row `r`.
-fn number_at(t: &Table, r: usize, g: usize) -> Option<f64> {
-    let ci = t.cell_at_grid(r, g)?;
-    t.rows.get(r)?.cells.get(ci).and_then(cell_number)
 }
 
 fn eval(e: &Expr, here: &Here) -> Result<Val, CmdError> {
@@ -568,7 +631,7 @@ fn side_numbers(here: &Here, side: Side) -> Result<Vec<f64>, CmdError> {
         Side::Left | Side::Right => {
             let Some(row) = here.t.rows.get(here.r) else { return Ok(out) };
             here.visit(row.cells.len())?;
-            let cells: Vec<Option<f64>> = row.cells.iter().map(cell_number).collect();
+            let cells: Vec<Option<f64>> = row.cells.iter().map(|c| here.cell_number(c)).collect();
             let order: Vec<usize> = if side == Side::Left { (0..here.c).rev().collect() } else { ((here.c + 1)..cells.len()).collect() };
             for ci in order {
                 if !take(cells.get(ci).copied().flatten()) {
@@ -763,13 +826,14 @@ mod tests {
 
     #[test]
     fn numbers_read_currency_and_separators_but_not_letters() {
-        assert_eq!(parse_number("$1,200"), Some(1200.0));
-        assert_eq!(parse_number(" 12% "), Some(12.0));
-        assert_eq!(parse_number("(5)"), Some(-5.0));
-        assert_eq!(parse_number("x9"), None);
-        assert_eq!(parse_number("1a"), None);
-        assert_eq!(parse_number("inf"), None);
-        assert_eq!(parse_number(""), None);
+        assert_eq!(parse_number("$1,200", None), Some(1200.0));
+        assert_eq!(parse_number(" 12% ", None), Some(12.0));
+        assert_eq!(parse_number("(5)", None), Some(-5.0));
+        assert_eq!(parse_number("x9", None), None);
+        assert_eq!(parse_number("1a", None), None);
+        assert_eq!(parse_number("inf", None), None);
+        assert_eq!(parse_number("", None), None);
+        assert_eq!(parse_number("3,50", Some("pl-PL")), Some(3.5));
     }
 
     #[test]
