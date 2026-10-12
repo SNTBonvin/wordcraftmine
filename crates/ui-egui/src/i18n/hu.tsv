@@ -2473,3 +2473,10 @@
 	Table Properties…	Táblázat tulajdonságai…
 	Search	Keresés
 	Title Bar	Címsor
+	WordCraft {version} is available.	A WordCraft {version} elérhető.
+	Download	Letöltés
+	Open the release page in your browser	A kiadás oldalának megnyitása a böngészőben
+	Skip this version	Ennek a verziónak a kihagyása
+	Dismiss	Bezárás
+	Check for updates	Frissítések keresése
+	Once a day, ask GitHub whether a newer WordCraft release is out and show a notice. Nothing else is sent.	Naponta egyszer megkérdezi a GitHubot, megjelent-e újabb WordCraft-kiadás, és értesítést mutat. Más adat nem kerül elküldésre.

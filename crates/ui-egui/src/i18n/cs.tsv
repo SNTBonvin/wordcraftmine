@@ -2080,3 +2080,10 @@
 	Automatic ({region})	Automaticky ({region})
 	Search	Hledat
 	Title Bar	Záhlaví okna
+	WordCraft {version} is available.	WordCraft {version} je k dispozici.
+	Download	Stáhnout
+	Open the release page in your browser	Otevřít stránku vydání v prohlížeči
+	Skip this version	Přeskočit tuto verzi
+	Dismiss	Zavřít
+	Check for updates	Kontrolovat aktualizace
+	Once a day, ask GitHub whether a newer WordCraft release is out and show a notice. Nothing else is sent.	Jednou denně se zeptat GitHubu, zda je venku novější vydání WordCraftu, a zobrazit oznámení. Nic dalšího se neodesílá.

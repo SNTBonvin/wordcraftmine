@@ -2074,3 +2074,10 @@
 	Automatic ({region})	Automatisch ({region})
 	Search	Suchen
 	Title Bar	Titelleiste
+	WordCraft {version} is available.	WordCraft {version} ist verfügbar.
+	Download	Herunterladen
+	Open the release page in your browser	Die Seite der Version im Browser öffnen
+	Skip this version	Diese Version überspringen
+	Dismiss	Schließen
+	Check for updates	Nach Updates suchen
+	Once a day, ask GitHub whether a newer WordCraft release is out and show a notice. Nothing else is sent.	Einmal täglich bei GitHub nachfragen, ob eine neuere WordCraft-Version erschienen ist, und einen Hinweis anzeigen. Es wird nichts anderes gesendet.
