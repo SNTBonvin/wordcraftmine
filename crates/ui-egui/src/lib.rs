@@ -13,17 +13,29 @@ macro_rules! tl {
     };
 }
 
+pub mod a11y;
+pub mod a11y_pane;
 pub mod backstage;
 pub mod canvas;
 pub mod chrome;
+pub mod colors;
+pub mod content_controls;
 pub mod control;
 pub mod credits;
 pub mod dialogs;
+pub mod dialogs_chart;
+pub mod dialogs_controls;
 pub mod dialogs_insert;
 pub mod dialogs_keyboard;
+pub mod dialogs_layout;
 pub mod dialogs_lists;
+pub mod dialogs_notes;
 pub mod dialogs_para;
+pub mod dialogs_refs;
+pub mod dialogs_review;
 pub mod dialogs_ribbon;
+pub mod dialogs_smart_art;
+pub mod dialogs_templates;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
@@ -34,9 +46,11 @@ pub mod keys;
 pub mod keytips;
 pub mod mini_toolbar;
 pub mod objects;
+pub mod options;
 pub mod panes;
 pub mod paste_picture;
 pub mod previews;
+pub mod print_page;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -44,6 +58,7 @@ pub mod table_pen;
 pub mod theme;
 pub mod widgets;
 pub mod window_geometry;
+pub mod wordart_menus;
 pub mod zotero;
 
 use serde::{Deserialize, Serialize};
@@ -94,10 +109,15 @@ pub struct UiState {
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
+    /// File › Print settings (#641); not saved.
+    #[serde(skip)]
+    pub print: print_page::PrintSettings,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
     /// Symbols inserted from the Symbol dialog, most recent first (#321).
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
+    /// Colours picked in the Colors dialog (More Colors…), most recent first (#606).
+    pub recent_colors: Vec<String>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
     /// Interface size in percent (#475): scales the whole interface on top of the system's
@@ -134,7 +154,34 @@ pub struct UiState {
     /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
     /// #379); the session owns them while running.
     pub ribbon: wordcraft_engine::RibbonLayout,
+    /// Caption labels the user added (References › Insert Caption › New Label), kept between
+    /// runs like Word keeps them in its Normal template (#402).
+    pub caption_labels: Vec<String>,
+    /// Draw › Add Pen: the pens added to the pen gallery; the session owns them while running.
+    /// Entries that aren't pens are dropped on reading.
+    #[serde(deserialize_with = "wordcraft_engine::cmd::draw::lenient_pens")]
+    pub ink_pens: Vec<wordcraft_engine::cmd::draw::CustomPen>,
+    /// File › Options › General: initials for comments; empty = the user name's. The session
+    /// owns them while running, like `author`.
+    pub initials: String,
+    /// The File › Options pane last shown ([`wordcraft_engine::cmd::options::PANES`]).
+    pub options_pane: String,
+    /// File › Options › Advanced: how many recent documents File › Home and Open list (0–50).
+    pub recent_count: usize,
+    /// File › Options › General: show the mini toolbar over a selection.
+    pub mini_toolbar: bool,
+    /// File › Options › Display: print the page colour (off, as in Word).
+    pub print_backgrounds: bool,
+    /// File › Options › Display: update fields (dates, page numbers, SEQ…) before printing.
+    pub update_fields_before_print: bool,
+    /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
+    pub dictionary: Vec<String>,
 }
+
+/// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
+pub const MAX_RECENT: usize = 50;
+/// Most custom dictionary words read back from `ui.json`.
+pub const MAX_DICTIONARY: usize = 10_000;
 
 impl Default for UiState {
     fn default() -> Self {
@@ -142,9 +189,11 @@ impl Default for UiState {
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
+            print: print_page::PrintSettings::default(),
             ribbon_collapsed: false,
             recent: Vec::new(),
             recent_symbols: Vec::new(),
+            recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
             interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
@@ -161,7 +210,31 @@ impl Default for UiState {
             dark_page: false,
             keyboard: wordcraft_engine::KeyMap::default(),
             ribbon: wordcraft_engine::RibbonLayout::default(),
+            caption_labels: Vec::new(),
+            ink_pens: Vec::new(),
+            initials: String::new(),
+            options_pane: "general".into(),
+            recent_count: 12,
+            mini_toolbar: true,
+            print_backgrounds: false,
+            update_fields_before_print: false,
+            dictionary: Vec::new(),
         }
+    }
+}
+
+impl UiState {
+    /// Read `ui.json` leniently: a setting with a value of the wrong type (or a newer or older
+    /// version's idea of it) falls back to its default instead of discarding every setting.
+    /// `None` only when the file isn't a JSON object.
+    pub fn from_json(bytes: &[u8]) -> Option<UiState> {
+        let v: Value = serde_json::from_slice(bytes).ok()?;
+        v.is_object().then(|| options::lenient(&v))
+    }
+
+    /// How many recent documents to list.
+    pub fn recent_shown(&self) -> usize {
+        self.recent_count.min(MAX_RECENT)
     }
 }
 
@@ -171,7 +244,13 @@ pub struct WordApp {
     pub ui: UiState,
     pub services: Services,
     pub canvas: canvas::CanvasState,
+    /// Content control frames, check boxes and lists on the page.
+    pub controls: content_controls::ControlUi,
     pub dialog: Option<dialogs::Dialog>,
+    /// The Colors dialog (More Colors…), shown above any other dialog (#606).
+    pub colors: Option<colors::ColorsDialog>,
+    /// The Restrict Editing pane (#412).
+    pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
@@ -179,6 +258,9 @@ pub struct WordApp {
     /// Web: a recipient list was asked for (Select Recipients › Use an Existing List…), so the
     /// next text file from the picker loads as recipients instead of opening (#240).
     pub recipient_list_pending: bool,
+    /// A file picked for the open dialog (Templates and Add-ins › Attach…, Organizer ›
+    /// Browse…); the dialog takes it on its next frame.
+    pub(crate) dialog_pick: Option<String>,
     /// macOS: the window has no title bar; leave room for the traffic lights.
     pub integrated_titlebar: bool,
     control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
@@ -208,6 +290,12 @@ pub struct WordApp {
     last_autosave: f64,
     /// The tab shown before the Equation tab came up (restored when editing ends).
     pub(crate) equation_prev_tab: Option<String>,
+    /// SmartArt Text Pane: the item last focused (Promote, Demote and Add Shape act on it) and
+    /// the item being typed in (its keystrokes join one undo step).
+    pub smart_art_item: Option<usize>,
+    pub(crate) smart_art_typing: Option<usize>,
+    /// The tab shown before Outline view brought up the Outlining tab (restored when it closes).
+    pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
     pub zotero: zotero::ZoteroLink,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
@@ -253,7 +341,10 @@ impl WordApp {
             ui: UiState::default(),
             services,
             canvas: canvas::CanvasState::default(),
+            controls: Default::default(),
             dialog: None,
+            colors: None,
+            restrict: Default::default(),
             status_msg: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
@@ -276,6 +367,9 @@ impl WordApp {
             word_count: (0, 0),
             last_autosave: 0.0,
             equation_prev_tab: None,
+            smart_art_item: None,
+            smart_art_typing: None,
+            outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
             ctx: None,
             read_aloud_at: None,
@@ -283,6 +377,7 @@ impl WordApp {
             autosave_path: None,
             change_picture_target: None,
             recipient_list_pending: false,
+            dialog_pick: None,
             file_dialog: None,
             info_editing: None,
         }
@@ -298,12 +393,15 @@ impl WordApp {
     pub fn prefs(&self) -> UiState {
         let mut ui = self.ui.clone();
         ui.author = self.session.author.clone();
+        ui.initials = self.session.initials.clone();
+        ui.dictionary = wordcraft_engine::proof::user_dictionary();
         ui.editing = self.session.prefs.clone();
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
         ui.keyboard = self.session.keymap.clone();
         ui.ribbon = self.session.ribbon.clone();
+        ui.ink_pens = self.session.view.draw.pens.clone();
         ui
     }
 
@@ -320,6 +418,13 @@ impl WordApp {
         if !author.trim().is_empty() {
             self.session.author = author;
         }
+        self.session.initials = std::mem::take(&mut self.ui.initials).chars().take(wordcraft_engine::cmd::options::MAX_INITIALS_CHARS).collect();
+        for w in std::mem::take(&mut self.ui.dictionary).iter().take(MAX_DICTIONARY) {
+            let w = w.trim();
+            if !w.is_empty() && w.chars().count() <= wordcraft_engine::cmd::options::MAX_WORD_CHARS {
+                wordcraft_engine::proof::add_word(w);
+            }
+        }
         self.session.prefs = std::mem::take(&mut self.ui.editing);
         self.session.read_aloud.set_rate(self.ui.read_aloud_rate);
         self.session.read_aloud.skip_citations = self.ui.read_aloud_skip_citations;
@@ -331,6 +436,7 @@ impl WordApp {
         // So are ribbon and toolbar commands.
         self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
         self.session.ribbon.retain_known(&reg);
+        self.session.view.draw.pens = std::mem::take(&mut self.ui.ink_pens);
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -359,6 +465,10 @@ impl WordApp {
             return r;
         }
         let r = self.execute_user(id, params);
+        // Check Accessibility shows its findings in the Accessibility pane, kept up to date there.
+        if id == "file.accessibility" && r.is_ok() {
+            self.session.view.accessibility_pane = true;
+        }
         // Match Fields and Check for Errors show what they found.
         if let Ok(v) = &r
             && let Some(d) = dialogs::Dialog::report(id, v)
@@ -414,7 +524,8 @@ impl WordApp {
             // Word documents are encrypted with the document's password, if it has one.
             let password =
                 if matches!(id, "file.save" | "file.saveAs") { self.session.password.as_ref().map(wordcraft_engine::Password::as_str) } else { None };
-            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password)?;
+            let opts = wordcraft_engine::cmd::file::export_options(&self.session, &params);
+            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password, &opts)?;
             if let Some(d) = &self.services.download
                 && let Err(e) = d(&name, &bytes)
             {
@@ -532,6 +643,7 @@ impl WordApp {
     }
 
     fn after_command(&mut self, id: &str) {
+        options::sync(self);
         self.canvas.caret_visible_since = now_ms();
         if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
             self.canvas.scroll_to_caret = true;
@@ -544,7 +656,7 @@ impl WordApp {
         {
             self.ui.recent.retain(|r| *r != p);
             self.ui.recent.insert(0, p);
-            self.ui.recent.truncate(12);
+            self.ui.recent.truncate(MAX_RECENT);
         }
         if !self.session.status.is_empty() {
             let s = std::mem::take(&mut self.session.status);
@@ -568,6 +680,9 @@ impl WordApp {
                 "options" => {
                     self.ui.backstage = true;
                     self.ui.backstage_page = "options".into();
+                    if let Some(pane) = req.get("pane").and_then(Value::as_str) {
+                        self.ui.options_pane = pane.into();
+                    }
                 }
                 "pasteSpecial" => self.dialog = Some(dialogs::Dialog::paste_special(self, req)),
                 other => self.dialog = dialogs::Dialog::open(other, self),
@@ -602,7 +717,22 @@ impl WordApp {
                 if let Some(pg) = s("page") {
                     self.ui.backstage_page = pg.into();
                 }
+                if let Some(pane) = s("pane") {
+                    self.ui.options_pane = pane.into();
+                }
                 json!({"backstage": self.ui.backstage})
+            }
+            "ui.dialog" if s("name") == Some("colors") => {
+                // The font colour's More Colors… (#606); `tab`: standard or custom.
+                let target = colors::Target::cmd("format.color").remember(colors::Remember::FontColor);
+                let current =
+                    self.session.run("format.state", &json!({})).ok().and_then(|st| st.get("color").and_then(Value::as_str).and_then(colors::parse));
+                let mut d = colors::ColorsDialog::new(current, target);
+                if s("tab") == Some("custom") {
+                    d.tab = colors::ColorsTab::Custom;
+                }
+                self.colors = Some(d);
+                json!({"dialog": "colors"})
             }
             "ui.dialog" => {
                 self.dialog = dialogs::Dialog::open(s("name").unwrap_or(""), self);
@@ -610,6 +740,7 @@ impl WordApp {
             }
             "ui.closeDialog" => {
                 self.dialog = None;
+                self.colors = None;
                 json!({})
             }
             "ui.changePicture" => {
@@ -690,23 +821,44 @@ impl WordApp {
             // Send the document to the system print flow (web, desktop). `file.print` opens the Print
             // page; this is the button on it, and the one programmatic call that opens system UI
             // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system()),
+            "ui.print" => return Some(self.print_to_system(p)),
             "ui.discord" => {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
+            }
+            // Shape Format › Text › Create Link: the next click on an empty text box links the
+            // selected box to it (`shape.link` with that box as the target); Esc cancels.
+            "ui.linkTextBox" => {
+                let from = wordcraft_engine::cmd::objects::text_box_target(&self.session).filter(|_| widgets::enabled(self, "shape.link"));
+                let Some((pos, _)) = from else { return Some(Err("select a text box that isn't linked yet first".into())) };
+                self.canvas.link_from = Some(pos);
+                self.status(tl!("Click the empty text box the text should continue in (Esc cancels)"));
+                json!({"pending": "link"})
             }
             _ => return None,
         }))
     }
 
     /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
+    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
+    /// `file.printPdf`); without any, every page prints once.
     /// An error when the host can't print (File › Print then only saves a PDF).
-    fn print_to_system(&mut self) -> Result<Value, String> {
+    fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
         if self.services.print.is_none() {
             return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
         }
-        let result = wordcraft_engine::io::save_bytes("document.pdf", &self.session.doc)
-            .and_then(|bytes| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
+        // File › Options › Display: fields first, and the page colour only when asked for.
+        if self.ui.update_fields_before_print
+            && let Err(e) = self.session.run("references.updateFields", &json!({}))
+        {
+            log::warn!("updating fields before printing: {e}");
+        }
+        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
+        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
+        if colour.is_some() {
+            self.session.doc.settings.page_color = colour;
+        }
+        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
         match result {
             Ok(len) => {
                 self.status(tl!("Opening print dialog…"));
@@ -765,10 +917,20 @@ impl WordApp {
         let _ = self.ask_file(file_dialogs::FileDialogRequest::Open { purpose: "recipients".into() }, file_dialogs::AfterPick::Recipients);
     }
 
-    /// Load mail-merge recipients and say how many there are.
+    /// Load mail-merge recipients and say how many there are. A workbook with several sheets
+    /// shows Select Table to choose one first (#334).
     pub(crate) fn load_recipients(&mut self, params: Value) -> Result<Value, String> {
-        let r = self.run("mailings.recipients", params);
-        if let Ok(v) = &r {
+        let r = self.run("mailings.recipients", params.clone());
+        if let Ok(v) = &r
+            && v.get("chooseSheet").and_then(Value::as_bool) == Some(true)
+        {
+            let sheets = v
+                .get("sheets")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            self.dialog = Some(dialogs::Dialog::SelectTable { sheets, selected: 0, headers: true, message: String::new(), params });
+        } else if let Ok(v) = &r {
             let records = v.get("records").and_then(Value::as_u64).unwrap_or(0).to_string();
             self.status(i18n::fmt(tl!("Recipients: {count}"), &[("count", &records)]));
         }
@@ -804,12 +966,13 @@ impl WordApp {
     pub fn logic(&mut self, ctx: &egui::Context) {
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
+        options::sync(self);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
         // An installed CJK font is read only once CJK text is shown (#241): never for an English
         // interface that doesn't open the language list.
         let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
         if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
-            theme::install_fonts_with(ctx, lang.prefers_hans(), system_cjk);
+            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
             self.fonts_hans = lang.prefers_hans();
             self.fonts_system_cjk = system_cjk;
             // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
@@ -855,7 +1018,15 @@ impl WordApp {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
                 let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
-                let _ = if img { self.run("insert.picture", json!({"path": path})) } else { self.run("file.open", json!({"path": path})) };
+                let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
+                let _ = if img {
+                    self.run("insert.picture", json!({"path": path}))
+                } else if sheet {
+                    // A spreadsheet isn't a document: it's a recipient list (#334).
+                    self.load_recipients(json!({"path": path}))
+                } else {
+                    self.run("file.open", json!({"path": path}))
+                };
             }
         }
         self.report_dirty();
@@ -964,7 +1135,9 @@ impl WordApp {
                 canvas::show(self, ui);
             });
         }
+        content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
@@ -983,16 +1156,21 @@ impl WordApp {
     }
 
     /// Files that arrived asynchronously (web picker, drops): documents open, pictures insert,
-    /// recipient lists (CSV/TSV, or a text file asked for as one) load as recipients.
+    /// recipient lists (CSV/TSV, spreadsheets, or a text file asked for as one) load as recipients.
     fn drain_inbox(&mut self) {
         let Some(inbox) = self.services.inbox.clone() else { return };
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
-            let list =
-                lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && std::mem::take(&mut self.recipient_list_pending));
-            let r = if list {
+            // Any recipient file ends the pending picker request, so a later .txt drop opens normally.
+            let asked = std::mem::take(&mut self.recipient_list_pending);
+            let list = lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && asked);
+            let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lower.ends_with(e));
+            self.recipient_list_pending = asked && !list && !sheet;
+            let r = if sheet {
+                self.load_recipients(json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
+            } else if list {
                 self.load_recipients(json!({"csv": wordcraft_engine::io::decode_text(&bytes)}))
             } else if img {
                 self.insert_or_change_picture(json!({"data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
@@ -1117,14 +1295,14 @@ impl AutoSaveBlock {
 /// copy that leaves it unsaved. AutoSave writes only these formats.
 fn keeps_everything(name: &str) -> bool {
     let ext = std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json")
+    matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json" | "xml")
 }
 
 /// The dialog a user-run command opens when it lacks the input it needs (scripts and agents get
 /// the command's own error or default instead): Select Recipients and Edit Recipient List without
 /// data, Insert Merge Field without a field, Find Recipient without text, the If and Skip
 /// Record If rules (or Rules with no rule at all) without a field, Table Properties without
-/// settings, and Symbol and Field without a character or code.
+/// settings, Symbol and Field without a character or code, and Enclose Characters without a shape.
 fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     let has = |k: &str| params.get(k).is_some_and(|v| !v.is_null());
     let rule = params.get("rule").and_then(Value::as_str).map(str::to_ascii_uppercase);
@@ -1134,7 +1312,7 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
             Some("SKIPIF") => Some("ruleSkipIf"),
             _ => None,
         },
-        "mailings.recipients" if !["csv", "path", "rows"].into_iter().any(has) => Some("recipientList"),
+        "mailings.recipients" if !["csv", "path", "data", "rows"].into_iter().any(has) => Some("recipientList"),
         "mailings.editRecipients" if !has("rows") => Some("recipientList"),
         "mailings.insertField" if !has("field") => Some("insertMergeField"),
         "mailings.findRecipient" if !has("text") => Some("findRecipient"),
@@ -1143,6 +1321,12 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "insert.field" if !has("instr") => Some("field"),
         // Edit Field Code shows the selected field's code (#339).
         "fields.setCode" if !has("code") => Some("editFieldCode"),
+        // SmartArt without a layout or items shows the layout picker.
+        "insert.smartArt" if !has("layout") && !has("items") => Some("insertSmartArt"),
+        // Chart without a type shows the gallery; Change Chart Type and Edit Data their dialogs.
+        "insert.chart" if !has("type") && !has("data") => Some("insertChart"),
+        "chart.type" if !has("type") => Some("changeChartType"),
+        "chart.editData" if !["data", "categories", "series"].into_iter().any(has) => Some("chartData"),
         // Table Properties without settings shows the dialog (with settings it applies them).
         "table.properties" if params.as_object().is_none_or(|m| m.is_empty()) => Some("tableProperties"),
         // Tabs, Borders and Shading, and Page Borders without settings show their dialogs (#320).
@@ -1154,19 +1338,48 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         // Define New Multilevel List and Track Changes Options without settings show their dialogs.
         "list.define" if params.get("levels").is_none() => Some("defineList"),
         "review.trackingOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("trackChangesOptions"),
+        // Compare / Combine without a revised document, AutoCorrect Options without settings and
+        // Restrict Editing without settings show their dialogs or pane (#412).
+        "review.compare" if !has("path") && !has("text") => Some("compare"),
+        "review.combine" if !has("path") && !has("text") => Some("combine"),
+        "tools.autocorrect" if params.as_object().is_none_or(|m| m.is_empty()) => Some("autoCorrect"),
+        "review.restrict" | "file.protect" if params.as_object().is_none_or(|m| m.is_empty()) => Some("restrictEditing"),
         "insert.bookmark" if !has("name") => Some("bookmark"),
         // Word Count from the keyboard or command search shows its dialog, as the ribbon does.
         "review.wordCount" if params.as_object().is_none_or(|m| m.is_empty()) => Some("wordCount"),
+        // Content control Properties without settings shows the dialog.
+        "developer.properties" if params.as_object().is_none_or(|m| m.is_empty()) => Some("controlProperties"),
+        // Enclose Characters without a shape (null is one: it takes the enclosure away).
+        "format.enclose" if params.get("shape").is_none() => Some("enclose"),
+        // Footnote and Endnote without settings shows its dialog (#385).
+        "references.noteOptions" if params.as_object().is_none_or(|m| m.is_empty()) => Some("noteOptions"),
+        // References dialogs (#402): Insert Caption, Insert Index, Mark Entry, Manage Sources and
+        // Insert Citation without a source.
+        "references.caption" | "references.index" if params.as_object().is_none_or(|m| m.is_empty()) => {
+            Some(if id == "references.caption" { "caption" } else { "index" })
+        }
+        "references.markEntry" if !has("entry") => Some("markEntry"),
+        "references.sources" if params.as_object().is_none_or(|m| m.is_empty()) => Some("sourceManager"),
+        "references.citation" if !has("tag") && !has("source") => Some("createSource"),
+        // Templates and Add-ins, and the Organizer without a file to list (#377).
+        "tools.templates" => Some("templates"),
+        "styles.organizer" if !has("path") => Some("organizer"),
+        // Language, Envelopes and Labels without settings show their dialogs (#407).
+        "review.language" if params.as_object().is_none_or(|m| m.is_empty()) => Some("language"),
+        "mailings.envelopes" if params.as_object().is_none_or(|m| m.is_empty()) => Some("envelopes"),
+        "mailings.labels" if params.as_object().is_none_or(|m| m.is_empty()) => Some("labels"),
         _ => None,
     }
 }
 
 /// User commands that replace or close the document (`file.open` without a path only shows the
 /// file picker; the open that follows is checked). Envelopes, Labels and Finish & Merge make a
-/// new document in its place; a merge written to a file (`path`) leaves it alone.
+/// new document in its place; a merge written to a file (`path`) and an envelope added to this
+/// document (`add`) leave it alone.
 fn discards_document(id: &str, params: &Value) -> bool {
     match id {
-        "file.new" | "file.close" | "mailings.envelopes" | "mailings.labels" => true,
+        "file.new" | "file.close" | "mailings.labels" => true,
+        "mailings.envelopes" => params.get("add").and_then(Value::as_bool) != Some(true),
         "file.open" => params.get("path").is_some(),
         "mailings.finish" => params.get("path").and_then(Value::as_str).is_none(),
         _ => false,
@@ -1241,6 +1454,19 @@ mod tests {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
     }
 
+    /// Insert › Icons (#309) opens the icon picker from the ribbon; an id inserts without it.
+    #[test]
+    fn icons_button_opens_the_picker_and_ids_insert_directly() {
+        let mut a = app();
+        a.run("insert.icon", json!({})).unwrap();
+        assert_eq!(a.dialog.as_ref().map(dialogs::Dialog::name), Some("icons"));
+        a.dialog = None;
+        let r = a.run("insert.icon", json!({"id": "sun", "size": 36})).unwrap();
+        assert_eq!(r["icon"], "sun");
+        assert!(a.dialog.is_none(), "an id inserts without the dialog");
+        assert!(a.selected_picture_media().is_some());
+    }
+
     /// Table Layout › Properties (#44) opens the dialog from the ribbon; OK sends only what
     /// changed, as one `table.properties` step. Scripts with settings never see the dialog.
     #[test]
@@ -1266,6 +1492,29 @@ mod tests {
         assert_eq!(t.props.align, Some(wordcraft_doc::props::Align::Center));
         assert_eq!((t.rows[0].props.height, t.rows[0].props.header), (Some(36.0), true));
         assert_eq!(dialogs::TableForm::read(&a).unwrap().changes(&f), json!({}), "the dialog reopens with the new values");
+        // Table direction (#362) is one more setting of the same step.
+        let mut g = dialogs::TableForm::read(&a).unwrap();
+        let basis = g.clone();
+        g.rtl = true;
+        assert_eq!(g.changes(&basis), json!({"rtl": true}));
+    }
+
+    /// Home › Font › Enclose Characters (#297): the button opens the dialog on the selected
+    /// character; the dialog's OK is `format.enclose`, and it reopens showing the enclosure.
+    #[test]
+    fn enclose_characters_button_opens_the_dialog() {
+        let mut a = app();
+        a.run("text.insert", json!({"text": "a 字 b"})).unwrap();
+        a.run("select.text", json!({"text": "字"})).unwrap();
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, text, shape }) = a.dialog.clone() else { panic!("no dialog: {:?}", a.dialog) };
+        assert_eq!((style.as_str(), text.as_str(), shape.as_str()), ("shrink", "字", "circle"));
+        a.dialog = None;
+        a.run("format.enclose", json!({"shape": "square", "style": "enlarge", "text": "字"})).unwrap();
+        assert!(a.dialog.is_none(), "a shape applies without the dialog");
+        a.run("format.enclose", json!({})).unwrap();
+        let Some(dialogs::Dialog::Enclose { style, shape, .. }) = a.dialog.clone() else { panic!("no dialog") };
+        assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
     /// Issue #139: Ctrl+wheel over the page didn't zoom.
@@ -1682,6 +1931,23 @@ mod tests {
         assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("blocked by the browser")), "the status bar says why");
     }
 
+    /// The print settings reach the hook: bad ones print nothing, `copies` repeats the pages.
+    #[test]
+    fn ui_print_honours_the_print_settings() {
+        let mut a = typed();
+        let sizes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen = sizes.clone();
+        a.services.print = Some(Box::new(move |bytes| {
+            seen.borrow_mut().push(bytes.len());
+            Ok(())
+        }));
+        assert!(a.run("ui.print", json!({"pages": "7-9"})).is_err(), "page 7 doesn't exist");
+        assert!(a.run("ui.print", json!({"range": "nope"})).is_err());
+        assert!(sizes.borrow().is_empty(), "nothing was sent");
+        a.run("ui.print", json!({"range": "current", "copies": 3})).unwrap();
+        assert_eq!(sizes.borrow().len(), 1);
+    }
+
     /// The Print page shows the Print button only when the host can print, and the button
     /// prints through `ui.print`.
     #[test]
@@ -1944,6 +2210,15 @@ mod tests {
 
     const MAILINGS: [&str; 3] = ["mailings.envelopes", "mailings.labels", "mailings.finish"];
 
+    /// What the user gave: Envelopes and Labels without anything open their dialogs (#407).
+    fn mailing(id: &str) -> Value {
+        match id {
+            "mailings.envelopes" => json!({"delivery": "Ada"}),
+            "mailings.labels" => json!({"text": "Ada"}),
+            _ => json!({}),
+        }
+    }
+
     /// Envelopes, Labels and Finish & Merge replace the document with a new one, like New, but
     /// the ribbon ran them at once and the unsaved document was gone without a question.
     #[test]
@@ -1952,7 +2227,7 @@ mod tests {
             let mut a = typed();
             a.run("mailings.recipients", json!({"csv": "Name\nAda"})).unwrap();
             let document = a.session.document_id();
-            a.run(id, json!({})).unwrap();
+            a.run(id, mailing(id)).unwrap();
             assert_eq!(prompt(&a), Some("saveChanges"), "{id}");
             assert_eq!(a.session.document_id(), document, "{id}: untouched while the prompt is up");
 
@@ -1962,7 +2237,7 @@ mod tests {
             assert!(body_text(&a).contains(UNSAVED));
             assert!(a.session.dirty);
 
-            a.run(id, json!({})).unwrap();
+            a.run(id, mailing(id)).unwrap();
             a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
             assert_eq!(prompt(&a), None);
             assert_ne!(a.session.document_id(), document, "{id}: Don't Save makes the new document");
@@ -1986,7 +2261,7 @@ mod tests {
             a.run("file.save", json!({"path": dir.join("saved.docx").to_string_lossy()})).unwrap();
             assert!(!a.session.dirty);
             let document = a.session.document_id();
-            a.run(id, json!({})).unwrap();
+            a.run(id, mailing(id)).unwrap();
             assert_eq!(prompt(&a), None, "{id}");
             assert_ne!(a.session.document_id(), document, "{id}");
         }
@@ -2014,7 +2289,7 @@ mod tests {
             assert!(a.autosaves());
             a.run("mailings.recipients", json!({"csv": "Name\nAda"})).unwrap();
             a.run("text.insert", json!({"text": "Again "})).unwrap();
-            a.run(id, json!({})).unwrap();
+            a.run(id, mailing(id)).unwrap();
             a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
             assert_eq!(prompt(&a), None);
             let saved = std::fs::read(&path).unwrap();
@@ -2090,7 +2365,7 @@ mod tests {
             a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
             a.run("mailings.recipients", json!({"csv": "Name\nAda"})).unwrap();
             a.run("file.save", json!({})).unwrap();
-            a.run(id, json!({})).unwrap();
+            a.run(id, mailing(id)).unwrap();
             assert_eq!(prompt(&a), None, "{id}: the document was saved");
             let result = body_text(&a);
 
@@ -2656,6 +2931,17 @@ mod tests {
         inbox.lock().unwrap().push(("more.csv".into(), b"Name\nBo\nCy\n".to_vec()));
         a.drain_inbox();
         assert_eq!(a.session.merge.rows.len(), 2);
+        // A CSV picked through the picker must not turn the next .txt drop into recipients.
+        a.run("ui.openRecipientList", json!({})).unwrap();
+        inbox.lock().unwrap().push(("people.csv".into(), b"Name,City\nAda,London\n".to_vec()));
+        a.drain_inbox();
+        assert!(!a.recipient_list_pending);
+        inbox.lock().unwrap().push(("notes.txt".into(), b"A plain text document.\nAnother line.\n".to_vec()));
+        a.drain_inbox();
+        assert_eq!(prompt(&a), Some("saveChanges"), "the TXT opens like any document");
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_eq!(a.session.merge.headers, vec!["Name", "City"], "the recipients stay");
+        assert!(body_text(&a).contains("A plain text document."), "the TXT opened as a document");
         // A cancelled picker leaves nothing pending once the user does something else.
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
