@@ -186,6 +186,16 @@ fn insert_nodes_as_equation(s: &mut Session, nodes: Arg, v: &Value) -> CmdResult
     result(s)
 }
 
+/// Insert a recognized linear equation at a known document position without opening its editor.
+///
+/// Draw commands use this after removing floating ink. Keeping this here ensures Ink to Math
+/// creates exactly the same native equation object as Insert › Equation.
+pub(crate) fn insert_recognized_linear(s: &mut Session, at: Pos, linear: &str) -> Result<(), CmdError> {
+    s.sel = Selection::caret(at);
+    insert_nodes_as_equation(s, parse_linear(linear), &json!({"display": false, "edit": false}))?;
+    Ok(())
+}
+
 fn edit(s: &mut Session, v: &Value) -> CmdResult {
     let at = equation_at_caret(s).ok_or_else(|| CmdError::Disabled("no equation at the caret".into()))?;
     let nodes = match s.doc.para_at(&at).and_then(|p| p.object_at(at.off)) {

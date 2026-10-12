@@ -1,6 +1,6 @@
 # WordCraft roadmap: milestones and what's next
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Portuguese proofing; previously minor: Polish interface and Polish proofing; previously trivial: M7: formatting revisions landed, #41; previously trivial: M5: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: alpha gate checked: six core workflows pass; previously major: milestones moved here from ROADMAP.md; Current focus set from the re-measured gaps) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (basic Ink to Math; previously minor: Portuguese proofing; previously minor: Polish interface and Polish proofing; previously trivial: M7: formatting revisions landed, #41; previously trivial: M5: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: alpha gate checked: six core workflows pass; previously major: milestones moved here from ROADMAP.md; Current focus set from the re-measured gaps) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Forward-looking plan. The summary is [`ROADMAP.md`](../ROADMAP.md); the ranked work list is
 [`gaps.md`](gaps.md); the numbers are in [`target-app-parity.md`](target-app-parity.md). Hours are
@@ -57,7 +57,7 @@ partial rows are fidelity gaps (beta work), not broken workflows. WordCraft stay
 | M8 | View | mostly done; window commands missing | 3–5 h |
 | M9 | Mailings | done (first version); Excel/Outlook data sources and email merge missing | 6–10 h |
 | M10 | File/Backstage | mostly done; native printing, Options depth missing | 12–20 h |
-| M11 | Draw and objects | text wrap, text boxes, canvas handles, rotation (#332), ink pens and eraser (#307), contour wrap (#354), lasso, Add Pen, Ink to Shape and Ink Replay (#395) done; Ink to Math, grouping missing | 35–55 h |
+| M11 | Draw and objects | text wrap, text boxes, canvas handles, rotation (#332), ink pens and eraser (#307), contour wrap (#354), lasso, Add Pen, Ink to Shape and Ink Replay (#395), and basic Ink to Math done; general handwriting recognition and grouping missing | 35–55 h |
 | M12 | Formats breadth (PDF, ODT, RTF, HTML, MD, TXT, LaTeX, `.doc` import) | done (first versions); `.doc` write, encryption, minor formats missing | 60–100 h |
 | M13 | Performance budgets | on track (1.4 ms relayout); large real-world documents unmeasured | 10–20 h |
 | M14 | 1.0 polish, packaging, signing | releases v0.1.0–v0.4.0 published (signed macOS, Windows MSI x64/x86/arm64, Linux, FreeBSD, web) | — |
@@ -73,6 +73,7 @@ languages, screen-reader access, ecosystem decisions (VBA, add-ins, cloud), an i
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | M11: lasso-selected, unambiguous pen/pencil line ink converts to native basic equations (`-`, `=`, `+`, `/`, `1`); general handwriting recognition remains |
 | 2026-10-12 | minor | M15: Portuguese proofing (pt-BR spelling from the installed VERO dictionary, suggestions, grammar, hyphenation; Review › Language gains Português (Brasil)) |
 | 2026-10-11 | trivial | M15: Polish interface and Polish proofing landed |
 | 2026-10-11 | trivial | M3: icons landed (#309) |

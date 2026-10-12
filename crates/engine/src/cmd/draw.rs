@@ -7,7 +7,9 @@
 //!
 //! Draw › Lasso Select picks the strokes (and drawings) inside a loop drawn on a page; the
 //! selection can then be moved, recoloured, deleted or turned into shapes. Ink to Shape replaces
-//! strokes that look like a line, rectangle, ellipse, triangle or polygon with that shape
+//! strokes that look like a line, rectangle, ellipse, triangle or polygon with that shape.
+//! Ink to Math turns an unambiguous lasso selection of pen/pencil strokes into a native equation
+//! (`-`, `=`, `+`, `/`, or `1`) and leaves uncertain handwriting intact.
 //! ([`ink_shape`](super::ink_shape)). Ink Replay plays the strokes back in the order they were
 //! drawn (each stroke keeps its place in that order). Add Pen keeps custom pens in a gallery.
 
@@ -251,6 +253,8 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"value"?: bool}  (no value: convert the lasso-selected strokes, or turn Ink to Shape on or off)"#)
         .pure(),
         CommandSpec::new("draw.convertInk", "Convert to Shapes", "Draw › Convert", convert_selection),
+        CommandSpec::new("draw.inkToMath", "Ink to Math", "Draw › Convert", ink_to_math)
+            .params(r#"{}  (converts an unambiguous lasso selection of pen or pencil ink into an equation)"#),
         CommandSpec::new("draw.replay", "Ink Replay", "Draw › Replay", replay)
             .params(r#"{"value"?: bool}  (starts or stops Ink Replay; returns the strokes in the order they were drawn)"#)
             .pure(),
@@ -692,6 +696,117 @@ fn convert_selection(s: &mut Session, _: &Value) -> CmdResult {
     Ok(json!({"count": converted.len(), "converted": converted}))
 }
 
+/// Turn a small, unambiguous selection of pen strokes into a native inline equation. This is
+/// deliberately conservative: other handwriting remains ink, rather than risking a destructive
+/// wrong conversion. More handwriting and structure recognition can build on this path.
+fn ink_to_math(s: &mut Session, _: &Value) -> CmdResult {
+    let sel = lasso_required(s)?;
+    let layout = s.layout();
+    let mut strokes = Vec::new();
+    for pos in &sel.items {
+        let Some(InlineObject::Shape { float, freeform: Some(f), .. }) = s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else {
+            continue;
+        };
+        if float.rot != 0.0 || float.flip_h || float.flip_v || !matches!(f.ink, Some(InkTool::Pen | InkTool::Pencil)) || f.paths.len() != 1 {
+            continue;
+        }
+        // Use the placed frame, rather than the stroke's local coordinates: floating ink in
+        // separate paragraphs has a different anchor and float offset for each stroke.
+        let Some(hit) = layout.object(pos, sel.page) else { continue };
+        let Some((points, _)) = f.placed(hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h).into_iter().next() else { continue };
+        let Some(InkShape::Line { a, b }) = recognise(&points) else { continue };
+        strokes.push((pos.clone(), a, b));
+    }
+    let Some(linear) = recognized_math(&strokes) else {
+        return Err(CmdError::Failed("the selected ink is not an unambiguous basic equation".into()));
+    };
+
+    // Delete the floating object characters from right to left, then put the equation at the
+    // first former anchor. This keeps the conversion one document change and one undo step.
+    let mut positions: Vec<Pos> = strokes.into_iter().map(|(pos, _, _)| pos).collect();
+    positions.sort();
+    positions.dedup();
+    let at = positions.first().cloned().ok_or_else(|| CmdError::Failed("no convertible ink is selected".into()))?;
+    for pos in positions.iter().rev() {
+        delete_object(s, pos)?;
+    }
+    super::equation::insert_recognized_linear(s, at, linear)?;
+    s.view.draw.lasso = None;
+    Ok(json!({"linear": linear, "converted": positions.len()}))
+}
+
+/// Recognize only simple line-based symbols in page coordinates. Their direction is enough for
+/// `-`, `/`, and `1`; a two-stroke `=` must overlap and be vertically stacked, while `+` must
+/// cross near the middle of both strokes.
+fn recognized_math(strokes: &[(Pos, [f32; 2], [f32; 2])]) -> Option<&'static str> {
+    let line_kind = |a: [f32; 2], b: [f32; 2]| {
+        let (dx, dy) = ((b[0] - a[0]).abs(), (b[1] - a[1]).abs());
+        if dx >= dy * 3.0 {
+            Some("horizontal")
+        } else if dy >= dx * 3.0 {
+            Some("vertical")
+        } else if dx > 0.0 && dy > 0.0 {
+            Some("diagonal")
+        } else {
+            None
+        }
+    };
+    match strokes {
+        [(_, a, b)] => match line_kind(*a, *b)? {
+            "horizontal" => Some("-"),
+            "vertical" => Some("1"),
+            "diagonal" => Some("/"),
+            _ => None,
+        },
+        [(_, a0, b0), (_, a1, b1)] => {
+            let (k0, k1) = (line_kind(*a0, *b0)?, line_kind(*a1, *b1)?);
+            if k0 == "horizontal" && k1 == "horizontal" && equals_geometry(*a0, *b0, *a1, *b1) {
+                Some("=")
+            } else if (k0 == "horizontal" && k1 == "vertical") || (k0 == "vertical" && k1 == "horizontal") {
+                let (h0, h1, v0, v1) = if k0 == "horizontal" { (*a0, *b0, *a1, *b1) } else { (*a1, *b1, *a0, *b0) };
+                plus_geometry(h0, h1, v0, v1).then_some("+")
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether two near-horizontal strokes make an equals sign, rather than unrelated lines.
+fn equals_geometry(a0: [f32; 2], b0: [f32; 2], a1: [f32; 2], b1: [f32; 2]) -> bool {
+    let (dx0, dy0) = (b0[0] - a0[0], b0[1] - a0[1]);
+    let (dx1, dy1) = (b1[0] - a1[0], b1[1] - a1[1]);
+    let (len0, len1) = (dx0.hypot(dy0), dx1.hypot(dy1));
+    if len0 <= 0.0 || len1 <= 0.0 || (dx0 * dx1 + dy0 * dy1).abs() < 0.95 * len0 * len1 {
+        return false;
+    }
+    let (left, right) = (a0[0].min(b0[0]).max(a1[0].min(b1[0])), a0[0].max(b0[0]).min(a1[0].max(b1[0])));
+    let overlap = right - left;
+    let stack = ((a0[1] + b0[1]) - (a1[1] + b1[1])).abs() / 2.0;
+    overlap >= 0.5 * len0.min(len1) && stack >= 0.12 * len0.min(len1) && stack <= len0.max(len1)
+}
+
+/// Whether a horizontal and vertical stroke intersect away from their endpoints, forming `+`.
+fn plus_geometry(h0: [f32; 2], h1: [f32; 2], v0: [f32; 2], v1: [f32; 2]) -> bool {
+    let hdx = h1[0] - h0[0];
+    let vdy = v1[1] - v0[1];
+    if hdx.abs() <= f32::EPSILON || vdy.abs() <= f32::EPSILON {
+        return false;
+    }
+    let h_t = (v0[0] - h0[0]) / hdx;
+    let v_t = (h0[1] - v0[1]) / vdy;
+    // The strokes are only approximately horizontal/vertical; ensure their segments actually
+    // meet and the crossing sits in the central 60% of both.
+    let x = h0[0] + h_t * hdx;
+    let y = v0[1] + v_t * vdy;
+    let tolerance = 0.08 * hdx.abs().min(vdy.abs());
+    (0.2..=0.8).contains(&h_t)
+        && (0.2..=0.8).contains(&v_t)
+        && (y - (h0[1] + h_t * (h1[1] - h0[1]))).abs() <= tolerance
+        && (x - (v0[0] + v_t * (v1[0] - v0[0]))).abs() <= tolerance
+}
+
 /// Replace the ink stroke at `pos` by the shape it looks like, in its colour and thickness and
 /// where it was drawn. `None` (nothing changed) when it isn't a pen or pencil stroke, it is
 /// turned or flipped, or it doesn't look like a shape.
@@ -973,6 +1088,54 @@ mod tests {
         assert_eq!(r["converted"][0]["shape"], "ellipse");
         assert_eq!(ink(&s).len(), 1);
         assert!(!s.view.draw.ink_to_shape, "converting the selection doesn't turn the mode on");
+    }
+
+    #[test]
+    fn ink_to_math_replaces_unambiguous_lassoed_strokes_with_an_equation() {
+        let convert = |strokes: &[&[[f64; 2]]], bounds: [f64; 4]| {
+            let mut s = session();
+            for points in strokes {
+                s.run("draw.stroke", &json!({"page": 0, "points": points})).unwrap();
+            }
+            let [x0, y0, x1, y1] = bounds;
+            s.run("draw.lasso", &json!({"page": 0, "points": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]})).unwrap();
+            s
+        };
+        let horizontal = [[100.0, 100.0], [160.0, 100.0]];
+        let horizontal_lower = [[100.0, 118.0], [160.0, 118.0]];
+        let mut s = convert(&[&horizontal, &horizontal_lower], [80.0, 80.0, 180.0, 140.0]);
+        let steps = s.undo_depth();
+        let result = s.run("draw.inkToMath", &json!({})).unwrap();
+        assert_eq!(result, json!({"linear": "=", "converted": 2}));
+        assert_eq!(s.undo_depth(), steps + 1, "the conversion is one undo step");
+        assert!(ink(&s).is_empty());
+        assert_eq!(s.run("equation.get", &json!({})).unwrap()["linear"], "=");
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(ink(&s).len(), 2, "undo restores the original ink");
+
+        let slash = [[100.0, 100.0], [150.0, 150.0]];
+        let one = [[120.0, 90.0], [120.0, 160.0]];
+        let plus_h = [[100.0, 125.0], [160.0, 125.0]];
+        let plus_v = [[130.0, 95.0], [130.0, 155.0]];
+        for (points, bounds, expected) in [
+            (&horizontal[..], [80.0, 80.0, 180.0, 120.0], "-"),
+            (&slash[..], [80.0, 80.0, 170.0, 170.0], "/"),
+            (&one[..], [100.0, 70.0, 140.0, 180.0], "1"),
+        ] {
+            let mut single = convert(&[points], bounds);
+            assert_eq!(single.run("draw.inkToMath", &json!({})).unwrap()["linear"], expected);
+        }
+        let mut plus = convert(&[&plus_h, &plus_v], [80.0, 70.0, 180.0, 180.0]);
+        assert_eq!(plus.run("draw.inkToMath", &json!({})).unwrap()["linear"], "+");
+
+        let side_by_side = [[220.0, 100.0], [280.0, 100.0]];
+        let mut separate = convert(&[&horizontal, &side_by_side], [80.0, 80.0, 300.0, 130.0]);
+        assert!(separate.run("draw.inkToMath", &json!({})).is_err());
+        assert_eq!(ink(&separate).len(), 2, "unrelated horizontal strokes stay ink");
+        let l_vertical = [[100.0, 100.0], [100.0, 160.0]];
+        let mut l_shape = convert(&[&horizontal, &l_vertical], [80.0, 80.0, 180.0, 180.0]);
+        assert!(l_shape.run("draw.inkToMath", &json!({})).is_err());
+        assert_eq!(ink(&l_shape).len(), 2, "an endpoint meeting is not a plus");
     }
 
     #[test]
