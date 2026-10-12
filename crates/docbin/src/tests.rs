@@ -1454,6 +1454,66 @@ fn fields_and_hyperlinks() {
 }
 
 #[test]
+fn toc_field_result_becomes_paragraphs() {
+    // "Contents\r" + field begin (\u{13}) " TOC \o "1-3" " sep (\u{14}) + "Foreword\t16\r"
+    // + "Scope\t17\r" + end (\u{15}) + trailing paragraph: the cached entries are content.
+    let raw = "Contents\r\u{13} TOC \\o \"1-3\" \u{14}Foreword\t16\rScope\t17\r\u{15}Tail\r";
+    let f = text_doc(&[Piece { compressed: false, text: raw.into() }], &[], 0);
+    let doc = read(&f).expect("opens");
+    // The entries become real paragraphs (tab preserved), not one field result that
+    // collapses onto the last of them.
+    assert_eq!(body_texts(&doc), ["Contents", "\u{FFFC}Foreword\t16", "Scope\t17", "Tail"]);
+    // One field anchor with an empty result sits on the paragraph that held the begin
+    // character, the way the docx reader anchors a TOC on its heading paragraph.
+    let p1 = doc.body.get(1).and_then(|b| b.as_para()).expect("entry para");
+    assert_eq!(p1.objects.len(), 1, "one anchor for the whole TOC: {:?}", p1.objects);
+    assert!(
+        matches!(p1.objects.first(), Some(wordcraft_doc::para::InlineObject::Field { instr, result, .. }) if instr == "TOC \\o \"1-3\"" && result.is_empty()),
+        "objects: {:?}",
+        p1.objects
+    );
+}
+
+#[test]
+fn truncated_field_keeps_text() {
+    // begin + instr + separator + "partial" with no end character: the walk finishes
+    // the still-open field at the end of its range, so the collected characters are
+    // not lost.
+    let raw = "Head\r\u{13}PAGE\u{14}partial";
+    let f = text_doc(&[Piece { compressed: false, text: raw.into() }], &[], 0);
+    let doc = read(&f).expect("opens");
+    assert_eq!(body_texts(&doc), ["Head", "\u{FFFC}"]);
+    let p1 = doc.body.get(1).and_then(|b| b.as_para()).expect("field para");
+    assert!(
+        matches!(p1.objects.first(), Some(wordcraft_doc::para::InlineObject::Field { instr, result, .. }) if instr == "PAGE" && result == "partial"),
+        "objects: {:?}",
+        p1.objects
+    );
+}
+
+#[test]
+fn nested_field_in_toc_result_keeps_own_anchor() {
+    // A TOC entry's page number is a nested PAGE field: with the TOC spilled, the
+    // inner field keeps today's single-anchor behaviour, its finish_field pushing the
+    // anchor straight into the entry paragraph.
+    let raw = "Contents\r\u{13} TOC \\o \"1-3\" \u{14}Foreword\t\u{13}PAGE\u{14}16\u{15}\r\u{15}Tail\r";
+    let f = text_doc(&[Piece { compressed: false, text: raw.into() }], &[], 0);
+    let doc = read(&f).expect("opens");
+    assert_eq!(body_texts(&doc), ["Contents", "\u{FFFC}Foreword\t\u{FFFC}", "Tail"]);
+    let p1 = doc.body.get(1).and_then(|b| b.as_para()).expect("entry para");
+    let objs = &p1.objects;
+    assert_eq!(objs.len(), 2, "objects: {objs:?}");
+    assert!(
+        matches!(objs.first(), Some(wordcraft_doc::para::InlineObject::Field { instr, result, .. }) if instr == "TOC \\o \"1-3\"" && result.is_empty()),
+        "objects: {objs:?}"
+    );
+    assert!(
+        matches!(objs.get(1), Some(wordcraft_doc::para::InlineObject::Field { instr, result, .. }) if instr == "PAGE" && result == "16"),
+        "objects: {objs:?}"
+    );
+}
+
+#[test]
 fn bookmarks_become_objects() {
     let text = "Hello world\r";
     let ccp = text.chars().count() as u32;

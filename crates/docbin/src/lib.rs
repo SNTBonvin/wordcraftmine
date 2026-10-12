@@ -345,6 +345,8 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut
     let mut marks = ctx.marks.iter().peekable();
     // Field assembly state: instruction characters are swallowed, the result is kept until
     // the end character, then emitted as one object (hyperlinks keep their result text).
+    // A range field (TOC) instead anchors itself at the separator and spills its result
+    // into the paragraphs as ordinary content.
     let mut field: Option<FieldBuild> = None;
     while cp < cp_end {
         // Bookmark boundaries at this CP (main-document walks only; subdocument walks get
@@ -372,11 +374,14 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut
             '\r' | '\u{7}' => end_paragraph(ctx, cp, c, &mut pb, &mut out),
             // Field begin/separator/end ([MS-DOC] §2.9.84 Plcfld).
             '\u{13}' => {
-                match field.as_mut() {
-                    Some(f) => {
-                        f.depth = f.depth.saturating_add(1);
-                    }
-                    None => field = Some(FieldBuild { depth: 1, instr: String::new(), sep: None }),
+                // A field begun inside a spilled range field's result (a TOC entry's page
+                // number) is its own field: the range field already anchored itself at its
+                // separator, so the inner one starts fresh and its `finish_field` pushes
+                // the anchor straight into the paragraph.
+                if field.as_ref().is_none_or(|f| f.range && f.sep.is_some()) {
+                    field = Some(FieldBuild { depth: 1, instr: String::new(), sep: None, range: false });
+                } else if let Some(f) = field.as_mut() {
+                    f.depth = f.depth.saturating_add(1);
                 }
                 cp = cp.saturating_add(1);
                 continue;
@@ -387,6 +392,16 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut
                     && f.sep.is_none()
                 {
                     f.sep = Some(Vec::new());
+                    f.range = is_range_instr(&f.instr);
+                    if f.range {
+                        // A TOC's cached result is real content that spans paragraphs:
+                        // anchor the field here with an empty result, as the docx reader
+                        // anchors a TOC on its heading paragraph, and let the entries
+                        // spill into the paragraphs below.
+                        let instr = f.instr.trim().to_string();
+                        pb.push('\u{FFFC}', CharProps::default());
+                        pb.objects.push(InlineObject::Field { instr, result: String::new(), locked: false, code: false });
+                    }
                 }
                 cp = cp.saturating_add(1);
                 continue;
@@ -457,6 +472,13 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut
             c => push_formatted(&mut pb, cp, c, ctx, field.as_mut()),
         }
         cp = cp.saturating_add(units);
+    }
+    // A field still open at the end of its range (a truncated file, or a subdocument whose
+    // story ends mid-field) is finished here so the characters it collected are not lost;
+    // a range field is a no-op — its anchor went out at the separator and its result is
+    // already in the paragraphs.
+    if let Some(f) = field.take() {
+        finish_field(&mut pb, f);
     }
     if !pb.text.is_empty() {
         let done = pb;
@@ -537,16 +559,23 @@ fn resolve_papx<'a>(bins: &Bins, word: &'a [u8], data: &'a [u8], fc: u32) -> (u1
 }
 
 /// Field assembly: `instr` collects everything before the separator (nested fields
-/// flattened), `sep` holds the cached result once the separator was seen.
+/// flattened), `sep` holds the cached result once the separator was seen, and `range`
+/// marks a field whose result stays in the document as content (a TOC's entries): its
+/// anchor is emitted at the separator and everything after spills into the paragraphs.
 struct FieldBuild {
     depth: u32,
     instr: String,
     sep: Option<Vec<(char, CharProps)>>,
+    range: bool,
 }
 
 /// Emit a finished field: HYPERLINK keeps its result text as a linked run; every other
-/// field becomes one inline object with its cached result.
+/// field becomes one inline object with its cached result. A range field emits nothing
+/// here — its anchor went out at the separator and its result is ordinary content.
 fn finish_field(pb: &mut ParaBuild, f: FieldBuild) {
+    if f.range {
+        return;
+    }
     let instr = f.instr.trim().to_string();
     let result = f.sep.unwrap_or_default();
     let result_text: String = result.iter().map(|(c, _)| *c).collect();
@@ -559,6 +588,14 @@ fn finish_field(pb: &mut ParaBuild, f: FieldBuild) {
     }
     pb.push('\u{FFFC}', CharProps::default());
     pb.objects.push(InlineObject::Field { instr, result: result_text, locked: false, code: false });
+}
+
+/// Fields kept as ranges: the first whitespace token of the instruction is `TOC`
+/// (case-insensitive), mirroring the docx reader's `is_toc`. Their cached result is
+/// content another program writes back, often spanning paragraphs, so it stays in the
+/// document instead of collapsing onto one anchor.
+fn is_range_instr(instr: &str) -> bool {
+    instr.split_whitespace().next().is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
 }
 
 /// `HYPERLINK "url"` / `HYPERLINK url \l "bookmark"` → the model link target
@@ -617,8 +654,9 @@ fn num_of(ilfo: i32) -> Option<u32> {
 
 /// Resolve the character properties for the character at `cp`: the CHPX grpprl of its FC,
 /// plus the piece's Prm, over the paragraph style's base character props. Inside a field,
-/// the character is recorded into the instruction or the cached result instead of (or as
-/// well as) the visible text.
+/// the character is recorded into the instruction or the cached result instead of the
+/// visible text — except in a spilled range field (a TOC past its separator), where it
+/// becomes ordinary content.
 fn push_formatted(pb: &mut ParaBuild, cp: u32, c: char, ctx: &WalkCtx, field: Option<&mut FieldBuild>) {
     let fc = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
     let grpprl = ctx.chpx_bins.chpx(ctx.word, fc);
@@ -633,6 +671,9 @@ fn push_formatted(pb: &mut ParaBuild, cp: u32, c: char, ctx: &WalkCtx, field: Op
     let mut props = char_props(grpprl, ctx.fonts, base);
     apply_prm(&mut props, ctx.pieces.piece_prm(cp), ctx.fonts, base);
     match field {
+        // A spilled range field (a TOC past its separator): the result is ordinary
+        // content, so the character goes straight into the paragraph.
+        Some(f) if f.range && f.sep.is_some() => pb.push(c, props),
         Some(f) => match f.sep.as_mut() {
             // Inside a field, characters are recorded for the field object instead of shown;
             // `finish_field` emits the visible text (hyperlink runs or one object anchor).
