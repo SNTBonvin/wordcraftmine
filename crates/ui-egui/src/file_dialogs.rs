@@ -16,7 +16,7 @@ use crate::WordApp;
 /// A file dialog the app asks the host to show ([`Services::file_dialog`](crate::Services::file_dialog)).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileDialogRequest {
-    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`), as for
+    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`, `font`), as for
     /// `pick_open`.
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
@@ -33,8 +33,17 @@ pub(crate) enum AfterPick {
     SaveAs(AfterSave),
     /// Save a copy there in this format (`pdf`, `docx`, `png`…).
     Export { ext: String },
-    /// Load the picked CSV/TSV/text file as the mail-merge recipients (#240).
+    /// Write the PDF of these print settings there (File › Print › Save these pages as PDF).
+    PrintPdf { settings: Value },
+    /// Load the picked CSV/TSV/text file or spreadsheet as the mail-merge recipients (#240, #334).
     Recipients,
+    /// Add the picked font file (#582).
+    Font,
+    /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
+    /// Organizer (#377).
+    ForDialog,
+    /// Put the picked document into the Compare dialog (original or revised, #412).
+    ComparePath { revised: bool },
 }
 
 /// What to do once Save As has written the document.
@@ -123,13 +132,38 @@ impl WordApp {
                 };
                 self.insert_or_change_picture(json!({"path": path}))
             }
+            AfterPick::Font => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                self.run("font.add", json!({"path": path}))
+            }
+            AfterPick::ForDialog => {
+                let picked = picked.filter(|p| !p.is_empty());
+                let r = json!({"picked": picked});
+                self.dialog_pick = picked;
+                Ok(r)
+            }
             AfterPick::Recipients => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 self.load_recipients(json!({"path": path}))
             }
+            AfterPick::ComparePath { revised } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                crate::dialogs_review::set_compare_path(self, revised, path);
+                Ok(json!({"picked": true}))
+            }
             AfterPick::Export { ext } => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 let r = if ext == "png" { self.run("file.exportPng", json!({"path": path})) } else { self.run("file.saveAs", json!({"path": path})) };
+                if r.is_ok() {
+                    self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
+                }
+                r
+            }
+            AfterPick::PrintPdf { settings } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                let mut params = settings;
+                params["path"] = json!(path);
+                let r = self.run("file.printPdf", params);
                 if r.is_ok() {
                     self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
                 }
@@ -175,6 +209,14 @@ impl WordApp {
         let _ = self.ask_file(FileDialogRequest::Save { name }, AfterPick::Export { ext: ext.to_string() });
     }
 
+    /// File › Print › Save these pages as PDF: ask where, then write the pages the print
+    /// settings choose.
+    pub(crate) fn print_pdf_dialog(&mut self) {
+        let name = format!("{}.pdf", self.title_stem());
+        let settings = self.ui.print.params();
+        let _ = self.ask_file(FileDialogRequest::Save { name }, AfterPick::PrintPdf { settings });
+    }
+
     pub(crate) fn open_dialog(&mut self) {
         if let Some(f) = &self.services.open_async {
             f("document");
@@ -189,6 +231,15 @@ impl WordApp {
             return;
         }
         let _ = self.ask_file(FileDialogRequest::Open { purpose: "picture".into() }, AfterPick::Picture);
+    }
+
+    /// Pick a font file to add (Add Font…; web: it arrives through the inbox).
+    pub(crate) fn pick_font(&mut self) {
+        if let Some(f) = &self.services.open_async {
+            f("font");
+            return;
+        }
+        let _ = self.ask_file(FileDialogRequest::Open { purpose: "font".into() }, AfterPick::Font);
     }
 }
 
@@ -270,6 +321,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #689: Save As honours the filename typed in the dialog, not just the folder: a document
+    /// opened as `a/one.docx` and saved as `b/two.docx` is written there and takes that path.
+    #[test]
+    fn save_as_with_a_new_filename_saves_under_it() {
+        let dir = scratch("rename");
+        let opened = dir.join("one.docx");
+        let picked = dir.join("sub").join("two.docx");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("original"))
+            .run("file.save", &json!({"path": opened.to_string_lossy()}))
+            .unwrap();
+        let (mut a, shown) = async_app();
+        a.run("file.open", json!({"path": opened.to_string_lossy()})).unwrap();
+        assert_eq!(a.session.path.as_deref(), Some(opened.as_path()));
+        a.save_as_dialog();
+        answer(&shown, Some(&picked.to_string_lossy()));
+        let r = a.poll_file_dialog().unwrap().unwrap();
+        assert_eq!(r, json!({"saved": true}), "the save-as succeeded");
+        assert_eq!(a.session.path.as_deref(), Some(picked.as_path()), "the picked filename is the document's path");
+        assert!(picked.is_file(), "the file is written under the picked name");
+        assert!(saved_text(&picked).contains("original"));
+        // F12 (file.saveAs without a path) lands in the same dialog, suggesting the new name.
+        let r = a.run("file.saveAs", json!({})).unwrap();
+        assert_eq!(r, json!({"saved": false}));
+        assert!(a.file_dialog_open(), "F12's saveAs request opens the dialog");
+        assert_eq!(shown.borrow()[0].0, FileDialogRequest::Save { name: "two.docx".into() });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// While a dialog is open, more Save As / Open / Export / Picture clicks don't open a second one.
     #[test]
     fn a_second_dialog_while_one_is_open_is_ignored() {
@@ -336,6 +416,49 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         answer(&shown, None);
         assert_eq!(a.poll_file_dialog().unwrap().unwrap(), json!({"cancelled": true}));
+        assert_eq!(a.session.merge.rows.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A workbook with several sheets (#334) shows Select Table; its answer loads that sheet.
+    #[test]
+    fn a_workbook_with_several_sheets_asks_which_one() {
+        use std::io::Write;
+        let dir = scratch("workbook");
+        let book = dir.join("people.ods");
+        let table = |name: &str, cells: &[&str]| {
+            let cells: String = cells
+                .iter()
+                .map(|c| {
+                    format!(
+                        r#"<table:table-row><table:table-cell office:value-type="string"><text:p>{c}</text:p></table:table-cell></table:table-row>"#
+                    )
+                })
+                .collect();
+            format!(r#"<table:table table:name="{name}">{cells}</table:table>"#)
+        };
+        let content = format!(
+            r#"<office:document-content xmlns:office="o" xmlns:table="t" xmlns:text="x"><office:body><office:spreadsheet>{}{}</office:spreadsheet></office:body></office:document-content>"#,
+            table("Notes", &["n"]),
+            table("Guests", &["Name", "Ada", "Alan"])
+        );
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, body) in [("mimetype", "application/vnd.oasis.opendocument.spreadsheet"), ("content.xml", content.as_str())] {
+            z.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(body.as_bytes()).unwrap();
+        }
+        std::fs::write(&book, z.finish().unwrap().into_inner()).unwrap();
+        let (mut a, shown) = async_app();
+        a.run("ui.openRecipientList", json!({})).unwrap();
+        answer(&shown, Some(&book.to_string_lossy()));
+        a.poll_file_dialog().unwrap().unwrap();
+        let Some(crate::dialogs::Dialog::SelectTable { sheets, params, headers: true, .. }) = &a.dialog else { panic!("Select Table expected") };
+        assert_eq!(sheets, &["Notes", "Guests"]);
+        assert!(a.session.merge.headers.is_empty(), "nothing loads before a sheet is chosen");
+        let mut p = params.clone();
+        p["sheet"] = json!(2);
+        a.load_recipients(p).unwrap();
+        assert_eq!(a.session.merge.headers, vec!["Name"]);
         assert_eq!(a.session.merge.rows.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
