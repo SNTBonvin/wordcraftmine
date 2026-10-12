@@ -2047,6 +2047,11 @@
 	Hindi	Hindi
 	Context	Kontext
 	System	System
+	Show KeyTips (Alt or F10)	Zugriffstasten anzeigen (Alt oder F10)
+	Reading	Lesen
+	Reading Column Width	Spaltenbreite beim Lesen
+	Reading Line Spacing	Zeilenabstand beim Lesen
+	Reading Text Size	Textgröße beim Lesen
 	API key:	API-Schlüssel:
 	Check spelling and grammar with LanguageTool	Rechtschreibung und Grammatik mit LanguageTool prüfen
 	Detect automatically	Automatisch erkennen

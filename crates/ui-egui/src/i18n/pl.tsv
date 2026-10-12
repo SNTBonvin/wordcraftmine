@@ -2065,6 +2065,35 @@
 	Hindi	Hindi
 	Context	Kontekstowe
 	System	Systemowe
+	Book Title	Tytuł książki
+	Category	Kategoria
+	Contributors	Współtwórcy
+	Emphasis	Wyróżnienie
+	Endnote Reference	Odwołanie przypisu końcowego
+	Endnote Text	Tekst przypisu końcowego
+	Footnote Reference	Odwołanie przypisu dolnego
+	Footnote Text	Tekst przypisu dolnego
+	Hyperlink	Hiperłącze
+	Intense Emphasis	Wyróżnienie intensywne
+	Intense Quote	Cytat intensywny
+	Intense Reference	Odwołanie intensywne
+	Keywords	Słowa kluczowe
+	No Spacing	Bez odstępów
+	Quote	Cytat
+	Strong	Pogrubienie
+	Subject	Temat
+	Subtitle	Podtytuł
+	Subtle Emphasis	Wyróżnienie delikatne
+	Subtle Reference	Odwołanie delikatne
+	TOC Heading	Nagłówek spisu treści
+	TOC {n}	Spis treści {n}
+	List Paragraph	Akapit z listą
+	Models	Modele
+	Show KeyTips (Alt or F10)	Pokaż etykietki klawiszy (Alt lub F10)
+	Reading	Czytanie
+	Reading Column Width	Szerokość kolumny do czytania
+	Reading Line Spacing	Interlinia do czytania
+	Reading Text Size	Rozmiar tekstu do czytania
 	API key:	Klucz API:
 	Check spelling and grammar with LanguageTool	Sprawdzaj pisownię i gramatykę za pomocą LanguageTool
 	Detect automatically	Wykrywaj automatycznie

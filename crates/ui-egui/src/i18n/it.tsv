@@ -2432,6 +2432,11 @@ preview	Title	Esempio
 	Hindi	Hindi
 	Context	Contesto
 	System	Sistema
+	Show KeyTips (Alt or F10)	Mostra i suggerimenti tasti (Alt o F10)
+	Reading	Lettura
+	Reading Column Width	Larghezza colonna di lettura
+	Reading Line Spacing	Interlinea di lettura
+	Reading Text Size	Dimensione testo di lettura
 	API key:	Chiave API:
 	Check spelling and grammar with LanguageTool	Controlla ortografia e grammatica con LanguageTool
 	Detect automatically	Rileva automaticamente
