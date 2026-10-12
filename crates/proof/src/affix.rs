@@ -482,6 +482,21 @@ impl AffixDict {
         self.words.get(a..b)
     }
 
+    /// The flag characters of `mask`, in flag order (how the compact format stores flags).
+    fn flag_chars_for(&self, mask: u128) -> String {
+        self.flag_chars.iter().enumerate().filter(|&(i, _)| mask & (1u128 << i) != 0).map(|(_, c)| c).collect()
+    }
+
+    /// The character of `mask` when it holds exactly one flag.
+    fn flag_char(&self, mask: u128) -> Option<char> {
+        let s = self.flag_chars_for(mask);
+        let mut it = s.chars();
+        match (it.next(), it.next()) {
+            (Some(c), None) => Some(c),
+            _ => None,
+        }
+    }
+
     /// The stems, in byte order.
     pub fn stems(&self) -> impl Iterator<Item = &str> + '_ {
         (0..self.len()).filter_map(|i| self.word(i))
@@ -741,11 +756,23 @@ impl AffixDict {
         for (a, b) in &self.rep {
             out.push_str(&format!("REP {} {}\n", a.replace(' ', "_"), b.replace(' ', "_")));
         }
+        if self.forbidden != 0
+            && let Some(c) = self.flag_char(self.forbidden)
+        {
+            out.push_str(&format!("FORBIDDENWORD {c}\n"));
+        }
         let z = |s: &str| if s.is_empty() { "0".to_string() } else { s.to_string() };
         for (kind, rules) in [("PFX", &self.prefixes), ("SFX", &self.suffixes)] {
             for r in rules {
                 let y = if r.cross { "Y" } else { "N" };
-                out.push_str(&format!("{kind} {} {y} {} {} {}\n", r.flag, z(&r.strip), z(&r.add), r.cond_text));
+                // Continuation classes ride on the appended field, as in the `.aff` source.
+                let mut add = z(&r.add);
+                let cont = self.flag_chars_for(r.cont);
+                if !cont.is_empty() {
+                    add.push('/');
+                    add.push_str(&cont);
+                }
+                out.push_str(&format!("{kind} {} {y} {} {} {}\n", r.flag, z(&r.strip), add, r.cond_text));
             }
         }
         out.push_str("WORDS\n");
@@ -760,12 +787,7 @@ impl AffixDict {
             let mask = self.flags.get(i).and_then(|&id| self.sets.get(usize::from(id))).copied().unwrap_or(0);
             if mask != 0 {
                 raw.push(b'/');
-                for (bit, c) in self.flag_chars.iter().enumerate() {
-                    if mask & (1 << bit) != 0 {
-                        let mut buf = [0u8; 4];
-                        raw.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
-                    }
-                }
+                raw.extend_from_slice(self.flag_chars_for(mask).as_bytes());
             }
             raw.push(b'\n');
             prev = b;
@@ -796,13 +818,25 @@ impl AffixDict {
                 "TRY" => rules.try_chars = at(1).to_string(),
                 "MAP" => rules.map.push(at(1).chars().collect()),
                 "REP" => rules.rep.push((at(1).replace('_', " "), at(2).replace('_', " "))),
+                "FORBIDDENWORD" => {
+                    let mut it = at(1).chars();
+                    match (it.next(), it.next()) {
+                        (Some(c), None) if !c.is_whitespace() => rules.forbidden = Some(c),
+                        _ => return Err(format!("affix dictionary: bad FORBIDDENWORD in `{line}`")),
+                    }
+                }
                 kind @ ("PFX" | "SFX") => {
                     let mut fc = at(1).chars();
                     let (Some(flag), None) = (fc.next(), fc.next()) else { return Err(format!("affix dictionary: bad flag in `{line}`")) };
                     if f.len() != 6 {
                         return Err(format!("affix dictionary: bad rule `{line}`"));
                     }
-                    let rule: RawRule = (flag, at(2) == "Y", zero_empty(at(3)), zero_empty(at(4)), String::new(), at(5).to_string());
+                    // Continuation classes ride on the appended field, as in the `.aff` source.
+                    let (add, cont) = match at(4).split_once('/') {
+                        Some((a, c)) => (zero_empty(a), c.to_string()),
+                        None => (zero_empty(at(4)), String::new()),
+                    };
+                    let rule: RawRule = (flag, at(2) == "Y", zero_empty(at(3)), add, cont, at(5).to_string());
                     if kind == "SFX" {
                         rules.suffixes.push(rule);
                     } else {
@@ -976,6 +1010,16 @@ mod tests {
         for form in d.forms("work") {
             assert!(d.contains(&form), "every listed form is accepted: {form}");
         }
+    }
+
+    #[test]
+    fn compact_format_round_trips_continuations_and_forbidden() {
+        let aff = "SET UTF-8\nFLAG UTF-8\nFORBIDDENWORD ý\nSFX A N 1\nSFX A   0   able/B   .\nSFX B N 1\nSFX B   0   s   .\n";
+        let d = AffixDict::from_hunspell(aff, "2\nwork/A\nimundo/ý\n", &[]).unwrap();
+        let back = AffixDict::from_bytes(&d.to_bytes()).unwrap();
+        assert!(back.contains("work") && back.contains("workable") && back.contains("workables"));
+        assert!(!back.contains("works"), "the stem has A, not B, after a round trip");
+        assert!(!back.check("imundo") && !back.contains("imundoy"), "forbidden survives a round trip");
     }
 
     #[test]
