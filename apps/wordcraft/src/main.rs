@@ -274,8 +274,8 @@ fn main() -> eframe::Result {
         options.viewport = options.viewport.with_icon(icon);
     }
     // Before eframe creates the wgpu instance: default Windows to DirectX 12 only, or OpenGL when
-    // DirectX 12 has no GPU driver, and compile DirectX 12 shaders with FXC, which needs no
-    // DLL of ours (#603; see graphics.rs).
+    // DirectX 12 has no GPU driver or this is a 32-bit build, and compile DirectX 12 shaders with
+    // FXC, which needs no DLL of ours (#603; see graphics.rs).
     #[cfg(target_os = "windows")]
     graphics::configure(&mut options, eframe::wgpu::Backends::from_env());
     load_user_fonts();
@@ -328,6 +328,12 @@ fn main() -> eframe::Result {
             {
                 app = app.with_control(rx);
                 key_file = file;
+            }
+            // Nothing to open (no files, no sample, no control channel driving the editor): start
+            // on File › Home, as Word does (#766), unless the Start screen option is off. Files
+            // macOS hands over later open on top of it and close it (`apple_events`).
+            if files.is_empty() && !sample && control_port.is_none() {
+                app.start_screen();
             }
             for f in files {
                 if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
