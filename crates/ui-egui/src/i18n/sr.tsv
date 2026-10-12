@@ -69,12 +69,15 @@
 	Arrow	Стрелица
 	Artistic Effects	Уметнички ефекти
 	As Recommended	Као што је препоручено
+	As you type	Током куцања
+	Asian text font:	Фонт азијског текста:
 	Asian Typography	Азијска типографија
 	Author	Аутор
 	AutoCorrect Options	Опције аутоматске исправке
 	AutoFit	Аутоматско уклапање
 	AutoFit Contents	Аутоматски уклопи према садржају
 	AutoFit Window	Аутоматски уклопи према прозору
+	AutoSave writes your changes to the file a moment after you stop typing.	Аутоматско чување уписује измене у датотеку чим престанете да куцате.
 	Automatic	Аутоматски
 	Automatic ({language})	Аутоматски ({language})
 	Automatic follows your system's language. Menus and commands change; your documents don't.	Аутоматски прати језик система. Менији и наредбе се мењају; документи не.
@@ -85,6 +88,8 @@
 	AutoSave failed: {error}. Save the document to turn AutoSave back on.	Аутоматско чување неуспело: {error}. Сачувајте документ да бисте га поново укључили.
 	Balloons	Облачићи
 	Bottom Margin	Доња маргина
+	Centimeters	Центиметри
+	Check spelling as you type	Проверавај правопис током куцања
 	Click a border between two cells to merge them. Esc stops.	Кликните ивицу између две ћелије да их спојите. Esc завршава.
 	Based on: {style}	Заснован на: {style}
 	Built-in style	Уграђени стил
@@ -96,12 +101,14 @@
 	Character style	Стил знакова
 	Click an item to paste it.	Кликните на ставку да бисте је налепили.
 	Click level to modify:	Кликните ниво који мењате:
+	Click to switch back to inserting	Кликните да бисте се вратили на уметање
 	Clipboard Items	Ставке оставе
 	Clipboard Pane	Окно оставе
 	Color only	Само боја
 	Color: {color}	Боја: {color}
 	Compress punctuation at the start of a line	Сажми интерпункцију на почетку реда
 	Confirm password:	Потврдите лозинку:
+	Custom dictionary	Прилагођени речник
 	Dark page (white text on black)	Тамна страница (бео текст на црном)
 	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	Превуците правоугаоник да нацртате табелу или линију преко ћелија да их поделите. Esc завршава.
 	Draw Table	Нацртај табелу
@@ -112,20 +119,52 @@
 	Enter formatting for number:	Облик броја:
 	Follow number with:	После броја:
 	Formatting	Обликовање
+	Formatting marks	Ознаке обликовања
+	Hidden text	Скривени текст
+	Ignore web and file addresses	Занемари веб-адресе и путање датотека
+	Ignore words in capitals	Занемари речи писане великим словима
+	Ignore words with numbers	Занемари речи са бројевима
+	Inches	Инчи
+	Formatting exceptions	Изузеци форматирања
 	Include level number from:	Укључи број нивоа:
+	Initials:	Иницијали:
 	Ink	Мастило
 	Insertions and Deletions	Уметања и брисања
 	Insertions:	Уметања:
+	Interface	Интерфејс
+	Interface language	Језик интерфејса
+	Inside:	Унутра:
+	Latin text font:	Фонт латиничног текста:
 	Left border	Лева ивица
 	Left Margin	Лева маргина
 	Legal style numbering	Правно нумерисање
 	Link level to style:	Повежи ниво са стилом:
 	List Definition	Дефиниција листе
+	Mark grammar errors as you type	Означавај граматичке грешке током куцања
+	Measurement units:	Јединице мере:
+	Millimeters	Милиметри
+	New comments and tracked changes are recorded under this name and these initials.	Нови коментари и праћене измене бележе се под овим именом и иницијалима.
+	New word	Нова реч
+	No words yet. Add to Dictionary on a misspelled word puts it here.	Још нема речи. Додај у речник на погрешно написаној речи ставља је овде.
+	Mirror indents	Пресликај увлачења
 	Nothing	Ништа
 	Number alignment:	Поравнање броја:
 	Number format	Формат броја
 	Number style for this level:	Стил броја за овај ниво:
 	Outside border	Спољна ивица
+	Overtype	Преписивање
+	Overtype (typing replaces the characters after the caret)	Преписивање (откуцано замењује знакове после курсора)
+	Page display	Приказ стране
+	Paragraph marks	Ознаке пасуса
+	Personalize	Персонализација
+	Picas	Пике
+	Points	Тачке
+	Print the page color	Штампај боју стране
+	Printing	Штампање
+	Proofing language	Језик провере писања
+	Recent documents to show:	Број недавних докумената за приказ:
+	Remove	Уклони
+	Outside:	Споља:
 	Reopen	Поново отвори
 	Restart list after:	Поново почни листу после:
 	Right border	Десна ивица
@@ -163,6 +202,7 @@
 	Paste Clipboard Item	Налепи ставку из оставе
 	Preview	Преглед
 	Remove Password	Уклони лозинку
+	Save documents	Чување докумената
 	Shadow, glow and soft edges	Сенка, сјај и меке ивице
 	Shape Effects	Ефекти облика
 	Show all revisions inline	Прикажи све измене у тексту
@@ -171,7 +211,6 @@
 	Distribute spacing	Распореди размак
 	Offset (pt):	Помак (пт):
 	Phonetic Guide	Фонетски водич
-	Remove	Уклони
 	Right (vertical)	Десно (вертикално)
 	Ruby text:	Руби текст:
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	Прикажи документе са инвертованим бојама, као код Приказ › Промени режим. Чување, штампање и PDF нису погођени.
@@ -199,6 +238,11 @@
 	Border Painter	Копирање ивица
 	Border\nPainter	Копирање\nивица
 	Borders	Ивице
+	Show the mini toolbar when text is selected	Прикажи мини траку са алаткама при избору текста
+	Spaces	Размаци
+	Spelling	Правопис
+	Spelling and grammar are checked in English (United States).	Правопис и граматика се проверавају на енглеском (Сједињене Државе).
+	Tab characters	Знакови табулатора
 	Tab stop position:	Положај табулатора:
 	Default tab stops:	Подразумевани табулатори:
 	Tab stops to be cleared:	Табулатори за брисање:
@@ -209,6 +253,10 @@
 	Set	Постави
 	Page Border	Ивица стране
 	Apply to:	Примени на:
+	These marks show even when Show/Hide ¶ is off.	Ове ознаке се приказују и када је Прикажи/сакриј ¶ искључено.
+	Typing replaces selected text	Откуцано замењује изабрани текст
+	Update fields before printing	Ажурирај поља пре штампања
+	Use the Insert key to switch overtype on and off	Тастер Insert укључује и искључује преписивање
 	Whole document	Цео документ
 	This section	Овај одељак
 	Fill	Испуна
@@ -384,6 +432,7 @@
 	Export PDF	Извези PDF
 	Exported {path}	Извезено: {path}
 	Extend Selection	Прошири избор
+	Extend Selection by Units	Прошири избор по јединицама
 	Field	Поље
 	File	Фајл
 	Find	Пронађи
@@ -943,10 +992,10 @@
 	Wide	Широко
 	Widow/Orphan Control	Контрола усамљених редова
 	Widow/Orphan control	Контрола усамљених редова
-	Wildcards (regex)	Џокер знаци (regex)
 	Window	Прозор
 	Word Count	Број речи
 	Word document (*.docx)	Word документ (*.docx)
+	Word XML Document (*.xml)	Word XML документ (*.xml)
 	Word Left	Реч лево
 	Word Right	Реч десно
 	WordArt	WordArt
@@ -1364,6 +1413,82 @@
 	Formatted	Форматирано
 	Interface size:	Величина интерфејса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.
+	Print Markup	Штампај ознаке
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Коментари поред сваке странице и праћене измене у PDF-овима, отисцима и сликама; листа коментара на крају веб-страница, Markdown-а и текста.
+
+# Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
+	1. Formatting restrictions	1. Ограничења обликовања
+	2. Editing restrictions	2. Ограничења уређивања
+	3. Start enforcement	3. Покретање заштите
+	<< Less	<< Мање
+	Another file	Друга датотека
+	Apply as you type	Примени док куцаш
+	AutoCorrect	Аутоматска исправка
+	AutoFormat As You Type	Аутоматско обликовање током куцања
+	Automatic bulleted lists	Аутоматске листе са знаковима
+	Automatic numbered lists	Аутоматске нумерисане листе
+	Border lines	Линије ивица
+	Capitalize first letter of sentences	Велико прво слово реченице
+	Capitalize first letter of table cells	Велико прво слово у ћелијама табеле
+	Capitalize names of days	Велико слово у називима дана
+	Case changes	Промене величине слова
+	Character level	Ниво знака
+	Checked styles are allowed:	Означени стилови су дозвољени:
+	Combine Documents	Спајање докумената
+	Compare Documents	Упоређивање докумената
+	Compared: {changes} changes	Упоређено: измена {changes}
+	Comparing with another file needs the desktop app.	За поређење са другом датотеком потребна је десктоп апликација.
+	Comparison settings	Подешавања поређења
+	Don't capitalize after:	Без великог слова после:
+	Editing in this document is restricted.	Уређивање овог документа је ограничено.
+	Every change is recorded as a tracked change.	Свака измена се бележи као праћена измена.
+	Everyone	Сви
+	Exceptions (optional)	Изузеци (необавезно)
+	Exceptions…	Изузеци…
+	Fields	Поља
+	Filling in forms	Попуњавање образаца
+	Find Next Editable Region	Пронађи следећи део за уређивање
+	Footnotes and endnotes	Фусноте и крајње напомене
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	Пореде се обликовање, величина слова, размаци и табеле; остала подешавања се чувају за касније.
+	Fractions (1/2) as fraction characters (½)	Разломци (1/2) као знакови разломка (½)
+	Headers and footers	Заглавља и подножја
+	Hyphens (--) as dashes (—)	Цртице (--) као црте (—)
+	In equations, typing a name after a backslash replaces it with its symbol.	У једначинама се назив откуцан после обрнуте косе црте замењује симболом.
+	Internet addresses as links	Интернет адресе као везе
+	Label changes with:	Означи измене са:
+	Limit formatting to a selection of styles	Ограничи обликовање на изабране стилове
+	Math AutoCorrect	Аутоматска исправка математике
+	More >>	Више >>
+	Moves	Премештања
+	New document	Нови документ
+	No changes (read only)	Без измена (само за читање)
+	Only allow this kind of editing:	Дозволи само ову врсту уређивања:
+	Only comments can be added, except in regions marked editable.	Могу се додавати само коментари, осим у деловима означеним за уређивање.
+	Only form fields can be filled in.	Могу се попунити само поља обрасца.
+	Only the allowed styles can be applied.	Могу се применити само дозвољени стилови.
+	Ordinals (1st) as superscript	Редни бројеви (1st) као експонент
+	Original document	Оригинални документ
+	This password type isn't supported.	Ова врста лозинке није подржана.
+	Replace as you type	Замени док куцаш
+	Replace text as you type	Замени текст док куцаш
+	Replace:	Замени:
+	Revised document	Измењени документ
+	Select text, then tick who can still edit it.	Изаберите текст, па означите ко још може да га уређује.
+	Settings…	Подешавања…
+	Show changes at:	Прикажи измене на нивоу:
+	Show changes in:	Прикажи измене у:
+	Smart quotes instead of straight quotes	Типографски наводници уместо правих
+	Start Enforcing Protection	Покрени заштиту
+	Stop Protection	Заустави заштиту
+	Text boxes	Оквири за текст
+	The document is read only, except for regions marked editable.	Документ је само за читање, осим делова означених за уређивање.
+	The password is optional; without it anyone can stop the protection.	Лозинка није обавезна; без ње свако може да заустави заштиту.
+	This document	Овај документ
+	Tracked changes	Праћене измене
+	Type the password to stop the protection.	Унесите лозинку да бисте зауставили заштиту.
+	White space	Размаци
+	With:	Са:
+	Word level	Ниво речи
 	In Line with Text	У равни са текстом
 	Square	Квадратно
 	Through	Кроз
@@ -1410,6 +1535,22 @@
 	New Group	Нова група
 	Rename…	Преименуј…
 	Ribbon and Quick Access Toolbar:	Трака и трака са алаткама за брзи приступ:
+	Add Font…	Додај фонт…
+	Added Fonts	Додати фонтови
+	Remove Added Font	Уклони додати фонт
+	Recent Colors	Недавне боје
+	More Colors…	Још боја…
+	Standard	Стандардне
+	Current	Тренутна
+	Colors:	Боје:
+	Color model:	Модел боја:
+	Red:	Црвена:
+	Green:	Зелена:
+	Blue:	Плава:
+	Hue:	Нијанса:
+	Sat:	Засићеност:
+	Lum:	Осветљеност:
+	Hex:	Хекс:
 	Accessibility Pane	Окно приступачности
 	Alt Text Pane	Окно алтернативног текста
 	Alt\nText	Алтернативни\nтекст
@@ -1493,6 +1634,19 @@
 	Enlarge symbol	Увећај симбол
 	Enclosure	Оквир
 	Circle	Круг
+	Templates	Шаблони
+	Templates and Add-ins	Шаблони и додаци
+	Attach Template	Приложи шаблон
+	Detach Template	Уклони шаблон
+	Automatically Update Document Styles	Аутоматски ажурирај стилове документа
+	Update Styles from Template	Ажурирај стилове из шаблона
+	Organizer	Организатор
+	Copy Styles	Копирај стилове
+	Rename Style	Преименуј стил
+	Document template:	Шаблон документа:
+	Attach…	Приложи…
+	Automatically update document styles	Аутоматски ажурирај стилове документа
+	Organizer…	Организатор…
 	Change Chart Type	Промени тип графикона
 	Chart Design	Дизајн графикона
 	Type	Тип
@@ -1545,6 +1699,86 @@
 	Continuous numbering	Непрекидна нумерација
 	Apply	Примени
 	Convert Notes	Претвори напомене
+	Hide White Space	Сакриј празан простор
+	All pages	Све странице
+	Current page	Тренутна страница
+	Selected pages	Изабране странице
+	Custom range	Прилагођени опсег
+	All pages in the range	Све странице у опсегу
+	Odd pages only	Само непарне странице
+	Even pages only	Само парне странице
+	Copies	Копије
+	Collate copies	Сложи копије
+	Pages like 1-3, 5	Странице попут 1-3, 5
+	{count} of {total} pages will print	Штампаће се {count} од {total} страница
+	Save these pages as PDF…	Сачувај ове странице као PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Штампач, обострана штампа и број страница по листу бирају се у том дијалогу.
+	Previous Page	Претходна страница
+	Print to PDF	Штампај у PDF
+	Add Shape	Додај облик
+	Change Colors	Промени боје
+	Change Layout	Промени распоред
+	Create Graphic	Креирање графике
+	Edit Items	Уреди ставке
+	Layouts	Распореди
+	Reset Graphic	Ресетуј графику
+	SmartArt Design	SmartArt дизајн
+	SmartArt Styles	SmartArt стилови
+	Text Pane	Окно за текст
+	List	Листа
+	Process	Процес
+	Cycle	Циклус
+	Hierarchy	Хијерархија
+	Relationship	Однос
+	Pyramid	Пирамида
+	Basic List	Основна листа
+	Basic Process	Основни процес
+	Basic Cycle	Основни циклус
+	Basic Pyramid	Основна пирамида
+	Basic Radial	Основни радијални
+	Basic Matrix	Основна матрица
+	Basic Venn	Основни Венов дијаграм
+	Shows items of equal weight as blocks in rows.	Приказује ставке једнаке важности као блокове у редовима.
+	Shows steps in order, left to right, with arrows between them.	Приказује кораке редом, слева надесно, са стрелицама између њих.
+	Shows steps that repeat, around a circle.	Приказује кораке који се понављају, око круга.
+	Shows a tree: each item below the item it belongs to.	Приказује стабло: свака ставка испод ставке којој припада.
+	Shows parts that build on each other, largest at the bottom.	Приказује делове који се ослањају један на други, највећи на дну.
+	Shows items around a central idea: the first item is the centre.	Приказује ставке око централне идеје: прва ставка је у средини.
+	Shows parts of a whole as quadrants.	Приказује делове целине као квадранте.
+	Shows overlapping ideas as overlapping circles.	Приказује идеје које се преклапају као кругове који се преклапају.
+	Accent {n}	Акценат {n}
+	Colorful	Шарено
+	Insert SmartArt	Уметни SmartArt
+	One line per item. Enter adds an item.	Један ред по ставци. Enter додаје ставку.
+	Add\nShape	Додај\nоблик
+	Change\nColors	Промени\nбоје
+	Reset\nGraphic	Ресетуј\nграфику
+	Promote to Heading 1	Подигни на Наслов 1
+	Demote to Body Text	Спусти на основни текст
+	Move Up	Помери нагоре
+	Move Down	Помери надоле
+	Collapse	Скупи
+	Expand or Collapse Heading	Прошири или скупи наслов
+	Select Heading and Content	Изабери наслов и садржај
+	Show Level	Прикажи ниво
+	Show Level 1	Прикажи ниво 1
+	Show Level 2	Прикажи ниво 2
+	Show Level 3	Прикажи ниво 3
+	Show Level 4	Прикажи ниво 4
+	Show Level 5	Прикажи ниво 5
+	Show Level 6	Прикажи ниво 6
+	Show Level 7	Прикажи ниво 7
+	Show Level 8	Прикажи ниво 8
+	Show Level 9	Прикажи ниво 9
+	Show All Levels	Прикажи све нивое
+	All Levels	Сви нивои
+	Show First Line Only	Прикажи само први ред
+	Show Text Formatting	Прикажи обликовање текста
+	Close Outline View	Затвори приказ контуре
+	Outline State	Стање контуре
+	Outlining	Контура
+	Outline Tools	Алатке контуре
+	Close Outline\nView	Затвори приказ\nконтуре
 	A, B, C, …	A, B, C, …
 	Above the item	Изнад ставке
 	Accessed on	Приступљено
@@ -1654,6 +1888,39 @@
 	Rewind	На почетак
 	Forward	Напред
 	Stroke {n} of {total}	Потез {n} од {total}
+	Use wildcards	Користи џокер знаке
+	Special	Посебно
+	Match prefix	Подудари префикс
+	Match suffix	Подудари суфикс
+	Ignore punctuation characters	Занемари знаке интерпункције
+	Ignore white-space characters	Занемари белине
+	Regular expressions	Регуларни изрази
+	Search Options	Опције претраге
+	Tab Character	Знак табулатора
+	Any Character	Било који знак
+	Any Digit	Било која цифра
+	Any Letter	Било које слово
+	Caret Character	Знак капице
+	Section Character	Знак одељка
+	Paragraph Character	Симбол пасуса
+	Graphic	Графика
+	Manual Line Break	Ручни прекид реда
+	Manual Page Break	Ручни прекид стране
+	Section Break	Прекид одељка
+	White Space	Белина
+	Clipboard Contents	Садржај оставе
+	Find What Text	Пронађени текст
+	Find What Expression	Пронађени израз
+	Character in Range	Знак у опсегу
+	Beginning of Word	Почетак речи
+	End of Word	Крај речи
+	Expression	Израз
+	Not	Није
+	Num Occurrences	Број понављања
+	Previous 1 or More	Претходно 1 или више пута
+	0 or More Characters	0 или више знакова
+	Move with Text	Померај са текстом
+	Fix Position on Page	Фиксирај положај на страници
 
 # WordArt and connectors (#416).
 	WordArt Styles	WordArt стилови

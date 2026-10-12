@@ -91,9 +91,22 @@ fn load_prefs(app: &mut WordApp) {
     }
     if let Some(p) = prefs_path()
         && let Ok(bytes) = std::fs::read(&p)
-        && let Ok(ui) = serde_json::from_slice::<UiState>(&bytes)
+        && let Some(ui) = UiState::from_json(&bytes)
     {
         app.apply_prefs(ui);
+    }
+}
+
+/// Fonts the user added (#582) live in `fonts` in the settings folder: load them, and store fonts
+/// added later there. Runs without preferences neither read nor keep them.
+fn load_user_fonts() {
+    if !prefs_enabled() {
+        return;
+    }
+    let Some(dir) = wordcraft_control_key::settings_dir().map(|d| d.join("fonts")) else { return };
+    let (loaded, skipped) = wordcraft_fonts::FontDb::global().load_user_fonts(&dir);
+    if !loaded.is_empty() || !skipped.is_empty() {
+        log::info!("user fonts: {} loaded, {} skipped from {}", loaded.len(), skipped.len(), dir.display());
     }
 }
 
@@ -103,7 +116,7 @@ fn saved_window() -> Option<WindowGeometry> {
         return None;
     }
     let bytes = std::fs::read(prefs_path()?).ok()?;
-    serde_json::from_slice::<UiState>(&bytes).ok()?.window?.sanitized()
+    UiState::from_json(&bytes)?.window?.sanitized()
 }
 
 fn save_prefs(app: &WordApp) {
@@ -207,9 +220,11 @@ fn main() -> eframe::Result {
         options.viewport = options.viewport.with_icon(icon);
     }
     // Before eframe creates the wgpu instance: default Windows to DirectX 12 only, or OpenGL when
-    // DirectX 12 has no GPU driver (see graphics.rs).
+    // DirectX 12 has no GPU driver, and compile DirectX 12 shaders with FXC, which needs no
+    // DLL of ours (#603; see graphics.rs).
     #[cfg(target_os = "windows")]
     graphics::configure(&mut options, eframe::wgpu::Backends::from_env());
+    load_user_fonts();
     let restored = saved_window();
     if let Some(window) = restored {
         options.viewport = window.apply(options.viewport);
