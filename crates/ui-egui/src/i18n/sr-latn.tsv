@@ -66,6 +66,7 @@
 	Artistic Effects	Umetnički efekti
 	As Recommended	Kao što je preporučeno
 	As you type	Tokom kucanja
+	Asian text font:	Font azijskog teksta:
 	Asian Typography	Azijska tipografija
 	Author	Autor
 	AutoCorrect Options	Opcije automatske ispravke
@@ -129,6 +130,7 @@
 	Interface	Interfejs
 	Interface language	Jezik interfejsa
 	Inside:	Unutra:
+	Latin text font:	Font latiničnog teksta:
 	Left border	Leva ivica
 	Left Margin	Leva margina
 	Legal style numbering	Pravno numerisanje
@@ -426,6 +428,7 @@
 	Export PDF	Izvezi PDF
 	Exported {path}	Izvezeno: {path}
 	Extend Selection	Proširi izbor
+	Extend Selection by Units	Proširi izbor po jedinicama
 	Field	Polje
 	File	Fajl
 	Find	Pronađi
@@ -985,10 +988,10 @@
 	Wide	Široko
 	Widow/Orphan Control	Kontrola usamljenih redova
 	Widow/Orphan control	Kontrola usamljenih redova
-	Wildcards (regex)	Džoker znaci (regex)
 	Window	Prozor
 	Word Count	Broj reči
 	Word document (*.docx)	Word dokument (*.docx)
+	Word XML Document (*.xml)	Word XML dokument (*.xml)
 	Word Left	Reč levo
 	Word Right	Reč desno
 	WordArt	WordArt
@@ -1847,6 +1850,37 @@
 	Rewind	Na početak
 	Forward	Napred
 	Stroke {n} of {total}	Potez {n} od {total}
+	Use wildcards	Koristi džoker znake
+	Special	Posebno
+	Match prefix	Podudari prefiks
+	Match suffix	Podudari sufiks
+	Ignore punctuation characters	Zanemari znake interpunkcije
+	Ignore white-space characters	Zanemari beline
+	Regular expressions	Regularni izrazi
+	Search Options	Opcije pretrage
+	Tab Character	Znak tabulatora
+	Any Character	Bilo koji znak
+	Any Digit	Bilo koja cifra
+	Any Letter	Bilo koje slovo
+	Caret Character	Znak kapice
+	Section Character	Znak odeljka
+	Paragraph Character	Simbol pasusa
+	Graphic	Grafika
+	Manual Line Break	Ručni prekid reda
+	Manual Page Break	Ručni prekid strane
+	Section Break	Prekid odeljka
+	White Space	Belina
+	Clipboard Contents	Sadržaj ostave
+	Find What Text	Pronađeni tekst
+	Find What Expression	Pronađeni izraz
+	Character in Range	Znak u opsegu
+	Beginning of Word	Početak reči
+	End of Word	Kraj reči
+	Expression	Izraz
+	Not	Nije
+	Num Occurrences	Broj ponavljanja
+	Previous 1 or More	Prethodno 1 ili više puta
+	0 or More Characters	0 ili više znakova
 	Move with Text	Pomeraj sa tekstom
 	Fix Position on Page	Fiksiraj položaj na stranici
 

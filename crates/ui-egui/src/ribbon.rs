@@ -994,7 +994,7 @@ fn design(app: &mut WordApp, ui: &mut Ui) {
 }
 
 fn layout(app: &mut WordApp, ui: &mut Ui) {
-    group(ui, "Page Setup", Some("ui.dialog"), app, |ui, app| {
+    group(ui, "Page Setup", Some("layout.pageSetup"), app, |ui, app| {
         // Text Direction works on what the caret is in: table cells, a text box, else the section.
         let dir = wordcraft_engine::cmd::page::text_direction_at(&app.session);
         menu_button(ui, app, "textDirection", Some("Text\nDirection"), "Text Direction", true, |ui, app| {
@@ -2137,14 +2137,27 @@ fn cell_size_boxes(ui: &mut Ui, app: &mut WordApp) {
     let row = t.rows.get(r).map(|x| x.props.clone()).unwrap_or_default();
     let stored_w = t.grid.get(t.grid_col(r, c)).copied();
     let laid = app.session.layout().pages.iter().flat_map(|pg| pg.items.iter()).find_map(|it| match it {
-        wordcraft_layout::Placed::Cell { rect, table, row, cell, story: st } if *table == tp && *row == r && *cell == c && *st == story => {
+        wordcraft_layout::Placed::Cell { rect, table, row, cell, story: st, .. } if *table == tp && *row == r && *cell == c && *st == story => {
             Some(*rect)
         }
         _ => None,
     });
+    // The row's own height: a vertically merged cell's box spans several rows, so take the
+    // shortest box in this row.
+    let row_h = app
+        .session
+        .layout()
+        .pages
+        .iter()
+        .flat_map(|pg| pg.items.iter())
+        .filter_map(|it| match it {
+            wordcraft_layout::Placed::Cell { rect, table, row, story: st, .. } if *table == tp && *row == r && *st == story => Some(rect.h),
+            _ => None,
+        })
+        .reduce(f32::min);
     let unit = crate::options::unit();
     let k = unit.pt_per_unit();
-    let h0 = row.height.or(laid.map(|x| x.h)).unwrap_or(0.0);
+    let h0 = row.height.or(row_h).unwrap_or(0.0);
     let w0 = laid.map(|x| x.w).or(stored_w).unwrap_or(0.0);
     let exact = row.height_rule == wordcraft_doc::props::HeightRule::Exact;
     // The edited value in points, and whether it continues a drag (joins the previous Undo step).
@@ -2291,6 +2304,21 @@ mod tests {
         s.run("select.collapse", &json!({"end": true})).unwrap();
         s.run("text.insert", &json!({"text": "x"})).unwrap();
         assert!(!contextual_tabs(&s).contains(&"Shape Format"));
+    }
+
+    #[test]
+    fn page_setup_launcher_opens_the_dialog() {
+        // A group launcher runs its command with no parameters (#471).
+        let mut app = crate::WordApp::new(Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        app.run("layout.pageSetup", json!({})).unwrap();
+        assert!(matches!(app.dialog, Some(crate::dialogs::Dialog::PageSetup { .. })));
+        // `ui.dialog` needs a dialog name, so it can't be a launcher.
+        let launchers: Vec<&str> = include_str!("ribbon.rs")
+            .split("group(ui, \"")
+            .filter_map(|g| g.split_once('"')?.1.strip_prefix(", Some(\"")?.split('"').next())
+            .collect();
+        assert!(launchers.contains(&"layout.pageSetup"), "{launchers:?}");
+        assert!(!launchers.contains(&"ui.dialog"), "{launchers:?}");
     }
 
     #[test]

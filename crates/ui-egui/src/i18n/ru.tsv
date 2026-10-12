@@ -253,6 +253,7 @@
 	Export PDF	Экспорт в PDF
 	Exported {path}	Экспортировано: {path}
 	Extend Selection	Расширить выделение
+	Extend Selection by Units	Расширить выделение по единицам
 	Field	Поле
 	File	Файл
 	Find	Найти
@@ -804,7 +805,6 @@ preview	Title	Пример
 	Wide	Широкие
 	Widow/Orphan Control	Запрет висячих строк
 	Widow/Orphan control	Запрет висячих строк
-	Wildcards (regex)	Подстановочные знаки (regex)
 	Window	Окно
 	Word Count	Число слов
 	Word document (*.docx)	Документ Word (*.docx)
@@ -2113,6 +2113,40 @@ preview	Title	Пример
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Подстановочные знаки
+	Special	Специальный
+	Match prefix	Начало слова
+	Match suffix	Конец слова
+	Ignore punctuation characters	Не учитывать знаки препинания
+	Ignore white-space characters	Не учитывать пробелы
+	Regular expressions	Регулярные выражения
+	Search Options	Параметры поиска
+	Tab Character	Знак табуляции
+	Any Character	Любой знак
+	Any Digit	Любая цифра
+	Any Letter	Любая буква
+	Caret Character	Знак вставки (^)
+	Section Character	Знак раздела
+	Paragraph Character	Знак абзаца
+	Graphic	Графический объект
+	Manual Line Break	Разрыв строки
+	Manual Page Break	Разрыв страницы
+	Section Break	Разрыв раздела
+	White Space	Пробельный знак
+	Clipboard Contents	Содержимое буфера обмена
+	Find What Text	Текст для поиска
+	Find What Expression	Найденное выражение
+	Character in Range	Знак из диапазона
+	Beginning of Word	Начало слова
+	End of Word	Конец слова
+	Expression	Выражение
+	Not	Не
+	Num Occurrences	Число вхождений
+	Previous 1 or More	Предыдущий знак 1 или более раз
+	0 or More Characters	0 или более знаков
 # Insert SmartArt (#497).
 	Add Shape	Добавить фигуру
 	Change Colors	Изменить цвета
@@ -2328,3 +2362,6 @@ preview	Title	Пример
 	Typing replaces selected text	Ввод заменяет выделенный текст
 	Update fields before printing	Обновлять поля перед печатью
 	Use the Insert key to switch overtype on and off	Клавиша Insert включает и выключает режим замены
+# Asian and Latin text fonts (#505).
+	Asian text font:	Шрифт азиатского текста:
+	Latin text font:	Шрифт латинского текста:
