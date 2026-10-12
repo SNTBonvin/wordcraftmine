@@ -4143,3 +4143,247 @@ fn bulgarian_text_is_hyphenated_by_its_own_rules() {
         assert!(wordcraft_proof::hyphen::hyphen_points_in(&word, &lim, wordcraft_proof::ProofLang::Bg).contains(&at), "{head}-{tail}");
     }
 }
+
+/// Spaces and tabs never make a line taller in Word, whatever their size (measured in Word for
+/// Windows: 9 pt text with 11–20 pt tabs, spaces and ideographic spaces kept the 9 pt line; a
+/// line of only big spaces took the paragraph mark's height; a big letter or no-break space did
+/// grow it). Tables of contents with big tab runs were a third taller than Word's.
+#[test]
+fn spaces_and_tabs_do_not_make_a_line_taller() {
+    use wordcraft_doc::props::CharProps;
+    let small = CharProps { size: Some(9.0), ..Default::default() };
+    let big = CharProps { size: Some(20.0), ..Default::default() };
+    let pitch = |middle: &str, middle_props: &CharProps| {
+        let mut d = Document::new();
+        d.body = (0..3)
+            .map(|i| {
+                let mut p = wordcraft_doc::Paragraph::with_text(&format!("L{i}A"), small.clone());
+                let n = p.len();
+                p.insert_text(n, middle, middle_props).unwrap();
+                let n = p.len();
+                p.insert_text(n, "B", &small).unwrap();
+                p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+                p.mark = small.clone();
+                wordcraft_doc::para_block(p)
+            })
+            .collect();
+        let l = lay(&d);
+        l.caret(&Pos::body(1, 0)).unwrap().top - l.caret(&Pos::body(0, 0)).unwrap().top
+    };
+    let plain = pitch(" ", &small);
+    for (what, middle) in [("a tab", "\t"), ("a space", " "), ("two spaces", "  "), ("an ideographic space", "\u{3000}")] {
+        assert!((pitch(middle, &big) - plain).abs() < 0.01, "{what} at 20 pt: {} vs {plain}", pitch(middle, &big));
+    }
+    assert!(pitch("x", &big) > plain + 5.0, "a 20 pt letter does make it taller");
+    assert!(pitch("\u{A0}", &big) > plain + 5.0, "so does a no-break space");
+}
+
+/// A list label taller than its text makes the first line taller above the baseline only: Word
+/// keeps the text's descent below it (measured in Word for Windows, `plan/word` R18: a Symbol
+/// bullet's taller ascent counts, a Courier New label's deeper descent doesn't). NIH's bulleted
+/// items each came out a fifth of a point taller, enough to push a paragraph's last lines over
+/// the page bottom.
+#[test]
+fn a_list_label_adds_ascent_but_not_descent() {
+    let first_line = |label_size: Option<f32>| {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        for a in &mut d.numbering.abstracts {
+            for l in &mut a.levels {
+                l.chr.size = label_size;
+            }
+        }
+        let ten = wordcraft_doc::props::CharProps { size: Some(10.0), ..Default::default() };
+        let mut p = wordcraft_doc::Paragraph::with_text("Item", ten.clone());
+        p.props.numbering = Some(wordcraft_doc::props::NumRef { num, level: 0 });
+        p.mark = ten;
+        p.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = lay(&d);
+        l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { para.lines.first().cloned() } else { None }).unwrap()
+    };
+    let plain = first_line(None);
+    let big = first_line(Some(30.0));
+    let below = |l: &crate::para::Line| l.top + l.height - l.baseline;
+    assert!(big.baseline - big.top > plain.baseline - plain.top + 5.0, "the big label raises the baseline");
+    assert!((below(&big) - below(&plain)).abs() < 0.01, "the text's descent: {} vs {}", below(&big), below(&plain));
+}
+
+/// A cell's hidden end-of-cell mark (`w:hideMark`), measured in Word for Windows (`plan/word`
+/// R20, 9 cases): its empty last paragraph takes no room, spacing and all, so a row of such empty
+/// cells is only its borders; one ordinary empty cell keeps the row a line tall, and a paragraph
+/// with text is never hidden. NIH's Table A showed a blank row Word doesn't.
+#[test]
+fn a_hidden_cell_mark_takes_no_room() {
+    let row3_top = |hide: [bool; 2], second: Option<&str>| {
+        let mut d = Document::from_text("Above");
+        let mut t = Table::new(3, 2, 300.0);
+        for (r, text) in [(0, "R1"), (2, "R3")] {
+            for c in 0..2 {
+                t.rows[r].cells[c].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, Default::default()))];
+            }
+        }
+        for (cell, hide) in t.rows[1].cells.iter_mut().zip(hide) {
+            cell.props.hide_mark = hide;
+            let mut blocks = Vec::new();
+            if let Some(text) = second {
+                blocks.push(wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, Default::default())));
+            }
+            let mut mark = wordcraft_doc::Paragraph::with_text("", Default::default());
+            mark.props.space_before = Some(10.0);
+            blocks.push(wordcraft_doc::para_block(mark));
+            cell.blocks = blocks;
+        }
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        let at = |r: u32| l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, r, 0, 0]), off: 0 }).unwrap().top;
+        // Rows 1 and 2 together.
+        at(2) - at(0)
+    };
+    // Row 1 is one line of text; row 2's height is what's left.
+    let line = {
+        let both = row3_top([false, false], Some("Tx"));
+        let mut d = Document::from_text("Above");
+        let mut t = Table::new(2, 1, 300.0);
+        t.rows[0].cells[0].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("R1", Default::default()))];
+        t.rows[1].cells[0].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("R3", Default::default()))];
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        let at = |r: u32| l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, r, 0, 0]), off: 0 }).unwrap().top;
+        assert!(both > at(1) - at(0));
+        at(1) - at(0)
+    };
+    let row2 = |hide: [bool; 2], second: Option<&str>| row3_top(hide, second) - line;
+    let hidden = row2([true, true], None);
+    assert!(hidden < 1.5, "a row of hidden marks is only its borders: {hidden} vs a line of {line}");
+    let mixed = row2([true, false], None);
+    let plain = row2([false, false], None);
+    assert!(plain > 5.0 && (mixed - plain).abs() < 0.01, "an ordinary empty cell keeps the row: {mixed} vs {plain}");
+    let text = row2([true, true], Some("Tx"));
+    assert!((text - line).abs() < 0.5, "text stays, the empty mark after it goes: {text} vs {line}");
+}
+
+/// A text frame in a header, footer or cell (NIH's footers put the page number in one, centred,
+/// with the footer text wrapping around it) is placed apart: it takes no room in the flow, sits
+/// where its alignment says, and the text beside it keeps clear of it. WordCraft laid it out as
+/// an ordinary paragraph, a line of its own above the footer text.
+#[test]
+fn a_text_frame_in_a_cell_floats_beside_the_text() {
+    use wordcraft_doc::props::TextFrame;
+    let mut d = Document::from_text("Above");
+    let mut t = Table::new(1, 1, 300.0);
+    let mut framed = wordcraft_doc::Paragraph::with_text("7", Default::default());
+    framed.props.frame = Some(TextFrame {
+        x_align: Some("right".into()),
+        h_anchor: "text".into(),
+        v_anchor: "text".into(),
+        wrap: "around".into(),
+        ..Default::default()
+    });
+    let text = wordcraft_doc::Paragraph::with_text("Cell text", Default::default());
+    t.rows[0].cells[0].blocks = vec![wordcraft_doc::para_block(framed), wordcraft_doc::para_block(text)];
+    d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+    let l = lay(&d);
+    let at = |i: u32| l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, 0, 0, i]), off: 0 }).unwrap();
+    let (frame, text) = (at(0), at(1));
+    assert!((frame.top - text.top).abs() < 0.5, "the frame takes no room: {} vs {}", frame.top, text.top);
+    assert!(frame.x > text.x + 200.0, "right-aligned in the cell: {} vs {}", frame.x, text.x);
+}
+
+/// Where a list paragraph's text starts when its style has indents of its own (measured in Word,
+/// `plan/word` R16): the list level's indents go on top of the most derived style that gives the
+/// list, so that style's own indent (and those of styles based on it) win, its base styles' don't
+/// and the paragraph's own list wins over every style; a paragraph that switches the list off
+/// (`num: 0`) drops the styles' indents. NIH's Heading 3 (its own 0.9" on Heading 2's list) sat at
+/// the list's 0.6", and its "sample text" paragraphs with the list off at 0.9" instead of the margin.
+#[test]
+fn list_indents_and_style_indents_combine_like_word() {
+    use wordcraft_doc::props::NumRef;
+    use wordcraft_doc::styles::{Style, StyleKind};
+    let text_x = |style: &str, own: ParaProps| {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        let style_of = |id: &str, based: Option<&str>, para: ParaProps| Style {
+            id: id.into(),
+            name: id.into(),
+            kind: StyleKind::Paragraph,
+            based_on: based.map(Into::into),
+            para,
+            ..Default::default()
+        };
+        let list = ParaProps { numbering: Some(NumRef { num, level: 0 }), ..Default::default() };
+        let ind = ParaProps { indent_left: Some(64.8), ..Default::default() };
+        // List and indent in one style; list in the base, indent in the derived one; the reverse.
+        d.styles.upsert(style_of("Both", None, ParaProps { indent_left: Some(64.8), ..list.clone() }));
+        d.styles.upsert(style_of("ListBase", None, list.clone()));
+        d.styles.upsert(style_of("IndentOnList", Some("ListBase"), ind.clone()));
+        d.styles.upsert(style_of("IndentBase", None, ind));
+        d.styles.upsert(style_of("ListOnIndent", Some("IndentBase"), list.clone()));
+        let own =
+            ParaProps { style: Some(style.into()), numbering: own.numbering.map(|n| NumRef { num: if n.num == 0 { 0 } else { num }, ..n }), ..own };
+        let mut p = wordcraft_doc::Paragraph::with_text("Text", Default::default());
+        p.props = own;
+        d.body = vec![wordcraft_doc::para_block(p)];
+        lay(&d).caret(&Pos::body(0, 0)).unwrap().x
+    };
+    let listed = || ParaProps { numbering: Some(NumRef { num: 1, level: 0 }), ..Default::default() };
+    let off = || ParaProps { numbering: Some(NumRef { num: 0, level: 0 }), ..Default::default() };
+    let cases = [
+        ("the style's own indent beats its list's", text_x("Both", ParaProps::default()), 72.0 + 64.8),
+        ("a style based on the list's style wins too", text_x("IndentOnList", ParaProps::default()), 72.0 + 64.8),
+        ("the list's style beats its base style", text_x("ListOnIndent", ParaProps::default()), 108.0),
+        ("the paragraph's own list beats every style", text_x("Both", listed()), 108.0),
+        ("list off: the style's indent goes too", text_x("Both", off()), 72.0),
+        ("list off drops an indent from any style", text_x("IndentBase", off()), 72.0),
+        ("list off keeps the paragraph's own indent", text_x("Both", ParaProps { indent_left: Some(10.0), ..off() }), 82.0),
+    ];
+    for (what, got, want) in cases {
+        assert!((got - want).abs() < 0.5, "{what}: {got} vs {want}");
+    }
+}
+
+/// Keep with next at a page bottom, measured in Word for Windows (`plan/word` R19, 20 cases): a
+/// paragraph that would fit on the page by itself moves over with the next one, but one that
+/// doesn't fit anyway breaks as usual, its last lines going over with the next paragraph (with
+/// Keep lines together it moves whole); a chain of kept paragraphs moves together. NIH's
+/// five-line kept paragraph left a third of a page empty.
+#[test]
+fn keep_with_next_moves_a_paragraph_only_when_it_would_fit() {
+    // Page of each of the kept paragraph's 5 lines and of the first paragraph after it.
+    let pages = |fillers: usize, kept: ParaProps, next: ParaProps| {
+        let mut d = Document::new();
+        let plain = ParaProps {
+            space_before: Some(0.0),
+            space_after: Some(0.0),
+            line_spacing: Some(wordcraft_doc::props::LineSpacing::Multiple(1.0)),
+            ..Default::default()
+        };
+        let para = |text: &str, p: &ParaProps| {
+            let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
+            x.props = ParaProps { keep_next: p.keep_next, keep_lines: p.keep_lines, ..plain.clone() };
+            wordcraft_doc::para_block(x)
+        };
+        d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
+        d.body.push(para("Ka\nKb\nKc\nKd\nKe", &kept));
+        d.body.push(para("NX", &next));
+        d.body.push(para("NY", &plain));
+        let l = lay(&d);
+        let k = fillers;
+        [0, 3, 6, 9, 12]
+            .map(|off| l.caret(&Pos::body(k, off)).unwrap().page)
+            .into_iter()
+            .chain([l.caret(&Pos::body(k + 1, 0)).unwrap().page])
+            .collect::<Vec<_>>()
+    };
+    let none = ParaProps::default();
+    let kn = ParaProps { keep_next: Some(true), ..Default::default() };
+    let kl = ParaProps { keep_lines: Some(true), ..kn.clone() };
+    // Find where the kept paragraph just fits: its last line on page 1, the next one's on page 2.
+    let fit = (20..80).find(|n| pages(*n, none.clone(), none.clone()) == [0, 0, 0, 0, 0, 1]).expect("a filler count that fills the page");
+    assert_eq!(pages(fit, kn.clone(), none.clone()), [1, 1, 1, 1, 1, 1], "fits by itself: moves with the next");
+    let split = pages(fit + 1, none.clone(), none.clone());
+    assert!(split[0] == 0 && split[4] == 1, "one more line splits it: {split:?}");
+    assert_eq!(pages(fit + 1, kn.clone(), none.clone()), split, "doesn't fit anyway: breaks as usual");
+    assert_eq!(pages(fit + 1, kl.clone(), none.clone()), [1, 1, 1, 1, 1, 1], "with keep lines together it moves whole");
+    assert_eq!(pages(fit - 1, kn.clone(), kn.clone()), [1, 1, 1, 1, 1, 1], "a kept chain moves together");
+}

@@ -873,13 +873,33 @@ fn layout_box(
     let mut y = 0.0f32;
     let mut prev_after = 0.0f32;
     let mut prev_style: Option<(String, bool)> = None;
+    let mut last_top = 0.0f32;
     for (i, b) in blocks.iter().enumerate() {
+        last_top = y;
         let mut path = prefix.to_vec();
         path.push(i as u32);
         match &**b {
             Block::Para(p) => {
                 let label = ctx.next_label(p);
                 let mut pl = ctx.para_labelled(p, width, table, &[], label.clone());
+                // A text frame (a footer's page number in a frame, say) is placed apart, like a
+                // floating object, and the text after it wraps around it; it takes no room in
+                // the flow.
+                if let Some(fr) = pl.rp.frame.clone() {
+                    let fw = fr.w.unwrap_or_else(|| natural_width(&pl)).clamp(1.0, 1584.0);
+                    let pf = if (fw - width).abs() > 0.01 { ctx.para_labelled(p, fw, table, &[], label) } else { pl };
+                    let h = match fr.h {
+                        Some(h) if fr.h_exact => h,
+                        Some(h) => h.max(pf.height),
+                        None => pf.height,
+                    };
+                    let float = frame_float(&fr);
+                    let r = float_rect(frame, (0.0, width), y, fw, h, &float);
+                    push_para(&mut items, story, &path, &pf, 0, pf.lines.len(), r.x, r.y, fw);
+                    excl.extend(wrap_area(r, &float, None));
+                    float_tables.push(r);
+                    continue;
+                }
                 let ctxl = pl.rp.contextual_spacing;
                 let same = prev_style.as_ref().is_some_and(|(s, c)| *s == pl.rp.style && (*c || ctxl));
                 let before = if same && ctxl { 0.0 } else { pl.rp.space_before };
@@ -958,15 +978,64 @@ fn layout_box(
     }
     let floats_bottom = float_tables.iter().map(|r| r.bottom()).fold(0.0, f32::max);
     ctx.hide_deleted = outer_hide;
-    BoxLayout { items, height: y.max(0.0), floats_bottom }
+    BoxLayout { items, height: y.max(0.0), floats_bottom, last_top: last_top.max(0.0) }
 }
 
-/// A laid-out box: items relative to its top-left, the height of its text flow, and where its
-/// floating tables end (a table cell grows to hold them).
+/// The width a text frame without one takes: its widest line, with the paragraph's indents.
+fn natural_width(pl: &ParaLayout) -> f32 {
+    let widest = (0..pl.lines.len())
+        .filter_map(|li| {
+            let l = pl.lines.get(li)?;
+            Some((pl.x_of(li, l.stop)? - pl.x_of(li, l.start)?).abs())
+        })
+        .fold(0.0f32, f32::max);
+    widest + pl.rp.indent_left.max(0.0) + pl.rp.indent_right.max(0.0)
+}
+
+/// A text frame's placement as a floating object's (`w:framePr` → anchors, alignment, wrap).
+fn frame_float(fr: &wordcraft_doc::props::TextFrame) -> Float {
+    let anchor = |a: &str, text: Anchor| match a {
+        "page" => Anchor::Page,
+        "margin" => Anchor::Margin,
+        _ => text,
+    };
+    let align = |a: Option<&str>| match a {
+        Some("left" | "top") => Some(FloatAlign::Start),
+        Some("center") => Some(FloatAlign::Center),
+        Some("right" | "bottom") => Some(FloatAlign::End),
+        Some("inside") => Some(FloatAlign::Inside),
+        Some("outside") => Some(FloatAlign::Outside),
+        _ => None,
+    };
+    Float {
+        wrap: match fr.wrap.as_str() {
+            "notBeside" => Wrap::TopAndBottom,
+            "none" => Wrap::InFrontOfText,
+            "tight" => Wrap::Tight,
+            "through" => Wrap::Through,
+            _ => Wrap::Square,
+        },
+        h_rel: anchor(&fr.h_anchor, Anchor::Column),
+        v_rel: anchor(&fr.v_anchor, Anchor::Paragraph),
+        x: fr.x,
+        y: fr.y,
+        h_align: align(fr.x_align.as_deref()),
+        v_align: align(fr.y_align.as_deref()),
+        dist: fr.h_space,
+        dist_top: fr.v_space,
+        dist_bottom: fr.v_space,
+        ..Default::default()
+    }
+}
+
+/// A laid-out box: items relative to its top-left, the height of its text flow, where its
+/// floating tables end (a table cell grows to hold them) and where its last block starts (the
+/// height without it).
 struct BoxLayout {
     items: Vec<Placed>,
     height: f32,
     floats_bottom: f32,
+    last_top: f32,
 }
 
 /// Where floating table `tl` goes in a box `width` wide whose next paragraph starts at `y`, and
@@ -1026,8 +1095,11 @@ fn clear_of_float_tables(mut r: Rect, f: &TableFloat, legacy: f32, text_left: f3
     r
 }
 
-/// A text box's internal margins (Word's defaults: 0.1" left/right, 0.05" top/bottom).
+/// A text box's default internal margins (Word's: 0.1" left/right, 0.05" top/bottom); a box's
+/// own come from its [`wordcraft_doc::TextBody`].
+#[cfg(test)]
 const BOX_INSET_X: f32 = 7.2;
+#[cfg(test)]
 const BOX_INSET_Y: f32 = 3.6;
 
 /// Keep what fits in a box `height` tall (items relative to its top): lines that don't fit are
@@ -2543,9 +2615,11 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
         }
     }
     pb.y += before;
-    // Keep lines together: if it doesn't fit but would on an empty column, move it.
-    if pl.rp.keep_lines || pl.rp.keep_next {
-        let need = pl.height + if pl.rp.keep_next { next_first_line(ctx, block, width) } else { 0.0 };
+    // Keep lines together: if it doesn't fit but would on an empty column, move it. Keep with
+    // next alone moves a paragraph only when it would fit here by itself (Word for Windows): one
+    // that doesn't breaks as usual, its last lines going over with the next paragraph.
+    if pl.rp.keep_lines || (pl.rp.keep_next && pb.y + pl.height <= pb.bottom + 0.01) {
+        let need = pl.height + if pl.rp.keep_next { next_first_line(ctx, block, width, 0) } else { 0.0 };
         // (Against the whole column: balanced columns grow to hold it.)
         if pb.y + need > pb.bottom && !pb.at_top() && need <= pb.uncapped_bottom() - pb.top {
             pb.advance(block, body_top);
@@ -2811,7 +2885,10 @@ fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: boo
 }
 
 /// Height of the first line of the block after `block` (for keep-with-next).
-fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
+/// The room the paragraphs after `block` need on its page for keep with next: the next one's
+/// first line, or all of it and what it keeps with in turn when it is kept with the next too
+/// (a chain moves together in Word).
+fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32 {
     match ctx.doc.body.get(block + 1).map(|b| &**b) {
         Some(Block::Para(p)) => {
             // Don't advance list counters for a lookahead: lay out without the label.
@@ -2835,7 +2912,11 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
             };
             let _ = rp;
             let pl = para::layout_para(p, &env);
-            pl.rp.space_before + pl.lines.first().map(|l| l.height).unwrap_or(0.0)
+            if pl.rp.keep_next && depth < 8 {
+                pl.rp.space_before + pl.height + pl.rp.space_after + next_first_line(ctx, block + 1, width, depth + 1)
+            } else {
+                pl.rp.space_before + pl.lines.first().map(|l| l.height).unwrap_or(0.0)
+            }
         }
         Some(Block::Table(_)) => 24.0,
         None => 0.0,
