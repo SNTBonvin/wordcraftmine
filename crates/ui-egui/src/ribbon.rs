@@ -1188,7 +1188,7 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
         egui::Grid::new("layout_para").spacing(vec2(4.0, 3.0)).min_row_height(FIELD.y).show(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Indent")).small().strong());
             ui.label("");
-            ui.add_space(8.0);
+            ui.add_sized([8.0, 0.0], egui::Label::new(""));
             ui.label(egui::RichText::new(tl!("Spacing")).small().strong());
             ui.end_row();
             // Indents in the File › Options unit.
@@ -1203,7 +1203,7 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             {
                 let _ = app.run("para.indents", json!({"left": l * k}));
             }
-            ui.add_space(8.0);
+          ui.add_sized([8.0, 0.0], egui::Label::new(""));
             ui.label(egui::RichText::new(tl!("Before:")).small());
             if ui.add_sized(FIELD, egui::DragValue::new(&mut b).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt")))).changed() {
                 let _ = app.run("para.spacing", json!({"before": b}));
@@ -1218,7 +1218,7 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             {
                 let _ = app.run("para.indents", json!({"right": r * k}));
             }
-            ui.add_space(8.0);
+           ui.add_sized([8.0, 0.0], egui::Label::new(""));
             ui.label(egui::RichText::new(tl!("After:")).small());
             if ui.add_sized(FIELD, egui::DragValue::new(&mut a).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt")))).changed() {
                 let _ = app.run("para.spacing", json!({"after": a}));
