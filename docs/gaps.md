@@ -1,30 +1,32 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Word XML Document and Word 2003 XML landed, #548; previously trivial: #24 narrowed: Customize Keyboard and Customize Ribbon landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (DOCX complex-script formatting inheritance fixed; broader RTL work remains; previously trivial: #24 narrowed: Customize Keyboard and Customize Ribbon landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 The work list. One entry per shortfall, ranked by how much it stops a Word user from switching
 (**B** = blocks beta). Each says what's missing, the evidence, who it hurts, an Opus 5.5 agent
 wall-clock estimate, and which parity document tracks it. Agents: pick from the top, check open PRs
 first (`gh pr list`), and update this file and the parity doc when a gap closes.
 
+Native save reliability: synthetic cases on macOS reproduced loss through the predictable temporary-file name. Saves now use owned, exclusively created siblings, synchronize before replacement and clean up on failure; originals survive pre-replacement errors. This narrows save-path reliability under gap #3; the listed field failures and broader stability work remain open. See [save-path guarantees](file-format-parity.md#native-save-path-guarantees).
+
 ## Ranked
 
 | # | Gap | B | Evidence | Impact | Hours | Doc |
 |---|---|---|---|---|---|---|
-| 1 | **DOCX never tested on real-world files.** No corpus of files from Word, Google Docs, LibreOffice and Pages has been opened, rendered and round-tripped and compared with Word page by page | B | No corpus in the repo; `crates/docx/tests` are synthetic fixtures (including omitted/empty paragraph-default preservation); "DOCX fidelity corpus: not started" since 2026-10-06 | Everyone: the files people receive are the files that break | 30–50 | [file-format-parity.md](file-format-parity.md) |
+| 1 | **DOCX never tested on real-world files.** No corpus of files from Word, Google Docs, LibreOffice and Pages has been opened, rendered and round-tripped and compared with Word page by page | B | No corpus in the repo; `crates/docx/tests` are synthetic fixtures (including omitted/empty paragraph defaults and imported TOC range preservation); "DOCX fidelity corpus: not started" since 2026-10-06 | Everyone: the files people receive are the files that break | 30–50 | [file-format-parity.md](file-format-parity.md) |
 | 2 | **Ink and drawing canvases are dropped on open and lost on save, silently**; OLE objects show only their picture | B | No ink or drawing-canvas (`wpc`) handling in `crates/docx`; group shapes (`wpg`) read and written (#267). Charts and SmartArt are drawn (#292) and, with OLE objects, written back with all their parts on save (#319) | Documents with diagrams drawn in Word or pen notes lose content without warning | 4–8 to preserve ink and drawing canvases; 45–70 to render and edit charts and SmartArt (#13) | [file-format-parity.md](file-format-parity.md) |
 | 3 | **Crashes and freezes in the field**: startup crash on Intel UHD Graphics (#170) (lag on GPUs without a DirectX 12 driver fixed, #316), freezes (#77, #59 Thai fonts, #31 font selector), no writes without admin on Windows 11 (#218), broken shape tool (#142), images can't be moved (#82) | B | 62 open issues, ~15 of them crashes, hangs or data-path failures | Anyone hit loses work or trust; the never-crash standard covers panics, not hangs or GPU driver faults | 20–30 | [target-app-parity.md](target-app-parity.md) (Stability) |
 | 4 | **Pagination differs from Word**: Aptos has no metric-matched substitute; legacy compatibility options ignored; no page-by-page comparison harness | B | [layout-parity.md](layout-parity.md); [typing-parity.md](typing-parity.md) Known gaps | Page counts and line breaks differ, which matters for forms, legal and academic work | 30–50 + owner (font) | [layout-parity.md](layout-parity.md) |
-| 5 | **Content controls** landed (#381): `w:sdt` kept, shown and edited (Developer tab, Design Mode, Properties). Move tracking landed (#400): `w:moveFrom`/`w:moveTo` with their named ranges round-trip, a tracked cut and paste of a paragraph or sentence records a move, either end accepts/rejects both, green double strike/underline markup and "Moved from/to" balloons; still missing: drag-and-drop moves (no text drag yet) and move options in Track Changes Options. Formatting revisions landed (#41): `w:rPrChange`/`w:pPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`/`w:sectPrChange`/`w:numberingChange` round-trip, are recorded while tracking, accepted/rejected and shown in balloons; still missing: tracked style-definition changes and table/section changes made in WordCraft | B | Issues #41, #400; source grep | Legal and editorial review workflows; templates with form controls | 5–8 | [file-format-parity.md](file-format-parity.md) |
+| 5 | **Content controls** landed (#381): `w:sdt` kept, shown and edited (Developer tab, Design Mode, Properties). Move tracking landed (#400): `w:moveFrom`/`w:moveTo` with their named ranges round-trip, a tracked cut and paste of a paragraph or sentence records a move, either end accepts/rejects both, green double strike/underline markup and "Moved from/to" balloons; still missing: drag-and-drop moves (no text drag yet) and move options in Track Changes Options. Formatting revisions landed (#41): `w:rPrChange`/`w:pPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`/`w:sectPrChange`/`w:numberingChange` round-trip, are recorded while tracking, accepted/rejected and shown in balloons; still missing: tracked style-definition changes and table/section changes made in WordCraft. Opaque custom XML backing stores now survive saves; binding evaluation remains absent. | B | Issues #41, #400; source grep | Legal and editorial review workflows; templates with form controls | 5–8 | [file-format-parity.md](file-format-parity.md) |
 | 6 | **No native printing** on desktop: File › Print opens the PDF in the system viewer, which prints (#286); File › Print has a preview, page range, odd/even, copies and collate (#641); printer choice, duplex and pages per sheet are still the system's; web prints through the browser (#209) | B | `ui.print` → `apps/wordcraft/src/print.rs`; issue #15 | Everyone who prints | 5–8 | [hardware-parity.md](hardware-parity.md) |
 | 7 | **Dialog depth**: 54 modal dialogs vs Word's ~100 | B | `Dialog` enum in `crates/ui-egui/src/dialogs.rs` | Power users reach for dialogs the ribbon alone doesn't cover | 11–19 | [ui-parity.md](ui-parity.md) |
-| 8 | **Proofing is English only**; no language per run, no dictionaries for other languages | | `crates/proof` has one dictionary; Word ships 120 proofing tools; issues #25, #40, #100 | Every non-English writer | 25–45 | [localization-parity.md](localization-parity.md) |
+| 8 | **Proofing covers English and Polish only**; no dictionaries, grammar or hyphenation for the other ~48 languages Word proofs (text in them is left unmarked) | | `crates/proof`: English and Polish, a language per run (2026-10-10); Word ships 120 proofing tools; issues #25, #40, #100 | Every writer outside English and Polish | 20–40 | [localization-parity.md](localization-parity.md) |
 | 9 | **Password-protected files** can't be opened or saved | | #55; `docbin` detects and refuses RC4/XOR | Corporate and legal users | 6–10 | [file-format-parity.md](file-format-parity.md) |
 | 10 | **Objects**: no group (#267 open), text in a freely rotated text box (free rotation and flips landed, #332; text direction, alignment and linked text boxes landed, #369; contour wrap and wrap side landed, #354), shape effects, WordArt 3-D effects and connector routing around shapes (WordArt effects and warps and glued connectors landed, #416), dragging members inside a Drawing Canvas (the canvas landed, #344) | | [parity-checklist.md](parity-checklist.md) (Shape Format 6/6, Layout › Group) | Newsletters, flyers, reports with diagrams | 20–30 | [target-app-parity.md](target-app-parity.md) |
-| 11 | **Interface languages**: 8 of the 12 key languages missing (hi, ar, fr, id, de, ko, vi, pt-PT); no mirrored RTL interface; ~5% of strings still English in the six translated catalogs | | [localization-parity.md](localization-parity.md) | Most of the world's writers | 50–80 | [localization-parity.md](localization-parity.md) |
+| 11 | **Interface languages**: 7 of the 12 key languages missing (hi, ar, fr, id, ko, vi, pt-PT); no mirrored RTL interface; ~5% of strings still English in the translated catalogs | | [localization-parity.md](localization-parity.md) | Most of the world's writers | 50–80 | [localization-parity.md](localization-parity.md) |
 | 12 | **Draw tab / ink**: pens, pencil, highlighter, eraser, Select and Hide Ink landed (#307); Lasso Select, Add Pen, Ink to Shape and Ink Replay landed (#395); missing: Ink to Math, arrows in Ink to Shape, pressure, Word's own ink (`w14:contentPart`/InkML) | | [parity-checklist.md](parity-checklist.md) (Draw 9/11) | Pen and tablet users | 4–8 | [hardware-parity.md](hardware-parity.md) |
 | 13 | **Charts and SmartArt editing** (editing charts and SmartArt from Word, more chart types and formatting) | | `insert.chart` and Chart Design basics landed (#409): WordCraft's own charts are editable; charts from Word stay read-only (no embedded-workbook editing), no combo/3D/radar/stock charts, axis or series formatting; Insert › SmartArt landed (#497) for graphics WordCraft makes | Reports and business documents | 35–55 | [target-app-parity.md](target-app-parity.md) |
-| 14 | **`.doc` can't be written; metafile pictures and Word 6/95 files refused** | | `crates/docbin` is read-only | Users exchanging files with old Word or legacy systems | 25–40 | [file-format-parity.md](file-format-parity.md) |
+| 14 | **`.doc` can't be written; Word 6/95 files refused** | | `crates/docbin` is read-only | Users exchanging files with old Word or legacy systems | 25–40 | [file-format-parity.md](file-format-parity.md) |
 | 15 | **References depth**: sources not saved in DOCX (#169 open); no EndNote/Mendeley desktop integration | | Sources live only in the session (#169 open) | Students and researchers | 6–10 | [target-app-parity.md](target-app-parity.md) |
 | 16 | **Right-to-left completeness**: kashida, RTL in HTML/ODT/RTF; eight older RTL bug reports to re-verify after #207 (#215, #211, #199, #66, #63, #48, #19). RTL tables and sections landed (#362) | | [layout-parity.md](layout-parity.md) | Arabic, Persian, Hebrew writers | 7–11 | [layout-parity.md](layout-parity.md) |
 | 17 | **East Asian typography**: Asian Typography options (Phonetic Guide landed, #288; Enclose Characters landed, #297; document grid landed, #391; vertical text landed, #491) | | Catalog misses `para.asianTypography` | Chinese, Japanese and Korean documents | 11–19 | [layout-parity.md](layout-parity.md) |
@@ -53,8 +55,11 @@ The same gaps grouped the way the parity documents are, for agents working in on
   pane, Manage Styles, Group (open PRs exist for the first three — review and merge before
   re-implementing). Paste Special, Advanced Find, Column Selection, Style Inspector, custom table
   styles, and Draw Table and Eraser (#303) landed on 2026-10-10.
-- **UI/UX gaps:** #7, #18, #24; crop handles on the canvas (rotation handle landed, #332); table column drag on the
-  ruler (#49, #217); context menus for objects and tables; Linux title bar theming (#78).
+- **UI/UX gaps:** #7, #18, #24; crop handles on the canvas (rotation handle landed, #332); table column markers on the
+  ruler (#49; dragging borders and the resize handle on the page landed, #217); context menus for objects and tables; Linux title bar theming (#78); File ›
+  Options › Animation effects › Use system setting reads macOS (Reduce motion) and the Linux/BSD
+  desktops (`apps/wordcraft/src/animations.rs`) but hasn't been tried on a Mac or in a real
+  GNOME or KDE session yet.
 - **File-format gaps:** #1, #2, #5, #9, #14, #19, #23, #26; embedded fonts; glossary/building blocks.
 - **Hardware gaps:** #6, #12, #28; scanner/Continuity Camera insert; KDE soft text (#140).
 - **Localization gaps:** #8, #11, #16, #17; native-speaker review of every catalog (human).
@@ -65,6 +70,12 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | trivial | Custom dictionary persists across sessions (`custom-dictionary.txt` in the settings folder; #40) |
+| 2026-10-11 | trivial | #8 narrowed: runs in a proofing language without a dictionary are skipped instead of flagged against the English dictionary (#100); dictionaries still English-only |
+| 2026-10-11 | trivial | #16: DOCX open/save preserves independent complex-script formatting inheritance; RTL sections, tables and typography remain open |
+| 2026-10-11 | trivial | `.doc` pictures, shapes and text boxes read (#551); gap #14 narrowed to the writer and Word 6/95 files |
+| 2026-10-11 | trivial | Table column and row borders and the resize handle drag on the page (#217); UI/UX gap narrowed to the ruler's column markers |
+| 2026-10-11 | trivial | UI/UX gaps list: the system's animation setting is now read on macOS and the Linux/BSD desktops; trying it on real machines remains |
+| 2026-10-11 | trivial | Animation effects setting landed (File › Options › Accessibility); UI/UX gaps list: the system's animation setting isn't read on macOS or Linux/BSD yet |
 | 2026-10-11 | trivial | Word XML Document (Flat OPC) and Word 2003 XML opening landed (#548); gap #26 narrowed to 15–28 h |
 | 2026-10-11 | trivial | #13 narrowed: Insert › SmartArt with eight layouts, Text Pane and SmartArt Design landed (#497); 25–40 h left for charts |
 | 2026-10-11 | trivial | File › Options panes landed (#485); removed from the dialog-depth list |
@@ -83,8 +94,11 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-11 | trivial | #4: columns balance before a continuous section break (#350) |
 | 2026-10-11 | trivial | #21: Excel (.xlsx/.xlsm) and OpenDocument (.ods) spreadsheets as recipient lists (#334); hours 6–10 → 4–8 |
 | 2026-10-11 | trivial | Insert › Icons landed (#309); removed from the objects gap |
+| 2026-10-12 | minor | Preserve opaque custom XML data/properties through saves; gap #5 and readiness remain unchanged |
+| 2026-10-11 | minor | Imported TOC boundaries preserved in synthetic checks; real-world corpus gap and readiness unchanged |
 | 2026-10-11 | trivial | #24 narrowed: Customize Ribbon and Quick Access Toolbar customization landed (#379); the default shortcuts remain |
 | 2026-10-11 | trivial | #24 narrowed: Customize Keyboard landed (#368); Customize Ribbon and the Quick Access Toolbar remain |
+| 2026-10-11 | trivial | Native saves protect existing temporary-name entries and originals on pre-replacement failure; synthetic macOS evidence, explicit durability/platform limits; readiness unchanged |
 | 2026-10-11 | trivial | #24: Word's field keys (Alt+F9, Shift+F9, Ctrl+Shift+F9, Ctrl+F11, Ctrl+Shift+F11, F11, Shift+F11) (#339) |
 | 2026-10-10 | trivial | #24: 125 of ~250 keyboard shortcuts after #330 |
 | 2026-10-11 | trivial | Collapsed duplicate rows left by parallel merges |
@@ -107,6 +121,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-10 | trivial | #10: Drawing Canvas landed (#344); in-canvas dragging of members remains |
 | 2026-10-10 | trivial | #29: long display equations wrap across lines (#326) |
 | 2026-10-10 | trivial | #3: Windows lag on GPUs without a DirectX 12 driver fixed with an OpenGL fallback (#316) |
+| 2026-10-10 | minor | #8: Polish proofing (spelling, grammar, hyphenation) and a proofing language per run landed; the gap is now the other languages (20–40 h) |
 | 2026-10-10 | trivial | #6: desktop File › Print opens the system PDF viewer (#286) |
 | 2026-10-10 | trivial | Table Properties dialog landed (#44); removed from the dialog-depth list |
 | 2026-10-10 | trivial | Merged main: landed features removed from the feature-gap list |

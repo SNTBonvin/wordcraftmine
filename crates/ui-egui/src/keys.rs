@@ -112,15 +112,27 @@ fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
         let _ = app.run(spec.id, json!({}));
         return true;
     }
-    // Shift extends caret movement.
+    // Shift extends caret movement; Shift+Backspace still erases (#707).
     if m.shift
         && let Some(spec) = app.session.keymap.resolve(&reg, &combo(m, name, false))
-        && spec.id.starts_with("caret.")
+        && let Some(params) = shift_variant_params(spec.id)
     {
-        let _ = app.run(spec.id, json!({"extend": true}));
+        let _ = app.run(spec.id, params);
         return true;
     }
     false
+}
+
+/// How a command bound to a plain key runs when Shift is also held and nothing is bound to the
+/// shifted combo: caret moves extend the selection, Backspace erases as usual (#707).
+fn shift_variant_params(id: &str) -> Option<Value> {
+    if id.starts_with("caret.") {
+        Some(json!({"extend": true}))
+    } else if id == "text.backspace" {
+        Some(json!({}))
+    } else {
+        None
+    }
 }
 
 /// F1–F12: shortcuts on these work without the canvas focused.
@@ -165,6 +177,32 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         return;
     }
     let events = ctx.input(|i| i.events.clone());
+    if app.session.view.read_mode {
+        // Read Mode is for navigation and selection, not typing into the document. The ribbon's
+        // Edit Document button or Escape returns to Print Layout before editing.
+        for e in &events {
+            match e {
+                egui::Event::Key { key: Key::Escape, pressed: true, .. } => {
+                    let _ = app.run("view.printLayout", json!({}));
+                    break;
+                }
+                egui::Event::Key { key: Key::PageDown | Key::ArrowRight, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                    crate::canvas::turn_read_page(app, 1.0)
+                }
+                egui::Event::Key { key: Key::PageUp | Key::ArrowLeft, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                    crate::canvas::turn_read_page(app, -1.0)
+                }
+                egui::Event::Copy => {
+                    let selected = app.session.selected_text();
+                    if !selected.is_empty() {
+                        ctx.copy_text(selected);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return;
+    }
     for e in events {
         // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
         match &e {
@@ -321,6 +359,13 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shift_backspace_still_erases() {
+        assert_eq!(shift_variant_params("text.backspace"), Some(json!({})));
+        assert_eq!(shift_variant_params("caret.left"), Some(json!({"extend": true})));
+        assert_eq!(shift_variant_params("text.delete"), None);
+    }
 
     #[test]
     fn only_plain_paste_releases_paste_a_clipboard_picture() {
