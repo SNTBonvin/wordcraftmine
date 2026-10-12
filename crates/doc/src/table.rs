@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::props::{CellProps, RowProps, TableProps, VMerge};
+use crate::props::{Align, CellProps, RowProps, TableProps, VMerge};
 use crate::{Blocks, Paragraph, para_block};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -104,6 +104,16 @@ impl Table {
             nc.props = c.props.clone();
             if nc.props.vmerge == VMerge::Restart {
                 nc.props.vmerge = VMerge::None;
+            }
+            if let Some(src_p) = c.blocks.first().and_then(|b| b.as_para()) {
+                if let Some(dst_p) = nc.blocks.first_mut().and_then(|b| std::sync::Arc::make_mut(b).as_para_mut()) {
+                    dst_p.props = src_p.props.clone();
+                }
+            } else if self.props.bidi == Some(true)
+                && let Some(dst_p) = nc.blocks.first_mut().and_then(|b| std::sync::Arc::make_mut(b).as_para_mut())
+            {
+                dst_p.props.bidi = Some(true);
+                dst_p.props.align = Some(Align::Right);
             }
             row.cells.push(nc);
         }

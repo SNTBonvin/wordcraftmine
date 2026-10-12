@@ -109,7 +109,10 @@ impl Catalog {
     /// Build a catalog from its valid entries; the errors of the skipped lines come back too.
     pub fn parse(text: &str) -> (Catalog, Vec<String>) {
         let (entries, errors) = parse_entries(text);
-        let plain = entries.into_iter().map(|e| (e.source, e.translation)).collect();
+        let plain = entries
+            .into_iter()
+            .map(|e| (e.source, e.translation))
+            .collect();
         (Catalog { plain }, errors)
     }
 

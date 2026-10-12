@@ -131,6 +131,26 @@ fn table(s: &mut Session, v: &Value) -> CmdResult {
         let id = s.doc.styles.find(st).map(|x| x.id.clone()).ok_or_else(|| CmdError::Params(format!("no table style `{st}`")))?;
         t.props.style = Some(id);
     }
+    let is_rtl = p::bool(v, "bidi").unwrap_or_else(|| {
+        s.doc.para_at(&s.sel.focus).is_some_and(|p| {
+            p.props.bidi.unwrap_or(false)
+                || wordcraft_doc::bidi::has_rtl(&p.text)
+                || s.doc.styles.resolve_para(&p.props).bidi
+        }) || s.doc.sections().first().map(|(_, sp)| sp.rtl).unwrap_or(false)
+    });
+    if is_rtl {
+        t.props.bidi = Some(true);
+        for row in &mut t.rows {
+            for cell in &mut row.cells {
+                for b in &mut cell.blocks {
+                    if let Some(p) = std::sync::Arc::make_mut(b).as_para_mut() {
+                        p.props.bidi = Some(true);
+                        p.props.align = Some(Align::Right);
+                    }
+                }
+            }
+        }
+    }
     let story = s.sel.focus.story;
     let path = insert_block_at_caret(s, Block::Table(t))?;
     let mut first = path.0.clone();

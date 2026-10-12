@@ -127,6 +127,8 @@ pub struct UiState {
     /// View › Switch Modes: show pages dark (white text on black), kept between runs. Only the
     /// pages: the interface follows [`UiState::theme`] (#312).
     pub dark_page: bool,
+    /// Multi-column page order: "auto", "ltr", or "rtl".
+    pub page_order: String,
 }
 
 impl Default for UiState {
@@ -152,6 +154,7 @@ impl Default for UiState {
             keytips: crate::keytips::Phase::Off,
             alt_chord_used: false,
             dark_page: false,
+            page_order: "auto".into(),
         }
     }
 }
@@ -184,6 +187,7 @@ pub struct WordApp {
     fonts_hans: bool,
     /// Whether the installed UI fonts include an installed CJK fallback font (#241).
     fonts_system_cjk: bool,
+    fonts_arabic: bool,
     /// CJK text is (about to be) on screen in a non-CJK interface, e.g. the language names in
     /// File ▸ Options: load the installed CJK fallback font if no embedded face covers it.
     pub(crate) want_system_cjk: bool,
@@ -216,6 +220,8 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// Whether the window is currently focused; transitions trigger a font atlas and texture refresh.
+    pub window_focused: bool,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -257,6 +263,7 @@ impl WordApp {
             styled: false,
             fonts_hans: false,
             fonts_system_cjk: false,
+            fonts_arabic: false,
             want_system_cjk: false,
             fonts_frames: 0,
             applied_theme: None,
@@ -276,6 +283,7 @@ impl WordApp {
             recipient_list_pending: false,
             file_dialog: None,
             info_editing: None,
+            window_focused: true,
         }
     }
 
@@ -293,6 +301,7 @@ impl WordApp {
         ui.read_aloud_rate = self.session.read_aloud.rate();
         ui.read_aloud_skip_citations = self.session.read_aloud.skip_citations;
         ui.dark_page = self.session.view.dark_mode;
+        ui.page_order = self.session.view.page_order.clone();
         ui
     }
 
@@ -313,6 +322,9 @@ impl WordApp {
         self.session.read_aloud.set_rate(self.ui.read_aloud_rate);
         self.session.read_aloud.skip_citations = self.ui.read_aloud_skip_citations;
         self.session.view.dark_mode = self.ui.dark_page;
+        if !self.ui.page_order.is_empty() {
+            self.session.view.page_order = self.ui.page_order.clone();
+        }
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -784,16 +796,39 @@ impl WordApp {
 
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        let focus_lost = ctx.input(|i| {
+            i.viewport().focused == Some(false)
+                || i.viewport().minimized == Some(true)
+                || i.viewport().occluded == Some(true)
+                || i.raw.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false)))
+        });
+        let focus_gained = ctx.input(|i| {
+            i.raw.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(true)))
+        }) || (!self.window_focused && ctx.input(|i| i.viewport().focused.unwrap_or(true)));
+
+        if focus_lost {
+            self.window_focused = false;
+        } else if focus_gained {
+            if !self.window_focused {
+                self.styled = false;
+                self.canvas.clear_textures();
+                ctx.request_repaint();
+            }
+            self.window_focused = true;
+        }
+
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
         // An installed CJK font is read only once CJK text is shown (#241): never for an English
         // interface that doesn't open the language list.
         let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
-        if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
+        let is_arabic = lang.is_rtl();
+        if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk || is_arabic != self.fonts_arabic {
             theme::install_fonts_with(ctx, lang.prefers_hans(), system_cjk);
             self.fonts_hans = lang.prefers_hans();
             self.fonts_system_cjk = system_cjk;
+            self.fonts_arabic = is_arabic;
             // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
             // egui's keyboard zoom would also scale the whole window on them. Zoom is View › Zoom.
             ctx.options_mut(|o| o.zoom_with_keyboard = false);

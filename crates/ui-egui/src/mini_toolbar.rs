@@ -75,7 +75,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
     // pinned to the selection, so moving it would lose the association.
     // Draw the bar pinned above the selection. egui stops a click at the topmost widget, so a
     // click on the bar never reaches the document underneath.
-    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Tooltip).interactable(true).fixed_pos(bar.min);
+    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Middle).interactable(true).fixed_pos(bar.min);
     _area.show(ctx, |ui| {
         ui.set_clip_rect(bar);
         let painter = ui.painter();
@@ -83,7 +83,8 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
         painter.rect_filled(bar, CornerRadius::same(6), t.menu);
         painter.rect_stroke(bar, CornerRadius::same(6), egui::Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
         let inner = bar.shrink2(Vec2::new(PAD_X, 0.0));
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(Layout::left_to_right(Align::Center)));
+        let layout = if crate::i18n::is_rtl() { Layout::right_to_left(Align::Center) } else { Layout::left_to_right(Align::Center) };
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(layout));
         child.spacing_mut().item_spacing = Vec2::new(1.0, 0.0);
         content(app, &mut child, &t);
     });
@@ -154,24 +155,27 @@ fn highlight_menu(ui: &mut egui::Ui, app: &mut WordApp) {
                 app.canvas.last_highlight = h.ooxml().to_string();
                 let _ = app.run("format.highlight", json!({"color": h.ooxml()}));
                 ui.close();
+                egui::Popup::close_all(ui.ctx());
             }
             if i % 5 == 0 {
                 ui.end_row();
             }
         }
     });
-    if ui.selectable_label(false, "No Color").clicked() {
+    if ui.selectable_label(false, crate::tl!("No Color")).clicked() {
         let _ = app.run("format.highlight", json!({"color": "none"}));
         ui.close();
+        egui::Popup::close_all(ui.ctx());
     }
 }
 
 /// Font colour: Automatic plus the standard colour grid.
 fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
     egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
-        if ui.selectable_label(false, "Automatic").clicked() {
+        if ui.selectable_label(false, crate::tl!("Automatic")).clicked() {
             let _ = app.run("format.color", json!({"color": "auto"}));
             ui.close();
+            egui::Popup::close_all(ui.ctx());
             return;
         }
         let theme = app.session.doc.settings.theme_colors.clone();
@@ -179,6 +183,7 @@ fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
             app.canvas.last_font_color = hex.clone();
             let _ = app.run("format.color", json!({"color": hex}));
             ui.close();
+            egui::Popup::close_all(ui.ctx());
         }
     });
 }

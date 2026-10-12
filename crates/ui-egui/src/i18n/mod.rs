@@ -47,7 +47,7 @@ pub struct LangInfo {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 10] = [
+pub static LANGUAGES: [LangInfo; 11] = [
     LangInfo { code: "en", name: "English", source: "", prefer_hans: false, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` resolve here (see `candidates`).
     LangInfo { code: "zh-hans", name: "简体中文", source: include_str!("zh-hans.tsv"), prefer_hans: true, catalog: OnceLock::new() },
@@ -67,6 +67,8 @@ pub static LANGUAGES: [LangInfo; 10] = [
     // matching — no special-casing needed, unlike Chinese's script-by-region fallback).
     LangInfo { code: "sr-latn", name: "Srpski (latinica)", source: include_str!("sr-latn.tsv"), prefer_hans: false, catalog: OnceLock::new() },
     LangInfo { code: "et", name: "Eesti", source: include_str!("et.tsv"), prefer_hans: false, catalog: OnceLock::new() },
+    // Arabic; `ar`, `ar-SA`, `ar-EG`, `ar-AE` … resolve here.
+    LangInfo { code: "ar", name: "العربية", source: include_str!("ar.tsv"), prefer_hans: false, catalog: OnceLock::new() },
 ];
 
 impl LangInfo {
@@ -117,6 +119,11 @@ impl Lang {
     /// Is the interface written in CJK script (its own name is), so it needs a CJK face?
     pub fn uses_cjk(self) -> bool {
         self.0.name.chars().any(|c| ('\u{2E80}'..='\u{9FFF}').contains(&c) || ('\u{AC00}'..='\u{D7AF}').contains(&c))
+    }
+
+    /// Whether the language is written right-to-left (Arabic, Hebrew, Persian, Urdu).
+    pub fn is_rtl(self) -> bool {
+        matches!(self.0.code, "ar" | "he" | "fa" | "ur")
     }
 
     /// A language by its exact code (any case).
@@ -215,6 +222,11 @@ pub fn set_current(lang: Lang) {
 /// The language the UI is drawn in.
 pub fn current() -> Lang {
     CURRENT.get()
+}
+
+/// Whether the current interface language is Right-to-Left (e.g. Arabic).
+pub fn is_rtl() -> bool {
+    current().is_rtl()
 }
 
 /// Does `lang` have a catalog entry for this string? (English never does: it is the source.)

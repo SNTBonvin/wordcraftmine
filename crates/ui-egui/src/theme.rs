@@ -275,11 +275,12 @@ pub fn install_fonts_for(ctx: &egui::Context, prefer_hans: bool) {
 /// for it only when CJK text is on screen: a CJK interface language, or the language names in
 /// Options.
 pub fn install_fonts_with(ctx: &egui::Context, prefer_hans: bool, system_cjk: bool) {
-    ctx.set_fonts(font_definitions(prefer_hans, system_cjk));
+    let is_arabic = crate::i18n::is_rtl();
+    ctx.set_fonts(font_definitions(prefer_hans, system_cjk, is_arabic));
 }
 
 /// The interface fonts; see [`install_fonts_with`].
-pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions {
+pub fn font_definitions(prefer_hans: bool, system_cjk: bool, is_arabic: bool) -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let add = |fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
         fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
@@ -322,10 +323,37 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
         data.index = f.index;
         add_cjk(&mut fonts, format!("system {}", f.family), data);
     }
+    // An installed Arabic font for the interface (menus, dialogs, buttons, tooltips).
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(f) = system_arabic_font() {
+        let mut data = FontData::from_static(&f.bytes);
+        data.index = f.index;
+        data.tweak.scale = 1.15;
+        let font_name = format!("system arabic {}", f.family);
+        fonts.font_data.insert(font_name.clone(), Arc::new(data));
+        for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
+            if let Some(v) = fonts.families.get_mut(&fam) {
+                if is_arabic {
+                    v.insert(0, font_name.clone());
+                } else {
+                    v.push(font_name.clone());
+                }
+            }
+        }
+    }
     #[cfg(target_arch = "wasm32")]
     let _ = system_cjk;
+    #[cfg(target_arch = "wasm32")]
+    let _ = is_arabic;
     // Symbols and emoji fall back to egui's defaults (kept in the families).
     fonts
+}
+
+/// The installed Arabic interface font, read once.
+#[cfg(not(target_arch = "wasm32"))]
+fn system_arabic_font() -> Option<&'static wordcraft_fonts::SystemUiFont> {
+    static ARABIC: std::sync::OnceLock<Option<wordcraft_fonts::SystemUiFont>> = std::sync::OnceLock::new();
+    ARABIC.get_or_init(wordcraft_fonts::system_arabic_ui_font).as_ref()
 }
 
 /// The installed CJK interface font for a Chinese (`hans`) or other interface, read once.
@@ -361,14 +389,18 @@ pub enum TypeRung {
 impl TypeRung {
     /// Font size in points.
     pub fn size(self) -> f32 {
+        let extra = if crate::i18n::is_rtl() { 0.5 } else { 0.0 };
         match self {
-            TypeRung::Chrome => 12.5,
-            TypeRung::Control => 11.5,
-            TypeRung::Caption => 11.0,
+            TypeRung::Chrome => 12.5 + extra,
+            TypeRung::Control => 11.5 + extra,
+            TypeRung::Caption => 11.0 + extra,
         }
     }
     /// Extra letter-spacing in points (em-relative, so it scales with the size).
     pub fn tracking(self) -> f32 {
+        if crate::i18n::is_rtl() {
+            return 0.0;
+        }
         match self {
             TypeRung::Chrome => -0.012 * self.size(),
             TypeRung::Control => 0.0,
@@ -501,7 +533,7 @@ mod tests {
     #[test]
     fn interface_symbols_have_glyphs() {
         let ctx = egui::Context::default();
-        ctx.set_fonts(super::font_definitions(false, false));
+        ctx.set_fonts(super::font_definitions(false, false, false));
         ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut symbols = BTreeSet::new();

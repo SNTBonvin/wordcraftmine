@@ -317,6 +317,7 @@ fn controls(tab: &str) -> Vec<Control> {
             c("Immersive Reader", "view.immersive"),
             c("Vertical", "view.vertical"),
             c("Side to Side", "view.sideToSide"),
+            m("Page Order", "view.pageOrder"),
             d("Zoom", "zoom"),
             c("100%", "view.zoom100"),
             c("One Page", "view.onePage"),

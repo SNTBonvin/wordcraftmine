@@ -80,6 +80,11 @@ impl CanvasState {
     pub(crate) fn page_texture(&self, page: usize) -> Option<&TextureHandle> {
         self.textures.get(&page).map(|(_, t)| t)
     }
+
+    /// Invalidate cached page textures (e.g. when regaining focus after GPU context/swapchain changes).
+    pub fn clear_textures(&mut self) {
+        self.textures.clear();
+    }
 }
 
 impl Default for CanvasState {
@@ -171,10 +176,10 @@ fn columns_for(avail_w: f32, slot_px: f32, pages: usize, min_cols: usize, auto: 
     fit.max(min_cols).min(pages.max(1)).max(1)
 }
 
-/// Place pages (sizes in points) in rows of `cols`, left to right then top to bottom, each in a slot
-/// as wide as the widest page plus `markup` and centred in `avail_w`. Returns the screen-space rects
+/// Place pages (sizes in points) in rows of `cols`, left to right (or right to left if `rtl`) then top to bottom,
+/// each in a slot as wide as the widest page plus `markup` and centred in `avail_w`. Returns the screen-space rects
 /// (relative to the content's top-left) and the content size.
-fn place_pages(sizes: &[(f32, f32)], markup: f32, scale: f32, cols: usize, avail: egui::Vec2) -> (Vec<Rect>, egui::Vec2) {
+fn place_pages(sizes: &[(f32, f32)], markup: f32, scale: f32, cols: usize, avail: egui::Vec2, rtl: bool) -> (Vec<Rect>, egui::Vec2) {
     let cols = cols.max(1);
     let scale = if scale.is_finite() { scale.clamp(0.01, 10.0) } else { PX_PER_PT };
     let markup = if markup.is_finite() { markup.clamp(0.0, 10_000.0) } else { 0.0 };
@@ -185,16 +190,16 @@ fn place_pages(sizes: &[(f32, f32)], markup: f32, scale: f32, cols: usize, avail
     let content_w = (row_w + 2.0 * GAP).max(avail.x);
     let mut rects = Vec::with_capacity(sizes.len());
     let mut y = GAP;
+    let start_x = (content_w - row_w) / 2.0;
     for row in sizes.chunks(cols) {
-        let mut x = (content_w - row_w) / 2.0;
         let mut h = 0.0f32;
-        for &(w, ph) in row {
+        for (c, &(w, ph)) in row.iter().enumerate() {
             let (w, ph) = (sane_dim(w, 1e5), sane_dim(ph, 1e6));
-            // Pages narrower than the widest keep their markup area beside them.
-            let px = x + (maxw - markup - w).max(0.0) * scale / 2.0;
+            let slot_idx = if rtl && cols > 1 { cols - 1 - c } else { c };
+            let slot_x = start_x + slot_idx as f32 * (slot + GAP);
+            let px = slot_x + (maxw - markup - w).max(0.0) * scale / 2.0;
             rects.push(Rect::from_min_size(pos2(px, y), vec2(w * scale, ph * scale)));
             h = h.max(ph * scale);
-            x += slot + GAP;
         }
         y += h + GAP;
     }
@@ -235,8 +240,13 @@ pub fn geometry(app: &WordApp, l: &DocLayout, avail: egui::Vec2) -> Geometry {
         (1, true)
     };
     let cols = if v.read_mode { 2 } else { columns_for(avail.x, maxw * scale, l.pages.len(), min_cols, auto) };
+    let rtl = match v.page_order.as_str() {
+        "rtl" => true,
+        "ltr" => false,
+        _ => crate::i18n::is_rtl() || app.session.doc.sections().iter().any(|(_, s)| s.rtl),
+    };
     let sizes: Vec<(f32, f32)> = l.pages.iter().map(|p| (p.w, p.h)).collect();
-    let (rects, size) = place_pages(&sizes, markup, scale, cols, avail);
+    let (rects, size) = place_pages(&sizes, markup, scale, cols, avail, rtl);
     Geometry { rects, size, scale, cols }
 }
 
@@ -1614,7 +1624,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         item(ui, app, "Reset Picture", "picture.reset", json!({}));
         item(ui, app, "Size and Crop…", "ui.tab", json!({"tab": "Picture Format"}));
     }
-    if app.session.sel.focus.path.cell().is_some() {
+    if app.session.sel.focus.path.cell().is_some() || app.session.sel.anchor.path.cell().is_some() {
         ui.separator();
         ui.menu_button(tl!("Insert"), |ui| {
             item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
@@ -1792,7 +1802,7 @@ mod tests {
         // Mixed sizes: a landscape page among portrait ones, three per row.
         let sizes = [(612.0, 792.0), (792.0, 612.0), (612.0, 792.0), (612.0, 792.0)];
         let scale = 0.25;
-        let (rects, size) = place_pages(&sizes, 0.0, scale, 3, vec2(1000.0, 600.0));
+        let (rects, size) = place_pages(&sizes, 0.0, scale, 3, vec2(1000.0, 600.0), false);
         assert_eq!(rects.len(), 4);
         assert_eq!(rects[0].top(), rects[1].top());
         assert_eq!(rects[1].top(), rects[2].top());
@@ -1801,6 +1811,13 @@ mod tests {
         assert_eq!(rects[3].left(), rects[0].left(), "rows share columns");
         assert!((rects[1].width() - 792.0 * scale).abs() < 1e-3);
         assert!(size.x >= 1000.0 && size.y >= rects[3].bottom());
+
+        // RTL: right to left page order.
+        let (rtl_rects, _) = place_pages(&sizes, 0.0, scale, 3, vec2(1000.0, 600.0), true);
+        assert_eq!(rtl_rects.len(), 4);
+        assert!(rtl_rects[0].left() > rtl_rects[1].right() && rtl_rects[1].left() > rtl_rects[2].right(), "right to left: {rtl_rects:?}");
+        assert_eq!(rtl_rects[3].right(), rtl_rects[0].right(), "next row starts from the right slot");
+
         // Each page's centre maps back to that page.
         for (i, r) in rects.iter().enumerate() {
             assert_eq!(nearest_page(&rects, r.center()), Some(i));
@@ -1808,7 +1825,7 @@ mod tests {
         // Hostile page sizes and scales stay finite.
         let bad = [(f32::NAN, f32::INFINITY), (-1.0, 0.0), (1e30, 1e30)];
         for scale in [f32::NAN, 0.0, -1.0, 1e9] {
-            let (rects, size) = place_pages(&bad, f32::NAN, scale, 0, vec2(f32::NAN, -1.0));
+            let (rects, size) = place_pages(&bad, f32::NAN, scale, 0, vec2(f32::NAN, -1.0), false);
             assert_eq!(rects.len(), 3);
             assert!(size.x.is_finite() && size.y.is_finite());
             assert!(rects.iter().all(|r| r.min.x.is_finite() && r.max.y.is_finite()), "{rects:?}");

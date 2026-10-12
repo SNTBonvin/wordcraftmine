@@ -307,6 +307,7 @@ View|Immersive|Focus|view.focus
 View|Immersive|Immersive Reader|view.immersive
 View|Page Movement|Vertical|view.vertical
 View|Page Movement|Side to Side|view.sideToSide
+View|Page Movement|Page Order|view.pageOrder
 View|Show|Ruler|view.ruler
 View|Show|Gridlines|view.gridlines
 View|Show|Navigation Pane|view.navigationPane

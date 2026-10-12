@@ -200,6 +200,14 @@ pub fn type_text(s: &mut Session, text: &str) -> Result<(), CmdError> {
         first = false;
         let part = part.replace('\u{000B}', "\n");
         if !part.is_empty() {
+            if let Ok(p) = s.doc.para_mut(at.story, &at.path)
+                && p.props.bidi.is_none()
+                && p.text.trim().is_empty()
+                && wordcraft_doc::bidi::has_rtl(&part)
+            {
+                p.props.bidi = Some(true);
+                p.touch();
+            }
             at = s.doc.insert_text(&at, &part, &props)?;
         }
     }

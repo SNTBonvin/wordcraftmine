@@ -37,16 +37,22 @@ case "$ARCH" in
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
 esac
-export WORDCRAFT_MAINTAINER="${WORDCRAFT_MAINTAINER:-WordCraft maintainers <wordcraft@storyteller.ai>}"
-BASENAME="wordcraft-$VERSION-linux-$ARCH"
+if [ "$SKIP_BUILD" = 0 ] && [ "${WORDCRAFT_BUILD_NUMBER_EXPLICIT:-0}" = 0 ]; then
+  WORDCRAFT_BUILD_NUMBER="$(bump_build_number)"
+  export WORDCRAFT_BUILD_NUMBER
+fi
 
-echo "==> WordCraft $VERSION for Linux $ARCH ($FORMATS)"
+export WORDCRAFT_MAINTAINER="${WORDCRAFT_MAINTAINER:-WordCraft maintainers <wordcraft@storyteller.ai>}"
+BASENAME="wordcraft-$VERSION-build.$WORDCRAFT_BUILD_NUMBER-linux-$ARCH"
+
+echo "==> WordCraft $VERSION (Build $WORDCRAFT_BUILD_NUMBER) for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
+  JOBS="${CARGO_BUILD_JOBS:-2}"
   if [ -n "${CROSS_TARGET:-}" ]; then
-    (cd "$ROOT" && cargo build --release --locked -p wordcraft -p wordcraft-cli --target "$CROSS_TARGET")
+    (cd "$ROOT" && cargo build --release --locked -p wordcraft -p wordcraft-cli --target "$CROSS_TARGET" -j "$JOBS")
   else
-    (cd "$ROOT" && cargo build --release --locked -p wordcraft -p wordcraft-cli)
+    (cd "$ROOT" && cargo build --release --locked -p wordcraft -p wordcraft-cli -j "$JOBS")
   fi
 fi
 BIN="$CARGO_TARGET_DIR/${CROSS_TARGET:+$CROSS_TARGET/}release"

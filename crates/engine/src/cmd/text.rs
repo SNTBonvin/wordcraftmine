@@ -295,6 +295,28 @@ fn backspace(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
     if !s.sel.is_collapsed() {
+        let (a, b) = s.sel.ordered();
+        if let Some((tp, _, _)) = a.path.cell()
+            && let Some((tp_b, _, _)) = b.path.cell()
+            && tp == tp_b
+        {
+            let story = a.story;
+            if s.doc.table(story, &tp).is_some() {
+                let all_paths = s.doc.para_paths(story);
+                let first = all_paths.iter().find(|p| p.0.starts_with(&tp.0)).cloned();
+                let last = all_paths.iter().rfind(|p| p.0.starts_with(&tp.0)).cloned();
+                if let (Some(fp), Some(lp)) = (first, last) {
+                    let end_off = s.doc.para(story, &lp).map(|p| p.len()).unwrap_or(0);
+                    let t_start = Pos { story, path: fp, off: 0 };
+                    let t_end = Pos { story, path: lp, off: end_off };
+                    if a <= t_start && b >= t_end {
+                        s.doc.remove_block(story, &tp)?;
+                        s.sel = Selection::caret(s.doc.clamp(&Pos { story, path: tp, off: 0 }));
+                        return sel_result(s);
+                    }
+                }
+            }
+        }
         delete_selection(s)?;
         return sel_result(s);
     }
@@ -305,6 +327,27 @@ fn backspace(s: &mut Session, _: &Value) -> CmdResult {
         s.sel = Selection { anchor: a, focus: f };
         delete_selection(s)?;
         return sel_result(s);
+    }
+    // At cell (0, 0) of an empty table: Backspace deletes the table.
+    if let Some((tp, r, c)) = f.path.cell()
+        && r == 0 && c == 0 && f.off == 0 && f.path.last() == 0
+    {
+        let story = f.story;
+        if let Some(t) = s.doc.table(story, &tp) {
+            let is_empty = t.rows.iter().all(|row| {
+                row.cells.iter().all(|cell| {
+                    cell.blocks.iter().all(|b| match b.as_para() {
+                        Some(p) => p.is_empty(),
+                        None => false,
+                    })
+                })
+            });
+            if is_empty {
+                s.doc.remove_block(story, &tp)?;
+                s.sel = Selection::caret(s.doc.clamp(&Pos { story, path: tp, off: 0 }));
+                return sel_result(s);
+            }
+        }
     }
     // At the start of a paragraph.
     if para.props.numbering.is_some_and(|n| n.num != 0) {

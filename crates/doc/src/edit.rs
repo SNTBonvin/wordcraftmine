@@ -258,20 +258,25 @@ impl Document {
             };
             self.para_mut(a.story, p)?.delete(from, to)?;
         }
-        // Drop top-level tables strictly between a and b at a's level.
-        if a.path.depth() == 0 && b.path.depth() > 0 {
-            let first_b = b.path.0.first().copied().unwrap_or(0) as usize;
-            let ia = a.path.last();
-            let bl = self.container_mut(a.story, &a.path)?;
-            let mut i = first_b;
-            while i > ia + 1 {
-                i -= 1;
-                if matches!(bl.get(i).map(|b| &**b), Some(Block::Table(_))) {
-                    bl.remove(i);
+        // Drop top-level tables strictly or entirely covered between a and b.
+        let first_top = a.path.0.first().copied().unwrap_or(0) as usize;
+        let last_top = b.path.0.first().copied().unwrap_or(0) as usize;
+        let all_para_paths = self.para_paths(a.story);
+        for i in (first_top..=last_top).rev() {
+            let t_first = all_para_paths.iter().find(|p| p.0.first() == Some(&(i as u32)));
+            let t_last = all_para_paths.iter().rfind(|p| p.0.first() == Some(&(i as u32)));
+            if let (Some(f_path), Some(l_path)) = (t_first, t_last) {
+                let is_table = f_path.0.len() > 1;
+                if is_table {
+                    let t_start = Pos { story: a.story, path: f_path.clone(), off: 0 };
+                    let t_end = Pos { story: a.story, path: l_path.clone(), off: self.para(a.story, l_path).map(|p| p.len()).unwrap_or(0) };
+                    if a <= t_start && b >= t_end && (a < t_start || b > t_end) {
+                        let _ = self.remove_block(a.story, &Path::top(i));
+                    }
                 }
             }
         }
-        Ok(a)
+        Ok(self.clamp(&a))
     }
 
     /// Apply `f` to the character formatting of `a..b`. A collapsed range changes nothing (the

@@ -30,6 +30,9 @@ fn system_locales_map_to_languages() {
     assert_eq!(lang_from_tag("sr-Cyrl-RS"), Some(lang("sr")));
     assert_eq!(lang_from_tag("sr-Latn-RS"), Some(lang("sr-latn")));
     assert_eq!(lang_from_tag("sr-Latn"), Some(lang("sr-latn")));
+    assert_eq!(lang_from_tag("ar"), Some(lang("ar")));
+    assert_eq!(lang_from_tag("ar-SA"), Some(lang("ar")));
+    assert_eq!(lang_from_tag("ar_EG.UTF-8"), Some(lang("ar")));
 }
 
 #[test]
@@ -58,12 +61,15 @@ fn settings_resolve_with_fallback() {
 #[test]
 fn lookups_fall_back_to_english() {
     let zh = lang("zh-hans");
+    let ar = lang("ar");
     assert_eq!(tr(zh, "File"), "文件");
+    assert_eq!(tr(ar, "File"), "ملف");
     assert_eq!(tr(lang("zh-hant"), "File"), "檔案");
     assert_eq!(tr(lang("ja"), "File"), "ファイル");
     assert_eq!(tr(zh, "no such label"), "no such label");
     assert_eq!(tr(Lang::EN, "File"), "File");
     assert!(has(zh, "Save") && !has(Lang::EN, "Save"));
+    assert!(has(ar, "Save"));
 }
 
 #[test]
@@ -346,7 +352,7 @@ fn chinese_interface_fonts_load_and_cover_simplified_hanzi() {
     // #241: without an embedded Chinese face the interface adds an installed CJK font; egui must
     // accept it (it panics on font data it can't parse) and draw simplified-only hanzi with it.
     let ctx = egui::Context::default();
-    ctx.set_fonts(crate::theme::font_definitions(true, true));
+    ctx.set_fonts(crate::theme::font_definitions(true, true, false));
     ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
     let covered = ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), "删除页选"));
     let embedded = !wordcraft_fonts::ui_needs_system_cjk(true, &wordcraft_fonts::ui_cjk_fonts(true));

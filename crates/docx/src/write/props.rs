@@ -391,6 +391,9 @@ fn tblpr_inner(w: &mut W, t: &TableProps) {
     if let Some(c) = &t.caption {
         w.val("w:tblCaption", c);
     }
+    if t.bidi == Some(true) {
+        w.empty("w:bidiVisual", &[]);
+    }
 }
 
 /// `w:trPr` (when the row has any), with a tracked change last as for [`tblpr`].

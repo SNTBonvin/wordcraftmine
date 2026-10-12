@@ -75,6 +75,32 @@ pub fn system_cjk_ui_font(hans: bool) -> Option<SystemUiFont> {
     find_ui_font(&crate::system_font_dirs(), &candidates(hans), probe(hans), hans)
 }
 
+fn candidates_arabic() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["segoeui.ttf", "arial.ttf", "tahoma.ttf", "calibri.ttf"]
+    } else if cfg!(target_os = "macos") {
+        &["SFArabic.ttf", "GeezaPro.ttc", "Arial.ttf"]
+    } else {
+        &[
+            "truetype/noto/NotoSansArabicUI-Regular.ttf",
+            "noto/NotoSansArabicUI-Regular.ttf",
+            "truetype/noto/NotoSansArabic-Regular.ttf",
+            "noto/NotoSansArabic-Regular.ttf",
+            "truetype/noto/NotoNaskhArabicUI-Regular.ttf",
+            "noto/NotoNaskhArabicUI-Regular.ttf",
+            "truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "noto/NotoNaskhArabic-Regular.ttf",
+            "truetype/dejavu/DejaVuSans.ttf",
+            "dejavu/DejaVuSans.ttf",
+        ]
+    }
+}
+
+/// The installed Arabic font for the interface, if one is found.
+pub fn system_arabic_ui_font() -> Option<SystemUiFont> {
+    find_ui_font(&crate::system_font_dirs(), candidates_arabic(), 'ع', false)
+}
+
 /// The first of `names` (tried in order, each in every folder of `dirs`) that is a font file
 /// with a face mapping `probe`.
 pub(crate) fn find_ui_font(dirs: &[std::path::PathBuf], names: &[&str], probe: char, hans: bool) -> Option<SystemUiFont> {
@@ -151,5 +177,21 @@ mod tests {
         assert!(find_ui_font(std::slice::from_ref(&dir), &names, '页', true).is_none());
         assert!(pick_face(b"OTT", 'A', false).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inspect_system_arabic_font() {
+        let f = system_arabic_ui_font();
+        if let Some(font) = f {
+            eprintln!("Found arabic font: {} ({} bytes)", font.family, font.bytes.len());
+            let fref = skrifa::FontRef::from_index(&font.bytes, font.index).unwrap();
+            let cmap = fref.charmap();
+            let test_chars = ['\u{0645}', '\u{FEE3}', '\u{FEDE}', '\u{FED2}', ' ', 'A', '1', '—'];
+            for c in test_chars {
+                eprintln!("Char U+{:04X} ('{}'): mapped = {:?}", c as u32, c, cmap.map(c));
+            }
+        } else {
+            eprintln!("No arabic font found!");
+        }
     }
 }

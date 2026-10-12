@@ -8,7 +8,7 @@ use super::sel_result;
 use crate::{CmdError, CmdResult, CommandSpec, Selection, Session, p};
 
 fn in_table(s: &Session) -> Option<&'static str> {
-    if s.sel.focus.path.cell().is_some() { None } else { Some("the cursor isn't in a table") }
+    if s.sel.focus.path.cell().is_some() || s.sel.anchor.path.cell().is_some() { None } else { Some("the cursor isn't in a table") }
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -164,8 +164,16 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .pure()),
         t(CommandSpec::new("table.properties", "Properties", "Table Layout › Table", properties).params(
-            r#"{"align"?: "left|center|right", "width"?: pt|null, "widthPct"?: percent, "indent"?: pt, "rowHeight"?: pt|null, "rowHeightRule"?: "atLeast|exact", "allowBreak"?: bool, "headerRow"?: bool, "columnWidth"?: pt, "cellWidth"?: pt|null, "valign"?: "top|center|bottom"} (row, column and cell settings apply to the caret's; without settings it returns the current ones)"#,
+            r#"{"align"?: "left|center|right", "bidi"?: bool, "width"?: pt|null, "widthPct"?: percent, "indent"?: pt, "rowHeight"?: pt|null, "rowHeightRule"?: "atLeast|exact", "allowBreak"?: bool, "headerRow"?: bool, "columnWidth"?: pt, "cellWidth"?: pt|null, "valign"?: "top|center|bottom"} (row, column and cell settings apply to the caret's; without settings it returns the current ones)"#,
         )),
+        t(CommandSpec::new("table.direction", "Table Direction", "Table Layout › Alignment", |s, v| {
+            let want = p::bool(v, "bidi");
+            with_table(s, |t| {
+                let cur = t.props.bidi.unwrap_or(false);
+                t.props.bidi = Some(want.unwrap_or(!cur));
+            })
+        })
+        .params(r#"{"bidi"?: bool (default: toggle)}"#)),
         CommandSpec::new("table.fromText", "Convert Text to Table", "Insert › Tables", from_text).params(r#"{"separator"?: "tab|comma"}"#),
         CommandSpec::new("table.quick", "Quick Tables", "Insert › Tables", quick_table).params(r#"{"kind"?: "calendar|tabular|matrix"}"#),
     ]
@@ -284,7 +292,11 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
     let header = p::bool(v, "headerRow");
     let column_width = p::f32(v, "columnWidth").map(|x| x.clamp(6.0, 1584.0));
     let cell_width = size("cellWidth", 6.0, 1584.0);
+    let bidi = p::bool(v, "bidi");
     with_table(s, |t| {
+        if let Some(b) = bidi {
+            t.props.bidi = Some(b);
+        }
         if let Some(a) = align {
             t.props.align = Some(a);
         }
@@ -329,7 +341,9 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn cell(s: &Session) -> Result<(Path, usize, usize), CmdError> {
-    s.sel.focus.path.cell().ok_or_else(|| CmdError::Disabled("the cursor isn't in a table".into()))
+    s.sel.focus.path.cell()
+        .or_else(|| s.sel.anchor.path.cell())
+        .ok_or_else(|| CmdError::Disabled("the cursor isn't in a table".into()))
 }
 
 fn with_table(s: &mut Session, f: impl Fn(&mut Table)) -> CmdResult {

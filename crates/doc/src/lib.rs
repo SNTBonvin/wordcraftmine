@@ -73,6 +73,12 @@ impl Block {
             Block::Table(_) => None,
         }
     }
+    pub fn as_para_mut(&mut self) -> Option<&mut Paragraph> {
+        match self {
+            Block::Para(p) => Some(p),
+            Block::Table(_) => None,
+        }
+    }
     pub fn as_table(&self) -> Option<&Table> {
         match self {
             Block::Table(t) => Some(t),

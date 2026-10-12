@@ -22,7 +22,7 @@ pub fn has_shape_selected(s: &wordcraft_engine::Session) -> bool {
 /// Contextual tabs for the current selection (pure, tested).
 pub fn contextual_tabs(s: &wordcraft_engine::Session) -> Vec<&'static str> {
     let mut tabs = Vec::new();
-    if s.sel.focus.path.cell().is_some() {
+    if s.sel.focus.path.cell().is_some() || s.sel.anchor.path.cell().is_some() {
         tabs.push("Table Design");
         tabs.push("Table Layout");
     }
@@ -49,6 +49,69 @@ pub fn in_table_public(app: &WordApp) -> bool {
     app.session.sel.focus.path.cell().is_some()
 }
 
+fn utility_buttons(ui: &mut Ui, app: &mut WordApp, t: &Tokens) {
+    let share = tl!("Share");
+    let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
+    let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
+    ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)),
+        "share",
+        egui::Color32::WHITE,
+        egui::Color32::WHITE,
+    );
+    ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), egui::Color32::WHITE);
+    if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
+        let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
+    }
+    ui.add_space(6.0);
+    let track = app.session.doc.settings.track_changes;
+    let mode = crate::widgets::icon_text_button(ui, "pencil", &format!("{} ▾", if track { tl!("Reviewing") } else { tl!("Editing") }), regular(12.0));
+    egui::Popup::menu(&mode).show(|ui| {
+        if ui.selectable_label(!track, tl!(tl!("Editing — edit the document directly"))).clicked() {
+            let _ = app.run("review.trackChanges", json!({"value": false}));
+            ui.close();
+            egui::Popup::close_all(ui.ctx());
+        }
+        if ui.selectable_label(track, tl!(tl!("Reviewing — edits become suggestions"))).clicked() {
+            let _ = app.run("review.trackChanges", json!({"value": true}));
+            ui.close();
+            egui::Popup::close_all(ui.ctx());
+        }
+    });
+    ui.add_space(4.0);
+    if crate::widgets::icon_text_button(ui, "comment", tl!("Comments"), regular(12.0)).clicked() {
+        let _ = app.run("view.commentsPane", json!({}));
+    }
+}
+
+fn tab_button(ui: &mut Ui, app: &mut WordApp, tab: &str, t: &Tokens) {
+    let contextual = tab.starts_with("Table ") || tab.ends_with(" Format") || tab == "Equation";
+    let shown = tl!(tab);
+    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
+    if app.ui.keytips == crate::keytips::Phase::Tabs {
+        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
+    }
+    let active = app.ui.tab == tab && !app.ui.backstage;
+    if resp.hovered() && !active {
+        ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
+    }
+    let color = if contextual || active { t.accent_text } else { t.text };
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, shown, if active { semibold(12.5) } else { medium(12.5) }, color);
+    if active {
+        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
+        ui.painter().rect_filled(u, 2.0, t.accent);
+    }
+    if resp.clicked() {
+        let _ = app.run("ui.tab", json!({"tab": tab}));
+    }
+    if resp.double_clicked() && tab != "File" {
+        let _ = app.run("ui.collapseRibbon", json!({}));
+    }
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     // Editing an equation brings up the Equation tab; leaving it goes back.
@@ -71,85 +134,40 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.ui.tab = next.to_string();
         }
     }
+    let rtl = crate::i18n::is_rtl();
     // Tab strip.
     egui::Panel::top("tabs")
         .exact_size(30.0)
         .frame(egui::Frame::NONE.fill(t.tab_strip).inner_margin(egui::Margin { left: 8, right: 10, top: 0, bottom: 0 }))
         .show(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                let mut tabs: Vec<&str> = TABS.to_vec();
-                for ct in contextual_tabs(&app.session) {
-                    if !tabs.contains(&ct) {
-                        tabs.push(ct);
-                    }
+            let mut tabs: Vec<&str> = TABS.to_vec();
+            for ct in contextual_tabs(&app.session) {
+                if !tabs.contains(&ct) {
+                    tabs.push(ct);
                 }
-                for tab in tabs {
-                    let contextual = tab.starts_with("Table ") || tab.ends_with(" Format") || tab == "Equation";
-                    let shown = tl!(tab);
-                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
-                    let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
-                    if app.ui.keytips == crate::keytips::Phase::Tabs {
-                        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
-                    }
-                    let active = app.ui.tab == tab && !app.ui.backstage;
-                    if resp.hovered() && !active {
-                        ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
-                    }
-                    let color = if contextual || active { t.accent_text } else { t.text };
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, shown, if active { semibold(12.5) } else { medium(12.5) }, color);
-                    if active {
-                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
-                        ui.painter().rect_filled(u, 2.0, t.accent);
-                    }
-                    if resp.clicked() {
-                        let _ = app.run("ui.tab", json!({"tab": tab}));
-                    }
-                    if resp.double_clicked() && tab != "File" {
-                        let _ = app.run("ui.collapseRibbon", json!({}));
-                    }
-                }
+            }
+            if rtl {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Share, Editing mode, Comments.
-                    let share = tl!("Share");
-                    let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
-                    let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
-                    ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
-                    icons::paint(
-                        ui.painter(),
-                        Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)),
-                        "share",
-                        egui::Color32::WHITE,
-                        egui::Color32::WHITE,
-                    );
-                    ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), egui::Color32::WHITE);
-                    if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
-                        let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
+                    ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                    for tab in tabs {
+                        tab_button(ui, app, tab, &t);
                     }
-                    ui.add_space(6.0);
-                    let track = app.session.doc.settings.track_changes;
-                    let mode = crate::widgets::icon_text_button(
-                        ui,
-                        "pencil",
-                        &format!("{} ▾", if track { tl!("Reviewing") } else { tl!("Editing") }),
-                        regular(12.0),
-                    );
-                    egui::Popup::menu(&mode).show(|ui| {
-                        if ui.selectable_label(!track, tl!(tl!("Editing — edit the document directly"))).clicked() {
-                            let _ = app.run("review.trackChanges", json!({"value": false}));
-                            ui.close();
-                        }
-                        if ui.selectable_label(track, tl!(tl!("Reviewing — edits become suggestions"))).clicked() {
-                            let _ = app.run("review.trackChanges", json!({"value": true}));
-                            ui.close();
-                        }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
+                        utility_buttons(ui, app, &t);
                     });
-                    ui.add_space(4.0);
-                    if crate::widgets::icon_text_button(ui, "comment", tl!("Comments"), regular(12.0)).clicked() {
-                        let _ = app.run("view.commentsPane", json!({}));
-                    }
                 });
-            });
+            } else {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                    for tab in tabs {
+                        tab_button(ui, app, tab, &t);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        utility_buttons(ui, app, &t);
+                    });
+                });
+            }
         });
     if app.ui.ribbon_collapsed {
         return;
@@ -161,7 +179,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         )
         .show(ui, |ui| {
             let scroll = egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
-                ui.horizontal_top(|ui| {
+                let ribbon_layout = if rtl { egui::Layout::right_to_left(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+                ui.with_layout(ribbon_layout, |ui| {
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
                     match app.ui.tab.as_str() {
                         "Home" => home(app, ui),
@@ -239,6 +258,7 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
     if resp.clicked() {
         let _ = app.run(id, params);
         ui.close();
+        egui::Popup::close_all(ui.ctx());
     }
 }
 
@@ -252,6 +272,7 @@ fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str
     if resp.clicked() {
         let _ = app.run(id, params);
         ui.close();
+        egui::Popup::close_all(ui.ctx());
     }
 }
 
@@ -350,6 +371,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                                 app.canvas.last_highlight = h.ooxml().to_string();
                                 let _ = app.run("format.highlight", json!({"color": h.ooxml()}));
                                 ui.close();
+                                egui::Popup::close_all(ui.ctx());
                             }
                             if i % 5 == 0 {
                                 ui.end_row();
@@ -367,6 +389,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                         app.canvas.last_font_color = hex.clone();
                         let _ = app.run("format.color", json!({"color": hex}));
                         ui.close();
+                        egui::Popup::close_all(ui.ctx());
                     }
                 });
             });
@@ -1150,6 +1173,14 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Page Movement", None, app, |ui, app| {
         big(ui, app, "vertical", "Vertical", "view.vertical", json!({}), false);
         big(ui, app, "sideToSide", "Side\nto Side", "view.sideToSide", json!({}), false);
+        menu_button(ui, app, "pageOrder", Some("Page\nOrder"), "Page Order", true, |ui, app| {
+            let is_rtl = app.session.view.page_order == "rtl";
+            let is_ltr = app.session.view.page_order == "ltr";
+            let is_auto = !is_rtl && !is_ltr;
+            mi_check(ui, app, "Right-to-left", is_rtl, "view.pageOrder", json!({"order": "rtl"}));
+            mi_check(ui, app, "Left-to-right", is_ltr, "view.pageOrder", json!({"order": "ltr"}));
+            mi_check(ui, app, "Automatic", is_auto, "view.pageOrder", json!({"order": "auto"}));
+        });
     });
     group(ui, "Show", None, app, |ui, app| {
         stack(ui, |ui| {

@@ -314,6 +314,7 @@ impl PropCtx {
                 }
                 "w:tblCaption" => t.caption = k.attr("w:val").map(str::to_string),
                 "w:tblDescription" if t.caption.is_none() => t.caption = k.attr("w:val").map(str::to_string),
+                "w:bidiVisual" => t.bidi = Some(on_off(k)),
                 _ => {}
             }
         }

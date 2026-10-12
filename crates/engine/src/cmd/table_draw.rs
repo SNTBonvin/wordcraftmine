@@ -383,22 +383,29 @@ pub fn erase_target(l: &DocLayout, page: usize, x: f32, y: f32) -> Option<EraseT
     for a in &boxes {
         let (ar, ab) = (a.rect.right(), a.rect.bottom());
         let same = |b: &&CellBox| b.story == a.story && b.table == a.table;
-        // The border on a's right, shared with the next cell of its row.
-        if (x - ar).abs() <= ERASER_REACH
-            && y >= a.rect.y
-            && y <= ab
-            && let Some(b) = boxes.iter().filter(same).find(|b| b.row == a.row && b.cell == a.cell + 1 && (b.rect.x - ar).abs() <= 1.5)
-        {
-            let e = EraseTarget {
-                from: (ar, a.rect.y.max(b.rect.y)),
-                to: (ar, ab.min(b.rect.bottom())),
-                story: a.story,
-                table: a.table.clone(),
-                first: (a.row, a.cell),
-                second: (b.row, b.cell),
-                across: true,
+        // The border shared between a and cell (a.row, a.cell + 1).
+        // In LTR: a is to the left of b, so border is at a.rect.right() (b.rect.x).
+        // In RTL: a is to the right of b, so border is at a.rect.x (b.rect.right()).
+        if let Some(b) = boxes.iter().filter(same).find(|b| b.row == a.row && b.cell == a.cell + 1) {
+            let (bx, is_border) = if (b.rect.x - ar).abs() <= 1.5 {
+                (ar, true)
+            } else if (a.rect.x - b.rect.right()).abs() <= 1.5 {
+                (a.rect.x, true)
+            } else {
+                (0.0, false)
             };
-            offer((x - ar).abs(), a.table.0.len(), e);
+            if is_border && (x - bx).abs() <= ERASER_REACH && y >= a.rect.y && y <= ab {
+                let e = EraseTarget {
+                    from: (bx, a.rect.y.max(b.rect.y)),
+                    to: (bx, ab.min(b.rect.bottom())),
+                    story: a.story,
+                    table: a.table.clone(),
+                    first: (a.row, a.cell),
+                    second: (b.row, b.cell),
+                    across: true,
+                };
+                offer((x - bx).abs(), a.table.0.len(), e);
+            }
         }
         // The border below a, shared with a cell of the next row.
         if (y - ab).abs() <= ERASER_REACH
@@ -429,7 +436,28 @@ fn eraser(s: &mut Session, v: &Value) -> CmdResult {
     if l.pages.get(page).is_none() {
         return Err(CmdError::Params(format!("no page {page}")));
     }
-    let e = erase_target(&l, page, x, y).ok_or_else(|| CmdError::Failed("there's no border between two cells there".into()))?;
+    let e = match erase_target(&l, page, x, y) {
+        Some(e) => e,
+        None => {
+            let boxes = cell_boxes(&l, page);
+            let target_table = boxes.iter().find(|b| {
+                let r = b.rect;
+                let near_outer = (x >= r.x - ERASER_REACH && x <= r.right() + ERASER_REACH && (y - r.y).abs() <= ERASER_REACH)
+                    || (x >= r.x - ERASER_REACH && x <= r.right() + ERASER_REACH && (y - r.bottom()).abs() <= ERASER_REACH)
+                    || (y >= r.y - ERASER_REACH && y <= r.bottom() + ERASER_REACH && (x - r.x).abs() <= ERASER_REACH)
+                    || (y >= r.y - ERASER_REACH && y <= r.bottom() + ERASER_REACH && (x - r.right()).abs() <= ERASER_REACH);
+                let is_single_cell = boxes.iter().filter(|o| o.table == b.table && o.story == b.story).count() == 1;
+                near_outer || (is_single_cell && r.contains(wordcraft_geom::Point::new(x, y)))
+            });
+            if let Some(target) = target_table {
+                let (story, tp) = (target.story, target.table.clone());
+                s.doc.remove_block(story, &tp)?;
+                s.sel = Selection::caret(s.doc.clamp(&Pos { story, path: tp, off: 0 }));
+                return sel_result(s);
+            }
+            return Err(CmdError::Failed("there's no table border there".into()));
+        }
+    };
     let (story, tp) = (e.story, e.table.clone());
     let t = s.doc.table_mut(story, &tp)?;
     let ((r, c), (r2, c2)) = (e.first, e.second);

@@ -357,10 +357,15 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
     if let Some(own) = t.props.borders {
         tborders.overlay(&own);
     }
+    let is_bidi = t.props.bidi.unwrap_or_else(|| {
+        ctx.doc.sections().first().map(|(_, sp)| sp.rtl).unwrap_or(false)
+    });
     let first_cell = t.rows.first().and_then(|r| r.cells.first());
     let x = match t.props.align {
         Some(Align::Center) => (avail - total) / 2.0,
         Some(Align::Right) => avail - total,
+        Some(Align::Left) => indent,
+        _ if is_bidi => avail - total - indent,
         _ if ctx.doc.settings.compat_mode >= 15 => {
             // The border is centred on the edge, so half of it sits outside: Word moves the
             // table in by that half.
@@ -400,8 +405,13 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         let band = banded(t, style.as_ref(), ri);
         for (ci, cell) in row.cells.iter().enumerate() {
             let span = cell.span();
-            let x0 = colx.get(g).copied().unwrap_or(acc);
-            let x1 = colx.get((g + span).min(ncols)).copied().unwrap_or(acc);
+            let (x0, x1) = if is_bidi {
+                let r_edge = total - colx.get(g).copied().unwrap_or(0.0);
+                let l_edge = total - colx.get((g + span).min(ncols)).copied().unwrap_or(0.0);
+                (l_edge, r_edge)
+            } else {
+                (colx.get(g).copied().unwrap_or(acc), colx.get((g + span).min(ncols)).copied().unwrap_or(acc))
+            };
             let margins = cell.props.margins.unwrap_or(margins_def);
             let cw = (x1 - x0 - margins[1] - margins[3]).max(4.0);
             let mut fill = cell.props.shading;
@@ -445,7 +455,11 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
             let edge =
                 |own: Option<Border>, outer: bool, outer_b: Option<Border>, inner_b: Option<Border>| own.or(if outer { outer_b } else { inner_b });
             let cb = cell.props.borders.unwrap_or_default();
-            let (first_g, last_g) = (g == 0, g + span >= ncols);
+            let (first_g, last_g) = if is_bidi {
+                (g + span >= ncols, g == 0)
+            } else {
+                (g == 0, g + span >= ncols)
+            };
             let rb = parts
                 .map(|p| region_borders(p, (ri, nrows), (first_g, last_g), [is_header, is_total, first_col, last_col, band, col_band]))
                 .unwrap_or_default();

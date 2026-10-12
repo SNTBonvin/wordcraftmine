@@ -4,6 +4,7 @@
 //! invoked through `std::process::Command`.
 
 mod assets;
+mod build_number;
 mod ico;
 mod layers;
 mod parity;
@@ -27,6 +28,10 @@ commands:
   parity          recompute the Word feature-parity summary in docs/parity-checklist.md
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
+  version [set X.Y.Z]
+                  read or set the workspace version in Cargo.toml
+  build-number [next | set <X.Y>]
+                  read, increment, or set the build number (.build_number)
 ";
 
 fn main() -> ExitCode {
@@ -42,6 +47,7 @@ fn main() -> ExitCode {
         Some("parity") => parity::run(&root()),
         Some("ico") => ico::run(&rest),
         Some("version") => version::run(&root(), &rest),
+        Some("build-number") => build_number::run(&root(), &rest),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())

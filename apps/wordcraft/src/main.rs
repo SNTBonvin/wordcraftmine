@@ -153,9 +153,15 @@ fn app_icon() -> Option<egui::IconData> {
     eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
 }
 
-/// The commit the build came from (short), or `dev`.
-fn build_sha() -> &'static str {
-    option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or("dev")
+/// The commit the build came from (short), or `dev`, plus optional build number.
+fn build_label() -> String {
+    let sha = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s));
+    match (option_env!("WORDCRAFT_BUILD_NUMBER"), sha) {
+        (Some(b), Some(s)) => format!("Build {b}, {s}"),
+        (Some(b), None) => format!("Build {b}"),
+        (None, Some(s)) => s.to_string(),
+        (None, None) => "dev".to_string(),
+    }
 }
 
 fn main() -> eframe::Result {
@@ -171,7 +177,7 @@ fn main() -> eframe::Result {
             "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
             "--sample" => sample = true,
             "--version" => {
-                println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_sha());
+                println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_label());
                 return Ok(());
             }
             _ => files.push(a),
@@ -184,7 +190,7 @@ fn main() -> eframe::Result {
     if let Some(logger) = logger {
         match log_dir().filter(|_| prefs_enabled()) {
             Some(dir) => match logger.attach_dir(&dir) {
-                Ok(path) => log::info!("WordCraft {} ({}), log file {}", env!("CARGO_PKG_VERSION"), build_sha(), path.display()),
+                Ok(path) => log::info!("WordCraft {} ({}), log file {}", env!("CARGO_PKG_VERSION"), build_label(), path.display()),
                 // Standard error only by now (`attach_dir` gave up on the file); unlike `eprintln!`, never panics.
                 Err(e) => log::warn!("no log file: {e}"),
             },

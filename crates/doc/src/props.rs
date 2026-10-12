@@ -797,6 +797,9 @@ pub struct TableProps {
     /// Tracked formatting change (`w:tblPrChange`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fmt_change: Option<Box<PropChange<TableProps>>>,
+    /// Visually right-to-left (`w:bidiVisual`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bidi: Option<bool>,
 }
 
 /// Where a floating table sits; the text after it wraps around it.

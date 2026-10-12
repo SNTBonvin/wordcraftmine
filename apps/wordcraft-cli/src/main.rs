@@ -278,7 +278,14 @@ fn run(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         "--version" | "-V" => {
-            println!("wordcraft-cli {}", env!("CARGO_PKG_VERSION"));
+            let sha = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s));
+            let extra = match (option_env!("WORDCRAFT_BUILD_NUMBER"), sha) {
+                (Some(b), Some(s)) => format!(" (Build {b}, {s})"),
+                (Some(b), None) => format!(" (Build {b})"),
+                (None, Some(s)) => format!(" ({s})"),
+                (None, None) => String::new(),
+            };
+            println!("wordcraft-cli {}{extra}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         "" | "help" | "--help" | "-h" => {

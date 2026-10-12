@@ -83,6 +83,9 @@ pub struct ViewState {
     /// Draw tab: the tool dragging on the page uses, and each pen's colour and thickness.
     #[serde(default)]
     pub draw: crate::cmd::draw::DrawState,
+    /// Page display order for multi-column layout: "auto", "ltr", or "rtl".
+    #[serde(default)]
+    pub page_order: String,
 }
 
 fn on() -> bool {
@@ -107,6 +110,7 @@ impl Default for ViewState {
             clipboard_pane: false,
             multi_page: false,
             fit: String::new(),
+            page_order: String::new(),
             web_width: 800.0,
             dark_mode: false,
             show_markup: true,

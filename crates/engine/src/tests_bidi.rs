@@ -183,3 +183,102 @@ fn explicit_alignment_sets_without_toggling() {
         }
     }
 }
+
+#[test]
+fn typing_arabic_in_unset_paragraph_auto_sets_rtl() {
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    assert_eq!(props(&s, 0).bidi, None);
+    run(&mut s, "text.insert", json!({"text": "مرحبا"}));
+    assert_eq!(props(&s, 0).bidi, Some(true), "typing Arabic automatically sets paragraph to RTL");
+
+    // Typing in a new paragraph created from scratch with English keeps it LTR
+    let mut s2 = Session::new(wordcraft_doc::Document::new());
+    assert_eq!(props(&s2, 0).bidi, None);
+    run(&mut s2, "text.insert", json!({"text": "Hello"}));
+    assert_eq!(props(&s2, 0).bidi, None, "typing English does not set RTL");
+}
+
+#[test]
+fn rtl_table_creation_and_tab_navigation() {
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "text.insert", json!({"text": "جدول"}));
+    assert_eq!(props(&s, 0).bidi, Some(true));
+    // Insert 2x2 table in RTL paragraph
+    run(&mut s, "insert.table", json!({"rows": 2, "cols": 2}));
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert_eq!(t.props.bidi, Some(true), "inserted table in RTL context is marked bidi");
+
+    // In layout, cell 0 is on the right, cell 1 is on the left
+    let l = s.layout();
+    let c0 = l.pages[0].items.iter().find_map(|it| match it {
+        wordcraft_layout::Placed::Cell { rect, row: 0, cell: 0, .. } => Some(*rect),
+        _ => None,
+    }).unwrap();
+    let c1 = l.pages[0].items.iter().find_map(|it| match it {
+        wordcraft_layout::Placed::Cell { rect, row: 0, cell: 1, .. } => Some(*rect),
+        _ => None,
+    }).unwrap();
+    assert!(c0.x > c1.x, "In RTL table, cell 0 is to the right of cell 1: c0.x={}, c1.x={}", c0.x, c1.x);
+
+    // Typing in cell 0, then pressing Tab moves to cell 1 (visually to the left)
+    run(&mut s, "text.insert", json!({"text": "عمود 1"}));
+    run(&mut s, "text.tab", json!({}));
+    assert_eq!(s.sel.focus.path.cell().unwrap().2, 1, "Tab moved from cell 0 to cell 1");
+    run(&mut s, "text.insert", json!({"text": "عمود 2"}));
+
+    // Pressing Tab in cell 1 wraps to row 1 cell 0
+    run(&mut s, "text.tab", json!({}));
+    let (_, r, c) = s.sel.focus.path.cell().unwrap();
+    assert_eq!((r, c), (1, 0), "Tab wrapped to next row cell 0");
+}
+
+#[test]
+fn table_deletion_with_backspace_and_commands() {
+    // 1. Backspace in empty table deletes it
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "insert.table", json!({"rows": 2, "cols": 2}));
+    assert!(s.doc.body.iter().any(|b| b.as_table().is_some()));
+    run(&mut s, "text.backspace", json!({}));
+    assert!(s.doc.body.iter().all(|b| b.as_table().is_none()), "empty table deleted by Backspace");
+
+    // 2. Backspace on selected table deletes it
+    let mut s2 = Session::new(wordcraft_doc::Document::new());
+    run(&mut s2, "insert.table", json!({"rows": 2, "cols": 2}));
+    run(&mut s2, "table.selectTable", json!({}));
+    run(&mut s2, "text.backspace", json!({}));
+    assert!(s2.doc.body.iter().all(|b| b.as_table().is_none()), "selected table deleted by Backspace");
+
+    // 3. table.deleteTable command deletes it
+    let mut s3 = Session::new(wordcraft_doc::Document::new());
+    run(&mut s3, "insert.table", json!({"rows": 2, "cols": 2}));
+    run(&mut s3, "table.deleteTable", json!({}));
+    assert!(s3.doc.body.iter().all(|b| b.as_table().is_none()), "table deleted by table.deleteTable");
+
+    // 4. Select All + delete deletes the table
+    let mut s4 = Session::new(wordcraft_doc::Document::new());
+    run(&mut s4, "insert.table", json!({"rows": 2, "cols": 2}));
+    run(&mut s4, "select.all", json!({}));
+    run(&mut s4, "text.delete", json!({}));
+    assert!(s4.doc.body.iter().all(|b| b.as_table().is_none()), "table deleted by Select All + delete");
+}
+
+#[test]
+fn view_page_order_command() {
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    assert_eq!(s.view.page_order, "");
+
+    run(&mut s, "view.pageOrder", json!({"order": "rtl"}));
+    assert_eq!(s.view.page_order, "rtl");
+
+    run(&mut s, "view.pageOrder", json!({"order": "ltr"}));
+    assert_eq!(s.view.page_order, "ltr");
+
+    // Toggle
+    run(&mut s, "view.pageOrder", json!({}));
+    assert_eq!(s.view.page_order, "rtl");
+
+    run(&mut s, "view.pageOrder", json!({"order": "auto"}));
+    assert_eq!(s.view.page_order, "auto");
+}
+
+

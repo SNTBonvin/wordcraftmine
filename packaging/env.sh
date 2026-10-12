@@ -36,8 +36,55 @@ if [ -z "${WORDCRAFT_BUILD_SHA:-}" ]; then
   WORDCRAFT_BUILD_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
 fi
 export WORDCRAFT_BUILD_SHA
-export WORDCRAFT_BUILD_DATE="${WORDCRAFT_BUILD_DATE:-$(date -u +%Y-%m-%d)}"
+WORDCRAFT_BUILD_DATE="${WORDCRAFT_BUILD_DATE:-$(date -u +%Y-%m-%d)}"
+export WORDCRAFT_BUILD_DATE
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+
+# The build number starts from 0.1 and increments on builds, stored in $ROOT/.build_number.
+# (override: WORDCRAFT_BUILD_NUMBER)
+if [ -n "${WORDCRAFT_BUILD_NUMBER:-}" ]; then
+  WORDCRAFT_BUILD_NUMBER_EXPLICIT=1
+else
+  WORDCRAFT_BUILD_NUMBER_EXPLICIT=0
+fi
+export WORDCRAFT_BUILD_NUMBER_EXPLICIT
+
+read_build_number() {
+  local f="$ROOT/.build_number"
+  if [ -f "$f" ]; then
+    local v
+    v="$(tr -d ' \r\n' < "$f")"
+    if [ -n "$v" ]; then
+      echo "$v"
+      return 0
+    fi
+  fi
+  echo "0.1"
+}
+
+bump_build_number() {
+  local f="$ROOT/.build_number"
+  if [ ! -f "$f" ]; then
+    echo "0.1" > "$f"
+    echo "0.1"
+    return 0
+  fi
+  local cur
+  cur="$(read_build_number)"
+  local major="${cur%%.*}"
+  local minor="${cur##*.}"
+  if [ "$major" = "$cur" ]; then
+    major="0"
+    minor="$cur"
+  fi
+  local next_minor=$((minor + 1))
+  local next="${major}.${next_minor}"
+  echo "$next" > "$f"
+  echo "$next"
+}
+
+WORDCRAFT_BUILD_NUMBER="${WORDCRAFT_BUILD_NUMBER:-$(read_build_number)}"
+export WORDCRAFT_BUILD_NUMBER
 
 # Emit a GitHub Actions warning (plain stderr outside Actions).
 warn() {

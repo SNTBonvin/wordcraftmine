@@ -72,6 +72,21 @@ pub fn specs() -> Vec<CommandSpec> {
             sel_result(s)
         })
         .pure(),
+        CommandSpec::new("view.pageOrder", "Page Order", "View › Page Movement", |s, v| {
+            let cur = if s.view.page_order.is_empty() { "auto" } else { s.view.page_order.as_str() };
+            let new_order = if let Some(o) = p::str(v, "order").or_else(|| p::str(v, "value")) {
+                match o {
+                    "rtl" | "ltr" | "auto" => o.to_string(),
+                    _ => return Err(CmdError::Params("order must be 'rtl', 'ltr' or 'auto'".into())),
+                }
+            } else {
+                if cur == "rtl" { "ltr".to_string() } else { "rtl".to_string() }
+            };
+            s.view.page_order = new_order;
+            Ok(json!({"pageOrder": s.view.page_order}))
+        })
+        .params(r#"{"order"?: "rtl" | "ltr" | "auto"}"#)
+        .pure(),
         CommandSpec::new("view.state", "View State", "View", |s, _| serde_json::to_value(&s.view).map_err(|e| CmdError::Failed(e.to_string())))
             .pure(),
     ]

@@ -141,16 +141,24 @@ fn big_button(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str,
 pub fn small(ui: &mut Ui, app: &mut WordApp, icon: &str, label: Option<&str>, tip: &str, id: &str, params: Value, checked: bool) -> Response {
     let (label, tip) = (label.map(|l| tl!(l)), tl!(tip));
     let t = Tokens::get(ui.ctx());
-    let text_w = label.map(|l| ui.ctx().fonts_mut(|f| f.layout_no_wrap(l.to_string(), regular(11.5), t.text).size().x) + 6.0).unwrap_or(0.0);
+    let text_w = label.map(|l| ui.ctx().fonts_mut(|f| f.layout_no_wrap(l.to_string(), regular(11.5), t.text).size().x) + 10.0).unwrap_or(0.0);
     let (r, resp) = ui.allocate_exact_size(vec2(24.0 + text_w, 22.0), Sense::click());
     keytip_badge(ui, r, id, tip);
     let on = enabled(app, id);
     bg(ui, r, &resp, checked, &t);
-    let ic = Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0));
+    let rtl = crate::i18n::is_rtl();
     let (c, a) = if on { (t.icon, t.accent) } else { (t.text_disabled, t.text_disabled) };
-    icons::paint(ui.painter(), ic, icon, c, a);
     if let Some(l) = label {
-        ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), if on { t.text } else { t.text_disabled });
+        if rtl {
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(17.0, 17.0)), icon, c, a);
+            ui.painter().text(pos2(r.max.x - 24.0, r.center().y), Align2::RIGHT_CENTER, l, regular(11.5), if on { t.text } else { t.text_disabled });
+        } else {
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0)), icon, c, a);
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), if on { t.text } else { t.text_disabled });
+        }
+    } else {
+        let ic = Rect::from_center_size(r.center(), vec2(17.0, 17.0));
+        icons::paint(ui.painter(), ic, icon, c, a);
     }
     let resp = tooltip(app, resp, tip, id);
     if resp.clicked() && on {
@@ -212,7 +220,7 @@ pub fn menu_button(
             .split('\n')
             .map(|l| ui.ctx().fonts_mut(|f| f.layout_no_wrap(l.to_string(), regular(11.5), t.text).size().x))
             .fold(0.0, f32::max);
-        let w = (galley_w + 22.0).max(44.0);
+        let w = (galley_w + 26.0).max(52.0);
         let (r, resp) = ui.allocate_exact_size(vec2(w, CONTENT_H), Sense::click());
         keytip_badge(ui, r, "menu", tip);
         bg(ui, r, &resp, false, &t);
@@ -230,11 +238,20 @@ pub fn menu_button(
         let (r, resp) = ui.allocate_exact_size(vec2(24.0 + text_w + 10.0, 22.0), Sense::click());
         keytip_badge(ui, r, "menu", tip);
         bg(ui, r, &resp, false, &t);
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0)), icon, t.icon, t.accent);
-        if let Some(l) = label {
-            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), t.text);
+        let rtl = crate::i18n::is_rtl();
+        if rtl {
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(17.0, 17.0)), icon, t.icon, t.accent);
+            if let Some(l) = label {
+                ui.painter().text(pos2(r.max.x - 24.0, r.center().y), Align2::RIGHT_CENTER, l, regular(11.5), t.text);
+            }
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 6.0, r.center().y), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
+        } else {
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0)), icon, t.icon, t.accent);
+            if let Some(l) = label {
+                ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), t.text);
+            }
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 6.0, r.center().y), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
         }
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 6.0, r.center().y), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
         resp
     };
     let resp = resp.on_hover_text(tip);
@@ -250,32 +267,49 @@ pub fn group(ui: &mut Ui, title: &str, launcher: Option<&str>, app: &mut WordApp
     let id_title = title;
     let title = tl!(title);
     let t = Tokens::get(ui.ctx());
+    let rtl = crate::i18n::is_rtl();
     let label_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(title.to_string(), regular(11.0), t.group_label).size().x);
-    let start = ui.cursor().min;
-    let inner = ui.vertical(|ui| {
-        ui.set_min_width(label_w + if launcher.is_some() { 22.0 } else { 10.0 });
-        ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-            ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
-            add(ui, app);
+    let min_label_w = label_w + if launcher.is_some() { 22.0 } else { 10.0 };
+    let group_id = ui.id().with(("grp_w", id_title));
+    let group_w = if rtl { ui.ctx().data(|d| d.get_temp::<f32>(group_id)).unwrap_or(min_label_w + 60.0).max(min_label_w) } else { 0.0 };
+    let r = if rtl {
+        let (rect, _resp) = ui.allocate_exact_size(vec2(group_w, CONTENT_H + LABEL_H), Sense::hover());
+        let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+        let content_rect = Rect::from_min_size(rect.min, vec2(group_w, CONTENT_H));
+        let mut content_ui = child_ui.new_child(egui::UiBuilder::new().max_rect(content_rect).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        content_ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
+        add(&mut content_ui, app);
+        let actual_w = (content_ui.min_rect().max.x - rect.min.x).max(min_label_w);
+        ui.ctx().data_mut(|d| d.insert_temp(group_id, actual_w));
+        rect
+    } else {
+        let start = ui.cursor().min;
+        let inner = ui.vertical(|ui| {
+            ui.set_min_width(min_label_w);
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
+                add(ui, app);
+            });
         });
-    });
-    let r = inner.response.rect;
-    let r = Rect::from_min_max(start, pos2(r.max.x, start.y + CONTENT_H + LABEL_H));
+        let r = inner.response.rect;
+        Rect::from_min_max(start, pos2(r.max.x, start.y + CONTENT_H + LABEL_H))
+    };
     ui.painter().text(pos2(r.center().x, r.max.y - 8.0), Align2::CENTER_CENTER, title, regular(11.0), t.group_label);
     if let Some(cmd) = launcher {
-        let lr = Rect::from_center_size(pos2(r.max.x - 6.0, r.max.y - 8.0), vec2(11.0, 11.0));
+        let lx = if rtl { r.min.x + 6.0 } else { r.max.x - 6.0 };
+        let lr = Rect::from_center_size(pos2(lx, r.max.y - 8.0), vec2(11.0, 11.0));
         let resp = ui.interact(lr, ui.id().with(("launch", id_title)), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(lr.expand(2.0), 2.0, t.hover);
         }
-        icons::paint(ui.painter(), lr, "launcher", t.text_dim, t.accent);
+        icons::paint(ui.painter(), lr, if rtl { "launcher_rtl" } else { "launcher" }, t.text_dim, t.accent);
         if resp.on_hover_text(crate::i18n::fmt(tl!("{group} settings"), &[("group", title)])).clicked() {
             let _ = app.run(cmd, serde_json::json!({}));
         }
     }
     ui.add_space(5.0);
-    let x = ui.cursor().min.x;
-    ui.painter().line_segment([pos2(x, start.y + 4.0), pos2(x, start.y + CONTENT_H + LABEL_H - 4.0)], Stroke::new(1.0, t.border));
+    let x = if rtl { r.min.x - 3.0 } else { r.max.x + 3.0 };
+    ui.painter().line_segment([pos2(x, r.min.y + 4.0), pos2(x, r.min.y + CONTENT_H + LABEL_H - 4.0)], Stroke::new(1.0, t.border));
     ui.add_space(6.0);
 }
 
@@ -305,6 +339,8 @@ pub fn color_grid(ui: &mut Ui, theme: &[wordcraft_doc::Rgb]) -> Option<String> {
                 let c = tint(c, k);
                 if swatch(ui, c) {
                     picked = Some(c.hex());
+                    ui.close();
+                    egui::Popup::close_all(ui.ctx());
                 }
             }
         });
@@ -318,6 +354,8 @@ pub fn color_grid(ui: &mut Ui, theme: &[wordcraft_doc::Rgb]) -> Option<String> {
                 && swatch(ui, c)
             {
                 picked = Some(hex.to_string());
+                ui.close();
+                egui::Popup::close_all(ui.ctx());
             }
         }
     });
@@ -489,6 +527,7 @@ fn combo_impl(
             if let Some(v) = combo_list(ui, width, current, items, preview) {
                 out = Some(v);
                 ui.close();
+                egui::Popup::close_all(ui.ctx());
             }
         });
         if s.open && !s.matches.is_empty() {
