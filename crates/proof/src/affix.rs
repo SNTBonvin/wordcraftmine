@@ -11,7 +11,7 @@
 //! also be stored in WordCraft's compact format ([`AffixDict::to_bytes`]): the rules as text
 //! lines and the stems front-coded, raw-deflated together (the Polish dictionary is under 1 MB).
 //!
-//! Supported: one-character flags (at most 64 distinct), `PFX`/`SFX` with strip, append and
+//! Supported: one-character flags (at most 128 distinct, any Unicode character — `FLAG UTF-8`), `PFX`/`SFX` with strip, append and
 //! condition (`.`, letters, `[abc]`, `[^abc]`), cross products, and the suggestion tables `TRY`,
 //! `MAP` and `REP`. Rejected: compounding, continuation classes, long or numeric flags,
 //! `NEEDAFFIX`, `FORBIDDENWORD` and the other directives that change which words are correct.
@@ -118,7 +118,7 @@ fn parse_cond(text: &str) -> Result<Box<[Cond]>, String> {
 #[derive(Clone, Debug)]
 struct Rule {
     /// Bit of the rule's flag in the stems' flag masks.
-    bit: u64,
+    bit: u128,
     flag: char,
     cross: bool,
     strip: Box<str>,
@@ -159,7 +159,7 @@ pub struct AffixDict {
     /// Per stem: index into `sets`.
     flags: Vec<u16>,
     /// Distinct flag masks.
-    sets: Vec<u64>,
+    sets: Vec<u128>,
     /// Open-addressing hash table of stem indices (`EMPTY` = free).
     table: Vec<u32>,
     /// Flag char of each bit.
@@ -359,10 +359,10 @@ impl AffixDict {
         flag_chars.extend(stems.iter().flat_map(|s| s.1.chars()));
         flag_chars.sort_unstable();
         flag_chars.dedup();
-        if flag_chars.len() > 64 {
-            return Err(format!("{} distinct flags; at most 64 are supported", flag_chars.len()));
+        if flag_chars.len() > 128 {
+            return Err(format!("{} distinct flags; at most 128 are supported", flag_chars.len()));
         }
-        let bit_of = |c: char| flag_chars.iter().position(|&x| x == c).map_or(0, |i| 1u64 << i);
+        let bit_of = |c: char| flag_chars.iter().position(|&x| x == c).map_or(0, |i| 1u128 << i);
         // Stems sorted by bytes; homonyms (the same word twice) are merged.
         stems.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
         let mut d = AffixDict {
@@ -376,11 +376,11 @@ impl AffixDict {
             ..AffixDict::default()
         };
         d.offs.push(0);
-        let mut set_ids: HashMap<u64, u16> = HashMap::new();
+        let mut set_ids: HashMap<u128, u16> = HashMap::new();
         let mut i = 0;
         while i < stems.len() {
             let Some((word, _)) = stems.get(i) else { break };
-            let mut mask = 0u64;
+            let mut mask = 0u128;
             let mut j = i;
             while let Some((w, f)) = stems.get(j)
                 && w == word
@@ -481,7 +481,7 @@ impl AffixDict {
     }
 
     /// Flag mask of a stem, if `w` is one.
-    fn stem_flags(&self, w: &str) -> Option<u64> {
+    fn stem_flags(&self, w: &str) -> Option<u128> {
         if self.table.is_empty() {
             return None;
         }
@@ -533,7 +533,7 @@ impl AffixDict {
 
     /// Is `w` a stem with one suffix? With `need` set (a prefix was taken off), the stem must
     /// carry those flags too and the suffix must allow cross products.
-    fn suffixed(&self, w: &str, need: u64) -> bool {
+    fn suffixed(&self, w: &str, need: u128) -> bool {
         let mut root = String::with_capacity(w.len() + 8);
         // Each split point from the end: the appended string is `w[b..]`, at most the longest
         // suffix, and something must stay before it.
@@ -833,6 +833,25 @@ mod tests {
             assert!(d.contains("kot") && d.contains("koty"), "{mode}");
         }
         assert!(AffixDict::from_hunspell("FLAG UTF-8\n", "0\n", &[]).is_ok(), "FLAG alone is harmless");
+    }
+
+    #[test]
+    fn more_than_64_distinct_flags_load() {
+        // VERO pt_BR uses 106 distinct flags (FLAG UTF-8). Build one with every basic Latin
+        // letter, the digits and eight accented letters: 70 flags, 64 < n <= 128.
+        let mut flags = String::new();
+        let mut aff = String::from("SET UTF-8\nFLAG UTF-8\n");
+        let chars: Vec<char> = ('a'..='z').chain('A'..='Z').chain('0'..='9').chain(['á', 'é', 'í', 'ó', 'ú', 'ç', 'ã', 'õ']).collect();
+        assert_eq!(chars.len(), 70);
+        for c in chars {
+            aff.push_str(&format!("SFX {c} N 1\nSFX {c}   0   {c}   .\n"));
+            flags.push(c);
+        }
+        let d = AffixDict::from_hunspell(&aff, &format!("1\nverbo/{flags}\n"), &[]).unwrap();
+        assert!(d.contains("verbo"));
+        assert!(d.contains("verboa") && d.contains("verboz") && d.contains("verbo9"));
+        assert!(d.contains("verboç") && d.contains("verboã"), "multi-byte UTF-8 flags");
+        assert!(!d.contains("verboß"), "ß is not a flag and not a stem");
     }
 
     #[test]
