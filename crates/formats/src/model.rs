@@ -899,6 +899,11 @@ pub fn from_doc(doc: &Document) -> Flow {
     }
 }
 
+/// `blocks` (the story of a note or comment, say) as flow blocks.
+pub fn flow_of_blocks(doc: &Document, blocks: &Blocks) -> Vec<FBlock> {
+    flow_blocks(doc, blocks, 0)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
