@@ -49,8 +49,9 @@ fn the_first_supported_preferred_language_wins() {
     assert_eq!(first_supported(["en-US", "ja-JP"]), Some(Lang::EN));
     assert_eq!(first_supported([UNSUPPORTED, "qtz"]), None);
     assert_eq!(first_supported(["fr-FR", "de-DE"]), Some(lang("fr")));
-    assert_eq!(first_supported(["nl-NL", "de-DE"]), Some(lang("de")));
-    assert_eq!(first_supported(["nl-NL", UNSUPPORTED]), None);
+    // `is-IS` (Icelandic) is one of the languages Word has no interface for, so it stays unsupported.
+    assert_eq!(first_supported(["is-IS", "de-DE"]), Some(lang("de")));
+    assert_eq!(first_supported(["nl-NL", UNSUPPORTED]), Some(lang("nl")));
     assert_eq!(first_supported([]), None);
 }
 
@@ -463,7 +464,7 @@ fn cjk_catalogs_are_covered_by_the_embedded_interface_faces() {
 fn only_cjk_languages_ask_for_an_installed_cjk_font() {
     // #241 follow-up: an English interface must not read a large system CJK font on startup.
     let cjk: Vec<&str> = Lang::all().filter(|l| l.uses_cjk()).map(Lang::code).collect();
-    assert_eq!(cjk, ["zh-hans", "zh-hant", "ja"]);
+    assert_eq!(cjk, ["zh-hans", "zh-hant", "ja", "ko"]);
 }
 
 #[test]
@@ -767,7 +768,8 @@ fn hungarian_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["hu", "hu-HU", "hu_HU.UTF-8", "HU_hu.UTF-8@euro", "hu-Latn-HU"] {
         assert_eq!(lang_from_tag(tag), Some(hu), "{tag}");
     }
-    assert_eq!(first_supported(["sv-SE", "hu-HU", "en-US"]), Some(hu));
+    // `is-IS` (Icelandic) is one of the languages Word has no interface for, so it stays unsupported.
+    assert_eq!(first_supported(["is-IS", "hu-HU", "en-US"]), Some(hu));
     assert_eq!(normalize_pref("HU"), Some("hu"));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
@@ -1121,7 +1123,8 @@ fn bulgarian_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["bg", "bg-BG", "bg_BG.UTF-8", "BG-bg", "bg-Cyrl-BG"] {
         assert_eq!(lang_from_tag(tag), Some(bg), "{tag}");
     }
-    assert_eq!(first_supported(["ko-KR", "bg-BG", "en-US"]), Some(bg));
+    assert_eq!(first_supported(["qaa-QM", "bg-BG", "en-US"]), Some(bg));
+    assert_eq!(first_supported(["ko-KR", "bg-BG"]), Some(lang("ko")), "the first supported preferred language wins");
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
     let result = app.run("ui.language", serde_json::json!({"value": "BG"})).unwrap();
@@ -1190,4 +1193,290 @@ fn bundled_interface_fonts_cover_bulgarian_without_system_fallbacks() {
         }
     }
     assert!(!lang("bg").uses_cjk());
+}
+
+#[test]
+fn dutch_locales_and_saved_preference_work_without_changing_the_document() {
+    let nl = lang("nl");
+    for tag in ["nl", "nl-NL", "nl_BE", "NL-nl", "nl-NL.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(nl), "{tag}");
+    }
+    assert_eq!(first_supported(["is-IS", "nl-BE", "en-US"]), Some(nl));
+    assert_eq!(normalize_pref("NL"), Some("nl"));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "NL"})).unwrap();
+    assert_eq!(result["effective"], "nl");
+    assert_eq!(app.ui.language, "nl");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "nl" && l["name"] == "Nederlands"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), nl);
+    assert_eq!(nl.name(), "Nederlands");
+}
+
+#[test]
+fn dutch_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // Every key the interface looks up (Spanish carries them all), and no catalog errors.
+    assert!(keys(lang("nl").0.source).is_superset(&keys(lang("es").0.source)));
+    assert!(parse_entries(lang("nl").0.source).1.is_empty());
+    let nl = lang("nl");
+    for (source, expected) in [
+        ("File", "Bestand"),
+        ("Home", "Start"),
+        ("Insert", "Invoegen"),
+        ("Layout", "Lay-out"),
+        ("References", "Verwijzingen"),
+        ("View", "Weergave"),
+        ("Save", "Opslaan"),
+        ("Font", "Lettertype"),
+        ("Bold", "Vet"),
+        ("Spelling & Grammar", "Spelling en grammatica"),
+        ("Heading 1", "Kop 1"),
+        ("Hyphenation", "Woordafbreking"),
+        ("Track Changes", "Wijzigingen bijhouden"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(tr(nl, source), expected, "{source}");
+    }
+    // The Review tab's group and its toggle keep different names.
+    assert_ne!(tr(nl, "Changes"), tr(nl, "Track Changes"));
+    // The search hint's example must find the command it names.
+    assert_eq!(tr(nl, "Insert Table"), "Tabel invoegen");
+    assert!(tr(nl, "Type a command, e.g. \"insert table\"").contains("tabel invoegen"));
+    assert_eq!(fmt(tr(nl, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "Pagina 3 van 9");
+    // Dutch nouns don't agree with a number, so one count form reads right for every count.
+    for count in [0, 1, 2, 5, 21, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(nl, "{words} words"), &[("words", &words)]), format!("{count} woorden"));
+        assert_eq!(fmt(tr(nl, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("1 van {count} woorden"));
+        assert_eq!(fmt(tr(nl, "{n} lines"), &[("n", &words)]), format!("{count} regels"));
+    }
+    set_current(nl);
+    assert_eq!(location("Review › Proofing"), "Review › Controleren");
+    assert_eq!(prefixed("Undo", "Bold"), "Ongedaan maken: Vet");
+    set_current(Lang::EN);
+}
+
+#[test]
+fn bundled_interface_fonts_cover_dutch_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("nl").0.source);
+    assert!(errors.is_empty());
+    let chars: std::collections::HashSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        // Latin letters plus the Dutch quotes and dashes; symbols come from the English sources.
+        .filter(|c| ('\u{00C0}'..='\u{024F}').contains(c) || matches!(c, '„' | '”' | '—' | '–'))
+        .chain("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZzÄäËëÉéÏïÓóÖöÜüÀàÇçÈèÊê".chars())
+        .collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("nl").uses_cjk());
+}
+
+#[test]
+fn swedish_locales_and_saved_preference_work_without_changing_the_document() {
+    let sv = lang("sv");
+    for tag in ["sv", "sv-SE", "sv_FI.UTF-8", "SV-se", "sv-SE.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(sv), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "sv-SE", "en-US"]), Some(sv));
+    assert_eq!(normalize_pref("SV"), Some("sv"));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "SV"})).unwrap();
+    assert_eq!(result["effective"], "sv");
+    assert_eq!(app.ui.language, "sv");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "sv" && l["name"] == "Svenska"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), sv);
+    assert_eq!(sv.name(), "Svenska");
+}
+
+#[test]
+fn swedish_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // Every key the interface looks up (Spanish carries them all), and no catalog errors.
+    assert!(keys(lang("sv").0.source).is_superset(&keys(lang("es").0.source)));
+    assert!(parse_entries(lang("sv").0.source).1.is_empty());
+    let sv = lang("sv");
+    for (source, expected) in [
+        ("File", "Arkiv"),
+        ("Home", "Start"),
+        ("Insert", "Infoga"),
+        ("References", "Referenser"),
+        ("Review", "Granska"),
+        ("View", "Vy"),
+        ("Help", "Hjälp"),
+        ("Save", "Spara"),
+        ("Font", "Teckensnitt"),
+        ("Bold", "Fet"),
+        ("Spelling & Grammar", "Stavning och grammatik"),
+        ("Heading 1", "Rubrik 1"),
+        ("Hyphenation", "Avstavning"),
+        ("Track Changes", "Spåra ändringar"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(tr(sv, source), expected, "{source}");
+    }
+    // The Granska tab's group and its toggle keep different names.
+    assert_ne!(tr(sv, "Changes"), tr(sv, "Track Changes"));
+    // The search hint's example must find the command it names.
+    assert_eq!(tr(sv, "Insert Table"), "Infoga tabell");
+    assert!(tr(sv, "Type a command, e.g. \"insert table\"").contains("infoga tabell"));
+    assert_eq!(fmt(tr(sv, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "Sida 3 av 9");
+    // Swedish nouns agree with a number, so count labels are a label and a colon: `Ord: 21`.
+    for count in [0, 1, 2, 5, 21, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(sv, "{words} words"), &[("words", &words)]), format!("Ord: {count}"));
+        assert_eq!(fmt(tr(sv, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("Valda: 1 av {count}"));
+        assert_eq!(fmt(tr(sv, "{n} lines"), &[("n", &words)]), format!("Rader: {count}"));
+    }
+    set_current(sv);
+    assert_eq!(location("Review › Proofing"), "Granska › Granskning");
+    assert_eq!(prefixed("Undo", "Bold"), "Ångra Fet");
+    set_current(Lang::EN);
+}
+
+#[test]
+fn bundled_interface_fonts_cover_swedish_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("sv").0.source);
+    assert!(errors.is_empty());
+    let chars: std::collections::HashSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        // Latin letters plus the Swedish quotes and dashes; symbols come from the English sources.
+        .filter(|c| ('\u{00C0}'..='\u{024F}').contains(c) || matches!(c, '”' | '„' | '—' | '–'))
+        .chain("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZzÄäÅåÖöÉéÈèÜü".chars())
+        .collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("sv").uses_cjk());
+}
+
+#[test]
+fn danish_locales_and_saved_preference_work_without_changing_the_document() {
+    let da = lang("da");
+    for tag in ["da", "da-DK", "da_DK.UTF-8", "DA-dk", "da-DK.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(da), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "da-DK", "en-US"]), Some(da));
+    assert_eq!(normalize_pref("DA"), Some("da"));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "DA"})).unwrap();
+    assert_eq!(result["effective"], "da");
+    assert_eq!(app.ui.language, "da");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "da" && l["name"] == "Dansk"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), da);
+    assert_eq!(da.name(), "Dansk");
+}
+
+#[test]
+fn danish_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    assert!(keys(lang("da").0.source).is_superset(&keys(lang("es").0.source)));
+    assert!(parse_entries(lang("da").0.source).1.is_empty());
+    let da = lang("da");
+    for (source, expected) in [
+        ("File", "Filer"),
+        ("Home", "Start"),
+        ("Insert", "Indsæt"),
+        ("References", "Referencer"),
+        ("Review", "Gennemse"),
+        ("View", "Visning"),
+        ("Help", "Hjælp"),
+        ("Save", "Gem"),
+        ("Font", "Skrifttype"),
+        ("Bold", "Fed"),
+        ("Spelling & Grammar", "Stavekontrol og grammatik"),
+        ("Heading 1", "Overskrift 1"),
+        ("Hyphenation", "Orddeling"),
+        ("Track Changes", "Følg ændringer"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(tr(da, source), expected, "{source}");
+    }
+    assert_ne!(tr(da, "Changes"), tr(da, "Track Changes"));
+    assert_eq!(tr(da, "Insert Table"), "Indsæt tabel");
+    assert!(tr(da, "Type a command, e.g. \"insert table\"").contains("indsæt tabel"));
+    assert_eq!(fmt(tr(da, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "Side 3 af 9");
+    // Danish nouns agree with a number, so count labels are a label and a colon: `Ord: 21`.
+    for count in [0, 1, 2, 5, 21, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(da, "{words} words"), &[("words", &words)]), format!("Ord: {count}"));
+        assert_eq!(fmt(tr(da, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("Valgt: 1 af {count}"));
+        assert_eq!(fmt(tr(da, "{n} lines"), &[("n", &words)]), format!("Linjer: {count}"));
+    }
+    set_current(da);
+    assert_eq!(location("Review › Proofing"), "Gennemse › Korrekturlæsning");
+    assert_eq!(prefixed("Undo", "Bold"), "Fortryd Fed");
+    set_current(Lang::EN);
+}
+
+#[test]
+fn bundled_interface_fonts_cover_danish_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("da").0.source);
+    assert!(errors.is_empty());
+    let chars: std::collections::HashSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        // Latin letters plus the Danish quotes and dashes; symbols come from the English sources.
+        .filter(|c| ('\u{00C0}'..='\u{024F}').contains(c) || matches!(c, '”' | '„' | '—' | '–'))
+        .chain("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZzÆæØøÅåÉéÈèÜü".chars())
+        .collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("da").uses_cjk());
+}
+
+#[test]
+fn korean_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    assert!(keys(lang("ko").0.source).is_superset(&keys(lang("nl").0.source)));
+    assert!(parse_entries(lang("ko").0.source).1.is_empty());
+    let ko = lang("ko");
+    for (source, expected) in [
+        ("Even Page", "짝수 페이지"),
+        ("Export", "내보내기"),
+        ("Find", "찾기"),
+        ("Accept", "수락"),
+        ("Lasso", "올가미"),
+        ("Interface language:", "인터페이스 언어:"),
+        ("Alt\nText", "대체\n텍스트"),
+    ] {
+        assert_eq!(tr(ko, source), expected, "{source}");
+    }
 }

@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Danish `da`, Swedish `sv` and Dutch `nl` interface catalogs added, 2,447 entries each; previously minor: Swedish `sv` and Dutch `nl` interface catalogs added; previously minor: Dutch `nl` interface catalog added, 2,447 entries; previously trivial: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -19,8 +19,8 @@ native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **19 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,057–2,454 entries
+- **23 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr`, Bulgarian `bg`, Dutch `nl`, Korean `ko`, Swedish `sv` and Danish `da`. Catalogs have 2,057–2,454 entries
   each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
   `pl`, `pl-PL` and `pl_PL.UTF-8` system locales pick Polish automatically.
@@ -57,8 +57,8 @@ shared items below.
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
-Other shipped languages: **13** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
-Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`), Russian (`ru`), Italian (`it`, #594), Polish (`pl`), Czech (`cs`), Hungarian (`hu`), French (`fr`) and Bulgarian (`bg`), all partial.
+Other shipped languages: **17** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
+Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`), Russian (`ru`), Italian (`it`, #594), Polish (`pl`), Czech (`cs`), Hungarian (`hu`), French (`fr`), Bulgarian (`bg`), Dutch (`nl`), Korean (`ko`), Swedish (`sv`) and Danish (`da`), all partial.
 Estonian uses the existing fonts, follows `et-EE` system locales, and is available in Options or
 through `ui.language` with `{"value":"et"}`. Its 1,307 entries cover the existing interface catalog.
 Estonian spelling, grammar, dates and document templates are not added by the interface catalog.
@@ -76,6 +76,28 @@ the Russian catalog, built-in style names shown translated, plus the citation st
 
 Polish is the only one besides English with proofing tools, and a Polish interface writes new
 documents in Polish (`pl-PL`).
+
+Dutch (`nl-NL`, `nl-BE` and `nl_BE` system locales, `{"value":"nl"}`) has a complete catalog of
+2,447 entries: every key of the reference (Polish) catalog, so the equation gallery, the built-in
+style names, watermarks and paper sizes are translated like the newest catalogs. Dutch nouns do
+not agree with a number, so count labels keep one form (`21 woorden`, `{n} regels`); quotes are
+`„…”` and a colon takes no space before it. The bundled Inter faces cover the Dutch letters
+(`ë`, `ï`, `é`, `å`) in every interface weight, and a test checks that. Dutch proofing is not
+included.
+
+Swedish (`sv-SE`, `sv-FI` and `sv_FI.UTF-8` system locales, `{"value":"sv"}`) has the same
+complete 2,447-entry catalog. Swedish nouns do agree with a number, so count labels are a label
+and a colon (`Ord: 21`, `Rader: {n}`) and read right at every count; quotes are `”…”`.
+Feature names follow Swedish Word (`Arkiv`, `Infoga`, `Referenser`, `Granska`, `Vy`, `Spåra
+ändringar`), and the bundled Inter faces cover `å ä ö` in every interface weight (a test checks
+that). Swedish proofing is not included.
+
+Danish (`da-DK` and `da_DK.UTF-8` system locales, `{"value":"da"}`) has the same complete
+2,447-entry catalog. Danish nouns agree with a number too, so count labels are a label and a
+colon (`Ord: 21`, `Linjer: {n}`); quotes are `„…”`. Feature names follow Danish Word (`Filer`,
+`Indsæt`, `Referencer`, `Gennemse`, `Visning`, `Følg ændringer`, `Serielbrev`), and the bundled
+Inter faces cover `æ ø å` in every interface weight (a test checks that). Danish proofing is not
+included.
 
 ## Proofing per language
 
@@ -158,6 +180,9 @@ WordCraft keeps 2,54 cm).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Danish (`da`) interface catalog added: 2,447 entries covering the reference (Polish) key set; count labels as `Ord: 21`; `da-DK` locales, saved-preference and bundled-font tests; no Danish proofing |
+| 2026-10-12 | minor | Swedish (`sv`) interface catalog added: 2,447 entries covering the reference (Polish) key set; count labels as `Ord: 21` since Swedish nouns agree with a number; `sv-SE`/`sv-FI` locales, saved-preference and bundled-font tests; no Swedish proofing |
+| 2026-10-12 | minor | Dutch (`nl`) interface catalog added: 2,447 entries covering the reference (Polish) key set — equation gallery, built-in style names, watermarks, paper sizes; `nl-NL`/`nl-BE` locales, saved-preference and bundled-font tests; no Dutch proofing |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
 | 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |
