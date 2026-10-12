@@ -1584,7 +1584,7 @@ impl AutoSaveBlock {
 /// Whether saving to `name` keeps the whole document (the formats `file.save` treats as the
 /// document's own file, including macro-enabled documents and templates); anything else is a
 /// copy that leaves it unsaved. AutoSave writes only these formats.
-fn keeps_everything(name: &str) -> bool {
+pub fn keeps_everything(name: &str) -> bool {
     let ext = std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json" | "xml")
 }
@@ -1695,6 +1695,7 @@ pub fn now_ms() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
 
     fn mod_key(key: egui::Key) -> egui::Event {
         egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND }
@@ -2558,7 +2559,9 @@ mod tests {
             assert_eq!(h.query_by_label(BLURB).is_some(), hook, "hook {hook}: the Print button's blurb");
             assert!(h.query_by_label("PDF document (*.pdf)").is_some(), "hook {hook}: the page rendered its export choices");
             if hook {
-                h.get_by_role_and_label(egui::accesskit::Role::Button, "Print").click();
+                // The page's own Print button (the backstage list has a Print entry too): the last.
+                let buttons: Vec<_> = h.query_all(egui_kittest::kittest::By::new().role(egui::accesskit::Role::Button).label("Print")).collect();
+                buttons.last().expect("a Print button").click();
                 h.step();
                 h.step();
                 assert_eq!(printed.get(), 1, "the button printed");
@@ -2656,6 +2659,46 @@ mod tests {
         h.step();
         assert!(h.state().session.dirty, "the keystroke reached the document");
         assert_eq!(reported.get(), Some(true), "the host was told before the frame ended");
+    }
+
+    #[test]
+    fn paragraph_alignment_keeps_the_canvas_focused_for_typing() {
+        use wordcraft_doc::Align;
+
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            typed(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+
+        for (label, alignment, text) in
+            [("Align Left", Align::Left, " left"), ("Center", Align::Center, " center"), ("Align Right", Align::Right, " right")]
+        {
+            h.get_by_role_and_label(egui::accesskit::Role::Button, label).click();
+            h.step();
+
+            assert!(h.state().canvas.focused, "{label}: the canvas keeps keyboard focus");
+            let paragraph = h.state().session.doc.para_at(&h.state().session.sel.focus).expect("the caret remains in its paragraph");
+            assert_eq!(h.state().session.doc.styles.resolve_para(&paragraph.props).align, alignment);
+
+            h.event(egui::Event::Text(text.into()));
+            h.step();
+            assert!(body_text(h.state()).ends_with(text), "{label}: typing continues in the document");
+        }
+
+        // Every command button does the same, not only alignment: Bold, then type.
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Bold").click();
+        h.step();
+        assert!(h.state().canvas.focused, "Bold: the canvas keeps keyboard focus");
+        h.event(egui::Event::Text(" bold".into()));
+        h.step();
+        assert!(body_text(h.state()).ends_with(" bold"), "Bold: typing continues in the document");
     }
 
     /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
