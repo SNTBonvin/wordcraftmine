@@ -112,7 +112,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let hook = app.services.print.is_some();
             if hook {
                 ui.label(tl!("Send the document straight to the system print dialog, or save a copy in another format below."));
-                ui.label(egui::RichText::new(tl!("The printer, two-sided printing and pages per sheet are chosen in that dialog.")).color(t.text_dim));
+                ui.label(
+                    egui::RichText::new(tl!("The printer, two-sided printing and pages per sheet are chosen in that dialog.")).color(t.text_dim),
+                );
             } else {
                 ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
             }
@@ -121,7 +123,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 let params = app.ui.print.params();
                 let _ = app.run("ui.print", params);
             }
-            if ui.add(egui::Button::new(egui::RichText::new(tl!("Save these pages as PDF…")).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
+            if ui
+                .add(egui::Button::new(egui::RichText::new(tl!("Save these pages as PDF…")).font(medium(13.5))).min_size(vec2(320.0, 34.0)))
+                .clicked()
+            {
                 app.print_pdf_dialog();
             }
             ui.add_space(6.0);
@@ -142,7 +147,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 app.ui.print.preview = if app.ui.print.range == "all" { 0 } else { current.0.min(total.saturating_sub(1)) };
             }
             if app.ui.print.range == "custom" {
-                ui.add(egui::TextEdit::singleline(&mut app.ui.print.pages).hint_text(tl!("Pages like 1-3, 5")).desired_width(260.0).char_limit(wordcraft_engine::print::MAX_SPEC_CHARS));
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.ui.print.pages)
+                        .hint_text(tl!("Pages like 1-3, 5"))
+                        .desired_width(260.0)
+                        .char_limit(wordcraft_engine::print::MAX_SPEC_CHARS),
+                );
             }
             choice(ui, "print_parity", &mut app.ui.print.parity, &PARITIES);
 
@@ -211,6 +221,7 @@ pub fn export_formats(app: &mut WordApp, ui: &mut Ui) {
     for (label, ext) in [
         ("PDF document (*.pdf)", "pdf"),
         ("Word document (*.docx)", "docx"),
+        ("Word XML Document (*.xml)", "xml"),
         ("OpenDocument Text (*.odt)", "odt"),
         ("Rich Text Format (*.rtf)", "rtf"),
         ("Web page (*.html)", "html"),
