@@ -2417,3 +2417,21 @@
 	TOA Heading	Заглавие на списъка на правните източници
 	TOC {n}	Съдържание {n}
 	Good afternoon	Добър ден
+	Context	Според контекста
+	Couldn't make WordCraft the default: {error}	WordCraft не можа да стане приложение по подразбиране: {error}
+	Do Not Check Spelling or Grammar	Без проверка на правописа и граматиката
+	Hindi	Хинди
+	In Default apps, choose WordCraft for the document types you want it to open.	В „Приложения по подразбиране“ изберете WordCraft за типовете документи, които искате да отваря.
+	Make WordCraft the default for Word documents…	WordCraft по подразбиране за документи на Word…
+	Numerals	Цифри
+	Numerals:	Цифри:
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	Отсега нататък файловете .docx, .doc, .rtf и .odt и шаблоните на Word ще се отварят с WordCraft.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Отваря „Настройки › Приложения по подразбиране“, където избирате WordCraft за .docx и другите типове документи.
+	Reading	Четене
+	Reading Column Width	Ширина на колоната при четене
+	Reading Line Spacing	Междуредие при четене
+	Reading Text Size	Размер на текста при четене
+	Show KeyTips (Alt or F10)	Показване на клавишните подсказки (Alt или F10)
+	System	Според системата
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	За да се отварят документите на Word с WordCraft по подразбиране: изберете документ във Finder, изберете File › Get Info, изберете WordCraft под Open with и щракнете Change All.
+	WordCraft is now the default app for Word documents.	WordCraft вече е приложението по подразбиране за документи на Word.

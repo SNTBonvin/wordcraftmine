@@ -126,6 +126,27 @@ fn reset_shortcuts_remove_direct_formatting_but_keep_styles() {
 }
 
 #[test]
+fn non_english_runs_are_not_proofed() {
+    // #100: runs tagged with a proofing language that has no dictionary are skipped
+    // by both proofing paths; English still is proofed.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "ąžuolas labas"}));
+    let before = run(&mut s, "review.issues", json!({}));
+    assert!(!before.as_array().map(|a| a.is_empty()).unwrap_or(true), "default language flags the words: {before}");
+
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "lt-LT"}));
+    let after = run(&mut s, "review.issues", json!({}));
+    assert_eq!(after, json!([]), "Lithuanian runs are skipped: {after}");
+
+    // English typos are still caught.
+    let mut e = Session::new(wordcraft_doc::Document::new());
+    run(&mut e, "text.insert", json!({"text": "Hello helo world"}));
+    let en = run(&mut e, "review.issues", json!({}));
+    assert_eq!(en.as_array().map(|a| a.len()).unwrap_or(0), 1, "English typo still flagged: {en}");
+}
+
+#[test]
 fn typing_enter_undo() {
     let mut s = s();
     run(&mut s, "text.insert", json!({"text": "Hello"}));
@@ -2428,12 +2449,13 @@ fn style_inspector_reports_and_clears_levels() {
     assert!(pdirect.iter().any(|d| d["prop"] == "align" && d["value"] == "center"), "{pdirect:?}");
     assert!(r["character"]["style"].is_null());
     let cdirect = r["character"]["direct"].as_array().unwrap();
-    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true})]);
+    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true}), json!({"prop": "boldCs", "value": true})]);
 
     // Formatting that matches the style isn't a difference (Heading 1 is 20 pt).
     run(&mut s, "format.size", json!({"size": 20}));
     let r = run(&mut s, "styles.inspect", json!({}));
-    assert_eq!(r["character"]["direct"].as_array().unwrap().len(), 1, "{r}");
+    let cdirect = r["character"]["direct"].as_array().unwrap();
+    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true}), json!({"prop": "boldCs", "value": true})]);
 
     // Character style level.
     run(&mut s, "format.charStyle", json!({"style": "Emphasis"}));
@@ -2612,6 +2634,94 @@ fn page_and_table_gridlines_toggle_independently() {
     let state = run(&mut s, "view.state", json!({}));
     assert_eq!(state["gridlines"], false);
     assert_eq!(state["tableGridlines"], false);
+}
+
+#[test]
+fn navigation_pane_opens_without_changing_view_mode() {
+    // Reading Mode's heading navigation is the Navigation pane; Outline is an editing view (#493).
+    let mut s = s();
+    for command in ["view.printLayout", "view.webLayout", "view.readMode"] {
+        run(&mut s, command, json!({}));
+        let before = (s.view.mode, s.view.read_mode);
+        s.view.nav_pane = false;
+        run(&mut s, "view.navigationPane", json!({"value": true}));
+        assert!(s.view.nav_pane);
+        assert_eq!((s.view.mode, s.view.read_mode), before, "{command}");
+    }
+}
+
+#[test]
+fn reading_mode_reflows_per_viewport_without_changing_document_or_export() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "A long paragraph for reading. ".repeat(200)}));
+    let original = s.doc.clone();
+    let print = s.export_layout();
+    let dirty = s.dirty;
+    run(&mut s, "view.readMode", json!({}));
+    assert!(s.view.read_mode);
+    s.view.read_width = 240.0;
+    s.view.read_height = 420.0;
+    let columns = s.layout();
+    assert!(columns.pages.len() > print.pages.len());
+    assert!(columns.pages.iter().all(|p| p.w == 240.0 && p.h == 420.0));
+    s.view.read_height = 260.0;
+    assert!(s.layout().pages.len() > columns.pages.len(), "height is part of the layout cache key");
+    s.view.read_width = 300.0;
+    assert_eq!(s.layout().pages[0].w, 300.0, "width is part of the layout cache key");
+    let serialized = serde_json::to_value(&s.view).unwrap();
+    assert!(serialized.get("readWidth").is_none() && serialized.get("readHeight").is_none());
+    let restored: crate::ViewState = serde_json::from_value(serialized).unwrap();
+    assert_eq!((restored.read_width, restored.read_height), (300.0, 500.0));
+    run(&mut s, "view.readColumnWidth", json!({"value": "page"}));
+    run(&mut s, "view.readTextSize", json!({"value": 125}));
+    let default_spacing_pages = s.layout().pages.len();
+    run(&mut s, "view.readLineSpacing", json!({"value": 2.0}));
+    assert_eq!(s.view.read_column_width, Some(612.0));
+    assert_eq!(s.view.read_zoom, 1.25);
+    assert_eq!(s.view.read_line_spacing, Some(2.0));
+    let spaced = s.layout();
+    assert!(spaced.pages.len() > default_spacing_pages, "line spacing must invalidate cached pagination");
+    assert!(s.run("view.readTextSize", &json!({"value": -10})).is_err());
+    assert!(s.run("view.readLineSpacing", &json!({"value": 0.01})).is_err());
+    assert!(s.run("view.readColumnWidth", &json!({"value": "giant"})).is_err());
+    let serialized = serde_json::to_value(&s.view).unwrap();
+    for key in ["readColumnWidth", "readZoom", "readLineSpacing"] {
+        assert!(serialized.get(key).is_none());
+    }
+    run(&mut s, "view.printLayout", json!({}));
+    assert!(!s.view.read_mode);
+    assert_eq!(s.layout().pages[0].w, print.pages[0].w);
+    assert_eq!(s.export_layout().pages.len(), print.pages.len());
+    assert_eq!(s.doc, original);
+    assert_eq!(s.dirty, dirty);
+    run(&mut s, "view.readMode", json!({}));
+    assert_eq!(s.view.read_column_width, None);
+    assert_eq!(s.view.read_zoom, 1.0);
+    assert_eq!(s.view.read_line_spacing, None);
+}
+
+/// File › Options › Advanced › Numeral: the display mode for digits (display only).
+#[test]
+fn numeral_mode_sets_gets_and_rejects_junk() {
+    use wordcraft_layout::NumeralMode;
+    let mut s = s();
+    assert_eq!(s.view.numeral, NumeralMode::Arabic, "Western digits by default");
+    let r = run(&mut s, "view.numeral", json!({"value": "hindi"}));
+    assert_eq!(r["value"], "hindi");
+    assert_eq!(s.view.numeral, NumeralMode::Hindi);
+    let r = run(&mut s, "view.numeral", json!({}));
+    assert_eq!(r["value"], "hindi", "no params reads the current mode");
+    run(&mut s, "view.numeral", json!({"value": "Context"}));
+    assert_eq!(s.view.numeral, NumeralMode::Context, "mode names ignore case");
+    assert!(s.run("view.numeral", &json!({"value": "western"})).is_err());
+    assert!(s.run("view.numeral", &json!({"value": 3})).is_err());
+    assert!(s.run("view.numeral", &json!({"value": ["hindi"]})).is_err());
+    assert_eq!(s.view.numeral, NumeralMode::Context, "rejected values keep the mode");
+    // Switching modes relayouts without disturbing the text.
+    s.doc = wordcraft_doc::Document::from_text("Year 2024");
+    run(&mut s, "view.numeral", json!({"value": "hindi"}));
+    let _l = s.layout();
+    assert_eq!(text(&s), "Year 2024");
 }
 
 /// Issue #67: View › Zoom steps. Zoom In/Out leave a fit mode and step 10% from the current zoom
@@ -3573,6 +3683,38 @@ fn enclose_characters_make_an_eq_field_and_come_back_out() {
 }
 
 #[test]
+fn list_buttons_follow_the_paragraphs_own_level() {
+    use crate::cmd::para::{ListButtons, list_buttons};
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "item"}));
+    let state = |s: &Session| {
+        let rp = s.doc.para_at(&s.sel.focus).map(|p| s.doc.styles.resolve_para(&p.props));
+        list_buttons(&s.doc, rp.and_then(|r| r.numbering))
+    };
+    assert_eq!(state(&s), ListButtons::default(), "plain text: no list button on");
+    run(&mut s, "para.bullets", json!({}));
+    assert_eq!(state(&s), ListButtons { bullets: true, numbering: false, multilevel: false });
+    // A bulleted list whose second level is numbered: at level 2 the paragraph is numbered.
+    let num = s.doc.para_at(&s.sel.focus).unwrap().props.numbering.unwrap().num;
+    let numbered = wordcraft_doc::numbering::Level { text: "%2.".into(), ..Default::default() };
+    s.doc.numbering.nums.iter_mut().find(|n| n.id == num).unwrap().level_overrides.push((1, numbered));
+    run(&mut s, "para.listLevel", json!({"level": 1}));
+    assert_eq!(state(&s), ListButtons { bullets: false, numbering: true, multilevel: false });
+    run(&mut s, "para.numbering", json!({}));
+    assert_eq!(state(&s), ListButtons { bullets: false, numbering: true, multilevel: false }, "1. a. i. is not multilevel");
+    // Legal numbering (1. 1.1. 1.1.1.) numbers levels together, even on its first level. (Its
+    // first level reads like "1." numbering, which the button would toggle off, so start plain.)
+    run(&mut s, "para.numbering", json!({"off": true}));
+    run(&mut s, "para.multilevel", json!({"kind": "legal"}));
+    run(&mut s, "para.listLevel", json!({"level": 0}));
+    assert_eq!(state(&s), ListButtons { bullets: false, numbering: true, multilevel: true });
+    run(&mut s, "para.listLevel", json!({"level": 2}));
+    assert!(state(&s).multilevel);
+    run(&mut s, "para.numbering", json!({"off": true}));
+    assert_eq!(state(&s), ListButtons::default());
+}
+
+#[test]
 fn replace_all_splits_paragraphs_at_a_paragraph_mark_in_the_replacement() {
     // Issue #423: untracked Replace All left `\r` in the paragraph instead of splitting it.
     for with in ["A\rB", "A\u{2029}B"] {
@@ -3691,6 +3833,127 @@ fn note_options_per_section_and_convert_notes() {
     assert_eq!(kinds(&s), vec![NoteKind::Footnote, NoteKind::Footnote]);
     assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
     assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
+}
+
+/// A tiny synthetic Polish Hunspell dictionary (written for these tests). Real dictionaries are
+/// installed on the system, never bundled; every Polish test installs this same one.
+fn polish_test_dictionary() {
+    let aff = "SET UTF-8\nTRY aioeznrwcyszżtkpdmłjlubąęgh\nMAP 2\nMAP oó\nMAP zż\nREP 2\nREP ż rz\nREP rz ż\n";
+    let dic = "12\npłynie\nrzeka\na\nto\nwiem\nże\ntak\nw\nogóle\nzażółć\ngęślą\njaźń\n";
+    wordcraft_proof::pl::install_dictionary(aff, dic).unwrap();
+}
+
+/// Review › Language and the proofing commands work in Polish end to end: the language makes
+/// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
+/// suggestions come from it, and a suggestion fixes the text.
+#[test]
+fn polish_proofing_through_the_review_commands() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Płynie żeka, a wogóle to wiem że tak."}));
+    // English by default: the Polish words are English misspellings.
+    assert!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len() >= 5);
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pl_PL", "default": true}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "the tag is normalized");
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pl-PL");
+    let issues = run(&mut s, "review.issues", json!({}));
+    let arr = issues.as_array().unwrap();
+    let has = |text: &str, kind: &str, sugg: &str| {
+        arr.iter()
+            .any(|i| i["text"] == text && i["kind"] == kind && i["lang"] == "pl" && i["suggestions"].as_array().unwrap().iter().any(|x| x == sugg))
+    };
+    assert!(has("żeka", "spelling", "rzeka"), "{issues}");
+    assert!(has("wogóle", "spelling", "w ogóle"), "{issues}");
+    assert!(has(" że", "grammar", ", że"), "{issues}");
+    assert_eq!(arr.len(), 3, "{issues}");
+    assert!(arr.iter().any(|i| i["message"] == "Brak przecinka przed „że”"), "{issues}");
+    // F7 from the start selects the first issue; Change applies a suggestion.
+    run(&mut s, "caret.docStart", json!({}));
+    let first = run(&mut s, "review.spelling", json!({}));
+    assert_eq!(first["text"], "żeka");
+    run(&mut s, "review.applySuggestion", json!({"text": "rzeka"}));
+    assert!(text(&s).starts_with("Płynie rzeka,"), "{}", text(&s));
+    // Add to Dictionary works for Polish words too.
+    run(&mut s, "review.addToDictionary", json!({"word": "wogóle"}));
+    let left = run(&mut s, "review.issues", json!({}));
+    assert_eq!(left.as_array().unwrap().len(), 1, "{left}");
+}
+
+/// `review.language`: tags are validated and normalized, `noProof` alone keeps the language,
+/// no parameters keep the old meaning (US English), and `default` needs a language.
+#[test]
+fn review_language_validates_tags_and_marks_text_unchecked() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Hello wrold"}));
+    run(&mut s, "select.all", json!({}));
+    assert!(s.run("review.language", &json!({"lang": "not a tag!"})).is_err());
+    assert!(s.run("review.language", &json!({"lang": ""})).is_err());
+    assert!(s.run("review.language", &json!({"default": true, "noProof": true})).is_err(), "default needs a language");
+    assert_eq!(text(&s), "Hello wrold", "a refused command changes nothing");
+    run(&mut s, "review.language", json!({"noProof": true}));
+    let st = run(&mut s, "format.state", json!({}));
+    assert_eq!((st["noProof"].clone(), st["lang"].clone()), (json!(true), json!("en-US")));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    run(&mut s, "review.language", json!({"noProof": false}));
+    assert_eq!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len(), 1);
+    run(&mut s, "review.language", json!({"lang": "PL"}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pl");
+    run(&mut s, "review.language", json!({}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "en-US");
+    // A language without proofing tools: no marks.
+    run(&mut s, "review.language", json!({"lang": "fr-FR"}));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+}
+
+/// The editing language (set by the front end from the interface language): new blank
+/// documents and opened plain text are written in it; the untouched first document switches,
+/// a document with changes never does, and templates stay English.
+#[test]
+fn new_documents_follow_the_editing_language() {
+    polish_test_dictionary();
+    let mut s = s();
+    s.set_editing_language(Some("pl-PL"));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "the untouched blank document switches");
+    assert!(!s.dirty && !s.can_undo(), "no change to save or undo");
+    run(&mut s, "text.insert", json!({"text": "Zażółć gęślą jaźń."}));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    s.set_editing_language(None);
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "a document with changes keeps its language");
+    s.set_editing_language(Some("pl"));
+    run(&mut s, "file.new", json!({}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl"));
+    run(&mut s, "file.new", json!({"template": "letter"}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("en-US"), "templates are English text");
+    let data = crate::cmd::insert::base64_encode("Płynie rzeka.".as_bytes());
+    run(&mut s, "file.open", json!({"path": "notatka.txt", "data": data}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl"));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    // Malformed tags fall back to US English.
+    s.set_editing_language(Some("not a tag"));
+    assert_eq!(s.editing_lang, None);
+}
+
+/// A Polish document keeps its languages through .docx: the default (`w:docDefaults`) and an
+/// English run (`w:lang`) come back, and so does the proofing.
+#[test]
+fn proofing_languages_survive_a_docx_round_trip() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Płynie żeka. Hello wrold."}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    run(&mut s, "select.text", json!({"text": "Hello wrold."}));
+    run(&mut s, "review.language", json!({"lang": "en-GB"}));
+    let bytes = crate::io::save_bytes("polski.docx", &s.doc).unwrap();
+    let doc = crate::io::open_bytes("polski.docx", &bytes).unwrap();
+    assert_eq!(doc.styles.default_chr.lang.as_deref(), Some("pl-PL"));
+    let mut back = Session::new(doc);
+    let issues = run(&mut back, "review.issues", json!({}));
+    let found: Vec<(String, String)> =
+        issues.as_array().unwrap().iter().map(|i| (i["text"].as_str().unwrap().to_string(), i["lang"].as_str().unwrap().to_string())).collect();
+    assert_eq!(found, [("żeka".to_string(), "pl".to_string()), ("wrold".to_string(), "en".to_string())], "{issues}");
 }
 
 #[test]
