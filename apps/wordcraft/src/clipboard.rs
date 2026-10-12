@@ -10,7 +10,7 @@
 //! Everything read here comes from other programs: sizes are capped as it is read.
 
 use wordcraft_engine::cmd::paste::MAX_PASTE_BYTES;
-use wordcraft_ui_egui::paste_picture::{ClipboardPicture, MAX_FILE_BYTES};
+use wordcraft_ui_egui::paste_picture::ClipboardPicture;
 
 fn open() -> Option<arboard::Clipboard> {
     arboard::Clipboard::new().map_err(|e| log::warn!("clipboard: {e}")).ok()
@@ -118,7 +118,7 @@ mod platform {
         }
         let offered = formats();
         let mime = super::PICTURE_MIMES.into_iter().find(|m| offered.iter().any(|o| o == m))?;
-        read(mime, super::MAX_FILE_BYTES)
+        read(mime, wordcraft_ui_egui::paste_picture::MAX_FILE_BYTES)
     }
 }
 

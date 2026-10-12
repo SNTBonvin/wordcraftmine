@@ -552,6 +552,8 @@
 	Read\nMode	Okuma\nModu
 	Reads the clipboard's rich text and keeps its formatting.	Panodaki zengin metni okur ve biçimlendirmesini korur.
 	Reads the clipboard's web content and keeps its formatting.	Panodaki web içeriğini okur ve biçimlendirmesini korur.
+	Picture	Resim
+	Pastes the clipboard's picture.	Panodaki resmi yapıştırır.
 	Reading Highlight	Okuma Vurgusu
 	Recent	Son Kullanılanlar
 	Record Macro	Makro Kaydet
