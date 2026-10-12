@@ -26,6 +26,7 @@ pub mod hyphen;
 pub mod lang;
 pub mod patterns;
 pub mod pl;
+pub mod pt;
 
 use std::collections::HashSet;
 use std::ops::Range;
@@ -304,6 +305,7 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang) -> Option<Iss
     }
     let message = match lang {
         ProofLang::Pl => "Możliwy błąd pisowni",
+        ProofLang::Pt => "Possível erro de ortografia",
         _ => "Possible spelling mistake",
     };
     Some(Issue { start: a, end: b, kind: IssueKind::Spelling, message: message.into(), suggestions: Vec::new(), lang })
@@ -314,6 +316,7 @@ pub fn is_correct_in(word: &str, lang: ProofLang) -> bool {
     match lang {
         ProofLang::En => is_correct(word),
         ProofLang::Pl => pl::is_correct(word),
+        ProofLang::Pt => pt::is_correct(word),
         ProofLang::Other => true,
     }
 }
@@ -323,16 +326,19 @@ pub fn suggest_in(word: &str, max: usize, lang: ProofLang) -> Vec<String> {
     match lang {
         ProofLang::En => suggest(word, max),
         ProofLang::Pl => pl::suggest(word, max),
+        ProofLang::Pt => pt::suggest(word, max),
         ProofLang::Other => Vec::new(),
     }
 }
 
 /// Grammar issues in a paragraph of text in `lang`: the English rules, the Polish ones
-/// ([`pl::grammar`]), or none for a language WordCraft doesn't proof.
+/// ([`pl::grammar`]), the Portuguese ones ([`pt::grammar`]), or none for a language WordCraft
+/// doesn't proof.
 pub fn check_grammar_in(text: &str, lang: ProofLang) -> Vec<Issue> {
     match lang {
         ProofLang::En => check_grammar(text),
         ProofLang::Pl => pl::grammar::check(text),
+        ProofLang::Pt => pt::grammar::check(text),
         ProofLang::Other => Vec::new(),
     }
 }
