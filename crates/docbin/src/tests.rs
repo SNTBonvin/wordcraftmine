@@ -1408,6 +1408,38 @@ fn table_cell_margins_from_gap_half() {
     assert_eq!(tbl.rows[0].cells[0].props.width, Some(144.0));
 }
 
+/// #880 fix round 3: a .doc table whose rows carry `sprmTDefTable` edges is
+/// edge-defined — Word lays it out at exactly those widths (the OOXML equivalent is
+/// `w:tblLayout w:type="fixed"`). docbin left the flag at its default, so layout's
+/// autofit recomputed columns from content and the model's exact TDefTable widths never
+/// reached the page (the rendered TDoc column was ~31 pt instead of 54.7). Tables with
+/// no edges of their own keep the autofit default.
+#[test]
+fn edge_defined_table_lays_out_fixed() {
+    let text = "a\u{7}b\u{7}tail\r";
+    let spec_of = |ttp: Vec<u8>| StructSpec {
+        text,
+        papx_entries: vec![
+            (0, 0, grpprl(&[(0x2416, &[0x01])])), // "a" cell paragraph
+            (2, 0, ttp),                          // "b" cell paragraph, ends the row
+            (4, 0, Vec::new()),                   // "tail" paragraph
+        ],
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    // With TDefTable edges: edge-defined, so the grid must reach the page unchanged.
+    let ttp_edges = [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(&[0, 2880, 5760])].concat();
+    let doc = read(&struct_doc(&spec_of(ttp_edges))).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.grid, vec![144.0f32, 144.0]);
+    assert!(tbl.props.fixed, "edge-defined table must lay out fixed, props: {:?}", tbl.props);
+    // Without edges: no grid, autofit keeps deciding the widths.
+    let ttp_plain = grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]);
+    let doc = read(&struct_doc(&spec_of(ttp_plain))).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert!(tbl.grid.is_empty());
+    assert!(!tbl.props.fixed, "edgeless table stays autofit, props: {:?}", tbl.props);
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 

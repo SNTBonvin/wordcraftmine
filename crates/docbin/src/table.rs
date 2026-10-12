@@ -323,7 +323,12 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
                 }
             }
         } else {
-            out.push(Arc::new(Block::Table(Table { props: props.clone(), grid, rows: std::mem::take(rows), controls: Default::default() })));
+            // A grid built from `sprmTDefTable` edges is edge-defined: Word lays the table
+            // out at those widths (OOXML `w:tblLayout w:type="fixed"`), so layout must not
+            // autofit them away. Tables without edges keep the autofit default.
+            let mut table_props = props.clone();
+            table_props.fixed |= !grid.is_empty();
+            out.push(Arc::new(Block::Table(Table { props: table_props, grid, rows: std::mem::take(rows), controls: Default::default() })));
         }
         rows.clear();
     }
