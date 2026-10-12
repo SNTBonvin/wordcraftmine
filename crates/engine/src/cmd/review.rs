@@ -288,6 +288,9 @@ fn resolve_para(
         .filter(|(r, _)| r.end > from && r.start < to)
         .map(|(r, c)| (r.start.max(from), r.end.min(to), c.ins.is_some(), c.del.is_some(), c.fmt_change.is_some()))
         .collect();
+    // Emptying a paragraph makes its mark take the formatting of the text that went, revisions
+    // included; the mark's own revisions are what they were.
+    let mark_revs = (para.mark.ins, para.mark.del, para.mark.fmt_change.clone());
     for (a, b, ins, del, fmt) in ranges.into_iter().rev() {
         if (del && accept) || (ins && !accept) {
             para.delete(a, b)?;
@@ -299,6 +302,7 @@ fn resolve_para(
             })?;
         }
     }
+    (para.mark.ins, para.mark.del, para.mark.fmt_change) = mark_revs;
     if !mark {
         return Ok(());
     }
@@ -1236,5 +1240,24 @@ mod tests {
         let p = body_para(&s);
         assert_eq!((p.props.align, p.props.fmt_change.is_none()), (Some(wordcraft_doc::props::Align::Center), true));
         assert!(s.run("review.changes", &json!({})).unwrap().as_array().unwrap().is_empty());
+    }
+
+    /// #864: a tracked deletion from the end of one paragraph to the end of a later one, once
+    /// accepted, leaves what an untracked deletion leaves: the paragraph after the range stays a
+    /// paragraph of its own.
+    #[test]
+    fn accepting_a_deletion_that_starts_at_a_paragraph_end_keeps_the_next_paragraph() {
+        let text = |s: &Session| s.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        let run = |track: bool| {
+            let mut s = Session::new(Document::new());
+            s.run("document.setText", &json!({"text": "Alpha\nBravo\nCharlie\nDelta\nEcho"})).unwrap();
+            s.run("review.trackChanges", &json!({"value": track})).unwrap();
+            s.run("select.range", &json!({"anchor": {"block": 0, "off": 5}, "focus": {"block": 2, "off": 7}})).unwrap();
+            s.run("text.delete", &json!({})).unwrap();
+            s.run("review.acceptAll", &json!({})).unwrap();
+            text(&s)
+        };
+        assert_eq!(run(false), "Alpha\nDelta\nEcho", "untracked control");
+        assert_eq!(run(true), "Alpha\nDelta\nEcho", "tracked, then Accept All");
     }
 }

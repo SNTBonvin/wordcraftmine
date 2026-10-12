@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Reading Mode completed; previously trivial: Insert › SmartArt landed, #497: catalog 429/451 → 437/458 (95.4%); previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (Accept All keeps the paragraph after a tracked deletion that starts at a paragraph end, #864; previously trivial: Reading Mode completed; previously trivial: Insert › SmartArt landed, #497: catalog 429/451 → 437/458 (95.4%); previously trivial: Turkish interface landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 WordCraft aims for complete parity with Microsoft Word, then goes further on speed, openness and
 agent control. This page is the summary; the assessment is
@@ -186,6 +186,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Insert › Icons (#309): a library of 61 original icons drawn in code, a searchable picker and Icon Color |
 | 2026-10-11 | Home › Font › Enclose Characters (#297): circle, square, triangle or diamond around a character, saved as Word's `EQ \o\ac` field |
 | 2026-10-11 | Phonetic Guide (#288): ruby text over base text, `w:ruby` round trip |
+| 2026-10-12 | Track Changes: Accept All no longer joins the paragraph after a tracked deletion that ends at a paragraph's end: the emptied paragraph's mark took the deletion revision of the text that went, so accepting removed the mark too (#864) |
 | 2026-10-12 | Custom XML backing stores preserved as opaque data and related properties through edited DOCX saves; content-control markup is handled by the existing reader/writer and #532 bibliography I/O remains separate; binding evaluation and readiness unchanged |
 | 2026-10-12 | Imported TOCs keep actual result boundaries, nested page fields, formatting and locks through DOCX saves without relying on TOC styles; existing engine-managed styled TOCs remain refreshable |
 | 2026-10-11 | Customize Ribbon and the Quick Access Toolbar: custom tabs and groups, hide and reorder tabs, add or remove toolbar commands (right-click any button, or the toolbar's … menu); kept between runs (#379, #376) |
@@ -215,6 +216,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | Progress log: Accept All keeps the paragraph after a tracked deletion (#864) |
 | 2026-10-11 | trivial | Progress log: Reading Mode implementation |
 | 2026-10-11 | trivial | DOCX complex-script formatting inheritance fix and round-trip coverage |
 | 2026-10-11 | minor | Czech (`cs`) interface catalog added |
