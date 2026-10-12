@@ -159,7 +159,12 @@ pub enum Dialog {
         first: f32,
         before: f32,
         after: f32,
+        /// Line spacing as a multiple; Exactly and At Least show as 1.0.
         line: f32,
+        /// `line` when the dialog opened: OK keeps the paragraph's spacing, whatever its rule,
+        /// unless this changed (#467).
+        #[serde(skip)]
+        line_was: f32,
         keep_next: bool,
         keep_lines: bool,
         page_break: bool,
@@ -283,7 +288,7 @@ pub enum Dialog {
         name: String,
         /// Style id.
         based_on: String,
-        /// Index into `regions` (see [`REGION_LABELS`]).
+        /// Index into `regions` (see `REGION_LABELS`).
         region: usize,
         regions: Box<[TableRegion; 7]>,
         /// What the regions showed when the dialog opened (or the base style changed): only
@@ -798,8 +803,16 @@ fn region_changes(r: &TableRegion, basis: &TableRegion) -> Value {
 
 /// A colour menu: a swatch with the colour grid and No Color. `value` is hex, empty for none.
 pub(crate) fn color_menu(ui: &mut Ui, theme: &[wordcraft_doc::Rgb], value: &mut String) {
-    let c = wordcraft_doc::Rgb::parse(value);
+    color_field(ui, theme, value, "No Color", "");
+}
+
+/// A colour field: a swatch and a drop-down with `none_label` (which sets `none_value`), the
+/// colour grid, Recent Colors and More Colors… (#606). `value` is hex or `none_value`.
+pub(crate) fn color_field(ui: &mut Ui, theme: &[wordcraft_doc::Rgb], value: &mut String, none_label: &str, none_value: &str) {
     ui.horizontal(|ui| {
+        let id = ui.id().with("colorField");
+        crate::colors::take_field(ui.ctx(), id, value);
+        let c = wordcraft_doc::Rgb::parse(value);
         let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
         let t = Tokens::get(ui.ctx());
         match c {
@@ -811,16 +824,13 @@ pub(crate) fn color_menu(ui: &mut Ui, theme: &[wordcraft_doc::Rgb], value: &mut 
             }
         }
         ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
-        let label = if c.is_some() { value.clone() } else { tl!("No Color").to_string() };
+        let label = if c.is_some() { value.clone() } else { tl!(none_label).to_string() };
         ui.menu_button(label, |ui| {
-            if ui.button(tl!("No Color")).clicked() {
-                value.clear();
+            if ui.button(tl!(none_label)).clicked() {
+                *value = none_value.to_string();
                 ui.close();
             }
-            if let Some(hex) = crate::widgets::color_grid(ui, theme) {
-                *value = hex;
-                ui.close();
-            }
+            crate::colors::field_menu(ui, theme, id, value);
         });
     });
 }
@@ -969,6 +979,7 @@ impl Dialog {
                     before: rp.space_before,
                     after: rp.space_after,
                     line,
+                    line_was: line,
                     keep_next: rp.keep_next,
                     keep_lines: rp.keep_lines,
                     page_break: rp.page_break_before,
@@ -1231,35 +1242,41 @@ pub fn table_grid_picker(ui: &mut Ui, app: &mut WordApp) {
     }
 }
 
-/// Where the open dialog's top edge sits, as (window id, offset below the top of the screen).
+/// The open dialog, as (window id, frames it has been centred for).
 fn dialog_top_key() -> egui::Id {
     egui::Id::new("dialog_top")
 }
 
-/// Anchors a dialog: centred on the frame it opens, then with its top edge held where that put
-/// it, so a taller or shorter tab (Paragraph, Font, Borders and Shading…) only moves the bottom
-/// edge and the tab strip stays under the mouse (#507). egui keeps it on screen if it grows past
-/// the bottom.
+/// Frames a dialog stays centred: the first one measures it, the second centres that size.
+const DIALOG_CENTRED_FRAMES: u8 = 2;
+
+/// Places a dialog: centred for its first frames, then left where it is with its top-centre point
+/// as the pivot, so a taller or shorter tab (Paragraph, Font, Borders and Shading…) only moves
+/// the bottom edge and the tab strip stays under the mouse (#507). It is no longer anchored after
+/// that, so dragging the title bar moves it (#732). egui keeps it on screen if it grows past the
+/// bottom.
 fn place_dialog<'a>(ctx: &egui::Context, id: egui::Id, w: egui::Window<'a>) -> egui::Window<'a> {
-    match ctx.data(|d| d.get_temp::<(egui::Id, f32)>(dialog_top_key())) {
-        Some((open, top)) if open == id => w.anchor(egui::Align2::CENTER_TOP, vec2(0.0, top)),
+    let w = w.pivot(egui::Align2::CENTER_TOP);
+    match ctx.data(|d| d.get_temp::<(egui::Id, u8)>(dialog_top_key())) {
+        Some((open, frames)) if open == id && frames >= DIALOG_CENTRED_FRAMES => w,
         _ => w.anchor(egui::Align2::CENTER_CENTER, vec2(0.0, -40.0)),
     }
 }
 
-/// After a dialog's first frame: holds its top edge where centring its measured size put it.
-fn remember_dialog_top(ctx: &egui::Context, id: egui::Id, rect: egui::Rect) {
-    if ctx.data(|d| d.get_temp::<(egui::Id, f32)>(dialog_top_key())).is_some_and(|(open, _)| open == id) {
-        return;
+/// After a frame of a dialog: counts the frames it has been centred for.
+fn count_dialog_frame(ctx: &egui::Context, id: egui::Id) {
+    let frames = match ctx.data(|d| d.get_temp::<(egui::Id, u8)>(dialog_top_key())) {
+        Some((open, frames)) if open == id => frames,
+        _ => 0,
+    };
+    if frames < DIALOG_CENTRED_FRAMES {
+        ctx.data_mut(|d| d.insert_temp(dialog_top_key(), (id, frames + 1)));
     }
-    let screen = ctx.content_rect();
-    let top = (screen.center().y - 40.0 - rect.height() / 2.0 - screen.top()).max(0.0);
-    ctx.data_mut(|d| d.insert_temp(dialog_top_key(), (id, top)));
 }
 
 pub fn show(app: &mut WordApp, ctx: &egui::Context) {
     let Some(mut d) = app.dialog.take() else {
-        ctx.data_mut(|d| d.remove::<(egui::Id, f32)>(dialog_top_key()));
+        ctx.data_mut(|d| d.remove::<(egui::Id, u8)>(dialog_top_key()));
         return;
     };
     let mut open = true;
@@ -1322,8 +1339,8 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         ui.set_min_width(340.0);
         close = body(app, ui, &mut d);
     });
-    if let Some(r) = shown {
-        remember_dialog_top(ctx, id, r.response.rect);
+    if shown.is_some() {
+        count_dialog_frame(ctx, id);
     }
     if open && !close {
         app.dialog = Some(d);
@@ -1337,11 +1354,13 @@ pub(crate) fn buttons(ui: &mut Ui, ok: &str) -> (bool, bool) {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(tl!("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // Enter and Escape belong to the Colors dialog while it is open above this one.
+            let keys = !crate::colors::is_open(ui.ctx());
+            if ui.button(tl!("Cancel")).clicked() || (keys && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
                 r.1 = true;
             }
             let okb = ui.add(egui::Button::new(egui::RichText::new(ok).color(egui::Color32::WHITE)).fill(crate::theme::APP_COLOR));
-            if okb.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            if okb.clicked() || (keys && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                 r.0 = true;
             }
         });
@@ -1382,6 +1401,9 @@ fn font_props(d: &Dialog) -> serde_json::Map<String, Value> {
     }
     if let Some(c) = wordcraft_doc::Rgb::parse(color) {
         props.insert("color".into(), json!({"Rgb": [c.0, c.1, c.2]}));
+    } else if color.eq_ignore_ascii_case("auto") {
+        // Automatic, from the colour field's drop-down (#606).
+        props.insert("color".into(), json!("Auto"));
     }
     props
 }
@@ -1457,7 +1479,8 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.text_edit_singleline(size);
                 ui.end_row();
                 ui.label(tl!("Font color:"));
-                ui.text_edit_singleline(color);
+                let theme = app.session.doc.settings.theme_colors.clone();
+                color_field(ui, &theme, color, "Automatic", "auto");
                 ui.end_row();
                 ui.label(tl!("Spacing (pt):"));
                 ui.add(egui::DragValue::new(spacing).speed(0.1).range(-20.0..=20.0));
@@ -1503,6 +1526,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             before,
             after,
             line,
+            line_was,
             keep_next,
             keep_lines,
             page_break,
@@ -1620,7 +1644,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     *first,
                     *before,
                     *after,
-                    *line,
+                    (*line, *line_was),
                     [*keep_next, *keep_lines, *page_break, *widow],
                     (*opts, *opts_was),
                 );
@@ -2762,11 +2786,12 @@ fn apply_paragraph(
     first: f32,
     before: f32,
     after: f32,
-    line: f32,
+    line: (f32, f32),
     flags: [bool; 4],
     opts: ([bool; 4], [bool; 4]),
 ) {
     let [keep_next, keep_lines, page_break, widow] = flags;
+    let (line, line_was) = line;
     // Direction first: the alignment and indents are as seen on the page, and their logical
     // values depend on it.
     let _ = app.run(if rtl { "para.rtl" } else { "para.ltr" }, json!({}));
@@ -2774,9 +2799,15 @@ fn apply_paragraph(
     let (start, end) = if rtl { (right, left) } else { (left, right) };
     let mut props = json!({
         "indentLeft": start * crate::options::unit().pt_per_unit(), "indentRight": end * crate::options::unit().pt_per_unit(), "indentFirst": first * crate::options::unit().pt_per_unit(),
-        "spaceBefore": before, "spaceAfter": after, "lineSpacing": {"rule": "multiple", "value": line},
+        "spaceBefore": before, "spaceAfter": after,
         "keepNext": keep_next, "keepLines": keep_lines, "pageBreakBefore": page_break, "widowControl": widow,
     });
+    // The dialog edits only multiples: an untouched value keeps Exactly and At Least.
+    if line != line_was
+        && let Some(m) = props.as_object_mut()
+    {
+        m.insert("lineSpacing".into(), json!({"rule": "multiple", "value": line}));
+    }
     let (now, was) = opts;
     for (key, (on, was)) in ["mirrorIndents", "contextualSpacing", "suppressLineNumbers", "suppressHyphens"].into_iter().zip(now.into_iter().zip(was))
     {
@@ -3135,14 +3166,40 @@ mod tests {
     /// Open the Paragraph dialog, change its options (`opts`) with `edit` and press OK.
     fn ok_with(app: &mut WordApp, edit: impl FnOnce(&mut [bool; 4])) {
         let Some(Dialog::Paragraph {
-            rtl, align, left, right, first, before, after, line, keep_next, keep_lines, page_break, widow, mut opts, ..
+            rtl,
+            align,
+            left,
+            right,
+            first,
+            before,
+            after,
+            line,
+            line_was,
+            keep_next,
+            keep_lines,
+            page_break,
+            widow,
+            mut opts,
+            ..
         }) = Dialog::open("paragraph", app)
         else {
             panic!("no paragraph dialog")
         };
         let was = opts;
         edit(&mut opts);
-        apply_paragraph(app, rtl, &align, left, right, first, before, after, line, [keep_next, keep_lines, page_break, widow], (opts, was));
+        apply_paragraph(
+            app,
+            rtl,
+            &align,
+            left,
+            right,
+            first,
+            before,
+            after,
+            (line, line_was),
+            [keep_next, keep_lines, page_break, widow],
+            (opts, was),
+        );
     }
 
     #[test]
@@ -3192,6 +3249,60 @@ mod tests {
     }
 
     #[test]
+    fn paragraph_dialog_keeps_fixed_line_spacing() {
+        use wordcraft_doc::props::LineSpacing;
+        for (cmd, rule) in [(json!({"exactly": 24}), LineSpacing::Exactly(24.0)), (json!({"atLeast": 24}), LineSpacing::AtLeast(24.0))] {
+            // OK without changes, and OK after changing only Keep with next (#467).
+            let mut app = app_with("Example");
+            let _ = app.run("para.lineSpacing", cmd.clone());
+            ok_unchanged(&mut app);
+            assert_eq!(props(&app).line_spacing, Some(rule), "unchanged OK, {cmd}");
+            let Some(Dialog::Paragraph { rtl, align, left, right, first, before, after, line, line_was, keep_lines, page_break, widow, .. }) =
+                Dialog::open("paragraph", &mut app)
+            else {
+                panic!("no paragraph dialog")
+            };
+            apply_paragraph(
+                &mut app,
+                rtl,
+                &align,
+                left,
+                right,
+                first,
+                before,
+                after,
+                (line, line_was),
+                [true, keep_lines, page_break, widow],
+                ([false; 4], [false; 4]),
+            );
+            let p = props(&app);
+            assert_eq!((p.line_spacing, p.keep_next), (Some(rule), Some(true)), "Keep with next, {cmd}");
+        }
+        // A changed value still sets a multiple.
+        let mut app = app_with("Example");
+        let _ = app.run("para.lineSpacing", json!({"exactly": 24}));
+        let Some(Dialog::Paragraph { rtl, align, left, right, first, before, after, line_was, keep_next, keep_lines, page_break, widow, .. }) =
+            Dialog::open("paragraph", &mut app)
+        else {
+            panic!("no paragraph dialog")
+        };
+        apply_paragraph(
+            &mut app,
+            rtl,
+            &align,
+            left,
+            right,
+            first,
+            before,
+            after,
+            (1.5, line_was),
+            [keep_next, keep_lines, page_break, widow],
+            ([false; 4], [false; 4]),
+        );
+        assert_eq!(props(&app).line_spacing, Some(LineSpacing::Multiple(1.5)));
+    }
+
+    #[test]
     fn font_dialog_sets_the_asian_and_latin_fonts_separately() {
         // #505: the Asian text font box and the Latin text font box each set their own font, and
         // OK leaves the one not changed as it was.
@@ -3223,7 +3334,7 @@ mod tests {
     #[test]
     fn paragraph_dialog_changes_direction() {
         let mut app = app_with("Hello");
-        let Some(Dialog::Paragraph { align, left, right, first, before, after, line, keep_next, keep_lines, page_break, widow, .. }) =
+        let Some(Dialog::Paragraph { align, left, right, first, before, after, line, line_was, keep_next, keep_lines, page_break, widow, .. }) =
             Dialog::open("paragraph", &mut app)
         else {
             panic!()
@@ -3238,7 +3349,7 @@ mod tests {
             first,
             before,
             after,
-            line,
+            (line, line_was),
             [keep_next, keep_lines, page_break, widow],
             ([false; 4], [false; 4]),
         );
@@ -3308,5 +3419,44 @@ mod tests {
         apply_font(&mut app, &d);
         let c = app.session.doc.para_at(&wordcraft_doc::Pos::body(0, 0)).map(|p| p.props_of_char(0).clone()).unwrap_or_default();
         assert_eq!((c.small_caps, c.caps, c.size), (Some(false), Some(true), Some(14.0)));
+    }
+
+    /// A dialog was pinned by its anchor, so dragging its title bar did nothing (#732).
+    #[test]
+    fn dragging_a_dialog_title_bar_moves_it() {
+        let mut app = app_with("Some text");
+        app.dialog = Dialog::open("paragraph", &mut app);
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        for _ in 0..4 {
+            h.step();
+        }
+        let id = egui::Id::new(("dialog", "Paragraph"));
+        let before = h.ctx.memory(|m| m.area_rect(id)).expect("dialog is open");
+        let screen = h.ctx.content_rect();
+        assert!((before.center().x - screen.center().x).abs() <= 1.0, "opens centred: {before:?} in {screen:?}");
+        let grab = egui::pos2(before.center().x, before.top() + 10.0);
+        let drop = grab + vec2(-200.0, 120.0);
+        let button =
+            |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        h.event(egui::Event::PointerMoved(grab));
+        h.step();
+        h.event(button(grab, true));
+        h.step();
+        h.event(egui::Event::PointerMoved(drop));
+        h.step();
+        h.event(button(drop, false));
+        for _ in 0..4 {
+            h.step();
+        }
+        let after = h.ctx.memory(|m| m.area_rect(id)).expect("dialog is still open");
+        assert!((after.min.x - (before.min.x - 200.0)).abs() <= 1.0, "moved left: {before:?} -> {after:?}");
+        assert!((after.min.y - (before.min.y + 120.0)).abs() <= 1.0, "moved down: {before:?} -> {after:?}");
     }
 }

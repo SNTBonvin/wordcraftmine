@@ -65,7 +65,7 @@ pub fn shown_id() -> egui::Id {
 /// Whether the bar may be shown for the current app state.
 pub fn visible(app: &WordApp) -> bool {
     // Never over a modal dialog or the Backstage.
-    if app.dialog.is_some() || app.ui.backstage {
+    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage {
         return false;
     }
     // Never while the right-click context menu is open: it owns the pointer and would double up.
@@ -132,8 +132,12 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
         let fams = app.previews.families();
         let prev = app.previews.font_preview_fn();
         if let Some(f) = widgets::font_combo(ui, "mini_font", COMBO_FONT_W, &font, &fams, Some(&*prev)) {
-            let f = app.previews.font_stored(&f);
-            let _ = app.run("format.font", json!({"name": f}));
+            let _ = if f == crate::widgets::ADD_FONT {
+                app.run("font.add", json!({}))
+            } else {
+                let f = app.previews.font_stored(&f);
+                app.run("format.font", json!({"name": f}))
+            };
         }
         let size =
             st.get("size").and_then(Value::as_f64).map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).unwrap_or_default();
@@ -205,7 +209,7 @@ fn highlight_menu(ui: &mut egui::Ui, app: &mut WordApp) {
     }
 }
 
-/// Font colour: Automatic plus the standard colour grid.
+/// Font colour: Automatic, the colour grid, Recent Colors and More Colors… (#606).
 fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
     egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
         if ui.selectable_label(false, "Automatic").clicked() {
@@ -214,11 +218,8 @@ fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
             return;
         }
         let theme = app.session.doc.settings.theme_colors.clone();
-        if let Some(hex) = widgets::color_grid(ui, &theme) {
-            app.canvas.last_font_color = hex.clone();
-            let _ = app.run("format.color", json!({"color": hex}));
-            ui.close();
-        }
+        let target = crate::colors::Target::cmd("format.color").remember(crate::colors::Remember::FontColor);
+        crate::colors::menu(ui, app, &theme, target);
     });
 }
 
