@@ -258,6 +258,7 @@ pub struct FindState {
     pub match_suffix: bool,
     pub ignore_punct: bool,
     pub ignore_space: bool,
+    pub match_diacritics: bool,
     /// Matches from the last search: (start, end).
     #[serde(skip)]
     pub results: Vec<(Pos, Pos)>,

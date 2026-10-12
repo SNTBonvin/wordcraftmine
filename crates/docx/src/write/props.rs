@@ -358,7 +358,9 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
     }
     toggle(w, "w:contextualSpacing", p.contextual_spacing);
     toggle(w, "w:mirrorIndents", p.mirror_indents);
-    if let Some(a) = p.align {
+    if let Some(k) = p.kashida {
+        w.val("w:jc", k.ooxml());
+    } else if let Some(a) = p.align {
         w.val("w:jc", align_val(a));
     }
     if let Some(l) = p.outline_level {

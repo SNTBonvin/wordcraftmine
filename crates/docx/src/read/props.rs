@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use wordcraft_doc::para::cap_alt;
 use wordcraft_doc::props::{
-    Align, Border, BorderStyle, Borders, CellProps, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign,
-    TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
+    Align, Border, BorderStyle, Borders, CellProps, CharProps, HeightRule, Highlight, Kashida, LineSpacing, NumRef, ParaProps, Rgb, RowProps,
+    TabAlign, TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
 use wordcraft_doc::section::{
     Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, NotePos, NoteProps, NoteRestart, NumFormat,
@@ -336,7 +336,15 @@ impl PropCtx {
                         _ => {}
                     }
                 }
-                "w:jc" => p.align = k.attr("w:val").map(align),
+                "w:jc" => {
+                    // Kashida justification keeps its mode (and justifies); anything else maps plainly.
+                    if let Some(mode) = k.attr("w:val").and_then(Kashida::from_ooxml) {
+                        p.align = Some(Align::Justify);
+                        p.kashida = Some(mode);
+                    } else {
+                        p.align = k.attr("w:val").map(align);
+                    }
+                }
                 "w:outlineLvl" => p.outline_level = k.attr("w:val").and_then(u32_of).map(|v| v.min(9) as u8),
                 "w:rPr" => mark = self.rpr(k),
                 _ => {}

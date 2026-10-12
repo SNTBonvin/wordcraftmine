@@ -103,7 +103,7 @@ Weights and evidence per area: [docs/target-app-parity.md](docs/target-app-parit
 | Simplified Chinese | zh-hans | partial | ~95% |
 | Spanish | es | partial | ~95% |
 | Hindi | hi | none | 0% |
-| Arabic | ar | none (document shaping and bidi work; no mirrored UI) | 0% |
+| Arabic | ar | partial (catalog, bidi/RTL tables/sections, Arabic numbering) | ~40% |
 | French | fr | partial (interface) | ~95% |
 | Portuguese | pt-br (pt-PT none) | partial | ~95% |
 | Indonesian | id | none | 0% |
@@ -358,3 +358,21 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-10 | major | Full re-measure; restructured to the progress-docs standard (stage banner, two numbers, dimensions, languages, upcoming, progress log); parity tables moved to `docs/target-app-parity.md`, milestones to `docs/roadmap.md` |
 | 2026-10-09 | minor | Recently landed: RTL, Ukrainian and Brazilian Portuguese |
 | 2026-10-06 | major | First honest estimate: 88% catalog, ~62% real parity, alpha ~85% of the way |
+
+## Arabic/RTL improvements in this branch
+
+- Right-to-left tables and sections (#66): `w:bidiVisual` table direction with mirrored columns,
+  `table.rtl` command and Table Layout button; section column order, gutter side, headers,
+  footers, line numbers and footnote separators; `layout.sectionRtl` command.
+- Arabic numbering (#66): `arabicAlpha`/`arabicAbjad` from U+0623 with Word's repeat scheme and
+  Devanagari `hindiNumbers` counters for lists and page/note fields (MS-DOCX, MS-OI29500
+  §17.18.59); unknown OOXML identifiers preserved; direction-preserving HTML/RTF/ODT conversion
+  (ODT table direction via table styles); kashida modes preserved; Arabic PDF text mapping (marks
+  extract as their letters).
+- Arabic interface catalog (#56): all 892 labels in Modern Standard Arabic, `ar` locale matching
+  and a persisted language choice, craft-fonts Arab plumbing with an installed-font fallback.
+- Arabic proofing policy (#66): ZWNJ-aware tokenization, an explicit diacritic set,
+  diacritic-tolerant find with exact matching on request, custom-dictionary support in every
+  script. A bundled Arabic dictionary is still missing.
+
+The Arabic catalog covers the original interface; newly added upstream labels may fall back to English. Kashida glyph elongation, full chrome mirroring, Arabic dictionary/grammar, per-run proofing language, and inline direction overrides remain pending. ODT `page` inheritance currently resolves enclosing table styles only.

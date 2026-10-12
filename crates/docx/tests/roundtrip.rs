@@ -5,8 +5,8 @@ use std::sync::Arc;
 use wordcraft_doc::numbering::ListKind;
 use wordcraft_doc::para::{Anchor, Float, FloatAlign, NoteKind, ShapeKind, Wrap};
 use wordcraft_doc::props::{
-    Align, Border, BorderStyle, Borders, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign, TabLeader,
-    TabStop, TableLook, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
+    Align, Border, BorderStyle, Borders, CharProps, HeightRule, Highlight, Kashida, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign,
+    TabLeader, TabStop, TableLook, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
 use wordcraft_doc::section::{Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, NumFormat, SectionProps, SectionStart};
 use wordcraft_doc::styles::{Style, StyleKind};
@@ -164,6 +164,7 @@ fn every_para_prop_round_trips() {
         suppress_hyphens: Some(true),
         suppress_line_numbers: Some(true),
         bidi: Some(false),
+        kashida: Some(Kashida::Medium),
         drop_cap: None,
         frame: Some(wordcraft_doc::props::TextFrame {
             w: Some(144.0),
