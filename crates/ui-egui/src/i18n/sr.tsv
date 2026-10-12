@@ -2073,3 +2073,13 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Систем не пријављује подешавање анимације, па ефекти анимације остају укључени.
 	Region:	Регион:
 	Automatic ({region})	Аутоматски ({region})
+	Odd Banded Rows	Непарни тракасти редови
+	Even Banded Rows	Парни тракасти редови
+	Odd Banded Columns	Непарне тракасте колоне
+	Even Banded Columns	Парне тракасте колоне
+	Top Left Cell	Горња лева ћелија
+	Top Right Cell	Горња десна ћелија
+	Bottom Left Cell	Доња лева ћелија
+	Bottom Right Cell	Доња десна ћелија
+	Inside Horizontal Border	Унутрашња хоризонтална ивица
+	Inside Vertical Border	Унутрашња вертикална ивица

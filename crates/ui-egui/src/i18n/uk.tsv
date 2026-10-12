@@ -2071,3 +2071,13 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не повідомляє про налаштування анімації, тому ефекти анімації залишаються ввімкненими.
 	Region:	Регіон:
 	Automatic ({region})	Автоматично ({region})
+	Odd Banded Rows	Непарні смугасті рядки
+	Even Banded Rows	Парні смугасті рядки
+	Odd Banded Columns	Непарні смугасті стовпці
+	Even Banded Columns	Парні смугасті стовпці
+	Top Left Cell	Ліва верхня клітинка
+	Top Right Cell	Права верхня клітинка
+	Bottom Left Cell	Ліва нижня клітинка
+	Bottom Right Cell	Права нижня клітинка
+	Inside Horizontal Border	Внутрішня горизонтальна межа
+	Inside Vertical Border	Внутрішня вертикальна межа

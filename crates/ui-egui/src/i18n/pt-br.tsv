@@ -2071,3 +2071,13 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Seu sistema não informa uma configuração de animação, então os efeitos de animação continuam ativados.
 	Region:	Região:
 	Automatic ({region})	Automático ({region})
+	Odd Banded Rows	Linhas listradas ímpares
+	Even Banded Rows	Linhas listradas pares
+	Odd Banded Columns	Colunas listradas ímpares
+	Even Banded Columns	Colunas listradas pares
+	Top Left Cell	Célula superior esquerda
+	Top Right Cell	Célula superior direita
+	Bottom Left Cell	Célula inferior esquerda
+	Bottom Right Cell	Célula inferior direita
+	Inside Horizontal Border	Borda horizontal interna
+	Inside Vertical Border	Borda vertical interna

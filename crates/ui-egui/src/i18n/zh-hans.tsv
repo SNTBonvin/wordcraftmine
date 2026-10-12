@@ -2071,3 +2071,13 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	系统未提供动画设置，因此动画效果保持打开。
 	Region:	区域：
 	Automatic ({region})	自动（{region}）
+	Odd Banded Rows	奇数镶边行
+	Even Banded Rows	偶数镶边行
+	Odd Banded Columns	奇数镶边列
+	Even Banded Columns	偶数镶边列
+	Top Left Cell	左上单元格
+	Top Right Cell	右上单元格
+	Bottom Left Cell	左下单元格
+	Bottom Right Cell	右下单元格
+	Inside Horizontal Border	内部横框线
+	Inside Vertical Border	内部竖框线

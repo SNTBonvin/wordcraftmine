@@ -2450,3 +2450,13 @@ preview	Title	Örnek
 	Your system doesn't report an animation setting, so animation effects stay on.	Sisteminiz bir animasyon ayarı bildirmiyor, bu nedenle animasyon efektleri açık kalır.
 	Region:	Bölge:
 	Automatic ({region})	Otomatik ({region})
+	Odd Banded Rows	Tek Şeritli Satırlar
+	Even Banded Rows	Çift Şeritli Satırlar
+	Odd Banded Columns	Tek Şeritli Sütunlar
+	Even Banded Columns	Çift Şeritli Sütunlar
+	Top Left Cell	Sol Üst Hücre
+	Top Right Cell	Sağ Üst Hücre
+	Bottom Left Cell	Sol Alt Hücre
+	Bottom Right Cell	Sağ Alt Hücre
+	Inside Horizontal Border	İç Yatay Kenarlık
+	Inside Vertical Border	İç Dikey Kenarlık
