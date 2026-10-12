@@ -5063,4 +5063,8 @@ fn rename_unsaved_document_names_the_file_not_the_document() {
     s.run("file.rename", &json!({"name": "Draft"})).unwrap();
     s.run("file.open", &json!({"path": "other.txt", "data": "aGk="})).unwrap();
     assert!(s.file_name.is_none());
+    s.run("file.new", &json!({})).unwrap();
+    s.run("file.rename", &json!({"name": "Draft"})).unwrap();
+    s.run("review.compare", &json!({"text": "changed", "showIn": "new"})).unwrap();
+    assert!(s.file_name.is_none() && s.path.is_none());
 }

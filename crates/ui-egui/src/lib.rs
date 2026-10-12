@@ -702,6 +702,7 @@ impl WordApp {
             return Ok(json!({"downloaded": name, "bytes": bytes.len()}));
         }
         let document = self.session.document_id();
+        let old_path = self.session.path.clone();
         let r = self.session.run(id, &params).map_err(|e| e.to_string());
         // When the document has been replaced (not when Open only showed its picker), a pending
         // "Save changes?" and AutoSave's go-ahead were both about the old one.
@@ -718,6 +719,17 @@ impl WordApp {
             && v.get("path").and_then(Value::as_str).map(std::path::Path::new) == self.session.path.as_deref()
         {
             self.autosave_path = self.session.path.clone();
+        }
+        // A renamed file is the same file: AutoSave keeps covering it, and Recent drops the old name.
+        if r.is_ok()
+            && id == "file.rename"
+            && let Some(old) = old_path.filter(|old| self.session.path.as_ref() != Some(old))
+        {
+            if self.autosave_path.as_ref() == Some(&old) {
+                self.autosave_path = self.session.path.clone();
+            }
+            let old = old.to_string_lossy();
+            self.ui.recent.retain(|r| *r != old);
         }
         if let Ok(v) = &r {
             self.keep_web_font(id, &params, v);
@@ -3389,6 +3401,35 @@ mod tests {
             assert!(saved.plain_text(wordcraft_doc::StoryRef::Body).contains("More "), "{ext}");
             let _ = std::fs::remove_dir_all(&dir);
         }
+    }
+
+    #[test]
+    fn renaming_a_saved_file_keeps_autosave_and_replaces_its_recent_entry() {
+        let dir = scratch("rename-autosave");
+        let path = dir.join("notes.docx");
+        let renamed = dir.join("Notes v2.docx");
+        let mut a = typed();
+        a.run("file.save", json!({"path": path.to_string_lossy()})).unwrap();
+        assert!(a.autosaves());
+        a.run("file.rename", json!({"name": "Notes v2"})).unwrap();
+        assert_eq!(a.session.path.as_deref(), Some(renamed.as_path()));
+        assert!(a.autosaves(), "AutoSave still covers the renamed file");
+        assert_eq!(a.ui.recent.first(), Some(&renamed.to_string_lossy().to_string()));
+        assert!(!a.ui.recent.contains(&path.to_string_lossy().to_string()), "{:?}", a.ui.recent);
+        a.run("text.insert", json!({"text": "More "})).unwrap();
+        a.autosave_tick(now_ms() + 10_000.0);
+        assert!(!a.session.dirty, "AutoSave wrote the renamed file");
+        let saved = wordcraft_engine::io::open_path(&renamed).unwrap();
+        assert!(saved.plain_text(wordcraft_doc::StoryRef::Body).contains("More "));
+        assert!(!path.exists());
+
+        // A file opened but not saved in this session doesn't gain AutoSave by being renamed.
+        let mut b = app();
+        b.run("file.open", json!({"path": renamed.to_string_lossy()})).unwrap();
+        assert!(!b.saved_here());
+        b.run("file.rename", json!({"name": "Notes v3"})).unwrap();
+        assert!(!b.saved_here() && !b.autosaves());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Web: the download callback couldn't report a failure, so Save marked the document saved
