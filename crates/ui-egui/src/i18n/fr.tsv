@@ -2044,3 +2044,20 @@
 	Use "an" before a vowel sound	Utiliser « an » devant un son voyelle
 	Use "a" before a consonant sound	Utiliser « a » devant un son consonne
 	The spelling and grammar check is complete.	La vérification de l’orthographe et de la grammaire est terminée.
+	Couldn't make WordCraft the default: {error}	Impossible de faire de WordCraft l’application par défaut : {error}
+	In Default apps, choose WordCraft for the document types you want it to open.	Dans Applications par défaut, choisissez WordCraft pour les types de documents qu’il doit ouvrir.
+	Make WordCraft the default for Word documents…	Faire de WordCraft l’application par défaut pour les documents Word…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	Ouvre désormais les fichiers .docx, .doc, .rtf et .odt ainsi que les modèles Word avec WordCraft.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Ouvre Paramètres › Applications par défaut, où vous choisissez WordCraft pour .docx et les autres types de documents.
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Pour ouvrir les documents Word avec WordCraft par défaut : sélectionnez-en un dans le Finder, choisissez Fichier › Lire les informations, choisissez WordCraft sous « Ouvrir avec », puis cliquez sur « Tout modifier ».
+	WordCraft is now the default app for Word documents.	WordCraft est désormais l’application par défaut pour les documents Word.
+	Numerals:	Chiffres :
+	Numerals	Chiffres
+	Hindi	Hindi
+	Context	Contexte
+	System	Système
+	Show KeyTips (Alt or F10)	Afficher les info-touches (Alt ou F10)
+	Reading	Lecture
+	Reading Column Width	Largeur de colonne de lecture
+	Reading Line Spacing	Interligne de lecture
+	Reading Text Size	Taille du texte de lecture
