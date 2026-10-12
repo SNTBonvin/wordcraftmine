@@ -25,6 +25,12 @@ pub struct CanvasState {
     dragging: bool,
     /// Alt+drag: where the column (block) selection started (page, x, y) and its last end.
     column_drag: Option<((usize, f32, f32), (usize, f32, f32))>,
+    /// The last primary press on the page (time, screen point, clicks in a row), to count
+    /// double- and triple-presses as they go down (egui reports them on release).
+    last_press: Option<(f64, Pos2, u8)>,
+    /// A drag after a double-click, triple-click or Ctrl/⌘+click: the unit it extends by, the
+    /// unit first selected, and the last position the pointer hit.
+    unit_drag: Option<UnitDrag>,
     pub last_highlight: String,
     pub last_font_color: String,
     pub last_shading: String,
@@ -37,6 +43,8 @@ pub struct CanvasState {
     pub focused: bool,
     pub render_ms: f64,
     pub ime_preedit: String,
+    /// Document faces added to the interface fonts to draw the input method's composition (#565).
+    pub(crate) ime_faces: Vec<std::sync::Arc<wordcraft_fonts::FontFace>>,
     pub want_focus: bool,
     pub context_issue: Option<serde_json::Value>,
     pub context_synonyms: Option<serde_json::Value>,
@@ -80,6 +88,8 @@ pub struct CanvasState {
     pub(crate) swallow_text: bool,
     /// Create Link is waiting for a click on the text box to link to: the linking box's object.
     pub(crate) link_from: Option<wordcraft_doc::Pos>,
+    /// What screen readers were last told about the document (#488).
+    pub(crate) a11y: crate::a11y::A11yCache,
 }
 
 impl CanvasState {
@@ -97,6 +107,8 @@ impl Default for CanvasState {
             caret_visible_since: 0.0,
             dragging: false,
             column_drag: None,
+            last_press: None,
+            unit_drag: None,
             last_highlight: "yellow".into(),
             last_font_color: "C00000".into(),
             last_shading: "FFF2CC".into(),
@@ -107,6 +119,7 @@ impl Default for CanvasState {
             focused: false,
             render_ms: 0.0,
             ime_preedit: String::new(),
+            ime_faces: Vec::new(),
             want_focus: true,
             context_issue: None,
             context_synonyms: None,
@@ -130,7 +143,27 @@ impl Default for CanvasState {
             table_tool: None,
             table_stroke: None,
             link_from: None,
+            a11y: Default::default(),
         }
+    }
+}
+
+/// See [`CanvasState::unit_drag`].
+struct UnitDrag {
+    unit: &'static str,
+    /// Clicks in a row that made it (2 or 3; 1 for Ctrl/⌘+click).
+    clicks: u8,
+    start: Pos,
+    end: Pos,
+    last: Pos,
+}
+
+/// Clicks in a row for a press at `at` (time `now`) after `last`: within the double-click
+/// delay and distance it counts up to 3 (a triple-click), otherwise it starts again at 1.
+fn press_count(last: Option<(f64, Pos2, u8)>, now: f64, at: Pos2, delay: f64, dist: f32) -> u8 {
+    match last {
+        Some((t, p, n)) if now - t >= 0.0 && now - t < delay && p.distance(at) <= dist => n.saturating_add(1).min(3),
+        _ => 1,
     }
 }
 
@@ -269,7 +302,7 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
     let v = &app.session.view;
-    (v.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
+    (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
@@ -284,8 +317,8 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
                 Placed::Fill { rect, color } => format!("{rect:?}{color:?}").hash(&mut h),
                 Placed::Rule { x0, y0, x1, y1, border } => format!("{x0}{y0}{x1}{y1}{border:?}").hash(&mut h),
                 Placed::Image { rect, media, spin, .. } => format!("{rect:?}{media}{spin:?}").hash(&mut h),
-                Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin } => {
-                    format!("{rect:?}{kind:?}{fill:?}{stroke:?}{stroke_width}{effects:?}{spin:?}").hash(&mut h);
+                Placed::Shape { rect, kind, fill, stroke, stroke_width, effects, freeform, spin, extra } => {
+                    format!("{rect:?}{kind:?}{fill:?}{stroke:?}{stroke_width}{effects:?}{spin:?}{extra:?}").hash(&mut h);
                     freeform.as_ref().map(|f| std::sync::Arc::as_ptr(f) as usize).hash(&mut h);
                 }
                 Placed::Graphic { rect, graphic, spin, .. } => {
@@ -462,6 +495,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             if !fresh && (rendered < 2 || !app.canvas.textures.contains_key(&i) && rendered < 4) {
                 let mut opts = screen_render_options();
                 opts.display.marks = app.session.view.marks;
+                opts.display.always = app.session.prefs.marks;
                 opts.display.placeholders = true;
                 opts.display.markup = app.session.view.show_markup;
                 // Ink Replay draws the ink itself, stroke by stroke, over pages without it.
@@ -537,7 +571,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             // Table Layout › View Gridlines: table cell outlines (on screen only).
             if app.session.view.table_gridlines {
                 for it in &page.items {
-                    if let Placed::Cell { rect, .. } = it {
+                    if let Placed::Cell { rect, covered: false, .. } = it {
                         let r = Rect::from_min_size(
                             pos2(visual_sr.min.x + rect.x * page_scale, visual_sr.min.y + rect.y * page_scale),
                             vec2(rect.w * page_scale, rect.h * page_scale),
@@ -591,6 +625,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         } else {
             app.canvas.mini_anchor = None;
         }
+        // Content controls: the frame of the one the caret is in (all of them in Design Mode).
+        crate::content_controls::paint(app, &painter, &t, &layout, &rects, geo.scale);
         // Read Aloud: the sentence being spoken.
         if let Some((a, b)) = crate::read_aloud::highlight(app) {
             for (pi, r) in layout.selection_rects(&app.session.doc, &a, &b, app.session.page_hint) {
@@ -670,6 +706,19 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 });
             }
             if !app.canvas.ime_preedit.is_empty() {
+                // The composition is interface text, but it may be in a script the interface fonts lack
+                // (Bangla, Thai ...): borrow the document fonts' fallback faces, or it draws as boxes (#565).
+                let new = crate::theme::faces_for_preedit(
+                    &app.canvas.ime_preedit,
+                    &app.canvas.ime_faces,
+                    |c| (c as u32) < 0x250,
+                    |c| wordcraft_fonts::FontDb::global().fallback_for(c, u32::MAX),
+                );
+                if !new.is_empty() {
+                    app.canvas.ime_faces.extend(new);
+                    crate::theme::install_fonts_extra(ui.ctx(), app.fonts_hans, app.fonts_system_cjk, &app.canvas.ime_faces);
+                    ui.ctx().request_repaint();
+                }
                 let g = painter.text(pos2(x, y1), egui::Align2::LEFT_BOTTOM, &app.canvas.ime_preedit, regular(c.height * scale * 0.8), caret_color);
                 painter.line_segment([pos2(g.min.x, g.max.y), pos2(g.max.x, g.max.y)], Stroke::new(1.0, caret_color));
             }
@@ -698,10 +747,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         });
     }
     app.canvas.focused = resp.has_focus();
+    // Screen readers: the document under the canvas, with the caret (#488).
+    crate::a11y::expose(app, ui.ctx(), resp.id, &layout, &rects, area);
     // Draw Table / Eraser own the mouse while on (no caret moves); else the usual editing.
     if !crate::table_pen::pointer(app, ui, &resp, &rects, &layout, geo.scale) {
         mouse(app, ui, &resp, &rects, &layout, geo.scale);
     }
+    // A click on a check box ticks it; on a list's button opens the list.
+    crate::content_controls::clicks(app, &resp);
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
     if resp.secondary_clicked()
@@ -719,18 +772,23 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             None => {}
         }
     }
+    // Right-click on a picture, shape or text box selects it (its menu offers Wrap Text).
     if resp.secondary_clicked()
         && app.session.math.is_none()
         && let Some(p) = resp.interact_pointer_pos()
         && let Some((page, x, y)) = page_at(&rects, &layout, geo.scale, p)
-        && let Some(pos) = layout.hit(page, x, y, app.session.sel.focus.story)
     {
-        let (a, b) = app.session.sel.ordered();
-        if !(a <= pos && pos <= b) || app.session.sel.is_collapsed() {
-            app.session.sel = wordcraft_engine::Selection::caret(pos);
+        if crate::objects::select_at(app, &layout, &rects, geo.scale, p) {
+            app.canvas.context_issue = None;
+            app.canvas.context_synonyms = None;
+        } else if let Some(pos) = layout.hit(page, x, y, app.session.sel.focus.story) {
+            let (a, b) = app.session.sel.ordered();
+            if !(a <= pos && pos <= b) || app.session.sel.is_collapsed() {
+                app.session.sel = wordcraft_engine::Selection::caret(pos);
+            }
+            app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
+            app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
         }
-        app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
-        app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
     }
     resp.context_menu(|ui| context_menu(app, ui));
     // Stand down while the context menu owns the pointer so the two never double up;
@@ -751,7 +809,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if let (Some(h), Some(v)) = (hruler, vruler) {
         rulers(app, ui, h, v, &rects, &layout, geo.scale);
     }
-    if let Some(sel) = app.canvas.mini_anchor {
+    if let Some(sel) = app.canvas.mini_anchor
+        && app.ui.mini_toolbar
+    {
         crate::mini_toolbar::show(app, ui.ctx(), sel, area);
     }
 }
@@ -1097,6 +1157,32 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     if (resp.double_clicked() || resp.triple_clicked()) && layout.equation_hit(page, x, y, story).is_some() {
         return;
     }
+    // Outline view: a paragraph's symbol selects it with what is under it; a double-click
+    // expands or collapses the heading.
+    if app.session.view.mode == wordcraft_layout::ViewMode::Outline
+        && let Some(block) = layout.outline_symbol_at(page, x, y)
+    {
+        if resp.double_clicked() {
+            let _ = app.run("outline.toggle", json!({ "block": block }));
+        } else if ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer() {
+            let _ = app.run("outline.selectSubtree", json!({ "block": block }));
+            app.session.page_hint = page;
+        }
+        return;
+    }
+    // The press already selected the word or paragraph (and a drag may have grown it).
+    let released_clicks = if resp.triple_clicked() {
+        3
+    } else if resp.double_clicked() {
+        2
+    } else {
+        0
+    };
+    if released_clicks > 0 && app.canvas.unit_drag.as_ref().is_some_and(|d| d.clicks == released_clicks) {
+        app.canvas.unit_drag = None;
+        app.canvas.dragging = false;
+        return;
+    }
     // Double-click in the header/footer area edits it; double-click in the body leaves it.
     if resp.double_clicked() {
         if let Some((s, header)) = layout.header_footer_at(page, y)
@@ -1134,6 +1220,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     }
     let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
     if pressed {
+        let now = ui.input(|i| i.time);
+        let (delay, dist) = ui.ctx().options(|o| (o.input_options.max_double_click_delay, o.input_options.max_click_dist));
+        let clicks = press_count(app.canvas.last_press, now, p, delay, dist);
+        app.canvas.last_press = Some((now, p, clicks));
+        app.canvas.unit_drag = None;
+        // A double-click that enters or leaves a header/footer is handled on release.
+        let hf_switch = (layout.header_footer_at(page, y).is_some() && story == StoryRef::Body)
+            || (matches!(story, StoryRef::Part(_)) && !in_text_box(app) && layout.header_footer_at(page, y).is_none());
         // Clicking into a footnote/endnote or a text box edits it; clicking outside a text box goes
         // back to where it is. While editing a header/footer, only its own text boxes are in reach.
         let story = {
@@ -1187,8 +1281,19 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         }
         app.canvas.column_drag = None;
         let _ = app.run("caret.set", json!({"pos": pj, "extend": mods.shift}));
-        if mods.command && !mods.shift {
-            let _ = app.run("select.sentence", json!({}));
+        // Double-click selects a word, triple-click a paragraph, Ctrl/⌘+click a sentence; holding
+        // the button and dragging then extends by whole units (Word, #549).
+        let unit = match clicks {
+            _ if mods.shift => None,
+            3 if !hf_switch => Some("paragraph"),
+            2 if !hf_switch => Some("word"),
+            1 if mods.command => Some("sentence"),
+            _ => None,
+        };
+        if let Some(unit) = unit {
+            let _ = app.run(&format!("select.{unit}"), json!({}));
+            let (start, end) = app.session.sel.ordered();
+            app.canvas.unit_drag = Some(UnitDrag { unit, clicks, start, end, last: pos });
         }
         app.session.page_hint = page;
         app.canvas.dragging = true;
@@ -1205,6 +1310,19 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
                 json!({"from": {"page": from.0, "x": from.1, "y": from.2}, "to": {"page": page, "x": x, "y": y}, "story": story}),
             );
         }
+    } else if app.canvas.dragging
+        && ui.input(|i| i.pointer.primary_down())
+        && let Some(d) = app.canvas.unit_drag.as_mut()
+    {
+        if let Some(pos) = layout.hit(page, x, y, story)
+            && pos != d.last
+        {
+            d.last = pos.clone();
+            let params = json!({"unit": d.unit, "start": d.start, "end": d.end, "pos": pos});
+            let _ = app.run("select.dragUnit", params);
+            app.session.page_hint = page;
+            app.canvas.caret_visible_since = crate::now_ms();
+        }
     } else if app.canvas.dragging && ui.input(|i| i.pointer.primary_down()) {
         if let Some(pos) = layout.hit(page, x, y, story)
             && pos != app.session.sel.focus
@@ -1217,6 +1335,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     } else if app.canvas.dragging && ui.input(|i| i.pointer.primary_released()) {
         app.canvas.dragging = false;
         app.canvas.column_drag = None;
+        app.canvas.unit_drag = None;
         if app.session.painter.is_some() && !app.session.sel.is_collapsed() {
             let _ = app.run("edit.pasteFormat", json!({}));
         }
@@ -1253,21 +1372,22 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
     hp.rect_filled(bar, 0.0, t.ruler_margin);
     let text = Rect::from_min_max(pos2(x0 + page.body.x * scale, bar.min.y), pos2(x0 + page.body.right() * scale, bar.max.y));
     hp.rect_filled(text, 0.0, t.ruler);
-    let unit = 72.0;
+    // Graduations in the File › Options unit.
+    let (unit, div, step) = ruler_scale(app.session.prefs.units);
     let origin = page.body.x;
-    let mut k = -((origin / unit).ceil() as i32) * 8;
+    let mut k = -((origin / unit).ceil() as i32) * div;
     loop {
-        let xpt = origin + k as f32 * unit / 8.0;
+        let xpt = origin + k as f32 * unit / div as f32;
         if xpt > page.w {
             break;
         }
         if xpt >= 0.0 {
             let sx = x0 + xpt * scale;
-            let (len, label) = if k % 8 == 0 {
-                (0.0, Some(k / 8))
-            } else if k % 4 == 0 {
+            let (len, label) = if k % div == 0 {
+                (0.0, Some(k / div * step))
+            } else if k % (div / 2) == 0 {
                 (5.0, None)
-            } else if k % 2 == 0 {
+            } else if div >= 8 && k % (div / 4) == 0 {
                 (3.0, None)
             } else {
                 (1.5, None)
@@ -1278,7 +1398,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
                 }
                 Some(_) => {}
                 None => {
-                    if scale * unit / 8.0 > 4.0 || k % 2 == 0 {
+                    if scale * unit / div as f32 > 4.0 || k % 2 == 0 {
                         hp.line_segment([pos2(sx, bar.center().y - len / 2.0), pos2(sx, bar.center().y + len / 2.0)], Stroke::new(1.0, t.ruler_tick));
                     }
                 }
@@ -1396,15 +1516,21 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
         margin_handle(app, ui, edge, zone, |p| (p.y - y0) / scale, &sect);
     }
     let origin = page.body.y;
-    let mut k = -((origin / unit).ceil() as i32) * 8;
+    let mut k = -((origin / unit).ceil() as i32) * div;
     loop {
-        let ypt = origin + k as f32 * unit / 8.0;
+        let ypt = origin + k as f32 * unit / div as f32;
         if ypt > page.h.min(20_000.0) {
             break;
         }
-        if ypt >= 0.0 && k % 8 == 0 && k != 0 {
-            vp.text(pos2(vbar.center().x, y0 + ypt * scale), egui::Align2::CENTER_CENTER, (k / 8).abs().to_string(), regular(9.5), t.ruler_tick);
-        } else if ypt >= 0.0 && k % 4 == 0 {
+        if ypt >= 0.0 && k % div == 0 && k != 0 {
+            vp.text(
+                pos2(vbar.center().x, y0 + ypt * scale),
+                egui::Align2::CENTER_CENTER,
+                (k / div * step).abs().to_string(),
+                regular(9.5),
+                t.ruler_tick,
+            );
+        } else if ypt >= 0.0 && k % (div / 2) == 0 {
             let sy = y0 + ypt * scale;
             vp.line_segment([pos2(vbar.center().x - 2.5, sy), pos2(vbar.center().x + 2.5, sy)], Stroke::new(1.0, t.ruler_tick));
         }
@@ -1412,6 +1538,19 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
         if k > 2000 {
             break;
         }
+    }
+}
+
+/// A ruler's graduation for a unit: points per numbered step, divisions per step, and how much
+/// each step counts (millimetre rulers number every centimetre as 10, 20…).
+fn ruler_scale(u: wordcraft_geom::Unit) -> (f32, i32, i32) {
+    use wordcraft_geom::Unit;
+    match u {
+        Unit::Centimeters => (wordcraft_geom::PT_PER_CM, 4, 1),
+        Unit::Millimeters => (wordcraft_geom::PT_PER_CM, 4, 10),
+        Unit::Points => (72.0, 8, 72),
+        Unit::Picas => (72.0, 8, 6),
+        Unit::Inches => (72.0, 8, 1),
     }
 }
 
@@ -1501,7 +1640,7 @@ fn part_kind(app: &WordApp, s: StoryRef) -> Option<PartKind> {
 }
 
 /// The story a text box's story sits in (where the box is), when the caret is in a text box.
-fn text_box_host(app: &WordApp, layout: &DocLayout) -> Option<StoryRef> {
+pub(crate) fn text_box_host(app: &WordApp, layout: &DocLayout) -> Option<StoryRef> {
     match app.session.sel.focus.story {
         StoryRef::Part(id) if in_text_box(app) => layout.text_box(id, app.session.page_hint).map(|o| o.story),
         _ => None,
@@ -1656,15 +1795,23 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         item(ui, app, tl!("Edit Field…"), "fields.setCode", json!({}));
         item(ui, app, tl!("Toggle Field Codes"), "fields.toggleCode", json!({}));
     }
-    let object = wordcraft_engine::cmd::objects::selected(&app.session).is_some();
-    if object || app.session.sel.focus.path.cell().is_some() {
+    let selected_object = wordcraft_engine::cmd::objects::selected(&app.session).is_some();
+    if selected_object || app.session.sel.focus.path.cell().is_some() {
         item(ui, app, "View Alt Text…", "view.altTextPane", json!({"value": true}));
     }
-    if crate::ribbon::has_picture_selected(&app.session) {
+    // A selected picture, shape, text box or chart: its own items, then Wrap Text (#513).
+    let picture = crate::ribbon::has_picture_selected(&app.session);
+    let object = wordcraft_engine::cmd::objects::object_selection(&app.session).is_some();
+    if picture || object {
         ui.separator();
+    }
+    if picture {
         item(ui, app, "Change Picture…", "ui.changePicture", json!({}));
         item(ui, app, "Reset Picture", "picture.reset", json!({}));
         item(ui, app, "Size and Crop…", "ui.tab", json!({"tab": "Picture Format"}));
+    }
+    if object {
+        ui.menu_button(tl!("Wrap Text"), |ui| crate::ribbon::wrap_text_items(ui, app));
     }
     if app.session.sel.focus.path.cell().is_some() {
         ui.separator();
@@ -1764,6 +1911,87 @@ mod tests {
         assert_eq!(wordcraft_engine::cmd::page::sect(&app.session).margin_left, sect.margin_left);
     }
 
+    /// #549: presses count as double/triple as they go down; slow or far presses start again.
+    #[test]
+    fn presses_count_up_to_three() {
+        let at = pos2(100.0, 100.0);
+        assert_eq!(press_count(None, 5.0, at, 0.3, 6.0), 1);
+        assert_eq!(press_count(Some((5.0, at, 1)), 5.1, at, 0.3, 6.0), 2);
+        assert_eq!(press_count(Some((5.1, at, 2)), 5.2, at + vec2(3.0, 0.0), 0.3, 6.0), 3);
+        assert_eq!(press_count(Some((5.2, at, 3)), 5.3, at, 0.3, 6.0), 3, "stays a triple");
+        assert_eq!(press_count(Some((5.0, at, 1)), 5.5, at, 0.3, 6.0), 1, "too slow");
+        assert_eq!(press_count(Some((5.0, at, 1)), 5.1, at + vec2(20.0, 0.0), 0.3, 6.0), 1, "too far");
+        assert_eq!(press_count(Some((5.0, at, 1)), 4.0, at, 0.3, 6.0), 1, "the clock went back");
+    }
+
+    /// #549: double-click a word and drag: the selection grows by whole words; triple-click and
+    /// drag: by whole paragraphs (Word's behaviour).
+    #[test]
+    fn multi_click_drag_extends_by_units() {
+        use egui::{Event, PointerButton};
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "Alpha beta gamma delta\rSecond para\rThird para"})).unwrap();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let screen = |h: &mut egui_kittest::Harness<'_, WordApp>, pos: Pos| {
+            let c = h.state_mut().session.layout().caret(&pos).expect("caret");
+            page_to_screen(h.state_mut(), c.page, c.x + 1.0, c.top + c.height / 2.0).expect("on screen")
+        };
+        let button =
+            |at: Pos2, pressed: bool| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        let multi_drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: Pos2, to: Pos2, clicks: usize| {
+            h.event(Event::PointerMoved(from));
+            for i in 0..clicks {
+                h.event(button(from, true));
+                h.step();
+                if i + 1 < clicks {
+                    h.event(button(from, false));
+                    h.step();
+                }
+            }
+            for k in 1..=4 {
+                h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 4.0)));
+                h.step();
+            }
+            h.event(button(to, false));
+            for _ in 0..3 {
+                h.step();
+            }
+        };
+        // Double-click inside "beta", drag into "gamma": "beta gamma " is selected.
+        let (from, to) = (screen(&mut h, Pos::body(0, 8)), screen(&mut h, Pos::body(0, 13)));
+        multi_drag(&mut h, from, to, 2);
+        let (s, e) = h.state().session.sel.ordered();
+        assert_eq!((s, e), (Pos::body(0, 6), Pos::body(0, 17)), "whole words");
+        // Let the double-click time pass, then triple-click the second paragraph and drag into the third.
+        for _ in 0..40 {
+            h.step();
+        }
+        let (from, to) = (screen(&mut h, Pos::body(1, 3)), screen(&mut h, Pos::body(2, 2)));
+        multi_drag(&mut h, from, to, 3);
+        let sel = h.state().session.sel.clone();
+        assert_eq!((sel.anchor, sel.focus), (Pos::body(1, 0), Pos::body(2, 10)), "whole paragraphs");
+        // A plain double-click (no drag) still selects just the word.
+        h.state_mut().run("select.collapse", json!({})).unwrap();
+        for _ in 0..40 {
+            h.step();
+        }
+        let at = screen(&mut h, Pos::body(0, 1));
+        multi_drag(&mut h, at, at, 2);
+        let (s, e) = h.state().session.sel.ordered();
+        assert_eq!((s, e), (Pos::body(0, 0), Pos::body(0, 6)));
+    }
+
     /// #167: a comment balloon edits in place like Word's: click it, type, leave it, and the
     /// comment has the new text as one undo step.
     #[test]
@@ -1810,6 +2038,53 @@ mod tests {
         assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step for the edit");
         assert!(h.state_mut().session.undo());
         assert_eq!(h.state().session.doc.plain_text(StoryRef::Part(part)), "Original");
+    }
+
+    /// #513: right-clicking a picture selects it and offers Wrap Text, as in Word; choosing
+    /// Square there wraps text around it.
+    #[test]
+    fn right_click_on_a_picture_offers_wrap_text() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "Text before the picture "})).unwrap();
+        let mut png = Vec::new();
+        let img = image::RgbaImage::from_pixel(40, 20, image::Rgba([200, 30, 30, 255]));
+        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        a.run("insert.picture", json!({"data": wordcraft_engine::cmd::insert::base64_encode(&png), "width": 160})).unwrap();
+        let pos = wordcraft_engine::cmd::objects::selected(&a.session).unwrap().0;
+        a.session.sel = wordcraft_engine::Selection::caret(Pos::body(0, 0));
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let rect = h.state_mut().session.layout().object(&pos, 0).expect("the picture is laid out").rect;
+        let at = crate::frame::to_screen(h.state().canvas.page_rects[0], h.state().canvas.scale, rect).center();
+        h.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        h.step();
+        let picked = wordcraft_engine::cmd::objects::object_selection(&h.state().session).map(|(p, _)| p);
+        assert_eq!(picked, Some(pos.clone()), "the right-click selected the picture");
+        h.get_by_label_contains("Wrap Text").hover();
+        for _ in 0..3 {
+            h.step();
+        }
+        assert!(h.query_by_label_contains("Fix Position on Page").is_some(), "the anchoring choices are offered");
+        h.get_by_label_contains("Square").click();
+        for _ in 0..3 {
+            h.step();
+        }
+        let o = wordcraft_engine::cmd::objects::selected(&h.state().session).unwrap().1;
+        assert_eq!(o.frame().unwrap().2.wrap, wordcraft_doc::para::Wrap::Square);
     }
 
     #[test]
