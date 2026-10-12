@@ -13,6 +13,9 @@ pub enum ProofLang {
     /// Polish (`pl`, `pl-PL`): the installed Hunspell dictionary (when there is one), the Polish grammar rules and the Polish
     /// hyphenation patterns.
     Pl,
+    /// Russian (`ru`, `ru-RU`): the installed Hunspell dictionary (when there is one), the Russian
+    /// grammar rules and the Russian word-division rules.
+    Ru,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without
     /// the language's proofing tools: no spelling or grammar marks, so its words are never
     /// flagged as English misspellings. Hyphenation keeps using the English patterns, as before
@@ -22,7 +25,7 @@ pub enum ProofLang {
 
 impl ProofLang {
     /// Every language with a spelling dictionary, in display order.
-    pub const PROOFED: [ProofLang; 2] = [ProofLang::En, ProofLang::Pl];
+    pub const PROOFED: [ProofLang; 3] = [ProofLang::En, ProofLang::Pl, ProofLang::Ru];
 
     /// The proofing language of a BCP 47 tag (`pl-PL`, `en_GB`, `PL`…). Only the primary subtag
     /// counts. No tag (or an empty one) is English, WordCraft's default editing language.
@@ -33,16 +36,19 @@ impl ProofLang {
             ProofLang::En
         } else if primary.eq_ignore_ascii_case("pl") || primary.eq_ignore_ascii_case("pol") {
             ProofLang::Pl
+        } else if primary.eq_ignore_ascii_case("ru") || primary.eq_ignore_ascii_case("rus") {
+            ProofLang::Ru
         } else {
             ProofLang::Other
         }
     }
 
-    /// The primary language subtag (`en`, `pl`); empty for [`ProofLang::Other`].
+    /// The primary language subtag (`en`, `pl`, `ru`); empty for [`ProofLang::Other`].
     pub fn code(self) -> &'static str {
         match self {
             ProofLang::En => "en",
             ProofLang::Pl => "pl",
+            ProofLang::Ru => "ru",
             ProofLang::Other => "",
         }
     }
@@ -126,6 +132,12 @@ mod tests {
         assert_eq!(ProofLang::from_tag(Some("")), ProofLang::En);
         assert_eq!(ProofLang::from_tag(Some("  ")), ProofLang::En);
         assert!(ProofLang::Pl.is_proofed() && !ProofLang::Other.is_proofed());
+        for t in ["ru", "ru-RU", "RU-ru", "ru_RU", "ru_RU.UTF-8", " ru-RU ", "rus"] {
+            assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::Ru, "{t}");
+        }
+        assert!(ProofLang::Ru.is_proofed());
+        assert_eq!(ProofLang::Ru.code(), "ru");
+        assert!(ProofLang::PROOFED.contains(&ProofLang::Ru));
         assert_eq!(ProofLang::Pl.code(), "pl");
     }
 }

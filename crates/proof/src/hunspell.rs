@@ -1,7 +1,7 @@
 //! Hunspell dictionaries installed on the system, read at runtime.
 //!
 //! WordCraft doesn't bundle large spelling dictionaries. For languages with an affix dictionary
-//! (Polish), it reads the standard Hunspell `.aff`/`.dic` pair installed by the operating system,
+//! (Polish, Russian), it reads the standard Hunspell `.aff`/`.dic` pair installed by the operating system,
 //! a package manager or LibreOffice, with [`crate::affix::AffixDict::from_hunspell`]. When none is
 //! installed the language has no spelling check (no marks, no errors), like Word without the
 //! language's proofing tools.
@@ -48,7 +48,9 @@ pub fn search_dirs() -> Vec<PathBuf> {
         }
         for var in ["ProgramFiles", "ProgramFiles(x86)"] {
             if let Some(base) = std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from) {
-                dirs.push(base.join("LibreOffice").join("share").join("extensions").join("dict-pl"));
+                for ext in ["dict-pl", "dict-ru"] {
+                    dirs.push(base.join("LibreOffice").join("share").join("extensions").join(ext));
+                }
             }
         }
     } else if cfg!(target_os = "macos") {
@@ -59,6 +61,7 @@ pub fn search_dirs() -> Vec<PathBuf> {
         dirs.push(PathBuf::from("/opt/homebrew/share/hunspell"));
         dirs.push(PathBuf::from("/usr/local/share/hunspell"));
         dirs.push(PathBuf::from("/Applications/LibreOffice.app/Contents/Resources/extensions/dict-pl"));
+        dirs.push(PathBuf::from("/Applications/LibreOffice.app/Contents/Resources/extensions/dict-ru"));
     } else {
         if let Some(h) = &home {
             dirs.push(h.join(".local/share/hunspell"));
@@ -71,6 +74,8 @@ pub fn search_dirs() -> Vec<PathBuf> {
             "/usr/local/share/myspell",
             "/usr/lib/libreoffice/share/extensions/dict-pl",
             "/opt/libreoffice/share/extensions/dict-pl",
+            "/usr/lib/libreoffice/share/extensions/dict-ru",
+            "/opt/libreoffice/share/extensions/dict-ru",
         ] {
             dirs.push(PathBuf::from(d));
         }
@@ -115,8 +120,24 @@ fn decode_latin2(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| if b < 0xa0 { char::from(b) } else { high.get(usize::from(b - 0xa0)).copied().unwrap_or('\u{fffd}') }).collect()
 }
 
+/// KOI8-R code points 0x80..=0xFF (0x00..=0x7F are ASCII): the encoding of older Russian
+/// dictionaries.
+const KOI8_R_HIGH: &str =
+    "─│┌┐└┘├┤┬┴┼▀▄█▌▐░▒▓⌠■∙√≈≤≥\u{a0}⌡°²·÷═║╒ё╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡Ё╢╣╤╥╦╧╨╩╪╫╬©юабцдефгхийклмнопярстужвьызшэщчъЮАБЦДЕФГХИЙКЛМНОПЯРСТУЖВЬЫЗШЭЩЧЪ";
+
+/// Windows-1251 code points 0x80..=0xFF (0x98 is unassigned): the other one Russian dictionaries
+/// use.
+const CP1251_HIGH: &str = "ЂЃ‚ѓ„…†‡€‰Љ‹ЊЌЋЏђ‘’“”•–—\u{fffd}™љ›њќћџ\u{a0}ЎўЈ¤Ґ¦§Ё©Є«¬\u{ad}®Ї°±Ііґµ¶·ё№є»јЅѕїАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя";
+
+/// Decode a single-byte encoding whose bytes 0x80..=0xFF are `high` (ASCII below).
+fn decode_high(bytes: &[u8], high: &str) -> String {
+    let high: Vec<char> = high.chars().collect();
+    bytes.iter().map(|&b| if b < 0x80 { char::from(b) } else { high.get(usize::from(b - 0x80)).copied().unwrap_or('\u{fffd}') }).collect()
+}
+
 /// Decode an `.aff`/`.dic` pair to UTF-8 from the encoding the `.aff`'s `SET` line names
-/// (UTF-8 when there is none; ISO 8859-2 is the other one Polish dictionaries use).
+/// (UTF-8 when there is none; ISO 8859-2 is the other one Polish dictionaries use, KOI8-R and
+/// Windows-1251 the ones older Russian dictionaries use).
 pub fn decode(aff: &[u8], dic: &[u8]) -> Result<(String, String), String> {
     let head = String::from_utf8_lossy(aff.get(..aff.len().min(8192)).unwrap_or_default()).to_string();
     let set = head.lines().find_map(|l| l.trim_start_matches('\u{feff}').strip_prefix("SET ")).map(str::trim).unwrap_or("UTF-8").to_ascii_uppercase();
@@ -126,6 +147,8 @@ pub fn decode(aff: &[u8], dic: &[u8]) -> Result<(String, String), String> {
             Ok((text(aff, ".aff")?, text(dic, ".dic")?))
         }
         "ISO8859-2" | "ISO-8859-2" => Ok((decode_latin2(aff), decode_latin2(dic))),
+        "KOI8-R" | "KOI8R" => Ok((decode_high(aff, KOI8_R_HIGH), decode_high(dic, KOI8_R_HIGH))),
+        "CP1251" | "WINDOWS-1251" | "MICROSOFT-CP1251" => Ok((decode_high(aff, CP1251_HIGH), decode_high(dic, CP1251_HIGH))),
         other => Err(format!("unsupported encoding {other}")),
     }
 }
@@ -142,8 +165,19 @@ mod tests {
         assert_eq!(d, "2\nżółw\n");
         let (_, d) = decode("SET UTF-8\n".as_bytes(), "żółw".as_bytes()).unwrap();
         assert_eq!(d, "żółw");
-        assert!(decode(b"SET KOI8-R\n", b"").is_err());
+        assert!(decode(b"SET SHIFT_JIS\n", b"").is_err());
         assert!(decode(b"SET UTF-8\n", b"\xff\xfe").is_err());
+    }
+
+    #[test]
+    fn decodes_russian_single_byte_encodings() {
+        // `ёлка` in KOI8-R (0xA3 0xCC 0xCB 0xC1) and in Windows-1251 (0xB8 0xEB 0xEA 0xE0).
+        let (a, d) = decode(b"SET KOI8-R\nTRY \xcf\xc5\n", b"1\n\xa3\xcc\xcb\xc1/A\n").unwrap();
+        assert!(a.contains("TRY ое"), "{a}");
+        assert_eq!(d, "1\nёлка/A\n");
+        let (_, d) = decode(b"SET microsoft-cp1251\n", b"1\n\xb8\xeb\xea\xe0 \xc4\xee\xec\n").unwrap();
+        assert_eq!(d, "1\nёлка Дом\n");
+        assert_eq!(decode_high(&[0x98], CP1251_HIGH), "\u{fffd}");
     }
 
     #[test]

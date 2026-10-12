@@ -409,8 +409,8 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
 }
 
 /// The proofing languages the Language menu offers: tag and English name (translated when drawn).
-pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 3] =
-    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish")];
+pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 4] =
+    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("ru-RU", "Russian")];
 
 /// The English name of a proofing language tag, as the status bar shows it (no tag: WordCraft's
 /// default, US English; a tag without a name here: the tag).
@@ -421,6 +421,7 @@ pub(crate) fn language_name(tag: Option<&str>) -> String {
     }
     match wordcraft_engine::proof::ProofLang::from_tag(Some(tag)) {
         wordcraft_engine::proof::ProofLang::Pl => "Polish".into(),
+        wordcraft_engine::proof::ProofLang::Ru => "Russian".into(),
         wordcraft_engine::proof::ProofLang::En if tag.eq_ignore_ascii_case("en") => "English (United States)".into(),
         _ => tag.to_string(),
     }

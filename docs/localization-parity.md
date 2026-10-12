@@ -79,12 +79,19 @@ documents in Polish (`pl-PL`).
 |---|---|---|---|---|
 | English (`en`, any region; text with no language) | Moby word list (public domain, ~160k words) with inflection rules | edit distance | repeated word, `a`/`an`, sentence capital, space before punctuation, double space | Moby dictionary, our Liang patterns, heuristic |
 | Polish (`pl`) | The Hunspell `pl_PL` dictionary installed on the system (OS package, Homebrew, LibreOffice, or the `WORDCRAFT_DICTIONARIES` folder; not bundled, so no Polish spelling marks without it), read at runtime by a Hunspell-style affix engine (`crates/proof/src/affix.rs`); names capitalized, compounds part by part, `Kennedy'ego` | missing diacritics first (`zolw` → `żółw`), the dictionary's confusion table (`żeka` → `rzeka`, `chuśtawka` → `huśtawka`), missing space (`napewno` → `na pewno`), one typo, then a stem scan within two typos | Polish messages: repeated word, space before punctuation, double space, sentence capital (knows `np.`, `r.`, initials, ordinals, dialogue dashes), missing comma before `że`/`który`/`ponieważ`/`gdyż`/`aby`/`żeby`/`jeśli`/`jeżeli`/`gdyby`/`lecz` (not after `mimo`, `chyba`, `tak`, prepositions…), `we`/`ze` (`we wtorek`, `ze szkoły`), doubled punctuation | TeX Polish patterns (Kołodziejska, Jackowski, Ryćko; MIT option) with their 20 exception words; a Polish syllable heuristic for letters outside the alphabet |
+| Russian (`ru`) | A Russian Hunspell dictionary installed on the system (`ru_RU` from the OS, a package manager, LibreOffice's `dict-ru` or the `WORDCRAFT_DICTIONARIES` folder; UTF-8, KOI8-R or Windows-1251; not bundled, so no Russian spelling marks without it), read by the same affix engine; `ё` optional (`елка`/`ёлка`, `еще`/`ещё`); hyphenated words whole, then by parts (`кто-то`, `по-русски`, `кое-где`, `северо-западный`, `ИИ-консультант`); solid compounds (`высокоэластичный`), `не` with adjectives, participles and verbal nouns (not verbs), productive prefixes (`ультра-`, `эко-`) and prefixed verbs; abbreviations with endings (`ГИПа`) and camel case left alone; our supplement of ~200 modern words with their declensions (`assets/spelling/ru-extra.txt`: `маркетплейс`, `промокод`, `интеграция`, `колеровать`) | `ё`/`е` first, then slips within letter groups (unstressed vowels, voiced and voiceless pairs, `ь`/`ъ`), the common confusions (`жы`, `чя`, `тся`/`ться`, doubled consonants, unpronounced consonants: `здраствуй` → `здравствуй`), a missing space (`незнаю` → `не знаю`; not a preposition before a verb), one typo, then a stem scan | Russian messages: repeated word, space before punctuation, double space, sentence capital (knows `т. е.`, `г.`, `руб.`, `ул.`, initials, numbers, dialogue dashes), possibly missing comma before `что`/`чтобы`/`если`/`хотя`/`поскольку`/`который` and before `потому что` (not after conjunctions and particles such as `и`, `только`, `даже`, `так`, `для того`; not after a preposition; not in `хотя бы`, `что-то`), doubled punctuation | The rules of Russian word division as code (no pattern file): a vowel on each side, two letters at least, `ь`/`ъ`/`й` kept with the letter before, a break after `ъ`, a consonant cluster divided after its first consonant |
 | Any other | — (no marks) | — | — | the English patterns, as before |
 
 Measured with the SJP.PL dictionary: every one of the ~4.5 million forms an independent expansion of its affix file
 produces is accepted, and 200,000 one-edit mutations that aren't words are all rejected; a check
 takes ~1 µs, a suggestion list 1–35 ms (release build). Not yet: other languages' dictionaries,
 a thesaurus for Polish, Word's style and clarity refinements, Polish-specific AutoCorrect.
+
+Measured with the LibreOffice `ru_RU` dictionary on a private corpus of 205 real-world Russian
+business documents (354,025 Cyrillic words): the dictionary loads in ~0.1 s, the whole corpus is
+checked in ~0.6 s, and 1.63% of the words are marked, almost all of them names of people, places
+and companies (2.96% before the supplement and the compound rules). Not yet: a Russian thesaurus,
+Russian AutoCorrect, agreement checks.
 
 Italian (`it`, #594) follows `it`, `it-IT` and `it-CH` system locales. Its catalog has every key of
 the others plus 51 strings that are wrapped in `tl!` but were in no catalog yet (File › Info
@@ -105,6 +112,7 @@ allows); all other text is written from the meaning of the English. No Italian p
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Russian proofing: spelling against an installed `ru_RU` Hunspell dictionary (also KOI8-R and Windows-1251), suggestions, grammar rules with Russian messages and Russian word division |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-11 | minor | Czech (`cs`) interface catalog added |
 | 2026-10-11 | minor | Polish interface (13 languages) and Polish proofing: SJP.PL spelling with suggestions, Polish grammar rules, TeX Polish hyphenation; proofing language per run; dimension ~25% → ~27% |
