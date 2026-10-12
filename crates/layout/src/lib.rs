@@ -17,6 +17,7 @@ pub mod kinsoku;
 pub mod math;
 pub mod outline;
 pub mod para;
+pub mod styleref;
 mod table;
 mod textbox;
 mod vertical;
@@ -455,6 +456,8 @@ struct Key {
     grid: (u32, u32, u32, bool),
     fit: bool,
     hide_deleted: bool,
+    /// STYLEREF results in headers and footers ([`FieldCtx::styleref_key`]).
+    sref: u64,
 }
 
 /// Memoised paragraph layouts.
@@ -700,6 +703,7 @@ impl Ctx<'_> {
             grid: self.grid.key(),
             fit: self.boxes.inside(),
             hide_deleted: self.hide_deleted,
+            sref: if self.fields.styleref.is_some() && styleref::has_styleref(p) { self.fields.styleref_key() } else { 0 },
         };
         self.cache.used.insert(key.clone());
         if let Some(pl) = self.cache.paras.get(&key) {
@@ -3047,6 +3051,7 @@ fn headers_footers(ctx: &mut Ctx, pages: &mut [Page], sections: &[(usize, &Secti
         *per_section.entry(p.section).or_default() += 1;
     }
     let even_odd = ctx.doc.settings.even_odd_headers;
+    let styles = styleref::headers_use_styleref(ctx.doc).then(|| Arc::new(styleref::StyleIndex::build(ctx.doc)));
     let mut first_of_section: HashSet<usize> = HashSet::new();
     let mut seen = HashSet::new();
     for (i, p) in pages.iter().enumerate() {
@@ -3074,6 +3079,14 @@ fn headers_footers(ctx: &mut Ctx, pages: &mut [Page], sections: &[(usize, &Secti
         ctx.fields.pages = total;
         ctx.fields.section_pages = per_section.get(&page.section).copied().unwrap_or(1);
         ctx.fields.section = page.section as u32 + 1;
+        // STYLEREF: the body paragraphs on this page.
+        ctx.fields.styleref = styles.as_ref().map(|ix| {
+            let paths = page.items.iter().filter_map(|it| match it {
+                Placed::Lines { story: StoryRef::Body, path, .. } => Some(path),
+                _ => None,
+            });
+            (ix.clone(), ix.page_at(paths, page.first_block))
+        });
         let w = sect.text_width();
         let x = sect.margin_left + sect.gutter;
         if let Some(id) = hid
@@ -3103,6 +3116,7 @@ fn headers_footers(ctx: &mut Ctx, pages: &mut [Page], sections: &[(usize, &Secti
             page.footer_story = Some(id);
         }
     }
+    ctx.fields.styleref = None;
 }
 
 /// Mirrored margins: even pages have the inside margin (and gutter) on the right, so their
@@ -3155,6 +3169,8 @@ mod tests_grid;
 mod tests_numeral;
 #[cfg(test)]
 mod tests_pages;
+#[cfg(test)]
+mod tests_styleref;
 #[cfg(test)]
 mod tests_textbox;
 #[cfg(test)]
