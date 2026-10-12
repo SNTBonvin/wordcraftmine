@@ -1085,6 +1085,8 @@
 	Keeps the fonts and formatting of the copied text.	保留所复制文本的字体和格式。
 	Reads the clipboard's rich text and keeps its formatting.	读取剪贴板中的 RTF 内容并保留其格式。
 	Reads the clipboard's web content and keeps its formatting.	读取剪贴板中的网页内容并保留其格式。
+	Picture	图片
+	Pastes the clipboard's picture.	粘贴剪贴板中的图片。
 	Drops all formatting and pastes plain text.	去除所有格式，粘贴纯文本。
 	Advanced Find	高级查找
 	Advanced Find…	高级查找…
@@ -2067,3 +2069,5 @@
 	Your system has animation effects turned on.	系统已打开动画效果。
 	Your system has animation effects turned off.	系统已关闭动画效果。
 	Your system doesn't report an animation setting, so animation effects stay on.	系统未提供动画设置，因此动画效果保持打开。
+	Region:	区域：
+	Automatic ({region})	自动（{region}）
