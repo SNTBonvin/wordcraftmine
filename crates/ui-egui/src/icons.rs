@@ -2100,6 +2100,20 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.panel(1.5, 8.0, 8.5, 14.5, 1.0);
             pen.cycle(11.5, 4.5, 3.0, a);
         }
+        // The built-in file browser (#576): a folder, a file and the home folder.
+        "folder" => {
+            pen.block(1.5, 4.75, 14.5, 13.5, 1.0, pen.t);
+            pen.poly(&[(1.5, 3.0), (6.0, 3.0), (7.5, 4.75), (14.5, 4.75), (14.5, 13.5), (1.5, 13.5)], c);
+        }
+        "file" => {
+            pen.page_h(3.0, 1.0, 14.0);
+            pen.page_rows(3.0, 1.0, 14.0, &[0, 1, 2]);
+        }
+        "homeFolder" => {
+            pen.line(&[(1.5, 7.5), (8.0, 2.0), (14.5, 7.5)]);
+            pen.rect(3.5, 8.5, 12.5, 14.5, 1.0);
+            pen.block(6.75, 10.75, 9.25, 13.25, 0.5, a);
+        }
         "addins" => {
             pen.panel(1.5, 1.5, 6.5, 6.5, 1.0);
             pen.panel(9.5, 1.5, 14.5, 6.5, 1.0);
@@ -2472,6 +2486,9 @@ pub const NAMES: &[&str] = &[
     "textPane",
     "smartArtColors",
     "resetGraphic",
+    "folder",
+    "file",
+    "homeFolder",
 ];
 
 /// Names that are deliberately the same drawing as another (aliases of one command or one idea).
