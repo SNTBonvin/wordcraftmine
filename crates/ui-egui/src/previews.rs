@@ -84,6 +84,17 @@ impl Previews {
         self.english_names.get(shown).cloned().unwrap_or_else(|| shown.to_string())
     }
 
+    /// Fonts were added or removed: list the families again and redraw the entries of
+    /// `families` (an entry drawn before its font was added shows the fallback face).
+    pub fn fonts_changed(&mut self, ctx: &egui::Context, families: impl Iterator<Item = String>) {
+        self.families = None;
+        ctx.data_mut(|d| {
+            for f in families {
+                d.remove::<TextureHandle>(egui::Id::new(format!("font:{f}")));
+            }
+        });
+    }
+
     /// A closure drawing a font-menu entry in its own face.
     pub fn font_preview_fn(&mut self) -> Box<dyn Fn(&mut Ui, &str) -> Response> {
         Box::new(|ui: &mut Ui, name: &str| {
@@ -410,12 +421,19 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
     }
 }
 
+/// Style sets shown in the Design tab's gallery, in order.
+const STYLE_SETS: [&str; 7] = ["default", "basic", "lines", "shaded", "casual", "centered", "minimalist"];
+/// Width of one gallery thumbnail, points.
+const STYLE_SET_W: f32 = 56.0;
+/// Width the whole gallery takes with the ribbon's 1 pt item spacing.
+pub const STYLE_SET_GALLERY_W: f32 = STYLE_SETS.len() as f32 * (STYLE_SET_W + 1.0) - 1.0;
+
 /// Design tab: style set tiles.
 pub fn style_set_gallery(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let ppp = ui.ctx().pixels_per_point();
-    for name in ["default", "basic", "lines", "shaded", "casual", "centered", "minimalist"] {
-        let (r, resp) = ui.allocate_exact_size(vec2(56.0, crate::widgets::CONTENT_H), Sense::click());
+    for name in STYLE_SETS {
+        let (r, resp) = ui.allocate_exact_size(vec2(STYLE_SET_W, crate::widgets::CONTENT_H), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, 3.0, t.hover);
         }

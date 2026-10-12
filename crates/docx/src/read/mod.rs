@@ -8,6 +8,7 @@ mod freeform;
 mod math;
 mod props;
 mod sdt;
+mod shape_style;
 mod story;
 mod wordart;
 
@@ -113,7 +114,12 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocxError> {
 
 /// [`read`] for bytes known not to be an encrypted package.
 pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
-    let pkg = Package::open(bytes)?;
+    read_opened(&Package::open(bytes)?)
+}
+
+/// Read a package whose parts are already unpacked (from a zip, a Flat OPC file or a converted
+/// Word 2003 XML document).
+pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     let root_rels = pkg.rels("");
     let main = root_rels.by_type(rt::OFFICE_DOC).filter(|r| !r.external).map(|r| r.target.clone()).unwrap_or_else(|| "word/document.xml".to_string());
     let Some(root) = pkg.xml(&main)? else {
@@ -126,7 +132,7 @@ pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
     let mut doc = Document::new();
     doc.body.clear();
     let mut r = Reader {
-        pkg: &pkg,
+        pkg,
         doc,
         pc: PropCtx::default(),
         revs: HashMap::new(),
@@ -675,6 +681,7 @@ impl Reader<'_> {
             self.pc.alias.insert(id.to_string(), "Normal".into());
         }
         let mut sheet = StyleSheet::empty();
+        sheet.default_para_present = root.child("w:docDefaults").and_then(|dd| dd.child("w:pPrDefault")).is_some();
         if let Some(dd) = root.child("w:docDefaults") {
             if let Some(r) = dd.child("w:rPrDefault").and_then(|d| d.child("w:rPr")) {
                 sheet.default_chr = self.pc.rpr(r);

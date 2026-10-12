@@ -2,7 +2,7 @@
 //! time a lookup needs them, native only), outline cache.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use kurbo::BezPath;
@@ -11,6 +11,9 @@ use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::raw::FileRef;
 use skrifa::string::StringId;
 use skrifa::{GlyphId, MetadataProvider};
+
+mod user;
+pub use user::{FONT_FILE_EXTS, FontFormat, Installed, MAX_FONT_FILE_BYTES, UserFont, UserFontError, decode_font_file, is_font_file_name, sniff};
 
 /// The family used when a requested family is unknown (the UI sans).
 pub const FALLBACK_FAMILY: &str = "Source Sans 3";
@@ -188,6 +191,12 @@ impl FontFace {
         }
         self.skrifa().is_some_and(|f| f.charmap().map(c).is_some())
     }
+    /// Does the face carry OpenType glyph substitution (GSUB)? Complex scripts (Myanmar, Khmer,
+    /// Indic…) need it to reorder and stack; fonts with only Apple's AAT tables draw them unshaped.
+    pub fn has_layout_tables(&self) -> bool {
+        use skrifa::raw::TableProvider;
+        self.skrifa().is_some_and(|f| f.gsub().is_ok())
+    }
     /// Units per em.
     pub fn units_per_em(&self) -> f64 {
         self.upem
@@ -287,6 +296,10 @@ pub struct FontDb {
     fallbacks: RwLock<FallbackCache>,
     #[cfg(not(target_arch = "wasm32"))]
     catalog: RwLock<Vec<CatalogEntry>>,
+    /// Fonts the user added at run time, and the folder they are stored in (#582).
+    user: RwLock<user::UserFonts>,
+    /// Bumped whenever user fonts are added or removed ([`FontDb::generation`]).
+    generation: AtomicU64,
     /// The folders the system font scan reads (the platform's font folders for [`FontDb::global`]).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     font_dirs: Vec<std::path::PathBuf>,
@@ -300,6 +313,12 @@ pub struct FontDb {
     /// System fallback state: enabled, and characters no system font covers.
     #[cfg(not(target_arch = "wasm32"))]
     sys: Mutex<SysFallback>,
+    /// Held through a system fallback search, so searches run one at a time. Without it a search
+    /// racing another that was still loading a preferred family ("Padauk" for Myanmar) skipped
+    /// that family as already tried and loaded whatever the coverage index found first (only
+    /// Padauk Bold), so which face a character fell back to depended on thread timing.
+    #[cfg(not(target_arch = "wasm32"))]
+    searching: Mutex<()>,
     /// The characters each installed font file maps, read the first time a fallback search
     /// needs that file. Held through a search, so two searches never read a file twice.
     #[cfg(not(target_arch = "wasm32"))]
@@ -827,6 +846,8 @@ impl FontDb {
             fallbacks: RwLock::new(FallbackCache::default()),
             #[cfg(not(target_arch = "wasm32"))]
             catalog: RwLock::new(Vec::new()),
+            user: RwLock::new(user::UserFonts::default()),
+            generation: AtomicU64::new(0),
             font_dirs,
             #[cfg(not(target_arch = "wasm32"))]
             cataloged: std::sync::OnceLock::new(),
@@ -834,6 +855,8 @@ impl FontDb {
             loading: Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             sys: Mutex::new(SysFallback { enabled: true, ..Default::default() }),
+            #[cfg(not(target_arch = "wasm32"))]
+            searching: Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             coverage: Mutex::new(CoverageIndex::default()),
             #[cfg(not(target_arch = "wasm32"))]
@@ -1270,9 +1293,13 @@ impl FontDb {
                 return hit.clone();
             }
         }
-        let found = self.search_fallback(c, exclude);
-        // Keyed by the face count after the search (a system fallback may have loaded fonts).
-        let n = self.read_faces().len();
+        let (found, n) = self.search_fallback(c, exclude);
+        // Keyed by the face count the answer was chosen from (a system fallback may have loaded
+        // fonts, and another thread may have loaded more since: an answer from before that load
+        // is returned but not cached under the new count).
+        if n != self.read_faces().len() {
+            return found;
+        }
         let mut cache = self.fallbacks.write().unwrap_or_else(|e| e.into_inner());
         if cache.faces != n || cache.map.len() >= FALLBACK_CACHE_MAX {
             cache.map.clear();
@@ -1282,17 +1309,36 @@ impl FontDb {
         found
     }
 
-    fn search_fallback(&self, c: char, exclude: u32) -> Option<Arc<FontFace>> {
-        self.loaded_fallback(c, exclude).or_else(|| {
-            #[cfg(not(target_arch = "wasm32"))]
-            if self.system_fallback(c) {
-                return self.loaded_fallback(c, exclude);
-            }
-            None
-        })
+    /// The fallback face for `c`, and the number of loaded faces it was chosen from.
+    fn search_fallback(&self, c: char, exclude: u32) -> (Option<Arc<FontFace>>, usize) {
+        let (found, n) = self.loaded_fallback(c, exclude);
+        if found.is_some() {
+            return (found, n);
+        }
+        self.system_search(c, exclude)
     }
 
-    fn loaded_fallback(&self, c: char, exclude: u32) -> Option<Arc<FontFace>> {
+    /// [`Self::search_fallback`] when no loaded face covers `c`: load a system font that does,
+    /// one search at a time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn system_search(&self, c: char, exclude: u32) -> (Option<Arc<FontFace>>, usize) {
+        let _searching = self.searching.lock().unwrap_or_else(|e| e.into_inner());
+        // A search that held the lock first may have loaded a font covering `c`: choose among the
+        // loaded faces again before loading more.
+        let (found, n) = self.loaded_fallback(c, exclude);
+        if found.is_none() && self.system_fallback(c) {
+            return self.loaded_fallback(c, exclude);
+        }
+        (found, n)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn system_search(&self, _c: char, _exclude: u32) -> (Option<Arc<FontFace>>, usize) {
+        (None, self.read_faces().len())
+    }
+
+    /// The best loaded face covering `c`, and the number of loaded faces it was chosen from.
+    fn loaded_fallback(&self, c: char, exclude: u32) -> (Option<Arc<FontFace>>, usize) {
         let faces = self.read_faces();
         let mut order: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.id != exclude).collect();
         // Right-to-left letters prefer a font made for the script, so a word isn't split across
@@ -1304,8 +1350,12 @@ impl FontDb {
                 0
             }
         };
-        order.sort_by_key(|f| (rank(f), !f.family.eq_ignore_ascii_case(FALLBACK_FAMILY), f.italic, (f.weight - 400.0).abs() as i32));
-        order.into_iter().find(|f| f.covers(c)).cloned()
+        // Complex scripts (Myanmar, Khmer, Indic…): a font with OpenType layout tables, preferring
+        // the script's own families, so syllables reorder and stack (#604).
+        let complex = crate::needs_layout_tables(c);
+        let shaping = |f: &FontFace| if complex { (!f.has_layout_tables(), crate::fallback_rank(c, &f.family)) } else { (false, 0) };
+        order.sort_by_key(|f| (rank(f), shaping(f), !f.family.eq_ignore_ascii_case(FALLBACK_FAMILY), f.italic, (f.weight - 400.0).abs() as i32));
+        (order.into_iter().find(|f| f.covers(c)).cloned(), faces.len())
     }
 
     /// Load a system font covering `c` (preferred fallback families first, then any cataloged
@@ -1326,7 +1376,7 @@ impl FontDb {
         let cataloged: Vec<String> = self.read_catalog().iter().map(|e| e.family.clone()).collect();
         let rtl = crate::is_rtl(c) || arabic_block(c);
         let preferred = RTL_FALLBACKS.iter().filter(|_| rtl);
-        for fam in preferred.chain(SYSTEM_FALLBACKS.iter()) {
+        for fam in crate::script_fallbacks(c).iter().chain(preferred).chain(SYSTEM_FALLBACKS.iter()) {
             // Each family is tried once: one that fails to load isn't read again per character.
             if self.is_loaded(fam) || !cataloged.iter().any(|f| f.eq_ignore_ascii_case(fam)) {
                 continue;
