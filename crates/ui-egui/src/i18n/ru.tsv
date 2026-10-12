@@ -965,6 +965,8 @@ preview	Title	Пример
 	Keeps the fonts and formatting of the copied text.	Сохраняет шрифты и форматирование скопированного текста.
 	Reads the clipboard's rich text and keeps its formatting.	Берёт RTF-текст из буфера обмена и сохраняет его форматирование.
 	Reads the clipboard's web content and keeps its formatting.	Берёт веб-содержимое из буфера обмена и сохраняет его форматирование.
+	Picture	Рисунок
+	Pastes the clipboard's picture.	Вставляет рисунок из буфера обмена.
 	Drops all formatting and pastes plain text.	Убирает всё форматирование и вставляет обычный текст.
 	Advanced Find	Расширенный поиск
 	Advanced Find…	Расширенный поиск…
@@ -2459,3 +2461,5 @@ preview	Title	Пример
 	Your system has animation effects turned on.	В системе эффекты анимации включены.
 	Your system has animation effects turned off.	В системе эффекты анимации выключены.
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не сообщает о настройке анимации, поэтому эффекты анимации остаются включёнными.
+	Region:	Регион:
+	Automatic ({region})	Автоматически ({region})

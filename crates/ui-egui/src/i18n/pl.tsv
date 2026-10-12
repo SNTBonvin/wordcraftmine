@@ -551,6 +551,8 @@
 	Read\nMode	Tryb\nczytania
 	Reads the clipboard's rich text and keeps its formatting.	Odczytuje sformatowany tekst ze schowka i zachowuje jego formatowanie.
 	Reads the clipboard's web content and keeps its formatting.	Odczytuje zawartość internetową ze schowka i zachowuje jej formatowanie.
+	Picture	Obraz
+	Pastes the clipboard's picture.	Wkleja obraz ze schowka.
 	Reading Highlight	Wyróżnienie wyników
 	Recent	Ostatnie
 	Record Macro	Zarejestruj makro
@@ -2107,3 +2109,5 @@
 	Server:	Serwer:
 	Use your own LanguageTool server by entering its address, such as http://localhost:8081.	Aby użyć własnego serwera LanguageTool, wpisz jego adres, na przykład http://localhost:8081.
 	Username:	Nazwa użytkownika:
+	Region:	Region:
+	Automatic ({region})	Automatycznie ({region})

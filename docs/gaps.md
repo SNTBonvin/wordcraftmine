@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (opt-in LanguageTool checking, #575; previously trivial: DOCX complex-script formatting inheritance fixed; broader RTL work remains; previously trivial: #24 narrowed: Customize Keyboard and Customize Ribbon landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (opt-in LanguageTool checking, #575; previously trivial: formatted paste from other programs and Wayland clipboard pictures, #687, #833; previously trivial: DOCX complex-script formatting inheritance fixed; broader RTL work remains; previously trivial: #24 narrowed: Customize Keyboard and Customize Ribbon landed; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 The work list. One entry per shortfall, ranked by how much it stops a Word user from switching
 (**B** = blocks beta). Each says what's missing, the evidence, who it hurts, an Opus 5.5 agent
@@ -22,6 +22,7 @@ Native save reliability: synthetic cases on macOS reproduced loss through the pr
 | 7 | **Dialog depth**: 54 modal dialogs vs Word's ~100 | B | `Dialog` enum in `crates/ui-egui/src/dialogs.rs` | Power users reach for dialogs the ribbon alone doesn't cover | 11–19 | [ui-parity.md](ui-parity.md) |
 | 8 | **Proofing covers English and Polish only**; no dictionaries, grammar or hyphenation for the other ~48 languages Word proofs (text in them is left unmarked) | | `crates/proof`: English and Polish, a language per run (2026-10-10); Word ships 120 proofing tools; issues #25, #40, #100 | Every writer outside English and Polish | 20–40 | [localization-parity.md](localization-parity.md) |
 | 8 | **Proofing is English only**; no language per run, no dictionaries for other languages | | `crates/proof` has one dictionary; Word ships 120 proofing tools; issues #25, #40, #100. Opt-in LanguageTool checking (#575, public or self-hosted server) covers its ~30 languages for people who accept sending text to a server | Every non-English writer | 25–45 | [localization-parity.md](localization-parity.md) |
+| 8 | **Proofing covers English, Polish and Portuguese only**; no dictionaries, grammar or hyphenation for the other ~47 languages Word proofs (text in them is left unmarked) | | `crates/proof`: English, Polish and Portuguese (pt-BR via the installed VERO dictionary, 2026-10-12), a language per run (2026-10-10); Word ships 120 proofing tools; issues #25, #40, #100 | Every writer outside English, Polish and Portuguese | 20–40 | [localization-parity.md](localization-parity.md) |
 | 9 | **Password-protected files** can't be opened or saved | | #55; `docbin` detects and refuses RC4/XOR | Corporate and legal users | 6–10 | [file-format-parity.md](file-format-parity.md) |
 | 10 | **Objects**: no group (#267 open), text in a freely rotated text box (free rotation and flips landed, #332; text direction, alignment and linked text boxes landed, #369; contour wrap and wrap side landed, #354), shape effects, WordArt 3-D effects and connector routing around shapes (WordArt effects and warps and glued connectors landed, #416), dragging members inside a Drawing Canvas (the canvas landed, #344) | | [parity-checklist.md](parity-checklist.md) (Shape Format 6/6, Layout › Group) | Newsletters, flyers, reports with diagrams | 20–30 | [target-app-parity.md](target-app-parity.md) |
 | 11 | **Interface languages**: 7 of the 12 key languages missing (hi, ar, fr, id, ko, vi, pt-PT); no mirrored RTL interface; ~5% of strings still English in the translated catalogs | | [localization-parity.md](localization-parity.md) | Most of the world's writers | 50–80 | [localization-parity.md](localization-parity.md) |
@@ -55,7 +56,10 @@ The same gaps grouped the way the parity documents are, for agents working in on
 - **Feature gaps:** #2 (preserve), #5, #10, #12, #13, #15, #17, #21, #25, #27, #28, #29; Clipboard
   pane, Manage Styles, Group (open PRs exist for the first three — review and merge before
   re-implementing). Paste Special, Advanced Find, Column Selection, Style Inspector, custom table
-  styles, and Draw Table and Eraser (#303) landed on 2026-10-10.
+  styles, and Draw Table and Eraser (#303) landed on 2026-10-10. Paste from other programs keeps
+  their formatting (system clipboard HTML/RTF), Merge Formatting keeps emphasis, Paste Special lists
+  what the system clipboard holds, and Linux/Wayland clipboard pictures paste (#687, #833);
+  still missing: the Paste Options button after a paste, and RTF on macOS and X11.
 - **UI/UX gaps:** #7, #18, #24; crop handles on the canvas (rotation handle landed, #332); table column markers on the
   ruler (#49; dragging borders and the resize handle on the page landed, #217); context menus for objects and tables; Linux title bar theming (#78); File ›
   Options › Animation effects › Use system setting reads macOS (Reduce motion) and the Linux/BSD
@@ -88,6 +92,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-11 | trivial | Insert › Chart landed (#409); gap #13 narrowed to editing Word's charts, more types and SmartArt, 35–55 h |
 | 2026-10-11 | trivial | Line Numbers, Hyphenation, Language, Envelopes and Labels dialogs landed (#407); gap #7 at 30 dialogs, 16–24 h; duplicated #7 rows merged |
 | 2026-10-11 | trivial | Caption, Index, Mark Index Entry, Custom Table of Contents, Source Manager and Create/Edit Source dialogs landed (#402); removed from the dialog-depth list |
+| 2026-10-12 | minor | #8: Portuguese proofing (spelling, suggestions, grammar, hyphenation) landed; the gap is now the other languages (20–40 h) |
 | 2026-10-11 | trivial | Document grid landed (#391); removed from the East Asian gap |
 | 2026-10-11 | trivial | Move tracking landed (#400); gap #5 narrowed to content controls, 5–8 h |
 | 2026-10-11 | trivial | #4: note options per section (below text, end of section, restart each section/page) and the Footnote and Endnote dialog (#385) |

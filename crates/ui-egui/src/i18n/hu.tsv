@@ -2464,3 +2464,7 @@
 	Language:	Nyelv:
 	Paragraphs checked: {count}	Ellenőrzött bekezdések: {count}
 	LanguageTool checking needs the desktop app; the browser version can't send text to a checking server yet.	A LanguageTool-ellenőrzéshez az asztali alkalmazás szükséges; a böngészős változat még nem tud szöveget küldeni ellenőrző kiszolgálónak.
+	Region:	Régió:
+	Automatic ({region})	Automatikus ({region})
+	Picture	Kép
+	Pastes the clipboard's picture.	Beilleszti a vágólapon lévő képet.

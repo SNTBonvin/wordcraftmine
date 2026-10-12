@@ -867,6 +867,8 @@
 	Reading Speed	Rychlost čtení
 	Reads the clipboard's rich text and keeps its formatting.	Načte formátovaný text (RTF) ze schránky a zachová jeho formátování.
 	Reads the clipboard's web content and keeps its formatting.	Načte webový obsah ze schránky a zachová jeho formátování.
+	Picture	Obrázek
+	Pastes the clipboard's picture.	Vloží obrázek ze schránky.
 	Recent	Nedávné
 	Recently used symbols:	Naposledy použité symboly:
 	Recipient List	Seznam příjemců
@@ -2071,3 +2073,5 @@
 	Server:	Server:
 	Use your own LanguageTool server by entering its address, such as http://localhost:8081.	Chcete-li použít vlastní server LanguageTool, zadejte jeho adresu, například http://localhost:8081.
 	Username:	Uživatelské jméno:
+	Region:	Oblast:
+	Automatic ({region})	Automaticky ({region})

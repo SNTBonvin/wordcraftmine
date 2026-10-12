@@ -2074,3 +2074,7 @@
 	Language:	Langue :
 	Paragraphs checked: {count}	Paragraphes vérifiés : {count}
 	LanguageTool checking needs the desktop app; the browser version can't send text to a checking server yet.	La vérification LanguageTool nécessite l'application de bureau ; la version navigateur ne peut pas encore envoyer de texte à un serveur de vérification.
+	Region:	Région :
+	Automatic ({region})	Automatique ({region})
+	Picture	Image
+	Pastes the clipboard's picture.	Colle l'image du Presse-papiers.

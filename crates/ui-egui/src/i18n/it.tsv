@@ -628,6 +628,8 @@
 	Read\nMode	Modalità\nlettura
 	Reads the clipboard's rich text and keeps its formatting.	Legge il testo RTF degli appunti e ne mantiene la formattazione.
 	Reads the clipboard's web content and keeps its formatting.	Legge il contenuto web degli appunti e ne mantiene la formattazione.
+	Picture	Immagine
+	Pastes the clipboard's picture.	Incolla l'immagine degli appunti.
 	Reading Highlight	Evidenziazione lettura
 	Recent	Recenti
 	Record Macro	Registra macro
@@ -2450,3 +2452,5 @@ preview	Title	Esempio
 	Server:	Server:
 	Use your own LanguageTool server by entering its address, such as http://localhost:8081.	Per usare un tuo server LanguageTool, inseriscine l'indirizzo, ad esempio http://localhost:8081.
 	Username:	Nome utente:
+	Region:	Area geografica:
+	Automatic ({region})	Automatico ({region})
