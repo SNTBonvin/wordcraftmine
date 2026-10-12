@@ -14,8 +14,7 @@ Put the caret where the table should go. Open **References**, click **Table of C
 3. Click the **References** tab.
 4. In the **Table of Contents** group, click **Table of Contents** and choose:
    - **Automatic Table 1 (3 levels)**, or
-   - **Automatic Table 2 (2 levels)**, which adds the title "Table of Contents", or
-   - **Custom Table of Contents…** to choose the options yourself.
+   - **Automatic Table 2 (2 levels)**, which adds the title "Table of Contents".
 
 ## Update the table
 

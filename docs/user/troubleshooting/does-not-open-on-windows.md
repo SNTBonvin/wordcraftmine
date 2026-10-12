@@ -9,7 +9,7 @@ Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulk
 
 ## Symptoms
 
-- WordCraft flashes in Task Manager and quits before its window appears. This was seen with AMD drivers (`atio6axx.dll`).
+- WordCraft quits before its window appears.
 - WordCraft quits right after its window appears, and the log says "Parent device is lost".
 
 ## Fix
@@ -23,11 +23,15 @@ Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulk
 
    The last line restores the default for later launches.
 
-If this works, use the same steps each time you start WordCraft. Setting `WGPU_BACKEND` to `gl` can bring the first crash back on affected systems.
+**Intel graphics (UHD, Iris):** use `gl` in place of `vulkan` in the first line. Intel's Vulkan driver (`igvk64.dll`) can crash WordCraft at start ([issue 170](https://github.com/storytold/wordcraft/issues/170)).
+
+If this works, use the same steps each time you start WordCraft. On AMD graphics do not use `gl`: it can bring back the `atio6axx.dll` crash.
 
 ## Why this happens
 
-By default, WordCraft starts only DirectX 12 on Windows. Some graphics drivers crash when OpenGL is also created, and that is why the default leaves OpenGL out. For shaders, WordCraft uses FXC, the compiler built into Windows, and ignores any `dxcompiler.dll` another program put on your `PATH`. The variable `WGPU_DX12_COMPILER` (`fxc`, `dxc` or `auto`) overrides this. With `dxc`, matching `dxcompiler.dll` and `dxil.dll` files must sit next to `wordcraft.exe`.
+WordCraft 0.5.0 compiles its DirectX 12 shaders with DXC but does not ship `dxcompiler.dll` and `dxil.dll`, so on some PCs the graphics device is lost before the first frame and the log ends with `Parent device is lost` ([issue 603](https://github.com/storytold/wordcraft/issues/603)). A fix that uses FXC, the compiler built into Windows, is merged after 0.5.0 and not in a release yet. The default leaves OpenGL out because creating it can crash AMD's `atio6axx.dll` before the window appears.
+
+## Slow on an older PC
 
 If your PC is old and WordCraft feels slow, it may be using Microsoft's software renderer. When DirectX 12 finds no graphics card with a driver for it, WordCraft switches to OpenGL by itself. The log file records the choice on lines starting with `graphics:`. See [Get help and find the log file](get-help-and-find-the-log.md) for where the log is.
 

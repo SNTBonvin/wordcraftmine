@@ -9,4 +9,4 @@ Yes. WordCraft is free, open-source software. You can use, share and change it u
 
 It works offline. Spelling, grammar and everything else need no internet connection.
 
-WordCraft is made by the ArtCraft team and community. The source code is on [GitHub](https://github.com/storytold/wordcraft).
+WordCraft is made by the ArtCraft team. The source code is on [GitHub](https://github.com/storytold/wordcraft).

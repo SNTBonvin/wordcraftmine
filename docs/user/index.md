@@ -4,7 +4,7 @@ description: WordCraft is a free, open-source word processor with a Word-style r
 verified: 0.5.0
 ---
 
-WordCraft is a free, open-source word processor. It works like Microsoft Word: ribbon tabs, styles, tables, track changes, references and mail merge. It opens and saves .docx files and is an alternative to Microsoft Word.
+WordCraft is a free, open-source word processor. It has the Word workflow you already know: ribbon tabs, styles, tables, track changes, references and mail merge. It opens and saves .docx files and is an alternative to Microsoft Word.
 
 WordCraft is written in Rust and runs on macOS, Windows, Linux and FreeBSD, and in the browser. Spelling and grammar checks work offline. WordCraft is in alpha, so expect rough edges and keep backups of important documents.
 

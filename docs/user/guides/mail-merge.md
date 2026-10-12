@@ -12,7 +12,7 @@ Write the letter, load a recipient list, insert merge fields, preview and click 
 1. Click the **Mailings** tab.
 2. Click **Start Mail Merge** and choose a kind: **Letters**, **E-mail Messages**, **Envelopes**, **Labels**, **Directory** or **Normal Word Document**.
 3. Click **Select Recipients**, then:
-   - **Use an Existing List…** and pick a file. The picker offers .csv, .tsv, .txt, .xlsx, .xlsm and .ods files.
+   - **Use an Existing List…** and pick a file. The picker offers .csv, .tsv and .txt files.
    - **Type a New List…** to enter the recipients by hand.
 4. The first row of the list names the fields. Click **Edit Recipient List** to review it.
 5. Click in the letter where a value belongs, then click **Insert Merge Field** and choose a field. **Address Block** and **Greeting Line** insert common groups of fields.

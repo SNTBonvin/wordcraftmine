@@ -27,4 +27,4 @@ In the same group, **Display for Review** switches between **All Markup** and **
 2. In the **Comments** group, click **New Comment**.
 3. Type the comment.
 
-In the same group, **Previous** and **Next** move between comments, **Delete** removes the current one and **Show Comments** switches the comments pane on or off. Comments can also be resolved or reopened with **Resolve** and **Reopen**.
+In the same group, **Previous** and **Next** move between comments, **Delete** removes the current one and **Show Comments** switches the comments pane on or off. **Resolve** and **Reopen** are on the comment itself (in the balloon or the comments pane), not in the ribbon group.

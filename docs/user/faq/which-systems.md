@@ -14,4 +14,4 @@ WordCraft runs on Windows 11, macOS, Linux and FreeBSD, and in a modern web brow
 
 Files and install steps are on [Install WordCraft](../getting-started/install.md).
 
-The interface follows your system language by default. It is available in English, 简体中文, 繁體中文, 日本語, Português (Brasil), Español, Українська, Српски / Srpski, Eesti, Türkçe and Русский.
+The interface follows your system language by default. It is available in English, 简体中文, 繁體中文, 日本語, Português (Brasil), Español, Українська, Српски / Srpski and Eesti.

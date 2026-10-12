@@ -12,7 +12,7 @@ Install WordCraft, open it, pick a template and start typing. Save with **Save**
 1. [Install WordCraft](install.md).
 2. Start WordCraft. It opens on the **File** tab with a greeting and your recent documents.
 3. Click a template: **Blank document**, **Studio handbook (sample)**, **Letter**, **Résumé** or **Report**. Click **More templates →** to see them all, or use the **Search for templates** box on **New**.
-4. Type. The ribbon has the tabs File, Home, Insert, Draw, Design, Layout, References, Mailings, Review, View, Developer, Zotero and Help. Table, Picture and Shape tabs appear when you select one.
+4. Type. The ribbon has the tabs File, Home, Insert, Draw, Design, Layout, References, Mailings, Review, View, Zotero and Help. **Table Design** and **Table Layout** appear when the caret is in a table, **Picture Format** when a picture is selected and **Shape Format** when a shape is selected.
 5. Open the **File** tab and choose **Save As** to pick a name and place.
 
 ## Next
