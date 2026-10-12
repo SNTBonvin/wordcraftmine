@@ -37,8 +37,9 @@ an active or just-cleared composition from the retry.
 
 `apps/wordcraft/tests/macos_ime_startup.rs` runs all seven pure policy tests and
 a no-space Korean/ASCII/Korean rearm regression through workspace CI. Native AppKit behavior also needs real keyboard retesting.
-The vendor retains the original Apache-2.0 license; original example and docs
-assets are attributed in `ATTRIBUTION.md` and are not used by WordCraft.
+The vendor retains the original Apache-2.0 code license; its keyboard diagrams
+retain CC BY-SA 4.0 with their original attribution. Example/docs assets are
+attributed in `ATTRIBUTION.md` and are not used by WordCraft.
 
 The broader existing PR #787 also vendors this exact winit release. When that PR
 lands, reconcile the override with its baseline rather than keeping two copies.

@@ -1423,6 +1423,111 @@ fn toc_and_fields() {
 }
 
 #[test]
+fn toc_refresh_after_save_and_reopen() {
+    for extension in ["docx", "json"] {
+        for (headings, levels) in [(&["Top"][..], 1), (&["Top", "Next"][..], 1), (&["Top"][..], 4)] {
+            let mut s = s();
+            run(&mut s, "document.setText", json!({"text": headings.join("\n")}));
+            for i in 0..headings.len() {
+                run(&mut s, "caret.set", json!({"pos": Pos::body(i, 0)}));
+                run(&mut s, "styles.apply", json!({"style": "Heading 1"}));
+            }
+            // A level-two heading must stay out of a depth-one TOC after reopening.
+            if levels == 1 {
+                run(&mut s, "caret.docEnd", json!({}));
+                run(&mut s, "text.newParagraph", json!({}));
+                run(&mut s, "text.insert", json!({"text": "Detail"}));
+                run(&mut s, "styles.apply", json!({"style": "Heading 2"}));
+            }
+            run(&mut s, "caret.docStart", json!({}));
+            run(&mut s, "references.toc", json!({"levels": levels}));
+            run(&mut s, "references.updateToc", json!({}));
+            let expected = text(&s);
+            let name = format!("toc.{extension}");
+            let bytes = crate::io::save_bytes(&name, &s.doc).unwrap();
+            s = Session::new(crate::io::open_bytes(&name, &bytes).unwrap());
+            for command in ["references.updateToc", "references.updateToc", "references.updateFields"] {
+                run(&mut s, command, json!({}));
+                assert_eq!(text(&s), expected, "{extension}, levels={levels}, {command}");
+            }
+            let heading = s
+                .doc
+                .body
+                .iter()
+                .position(|b| b.as_para().is_some_and(|p| p.props.style.as_deref() == Some("Heading1") && p.plain_text() == "Top"))
+                .unwrap();
+            // Hyperlinked TOCs bookmark their headings; select the text after those markers.
+            let off = s.doc.body[heading].as_para().unwrap().text.find("Top").unwrap();
+            run(&mut s, "select.range", json!({"anchor": Pos::body(heading, off), "focus": Pos::body(heading, off + 3)}));
+            run(&mut s, "text.insert", json!({"text": "Revised"}));
+            let before_refresh = text(&s);
+            run(&mut s, "references.updateToc", json!({}));
+            let revised = text(&s);
+            assert_eq!(revised.matches("Revised\t").count(), 1, "{revised}");
+            assert!(!revised.contains("Top"), "{revised}");
+            assert_eq!(revised.matches("Next\t").count(), headings.len() - 1, "{revised}");
+            assert_eq!(revised.matches("Detail\t").count(), 0, "{revised}");
+            assert_eq!(revised.lines().filter(|line| *line == "Detail").count(), usize::from(levels == 1), "{revised}");
+            assert!(s.undo());
+            assert_eq!(text(&s), before_refresh);
+            run(&mut s, "references.updateToc", json!({}));
+            assert_eq!(text(&s), revised);
+            let bytes = crate::io::save_bytes(&name, &s.doc).unwrap();
+            s = Session::new(crate::io::open_bytes(&name, &bytes).unwrap());
+            run(&mut s, "references.updateFields", json!({}));
+            assert_eq!(text(&s), revised, "saved edited TOC, {extension}");
+        }
+    }
+}
+
+/// A TOC imported as a range field (no TOC heading, so it isn't turned back into the engine's
+/// TOC on open) is still found by Update Table, Update Field and Table of Contents: it is
+/// refreshed in place, not duplicated, and the refresh is one undo step.
+#[test]
+fn imported_range_toc_is_refreshed_in_place() {
+    use wordcraft_doc::para::InlineObject;
+    use wordcraft_doc::props::CharProps;
+    for locked in [false, true] {
+        let mut d = wordcraft_doc::Document::from_text("Before.\nOld entry\t9\nAlpha\nBeta");
+        {
+            let p = d.para_mut(StoryRef::Body, &wordcraft_doc::Path::top(1)).unwrap();
+            let n = p.len();
+            p.insert_object(n, InlineObject::FieldEnd, &CharProps::default()).unwrap();
+            p.insert_object(0, InlineObject::FieldStart { instr: r#"TOC \o "1-2" \h"#.into(), locked }, &CharProps::default()).unwrap();
+        }
+        let mut s = Session::new(d);
+        for (i, style) in [(2, "Heading 1"), (3, "Heading 2")] {
+            run(&mut s, "caret.set", json!({"pos": Pos::body(i, 0)}));
+            run(&mut s, "styles.apply", json!({"style": style}));
+        }
+        // Through DOCX, as an imported file is.
+        let bytes = wordcraft_docx::write(&s.doc).unwrap();
+        s = Session::new(wordcraft_docx::read(&bytes).unwrap());
+        assert_eq!(s.doc.field_ranges(StoryRef::Body).len(), 1, "read back as a range field");
+        let before = text(&s);
+        run(&mut s, "references.updateToc", json!({}));
+        let refreshed = text(&s);
+        if locked {
+            // Like Word, a locked field keeps its result.
+            assert_eq!(refreshed, before);
+            continue;
+        }
+        assert!(!refreshed.contains("Old entry"), "{refreshed}");
+        assert!(refreshed.starts_with("Before.\n"), "{refreshed}");
+        assert_eq!(refreshed.matches("Alpha\t").count(), 1, "{refreshed}");
+        assert_eq!(refreshed.matches("Beta\t").count(), 1, "{refreshed}");
+        assert!(s.doc.field_ranges(StoryRef::Body).is_empty(), "now the engine's TOC");
+        for command in ["references.updateToc", "references.updateFields", "references.toc"] {
+            run(&mut s, command, json!({}));
+            assert_eq!(text(&s), refreshed, "{command} refreshes the same TOC");
+        }
+        while s.undo() {}
+        assert_eq!(text(&s), before);
+        assert_eq!(s.doc.field_ranges(StoryRef::Body).len(), 1, "undo brings the imported range back");
+    }
+}
+
+#[test]
 fn toc_page_numbers_follow_headings() {
     let mut s = s();
     run(&mut s, "references.toc", json!({}));
@@ -2323,12 +2428,13 @@ fn style_inspector_reports_and_clears_levels() {
     assert!(pdirect.iter().any(|d| d["prop"] == "align" && d["value"] == "center"), "{pdirect:?}");
     assert!(r["character"]["style"].is_null());
     let cdirect = r["character"]["direct"].as_array().unwrap();
-    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true})]);
+    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true}), json!({"prop": "boldCs", "value": true})]);
 
     // Formatting that matches the style isn't a difference (Heading 1 is 20 pt).
     run(&mut s, "format.size", json!({"size": 20}));
     let r = run(&mut s, "styles.inspect", json!({}));
-    assert_eq!(r["character"]["direct"].as_array().unwrap().len(), 1, "{r}");
+    let cdirect = r["character"]["direct"].as_array().unwrap();
+    assert_eq!(cdirect, &vec![json!({"prop": "bold", "value": true}), json!({"prop": "boldCs", "value": true})]);
 
     // Character style level.
     run(&mut s, "format.charStyle", json!({"style": "Emphasis"}));
@@ -3586,6 +3692,127 @@ fn note_options_per_section_and_convert_notes() {
     assert_eq!(kinds(&s), vec![NoteKind::Footnote, NoteKind::Footnote]);
     assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
     assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
+}
+
+/// A tiny synthetic Polish Hunspell dictionary (written for these tests). Real dictionaries are
+/// installed on the system, never bundled; every Polish test installs this same one.
+fn polish_test_dictionary() {
+    let aff = "SET UTF-8\nTRY aioeznrwcyszżtkpdmłjlubąęgh\nMAP 2\nMAP oó\nMAP zż\nREP 2\nREP ż rz\nREP rz ż\n";
+    let dic = "12\npłynie\nrzeka\na\nto\nwiem\nże\ntak\nw\nogóle\nzażółć\ngęślą\njaźń\n";
+    wordcraft_proof::pl::install_dictionary(aff, dic).unwrap();
+}
+
+/// Review › Language and the proofing commands work in Polish end to end: the language makes
+/// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
+/// suggestions come from it, and a suggestion fixes the text.
+#[test]
+fn polish_proofing_through_the_review_commands() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Płynie żeka, a wogóle to wiem że tak."}));
+    // English by default: the Polish words are English misspellings.
+    assert!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len() >= 5);
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pl_PL", "default": true}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "the tag is normalized");
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pl-PL");
+    let issues = run(&mut s, "review.issues", json!({}));
+    let arr = issues.as_array().unwrap();
+    let has = |text: &str, kind: &str, sugg: &str| {
+        arr.iter()
+            .any(|i| i["text"] == text && i["kind"] == kind && i["lang"] == "pl" && i["suggestions"].as_array().unwrap().iter().any(|x| x == sugg))
+    };
+    assert!(has("żeka", "spelling", "rzeka"), "{issues}");
+    assert!(has("wogóle", "spelling", "w ogóle"), "{issues}");
+    assert!(has(" że", "grammar", ", że"), "{issues}");
+    assert_eq!(arr.len(), 3, "{issues}");
+    assert!(arr.iter().any(|i| i["message"] == "Brak przecinka przed „że”"), "{issues}");
+    // F7 from the start selects the first issue; Change applies a suggestion.
+    run(&mut s, "caret.docStart", json!({}));
+    let first = run(&mut s, "review.spelling", json!({}));
+    assert_eq!(first["text"], "żeka");
+    run(&mut s, "review.applySuggestion", json!({"text": "rzeka"}));
+    assert!(text(&s).starts_with("Płynie rzeka,"), "{}", text(&s));
+    // Add to Dictionary works for Polish words too.
+    run(&mut s, "review.addToDictionary", json!({"word": "wogóle"}));
+    let left = run(&mut s, "review.issues", json!({}));
+    assert_eq!(left.as_array().unwrap().len(), 1, "{left}");
+}
+
+/// `review.language`: tags are validated and normalized, `noProof` alone keeps the language,
+/// no parameters keep the old meaning (US English), and `default` needs a language.
+#[test]
+fn review_language_validates_tags_and_marks_text_unchecked() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Hello wrold"}));
+    run(&mut s, "select.all", json!({}));
+    assert!(s.run("review.language", &json!({"lang": "not a tag!"})).is_err());
+    assert!(s.run("review.language", &json!({"lang": ""})).is_err());
+    assert!(s.run("review.language", &json!({"default": true, "noProof": true})).is_err(), "default needs a language");
+    assert_eq!(text(&s), "Hello wrold", "a refused command changes nothing");
+    run(&mut s, "review.language", json!({"noProof": true}));
+    let st = run(&mut s, "format.state", json!({}));
+    assert_eq!((st["noProof"].clone(), st["lang"].clone()), (json!(true), json!("en-US")));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    run(&mut s, "review.language", json!({"noProof": false}));
+    assert_eq!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len(), 1);
+    run(&mut s, "review.language", json!({"lang": "PL"}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pl");
+    run(&mut s, "review.language", json!({}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "en-US");
+    // A language without proofing tools: no marks.
+    run(&mut s, "review.language", json!({"lang": "fr-FR"}));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+}
+
+/// The editing language (set by the front end from the interface language): new blank
+/// documents and opened plain text are written in it; the untouched first document switches,
+/// a document with changes never does, and templates stay English.
+#[test]
+fn new_documents_follow_the_editing_language() {
+    polish_test_dictionary();
+    let mut s = s();
+    s.set_editing_language(Some("pl-PL"));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "the untouched blank document switches");
+    assert!(!s.dirty && !s.can_undo(), "no change to save or undo");
+    run(&mut s, "text.insert", json!({"text": "Zażółć gęślą jaźń."}));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    s.set_editing_language(None);
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl-PL"), "a document with changes keeps its language");
+    s.set_editing_language(Some("pl"));
+    run(&mut s, "file.new", json!({}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl"));
+    run(&mut s, "file.new", json!({"template": "letter"}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("en-US"), "templates are English text");
+    let data = crate::cmd::insert::base64_encode("Płynie rzeka.".as_bytes());
+    run(&mut s, "file.open", json!({"path": "notatka.txt", "data": data}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pl"));
+    assert_eq!(run(&mut s, "review.issues", json!({})), json!([]));
+    // Malformed tags fall back to US English.
+    s.set_editing_language(Some("not a tag"));
+    assert_eq!(s.editing_lang, None);
+}
+
+/// A Polish document keeps its languages through .docx: the default (`w:docDefaults`) and an
+/// English run (`w:lang`) come back, and so does the proofing.
+#[test]
+fn proofing_languages_survive_a_docx_round_trip() {
+    polish_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Płynie żeka. Hello wrold."}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    run(&mut s, "select.text", json!({"text": "Hello wrold."}));
+    run(&mut s, "review.language", json!({"lang": "en-GB"}));
+    let bytes = crate::io::save_bytes("polski.docx", &s.doc).unwrap();
+    let doc = crate::io::open_bytes("polski.docx", &bytes).unwrap();
+    assert_eq!(doc.styles.default_chr.lang.as_deref(), Some("pl-PL"));
+    let mut back = Session::new(doc);
+    let issues = run(&mut back, "review.issues", json!({}));
+    let found: Vec<(String, String)> =
+        issues.as_array().unwrap().iter().map(|i| (i["text"].as_str().unwrap().to_string(), i["lang"].as_str().unwrap().to_string())).collect();
+    assert_eq!(found, [("żeka".to_string(), "pl".to_string()), ("wrold".to_string(), "en".to_string())], "{issues}");
 }
 
 #[test]

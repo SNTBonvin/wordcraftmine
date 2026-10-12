@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (native save temporary-file ownership and failure protection; previously trivial: Print Markup: comments in PDF/print/copies, #589; previously trivial: SmartArt written from WordCraft's model, #497; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -22,7 +22,7 @@ Weights are the share of a Word user's file traffic (estimate). Read/write: ✅ 
 | `.docx` Word Document (ECMA-376 Transitional) | 70% | R/W | ✅ | ✅ | ~65% | 70–110 | `crates/docx/tests` (roundtrip 34, fixtures 29, malformed 8, bidi 5, citations 5); synthetic fixtures only | Word opens our files. Untested on a real-world corpus. Details below |
 | `.docx` Strict Open XML | 1% | R/W | ✅ (namespace mapping in `xml.rs`) | ❌ | ~60% | 2–4 | one fixture | Writing Strict is rare |
 | `.docm` / `.dotx` / `.dotm` | 3% | R/W | ✅ | ✅ | ~65% | incl. above | `macro_packages.rs` | Macros and signatures kept on save (#172); macros never run |
-| `.doc` Word 97-2003 (and `.dot`) | 8% | R/W | 🟡 | ❌ | ~55% | 25–40 | `crates/docbin/src/tests.rs` (56) | Spec-based reader ([MS-DOC]): text, formatting, styles, sections, headers/footers, tables, lists, notes, fields, bookmarks, pictures. Metafile (WMF/EMF) pictures, Word 6/95 files and encrypted files are refused or dropped. No writer |
+| `.doc` Word 97-2003 (and `.dot`) | 8% | R/W | 🟡 | ❌ | ~60% | 25–40 | `crates/docbin/src/tests.rs`, `tests/drawing.rs` (56) | Spec-based reader ([MS-DOC]): text, formatting, styles, sections, headers/footers, tables, lists, notes, fields, bookmarks; inline and floating pictures (PNG, JPEG, DIB, TIFF, EMF, WMF; Macintosh PICT as a sized placeholder) with crop, alt text, position and wrap; basic shapes, lines, groups and text boxes ([MS-ODRAW]). Freeform shapes, z-order and Word 6/95 or encrypted files are dropped or refused. No writer |
 | PDF export | 8% | W | — | ✅ | ~80% | 6–10 | `crates/pdf/src/tests.rs` | krilla: embedded subsets, selectable text incl. field results (#133), links, outline, tagging. Fonts it can't subset become outlines (#132). Print Markup (#589): comments in balloons beside each page (scaled to its paper) and tracked changes; HTML/Markdown/text copies end with a comment list. No PDF/A option, no "best for printing/online" choice |
 | PDF open (PDF Reflow, Word for Windows) | 1% | R | ❌ | — | 0% | 30–50 | — | Converting a PDF into an editable document. A sibling app (PdfCraft) may supply the parser |
 | `.rtf` Rich Text Format | 3% | R/W | 🟡 | 🟡 | ~50% | 10–15 | `crates/formats/src/tests.rs` | ~1,500 lines: text, character/paragraph formatting, styles, lists, tables, pictures (`\shppict`, #154), fields, bookmarks. Thin: comments, notes, revisions, sections, RTL |
@@ -46,7 +46,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Feature | Read | Write | Notes |
 |---|---|---|---|
-| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534); every ST_NumberFormat value of `w:numFmt` is kept on save, Chinese/Japanese/Korean, enclosed and full-width formats are drawn, the rest (Hebrew, Arabic, Hindi, Thai…) show decimal (#534). `w:beforeLines`/`w:afterLines` not kept (the points are) |
+| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111); independent complex-script formatting inherited through defaults/styles and preserved over repeated saves (`complex_script_inheritance.rs`), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534); every ST_NumberFormat value of `w:numFmt` is kept on save, Chinese/Japanese/Korean, enclosed and full-width formats are drawn, the rest (Hebrew, Arabic, Hindi, Thai…) show decimal (#534). `w:beforeLines`/`w:afterLines` not kept (the points are) |
 | Tables incl. floating (`w:tblpPr`), table styles and conditional formatting | ✅ | ✅ | Custom table styles round-trip (#256); right-to-left tables (`w:bidiVisual`) and sections (`w:bidi`) round-trip (#362) |
 | Headers/footers (first, even/odd), page borders, line numbers, gutter, mirror margins | ✅ | ✅ | |
 | Hyphenation settings (`w:autoHyphenation`, `w:hyphenationZone`, `w:doNotHyphenateCaps`, `w:consecutiveHyphenLimit`) | ✅ | ✅ | Zone, capitals and limit kept and honoured by layout (#407) |
@@ -54,7 +54,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Tracked insertions and deletions (`w:ins`/`w:del`), paragraph-mark revisions | ✅ | ✅ | #125, #244 |
 | Formatting revisions (`w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:numberingChange`) | ✅ | ✅ | #41: kept on open and save, schema order (change element last); changes inside `styles.xml` are dropped. RTF/ODT ignore them |
 | Move tracking (`w:moveFrom`/`w:moveTo`, `w:moveFromRangeStart/End`, `w:moveToRangeStart/End`), moved paragraph marks | ✅ | ✅ | #400: both ends linked by the range name; ranges rewritten around each moved stretch (ids renumbered); a move missing an end or a range end opens as a plain deletion/insertion. RTF/ODT/PDF export the result (moved-away text hidden like deletions) |
-| Fields (`w:fldChar`, `w:fldSimple`), TOC, cross-references, `ADDIN` citations | ✅ | ✅ | Field codes Word supports but we don't evaluate keep their cached result. `EQ \o` (overstrike, enclosed characters) is drawn; enclosed characters are written as Word stores them, their style in the code's run sizes (#297); a cached picture (`INCLUDEPICTURE`) stays as the content of a range field (#465) |
+| Fields (`w:fldChar`, `w:fldSimple`), TOC, cross-references, `ADDIN` citations | ✅ | ✅ | Field codes Word supports but we don't evaluate keep their cached result. Imported TOCs preserve actual result boundaries, formatted entries and nested fields without relying on TOC styles. `EQ \o` (overstrike, enclosed characters) is drawn; enclosed characters are written as Word stores them, their style in the code's run sizes (#297); a cached picture (`INCLUDEPICTURE`) stays as the content of a range field (#465) |
 | Content controls (`w:sdt`) | ✅ | ✅ | Block, inline, row and cell level, nested; title, tag, id, lock, placeholder, temporary, rich/plain text, `w14:checkbox`, combo box, drop-down list, date, picture, building block gallery, `w15` repeating sections; other `w:sdtPr` children (data binding, appearance) kept verbatim (#381). A TOC's control is rebuilt by the TOC |
 | Restrict Editing (`w:documentProtection` edit/formatting/enforcement and password hash, `w:locked` styles, `w:permStart`/`w:permEnd` exceptions) | ✅ | ✅ | #412: SHA-512 hash with salt and spin count written; Word's legacy `w:cryptAlgorithmSid`/`w:hash` form (SHA-1/-256/-384/-512, ECMA-376 Part 4 §14.8.1) is kept and verified; MD2/MD4/MD5, `w:algIdExt` and other unsupported forms are refused, never unlocked; `w:colFirst`/`w:colLast` table-column ranges read as plain ranges |
 | Legacy form fields (`w:ffData`), check boxes, drop-downs | ❌ | ❌ | |
@@ -79,8 +79,19 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Hostile input | ✅ | — | `malformed.rs`, capped allocations, never-crash standard |
 | Document paragraph defaults (`w:pPrDefault`) | ✅ | ✅ | Omission and explicit empty defaults remain distinct across repeated saves; nonempty defaults and later default-spacing edits are written |
 
-## Paragraph-default preservation
+## Opening files from the system
 
+Double-clicking a document, Open With, and making WordCraft the default app (#295). The installers
+register WordCraft for these types but never take over a default; File › Options › General has
+**Make WordCraft the default for Word documents…** where the system allows it.
+
+| Platform | Registered types | Default app | Notes |
+|---|---|---|---|
+| Windows (MSI) | `.docx` `.docm` `.dotx` `.dotm` `.doc` `.dot` `.rtf` `.odt`; `.md` `.txt` under Open With only | Options button opens Settings › Default apps on WordCraft's page | One ProgId per type, `OpenWithProgids`, Capabilities + `RegisteredApplications` (`packaging/windows/wordcraft.wxs`). Not yet tried on a real install |
+| Linux, BSD (deb, rpm, Flatpak, AppImage) | Word, ODT, RTF, Markdown, LaTeX, HTML, text (`MimeType=` in the desktop entry, AppStream `mediatype`) | Options button runs `xdg-mime default` for the Word, RTF and ODT types | Not from inside Flatpak (the sandbox can't change host defaults); a bare AppImage needs desktop integration first |
+| macOS | `CFBundleDocumentTypes` as Alternate handler (Word, ODT, RTF, Markdown, HTML, text) | Finder › Get Info › Open with › Change All (the Options page says so) | Apple events open the files (#27) |
+
+## Paragraph-default preservation
 The styles reader records whether `w:pPrDefault` exists. The writer keeps an omitted
 container omitted when its modeled properties are still empty. An explicitly empty
 container stays present, and editing document-default spacing writes the new values.
@@ -94,30 +105,24 @@ identical text, glyph/image geometry, page sizes and embedded font-program hashe
 two WordCraft save/reopen cycles. All fifteen variants open without repair warnings.
 Word PDFs and measurements remain local under ignored `plan/word/`; they are not fixtures.
 These checks cover preservation on Word reopen, not WordCraft pagination parity.
-
 The [public OOXML reference](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.paragraphpropertiesdefault?view=openxml-3.0.1)
 describes omission as leaving paragraph defaults application-defined. Real-world corpus
 coverage and WordCraft layout matching remain separate gaps.
-
 ## Custom XML store preservation
-
 A reduced original bound-control DOCX loses its backing data, item properties and relationship
 on main, both without editing and after unrelated edits. Main's content-control support (#381)
 preserves control metadata, including binding attributes, while this custom XML path keeps the
 backing store through the bounded opaque part graph: payload bytes, content types and
 related-part IDs survive two edited save/reopen cycles.
-
 The public [dataBinding contract](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.databinding?view=openxml-3.0.1)
 maps a control to a custom XML data part; its [item properties](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.customxmldataproperties.datastoreitem?view=openxml-3.0.1)
 identify the store. Keeping displayed text alone does not preserve that mapping. This change
 preserves stores without evaluating XPath or synchronizing control edits into XML.
-
 Focused original tests cover package/main roots, multiple/shared stores, cycles, external schema
 references, missing parts, UTF-16 payloads, strict relationship types and reserved filenames.
 The bibliography names used by #532 are reserved; bibliography already loaded into the source
 model belongs to its writer. Word-derived files are not fixtures. No readiness estimate rises
 from these synthetic package checks, and native Word rendering/binding behavior remains untested.
-
 ## Native save-path guarantees
 Native `io::save_path_with` serializes (and, for password-protected DOCX, encrypts) before creating an exclusively owned sibling temporary file. It writes and synchronizes that file, closes it, then replaces the destination. Failed preparation or replacement keeps the original bytes; cleanup removes only the save's temporary file, on a best-effort basis. Existing `<name>.tmp` files, directories and links are untouched. A new document gets the default mode (`0666` less the umask). When replacing an existing regular file, the Unix temporary file starts with mode `0600` and then takes the existing file's basic permissions. Serialization and format support are unchanged.
 Synthetic CLI cases and `engine/tests/safe_save.rs` cover occupied names, links, blocked replacement, missing directories, Save As session state, password-protected saves and original-file protection on macOS. Unit tests inject preparation errors and interleave two prepared saves. Independent saves use separate files; the last successful replacement wins. This is not document locking or conflict detection.
@@ -131,10 +136,34 @@ Windows/Linux runtime behavior, ACLs and extended metadata, real disk-full condi
 3. Move tracking (`w:moveFrom`/`w:moveTo`) read and written (formatting revisions: #41; content controls: #381).
 4. Encrypted `.docx` opens with a password.
 
+## Imported TOC result preservation
+
+Original synthetic TOCs without TOC paragraph styles lose their outer result range on main
+and #538. Main also flattens a nested page field in a single-paragraph result. Imported TOCs
+now use the existing range-field markers to retain the actual result boundaries, nested
+page-reference fields, formatting, links and locks through edited saves.
+
+The public [complex-field contract](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldchar?view=openxml-3.0.1)
+defines begin/separate/end delimiters and permits nested fields. Paragraph styles do not define
+those boundaries. A complete range is converted to the engine's styled TOC representation only
+when that writer can reproduce its exact extent; partial or custom-styled ranges stay explicit.
+
+Focused original regressions cover single/multiple paragraphs, partial ranges, adjacent styled
+text, multiple/simple fields, table cells, section breaks, missing ends and bounded nesting.
+The existing styled TOC write/read path remains supported. Update Table and Update Fields refresh
+unlocked top-level body TOC ranges in place through the engine's generator; one undo restores
+the imported range. Locked, nested and table-cell ranges remain preserved without regeneration.
+Preservation is separate from field evaluation. Native Word reopening and
+refresh, full schema validation and company documents remain untested. Synthetic checks do not
+raise readiness estimates. No Word-derived files are fixtures.
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Independent complex-script size, bold and italic inherit correctly through defaults and styles; explicit equal values survive; six synthetic multi-generation round-trip tests, including tracked formatting, added |
+| 2026-10-11 | minor | Opening files from the system: file associations and the default-app button (#295) |
+| 2026-10-11 | trivial | `.doc`: inline and floating pictures (BLIP store, PNG/JPEG/DIB/TIFF/EMF/WMF), basic shapes, groups and text boxes read from OfficeArt drawings (#551); fidelity ~55% → ~60% |
 | 2026-10-11 | trivial | Word XML Document (Flat OPC) read and written, Word 2003 XML read (#548) |
 | 2026-10-11 | trivial | #534: DOCX indents in characters read and written; `.doc` first-line indents (`sprmPDxaLeft1`, its two-byte operand, and `sprmPDxaLeft1_80`), indents in characters (`sprmPDxc*`) and exact/at-least line spacing (LSPD) read correctly |
 | 2026-10-11 | trivial | List and page number formats: all ST_NumberFormat values round-trip; Chinese, Japanese and Korean counting, legal and digit formats, stems/branches, kana, hangul, enclosed and full-width numbers drawn; unknown values are decimal; .doc number format codes mapped (#534) |
@@ -159,6 +188,7 @@ Windows/Linux runtime behavior, ACLs and extended metadata, real disk-full condi
 | 2026-10-11 | trivial | Spreadsheets (.xlsx/.xlsm/.ods) read as mail-merge recipient lists (#334) |
 | 2026-10-12 | minor | Preserve opaque custom XML stores and related properties; bindings and control support remain separate |
 | 2026-10-11 | trivial | Native saves protect existing temporary-name entries and originals on pre-replacement failure; synthetic macOS evidence, explicit durability/platform limits; readiness unchanged |
+| 2026-10-11 | minor | Preserve imported TOC ranges independently of paragraph styles, with explicit evaluation limits |
 | 2026-10-11 | trivial | Import/export fixes (#433–#440): TXT opens through the encoding-sniffing reader (Windows-1252, unmarked UTF-16) and saves list labels; RTF `\uN` in document info, bookmark names and field instructions; ODT common paragraph styles' text formatting and table-cell background colours; HTML borderless tables export without cell borders and `white-space:pre` keeps edge spaces; LaTeX brace groups scope `\centering`/`\raggedleft`/`\raggedright` |
 | 2026-10-11 | trivial | `.doc` import fixes per [MS-DOC]: piece Prm0/Prm1 decoding (#458), section-break kinds (#459), explicit orientation (#460), negative `sprmPIlfo` list references (#461), zero-based `istdBase` style inheritance (#462), font-table entries with alternate names (#463) |
 | 2026-10-11 | trivial | Formatting revisions (`w:rPrChange`, `w:pPrChange`, table, row, cell, section and numbering changes) read and written (#41) |

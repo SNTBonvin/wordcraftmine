@@ -166,27 +166,55 @@ fn hidden_text_adds_no_line_break_opportunity_when_not_shown() {
     }
 }
 
-/// How much longer laying out `doc(4n)` takes than `doc(n)` (fastest of three each, after a
-/// warm-up): ~4 when linear, ~16 when quadratic, whatever the machine.
-/// How much bigger the second document is in the linear-time tests. At 8x a linear layout takes
-/// about 8x as long and a quadratic one about 64x, so a limit of 24x stays far from both, however
-/// busy the machine running the tests is.
+/// How much bigger the second document is in the linear-time tests. At 8x a linear layout costs
+/// about 8x as much and a quadratic one about 64x, so a limit of 24x stays far from both.
 const SCALE: usize = 8;
 
-fn layout_time_ratio(doc: impl Fn(usize) -> Document, n: usize, opts: &LayoutOptions) -> (f64, f64, f64) {
-    let fastest = |d: &Document| {
-        (0..3)
-            .map(|_| {
-                let t = std::time::Instant::now();
-                layout(d, &mut LayoutCache::new(), opts);
-                t.elapsed().as_secs_f64()
-            })
-            .fold(f64::INFINITY, f64::min)
+/// The CPU time `f` takes on this thread, in seconds. On Linux it is the scheduler's count of the
+/// time the thread actually ran, so the time it waits while other work on a busy machine has the
+/// CPU is left out; elsewhere, wall-clock time.
+fn cpu_cost(f: &mut impl FnMut()) -> f64 {
+    let ran = || {
+        let s = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+        s.split_whitespace().next()?.parse::<u64>().ok()
     };
-    let (small, big) = (doc(n), doc(SCALE * n));
-    layout(&small, &mut LayoutCache::new(), opts);
-    let (t1, tk) = (fastest(&small), fastest(&big));
+    let (t, before) = (std::time::Instant::now(), ran());
+    f();
+    match (before, ran()) {
+        (Some(a), Some(b)) => b.saturating_sub(a) as f64 * 1e-9,
+        _ => t.elapsed().as_secs_f64(),
+    }
+}
+
+/// How much more `big` costs than `small`, for `big` an input `scale` times the size of `small`'s:
+/// (small, big, big / small), ~`scale` when linear and ~`scale`² when quadratic. Each is the
+/// cheapest of several runs after a warm-up, the runs alternating so a busy spell slows both sizes
+/// alike; `small` is timed `scale` times over per run, so both timings are long against the clock's
+/// resolution.
+fn cost_ratio(scale: usize, mut small: impl FnMut(), mut big: impl FnMut()) -> (f64, f64, f64) {
+    small();
+    big();
+    let mut small_scaled = || (0..scale).for_each(|_| small());
+    let (mut t1, mut tk) = (f64::INFINITY, f64::INFINITY);
+    for _ in 0..5 {
+        t1 = t1.min(cpu_cost(&mut small_scaled) / scale as f64);
+        tk = tk.min(cpu_cost(&mut big));
+    }
     (t1, tk, tk / t1.max(1e-9))
+}
+
+/// [`cost_ratio`] of laying out `doc(SCALE * n)` against `doc(n)`.
+fn layout_time_ratio(doc: impl Fn(usize) -> Document, n: usize, opts: &LayoutOptions) -> (f64, f64, f64) {
+    let (small, big) = (doc(n), doc(SCALE * n));
+    cost_ratio(
+        SCALE,
+        || {
+            layout(&small, &mut LayoutCache::new(), opts);
+        },
+        || {
+            layout(&big, &mut LayoutCache::new(), opts);
+        },
+    )
 }
 
 #[test]
@@ -3829,6 +3857,64 @@ fn endnotes_at_section_end_and_footnotes_below_text() {
     let below = top(&d);
     let text = lay(&d).caret(&Pos::body(1, 0)).unwrap();
     assert!(below > text.top + text.height && below < bottom - 100.0, "{below} {bottom} {text:?}");
+}
+
+/// Each run is hyphenated and proofed in its own language (`w:lang`, resolved through the
+/// styles): Polish patterns and dictionary for Polish runs, English ones for English runs.
+#[test]
+fn hyphenation_and_proofing_follow_each_runs_language() {
+    // A tiny synthetic Polish dictionary (real ones are installed on the system, not bundled).
+    wordcraft_proof::pl::install_dictionary("SET UTF-8\nSFX B Y 1\nSFX B y ego y\n", "2\nkonstytucyjny/B\npłynie\n").unwrap();
+    let text = "Konstytucyjnego żeka typography beautifull";
+    let mut d = Document::from_text(text);
+    d.settings.auto_hyphenation = true;
+    let eng = text.find("typography").unwrap();
+    d.format_range(&Pos::body(0, 0), &Pos::body(0, eng), &|c| c.lang = Some("pl-PL".into())).unwrap();
+    d.format_range(&Pos::body(0, eng), &Pos::body(0, text.len()), &|c| c.lang = Some("en-US".into())).unwrap();
+    let mut c = LayoutCache::new();
+    let l = layout(&d, &mut c, &LayoutOptions { proofing: true, ..LayoutOptions::default() });
+    let para = l.pages[0].items.iter().find_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None }).expect("a paragraph");
+    // Byte offsets after which a hyphen may go.
+    let ends: Vec<usize> = para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end)).collect();
+    for prefix in ["Kon", "Konsty", "Konstytu", "Konstytucyj", "Konstytucyjne"] {
+        assert!(ends.contains(&prefix.len()), "Polish kon-sty-tu-cyj-ne-go: no break after {prefix:?} in {ends:?}");
+    }
+    for prefix in ["ty", "typog", "typogra"] {
+        assert!(ends.contains(&(eng + prefix.len())), "English ty-pog-ra-phy: no break after {prefix:?} in {ends:?}");
+    }
+    // Spelling: the Polish misspelling and the English one; Polish words aren't English errors.
+    let flagged: Vec<&str> = para.issues.iter().filter(|i| !i.2).map(|i| &text[i.0..i.1]).collect();
+    assert_eq!(flagged, ["żeka", "beautifull"]);
+    // The layout and the Review commands report the same issues.
+    let p = d.para(StoryRef::Body, &Path::top(0)).unwrap();
+    let issues = para::paragraph_issues(p, &para::proof_runs(&d, p, None), &Default::default(), true);
+    assert_eq!(issues.iter().map(|i| (i.start, i.end, i.kind == wordcraft_proof::IssueKind::Grammar)).collect::<Vec<_>>(), para.issues);
+    assert_eq!(issues[0].lang, wordcraft_proof::ProofLang::Pl);
+    assert_eq!(issues[1].lang, wordcraft_proof::ProofLang::En);
+}
+
+/// Text in a language WordCraft can't proof gets no spelling marks, and "Do not check spelling
+/// or grammar" text none either; the document default language applies to text without its own.
+#[test]
+fn unproofed_languages_and_no_proof_runs_are_not_marked() {
+    // A tiny synthetic Polish dictionary (real ones are installed on the system, not bundled).
+    wordcraft_proof::pl::install_dictionary("SET UTF-8\nSFX B Y 1\nSFX B y ego y\n", "2\nkonstytucyjny/B\npłynie\n").unwrap();
+    let opts = LayoutOptions { proofing: true, ..LayoutOptions::default() };
+    let issues = |d: &Document| -> usize {
+        let l = layout(d, &mut LayoutCache::new(), &opts);
+        l.pages[0].items.iter().map(|i| if let Placed::Lines { para, .. } = i { para.issues.len() } else { 0 }).sum()
+    };
+    let text = "Nous écrivons beaucoup aujourd'hui.";
+    let mut d = Document::from_text(text);
+    assert!(issues(&d) > 0, "French words are English misspellings in an English document");
+    d.styles.default_chr.lang = Some("fr-FR".into());
+    assert_eq!(issues(&d), 0, "no French dictionary: no marks");
+    d.styles.default_chr.lang = Some("pl-PL".into());
+    let mut pl = Document::from_text("Płynie żeka.");
+    pl.styles.default_chr.lang = Some("pl-PL".into());
+    assert_eq!(issues(&pl), 1);
+    pl.format_range(&Pos::body(0, 0), &Pos::body(0, "Płynie żeka.".len()), &|c| c.no_proof = Some(true)).unwrap();
+    assert_eq!(issues(&pl), 0);
 }
 
 /// #451: page totals in the body show the document's page count (the stale cached result is

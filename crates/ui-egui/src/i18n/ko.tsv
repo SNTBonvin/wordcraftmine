@@ -2396,3 +2396,35 @@ preview	Title	제목
 	Your system has animation effects turned off.	시스템에서 애니메이션 효과가 꺼져 있습니다.
 	Your system doesn't report an animation setting, so animation effects stay on.	시스템이 애니메이션 설정을 제공하지 않아 효과를 켜진 상태로 유지합니다.
 	Resize Table by Dragging	드래그로 표 크기 조절
+
+# Keys added on main while the Korean IME changes were tested.
+	Capitalize the first word of a sentence	문장의 첫 단어를 대문자로 시작
+	Change to Level 6	수준 6으로 변경
+	Change to Level 7	수준 7로 변경
+	Change to Level 8	수준 8로 변경
+	Change to Level 9	수준 9로 변경
+	Couldn't make WordCraft the default: {error}	WordCraft를 기본 앱으로 설정하지 못했습니다: {error}
+	Do Not Check Spelling or Grammar	맞춤법 및 문법 검사 안 함
+	Extra space	불필요한 공백
+	In Default apps, choose WordCraft for the document types you want it to open.	기본 앱에서 WordCraft로 열 문서 형식에 WordCraft를 지정하세요.
+	Level 4	수준 4
+	Level 5	수준 5
+	Level 6	수준 6
+	Level 7	수준 7
+	Level 8	수준 8
+	Level 9	수준 9
+	Make WordCraft the default for Word documents…	Word 문서의 기본 앱으로 WordCraft 설정…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	이제 .docx, .doc, .rtf, .odt 파일과 Word 서식 파일을 WordCraft로 엽니다.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	설정 › 기본 앱을 열어 .docx 및 다른 문서 형식의 앱으로 WordCraft를 선택합니다.
+	Possible spelling mistake	맞춤법 오류일 수 있음
+	Remove the space before the punctuation	문장 부호 앞의 공백 제거
+	Style: APA	스타일: APA
+	The spelling and grammar check is complete.	맞춤법 및 문법 검사를 마쳤습니다.
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Word 문서를 기본적으로 WordCraft로 열려면 Finder에서 문서를 선택하고 파일 › 정보 가져오기를 연 다음, 다음으로 열기에서 WordCraft를 선택하고 모두 변경을 클릭하세요.
+	Typing	입력
+	Use "a" before a consonant sound	자음 소리 앞에 "a" 사용
+	Use "an" before a vowel sound	모음 소리 앞에 "an" 사용
+	Wildcards (regex)	와일드카드(정규식)
+	WordCraft is now the default app for Word documents.	이제 WordCraft가 Word 문서의 기본 앱입니다.
+	➕ New comment	➕ 새 메모
+	📂  Browse…	📂  찾아보기…
