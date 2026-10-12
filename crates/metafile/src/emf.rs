@@ -274,7 +274,7 @@ fn create_font(cv: &mut Canvas, r: Bytes) -> Option<()> {
 /// EMR_EXTTEXTOUTA/W (MS-EMF 2.3.5.7): bounds, graphics mode, scales, then one EMRTEXT — reference
 /// point at 36, character count at 44 and the string offset at 48, relative to the record start.
 /// The string is UTF-16LE for W and 8-bit ANSI for A; the options rectangle and the per-character
-/// `Dx` array are ignored.
+/// positioning of the `Dx` array are ignored (only the sum feeds the TA_UPDATECP position advance).
 fn ext_text_out(cv: &mut Canvas, r: Bytes, wide: bool) -> Option<()> {
     let at = xy32(r, 36)?;
     let n = r.u32(44)? as usize;
@@ -282,7 +282,15 @@ fn ext_text_out(cv: &mut Canvas, r: Bytes, wide: bool) -> Option<()> {
     let len = n.checked_mul(if wide { 2 } else { 1 })?;
     let bytes = r.slice(off, len)?;
     let text = if wide { utf16(bytes) } else { ansi(bytes) };
-    cv.text(at, text);
+    // The per-character Dx advances feed only the TA_UPDATECP position advance; a hostile or
+    // missing array (offDx 0, or pointing outside the record) is ignored, not fatal.
+    let dx: Vec<f64> = r
+        .u32(72)
+        .filter(|o| *o > 0)
+        .and_then(|o| r.slice(o as usize, n.checked_mul(4)?))
+        .map(|raw| raw.as_chunks::<4>().0.iter().map(|v| f64::from(i32::from_le_bytes(*v))).collect())
+        .unwrap_or_default();
+    cv.text(at, text, &dx);
     Some(())
 }
 

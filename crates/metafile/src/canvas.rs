@@ -16,6 +16,9 @@ pub(crate) const PS_STYLE_MASK: u32 = 0x0F;
 const BS_SOLID: u32 = 0;
 pub(crate) const BS_NULL: u32 = 1;
 const WINDING: u32 = 2;
+/// SETTEXTALIGN's TA_UPDATECP: text records draw at the current position, which the run's extent
+/// then advances (MS-EMF §2.1.11).
+const TA_UPDATECP: u32 = 0x01;
 /// SETROP2 mix mode that leaves the destination alone: outlines and fills draw nothing.
 const R2_NOP: u32 = 11;
 const PATCOPY: u32 = 0x00F0_0021;
@@ -385,18 +388,33 @@ impl Canvas {
     /// The point maps through the DC transform; the height scales by its mean factor, as pen widths
     /// do. The run anchors per the current text alignment and turns by the font's escapement plus
     /// the world transform's rotation (only the rotation is kept; the run is never sheared).
-    /// Per-character positions and clipping are out of scope.
-    pub fn text(&mut self, at: P, text: String) {
+    /// With TA_UPDATECP the run draws at the current position (the EMRTEXT point is ignored) and the
+    /// position advances by the run's extent — the sum of the per-character `dx` advances when the
+    /// record carries them (logical units, GDI's own numbers), else a lenient estimate of half the
+    /// character height per character — along the escapement direction. Per-character positions and
+    /// clipping are out of scope.
+    pub fn text(&mut self, at: P, text: String, dx: &[f64]) {
         if text.is_empty() || self.nop {
             return;
         }
-        let at = self.map.device(at);
+        let updatecp = self.text_align & TA_UPDATECP != 0;
+        let at = self.map.device(if updatecp { self.pos } else { at });
         let h = self.font.height * self.map.scale();
         let font = self.font.name.clone();
         let color = self.text_color;
         let (align_h, align_v) = text_anchors(self.text_align);
         let rotation = (self.font.escapement + self.map.world_rotation()).rem_euclid(360.0);
+        let chars = text.chars().count();
         self.push(Raw::Text { at, text, font, h, color, align_h, align_v, rotation });
+        if updatecp {
+            // The extent: the record's own Dx sum when it has one, else a lenient half the
+            // character height per character. A hostile sum (huge or non-finite) does not advance.
+            let extent = if dx.is_empty() { chars as f64 * self.font.height * 0.5 } else { dx.iter().sum() };
+            if extent.is_finite() && extent.abs() <= 1e7 {
+                let t = self.font.escapement.to_radians();
+                self.pos = (self.pos.0 + extent * t.cos(), self.pos.1 - extent * t.sin());
+            }
+        }
     }
 
     /// EMF SETWORLDTRANSFORM (`mode` 4) and MODIFYWORLDTRANSFORM (1 identity, 2 left, 3 right, 4 set).

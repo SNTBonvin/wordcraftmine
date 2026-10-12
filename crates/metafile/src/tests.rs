@@ -553,6 +553,21 @@ fn textout_rec(typ: u32, at: (i32, i32), string: &[u8]) -> Vec<u8> {
     erec_at(typ, total, &[(36, at.0 as u32), (40, at.1 as u32), (44, n_chars as u32), (48, 76), (52, 0), (72, 0)], &[(76, string)])
 }
 
+/// EMR_EXTTEXTOUTW at reference point `at` with a per-character `Dx` array after the string: the
+/// i32 advances sit at the next 4-byte boundary past the string, and `offDx` (spec offset 72)
+/// points there.
+fn textout_rec_dx(at: (i32, i32), string: &[u8], dx: &[i32]) -> Vec<u8> {
+    let dx_at = (76 + string.len()).div_ceil(4) * 4;
+    let total = (dx_at + dx.len() * 4).div_ceil(4) * 4;
+    let dx_payload: Vec<u8> = dx.iter().flat_map(|v| v.to_le_bytes()).collect();
+    erec_at(
+        84,
+        total,
+        &[(36, at.0 as u32), (40, at.1 as u32), (44, (string.len() / 2) as u32), (48, 76), (52, 0), (72, dx_at as u32)],
+        &[(76, string), (dx_at, &dx_payload)],
+    )
+}
+
 #[test]
 fn emf_exttextoutw_becomes_text_item() {
     // SetTextColor blue, a 120-unit Arial font selected, then ExtTextOutW "KDF" at (100, 200).
@@ -652,6 +667,42 @@ fn emf_settextalign_center_right() {
 }
 
 #[test]
+fn emf_updatecp_draws_at_the_current_position() {
+    // SetTextAlign(TA_UPDATECP|TA_BASELINE = 0x19) ignores the EMRTEXT reference point and draws at
+    // the current position, which MoveTo (30, 40) sets; the run's extent (the Dx sum 17+17+13 = 47)
+    // advances it, so a second run without a MoveTo follows on at (77, 40). RestoreDC brings back
+    // the alignment saved before the bracket.
+    let state = [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1))];
+    let recs = [
+        state.concat(),
+        erec(33, &[]),
+        erec(22, &h32(0x19)),
+        erec(27, &cat(vec![e32(30), e32(40)])),
+        textout_rec_dx((99, 99), &utf16le("KDF"), &[17, 17, 13]),
+        textout_rec_dx((99, 99), &utf16le("ab"), &[5, 7]),
+        erec(34, &e32(-1)),
+        textout_rec_dx((99, 99), &utf16le("cd"), &[1, 1]),
+    ];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let runs: Vec<((f32, f32), &str)> = p
+        .items
+        .iter()
+        .map(|i| match i {
+            Item::Text { at, text, .. } => (*at, text.as_str()),
+            _ => panic!("expected text, got {i:?}"),
+        })
+        .collect();
+    assert_eq!(
+        runs,
+        [((30.0, 40.0), "KDF"), ((77.0, 40.0), "ab"), ((99.0, 99.0), "cd")],
+        "current-position runs, then the EMRTEXT point after the restore"
+    );
+    // The anchor mode comes with it: UPDATECP here kept TA_BASELINE from the same mode word.
+    let Item::Text { align_v, .. } = &p.items[0] else { panic!("expected text") };
+    assert_eq!(*align_v, crate::TextVAlign::Baseline);
+}
+
+#[test]
 fn emf_escapement_rotates_text() {
     // lfEscapement 900 (90° in tenths of a degree) turns the run; placing scales the picture but
     // not the angle. The same 90° arrives through the world transform (MODIFYWORLDTRANSFORM mode 2
@@ -716,6 +767,16 @@ fn hostile_exttextout() {
     let Item::Text { align_h, align_v, rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
     assert_eq!((*align_h, *align_v), (crate::TextHAlign::Center, crate::TextVAlign::Baseline));
     assert!(close(*rotation, 0.0), "a full turn is no turn, got {rotation}");
+    // UPDATECP with a Dx array pointing past the record, and with junk advances: the run draws and
+    // the position advances by a finite amount, never a panic and never a wild placed position.
+    let far_dx = erec_at(84, 88, &[(36, 0), (40, 0), (44, 3), (48, 76), (72, 100_000)], &[(76, &utf16le("KDF"))]);
+    let junk_dx = textout_rec_dx((99, 99), &utf16le("KDF"), &[i32::MAX, i32::MIN, i32::MAX]);
+    let p = parse(&emf(&[state.concat(), erec(22, &h32(0x19)), erec(27, &cat(vec![e32(10), e32(10)])), far_dx, junk_dx], [0, 0, 100, 100], [0; 4]))
+        .unwrap();
+    let runs: Vec<(f32, f32)> = p.items.iter().map(|i| if let Item::Text { at, .. } = i { *at } else { panic!("expected text") }).collect();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0], (10.0, 10.0), "UPDATECP draws at the current position");
+    assert!(runs[1].0.is_finite() && runs[1].0 < 1e6 && runs[1].1.is_finite(), "the advanced position stays finite: {runs:?}");
     for esc in [-900, i32::MIN, i32::MAX] {
         let recs =
             [erec(24, &h32(0)), erec(82, &font_payload_esc(-120, "Arial", esc)), erec(37, &h32(1)), textout_rec(84, (10, 10), &utf16le("KDF"))];
