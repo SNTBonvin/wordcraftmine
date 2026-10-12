@@ -113,6 +113,9 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
         (None, Some(b)) => w.empty("w:lang", &[("w:bidi", b)]),
         (None, None) => {}
     }
+    if let Some(fx) = &c.text_effects {
+        super::wordart::rpr_effects(w, fx);
+    }
 }
 
 /// Does `c` produce any `w:rPr` content (besides a tracked change)?
@@ -303,6 +306,7 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
         w.empty("w:ind", &a);
     }
     toggle(w, "w:contextualSpacing", p.contextual_spacing);
+    toggle(w, "w:mirrorIndents", p.mirror_indents);
     if let Some(a) = p.align {
         w.val("w:jc", align_val(a));
     }
@@ -401,6 +405,9 @@ fn tblpr_inner(w: &mut W, t: &TableProps) {
     w.empty("w:tblLook", &refs);
     if let Some(c) = &t.caption {
         w.val("w:tblCaption", c);
+    }
+    if let Some(d) = &t.description {
+        w.val("w:tblDescription", d);
     }
 }
 

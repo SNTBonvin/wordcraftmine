@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use wordcraft_doc::para::cap_alt;
 use wordcraft_doc::props::{
     Align, Border, BorderStyle, Borders, CellProps, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign,
     TabLeader, TabStop, TableFloat, TableLook, TableProps, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
@@ -21,6 +22,8 @@ pub struct PropCtx {
     pub minor_font: String,
     /// Style id renames (e.g. a localized default paragraph style id → `Normal`).
     pub alias: HashMap<String, String>,
+    /// The theme's colours (for WordArt effects in theme colours).
+    pub theme: Vec<Rgb>,
 }
 
 impl PropCtx {
@@ -116,6 +119,13 @@ impl PropCtx {
                     c.lang = k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
                     c.lang_bidi = k.attr("w:bidi").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
                 }
+                n if n.starts_with("w14:") => {
+                    let fx = c.text_effects.get_or_insert_with(Default::default);
+                    super::wordart::read(k, &self.theme, fx);
+                    if fx.is_empty() {
+                        c.text_effects = None;
+                    }
+                }
                 _ => {}
             }
         }
@@ -145,6 +155,7 @@ impl PropCtx {
                 "w:pageBreakBefore" => p.page_break_before = Some(on_off(k)),
                 "w:widowControl" => p.widow_control = Some(on_off(k)),
                 "w:contextualSpacing" => p.contextual_spacing = Some(on_off(k)),
+                "w:mirrorIndents" => p.mirror_indents = Some(on_off(k)),
                 "w:suppressAutoHyphens" => p.suppress_hyphens = Some(on_off(k)),
                 "w:suppressLineNumbers" => p.suppress_line_numbers = Some(on_off(k)),
                 "w:bidi" => p.bidi = Some(on_off(k)),
@@ -320,8 +331,8 @@ impl PropCtx {
                         f.overlap = k.attr("w:val") != Some("never");
                     }
                 }
-                "w:tblCaption" => t.caption = k.attr("w:val").map(str::to_string),
-                "w:tblDescription" if t.caption.is_none() => t.caption = k.attr("w:val").map(str::to_string),
+                "w:tblCaption" => t.caption = k.attr("w:val").map(cap_alt),
+                "w:tblDescription" => t.description = k.attr("w:val").map(cap_alt),
                 _ => {}
             }
         }
@@ -497,6 +508,7 @@ pub fn sectpr(e: &El) -> (SectionProps, Vec<HfRef>) {
             "w:endnotePr" => s.endnote_pr = note_pr(k, true),
             "w:titlePg" => s.title_page = on_off(k),
             "w:bidi" => s.rtl = on_off(k),
+            "w:textDirection" => s.text_direction = wordcraft_doc::props::TextDirection::from_ooxml(k.attr("w:val").unwrap_or("")),
             "w:pgNumType" => {
                 s.page_num_start = k.attr("w:start").and_then(u32_of);
                 if let Some(f) = k.attr("w:fmt") {
