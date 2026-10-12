@@ -79,6 +79,28 @@ impl TabsForm {
         self.selected = self.stops.iter().position(|t| (t.pos - pos).abs() < SAME_POS);
     }
 
+    /// Start a new stop: deselect the list, propose the next free multiple of the default
+    /// interval after the last stop, and reset the alignment and leader. Set (or OK, which
+    /// applies what the fields show) then adds it.
+    pub fn new_stop(&mut self) {
+        let k = unit().pt_per_unit();
+        let step = if self.default_tab.is_finite() && self.default_tab > 0.0 { self.default_tab * k } else { 36.0 };
+        let taken = |p: f32| self.stops.iter().any(|t| (t.pos - p).abs() < SAME_POS) || self.cleared.iter().any(|c| (c - p).abs() < SAME_POS);
+        let last = self.stops.iter().map(|t| t.pos).fold(0.0f32, f32::max);
+        let mut p = (last / step).floor() * step + step;
+        while taken(p) && p <= 1584.0 {
+            p += step;
+        }
+        if !p.is_finite() || p > 1584.0 {
+            return;
+        }
+        self.selected = None;
+        self.editing = None;
+        self.pos = p / k;
+        self.align = TabAlign::default();
+        self.leader = TabLeader::default();
+    }
+
     /// Move stop `i` to `pos` (points), keeping its alignment and leader: the engine's ±1584
     /// bound applies, and a stop already at the target is replaced. The fields follow the moved
     /// stop, and `params` becomes a clear of the old position and a set of the new one.
@@ -115,6 +137,25 @@ impl TabsForm {
             // A position with no stop yet is set on OK, as the field shows it.
             None => self.set(),
         }
+    }
+
+    /// Clear stop `i` (the list's × button and the Delete key).
+    pub fn remove_stop(&mut self, i: usize) {
+        if i >= self.stops.len() {
+            return;
+        }
+        let t = self.stops.remove(i);
+        self.cleared.push(t.pos);
+        self.selected = match self.selected {
+            Some(s) if s == i => None,
+            Some(s) if s > i => Some(s - 1),
+            s => s,
+        };
+        self.editing = match self.editing.take() {
+            Some((e, _)) if e == i => None,
+            Some((e, b)) if e > i => Some((e - 1, b)),
+            e => e,
+        };
     }
 
     /// Clear the selected stop (or the one at the position field).
@@ -163,34 +204,50 @@ impl TabsForm {
 pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
     let u = unit();
     let k = u.pt_per_unit();
+    let mut pos_field = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(tl!("Tab stop position:"));
-            ui.add(egui::DragValue::new(&mut f.pos).speed(0.05).range(-22.0 * 72.0 / k..=22.0 * 72.0 / k).measure(u).max_decimals(2));
+            pos_field =
+                Some(ui.add(egui::DragValue::new(&mut f.pos).speed(0.05).range(-22.0 * 72.0 / k..=22.0 * 72.0 / k).measure(u).max_decimals(2)));
             let mut pick = None;
             egui::Frame::new().stroke(Stroke::new(1.0, Tokens::get(ui.ctx()).input_border)).inner_margin(4.0).show(ui, |ui| {
-                ui.set_min_size(vec2(150.0, 96.0));
+                // A fixed width: the scroll area fills it (rows and scrollbar at its edge)
+                // without growing the dialog.
+                ui.set_width(150.0);
+                ui.set_min_height(96.0);
                 let mut commit = None;
-                egui::ScrollArea::vertical().max_height(96.0).show(ui, |ui| {
+                let mut remove = None;
+                // Fill the frame, so rows span its width and the scrollbar sits at its edge.
+                egui::ScrollArea::vertical().max_height(96.0).auto_shrink([false, true]).show(ui, |ui| {
                     for i in 0..f.stops.len() {
                         let Some(t) = f.stops.get(i).copied() else { continue };
                         let edit_id = ui.id().with(("tab_pos_edit", i));
-                        if let Some((_, buf)) = f.editing.as_mut().filter(|(ei, _)| *ei == i) {
-                            let r = ui.add(egui::TextEdit::singleline(&mut *buf).id(edit_id).desired_width(110.0));
-                            if r.lost_focus() {
-                                // Enter (or clicking away) commits; Escape puts the old text back.
-                                let kept = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
-                                commit = Some((i, (!kept).then(|| wordcraft_geom::parse_measure(buf, u)).flatten()));
+                        ui.horizontal(|ui| {
+                            if let Some((_, buf)) = f.editing.as_mut().filter(|(ei, _)| *ei == i) {
+                                let w = ui.available_width() - 4.0;
+                                let r = ui.add(egui::TextEdit::singleline(&mut *buf).id(edit_id).desired_width(w));
+                                if r.lost_focus() {
+                                    // Enter (or clicking away) commits; Escape puts the old text back.
+                                    let kept = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
+                                    commit = Some((i, (!kept).then(|| wordcraft_geom::parse_measure(buf, u)).flatten()));
+                                }
+                            } else {
+                                let r = ui.selectable_label(f.selected == Some(i), u.format_with(t.pos, crate::options::decimal()));
+                                if r.double_clicked() {
+                                    f.editing = Some((i, u.number(t.pos, crate::options::decimal())));
+                                    ui.ctx().memory_mut(|m| m.request_focus(edit_id));
+                                } else if r.clicked() {
+                                    pick = Some(i);
+                                }
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.add_space(10.0); // clear of the scrollbar
+                                    if ui.add(egui::Button::new("×").small().frame(false)).on_hover_text(tl!("Clear")).clicked() {
+                                        remove = Some(i);
+                                    }
+                                });
                             }
-                        } else {
-                            let r = ui.selectable_label(f.selected == Some(i), u.format_with(t.pos, crate::options::decimal()));
-                            if r.double_clicked() {
-                                f.editing = Some((i, u.number(t.pos, crate::options::decimal())));
-                                ui.ctx().memory_mut(|m| m.request_focus(edit_id));
-                            } else if r.clicked() {
-                                pick = Some(i);
-                            }
-                        }
+                        });
                     }
                 });
                 if let Some((i, pos)) = commit {
@@ -198,6 +255,15 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                     if let Some(pos) = pos {
                         f.move_stop(i, pos);
                     }
+                } else if let Some(i) = remove {
+                    f.remove_stop(i);
+                } else if f.editing.is_none()
+                    && let Some(i) = f.selected
+                    && ui.memory(|m| m.focused().is_none())
+                    && ui.input(|inp| inp.key_pressed(egui::Key::Delete))
+                {
+                    // Delete clears the selected stop when nothing is being typed.
+                    f.remove_stop(i);
                 }
             });
             if let Some(i) = pick
@@ -254,6 +320,13 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
     });
     ui.add_space(4.0);
     ui.horizontal(|ui| {
+        if ui.button(tl!("New")).clicked() {
+            f.new_stop();
+            // Typing replaces the proposed position.
+            if let Some(r) = &pos_field {
+                r.request_focus();
+            }
+        }
         if ui.button(tl!("Set")).clicked() {
             f.set();
         }
@@ -861,5 +934,49 @@ mod tests {
         // What the list editor parses: the interface unit by default, any unit spelled out.
         assert_eq!(wordcraft_geom::parse_measure("1.5", wordcraft_geom::Unit::Inches), Some(108.0));
         assert_eq!(wordcraft_geom::parse_measure("2,54 cm", wordcraft_geom::Unit::Inches), Some(72.0));
+    }
+
+    /// New stages a fresh stop at the next free multiple of the default interval, with the
+    /// default alignment and leader; OK (or Set) then adds it without leaving the dialog.
+    #[test]
+    fn tabs_new_stages_the_next_free_position() {
+        let mut app = app_with("a\tb");
+        let k = unit().pt_per_unit();
+        let _ = app.run("para.tabs", json!({"set": [{"pos": 72.0, "align": "right"}, {"pos": 144.0}]}));
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        assert_eq!(f.default_tab * k, 36.0, "the document default interval");
+        f.align = TabAlign::Right;
+        f.new_stop();
+        assert_eq!((f.pos * k, f.selected, f.align, f.leader), (180.0, None, TabAlign::Left, TabLeader::None));
+        f.on_ok();
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 180.0, "align": "left", "leader": "none"}]})));
+
+        // Cleared positions are skipped: with only 72 left and 108 and 144 cleared, the
+        // proposal walks past both to 180.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.pos = 108.0 / k;
+        f.set();
+        f.clear();
+        f.selected = Some(1);
+        f.clear();
+        assert_eq!((f.cleared.clone(), f.stops.len()), (vec![108.0, 144.0], 1));
+        f.new_stop();
+        assert_eq!(f.pos * k, 180.0, "108 and 144 are cleared; the next free multiple is 180");
+        // The list's × and the Delete key: clearing a row keeps the selection sensible.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.selected = Some(1);
+        f.remove_stop(0);
+        assert_eq!((f.stops.len(), f.selected, f.cleared.clone()), (1, Some(0), vec![72.0]));
+        assert_eq!(f.params(), Some(json!({"clear": [72.0]})));
+        f.remove_stop(0);
+        assert_eq!((f.stops.len(), f.selected), (0, None));
+        f.remove_stop(7);
+        assert_eq!(f.cleared, vec![72.0, 144.0], "an index past the end changes nothing");
+
+        // An empty paragraph starts at one interval.
+        let app = app_with("plain");
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.new_stop();
+        assert_eq!(f.pos * k, 36.0);
     }
 }
