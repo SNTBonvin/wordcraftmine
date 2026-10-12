@@ -231,6 +231,51 @@ fn odt_round_trip() {
 }
 
 #[test]
+fn notes_round_trip_rtf_and_odt() {
+    let mut doc = Document::new();
+    let fn_part_id =
+        doc.add_part(wordcraft_doc::PartKind::Footnote, vec![para_block(Paragraph::with_text("Footnote body text", CharProps::default()))]);
+    let en_part_id =
+        doc.add_part(wordcraft_doc::PartKind::Endnote, vec![para_block(Paragraph::with_text("Endnote body text", CharProps::default()))]);
+
+    let mut p = Paragraph::with_text("Before note", CharProps::default());
+    let cp = CharProps::default();
+    p.insert_object(
+        "Before note".len(),
+        wordcraft_doc::para::InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Footnote, id: fn_part_id, custom: String::new() },
+        &cp,
+    )
+    .unwrap();
+    p.insert_text(p.text.len(), " middle ", &cp).unwrap();
+    p.insert_object(
+        p.text.len(),
+        wordcraft_doc::para::InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Endnote, id: en_part_id, custom: String::new() },
+        &cp,
+    )
+    .unwrap();
+    p.insert_text(p.text.len(), " after", &cp).unwrap();
+    doc.body = vec![para_block(p)];
+
+    // Round trip through RTF
+    let rtf_bytes = export("rtf", &doc).unwrap().unwrap();
+    let rtf_back = import("rtf", &rtf_bytes).unwrap().unwrap();
+    assert_eq!(rtf_back.parts.len(), 2);
+    let (&fn_id, _) = rtf_back.parts.iter().find(|(_, pt)| pt.kind == wordcraft_doc::PartKind::Footnote).expect("rtf footnote");
+    let (&en_id, _) = rtf_back.parts.iter().find(|(_, pt)| pt.kind == wordcraft_doc::PartKind::Endnote).expect("rtf endnote");
+    assert_eq!(rtf_back.plain_text(wordcraft_doc::StoryRef::Part(fn_id)).trim(), "Footnote body text");
+    assert_eq!(rtf_back.plain_text(wordcraft_doc::StoryRef::Part(en_id)).trim(), "Endnote body text");
+
+    // Round trip through ODT
+    let odt_bytes = export("odt", &doc).unwrap().unwrap();
+    let odt_back = import("odt", &odt_bytes).unwrap().unwrap();
+    assert_eq!(odt_back.parts.len(), 2);
+    let (&fn_id, _) = odt_back.parts.iter().find(|(_, pt)| pt.kind == wordcraft_doc::PartKind::Footnote).expect("odt footnote");
+    let (&en_id, _) = odt_back.parts.iter().find(|(_, pt)| pt.kind == wordcraft_doc::PartKind::Endnote).expect("odt endnote");
+    assert_eq!(odt_back.plain_text(wordcraft_doc::StoryRef::Part(fn_id)).trim(), "Footnote body text");
+    assert_eq!(odt_back.plain_text(wordcraft_doc::StoryRef::Part(en_id)).trim(), "Endnote body text");
+}
+
+#[test]
 fn latex_round_trip() {
     check_round_trip("tex", true);
     let tex = String::from_utf8(export("tex", &sample()).unwrap().unwrap()).unwrap();

@@ -189,6 +189,14 @@ impl Writer {
                     out.push_str(&format!("{{\\*\\bkmkstart {a}}}{{\\*\\bkmkend {a}}}"));
                 }
                 Inline::Figure(_) | Inline::Equation { .. } => {}
+                Inline::Note { kind, blocks } => {
+                    let alt = if *kind == wordcraft_doc::para::NoteKind::Endnote { "\\ftnalt" } else { "" };
+                    out.push_str(&format!("{{\\footnote{alt} \\chftn "));
+                    let mut note_str = String::new();
+                    self.blocks(blocks, false, "", &mut note_str, 0);
+                    out.push_str(&note_str);
+                    out.push('}');
+                }
             }
         }
     }
@@ -660,6 +668,9 @@ struct Reader {
     hf: Option<(usize, HeaderFooter, Box<Output>)>,
     /// Headers and footers read, in order.
     hf_parts: Vec<(HeaderFooter, Vec<FBlock>)>,
+    /// The footnote or endnote being read: the group depth it started at, kind, and the
+    /// previous output, put back when the group closes.
+    footnote: Option<(usize, wordcraft_doc::para::NoteKind, Box<Output>)>,
     /// `\titlepg`: the first page has its own header and footer.
     title_page: bool,
     /// The cell border side being described (`\clbrdrt`, `l`, `b`, `r`): its line style, width
@@ -769,6 +780,25 @@ impl Reader {
         }
     }
 
+    /// A footnote or endnote group starts: read it into an output of its own.
+    fn start_footnote(&mut self) {
+        let body = self.swap_output(Output::default());
+        self.footnote = Some((self.depth(), wordcraft_doc::para::NoteKind::Footnote, Box::new(body)));
+        self.st.intbl = false;
+    }
+
+    /// The footnote or endnote group closed: keep what it held and put back the outer output.
+    fn end_footnote(&mut self) {
+        let Some((_, kind, body)) = self.footnote.take() else { return };
+        if self.para_has || !self.para.inlines.is_empty() {
+            self.end_para(false);
+        }
+        self.close_table();
+        let part = self.swap_output(*body);
+        self.para.inlines.push(Inline::Note { kind, blocks: part.body });
+        self.para_has = true;
+    }
+
     fn open(&mut self) {
         self.skip_chars = 0;
         if self.stack.len() >= MAX_GROUPS {
@@ -821,6 +851,9 @@ impl Reader {
         self.st = prev;
         if self.hf.as_ref().is_some_and(|(d, _, _)| self.depth() < *d) {
             self.end_header_footer();
+        }
+        if self.footnote.as_ref().is_some_and(|(d, _, _)| self.depth() < *d) {
+            self.end_footnote();
         }
     }
 
@@ -1159,9 +1192,13 @@ impl Reader {
                 self.start_header_footer(HeaderFooter { footer, pages });
                 return;
             }
-            "header" | "footer" | "headerl" | "headerr" | "headerf" | "footerl" | "footerr" | "footerf" | "footnote" | "annotation" | "pntext"
-            | "listtext" | "object" | "nonshppict" | "xe" | "tc" | "txe" | "private" | "bkmkend" | "atnid" | "atnauthor" | "comment" | "shpinst"
-            | "do" | "operator" | "company" | "manager" | "category" | "hlinkbase" | "revtime" | "printim" | "buptim" | "version" | "nofpages"
+            "footnote" if self.footnote.is_none() && self.st.dest == Dest::Body => {
+                self.start_footnote();
+                return;
+            }
+            "header" | "footer" | "headerl" | "headerr" | "headerf" | "footerl" | "footerr" | "footerf" | "annotation" | "pntext" | "listtext"
+            | "object" | "nonshppict" | "xe" | "tc" | "txe" | "private" | "bkmkend" | "atnid" | "atnauthor" | "comment" | "shpinst" | "do"
+            | "operator" | "company" | "manager" | "category" | "hlinkbase" | "revtime" | "printim" | "buptim" | "version" | "nofpages"
             | "nofwords" | "nofchars" | "edmins" | "vern" | "themedata" | "colorschememapping" | "latentstyles" | "datastore" | "xmlnstbl"
             | "rsidtbl" | "generator" | "mmathPr" | "pgdsctbl" | "filetbl" | "revtbl" | "listpicture" | "userprops" | "docvar" | "objdata"
             | "fontemb" | "fontfile" | "panose" | "falt" | "mhtmltag" | "htmltag" | "pnseclvl" | "background" | "sp" | "pn" | "pgptbl" => {
@@ -1315,6 +1352,12 @@ impl Reader {
             Dest::Body => {}
         }
         match w {
+            "ftnalt" => {
+                if let Some((_, kind, _)) = &mut self.footnote {
+                    *kind = wordcraft_doc::para::NoteKind::Endnote;
+                }
+            }
+            "chftn" => {}
             "par" => self.end_para(false),
             "sect" => self.end_para(false),
             "cell" => self.end_cell(),
@@ -1712,6 +1755,7 @@ fn parse_full(bytes: &[u8]) -> Result<Parsed, String> {
     }
     // A header or footer left open by a truncated file ends here.
     r.end_header_footer();
+    r.end_footnote();
     if r.para_has || !r.para.inlines.is_empty() {
         r.end_para(false);
     }
@@ -2090,5 +2134,34 @@ mod tests {
     #[test]
     fn escapes() {
         assert_eq!(esc("a{b}\\c\té😀"), "a\\{b\\}\\\\c\\tab \\u233?\\u-10179?\\u-8704?");
+    }
+
+    #[test]
+    fn footnotes_and_endnotes_round_trip() {
+        let rtf = br#"{\rtf1\ansi Text with note{\footnote \chftn Footnote body text} and endnote{\footnote\ftnalt \chftn Endnote body text}.\par}"#;
+        let doc = import(rtf).unwrap();
+        let p = doc.plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(p.contains("Text with note"));
+        assert!(p.contains("and endnote."));
+        assert_eq!(doc.parts.len(), 2);
+        let fn_part = doc.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Footnote).expect("footnote part");
+        let en_part = doc.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Endnote).expect("endnote part");
+        let fn_text: String =
+            fn_part.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        let en_text: String =
+            en_part.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        assert_eq!(fn_text.trim(), "Footnote body text");
+        assert_eq!(en_text.trim(), "Endnote body text");
+
+        let exported = export(&doc);
+        assert!(exported.contains(r"{\footnote \chftn"));
+        assert!(exported.contains(r"{\footnote\ftnalt \chftn"));
+
+        let doc2 = import(exported.as_bytes()).unwrap();
+        assert_eq!(doc2.parts.len(), 2);
+        let fn_part2 = doc2.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Footnote).expect("re-imported footnote");
+        let fn_text2: String =
+            fn_part2.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        assert_eq!(fn_text2.trim(), "Footnote body text");
     }
 }

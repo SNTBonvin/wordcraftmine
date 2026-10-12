@@ -249,6 +249,18 @@ impl Writer {
                 }
                 Inline::Anchor(a) => out.push_str(&format!("<text:bookmark text:name=\"{}\"/>", x(a))),
                 Inline::Figure(_) | Inline::Equation { .. } => {}
+                Inline::Note { kind, blocks } => {
+                    let class = match kind {
+                        wordcraft_doc::para::NoteKind::Footnote => "footnote",
+                        wordcraft_doc::para::NoteKind::Endnote => "endnote",
+                    };
+                    out.push_str(&format!("<text:note text:note-class=\"{class}\"><text:note-citation/><text:note-body>"));
+                    let mut note_body = String::new();
+                    self.blocks(blocks, &mut note_body, 0);
+                    out.push_str(&note_body);
+                    out.push_str("</text:note-body></text:note>");
+                    prev_space = false;
+                }
             }
         }
     }
@@ -940,6 +952,8 @@ struct Body<'a> {
     lists_saved: Vec<(Vec<(Option<String>, bool)>, Vec<bool>)>,
     tables: Vec<TableB>,
     cells: Vec<Cell>,
+    notes: Vec<(wordcraft_doc::para::NoteKind, Option<Para>, Vec<Fmt>)>,
+    in_citation: bool,
     in_text: bool,
     skip: usize,
     depth: usize,
@@ -1036,7 +1050,7 @@ impl Body<'_> {
     }
 
     fn text(&mut self, t: &str) {
-        if self.skip > 0 || !self.in_text {
+        if self.skip > 0 || !self.in_text || self.in_citation {
             return;
         }
         if self.in_desc {
@@ -1085,8 +1099,16 @@ impl Body<'_> {
             return;
         }
         match local(q) {
-            "note"
-            | "annotation"
+            "note" => {
+                let class = get(a, "text:note-class").unwrap_or("footnote");
+                let kind = if class == "endnote" { wordcraft_doc::para::NoteKind::Endnote } else { wordcraft_doc::para::NoteKind::Footnote };
+                self.notes.push((kind, self.para.take(), std::mem::take(&mut self.fmt)));
+                self.containers.push(Vec::new());
+            }
+            "note-citation" => {
+                self.in_citation = true;
+            }
+            "annotation"
             | "tracked-changes"
             | "text-box"
             | "sequence-decls"
@@ -1221,6 +1243,20 @@ impl Body<'_> {
             return;
         }
         match local(q) {
+            "note-citation" => {
+                self.in_citation = false;
+            }
+            "note" => {
+                self.end_para();
+                let blocks = if self.containers.len() > 1 { self.containers.pop().unwrap_or_default() } else { Vec::new() };
+                if let Some((kind, outer_para, outer_fmt)) = self.notes.pop() {
+                    self.para = outer_para;
+                    self.fmt = outer_fmt;
+                    if let Some(p) = &mut self.para {
+                        p.inlines.push(Inline::Note { kind, blocks });
+                    }
+                }
+            }
             "p" | "h" if !self.in_desc => self.end_para(),
             "span" | "a" if self.fmt.len() > usize::from(self.para.is_some()) => {
                 self.fmt.pop();
@@ -1362,6 +1398,8 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
         item_used: Vec::new(),
         tables: Vec::new(),
         cells: Vec::new(),
+        notes: Vec::new(),
+        in_citation: false,
         in_text: false,
         skip: 0,
         depth: 0,
@@ -1592,5 +1630,33 @@ mod tests {
         let Some(FBlock::Table(t)) = f.blocks.iter().find(|b| matches!(b, FBlock::Table(_))) else { panic!("no table") };
         let row: Vec<_> = t.rows[0].iter().map(|c| (c.text(), c.shading)).collect();
         assert_eq!(row, vec![("Red".to_string(), Some(Rgb(255, 0, 0))), ("Plain".to_string(), None)]);
+    }
+
+    #[test]
+    fn footnotes_and_endnotes_round_trip() {
+        let content = format!(
+            r##"<office:document-content {NS_T}><office:body><office:text><text:p>Body with <text:note text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body><text:p>Footnote content</text:p></text:note-body></text:note> and <text:note text:note-class="endnote"><text:note-citation>i</text:note-citation><text:note-body><text:p>Endnote content</text:p></text:note-body></text:note> here.</text:p></office:text></office:body></office:document-content>"##
+        );
+        let doc = import(&package(&content, None)).unwrap();
+        let body_text = doc.plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(body_text.contains("Body with"));
+        assert!(body_text.contains("here."));
+        assert_eq!(doc.parts.len(), 2);
+        let fn_part = doc.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Footnote).expect("footnote part");
+        let en_part = doc.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Endnote).expect("endnote part");
+        let fn_text: String =
+            fn_part.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        let en_text: String =
+            en_part.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        assert_eq!(fn_text.trim(), "Footnote content");
+        assert_eq!(en_text.trim(), "Endnote content");
+
+        let bytes = export(&doc).unwrap();
+        let doc2 = import(&bytes).unwrap();
+        assert_eq!(doc2.parts.len(), 2);
+        let fn_part2 = doc2.parts.values().find(|pt| pt.kind == wordcraft_doc::PartKind::Footnote).expect("re-imported footnote");
+        let fn_text2: String =
+            fn_part2.blocks.iter().filter_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p.plain_text()) } else { None }).collect();
+        assert_eq!(fn_text2.trim(), "Footnote content");
     }
 }
