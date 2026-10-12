@@ -179,9 +179,14 @@ pub struct UiState {
     pub recent_colors: Vec<String>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
-    /// Interface size in percent (#475): scales the whole interface on top of the system's
-    /// display scale. Junk or out-of-range saved values read as 100 % or are clamped to 80–200 %.
+    /// Interface size (#475, #822): Auto (the display scale the system reports) or an absolute
+    /// size in percent. Junk saved values read as Auto; out-of-range ones are clamped to 50–300 %.
+    #[serde(rename = "uiScale")]
     pub interface_size: theme::InterfaceSize,
+    /// The interface size `ui.json` held before #822, on top of the display scale: read once to
+    /// migrate ([`theme::migrate_legacy_interface_size`]), never written.
+    #[serde(rename = "interfaceSize", skip_serializing)]
+    pub(crate) legacy_interface_size: Option<serde_json::Value>,
     /// Animation effects (smooth scrolling, fades): on, off, or follow the system's setting, which
     /// is the default. An unknown saved value reads as the default.
     pub animations: theme::Animations,
@@ -273,6 +278,7 @@ impl Default for UiState {
             recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
             interface_size: theme::InterfaceSize::default(),
+            legacy_interface_size: None,
             animations: theme::Animations::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
@@ -390,6 +396,9 @@ pub struct WordApp {
     fonts_frames: u32,
     /// The effective interface theme last installed in egui ([`theme::apply`]).
     applied_theme: Option<theme::Appearance>,
+    /// The display scale (native pixels per point) seen in the last frame, 1.0 before the first;
+    /// `ui.interfaceSize` reports the size Auto draws at with it.
+    native_scale: f32,
     /// The desktop's light/dark choice, watched while the app runs (Linux has no winit answer).
     desktop_theme: desktop_theme::DesktopTheme,
     /// The last answer [`desktop_theme`] gave, so a frame that asks costs nothing.
@@ -489,6 +498,7 @@ impl WordApp {
             want_system_cjk: false,
             fonts_frames: 0,
             applied_theme: None,
+            native_scale: 1.0,
             // Inert until the app binary calls `watch_desktop_theme`.
             desktop_theme: desktop_theme::DesktopTheme::default(),
             desktop_dark: None,
@@ -564,6 +574,10 @@ impl WordApp {
         // A `ui.json` from before the theme setting: its dark-mode switch picks Dark or Light.
         if let Some(dark) = self.ui.legacy_dark.take() {
             self.ui.theme = if dark { theme::Appearance::Dark } else { theme::Appearance::Light };
+        }
+        // A `ui.json` from before #822: its interface size was on top of the display scale.
+        if let Some(old) = self.ui.legacy_interface_size.take() {
+            self.ui.interface_size = theme::migrate_legacy_interface_size(&old);
         }
         // The session owns the name from here on; `prefs` copies it back when saving.
         let author = std::mem::take(&mut self.ui.author);
@@ -1035,21 +1049,28 @@ impl WordApp {
                 json!({"theme": self.ui.theme.code(), "dark": self.ui_is_dark()})
             }
             "ui.interfaceSize" => {
-                // Interface size in percent, 80–200 (clamped); no value reads it. Document zoom is
-                // `view.zoom` and stays as it is.
+                // `auto` (the display scale the system reports) or an absolute size in percent,
+                // 50–300 (clamped); no value reads it. `percent` in the result is the size the
+                // interface is drawn at. Document zoom is `view.zoom` and stays as it is.
                 if let Some(v) = p.get("percent").or_else(|| p.get("value")) {
-                    match v.as_f64().and_then(theme::InterfaceSize::from_percent) {
+                    let size = match v.as_str() {
+                        Some(a) if a.trim().eq_ignore_ascii_case("auto") => Some(theme::InterfaceSize::AUTO),
+                        Some(t) => t.trim().trim_end_matches('%').trim().parse::<f64>().ok().and_then(theme::InterfaceSize::from_percent),
+                        None => v.as_f64().and_then(theme::InterfaceSize::from_percent),
+                    };
+                    match size {
                         Some(size) => self.ui.interface_size = size,
                         None => {
                             return Some(Err(format!(
-                                "`percent` must be a number from {} to {}",
+                                "`percent` must be \"auto\" or a number from {} to {}",
                                 theme::InterfaceSize::MIN,
                                 theme::InterfaceSize::MAX
                             )));
                         }
                     }
                 }
-                json!({"percent": self.ui.interface_size.percent()})
+                let size = self.ui.interface_size;
+                json!({"auto": size.is_auto(), "percent": size.drawn_percent(self.native_scale)})
             }
             "ui.animations" => {
                 // `system` (follow the system's animation setting), `on` or `off`; no value reads
@@ -1342,10 +1363,14 @@ impl WordApp {
             theme::apply(ctx, effective);
             self.applied_theme = Some(effective);
         }
-        // Interface size (#475): egui's zoom factor multiplies the display scale the system reports
-        // (native pixels per point), so it adds to it rather than replacing it. Keyboard zoom is
-        // off (above), so nothing else changes the factor; `set_zoom_factor` repaints only on change.
-        let zoom = self.ui.interface_size.zoom_factor();
+        // Interface size (#475, #822): egui's zoom factor multiplies the display scale the system
+        // reports (native pixels per point). Auto keeps that scale; a chosen size divides it back
+        // out, so "100%" is one screen pixel per point even where the system's scale is a guess.
+        // Recomputed every frame, so a move to a monitor with another scale keeps a chosen size.
+        // Keyboard zoom is off (above), so nothing else changes the factor; `set_zoom_factor`
+        // repaints only on change.
+        self.native_scale = theme::usable_scale(ctx.native_pixels_per_point().unwrap_or(1.0));
+        let zoom = self.ui.interface_size.zoom_factor(self.native_scale);
         if ctx.zoom_factor() != zoom {
             ctx.set_zoom_factor(zoom);
         }
@@ -3770,50 +3795,100 @@ mod tests {
         assert_eq!((odd.theme, odd.tab.as_str()), (Appearance::Light, "Insert"));
     }
 
-    /// #475: the interface size is kept between runs; junk saved values read as 100 % and
+    /// #475, #822: the interface size is kept between runs; junk saved values read as Auto and
     /// out-of-range ones are clamped, without losing the other preferences.
     #[test]
     fn interface_size_survives_a_restart_and_clamps_junk() {
         let mut a = app();
-        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap()["percent"], 100);
-        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 150})).unwrap()["percent"], 150);
+        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap(), json!({"auto": true, "percent": 100}));
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 150})).unwrap(), json!({"auto": false, "percent": 150}));
         let saved = serde_json::to_string(&a.prefs()).unwrap();
-        assert!(saved.contains(r#""interfaceSize":150"#), "{saved}");
+        assert!(saved.contains(r#""uiScale":150"#) && !saved.contains("interfaceSize"), "{saved}");
         let mut b = app();
         b.apply_prefs(serde_json::from_str(&saved).unwrap());
-        assert_eq!(b.ui.interface_size.percent(), 150);
-        for (raw, want) in [("1000", 200), ("10", 80), ("-5", 80), ("124.6", 125), (r#""big""#, 100), ("null", 100), ("[1]", 100)] {
-            let ui: UiState = serde_json::from_str(&format!(r#"{{"interfaceSize": {raw}, "tab": "Insert"}}"#)).unwrap();
+        assert_eq!(b.ui.interface_size.percent(), Some(150));
+        for (raw, want) in [
+            ("1000", Some(300)),
+            ("10", Some(50)),
+            ("-5", Some(50)),
+            ("124.6", Some(125)),
+            (r#""auto""#, None),
+            (r#""big""#, None),
+            ("null", None),
+            ("[1]", None),
+        ] {
+            let ui: UiState = serde_json::from_str(&format!(r#"{{"uiScale": {raw}, "tab": "Insert"}}"#)).unwrap();
             assert_eq!((ui.interface_size.percent(), ui.tab.as_str()), (want, "Insert"), "{raw}");
         }
-        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 500})).unwrap()["percent"], 200);
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 500})).unwrap()["percent"], 300);
         assert!(a.run("ui.interfaceSize", json!({"percent": "huge"})).is_err());
         assert!(a.run("ui.interfaceSize", json!({"percent": null})).is_err());
-        assert_eq!(a.ui.interface_size.percent(), 200, "a rejected value keeps the setting");
+        assert_eq!(a.ui.interface_size.percent(), Some(300), "a rejected value keeps the setting");
+        assert_eq!(a.run("ui.interfaceSize", json!({"value": "125%"})).unwrap()["percent"], 125);
+        assert_eq!(a.run("ui.interfaceSize", json!({"value": "Auto"})).unwrap()["auto"], true);
+        let saved = serde_json::to_string(&a.prefs()).unwrap();
+        assert!(saved.contains(r#""uiScale":"auto""#), "{saved}");
     }
 
-    /// #475: the interface size multiplies the display scale the system reports (egui's zoom
-    /// factor) and leaves document zoom alone.
+    /// #822: a `ui.json` from before saved `interfaceSize` on top of the display scale. Its
+    /// default, 100, becomes Auto (the same size as before); a size picked on purpose is kept.
     #[test]
-    fn interface_size_scales_on_top_of_the_system_scale() {
+    fn interface_size_from_before_822_migrates() {
+        for (raw, want) in [("100", None), ("100.2", None), ("150", Some(150)), ("80", Some(80)), (r#""big""#, None)] {
+            let mut a = app();
+            a.apply_prefs(serde_json::from_str(&format!(r#"{{"interfaceSize": {raw}}}"#)).unwrap());
+            assert_eq!(a.ui.interface_size.percent(), want, "{raw}");
+            assert!(!serde_json::to_string(&a.prefs()).unwrap().contains("interfaceSize"), "{raw}");
+        }
+    }
+
+    /// #822: on a display the system reports at 200 % (a 1080p screen under a bare window manager,
+    /// where winit guesses the scale from the monitor's DPI), "100%" draws at a true 100 %: one
+    /// screen pixel per point. Auto keeps the display's scale and says what it draws at. Document
+    /// zoom is a separate setting.
+    #[test]
+    fn interface_size_is_absolute_and_auto_keeps_the_system_scale() {
         let ctx = egui::Context::default();
         let mut a = app();
         let doc_zoom = a.session.view.zoom;
-        a.run("ui.interfaceSize", json!({"percent": 150})).unwrap();
         let frame = |a: &mut WordApp, native: f32| {
             let mut input = egui::RawInput::default();
             input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
             ctx.run_ui(input, |ui| a.logic(ui.ctx())).drop_without_applying_deltas();
         };
-        // The new factor applies from the next pass.
-        frame(&mut a, 2.0);
-        frame(&mut a, 2.0);
-        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (1.5, 3.0));
-        a.run("ui.interfaceSize", json!({"percent": 80})).unwrap();
-        frame(&mut a, 1.0);
-        frame(&mut a, 1.0);
-        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (0.8, 0.8));
+        let ppp = |a: &mut WordApp, native: f32| {
+            // The new factor applies from the next pass.
+            frame(a, native);
+            frame(a, native);
+            ctx.pixels_per_point()
+        };
+        assert_eq!(ppp(&mut a, 2.0), 2.0, "Auto keeps the display's scale");
+        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap(), json!({"auto": true, "percent": 200}));
+        a.run("ui.interfaceSize", json!({"percent": 100})).unwrap();
+        assert_eq!(ppp(&mut a, 2.0), 1.0, "100% is one screen pixel per point on a 2× display");
+        for native in [1.0, 1.25, 1.5, 2.0, 3.0] {
+            for pct in [75u16, 100, 150, 200, 300] {
+                a.run("ui.interfaceSize", json!({"percent": pct})).unwrap();
+                let got = ppp(&mut a, native);
+                assert!((got - f32::from(pct) / 100.0).abs() < 1e-4, "{pct}% on a {native}× display drew at {got}");
+                assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap()["percent"], pct, "{pct}% on a {native}× display");
+            }
+        }
+        a.run("ui.interfaceSize", json!({"value": "auto"})).unwrap();
+        assert_eq!(ppp(&mut a, 1.5), 1.5);
         assert_eq!(a.session.view.zoom, doc_zoom, "document zoom is a separate setting");
+    }
+
+    /// #822: a display scale egui doesn't know or that is nonsense counts as 1×.
+    #[test]
+    fn interface_size_survives_an_unusable_display_scale() {
+        use theme::InterfaceSize;
+        let size = InterfaceSize::from_percent(125.0).unwrap();
+        for native in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -2.0] {
+            assert_eq!((size.zoom_factor(native), size.drawn_percent(native)), (1.25, 125), "{native}");
+            assert_eq!((InterfaceSize::AUTO.zoom_factor(native), InterfaceSize::AUTO.drawn_percent(native)), (1.0, 100), "{native}");
+        }
+        assert_eq!(InterfaceSize::AUTO.drawn_percent(f32::MAX), u16::MAX);
     }
 
     /// #115: System follows the OS appearance (light when unknown); the manual choices ignore it.
