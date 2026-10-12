@@ -70,6 +70,7 @@
 	Artistic Effects	Уметнички ефекти
 	As Recommended	Као што је препоручено
 	As you type	Током куцања
+	Asian text font:	Фонт азијског текста:
 	Asian Typography	Азијска типографија
 	Author	Аутор
 	AutoCorrect Options	Опције аутоматске исправке
@@ -133,6 +134,7 @@
 	Interface	Интерфејс
 	Interface language	Језик интерфејса
 	Inside:	Унутра:
+	Latin text font:	Фонт латиничног текста:
 	Left border	Лева ивица
 	Left Margin	Лева маргина
 	Legal style numbering	Правно нумерисање
@@ -430,6 +432,7 @@
 	Export PDF	Извези PDF
 	Exported {path}	Извезено: {path}
 	Extend Selection	Прошири избор
+	Extend Selection by Units	Прошири избор по јединицама
 	Field	Поље
 	File	Фајл
 	Find	Пронађи
@@ -989,10 +992,10 @@
 	Wide	Широко
 	Widow/Orphan Control	Контрола усамљених редова
 	Widow/Orphan control	Контрола усамљених редова
-	Wildcards (regex)	Џокер знаци (regex)
 	Window	Прозор
 	Word Count	Број речи
 	Word document (*.docx)	Word документ (*.docx)
+	Word XML Document (*.xml)	Word XML документ (*.xml)
 	Word Left	Реч лево
 	Word Right	Реч десно
 	WordArt	WordArt
@@ -1410,6 +1413,8 @@
 	Formatted	Форматирано
 	Interface size:	Величина интерфејса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.
+	Print Markup	Штампај ознаке
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Коментари поред сваке странице и праћене измене у PDF-овима, отисцима и сликама; листа коментара на крају веб-страница, Markdown-а и текста.
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. Ограничења обликовања
@@ -1530,6 +1535,22 @@
 	New Group	Нова група
 	Rename…	Преименуј…
 	Ribbon and Quick Access Toolbar:	Трака и трака са алаткама за брзи приступ:
+	Add Font…	Додај фонт…
+	Added Fonts	Додати фонтови
+	Remove Added Font	Уклони додати фонт
+	Recent Colors	Недавне боје
+	More Colors…	Још боја…
+	Standard	Стандардне
+	Current	Тренутна
+	Colors:	Боје:
+	Color model:	Модел боја:
+	Red:	Црвена:
+	Green:	Зелена:
+	Blue:	Плава:
+	Hue:	Нијанса:
+	Sat:	Засићеност:
+	Lum:	Осветљеност:
+	Hex:	Хекс:
 	Accessibility Pane	Окно приступачности
 	Alt Text Pane	Окно алтернативног текста
 	Alt\nText	Алтернативни\nтекст
@@ -1678,6 +1699,22 @@
 	Continuous numbering	Непрекидна нумерација
 	Apply	Примени
 	Convert Notes	Претвори напомене
+	Hide White Space	Сакриј празан простор
+	All pages	Све странице
+	Current page	Тренутна страница
+	Selected pages	Изабране странице
+	Custom range	Прилагођени опсег
+	All pages in the range	Све странице у опсегу
+	Odd pages only	Само непарне странице
+	Even pages only	Само парне странице
+	Copies	Копије
+	Collate copies	Сложи копије
+	Pages like 1-3, 5	Странице попут 1-3, 5
+	{count} of {total} pages will print	Штампаће се {count} од {total} страница
+	Save these pages as PDF…	Сачувај ове странице као PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Штампач, обострана штампа и број страница по листу бирају се у том дијалогу.
+	Previous Page	Претходна страница
+	Print to PDF	Штампај у PDF
 	Add Shape	Додај облик
 	Change Colors	Промени боје
 	Change Layout	Промени распоред
@@ -1851,6 +1888,37 @@
 	Rewind	На почетак
 	Forward	Напред
 	Stroke {n} of {total}	Потез {n} од {total}
+	Use wildcards	Користи џокер знаке
+	Special	Посебно
+	Match prefix	Подудари префикс
+	Match suffix	Подудари суфикс
+	Ignore punctuation characters	Занемари знаке интерпункције
+	Ignore white-space characters	Занемари белине
+	Regular expressions	Регуларни изрази
+	Search Options	Опције претраге
+	Tab Character	Знак табулатора
+	Any Character	Било који знак
+	Any Digit	Било која цифра
+	Any Letter	Било које слово
+	Caret Character	Знак капице
+	Section Character	Знак одељка
+	Paragraph Character	Симбол пасуса
+	Graphic	Графика
+	Manual Line Break	Ручни прекид реда
+	Manual Page Break	Ручни прекид стране
+	Section Break	Прекид одељка
+	White Space	Белина
+	Clipboard Contents	Садржај оставе
+	Find What Text	Пронађени текст
+	Find What Expression	Пронађени израз
+	Character in Range	Знак у опсегу
+	Beginning of Word	Почетак речи
+	End of Word	Крај речи
+	Expression	Израз
+	Not	Није
+	Num Occurrences	Број понављања
+	Previous 1 or More	Претходно 1 или више пута
+	0 or More Characters	0 или више знакова
 	Move with Text	Померај са текстом
 	Fix Position on Page	Фиксирај положај на страници
 

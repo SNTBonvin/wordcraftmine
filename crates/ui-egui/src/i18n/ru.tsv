@@ -253,6 +253,7 @@
 	Export PDF	Экспорт в PDF
 	Exported {path}	Экспортировано: {path}
 	Extend Selection	Расширить выделение
+	Extend Selection by Units	Расширить выделение по единицам
 	Field	Поле
 	File	Файл
 	Find	Найти
@@ -804,7 +805,6 @@ preview	Title	Пример
 	Wide	Широкие
 	Widow/Orphan Control	Запрет висячих строк
 	Widow/Orphan control	Запрет висячих строк
-	Wildcards (regex)	Подстановочные знаки (regex)
 	Window	Окно
 	Word Count	Число слов
 	Word document (*.docx)	Документ Word (*.docx)
@@ -1790,6 +1790,24 @@ preview	Title	Пример
 	Left Only	Только слева
 	Right Only	Только справа
 	Largest Only	Только по большей стороне
+	Add Font…	Добавить шрифт…
+	Added Fonts	Добавленные шрифты
+	Remove Added Font	Удалить добавленный шрифт
+	Print Markup	Печатать исправления и примечания
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Примечания рядом с каждой страницей и отслеживаемые изменения в PDF, при печати и в изображениях; список примечаний в конце веб-страниц, Markdown и текста.
+	Recent Colors	Последние цвета
+	More Colors…	Другие цвета…
+	Standard	Обычные
+	Current	Текущий
+	Colors:	Цвета:
+	Color model:	Цветовая модель:
+	Red:	Красный:
+	Green:	Зеленый:
+	Blue:	Синий:
+	Hue:	Оттенок:
+	Sat:	Насыщенность:
+	Lum:	Яркость:
+	Hex:	Hex:
 	Accessibility Pane	Область специальных возможностей
 	Alt Text Pane	Область замещающего текста
 	Alt\nText	Замещающий\nтекст
@@ -2112,7 +2130,57 @@ preview	Title	Пример
 	Continuous numbering	Сквозная нумерация
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
+	Hide White Space	Скрыть пустое место между страницами
+	All pages	Все страницы
+	Current page	Текущая страница
+	Selected pages	Выбранные страницы
+	Custom range	Свой диапазон
+	All pages in the range	Все страницы диапазона
+	Odd pages only	Только нечётные страницы
+	Even pages only	Только чётные страницы
+	Copies	Копии
+	Collate copies	Разобрать по копиям
+	Pages like 1-3, 5	Страницы, например 1-3, 5
+	{count} of {total} pages will print	Будет напечатано страниц: {count} из {total}
+	Save these pages as PDF…	Сохранить эти страницы как PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Принтер, двусторонняя печать и число страниц на листе выбираются в этом диалоге.
+	Previous Page	Предыдущая страница
+	Print to PDF	Печать в PDF
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Подстановочные знаки
+	Special	Специальный
+	Match prefix	Начало слова
+	Match suffix	Конец слова
+	Ignore punctuation characters	Не учитывать знаки препинания
+	Ignore white-space characters	Не учитывать пробелы
+	Regular expressions	Регулярные выражения
+	Search Options	Параметры поиска
+	Tab Character	Знак табуляции
+	Any Character	Любой знак
+	Any Digit	Любая цифра
+	Any Letter	Любая буква
+	Caret Character	Знак вставки (^)
+	Section Character	Знак раздела
+	Paragraph Character	Знак абзаца
+	Graphic	Графический объект
+	Manual Line Break	Разрыв строки
+	Manual Page Break	Разрыв страницы
+	Section Break	Разрыв раздела
+	White Space	Пробельный знак
+	Clipboard Contents	Содержимое буфера обмена
+	Find What Text	Текст для поиска
+	Find What Expression	Найденное выражение
+	Character in Range	Знак из диапазона
+	Beginning of Word	Начало слова
+	End of Word	Конец слова
+	Expression	Выражение
+	Not	Не
+	Num Occurrences	Число вхождений
+	Previous 1 or More	Предыдущий знак 1 или более раз
+	0 or More Characters	0 или более знаков
 # Insert SmartArt (#497).
 	Add Shape	Добавить фигуру
 	Change Colors	Изменить цвета
@@ -2328,3 +2396,6 @@ preview	Title	Пример
 	Typing replaces selected text	Ввод заменяет выделенный текст
 	Update fields before printing	Обновлять поля перед печатью
 	Use the Insert key to switch overtype on and off	Клавиша Insert включает и выключает режим замены
+# Asian and Latin text fonts (#505).
+	Asian text font:	Шрифт азиатского текста:
+	Latin text font:	Шрифт латинского текста:
