@@ -712,6 +712,8 @@
 	Read\nMode	Modo\nlectura
 	Reads the clipboard's rich text and keeps its formatting.	Lee el texto enriquecido del portapapeles y conserva su formato.
 	Reads the clipboard's web content and keeps its formatting.	Lee el contenido web del portapapeles y conserva su formato.
+	Picture	Imagen
+	Pastes the clipboard's picture.	Pega la imagen del portapapeles.
 	Reading Highlight	Resaltado de lectura
 	Recent	Recientes
 	Record Macro	Grabar macro
@@ -1468,6 +1470,8 @@
 	Border lines	Líneas de borde
 	Capitalize first letter of sentences	Poner en mayúscula la primera letra de las oraciones
 	Capitalize first letter of table cells	Poner en mayúscula la primera letra de las celdas
+	Correct TWo INitial CApitals	Corregir DOs MAyúsculas SEguidas
+	Correct accidental usage of cAPS LOCK key	Corregir el uso accidental de bLOQ mAYÚS
 	Capitalize names of days	Poner en mayúscula los nombres de los días
 	Case changes	Cambios de mayúsculas
 	Character level	Nivel de carácter
@@ -2093,3 +2097,5 @@
 	Your system has animation effects turned on.	Tu sistema tiene activados los efectos de animación.
 	Your system has animation effects turned off.	Tu sistema tiene desactivados los efectos de animación.
 	Your system doesn't report an animation setting, so animation effects stay on.	Tu sistema no indica ningún ajuste de animación, así que los efectos de animación siguen activados.
+	Region:	Región:
+	Automatic ({region})	Automático ({region})
