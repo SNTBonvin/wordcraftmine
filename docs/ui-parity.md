@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (every measurement follows the Options unit, #755; previously trivial: Find and Replace special characters and wildcards, #543; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (a non-Latin file name in the window caption is drawn with a fallback face instead of `?`; previously trivial: every measurement follows the Options unit, #755; previously trivial: Find and Replace special characters and wildcards, #543; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -39,6 +39,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | Window caption: a file name in a script the interface fonts lack (Hebrew, Arabic, and the rest; CJK via the CJK UI font) is drawn with a fallback face instead of `?` |
 | 2026-10-11 | trivial | Every measurement now follows File › Options › Advanced › Measurement units: the Line Numbers "From text" distance and the Hyphenation zone were still fixed in inches (#755) |
 | 2026-10-11 | trivial | Track Changes Options › Show revisions in balloons works: tracked deletions in the body leave the text for "Deleted: …" balloons in the markup area, joined to where they were; inline again where no balloons show (Comments pane, Read Mode, side by side, Web Layout), and always inline in headers, footers, notes and text boxes |
 | 2026-10-11 | trivial | Mini toolbar in two rows like Word's (font, size, grow, shrink; B I U S, highlight, font colour, four alignments) with every button inside the bar; font and size lists drop from the box's left edge; dropdown arrows a readable size; font list entries take the theme's text colour in dark mode (#535) |
