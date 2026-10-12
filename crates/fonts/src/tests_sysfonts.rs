@@ -250,6 +250,52 @@ fn fallback_cache_is_dropped_when_a_face_loads_by_its_legacy_family_name() {
     assert!(!cache.map.contains_key(&(thai, latin.id())), "answers from before the load are dropped");
 }
 
+#[test]
+fn fallback_reads_each_installed_font_file_once_however_many_characters_miss() {
+    // #605: every distinct character no font covers read every installed font file again.
+    let dir = font_dir("coverage");
+    // The installed Regular also maps U+30000 (no bundled font does): its last cmap group, the
+    // single character U+1F916, moved there (still the highest, so the groups stay sorted).
+    let mut regular = renamed("SourceSans3-Regular.ttf");
+    let (from, to) = ([0x0001_F916_u32.to_be_bytes(); 2].concat(), [0x0003_0000_u32.to_be_bytes(); 2].concat());
+    let mut patched = 0;
+    while let Some(at) = regular.windows(from.len()).position(|w| w == from) {
+        regular[at..at + to.len()].copy_from_slice(&to);
+        patched += 1;
+    }
+    assert!(patched > 0);
+    std::fs::write(dir.join("Sysfont-Regular.ttf"), regular).unwrap();
+    let db = FontDb::with_font_dirs(vec![dir]);
+    let latin = db.face(FALLBACK_FAMILY, "Regular");
+    let found = db.fallback_for('\u{30000}', latin.id()).expect("the installed font maps it");
+    assert_eq!((found.family.as_str(), found.style.as_str()), (FAMILY, "Regular"));
+    // 2,000 distinct characters nothing maps: the index answers, no file is read again.
+    for cp in 0x30001..0x30001 + 2000 {
+        let c = char::from_u32(cp).unwrap();
+        assert!(db.fallback_for(c, latin.id()).is_none());
+    }
+    let index = db.coverage.lock().unwrap();
+    assert_eq!(index.files.len(), 2, "Regular and Bold are cataloged");
+    assert_eq!(index.reads, 2, "each file read once");
+}
+
+#[test]
+fn coverage_ranges_hold_exactly_the_mapped_characters() {
+    let data = renamed("SourceSans3-Regular.ttf");
+    let ranges = coverage_ranges(&data);
+    assert!(ranges.windows(2).all(|w| w[0].1 + 1 < w[1].0), "sorted, disjoint and merged");
+    let font = skrifa::FontRef::new(&data).unwrap();
+    let mapped: Vec<u32> = font.charmap().mappings().map(|(cp, _)| cp).collect();
+    assert!(ranges.len() < mapped.len() / 4, "ranges, not a set of characters");
+    assert!(mapped.iter().all(|cp| ranges_hold(&ranges, *cp)));
+    for cp in [0x0, 0x9, 0x0E01, 0x17000, 0x10_FFFF] {
+        assert_eq!(ranges_hold(&ranges, cp), font.charmap().map(cp).is_some(), "U+{cp:04X}");
+    }
+    // Damaged data indexes as nothing.
+    assert!(coverage_ranges(b"ttcf\0\x01\0\0\xff\xff\xff\xff").is_empty());
+    assert!(coverage_ranges(&data[..100]).is_empty());
+}
+
 /// A bundled font renamed by a `name` table holding just its family names: (Windows language id,
 /// name) pairs, English (0x0409) first, as SimSun's names 宋体 for Simplified Chinese.
 fn with_family_names(file: &str, names: &[(u16, &str)]) -> Vec<u8> {
@@ -322,4 +368,38 @@ fn chinese_fonts_are_listed_by_their_chinese_names_in_a_chinese_interface() {
     ] {
         assert_eq!(name_language_matches(ui, tag), ok, "{ui} {tag}");
     }
+}
+
+/// `data` with its OS/2 code page bits (`ulCodePageRange1`) set to `pages`.
+fn with_code_pages(data: &[u8], pages: u32) -> Vec<u8> {
+    let font = skrifa::FontRef::new(data).unwrap();
+    let tables: Vec<([u8; 4], Vec<u8>)> = font
+        .table_directory()
+        .table_records()
+        .iter()
+        .map(|r| {
+            let mut t = font.table_data(r.tag()).unwrap().as_bytes().to_vec();
+            if r.tag() == skrifa::Tag::new(b"OS/2") {
+                t[78..82].copy_from_slice(&pages.to_be_bytes());
+            }
+            (r.tag().to_be_bytes(), t)
+        })
+        .collect();
+    mini_font(&tables)
+}
+
+#[test]
+fn east_asian_fonts_are_listed_for_the_asian_text_font_box() {
+    // #505: the Font dialog's Asian text font box lists the Chinese, Japanese and Korean fonts,
+    // found by their OS/2 code pages (here GB2312) during the scan, without loading them.
+    let dir = font_dir("eastasian");
+    let song = with_family_names("SourceSans3-Regular.ttf", &[(0x0409, "Songti Test"), (0x0804, "测试宋体")]);
+    std::fs::write(dir.join("song.ttf"), with_code_pages(&song, 1 << 18)).unwrap();
+    let db = FontDb::with_font_dirs(vec![dir]);
+    let listed = |db: &FontDb| db.east_asian_families().iter().filter(|f| *f == "Songti Test").count();
+    assert_eq!(listed(&db), 1);
+    assert!(!has(&db.east_asian_families(), FAMILY), "Latin fonts are left out");
+    // Loaded, it is still listed once.
+    assert!(db.face("Songti Test", "Regular").is_east_asian());
+    assert_eq!(listed(&db), 1);
 }

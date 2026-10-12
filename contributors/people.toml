@@ -45,3 +45,6 @@ sync_github_name = true
 real_name = "Bryan Mark"
 display_name = "Arcanii"
 sync_github_name = false
+
+[people.alexanderalber]
+real_name = "Alexander Alber"

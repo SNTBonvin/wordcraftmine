@@ -15,11 +15,121 @@ use wordcraft_engine::Password;
 use crate::WordApp;
 use crate::theme::{Tokens, semibold};
 
+/// The Find and Replace dialog's search options beyond the first row (#543).
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindExtra {
+    pub wildcards: bool,
+    pub prefix: bool,
+    pub suffix: bool,
+    pub ignore_punct: bool,
+    pub ignore_space: bool,
+    /// The search options are shown.
+    pub more: bool,
+    /// Special ▾ inserts into Replace with (it last had the focus), not Find what.
+    pub to_replace: bool,
+}
+
+/// The Special ▾ menu: (name, code) for Find what, without and with wildcards.
+const SPECIAL_FIND: &[(&str, &str)] = &[
+    ("Paragraph Mark", "^p"),
+    ("Tab Character", "^t"),
+    ("Any Character", "^?"),
+    ("Any Digit", "^#"),
+    ("Any Letter", "^$"),
+    ("Caret Character", "^^"),
+    ("Section Character", "^%"),
+    ("Paragraph Character", "^v"),
+    ("Column Break", "^n"),
+    ("Em Dash", "^+"),
+    ("En Dash", "^="),
+    ("Graphic", "^g"),
+    ("Manual Line Break", "^l"),
+    ("Manual Page Break", "^m"),
+    ("Nonbreaking Hyphen", "^~"),
+    ("Nonbreaking Space", "^s"),
+    ("Optional Hyphen", "^-"),
+    ("Section Break", "^b"),
+    ("White Space", "^w"),
+];
+const SPECIAL_FIND_WILD: &[(&str, &str)] = &[
+    ("Any Character", "?"),
+    ("Character in Range", "[-]"),
+    ("Beginning of Word", "<"),
+    ("End of Word", ">"),
+    ("Expression", "()"),
+    ("Not", "[!]"),
+    ("Num Occurrences", "{,}"),
+    ("Previous 1 or More", "@"),
+    ("0 or More Characters", "*"),
+    ("Paragraph Mark", "^13"),
+    ("Tab Character", "^t"),
+    ("Caret Character", "^^"),
+    ("Section Character", "^%"),
+    ("Paragraph Character", "^v"),
+    ("Column Break", "^n"),
+    ("Em Dash", "^+"),
+    ("En Dash", "^="),
+    ("Graphic", "^g"),
+    ("Manual Line Break", "^l"),
+    ("Manual Page Break", "^m"),
+    ("Nonbreaking Hyphen", "^~"),
+    ("Nonbreaking Space", "^s"),
+    ("Optional Hyphen", "^-"),
+];
+/// Replace with; with wildcards, "Find What Expression" (`\1`) comes first.
+const SPECIAL_REPLACE: &[(&str, &str)] = &[
+    ("Paragraph Mark", "^p"),
+    ("Tab Character", "^t"),
+    ("Caret Character", "^^"),
+    ("Section Character", "^%"),
+    ("Paragraph Character", "^v"),
+    ("Clipboard Contents", "^c"),
+    ("Column Break", "^n"),
+    ("Em Dash", "^+"),
+    ("En Dash", "^="),
+    ("Find What Text", "^&"),
+    ("Manual Line Break", "^l"),
+    ("Manual Page Break", "^m"),
+    ("Nonbreaking Hyphen", "^~"),
+    ("Nonbreaking Space", "^s"),
+    ("Optional Hyphen", "^-"),
+];
+
+/// The Special ▾ menu button; returns the code picked.
+fn special_menu(ui: &mut Ui, extra: &FindExtra) -> Option<&'static str> {
+    let mut picked = None;
+    ui.menu_button(format!("{} ▾", tl!("Special")), |ui| {
+        let wild_replace: &[(&str, &str)] = &[("Find What Expression", "\\1")];
+        let lists: [&[(&str, &str)]; 2] = match (extra.to_replace, extra.wildcards) {
+            (false, false) => [SPECIAL_FIND, &[]],
+            (false, true) => [SPECIAL_FIND_WILD, &[]],
+            (true, false) => [SPECIAL_REPLACE, &[]],
+            (true, true) => [wild_replace, SPECIAL_REPLACE],
+        };
+        for (name, code) in lists.into_iter().flatten() {
+            if ui.button(format!("{}   {code}", tl!(name))).clicked() {
+                picked = Some(*code);
+                ui.close();
+            }
+        }
+    });
+    picked
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "dialog", rename_all = "camelCase")]
 pub enum Dialog {
     Font {
+        /// The font (Latin text) and the Asian text font, as the font lists name them, and their
+        /// values when the dialog opened: OK changes only the ones changed (#505).
         font: String,
+        font_was: String,
+        font_ea: String,
+        font_ea_was: String,
+        /// Show the Asian text font box: a Chinese or Japanese interface, or East Asian text or
+        /// an Asian font in the selection.
+        asian: bool,
         size: String,
         bold: bool,
         italic: bool,
@@ -84,6 +194,8 @@ pub enum Dialog {
         match_case: bool,
         whole_word: bool,
         regex: bool,
+        /// Search options under "Search Options" (#543).
+        extra: FindExtra,
         replace_mode: bool,
         message: String,
     },
@@ -804,8 +916,22 @@ impl Dialog {
         let b = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
         Some(match name {
             "font" => {
+                let font = app.previews.font_shown(&s("font"));
+                let font_ea = app.previews.font_shown(&s("fontEastAsia"));
+                let lang = crate::i18n::current().code();
+                let text = app.session.selected_text();
+                let text = if text.is_empty() {
+                    app.session.doc.para_at(&app.session.sel.focus).map(|p| p.plain_text().to_string()).unwrap_or_default()
+                } else {
+                    text
+                };
+                let asian = ["zh", "ja", "ko"].iter().any(|l| lang.starts_with(l)) || !font_ea.is_empty() || text.chars().any(east_asian_char);
                 let mut d = Dialog::Font {
-                    font: s("font"),
+                    font_was: font.clone(),
+                    font,
+                    font_ea_was: font_ea.clone(),
+                    font_ea,
+                    asian,
                     size: st.get("size").and_then(Value::as_f64).map(|v| v.to_string()).unwrap_or_default(),
                     bold: b("bold"),
                     italic: b("italic"),
@@ -869,6 +995,19 @@ impl Dialog {
                 match_case: app.session.find.match_case,
                 whole_word: app.session.find.whole_word,
                 regex: app.session.find.regex,
+                extra: FindExtra {
+                    wildcards: app.session.find.wildcards,
+                    prefix: app.session.find.match_prefix,
+                    suffix: app.session.find.match_suffix,
+                    ignore_punct: app.session.find.ignore_punct,
+                    ignore_space: app.session.find.ignore_space,
+                    more: app.session.find.wildcards
+                        || app.session.find.match_prefix
+                        || app.session.find.match_suffix
+                        || app.session.find.ignore_punct
+                        || app.session.find.ignore_space,
+                    to_replace: false,
+                },
                 replace_mode: name == "replace",
                 message: String::new(),
             },
@@ -1212,7 +1351,7 @@ pub(crate) fn buttons(ui: &mut Ui, ok: &str) -> (bool, bool) {
 
 /// The character properties the Font dialog's fields stand for.
 fn font_props(d: &Dialog) -> serde_json::Map<String, Value> {
-    let Dialog::Font { font, size, bold, italic, underline, strike, sup, sub, small_caps, caps, hidden, color, spacing, .. } = d else {
+    let Dialog::Font { font, font_ea, size, bold, italic, underline, strike, sup, sub, small_caps, caps, hidden, color, spacing, .. } = d else {
         return serde_json::Map::new();
     };
     let mut props = serde_json::Map::new();
@@ -1235,6 +1374,9 @@ fn font_props(d: &Dialog) -> serde_json::Map<String, Value> {
     if !font.trim().is_empty() {
         props.insert("font".into(), json!(font.trim()));
     }
+    if !font_ea.trim().is_empty() {
+        props.insert("fontEa".into(), json!(font_ea.trim()));
+    }
     if let Ok(s) = size.trim().parse::<f64>() {
         props.insert("size".into(), json!(s));
     }
@@ -1244,10 +1386,26 @@ fn font_props(d: &Dialog) -> serde_json::Map<String, Value> {
     props
 }
 
-/// Font dialog OK: set the properties the user changed, leave the others alone.
+/// Is `c` Chinese, Japanese or Korean text (ideographs, kana, Hangul, CJK punctuation, fullwidth
+/// forms)?
+fn east_asian_char(c: char) -> bool {
+    matches!(u32::from(c), 0x1100..=0x11FF | 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x3FFFF)
+}
+
+/// The Font dialog's OK: one formatting step that sets only the properties the user changed, so
+/// formatting the dialog can't show or left alone stays as it is. Fonts are set by their stored
+/// (English) names, the Latin font for Persian/Arabic text too (as `format.font`).
 fn apply_font(app: &mut WordApp, d: &Dialog) {
     let Dialog::Font { start, .. } = d else { return };
-    let changed: serde_json::Map<String, Value> = font_props(d).into_iter().filter(|(k, v)| start.get(k) != Some(v)).collect();
+    let mut changed: serde_json::Map<String, Value> = font_props(d).into_iter().filter(|(k, v)| start.get(k) != Some(v)).collect();
+    if let Some(f) = changed.get("font").and_then(Value::as_str).map(str::to_string) {
+        let f = app.previews.font_stored(&f);
+        changed.insert("font".into(), json!(f));
+        changed.insert("fontCs".into(), json!(f));
+    }
+    if let Some(f) = changed.get("fontEa").and_then(Value::as_str).map(str::to_string) {
+        changed.insert("fontEa".into(), json!(app.previews.font_stored(&f)));
+    }
     if !changed.is_empty() {
         let _ = app.run("format.set", json!({"props": changed}));
     }
@@ -1256,7 +1414,7 @@ fn apply_font(app: &mut WordApp, d: &Dialog) {
 /// Returns true to close.
 fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     match d {
-        Dialog::Font { font, size, bold, italic, underline, strike, sup, sub, small_caps, caps, hidden, color, spacing, .. } => {
+        Dialog::Font { font, font_ea, asian, size, bold, italic, underline, strike, sup, sub, small_caps, caps, hidden, color, spacing, .. } => {
             // Build the sample text format for the preview pane below.
             let preview_size = size.trim().parse::<f32>().unwrap_or(12.0).clamp(6.0, 72.0);
             let preview_color = wordcraft_doc::Rgb::parse(color).map(crate::theme::c32).unwrap_or_else(|| ui.visuals().text_color());
@@ -1278,8 +1436,22 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 fmt.strikethrough = egui::Stroke::new(1.0, preview_color);
             }
             egui::Grid::new("fontdlg").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-                ui.label(tl!("Font:"));
-                ui.text_edit_singleline(font);
+                // Word's two font boxes when East Asian text is in use: the Latin text font and
+                // the Asian text font, each with its own list (type to find a font).
+                let prev = app.previews.font_preview_fn();
+                if *asian {
+                    ui.label(tl!("Asian text font:"));
+                    let fams = app.previews.east_asian_families();
+                    if let Some(f) = crate::widgets::font_combo(ui, "fontdlg_asian", 220.0, font_ea, &fams, Some(&*prev)) {
+                        *font_ea = f;
+                    }
+                    ui.end_row();
+                }
+                ui.label(if *asian { tl!("Latin text font:") } else { tl!("Font:") });
+                let fams = app.previews.families();
+                if let Some(f) = crate::widgets::font_combo(ui, "fontdlg_font", 220.0, font, &fams, Some(&*prev)) {
+                    *font = f;
+                }
                 ui.end_row();
                 ui.label(tl!("Size:"));
                 ui.text_edit_singleline(size);
@@ -1462,7 +1634,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         }
         Dialog::Tabs { form } => crate::dialogs_para::tabs(app, ui, form),
         Dialog::Borders { form } => crate::dialogs_para::borders(app, ui, form),
-        Dialog::Find { query, replace, match_case, whole_word, regex, replace_mode, message } => {
+        Dialog::Find { query, replace, match_case, whole_word, regex, extra, replace_mode, message } => {
             ui.horizontal(|ui| {
                 if ui.selectable_label(!*replace_mode, tl!("Find")).clicked() {
                     *replace_mode = false;
@@ -1473,20 +1645,59 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             });
             ui.horizontal(|ui| {
                 ui.label(tl!("Find what:"));
-                ui.add(egui::TextEdit::singleline(query).desired_width(240.0));
+                if ui.add(egui::TextEdit::singleline(query).desired_width(240.0)).gained_focus() {
+                    extra.to_replace = false;
+                }
             });
             if *replace_mode {
                 ui.horizontal(|ui| {
                     ui.label(tl!("Replace with:"));
-                    ui.add(egui::TextEdit::singleline(replace).desired_width(228.0));
+                    if ui.add(egui::TextEdit::singleline(replace).desired_width(228.0)).gained_focus() {
+                        extra.to_replace = true;
+                    }
+                });
+            } else {
+                extra.to_replace = false;
+            }
+            // Word greys out Match case and the word options with wildcards (they always match case).
+            let plain = !extra.wildcards;
+            ui.horizontal(|ui| {
+                ui.add_enabled(plain, egui::Checkbox::new(match_case, tl!("Match case")));
+                ui.add_enabled(plain, egui::Checkbox::new(whole_word, tl!("Whole words")));
+                ui.checkbox(&mut extra.wildcards, tl!("Use wildcards"));
+            });
+            let arrow = if extra.more { "▾" } else { "▸" };
+            if ui.selectable_label(extra.more, format!("{arrow} {}", tl!("Search Options"))).clicked() {
+                extra.more = !extra.more;
+            }
+            if extra.more {
+                ui.horizontal(|ui| {
+                    ui.add_enabled(plain, egui::Checkbox::new(&mut extra.prefix, tl!("Match prefix")));
+                    ui.add_enabled(plain, egui::Checkbox::new(&mut extra.suffix, tl!("Match suffix")));
+                });
+                ui.horizontal(|ui| {
+                    ui.add_enabled(plain, egui::Checkbox::new(&mut extra.ignore_punct, tl!("Ignore punctuation characters")));
+                    ui.add_enabled(plain, egui::Checkbox::new(&mut extra.ignore_space, tl!("Ignore white-space characters")));
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(regex, tl!("Regular expressions"));
+                    if let Some(code) = special_menu(ui, extra) {
+                        if extra.to_replace { replace.push_str(code) } else { query.push_str(code) }
+                    }
                 });
             }
-            ui.horizontal(|ui| {
-                ui.checkbox(match_case, tl!("Match case"));
-                ui.checkbox(whole_word, tl!("Whole words"));
-                ui.checkbox(regex, tl!("Wildcards (regex)"));
+            let opts = json!({
+                "text": query,
+                "with": replace,
+                "matchCase": *match_case,
+                "wholeWord": *whole_word,
+                "regex": *regex,
+                "wildcards": extra.wildcards,
+                "matchPrefix": extra.prefix,
+                "matchSuffix": extra.suffix,
+                "ignorePunct": extra.ignore_punct,
+                "ignoreSpace": extra.ignore_space,
             });
-            let opts = json!({"text": query, "with": replace, "matchCase": *match_case, "wholeWord": *whole_word, "regex": *regex});
             if !*replace_mode {
                 ui.horizontal(|ui| {
                     let lit = app.session.find.highlight;
@@ -1518,8 +1729,8 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     }
                 }
                 if ui.button(tl!("Find Next")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let _ = app.session.run("edit.find", &opts);
-                    match app.run("edit.findNext", json!({})) {
+                    // One step per click: `edit.find` would select a match itself, and the step after it skip one.
+                    match app.run("edit.findNext", opts.clone()) {
                         Ok(r) => *message = format!("Match {} of {}", r["index"].as_u64().unwrap_or(0) + 1, r["count"]),
                         Err(e) => *message = e,
                     }
@@ -2855,6 +3066,7 @@ fn enclose_preview(ui: &mut Ui, style: &str, text: &str, shape: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wordcraft_doc::Pos;
     use wordcraft_doc::props::Align;
     use wordcraft_engine::Session;
 
@@ -2977,6 +3189,35 @@ mod tests {
             assert_eq!((after.bidi, after.align), (before.bidi, before.align), "{align} in rtl={rtl}");
             assert_eq!((after.indent_left, after.indent_right), (Some(18.0), Some(9.0)), "{align} in rtl={rtl}");
         }
+    }
+
+    #[test]
+    fn font_dialog_sets_the_asian_and_latin_fonts_separately() {
+        // #505: the Asian text font box and the Latin text font box each set their own font, and
+        // OK leaves the one not changed as it was.
+        let mut app = app_with("Hello 你好");
+        let _ = app.run("select.all", json!({}));
+        let fonts = |app: &WordApp| {
+            let c = app.session.doc.para_at(&Pos::body(0, 0)).map(|p| p.props_of_char(0).clone()).unwrap_or_default();
+            (c.font, c.font_ea)
+        };
+        let latin = fonts(&app).0;
+        let Some(mut d) = Dialog::open("font", &mut app) else { panic!("no font dialog") };
+        let Dialog::Font { asian, font_ea, .. } = &mut d else { panic!() };
+        assert!(*asian, "Chinese text in the selection shows the Asian text font box");
+        *font_ea = "SimSun".into();
+        apply_font(&mut app, &d);
+        assert_eq!(fonts(&app), (latin, Some("SimSun".into())));
+        let Some(mut d) = Dialog::open("font", &mut app) else { panic!() };
+        let Dialog::Font { font, font_ea, .. } = &mut d else { panic!() };
+        assert_eq!(font_ea, "SimSun");
+        *font = "Georgia".into();
+        apply_font(&mut app, &d);
+        assert_eq!(fonts(&app), (Some("Georgia".into()), Some("SimSun".into())));
+        // One undo step each.
+        let _ = app.run("edit.undo", json!({}));
+        assert_eq!(fonts(&app).1.as_deref(), Some("SimSun"));
+        assert_ne!(fonts(&app).0.as_deref(), Some("Georgia"));
     }
 
     #[test]

@@ -413,6 +413,55 @@ fn lists_get_labels_and_indent() {
 }
 
 #[test]
+fn chinese_counting_list_labels_and_their_font_runs() {
+    // Issue #534: a "一、" list showed digits, drawn with glyph ids of another font.
+    use wordcraft_doc::section::NumFormat;
+    let mut d = Document::from_text("甲\n乙\n丙");
+    let id = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+    for a in &mut d.numbering.abstracts {
+        if let Some(l) = a.levels.first_mut() {
+            l.format = NumFormat::ChineseCounting;
+            l.text = "%1、".into();
+        }
+    }
+    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 3), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
+    let labels = |d: &Document| -> Vec<(String, Vec<(String, bool)>)> {
+        let l = lay(d);
+        l.pages[0]
+            .items
+            .iter()
+            .filter_map(|it| if let Placed::Lines { para, .. } = it { Some(para.clone()) } else { None })
+            .filter_map(|pl| {
+                let lab = pl.label.clone()?;
+                // Every run draws glyphs of its own face.
+                let runs = lab
+                    .runs
+                    .iter()
+                    .map(|r| {
+                        let face = &pl.styles[r.style as usize].face;
+                        let gids: Vec<u32> = lab.glyphs[r.glyphs.clone()].iter().map(|g| g.gid).collect();
+                        (r.text.clone(), r.text.chars().all(|c| gids.contains(&face.glyph_for(c))))
+                    })
+                    .collect();
+                Some((lab.text, runs))
+            })
+            .collect()
+    };
+    let got = labels(&d);
+    assert_eq!(got.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), ["一、", "二、", "三、"]);
+    // A decimal label next to a CJK comma mixes faces when the Latin face lacks the comma.
+    for a in &mut d.numbering.abstracts {
+        if let Some(l) = a.levels.first_mut() {
+            l.format = NumFormat::Decimal;
+        }
+    }
+    for (text, runs) in labels(&d).into_iter().chain(got) {
+        assert_eq!(runs.iter().map(|(t, _)| t.as_str()).collect::<String>(), text);
+        assert!(runs.iter().all(|(_, own)| *own), "{text}: {runs:?}");
+    }
+}
+
+#[test]
 fn symbol_font_bullet_without_the_font_draws_a_bullet() {
     // Word's default bullet: U+F0B7 in Symbol.
     let mut d = Document::from_text("one");
@@ -2392,6 +2441,74 @@ fn a_floating_table_taller_than_a_page_runs_across_pages() {
     assert_eq!(rows, 80);
 }
 
+/// #534: a table placed on the page (`w:tblpPr w:vertAnchor="page"`) whose anchor comes after a
+/// page full of text goes to the next page with it, like Word, instead of covering that text.
+#[test]
+fn a_page_anchored_floating_table_after_a_full_page_moves_to_the_next() {
+    use wordcraft_doc::para::Anchor;
+    use wordcraft_doc::props::TableFloat;
+    let text: Vec<String> = (0..24).map(|i| format!("Paragraph {i} before the table.")).collect();
+    let mut d = Document::from_text(&(text.join("\n") + "\nAfter the table."));
+    let mut t = Table::new(15, 1, 300.0);
+    for (i, r) in t.rows.iter_mut().enumerate() {
+        r.cells[0].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(&format!("Row {i}"), Default::default()))];
+    }
+    t.props.float = Some(TableFloat { h_rel: Anchor::Page, v_rel: Anchor::Page, x: 70.0, y: 71.0, ..Default::default() });
+    d.insert_block(StoryRef::Body, &Path::top(24), wordcraft_doc::Block::Table(t)).unwrap();
+    let l = lay(&d);
+    let page_of = |want: &dyn Fn(&Path) -> bool| -> Vec<usize> {
+        l.pages
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.items.iter().map(move |it| (i, it)))
+            .filter_map(|(i, it)| if let Placed::Lines { story: StoryRef::Body, path, .. } = it { want(path).then_some(i) } else { None })
+            .collect()
+    };
+    // The text before the table fills page 1; the table and the text after it are on page 2.
+    assert_eq!(page_of(&|p| p.0 == [23]), vec![0]);
+    let rows = page_of(&|p| p.0.first() == Some(&24) && p.0.len() > 1);
+    assert!(rows.len() == 15 && rows.iter().all(|pg| *pg == 1), "table rows on pages {rows:?}");
+    assert_eq!(page_of(&|p| p.0 == [25]), vec![1]);
+}
+
+/// #534: a paragraph that starts with a page break right where the page is full keeps the break
+/// on that page: no blank page between the two tables around it.
+#[test]
+fn a_page_break_at_the_bottom_of_a_full_page_leaves_no_blank_page() {
+    use wordcraft_doc::props::LineSpacing;
+    let props = ParaProps { line_spacing: Some(LineSpacing::Exactly(24.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+    let para = |text: &str| {
+        let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
+        p.props = props.clone();
+        wordcraft_doc::para_block(p)
+    };
+    let mut d = Document::from_text("");
+    // 27 lines of 24pt fill the 648pt of text on a Letter page.
+    d.body = (0..27).map(|i| para(&format!("Line {i}"))).collect();
+    d.body.push(para("\u{000C}Next page"));
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2, "pages: {}", l.pages.len());
+    let last_on_2 = l.pages[1].items.iter().any(|it| matches!(it, Placed::Lines { path, .. } if path.0 == [27]));
+    assert!(last_on_2, "the text after the break is on page 2");
+}
+
+/// #534: indents in characters (`w:firstLineChars`) are measured in the paragraph mark's font
+/// size and win over the indent in points.
+#[test]
+fn character_indents_use_the_paragraph_mark_size() {
+    let mut p = wordcraft_doc::Paragraph::with_text(&"字".repeat(80), Default::default());
+    p.props.indent_first = Some(5.0);
+    p.props.indent_first_chars = Some(2.0);
+    p.props.indent_left_chars = Some(1.0);
+    p.mark.size = Some(20.0);
+    let mut d = Document::from_text("");
+    d.body = vec![wordcraft_doc::para_block(p)];
+    let l = lay(&d);
+    let para = l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { Some(para.clone()) } else { None }).unwrap();
+    assert!((para.lines[0].left - 60.0).abs() < 0.01, "first line at {}", para.lines[0].left);
+    assert!((para.lines[1].left - 20.0).abs() < 0.01, "second line at {}", para.lines[1].left);
+}
+
 #[test]
 fn no_line_break_right_after_a_slash() {
     // Word keeps "and/or" and web addresses whole on a line when they fit.
@@ -2632,7 +2749,7 @@ fn oversized_graphic_draws_shrunk_with_its_items() {
         stroke: Some(Rgb::BLACK),
         stroke_width: 4.0,
     }];
-    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None };
+    let graphic = Graphic { kind: GraphicKind::Chart, items, w: 1000.0, h: 500.0, source: None, chart: None, smart_art: None };
     let obj = InlineObject::Graphic { w: 1000.0, h: 500.0, alt: String::new(), float: Default::default(), graphic: Arc::new(graphic) };
     let mut d = Document::from_text("Chart");
     d.insert_object(&Pos::body(0, 0), obj, &Default::default()).unwrap();
@@ -3611,4 +3728,43 @@ fn table_cell_footnotes_are_placed() {
     assert_eq!(c.page, 0);
     let body = l.caret(&Pos::body(1, 0)).unwrap();
     assert!(c.top > body.top + 100.0, "at the page bottom: {c:?} {body:?}");
+}
+
+#[test]
+fn east_asian_text_takes_the_asian_font_and_latin_text_the_latin_font() {
+    // #505: one run with a Latin font and an Asian font (w:eastAsia) of its own sets each script in
+    // its font. Prefer an installed CJK font other than the one fallback would pick anyway.
+    let resolve = |f: &str| wordcraft_fonts::word::resolve(f, false, false);
+    let fallback = wordcraft_fonts::FontDb::global().fallback_for('你', 0).map(|f| f.family.clone());
+    let mut fonts: Vec<String> = wordcraft_fonts::FontDb::global()
+        .east_asian_families()
+        .into_iter()
+        .filter(|f| {
+            let r = resolve(f);
+            !r.substituted && r.face.covers('你') && r.face.covers('好')
+        })
+        .collect();
+    fonts.sort_by_key(|f| Some(f) == fallback.as_ref());
+    let Some(asian) = fonts.first().cloned() else {
+        eprintln!("skipped: no Chinese font installed");
+        return;
+    };
+    let latin = wordcraft_doc::styles::BODY_FONT;
+    let text = "Hello 你好 World";
+    let mut d = Document::from_text(text);
+    d.format_range(&Pos::body(0, 0), &Pos::body(0, text.len()), &|c| {
+        c.font = Some(latin.into());
+        c.font_ea = Some(asian.clone());
+    })
+    .unwrap();
+    let l = lay(&d);
+    let para =
+        l.pages.iter().flat_map(|p| p.items.iter()).find_map(|it| if let Placed::Lines { para, .. } = it { Some(para) } else { None }).unwrap();
+    let (latin_face, asian_face) = (resolve(latin).face.id(), resolve(&asian).face.id());
+    for c in &para.clusters {
+        let Some(ch) = text.get(c.start..c.end).and_then(|s| s.chars().next()).filter(|ch| !ch.is_whitespace()) else { continue };
+        let face = para.styles[c.style as usize].face.id();
+        let want = if ch.is_ascii() { latin_face } else { asian_face };
+        assert_eq!(face, want, "{ch:?} in {}", if ch.is_ascii() { latin } else { &asian });
+    }
 }

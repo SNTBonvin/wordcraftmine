@@ -63,6 +63,7 @@
 	Arrow	Flecha
 	Artistic Effects	Efectos artísticos
 	As you type	Mientras escribes
+	Asian text font:	Fuente de texto asiático:
 	Asian Typography	Tipografía asiática
 	Author	Autor
 	AutoCorrect Options	Opciones de autocorrección
@@ -105,6 +106,7 @@
 	Interface	Interfaz
 	Interface language	Idioma de la interfaz
 	Inside:	Interior:
+	Latin text font:	Fuente de texto latino:
 	Left border	Borde izquierdo
 	Legal style numbering	Numeración de estilo legal
 	Link level to style:	Vincular nivel con estilo:
@@ -949,12 +951,12 @@
 	Wide	Ancho
 	Widow/Orphan Control	Control de líneas viudas y huérfanas
 	Widow/Orphan control	Control de líneas viudas y huérfanas
-	Wildcards (regex)	Comodines (expresión regular)
 	Window	Ventana
 	Word Count	Recuento de palabras
 	Word Left	Palabra a la izquierda
 	Word Right	Palabra a la derecha
 	Word document (*.docx)	Documento de Word (*.docx)
+	Word XML Document (*.xml)	Documento XML de Word (*.xml)
 	WordArt	WordArt
 	WordCraft	WordCraft
 	Words	Palabras
@@ -1683,6 +1685,44 @@
 	Continuous numbering	Numeración continua
 	Apply	Aplicar
 	Convert Notes	Convertir notas
+	Add Shape	Agregar forma
+	Change Colors	Cambiar colores
+	Change Layout	Cambiar diseño
+	Create Graphic	Crear gráfico
+	Edit Items	Editar elementos
+	Layouts	Diseños
+	Reset Graphic	Restablecer gráfico
+	SmartArt Design	Diseño de SmartArt
+	SmartArt Styles	Estilos de SmartArt
+	Text Pane	Panel de texto
+	List	Lista
+	Process	Proceso
+	Cycle	Ciclo
+	Hierarchy	Jerarquía
+	Relationship	Relación
+	Pyramid	Pirámide
+	Basic List	Lista básica
+	Basic Process	Proceso básico
+	Basic Cycle	Ciclo básico
+	Basic Pyramid	Pirámide básica
+	Basic Radial	Radial básico
+	Basic Matrix	Matriz básica
+	Basic Venn	Venn básico
+	Shows items of equal weight as blocks in rows.	Muestra elementos de igual peso como bloques en filas.
+	Shows steps in order, left to right, with arrows between them.	Muestra pasos en orden, de izquierda a derecha, con flechas entre ellos.
+	Shows steps that repeat, around a circle.	Muestra pasos que se repiten, alrededor de un círculo.
+	Shows a tree: each item below the item it belongs to.	Muestra un árbol: cada elemento debajo del elemento al que pertenece.
+	Shows parts that build on each other, largest at the bottom.	Muestra partes que se apoyan unas en otras, la mayor abajo.
+	Shows items around a central idea: the first item is the centre.	Muestra elementos alrededor de una idea central: el primer elemento es el centro.
+	Shows parts of a whole as quadrants.	Muestra las partes de un todo como cuadrantes.
+	Shows overlapping ideas as overlapping circles.	Muestra ideas que se superponen como círculos superpuestos.
+	Accent {n}	Énfasis {n}
+	Colorful	Multicolor
+	Insert SmartArt	Insertar SmartArt
+	One line per item. Enter adds an item.	Una línea por elemento. Intro agrega un elemento.
+	Add\nShape	Agregar\nforma
+	Change\nColors	Cambiar\ncolores
+	Reset\nGraphic	Restablecer\ngráfico
 	Promote to Heading 1	Promover a Título 1
 	Demote to Body Text	Degradar a texto independiente
 	Move Up	Subir
@@ -1818,6 +1858,37 @@
 	Rewind	Rebobinar
 	Forward	Avanzar
 	Stroke {n} of {total}	Trazo {n} de {total}
+	Use wildcards	Usar caracteres comodín
+	Special	Especial
+	Match prefix	Coincidir prefijo
+	Match suffix	Coincidir sufijo
+	Ignore punctuation characters	Omitir signos de puntuación
+	Ignore white-space characters	Omitir espacios en blanco
+	Regular expressions	Expresiones regulares
+	Search Options	Opciones de búsqueda
+	Tab Character	Carácter de tabulación
+	Any Character	Cualquier carácter
+	Any Digit	Cualquier dígito
+	Any Letter	Cualquier letra
+	Caret Character	Acento circunflejo
+	Section Character	Símbolo de sección
+	Paragraph Character	Símbolo de párrafo
+	Graphic	Gráfico
+	Manual Line Break	Salto de línea manual
+	Manual Page Break	Salto de página manual
+	Section Break	Salto de sección
+	White Space	Espacio en blanco
+	Clipboard Contents	Contenido del portapapeles
+	Find What Text	Texto buscado
+	Find What Expression	Expresión buscada
+	Character in Range	Carácter del intervalo
+	Beginning of Word	Principio de palabra
+	End of Word	Final de palabra
+	Expression	Expresión
+	Not	No
+	Num Occurrences	Número de repeticiones
+	Previous 1 or More	Anterior 1 o más veces
+	0 or More Characters	0 o más caracteres
 	Move with Text	Mover con el texto
 	Fix Position on Page	Fijar posición en la página
 
