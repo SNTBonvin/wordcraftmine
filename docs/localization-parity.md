@@ -21,7 +21,7 @@ native-speaker review (human).
 
 - **13 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
   Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru` and Polish `pl`. Catalogs
-  have 1,305–1,524 entries each; Polish has every key of every other catalog (a test checks it). A
+  have 2,022–2,387 entries each; Polish has every key of every other catalog (a test checks it). A
   test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command label and
   ribbon location is translated in every language. `pl`, `pl-PL` and `pl_PL.UTF-8` system locales
   pick Polish automatically.
