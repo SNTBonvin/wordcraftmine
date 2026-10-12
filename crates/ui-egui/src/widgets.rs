@@ -568,6 +568,14 @@ fn combo_impl(
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        // The field and its arrow share one outline: rounded on the outside, square where they
+        // meet. The field's frame takes the widget visuals' radius in every state.
+        let r = ui.visuals().widgets.inactive.corner_radius;
+        let w = &mut ui.visuals_mut().widgets;
+        for v in [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+            v.corner_radius.ne = 0;
+            v.corner_radius.se = 0;
+        }
         // Up/Down move the list's highlight: take them before the text field moves its cursor.
         let mut step = 0i32;
         if s.open && ui.memory(|m| m.has_focus(te_id)) {
@@ -627,7 +635,8 @@ fn combo_impl(
             out = Some(text.clone());
         }
         let (ar, aresp) = ui.allocate_exact_size(vec2(16.0, resp.rect.height()), Sense::click());
-        ui.painter().rect(ar, 0.0, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+        let ar_radius = CornerRadius { nw: 0, sw: 0, ne: r.ne, se: r.se };
+        ui.painter().rect(ar, ar_radius, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
         icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), "dropdown", t.icon, t.accent);
         // The list drops from the box's left edge, as in Word, not from the arrow (#535).
         egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).show(|ui| {
@@ -955,6 +964,35 @@ mod tests {
         assert_eq!(type_into_combo(true, &fonts, "arial", &[Escape]), None);
         let sizes: Vec<String> = ["10", "11", "12"].map(String::from).to_vec();
         assert_eq!(type_into_combo(false, &sizes, "1", &[Enter]).as_deref(), Some("1"));
+    }
+
+    /// The field was rounded on all four corners and the arrow on none, so the two looked apart:
+    /// the field is rounded only on the left and the arrow only on the right, focused or not.
+    #[test]
+    fn combo_field_and_arrow_share_one_outline() {
+        let sizes: Vec<String> = ["10", "11", "12"].map(String::from).to_vec();
+        let ctx = egui::Context::default();
+        for focused in [false, true] {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                if focused {
+                    ui.memory_mut(|m| m.request_focus(ui.id().with(("combo_edit", "f"))));
+                }
+                combo(ui, "f", 150.0, "12", &sizes, None);
+            });
+            let rects: Vec<CornerRadius> = std::mem::take(&mut out.shapes)
+                .into_iter()
+                .filter_map(|c| match c.shape {
+                    egui::Shape::Rect(r) => Some(r.corner_radius),
+                    _ => None,
+                })
+                .collect();
+            out.drop_without_applying_deltas();
+            let field = rects.iter().find(|c| c.nw > 0 && c.sw == c.nw && c.ne == 0 && c.se == 0);
+            let field = field.unwrap_or_else(|| panic!("focused {focused}: no field rounded on the left only in {rects:?}"));
+            let arrow = CornerRadius { nw: 0, sw: 0, ne: field.nw, se: field.sw };
+            assert!(rects.contains(&arrow), "focused {focused}: no arrow rounded on the right only in {rects:?}");
+            assert!(!rects.iter().any(|c| c.nw > 0 && c.ne > 0), "focused {focused}: a part is still rounded all round: {rects:?}");
+        }
     }
 
     #[test]
