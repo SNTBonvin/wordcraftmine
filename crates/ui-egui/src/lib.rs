@@ -15,6 +15,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod assistant;
 pub mod backstage;
 pub mod canvas;
 pub mod chrome;
@@ -102,6 +103,10 @@ pub struct Services {
     pub store_font: Option<Box<dyn Fn(&str, &[u8])>>,
     /// Web: forget a stored font (its stored file name) once the user removes it.
     pub forget_font: Option<Box<dyn Fn(&str)>>,
+    /// The assistant's HTTP client. Desktop: sends the request on a background thread, delivers
+    /// the response body (or an error) through the returned channel and wakes the UI. `None` (the
+    /// web, for now): the Assistant pane says the assistant isn't available here.
+    pub http: Option<Box<wordcraft_assistant::Http>>,
 }
 
 /// Files delivered asynchronously.
@@ -321,6 +326,8 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// The Assistant pane and its agent (`ui.assistant`).
+    pub assistant: assistant::AssistantPane,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -389,6 +396,7 @@ impl WordApp {
             dialog_pick: None,
             file_dialog: None,
             info_editing: None,
+            assistant: assistant::AssistantPane::default(),
         }
     }
 
@@ -401,7 +409,8 @@ impl WordApp {
     /// preferences.
     pub fn prefs(&self) -> UiState {
         let mut ui = self.ui.clone();
-        ui.author = self.session.author.clone();
+        // While the assistant edits, the session's author is "AI (model)": save the user's name.
+        ui.author = self.assistant.agent.user_author().unwrap_or(&self.session.author).to_string();
         ui.initials = self.session.initials.clone();
         ui.dictionary = wordcraft_engine::proof::user_dictionary();
         ui.editing = self.session.prefs.clone();
@@ -873,6 +882,7 @@ impl WordApp {
             // page; this is the button on it, and the one programmatic call that opens system UI
             // here, like `ui.openFileDialog` — only when the host can print.
             "ui.print" => return Some(self.print_to_system(p)),
+            "ui.assistant" => return Some(assistant::command(self, p)),
             "ui.discord" => {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
@@ -1051,6 +1061,7 @@ impl WordApp {
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
+        assistant::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
         self.drain_inbox();

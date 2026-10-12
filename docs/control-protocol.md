@@ -67,4 +67,14 @@ and set `WORDCRAFT_CONTROL_KEY` to that app's key.
 
 Any other method name is treated as a command id: `{"method": "format.bold"}` works.
 
+`ui.assistant` drives the Assistant pane (desktop; elsewhere `ask` fails with "The assistant isn't
+available here."). Params, all optional: `open` (bool; omitted, the call toggles the pane unless it
+only asks, replies, stops, clears or lists models), `ask` (text: start a request), `stop`, `clear`,
+`answer` (text for the model's waiting question), `decide` (`"allowOnce"`, `"allowRequest"` or
+`"deny"` for a waiting permission prompt), `models: true` (fetch or reuse the chosen provider's model
+list). Result: `{open, busy, log: [{kind: "user"|"assistant"|"action"|"error"|"question"|"permission", text, …}],
+pending: null | {kind: "question", question, options} | {kind: "permission", permissionKind: "delete"|"style", description},
+plan: [{text, done}]}`, plus `models: {loading, list, error}` when asked. Provider settings and API
+keys are never returned; a key echoed in any text is blanked.
+
 Positions are `{"story": "body" | {"part": n}, "path": [block, row, cell, block, …], "off": byteOffset}`.

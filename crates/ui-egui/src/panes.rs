@@ -25,6 +25,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 crate::dialogs_smart_art::text_pane(app, ui);
             });
     }
+    crate::assistant::show(app, ui);
     if app.session.view.nav_pane {
         egui::Panel::left("nav_pane")
             .default_size(260.0)

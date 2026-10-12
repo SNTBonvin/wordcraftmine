@@ -16,6 +16,8 @@ wordcraft-engine = { workspace = true }
 # Fonts the user added (#582) load from the settings folder at start-up.
 wordcraft-fonts = { workspace = true }
 wordcraft-ui-egui = { workspace = true }
+# The in-app assistant's settings (`assistant.json`) and the HTTP request/error types.
+wordcraft-assistant = { workspace = true }
 # The control key file's location (shared with the MCP bridge).
 wordcraft-control-key = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11", "links"] }
@@ -47,3 +49,6 @@ getrandom = "0.3"
 # File › Print opens the PDF in the system's default viewer (`xdg-open`/`gio` on Linux and BSD, the
 # file association on Windows, `open` on macOS) without blocking; already in the tree via egui_kittest.
 open = "5.4"
+# The assistant's HTTPS calls to the model provider (`assistant_http`), each on its own thread. rustls with the ring
+# provider (the default `rustls` feature; aws-lc-rs would need cmake/nasm on Windows); no gzip, nothing asks for it.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
