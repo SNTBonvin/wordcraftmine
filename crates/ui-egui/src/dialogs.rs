@@ -1493,6 +1493,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             if cancel {
                 return true;
             }
+            if ok && name.trim() == app.title_stem() {
+                return true;
+            }
             if ok {
                 match app.run("file.rename", json!({"name": name})) {
                     Ok(_) => return true,

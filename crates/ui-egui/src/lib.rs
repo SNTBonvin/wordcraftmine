@@ -1280,13 +1280,11 @@ impl WordApp {
     pub fn title_stem(&self) -> String {
         match &self.session.path {
             Some(p) => p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| tl!("Document1").into()),
-            None => {
-                if self.session.doc.core.title.is_empty() {
-                    tl!("Document1").into()
-                } else {
-                    self.session.doc.core.title.clone()
-                }
-            }
+            None => match &self.session.file_name {
+                Some(name) => name.clone(),
+                None if self.session.doc.core.title.is_empty() => tl!("Document1").into(),
+                None => self.session.doc.core.title.clone(),
+            },
         }
     }
 
@@ -1901,6 +1899,13 @@ mod tests {
         h.get_by_label("Document1 — Not saved").click();
         h.run_steps(2);
         assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("renameDocument"));
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Rename").click();
+        h.run_steps(2);
+        assert!(h.state().dialog.is_none());
+        assert!(h.state().session.file_name.is_none());
+        assert!(!h.state().session.dirty);
+        h.get_by_label("Document1 — Not saved").click();
+        h.run_steps(2);
         h.event(egui::Event::Key {
             key: egui::Key::A,
             physical_key: None,
@@ -1914,11 +1919,14 @@ mod tests {
         h.run_steps(2);
         assert!(h.state().dialog.is_none());
         assert_eq!(h.state().title_stem(), "Project notes");
+        assert_eq!(h.state().default_save_name(), "Project notes.docx");
+        assert!(h.state().session.doc.core.title.is_empty());
+        assert!(!h.state().session.dirty);
         // A long name remains clickable, and Escape leaves it unchanged.
         let long_name = "Notes ".repeat(25);
         h.state_mut().run("file.rename", json!({"name": long_name})).unwrap();
         h.run_steps(2);
-        h.get_by_label(&format!("{} — Edited", long_name.trim())).click();
+        h.get_by_label(&format!("{} — Not saved", long_name.trim())).click();
         h.run_steps(2);
         assert!(h.state().dialog.is_some());
         h.event(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });

@@ -5045,14 +5045,22 @@ fn rename_document_preserves_saved_contents_and_rejects_collisions() {
 }
 
 #[test]
-fn rename_unsaved_document_validates_the_name() {
+fn rename_unsaved_document_names_the_file_not_the_document() {
     let mut s = Session::new(wordcraft_doc::Document::new());
+    s.doc.core.title = "Quarterly report".into();
     for name in ["", "  ", "../report", "a/b", "a\\b", "a\nb", "name."] {
         assert!(s.run("file.rename", &json!({"name": name})).is_err(), "{name:?}");
-        assert!(s.doc.core.title.is_empty());
+        assert!(s.file_name.is_none());
     }
-    s.run("file.rename", &json!({"name": "Résumé notes"})).unwrap();
-    assert_eq!(s.doc.core.title, "Résumé notes");
+    s.run("file.rename", &json!({"name": " Résumé notes "})).unwrap();
+    assert_eq!(s.file_name.as_deref(), Some("Résumé notes"));
+    assert_eq!(s.doc.core.title, "Quarterly report");
     assert!(s.path.is_none());
-    assert!(s.dirty);
+    assert!(!s.dirty);
+    assert!(!s.can_undo());
+    s.run("file.new", &json!({})).unwrap();
+    assert!(s.file_name.is_none());
+    s.run("file.rename", &json!({"name": "Draft"})).unwrap();
+    s.run("file.open", &json!({"path": "other.txt", "data": "aGk="})).unwrap();
+    assert!(s.file_name.is_none());
 }

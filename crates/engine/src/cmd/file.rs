@@ -51,8 +51,7 @@ fn rename(s: &mut Session, v: &Value) -> CmdResult {
             s.path = Some(destination);
         }
     } else {
-        s.doc.core.title = name.to_string();
-        s.dirty = true;
+        s.file_name = Some(name.to_string());
     }
     Ok(json!({"name": name, "path": s.path}))
 }
