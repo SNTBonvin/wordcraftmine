@@ -4388,6 +4388,48 @@ fn hide_white_space_toggles_view_state_only() {
     assert_eq!(s.doc.body.len(), before, "a view option never edits the document");
 }
 
+#[test]
+fn view_window_commands_and_state() {
+    let mut s = s();
+    let before = s.doc.body.len();
+
+    // Arrange All sends UI request
+    s.ui_requests.clear();
+    run(&mut s, "view.arrangeAll", json!({}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"arrange": "all"})));
+
+    // View Side by Side toggles state and sends UI request
+    assert!(!s.view.side_by_side);
+    assert_eq!(run(&mut s, "view.sideBySide", json!({}))["value"], true);
+    assert!(s.view.side_by_side);
+    assert_eq!(s.ui_requests.last(), Some(&json!({"view": "sideBySide", "active": true})));
+    assert_eq!(run(&mut s, "view.sideBySide", json!({"value": false}))["value"], false);
+    assert!(!s.view.side_by_side);
+    assert_eq!(s.ui_requests.last(), Some(&json!({"view": "sideBySide", "active": false})));
+
+    // Synchronous Scrolling toggles state and sends UI request
+    assert!(!s.view.sync_scroll);
+    assert_eq!(run(&mut s, "view.syncScroll", json!({}))["value"], true);
+    assert!(s.view.sync_scroll);
+    assert_eq!(s.ui_requests.last(), Some(&json!({"syncScroll": true})));
+    assert_eq!(run(&mut s, "view.syncScroll", json!({"value": false}))["value"], false);
+    assert!(!s.view.sync_scroll);
+    assert_eq!(s.ui_requests.last(), Some(&json!({"syncScroll": false})));
+
+    // Switch Windows opens menu or switches to specified target
+    s.ui_requests.clear();
+    run(&mut s, "view.switchWindows", json!({}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "switchWindows"})));
+    run(&mut s, "view.switchWindows", json!({"window": "Report.docx"}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"switchWindow": "Report.docx"})));
+
+    // Shortcut Ctrl+F6 bound to switchWindows
+    let reg = cmd::registry();
+    assert_eq!(reg.by_shortcut("Ctrl+F6").map(|c| c.id), Some("view.switchWindows"));
+
+    assert_eq!(s.doc.body.len(), before, "window commands never edit the document");
+}
+
 /// The first SmartArt (or other graphic) in the body, selected.
 fn select_graphic(s: &mut Session) {
     let (path, off) = (0..s.doc.body.len() as u32)

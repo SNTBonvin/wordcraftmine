@@ -1672,6 +1672,29 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "newWindow", "New\nWindow", "view.newWindow", json!({}), false);
         big(ui, app, "arrangeAll", "Arrange\nAll", "view.arrangeAll", json!({}), false);
         big(ui, app, "split", "Split", "view.split", json!({}), false);
+        stack(ui, |ui| {
+            small(ui, app, "sideBySide", Some("View Side by Side"), "View Side by Side", "view.sideBySide", json!({}), app.session.view.side_by_side);
+            small(
+                ui,
+                app,
+                "syncScroll",
+                Some("Synchronous Scrolling"),
+                "Synchronous Scrolling",
+                "view.syncScroll",
+                json!({}),
+                app.session.view.sync_scroll,
+            );
+        });
+        menu_button(ui, app, "switchWindows", Some("Switch\nWindows"), "Switch Windows", true, "view.switchWindows", |ui, app| {
+            let name = app
+                .session
+                .path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| tl!("Document 1").to_string());
+            mi_text(ui, app, &format!("✓ {name}"), "view.switchWindows", json!({}));
+        });
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);

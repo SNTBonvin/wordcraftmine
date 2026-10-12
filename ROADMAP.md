@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (direct run-level native InkML content parts survive DOCX saves; previously trivial: progress log: symbol fonts, #776; previously trivial: the save prompt answers from the keyboard, #861; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (View window commands added to the ribbon as entry points, #27: catalog 491/502 (97.8%); previously trivial: direct run-level native InkML content parts survive DOCX saves; previously trivial: progress log: symbol fonts, #776; previously trivial: the save prompt answers from the keyboard, #861; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -16,7 +16,7 @@ agent control. This page is the summary; the assessment is
 
 | Number | Value | Kind |
 |---|---|---|
-| Ribbon/menu catalog coverage | **487 / 502 (97.0%)** | measured (`cargo xtask parity` → [`docs/parity-checklist.md`](docs/parity-checklist.md)) |
+| Ribbon/menu catalog coverage | **491 / 502 (97.8%)** | measured (`cargo xtask parity` → [`docs/parity-checklist.md`](docs/parity-checklist.md)) |
 | **Feature breadth** (weighted, incl. dialog options, styles, languages beyond the ribbon) | **~80%** | estimated |
 | **Ready for real work** (full target) | **~60%** (55–63%) | estimated, additive weighted sum over the dimensions |
 | **Mainstream practitioner** | **~55%** | estimated: weekly-work depth × discounts for interaction (×0.93), stability (×0.90), file exchange (×0.90) |
@@ -78,7 +78,7 @@ the two partial ones (real-world .docx, printing) complete, roughly.
 | Tables | 76% | 10–16 |
 | Styles and themes | 74% | 8–12 |
 | Review (comments, track changes, compare, protect) | 72% | 15–25 |
-| View | 72% | 6–10 |
+| View | 78% | 3–6 |
 | Page layout and sections | 70% | 12–20 |
 | Mailings | 70% | 6–10 |
 | Headers, footers, page numbers, fields | 70% | 8–12 |
@@ -296,7 +296,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | trivial | Progress log: Reading Mode implementation |
 | 2026-10-12 | trivial | Progress log: new documents follow the system region (#838) |
 | 2026-10-11 | trivial | DOCX complex-script formatting inheritance fix and round-trip coverage |
-| 2026-10-11 | minor | Czech (`cs`) interface catalog added |
+| 2026-10-12 | trivial | Progress log: View window commands added to the ribbon as entry points (the catalog counts them; real multi-window behaviour is still missing, gap #27), catalog 487 → 491/502 (97.8%) |
 | 2026-10-12 | trivial | Progress log: AutoCorrect replacement list follows the text's language (#835) |
 | 2026-10-11 | trivial | Progress log: German interface (#574) |
 | 2026-10-12 | trivial | Progress log: language-aware sorting and table numbers (#836, #837) |
