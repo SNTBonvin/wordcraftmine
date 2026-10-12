@@ -2473,3 +2473,16 @@
 	Table Properties…	Táblázat tulajdonságai…
 	Search	Keresés
 	Title Bar	Címsor
+
+# Native macOS application menus.
+	About {app}	A(z) {app} névjegye
+	Bring All to Front	Összes előrehozása
+	Edit	Szerkesztés
+	Hide Others	Többi elrejtése
+	Hide {app}	{app} elrejtése
+	Minimize	Kis méret
+	Open Recent	Legutóbbiak megnyitása
+	Quit {app}	Kilépés a(z) {app} alkalmazásból
+	Services	Szolgáltatások
+	Show All	Összes megjelenítése
+	Zoom…	Nagyítás…

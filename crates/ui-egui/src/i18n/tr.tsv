@@ -2473,3 +2473,16 @@ preview	Title	Örnek
 	Level 7	Düzey 7
 	Level 8	Düzey 8
 	Level 9	Düzey 9
+
+# Native macOS application menus.
+	About {app}	{app} Hakkında
+	Bring All to Front	Tümünü Öne Getir
+	Edit	Düzenle
+	Hide Others	Diğerlerini Gizle
+	Hide {app}	{app} Uygulamasını Gizle
+	Minimize	Simge Durumuna Küçült
+	Open Recent	Son Kullanılanları Aç
+	Quit {app}	{app} Uygulamasından Çık
+	Services	Servisler
+	Show All	Tümünü Göster
+	Zoom…	Yakınlaştır…

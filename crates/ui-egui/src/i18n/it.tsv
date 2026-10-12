@@ -2459,3 +2459,16 @@ preview	Title	Esempio
 	Automatic ({region})	Automatico ({region})
 	Search	Cerca
 	Title Bar	Barra del titolo
+
+# Native macOS application menus.
+	About {app}	Informazioni su {app}
+	Bring All to Front	Porta tutto in primo piano
+	Edit	Modifica
+	Hide Others	Nascondi altre app
+	Hide {app}	Nascondi {app}
+	Minimize	Riduci a icona
+	Open Recent	Apri recenti
+	Quit {app}	Esci da {app}
+	Services	Servizi
+	Show All	Mostra tutto
+	Zoom…	Zoom…

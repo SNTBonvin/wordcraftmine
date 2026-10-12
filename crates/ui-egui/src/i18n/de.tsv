@@ -2074,3 +2074,16 @@
 	Automatic ({region})	Automatisch ({region})
 	Search	Suchen
 	Title Bar	Titelleiste
+
+# Native macOS application menus.
+	About {app}	Über {app}
+	Bring All to Front	Alle nach vorne bringen
+	Edit	Bearbeiten
+	Hide Others	Andere ausblenden
+	Hide {app}	{app} ausblenden
+	Minimize	Minimieren
+	Open Recent	Zuletzt geöffnete Dateien
+	Quit {app}	{app} beenden
+	Services	Dienste
+	Show All	Alle einblenden
+	Zoom…	Zoom…

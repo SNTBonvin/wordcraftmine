@@ -57,6 +57,7 @@ pub mod ink;
 pub mod keys;
 pub mod keytips;
 pub mod mini_toolbar;
+pub mod native_menu;
 pub mod objects;
 pub mod options;
 pub mod panes;
@@ -88,6 +89,8 @@ pub use file_dialogs::{FileDialogAnswer, FileDialogRequest, open_filters};
 /// Platform services injected by the host (file dialogs, file I/O).
 #[derive(Default)]
 pub struct Services {
+    /// Desktop host's native menus. The ribbon remains available on every platform.
+    pub native_menu: Option<native_menu::NativeMenu>,
     /// Desktop: discover configured printers on a worker.
     pub printers: Option<printing::Discover>,
     /// Desktop: submit the PDF with the chosen settings on a worker.
@@ -1360,6 +1363,7 @@ impl WordApp {
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
         }
+        native_menu::run(self, ctx);
         self.poll_printing(ctx);
         self.drain_control(ctx);
         zotero::poll(self, ctx);
@@ -1480,6 +1484,7 @@ impl WordApp {
 
     /// Inject synthetic input events from the control channel (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        native_menu::raw_input(self, raw);
         if self.synthetic.is_empty() {
             return;
         }
@@ -1534,6 +1539,7 @@ impl WordApp {
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
         keys::global_shortcuts(self, &ctx);
+        native_menu::sync(self, &ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }

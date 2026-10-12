@@ -2464,3 +2464,16 @@
 	Table Properties…	Свойства на таблица…
 	Search	Търсене
 	Title Bar	Заглавна лента
+
+# Native macOS application menus.
+	About {app}	Относно {app}
+	Bring All to Front	Всички прозорци отпред
+	Edit	Редактиране
+	Hide Others	Скриване на останалите
+	Hide {app}	Скриване на {app}
+	Minimize	Минимизиране
+	Open Recent	Отваряне на скорошни
+	Quit {app}	Изход от {app}
+	Services	Услуги
+	Show All	Показване на всички
+	Zoom…	Мащаб…
