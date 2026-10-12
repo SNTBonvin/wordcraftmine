@@ -339,6 +339,12 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
         if !is_table {
             if open {
                 flush_table(&mut out, &mut rows, &mut row_edges, &mut cells, &mut cell, &props, depth_seen > 1);
+                // Table props are per-table (first row carrying the sprm wins within the
+                // table): reset the accumulator so one table's borders, align, indent and
+                // cell margins never leak into the next (the repro's first table wrote
+                // Word's default 108-twip gap, and every later table — including the
+                // change history with its own 40-twip gap — inherited 5.4 pt margins).
+                props = TableProps::default();
                 open = false;
                 depth_seen = 0;
             }
@@ -362,10 +368,23 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
             props.cell_margins = info.gap.map(|g| [0.0, g, 0.0, g]);
         }
         if info.cell_mark {
+            // A row-end (TTP) mark terminates the row. Word writes rows as N content
+            // cells each ended by their own cell mark, followed by an empty row-end mark
+            // that carries the row's TDefTable (the 3GPP change history: 8 content marks
+            // + an empty TTP whose TDefTable defines itcMac = 8). When that mark ends no
+            // content of its own and the TDefTable already has a column per flushed cell,
+            // it is a pure row terminator, not the end of a phantom (N+1)th cell — such a
+            // cell has no column (width None) and shifts every real cell's span one grid
+            // column over. A TTP mark with content, or one short of the TDefTable's
+            // columns, still ends a real cell (rows without a TDefTable keep today's
+            // shape: the count is unknowable, so the mark always flushes).
+            let row_end_only = info.ttp && p.para.text.is_empty() && cell.is_empty() && !info.edges.is_empty() && cells.len() + 1 >= info.edges.len();
             if !p.para.text.is_empty() {
                 cell.push(para_block(p.para));
             }
-            flush_cell(&mut cells, &mut cell);
+            if !row_end_only {
+                flush_cell(&mut cells, &mut cell);
+            }
             if info.ttp {
                 // The row's own edges feed the table grid and its cell spans.
                 let row = build_row(std::mem::take(&mut cells), &info);

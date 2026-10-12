@@ -1440,6 +1440,104 @@ fn edge_defined_table_lays_out_fixed() {
     assert!(!tbl.props.fixed, "edgeless table stays autofit, props: {:?}", tbl.props);
 }
 
+/// #880 fix round 4, defect 1: real Word rows are written as N content cells, each ended
+/// by its own cell mark, followed by an **empty** row-end (TTP) mark that carries the
+/// row's `sprmTDefTable` (verified against the 3GPP repro: every change-history row is
+/// 8 content marks + an empty TTP whose TDefTable defines itcMac = 8). The row-end mark
+/// terminates the row; when it ends no content of its own and the TDefTable already has
+/// a column per flushed cell, it must not flush a phantom (N+1)th cell — that extra
+/// cell had no column (width `None`) and pushed every real cell's span one column over,
+/// misaligning the fixed grid (Subject 241 pt → ~50 pt).
+#[test]
+fn row_end_mark_is_not_an_extra_cell() {
+    let banner_edges: [i16; 2] = [0, 9639];
+    let data_edges: [i16; 9] = [0, 800, 1600, 2694, 3261, 3686, 4111, 8931, 9639];
+    let mut data_stream = Vec::new();
+    let huge_at = |data_stream: &mut Vec<u8>, real: Vec<u8>| -> Vec<u8> {
+        let fc = data_stream.len() as u32;
+        data_stream.extend_from_slice(&(real.len() as u16).to_le_bytes());
+        data_stream.extend_from_slice(&real);
+        grpprl(&[(0x6646, &fc.to_le_bytes())])
+    };
+    let ttp_row = |edges: &[i16]| [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(edges)].concat();
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    // Banner "B" + row-end, then a data row "a".."h" + row-end, then a tail paragraph.
+    let text = "B\u{7}\u{7}a\u{7}b\u{7}c\u{7}d\u{7}e\u{7}f\u{7}g\u{7}h\u{7}\u{7}tail\r";
+    let spec = StructSpec {
+        text,
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),                                    // "B" cell paragraph
+            (2, 0, huge_at(&mut data_stream, ttp_row(&banner_edges))), // banner row-end para
+            (3, 0, in_tbl.clone()),                                    // "a"
+            (5, 0, in_tbl.clone()),
+            (7, 0, in_tbl.clone()),
+            (9, 0, in_tbl.clone()),
+            (11, 0, in_tbl.clone()),
+            (13, 0, in_tbl.clone()),
+            (15, 0, in_tbl.clone()),
+            (17, 0, in_tbl.clone()),                                  // "h" cell paragraph
+            (19, 0, huge_at(&mut data_stream, ttp_row(&data_edges))), // data row-end para
+            (20, 0, Vec::new()),                                      // "tail"
+        ],
+        data_stream,
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 2, "rows: {}", tbl.rows.len());
+    // Banner: one cell spanning the whole (8-column union) grid.
+    assert_eq!(tbl.rows[0].cells.len(), 1, "banner cells: {:?}", tbl.rows[0].cells.len());
+    assert_eq!(tbl.rows[0].cells[0].props.span, 8);
+    assert_eq!(tbl.rows[0].cells[0].props.width, Some(9639.0 / 20.0));
+    // Data row: exactly the TDefTable's 8 cells, each with its own width (computed with
+    // the reader's per-edge i16→pt arithmetic, so the assertion is bit-exact).
+    assert_eq!(tbl.rows[1].cells.len(), 8, "data cells: {}", tbl.rows[1].cells.len());
+    let pts: Vec<f32> = data_edges.iter().map(|&t| t as f32 / 20.0).collect();
+    let want: Vec<Option<f32>> = pts.windows(2).map(|w| Some(w[1] - w[0])).collect();
+    let got: Vec<Option<f32>> = tbl.rows[1].cells.iter().map(|c| c.props.width).collect();
+    assert_eq!(got, want, "data widths");
+    assert!(tbl.rows[1].cells.iter().all(|c| c.props.span == 1), "data spans");
+    let last = doc.body.last().and_then(|b| b.as_para()).expect("tail para");
+    assert_eq!(last.text, "tail");
+}
+
+/// #880 fix round 4, defect 2: the table-level props accumulator was never reset between
+/// tables, so the first table's `sprmTDxaGapHalf` (108 twips = Word's default, written
+/// explicitly) leaked into every later table and the change-history table's own 40-twip
+/// gap lost the first-wins pick — its cells got 5.4 pt side margins instead of 2.0.
+/// Props are per-table: the first row that carries the sprm wins within its own table.
+#[test]
+fn table_props_reset_between_tables() {
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let ttp = |gap_tw: i16, align: bool| {
+        let gap = gap_tw.to_le_bytes();
+        let mut prls = vec![(0x2416u16, &[0x01u8][..]), (0x2417, &[0x01][..]), (0x9602, gap.as_slice())];
+        if align {
+            prls.push((0x5400, &[0x01, 0x00][..])); // sprmTJc: center
+        }
+        grpprl(&prls)
+    };
+    let text = "a\u{7}b\u{7}mid\rc\u{7}d\u{7}";
+    let spec = StructSpec {
+        text,
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),  // "a"
+            (2, 0, ttp(108, true)),  // "b": table 1's row end, 108-twip gap
+            (4, 0, Vec::new()),      // "mid": closes table 1
+            (8, 0, in_tbl),          // "c"
+            (10, 0, ttp(40, false)), // "d": table 2's row end, 40-twip gap
+        ],
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tables: Vec<&wordcraft_doc::table::Table> = doc.body.iter().filter_map(|b| b.as_table()).collect();
+    assert_eq!(tables.len(), 2, "tables: {}", tables.len());
+    assert_eq!(tables[0].props.cell_margins, Some([0.0, 5.4, 0.0, 5.4]), "table 1 margins");
+    assert_eq!(tables[0].props.align, Some(wordcraft_doc::props::Align::Center), "table 1 align");
+    assert_eq!(tables[1].props.cell_margins, Some([0.0, 2.0, 0.0, 2.0]), "table 2 margins: {:?}", tables[1].props);
+    assert_eq!(tables[1].props.align, None, "table 1's align must not leak");
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 
