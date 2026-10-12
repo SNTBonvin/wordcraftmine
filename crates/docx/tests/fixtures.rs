@@ -1584,6 +1584,33 @@ fn cover_page_group_fills_freeforms_and_text_box_margins() {
     check(&wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap());
 }
 
+#[test]
+fn embedded_fonts_survive_a_round_trip() {
+    let table = r#"<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:font w:name="Roboto"><w:embedRegular r:id="rId1"/><w:embedBold r:id="rId2"/></w:font></w:fonts>"#;
+    let table_rels = rels(&[("rId1", "font", "fonts/Roboto-regular.ttf"), ("rId2", "font", "fonts/Roboto-bold.ttf")]);
+    let bytes = docx(
+        "<w:p><w:r><w:t>Hi</w:t></w:r></w:p>",
+        &[("rId9", "fontTable", "fontTable.xml")],
+        &[
+            ("word/fontTable.xml", table),
+            ("word/_rels/fontTable.xml.rels", &table_rels),
+            ("word/fonts/Roboto-regular.ttf", "regular font bytes"),
+            ("word/fonts/Roboto-bold.ttf", "bold font bytes"),
+        ],
+    );
+    let out = wordcraft_docx::write(&wordcraft_docx::read(&bytes).unwrap()).unwrap();
+    let files = unzip(&out);
+    assert_eq!(text(&files, "word/fontTable.xml"), table);
+    assert_eq!(text(&files, "word/fonts/Roboto-regular.ttf"), "regular font bytes");
+    assert_eq!(text(&files, "word/fonts/Roboto-bold.ttf"), "bold font bytes");
+    let table_rels = text(&files, "word/_rels/fontTable.xml.rels");
+    assert!(table_rels.contains(r#"Id="rId1""#) && table_rels.contains("fonts/Roboto-regular.ttf"), "{table_rels}");
+    assert!(text(&files, "word/_rels/document.xml.rels").contains("fontTable.xml"));
+    // A second save keeps them too.
+    let again = unzip(&wordcraft_docx::write(&wordcraft_docx::read(&out).unwrap()).unwrap());
+    assert_eq!(text(&again, "word/fonts/Roboto-bold.ttf"), "bold font bytes");
+}
+
 // ---- native Word ink: opaque preservation, never re-encoded as WordCraft freeforms ----
 
 const INK_NS: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingInk";
@@ -1787,4 +1814,39 @@ fn native_ink_preserves_inner_transform_and_rotation_padding_on_unrelated_saves(
         assert_eq!(attr_values(&body, "w14:xfrm", "rot"), ["2700000"]);
         d = wordcraft_docx::read(&out).unwrap();
     }
+}
+
+/// Word draws a table of contents' entry links without the Hyperlink character style (measured in
+/// Word for Windows); the import drops the style from them, keeping the link. A Hyperlink-styled run
+/// outside a hyperlink, and a hyperlink in another field, keep it.
+#[test]
+fn toc_entry_links_lose_the_hyperlink_style() {
+    let styles = format!(
+        r#"<w:styles {W_NS}><w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/></w:style>
+        <w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="0066FF"/><w:u w:val="single"/></w:rPr></w:style></w:styles>"#
+    );
+    let field = |instr: &str, inner: &str| {
+        format!(
+            r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{instr}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>{inner}</w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#
+        )
+    };
+    let link =
+        |t: &str| format!(r#"<w:hyperlink w:anchor="_Toc1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>{t}</w:t></w:r></w:hyperlink>"#);
+    let body = [
+        field(r#" TOC \o "1-3" \h \z \u "#, &link("entry")),
+        field(" TOC ", r#"<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>styled</w:t></w:r>"#),
+        field(" QUOTE x ", &link("quoted")),
+        format!("<w:p>{}</w:p>", link("plain")),
+        r#"<w:p><w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Target</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#.to_string(),
+    ]
+    .concat();
+    let d = wordcraft_docx::read(&docx(&body, &[("rId1", "styles", "styles.xml")], &[("word/styles.xml", &styles)])).unwrap();
+    let run = |word: &str| {
+        paras(&d).into_iter().find_map(|p| p.text.find(word).map(|at| p.props_of_char(at).clone())).unwrap_or_else(|| panic!("no run with {word}"))
+    };
+    let entry = run("entry");
+    assert_eq!((entry.style.as_deref(), entry.link.as_deref()), (None, Some("#_Toc1")), "a TOC entry: plain, still a link");
+    assert_eq!(run("styled").style.as_deref(), Some("Hyperlink"), "not in a hyperlink: kept");
+    assert_eq!(run("quoted").style.as_deref(), Some("Hyperlink"), "another field: kept");
+    assert_eq!(run("plain").style.as_deref(), Some("Hyperlink"), "outside fields: kept");
 }
