@@ -1537,6 +1537,9 @@
 	New Group	Nuevo grupo
 	Rename…	Cambiar nombre…
 	Ribbon and Quick Access Toolbar:	Cinta de opciones y barra de acceso rápido:
+	Add Font…	Agregar fuente…
+	Added Fonts	Fuentes agregadas
+	Remove Added Font	Quitar fuente agregada
 	Recent Colors	Colores recientes
 	More Colors…	Más colores…
 	Standard	Estándar
@@ -1698,6 +1701,7 @@
 	Continuous numbering	Numeración continua
 	Apply	Aplicar
 	Convert Notes	Convertir notas
+	Hide White Space	Ocultar espacio en blanco
 	All pages	Todas las páginas
 	Current page	Página actual
 	Selected pages	Páginas seleccionadas
