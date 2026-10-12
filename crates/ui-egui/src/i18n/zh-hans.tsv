@@ -89,6 +89,7 @@
 	Click to switch back to inserting	单击以切换回插入模式
 	Color only	仅颜色
 	Compress punctuation at the start of a line	压缩行首标点
+	Couldn't make WordCraft the default: {error}	无法将 WordCraft 设为默认应用：{error}
 	Custom dictionary	自定义词典
 	Dark page (white text on black)	深色页面（黑底白字）
 	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	拖出矩形以绘制表格，或拖出穿过单元格的线条以拆分单元格。按 Esc 结束。
@@ -117,6 +118,7 @@
 	Inside:	内侧：
 	Latin text font:	拉丁文字字体：
 	Left border	左框线
+	In Default apps, choose WordCraft for the document types you want it to open.	请在“默认应用”中，为希望由 WordCraft 打开的文档类型选择 WordCraft。
 	Left Margin	左边距
 	Indents and Spacing	缩进和间距
 	Legal style numbering	正规形式编号
@@ -137,6 +139,9 @@
 	Number format	编号格式
 	Number style for this level:	此级别的编号样式：
 	Outside border	外侧框线
+	Make WordCraft the default for Word documents…	将 WordCraft 设为 Word 文档的默认应用…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	今后用 WordCraft 打开 .docx、.doc、.rtf、.odt 文件和 Word 模板。
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	打开“设置 › 默认应用”，在其中为 .docx 及其他文档类型选择 WordCraft。
 	Overtype	改写
 	Overtype (typing replaces the characters after the caret)	改写（键入的内容替换插入点后的字符）
 	Page display	页面显示
@@ -331,6 +336,8 @@
 	Delete Style	删除样式
 	Delete Table	删除表格
 	Design	设计
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	要默认用 WordCraft 打开 Word 文档：在访达中选中一个文档，选择“文件 › 显示简介”，在“打开方式”中选择 WordCraft，然后点按“全部更改”。
+	WordCraft is now the default app for Word documents.	WordCraft 现在是 Word 文档的默认应用。
 	development build	开发版本
 	Diagonal	斜式
 	Diamond	菱形
@@ -798,6 +805,9 @@
 	Show only comments and formatting in balloons	仅在批注框中显示批注和格式
 	Show revisions in balloons	在批注框中显示修订
 	Show rulers	显示标尺
+	Animation	动画
+	Animate the caret (it glides and fades)	为光标添加动画（平滑移动并淡入淡出）
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	开启：输入或使用方向键时，光标平滑移动到新位置，闪烁时淡入淡出。关闭：光标直接跳转，闪烁时直接显示和隐藏。
 	Show the community button in the title bar	在标题栏中显示社区按钮
 	Show/Hide ¶	显示/隐藏 ¶
 	Show\nComments	显示批注
@@ -1075,6 +1085,8 @@
 	Keeps the fonts and formatting of the copied text.	保留所复制文本的字体和格式。
 	Reads the clipboard's rich text and keeps its formatting.	读取剪贴板中的 RTF 内容并保留其格式。
 	Reads the clipboard's web content and keeps its formatting.	读取剪贴板中的网页内容并保留其格式。
+	Picture	图片
+	Pastes the clipboard's picture.	粘贴剪贴板中的图片。
 	Drops all formatting and pastes plain text.	去除所有格式，粘贴纯文本。
 	Advanced Find	高级查找
 	Advanced Find…	高级查找…
@@ -1412,6 +1424,7 @@
 	Deleted	已删除
 	Interface size:	界面大小：
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	在系统显示缩放的基础上放大或缩小功能区、菜单和对话框。文档缩放单独设置。
+	Resize Table by Dragging	拖动调整表格大小
 	Print Markup	打印标记
 	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	在 PDF、打印和图像中于每页旁显示批注和修订；在网页、Markdown 和文本末尾附上批注列表。
 
@@ -1429,6 +1442,8 @@
 	Border lines	边框线
 	Capitalize first letter of sentences	句首字母大写
 	Capitalize first letter of table cells	表格单元格首字母大写
+	Correct TWo INitial CApitals	更正前两个字母连续大写
+	Correct accidental usage of cAPS LOCK key	更正误按 Caps Lock 键造成的大小写错误
 	Capitalize names of days	星期名称首字母大写
 	Case changes	大小写更改
 	Character level	字符级
@@ -1633,6 +1648,12 @@
 	Enlarge symbol	增大圈号
 	Enclosure	圈号
 	Circle	圆形
+	Numerals:	数字：
+	Numerals	数字
+	Arabic	阿拉伯
+	Hindi	印地
+	Context	上下文
+	System	系统
 	Templates	模板
 	Templates and Add-ins	模板和加载项
 	Attach Template	附加模板
@@ -1686,6 +1707,7 @@
 	Middle	中部
 	Click the empty text box the text should continue in (Esc cancels)	单击要接续文字的空文本框（按 Esc 取消）
 	Not linked: click a text box	未链接：请单击文本框
+	Show KeyTips (Alt or F10)	显示快捷键提示（Alt 或 F10）
 	Location	位置
 	Endnotes	尾注
 	Below text	文字下方
@@ -1698,6 +1720,29 @@
 	Continuous numbering	连续编号
 	Apply	应用
 	Convert Notes	转换注释
+	Reading	阅读
+	Reading Column Width	阅读栏宽
+	Reading Line Spacing	阅读行距
+	Reading Text Size	阅读字号
+	English (United Kingdom)	英语（英国）
+	Polish	波兰语
+	Do Not Check Spelling or Grammar	不检查拼写和语法
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	文档
+	Word document	Word 文档
+	All files	所有文件
+	Recipient lists	收件人列表
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	系统文件对话框不可用，因此 WordCraft 显示自己的对话框。要使用系统对话框，请安装文件选择器门户（例如 xdg-desktop-portal-gtk）或 zenity。
+	Up one level	向上一级
+	Home folder	主文件夹
+	{name} wasn't found.	未找到 {name}。
+	{name} already exists. Choose Save again to replace it.	{name} 已存在。再次选择“保存”即可替换它。
+	This folder can't be read: {error}	无法读取此文件夹：{error}
+	Showing the first {count} items.	仅显示前 {count} 项。
+	File name:	文件名:
+	Browse in WordCraft…	在 WordCraft 中浏览…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	当系统文件对话框没有出现时，使用 WordCraft 自带的浏览器打开文件。
 	Hide White Space	隐藏空白
 	All pages	所有页面
 	Current page	当前页
@@ -1959,7 +2004,6 @@
 	Add line numbering	添加行号
 	Add to Document	添加到文档
 	Address labels	地址标签
-	Arabic	阿拉伯语
 	Auto	自动
 	Automatically hyphenate document	自动断字
 	Chinese (Simplified)	中文（简体）
@@ -1972,7 +2016,6 @@
 	Detect language automatically	自动检测语言
 	Do not check spelling or grammar	不检查拼写或语法
 	Dutch	荷兰语
-	English (United Kingdom)	英语（英国）
 	Envelope size:	信封尺寸：
 	Estonian	爱沙尼亚语
 	Finnish	芬兰语
@@ -2001,7 +2044,6 @@
 	Numbering:	编号：
 	Omit	省略
 	One label per recipient	每位收件人一个标签
-	Polish	波兰语
 	Portuguese (Brazil)	葡萄牙语（巴西）
 	Portuguese (Portugal)	葡萄牙语（葡萄牙）
 	Return address labels	回信地址标签
@@ -2019,3 +2061,13 @@
 	Turkish	土耳其语
 	Ukrainian	乌克兰语
 	{language} is now the document's default language.	{language} 现在是此文档的默认语言。
+	Visual effects	视觉效果
+	Animation effects:	动画效果：
+	On	开
+	Off	关
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	平滑滚动和缩放，以及菜单和按钮的淡入效果。选择“关”后，所有更改会立即显示。
+	Your system has animation effects turned on.	系统已打开动画效果。
+	Your system has animation effects turned off.	系统已关闭动画效果。
+	Your system doesn't report an animation setting, so animation effects stay on.	系统未提供动画设置，因此动画效果保持打开。
+	Region:	区域：
+	Automatic ({region})	自动（{region}）

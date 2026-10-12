@@ -77,6 +77,7 @@
 	Click to switch back to inserting	クリックすると挿入モードに戻ります
 	Color only	色のみ
 	Compress punctuation at the start of a line	行頭の約物を詰める
+	Couldn't make WordCraft the default: {error}	WordCraft を既定のアプリにできませんでした: {error}
 	Custom dictionary	ユーザー辞書
 	Dark page (white text on black)	ダーク ページ (黒地に白い文字)
 	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	四角形をドラッグして表を描くか、セルを横切る線を引いて分割します。Esc で終了します。
@@ -105,6 +106,7 @@
 	Inside:	内側:
 	Latin text font:	ラテン文字のフォント:
 	Left border	左罫線
+	In Default apps, choose WordCraft for the document types you want it to open.	既定のアプリで、WordCraft で開きたい文書の種類ごとに WordCraft を選んでください。
 	Left Margin	左余白
 	Indents and Spacing	インデントと間隔
 	Legal style numbering	正規形式で番号付け
@@ -125,6 +127,9 @@
 	Number format	番号書式
 	Number style for this level:	このレベルの番号の種類:
 	Outside border	外側の罫線
+	Make WordCraft the default for Word documents…	WordCraft を Word 文書の既定のアプリにする…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	今後、.docx、.doc、.rtf、.odt ファイルと Word テンプレートを WordCraft で開きます。
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	設定 › 既定のアプリ を開きます。そこで .docx などの文書の種類ごとに WordCraft を選びます。
 	Overtype	上書き
 	Overtype (typing replaces the characters after the caret)	上書き (入力した文字がカーソルの後ろの文字を置き換えます)
 	Page display	ページの表示
@@ -319,6 +324,8 @@
 	Delete Style	スタイルの削除
 	Delete Table	表の削除
 	Design	デザイン
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Word 文書を既定で WordCraft で開くには: Finder で文書を選び、ファイル › 情報を見る を選んで、「このアプリケーションで開く」で WordCraft を選び、「すべてを変更」をクリックします。
+	WordCraft is now the default app for Word documents.	WordCraft が Word 文書の既定のアプリになりました。
 	development build	開発ビルド
 	Diagonal	対角線
 	Diamond	ひし形
@@ -786,6 +793,9 @@
 	Show only comments and formatting in balloons	コメントと書式のみを吹き出しに表示
 	Show revisions in balloons	変更履歴を吹き出しに表示
 	Show rulers	ルーラーを表示する
+	Animation	アニメーション
+	Animate the caret (it glides and fades)	カーソルをアニメーション表示する（滑らかに移動してフェードする）
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	オン: 入力や矢印キーの操作でカーソルが新しい位置へ滑らかに移動し、点滅もフェードします。オフ: カーソルは瞬時に移動し、点滅は表示と非表示が切り替わるだけです。
 	Show the community button in the title bar	タイトル バーにコミュニティ ボタンを表示する
 	Show/Hide ¶	編集記号の表示/非表示 ¶
 	Show\nComments	コメントの表示
@@ -1063,6 +1073,8 @@
 	Keeps the fonts and formatting of the copied text.	コピーしたテキストのフォントと書式を保持します。
 	Reads the clipboard's rich text and keeps its formatting.	クリップボードの RTF を読み込み、書式を保持します。
 	Reads the clipboard's web content and keeps its formatting.	クリップボードの Web コンテンツを読み込み、書式を保持します。
+	Picture	画像
+	Pastes the clipboard's picture.	クリップボードの画像を貼り付けます。
 	Drops all formatting and pastes plain text.	書式をすべて取り除き、プレーン テキストとして貼り付けます。
 	Advanced Find	高度な検索
 	Advanced Find…	高度な検索…
@@ -1400,6 +1412,7 @@
 	Deleted	削除
 	Interface size:	表示サイズ:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	リボン、メニュー、ダイアログを、システムの表示倍率に加えて拡大または縮小します。文書のズームは別に設定します。
+	Resize Table by Dragging	ドラッグで表のサイズを変更
 	Print Markup	変更履歴とコメントを印刷
 	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	PDF、印刷、画像では各ページの横にコメントと変更履歴を表示し、Web ページ、Markdown、テキストでは末尾にコメント一覧を付けます。
 
@@ -1417,6 +1430,8 @@
 	Border lines	罫線
 	Capitalize first letter of sentences	文の先頭文字を大文字にする
 	Capitalize first letter of table cells	表のセルの先頭文字を大文字にする
+	Correct TWo INitial CApitals	先頭 2 文字の大文字を修正する
+	Correct accidental usage of cAPS LOCK key	Caps Lock キーの押し間違いを修正する
 	Capitalize names of days	曜日の先頭文字を大文字にする
 	Case changes	大文字/小文字の変更
 	Character level	文字単位
@@ -1621,6 +1636,12 @@
 	Enlarge symbol	記号を拡大
 	Enclosure	囲い
 	Circle	円
+	Numerals:	数字:
+	Numerals	数字
+	Arabic	アラビア
+	Hindi	ヒンディー
+	Context	コンテキスト
+	System	システム
 	Templates	テンプレート
 	Templates and Add-ins	テンプレートとアドイン
 	Attach Template	テンプレートの添付
@@ -1674,6 +1695,7 @@
 	Middle	中央
 	Click the empty text box the text should continue in (Esc cancels)	テキストの続きを入れる空のテキスト ボックスをクリックしてください (Esc でキャンセル)
 	Not linked: click a text box	リンクされていません: テキスト ボックスをクリックしてください
+	Show KeyTips (Alt or F10)	キー操作のヒントを表示（Alt または F10）
 	Location	場所
 	Endnotes	文末脚注
 	Below text	本文の直後
@@ -1686,6 +1708,29 @@
 	Continuous numbering	通し番号
 	Apply	適用
 	Convert Notes	注の変換
+	Reading	閲覧
+	Reading Column Width	閲覧時の列幅
+	Reading Line Spacing	閲覧時の行間
+	Reading Text Size	閲覧時の文字サイズ
+	English (United Kingdom)	英語（英国）
+	Polish	ポーランド語
+	Do Not Check Spelling or Grammar	スペル チェックと文章校正を行わない
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	ドキュメント
+	Word document	Word 文書
+	All files	すべてのファイル
+	Recipient lists	宛先リスト
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	システムのファイル ダイアログを利用できないため、WordCraft 独自のダイアログを表示しています。システムのダイアログを使うには、ファイル選択ポータル (xdg-desktop-portal-gtk など) または zenity をインストールしてください。
+	Up one level	1 つ上のフォルダー
+	Home folder	ホーム フォルダー
+	{name} wasn't found.	{name} が見つかりません。
+	{name} already exists. Choose Save again to replace it.	{name} は既に存在します。置き換えるには、もう一度 [保存] を選んでください。
+	This folder can't be read: {error}	このフォルダーを読み取れません: {error}
+	Showing the first {count} items.	最初の {count} 項目を表示しています。
+	File name:	ファイル名:
+	Browse in WordCraft…	WordCraft で参照…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	システムのファイル ダイアログが表示されないときに、WordCraft 独自のブラウザーでファイルを開きます。
 	Hide White Space	余白を非表示
 	All pages	すべてのページ
 	Current page	現在のページ
@@ -1947,7 +1992,6 @@
 	Add line numbering	行番号を追加する
 	Add to Document	文書に追加
 	Address labels	宛名ラベル
-	Arabic	アラビア語
 	Auto	自動
 	Automatically hyphenate document	文書を自動的にハイフネーションする
 	Chinese (Simplified)	中国語（簡体字）
@@ -1960,7 +2004,6 @@
 	Detect language automatically	言語を自動的に検出する
 	Do not check spelling or grammar	スペルチェックと文章校正を行わない
 	Dutch	オランダ語
-	English (United Kingdom)	英語（英国）
 	Envelope size:	封筒サイズ:
 	Estonian	エストニア語
 	Finnish	フィンランド語
@@ -1989,7 +2032,6 @@
 	Numbering:	番号の付け方:
 	Omit	省略
 	One label per recipient	宛先ごとに 1 枚のラベル
-	Polish	ポーランド語
 	Portuguese (Brazil)	ポルトガル語（ブラジル）
 	Portuguese (Portugal)	ポルトガル語（ポルトガル）
 	Return address labels	差出人ラベル
@@ -2007,3 +2049,13 @@
 	Turkish	トルコ語
 	Ukrainian	ウクライナ語
 	{language} is now the document's default language.	{language} がこの文書の既定の言語になりました。
+	Visual effects	視覚効果
+	Animation effects:	アニメーション効果:
+	On	オン
+	Off	オフ
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	スクロールやズームのなめらかな動きと、メニューやボタンのフェード表示です。「オフ」にすると、すべての変化がすぐに表示されます。
+	Your system has animation effects turned on.	システムのアニメーション効果はオンです。
+	Your system has animation effects turned off.	システムのアニメーション効果はオフです。
+	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。
+	Region:	地域:
+	Automatic ({region})	自動 ({region})

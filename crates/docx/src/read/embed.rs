@@ -6,20 +6,45 @@
 //! reaches through relationships (chart, embedded workbook, colours and style; diagram data, layout,
 //! quick style, colours and drawing; OLE embedding and its picture…) as opaque bytes in
 //! `Document::passthrough`, with their content types and relationships in an
-//! [`EmbeddedManifest`](crate::package::EmbeddedManifest).
+//! [`EmbeddedManifest`](crate::package::EmbeddedManifest). The font table and the fonts it embeds
+//! are kept the same way.
 
 use std::sync::Arc;
 
 use wordcraft_doc::graphic::{Embedded, EmbeddedRef};
 
 use super::Reader;
-use crate::package::{ContentTypes, MAX_EMBEDDED_PARTS, MAX_EMBEDDED_RELS, MAX_EMBEDDED_XML, Rel, Rels, manifest_field_ok};
+use crate::package::{
+    CUSTOM_XML_ROOTS, ContentTypes, MAX_EMBEDDED_PARTS, MAX_EMBEDDED_RELS, MAX_EMBEDDED_XML, Rel, Rels, manifest_field_ok, rel_is, rt,
+};
 use crate::xml::{El, MAX_DEPTH, NAMESPACES, esc};
 
 /// Most relationship ids one object's markup may use.
 const MAX_IDS: usize = 64;
 
 impl Reader<'_> {
+    /// Keep custom XML stores reached from the main document or package, without evaluating
+    /// bindings. A bibliography already loaded into the source model belongs to its writer.
+    pub(super) fn keep_custom_xml(&mut self, package: &Rels, document: &Rels) {
+        let mut roots = String::new();
+        for (owner, rels) in [("P", package), ("D", document)] {
+            for rel in rels.list.iter().filter(|r| !r.external && rel_is(&r.kind, rt::CUSTOM_XML)).take(MAX_EMBEDDED_RELS) {
+                if ![&rel.kind, &rel.target].iter().all(|s| manifest_field_ok(s)) {
+                    continue;
+                }
+                if !self.doc.sources.is_empty() && self.xml(&rel.target).ok().flatten().is_some_and(|r| r.local() == "Sources") {
+                    continue;
+                }
+                if self.keep_part_tree(&rel.target) {
+                    roots.push_str(&format!("{owner}\t{}\t{}\n", rel.kind, rel.target));
+                }
+            }
+        }
+        if !roots.is_empty() {
+            self.doc.passthrough.insert(CUSTOM_XML_ROOTS.into(), Arc::new(roots.into_bytes()));
+        }
+    }
+
     /// Keep `el` (an object's `a:graphic` or `w:object`, read with `rels`) and the parts it refers
     /// to, so the object can be written back. `extra` names relationships the object's parts use
     /// by id although its markup doesn't (a SmartArt drawing, named in the diagram's data part).
@@ -49,7 +74,7 @@ impl Reader<'_> {
 
     /// Keep part `root` and every part it reaches through its relationships. False when `root`
     /// itself can't be kept.
-    fn keep_part_tree(&mut self, root: &str) -> bool {
+    pub(super) fn keep_part_tree(&mut self, root: &str) -> bool {
         if self.embedded.parts.contains_key(root) {
             return true;
         }

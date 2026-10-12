@@ -163,6 +163,7 @@
 	Bold	Negrita
 	Bookmark	Marcador
 	Bookmark name:	Nombre del marcador:
+	Book Title	Título de libro
 	Border Painter	Pincel de bordes
 	Border\nPainter	Pincel de\nbordes
 	Borders	Bordes
@@ -211,6 +212,7 @@
 	Cancel	Cancelar
 	Capitalize Each Word	Mayúscula inicial en cada palabra
 	Captions	Leyendas
+	Category	Categoría
 	Cell Margins	Márgenes de celda
 	Cell Size	Tamaño de celda
 	Cell\nMargins	Márgenes de\ncelda
@@ -273,6 +275,7 @@
 	Compress Pictures	Comprimir imágenes
 	Compress punctuation at the start of a line	Comprimir la puntuación al inicio de la línea
 	Continuous	Continuo
+	Contributors	Colaboradores
 	Convert	Convertir
 	Convert Text to Table	Convertir texto en tabla
 	Convert Text to Table…	Convertir texto en tabla…
@@ -280,6 +283,7 @@
 	Copy	Copiar
 	Copy Formatting	Copiar formato
 	Corrections	Correcciones
+	Couldn't make WordCraft the default: {error}	No se pudo hacer de WordCraft la aplicación predeterminada: {error}
 	Count words in text boxes and notes	Contar las palabras de los cuadros de texto y las notas
 	Cover Page	Portada
 	Create	Crear
@@ -364,6 +368,9 @@
 	Editor	Editor
 	Effects	Efectos
 	Emboss	Relieve
+	Emphasis	Énfasis
+	Endnote Reference	Referencia de nota al final
+	Endnote Text	Texto de nota al final
 	Encrypt with Password	Cifrar con contraseña
 	English (United States)	Inglés (Estados Unidos)
 	Engrave	Grabado
@@ -404,6 +411,8 @@
 	Fonts	Fuentes
 	Footer	Pie de página
 	Footnote and Endnote	Nota al pie y nota final
+	Footnote Reference	Referencia de nota al pie
+	Footnote Text	Texto de nota al pie
 	Footnotes	Notas al pie
 	Format	Formato
 	Format Page Numbers	Formato de números de página
@@ -442,6 +451,7 @@
 	Home	Inicio
 	Horizontal	Horizontal
 	Horizontal Line	Línea horizontal
+	Hyperlink	Hipervínculo
 	Hyphenation	Separación de palabras
 	Icons	Iconos
 	Ignore All	Omitir todo
@@ -449,6 +459,7 @@
 	Immersive	Inmersivo
 	Immersive Reader	Lector inmersivo
 	Immersive\nReader	Lector\ninmersivo
+	In Default apps, choose WordCraft for the document types you want it to open.	En Aplicaciones predeterminadas, elige WordCraft para los tipos de documento que quieras que abra.
 	Increase Font Size	Aumentar tamaño de fuente
 	Increase Indent	Aumentar sangría
 	Indent	Sangría
@@ -482,6 +493,9 @@
 	Insert\nCaption	Insertar\nleyenda
 	Insert\nCitation	Insertar\ncita
 	Insert\nFootnote	Insertar nota\nal pie
+	Intense Emphasis	Énfasis intenso
+	Intense Quote	Cita intensa
+	Intense Reference	Referencia intensa
 	Inside Borders	Bordes interiores
 	Inspect Document	Inspeccionar documento
 	Inspect Styles at Selection	Inspeccionar estilos de la selección
@@ -496,6 +510,7 @@
 	Keep with Next	Mantener con el siguiente
 	Keep with next	Mantener con el siguiente
 	Keeps the fonts and formatting of the copied text.	Conserva las fuentes y el formato del texto copiado.
+	Keywords	Palabras clave
 	Labels	Etiquetas
 	Landscape	Horizontal
 	Language	Idioma
@@ -531,6 +546,7 @@
 	MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.	MIT o Apache-2.0. Copyright (c) 2026 ArtCraft Team y los colaboradores de WordCraft.
 	Macros	Macros
 	Mailings	Correspondencia
+	Make WordCraft the default for Word documents…	Hacer de WordCraft la aplicación predeterminada para documentos de Word…
 	Manage Sources	Administrar fuentes
 	Many pages	Varias páginas
 	Margins	Márgenes
@@ -578,6 +594,7 @@
 	No Color	Sin color
 	No Markup	Sin marcas
 	No Paragraph Space	Sin espacio entre párrafos
+	No Spacing	Sin espaciado
 	No contributor data was built into this copy.	Esta copia no incluye datos de colaboradores.
 	No model credits were built into this copy.	Esta copia no incluye créditos de modelos.
 	No templates match your search.	Ninguna plantilla coincide con la búsqueda.
@@ -602,6 +619,8 @@
 	One Page	Una página
 	Open	Abrir
 	OpenDocument Text (*.odt)	Texto de OpenDocument (*.odt)
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	A partir de ahora, los archivos .docx, .doc, .rtf y .odt y las plantillas de Word se abren con WordCraft.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Abre Configuración › Aplicaciones predeterminadas, donde eliges WordCraft para .docx y los demás tipos de documento.
 	Optional Hyphen	Guion opcional
 	Copyright Sign	Signo de copyright
 	Ellipsis	Puntos suspensivos
@@ -686,12 +705,15 @@
 	Quick Access Toolbar	Barra de herramientas de acceso rápido
 	Quick Parts	Elementos rápidos
 	Quick Tables	Tablas rápidas
+	Quote	Cita
 	Read Aloud	Leer en voz alta
 	Read Mode	Modo lectura
 	Read\nAloud	Leer en\nvoz alta
 	Read\nMode	Modo\nlectura
 	Reads the clipboard's rich text and keeps its formatting.	Lee el texto enriquecido del portapapeles y conserva su formato.
 	Reads the clipboard's web content and keeps its formatting.	Lee el contenido web del portapapeles y conserva su formato.
+	Picture	Imagen
+	Pastes the clipboard's picture.	Pega la imagen del portapapeles.
 	Reading Highlight	Resaltado de lectura
 	Recent	Recientes
 	Record Macro	Grabar macro
@@ -808,6 +830,9 @@
 	Show only comments and formatting in balloons	Mostrar solo comentarios y formato en globos
 	Show revisions in balloons	Mostrar revisiones en globos
 	Show rulers	Mostrar reglas
+	Animation	Animación
+	Animate the caret (it glides and fades)	Animar el cursor (se desliza y se desvanece)
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Activado: el cursor se desliza hasta su nueva posición al escribir o usar las flechas, y su parpadeo se desvanece. Desactivado: salta y parpadea de golpe.
 	Show the community button in the title bar	Mostrar el botón de comunidad en la barra de título
 	Show/Hide ¶	Mostrar u ocultar ¶
 	Show\nComments	Mostrar\ncomentarios
@@ -845,6 +870,7 @@
 	Statistics	Estadísticas
 	Status Bar	Barra de estado
 	Strikethrough	Tachado
+	Strong	Fuerte
 	Studio cover	Portada de Studio
 	Studio handbook (sample)	Manual de Studio (ejemplo)
 	Style	Estilo
@@ -854,7 +880,11 @@
 	Style: {style}	Estilo: {style}
 	Styles	Estilos
 	Styles Pane	Panel de estilos
+	Subject	Asunto
 	Subscript	Subíndice
+	Subtitle	Subtítulo
+	Subtle Emphasis	Énfasis sutil
+	Subtle Reference	Referencia sutil
 	Superscript	Superíndice
 	Switch Modes	Cambiar de modo
 	Switch\nModes	Cambiar\nde modo
@@ -900,6 +930,9 @@
 	Thick	Gruesa
 	Three	Tres
 	Tight	Ajustado
+	TOC Heading	Título de tabla de contenido
+	TOC {n}	Tabla de contenido {n}
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Para abrir los documentos de Word con WordCraft de forma predeterminada: selecciona uno en el Finder, elige Archivo › Obtener información, selecciona WordCraft en «Abrir con» y haz clic en «Cambiar todo».
 	Top Border	Borde superior
 	Top Margin	Margen superior
 	Top of Page	Parte superior de la página
@@ -960,6 +993,7 @@
 	Word XML Document (*.xml)	Documento XML de Word (*.xml)
 	WordArt	WordArt
 	WordCraft	WordCraft
+	WordCraft is now the default app for Word documents.	WordCraft es ahora la aplicación predeterminada para los documentos de Word.
 	Words	Palabras
 	Words only	Solo palabras
 	Wrap Text	Ajustar texto
@@ -1241,6 +1275,7 @@
 	Index and Tables	Índices y tablas
 	Line between	Línea entre columnas
 	Links and References	Vínculos y referencias
+	List Paragraph	Párrafo de lista
 	Mail Merge	Combinar correspondencia
 	More Columns…	Más columnas…
 	More Symbols…	Más símbolos…
@@ -1362,6 +1397,7 @@
 	First	Primero
 	Last	Último
 	Model	Modelo
+	Models	Modelos
 	Version	Versión
 	% of all commits	% de todos los commits
 	Lines +/−	Líneas +/−
@@ -1416,6 +1452,7 @@
 	Deleted	Eliminado
 	Interface size:	Tamaño de la interfaz:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Agranda o reduce la cinta, los menús y los cuadros de diálogo, además del escalado de pantalla del sistema. El zoom del documento es aparte.
+	Resize Table by Dragging	Cambiar tamaño de tabla arrastrando
 	Print Markup	Imprimir marcas
 	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Comentarios junto a cada página y cambios marcados en PDF, impresiones e imágenes; una lista de comentarios al final de páginas web, Markdown y texto.
 
@@ -1433,6 +1470,8 @@
 	Border lines	Líneas de borde
 	Capitalize first letter of sentences	Poner en mayúscula la primera letra de las oraciones
 	Capitalize first letter of table cells	Poner en mayúscula la primera letra de las celdas
+	Correct TWo INitial CApitals	Corregir DOs MAyúsculas SEguidas
+	Correct accidental usage of cAPS LOCK key	Corregir el uso accidental de bLOQ mAYÚS
 	Capitalize names of days	Poner en mayúscula los nombres de los días
 	Case changes	Cambios de mayúsculas
 	Character level	Nivel de carácter
@@ -1637,6 +1676,12 @@
 	Enlarge symbol	Agrandar símbolo
 	Enclosure	Contorno
 	Circle	Círculo
+	Numerals:	Números:
+	Numerals	Números
+	Arabic	Árabe
+	Hindi	Hindi
+	Context	Contexto
+	System	Sistema
 	Templates	Plantillas
 	Templates and Add-ins	Plantillas y complementos
 	Attach Template	Adjuntar plantilla
@@ -1690,6 +1735,7 @@
 	Middle	En medio
 	Click the empty text box the text should continue in (Esc cancels)	Haga clic en el cuadro de texto vacío donde debe continuar el texto (Esc cancela)
 	Not linked: click a text box	Sin vincular: haga clic en un cuadro de texto
+	Show KeyTips (Alt or F10)	Mostrar sugerencias de teclas (Alt o F10)
 	Location	Ubicación
 	Endnotes	Notas finales
 	Below text	Debajo del texto
@@ -1702,6 +1748,29 @@
 	Continuous numbering	Numeración continua
 	Apply	Aplicar
 	Convert Notes	Convertir notas
+	Reading	Lectura
+	Reading Column Width	Ancho de columna de lectura
+	Reading Line Spacing	Interlineado de lectura
+	Reading Text Size	Tamaño del texto de lectura
+	English (United Kingdom)	Inglés (Reino Unido)
+	Polish	Polaco
+	Do Not Check Spelling or Grammar	No revisar la ortografía ni la gramática
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	Documentos
+	Word document	Documento de Word
+	All files	Todos los archivos
+	Recipient lists	Listas de destinatarios
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	El cuadro de diálogo de archivos del sistema no está disponible, así que WordCraft muestra el suyo. Para usar el del sistema, instala un portal selector de archivos (como xdg-desktop-portal-gtk) o zenity.
+	Up one level	Subir un nivel
+	Home folder	Carpeta personal
+	{name} wasn't found.	No se encontró {name}.
+	{name} already exists. Choose Save again to replace it.	{name} ya existe. Elige Guardar otra vez para reemplazarlo.
+	This folder can't be read: {error}	No se puede leer esta carpeta: {error}
+	Showing the first {count} items.	Se muestran los primeros {count} elementos.
+	File name:	Nombre de archivo:
+	Browse in WordCraft…	Examinar en WordCraft…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Abre un archivo con el explorador propio de WordCraft cuando no aparece el cuadro de diálogo de archivos del sistema.
 	Hide White Space	Ocultar espacio en blanco
 	All pages	Todas las páginas
 	Current page	Página actual
@@ -1963,7 +2032,6 @@
 	Add line numbering	Agregar numeración de líneas
 	Add to Document	Agregar al documento
 	Address labels	Etiquetas de dirección
-	Arabic	Árabe
 	Auto	Auto
 	Automatically hyphenate document	Separar palabras automáticamente en el documento
 	Chinese (Simplified)	Chino (simplificado)
@@ -1976,7 +2044,6 @@
 	Detect language automatically	Detectar idioma automáticamente
 	Do not check spelling or grammar	No revisar la ortografía ni la gramática
 	Dutch	Neerlandés
-	English (United Kingdom)	Inglés (Reino Unido)
 	Envelope size:	Tamaño del sobre:
 	Estonian	Estonio
 	Finnish	Finés
@@ -2005,7 +2072,6 @@
 	Numbering:	Numeración:
 	Omit	Omitir
 	One label per recipient	Una etiqueta por destinatario
-	Polish	Polaco
 	Portuguese (Brazil)	Portugués (Brasil)
 	Portuguese (Portugal)	Portugués (Portugal)
 	Return address labels	Etiquetas de remitente
@@ -2023,3 +2089,13 @@
 	Turkish	Turco
 	Ukrainian	Ucraniano
 	{language} is now the document's default language.	{language} es ahora el idioma predeterminado del documento.
+	Visual effects	Efectos visuales
+	Animation effects:	Efectos de animación:
+	On	Activado
+	Off	Desactivado
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Desplazamiento y zoom suaves, y menús y botones que aparecen gradualmente. Con «Desactivado», cada cambio se muestra al instante.
+	Your system has animation effects turned on.	Tu sistema tiene activados los efectos de animación.
+	Your system has animation effects turned off.	Tu sistema tiene desactivados los efectos de animación.
+	Your system doesn't report an animation setting, so animation effects stay on.	Tu sistema no indica ningún ajuste de animación, así que los efectos de animación siguen activados.
+	Region:	Región:
+	Automatic ({region})	Automático ({region})
