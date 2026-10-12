@@ -84,6 +84,48 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
     Ok(())
 }
 
+/// The value of `--flag` when it is given exactly once, `None` when it is absent, and an error when
+/// it is given twice or its value is missing (the flag ends the command line, or is followed by
+/// another option). The lenient `arg_value` is first-wins and loses a malformed value silently.
+fn arg_value_once(command: &str, args: &[String], flag: &str) -> Result<Option<String>, String> {
+    let mut given = args.iter().filter(|arg| arg.as_str() == flag);
+    if given.next().is_none() {
+        return Ok(None);
+    }
+    if given.next().is_some() {
+        return Err(format!("{command}: {flag} given twice"));
+    }
+    // Exactly one `flag`: the token after it is its value, unless that token is another option.
+    let value =
+        args.iter().zip(args.iter().skip(1)).find(|(arg, _)| arg.as_str() == flag).map(|(_, value)| value).filter(|value| !value.starts_with("--"));
+    match value {
+        Some(value) => Ok(Some(value.clone())),
+        None => Err(format!("{command}: {flag} needs a value")),
+    }
+}
+
+/// `--page N` and `--scale S` for PNG export (`render`, `run --save *.png`). An option left out
+/// stays `None`, so the engine's defaults apply; a malformed, out-of-range or repeated value is a
+/// user error, never a silent fallback to a default or the engine's clamp (#981).
+fn page_scale(command: &str, args: &[String]) -> Result<(Option<u64>, Option<f64>), String> {
+    let page = match arg_value_once(command, args, "--page")? {
+        None => None,
+        Some(value) => match value.parse::<u64>() {
+            Ok(page) if page >= 1 => Some(page),
+            _ => return Err(format!("{command}: --page must be a whole number of at least 1, not `{value}`")),
+        },
+    };
+    let scale = match arg_value_once(command, args, "--scale")? {
+        None => None,
+        Some(value) => match value.parse::<f64>() {
+            // `nan` and `inf` parse but never compare greater than 0, so rule them out explicitly.
+            Ok(scale) if scale.is_finite() && scale > 0.0 => Some(scale),
+            _ => return Err(format!("{command}: --scale must be a number greater than 0, not `{value}`")),
+        },
+    };
+    Ok((page, scale))
+}
+
 /// Take `--automation-read-root` / `--automation-write-root` (each `--flag DIR` or `--flag=DIR`,
 /// once) out of `args`, and open the roots, which must be existing folders. Returns the arguments
 /// that are left. A malformed root flag is an error, never a root silently left out.
@@ -211,15 +253,16 @@ fn run(args: &[String]) -> Result<(), Failure> {
         }
         "render" => {
             validate_options("render", &rest, RENDER_OPTIONS)?;
+            let (page, scale) = page_scale("render", &rest)?;
             let (i, o) = (pos(0)?, pos(1)?);
             let mut s = open(&i)?;
-            let page = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()).unwrap_or(1);
-            let scale = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()).unwrap_or(2.0);
-            let r = s.run("file.exportPng", &json!({"path": o, "page": page, "scale": scale})).map_err(|e| e.to_string())?;
+            let r =
+                s.run("file.exportPng", &json!({"path": o, "page": page.unwrap_or(1), "scale": scale.unwrap_or(2.0)})).map_err(|e| e.to_string())?;
             write_stdout(|o| writeln!(o, "{r}"))
         }
         "run" => {
             validate_options("run", &rest, RUN_OPTIONS)?;
+            let (page, scale) = page_scale("run", &rest)?;
             let mut s = match (arg_value(&rest, "--file"), arg_value(&rest, "--template")) {
                 (Some(f), _) => open(&f)?,
                 (None, Some(t)) => {
@@ -252,10 +295,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
             if let Some(out) = arg_value(&rest, "--save") {
                 let r = if out.to_ascii_lowercase().ends_with(".png") {
                     let mut v = json!({"path": out});
-                    if let Some(n) = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()) {
+                    if let Some(n) = page {
                         v["page"] = json!(n);
                     }
-                    if let Some(k) = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()) {
+                    if let Some(k) = scale {
                         v["scale"] = json!(k);
                     }
                     s.run("file.exportPng", &v)
@@ -457,6 +500,79 @@ mod tests {
         assert_eq!(run(&args(&["info", "missing.docx", "--passwrod", "x"])), Err("info: unknown option --passwrod".into()));
         assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])), Err("render: unknown option --sclae".into()));
         assert_eq!(run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])), Err("zotero: unknown option --prot".into()));
+    }
+
+    #[test]
+    fn page_and_scale_accept_absent_options_and_valid_values() {
+        assert_eq!(page_scale("render", &args(&["in.docx", "out.png"])), Ok((None, None)));
+        assert_eq!(page_scale("render", &args(&["in.docx", "out.png", "--page", "2", "--scale", "1.5"])), Ok((Some(2), Some(1.5))));
+        assert_eq!(page_scale("run", &args(&["--file", "f.docx", "--save", "out.png", "--page", "7", "--scale", "8"])), Ok((Some(7), Some(8.0))));
+    }
+
+    #[test]
+    fn bad_page_and_scale_values_are_rejected_not_silently_defaulted() {
+        let render = ["render", "in.docx", "out.png"];
+        for bad in [
+            ["--page", "banana"],
+            ["--page", "-1"],
+            ["--page", "0"],
+            ["--page", "99999999999999999999"],
+            ["--scale", "banana"],
+            ["--scale", "0"],
+            ["--scale", "-2"],
+            ["--scale", "nan"],
+            ["--scale", "inf"],
+            ["--scale", "1e-400"],
+        ] {
+            let argv: Vec<&str> = render.iter().copied().chain(bad).collect();
+            assert!(page_scale("render", &args(&argv)).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn bad_page_and_scale_values_are_rejected_before_the_file_is_opened() {
+        // Validation runs before the document is opened: `missing.docx` does not exist, so an error
+        // about the option (and not about the file) proves the check comes first.
+        let render = ["render", "missing.docx", "out.png"];
+        for (bad, message) in [
+            (["--page", "banana"], "--page must be a whole number of at least 1, not `banana`"),
+            (["--page", "-1"], "--page must be a whole number of at least 1, not `-1`"),
+            (["--page", "0"], "--page must be a whole number of at least 1, not `0`"),
+            (["--scale", "0"], "--scale must be a number greater than 0, not `0`"),
+            (["--scale", "nan"], "--scale must be a number greater than 0, not `nan`"),
+        ] {
+            let argv: Vec<&str> = render.iter().copied().chain(bad).collect();
+            assert_eq!(run(&args(&argv)), Err(format!("render: {message}").into()));
+        }
+        // The `run` path shares the options and the rules.
+        assert_eq!(
+            run(&args(&["run", "--file", "missing.docx", "--save", "out.png", "--page", "banana"])),
+            Err("run: --page must be a whole number of at least 1, not `banana`".into())
+        );
+    }
+
+    #[test]
+    fn page_and_scale_must_appear_once_with_a_value() {
+        assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--page"])), Err("render: --page needs a value".into()));
+        assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--scale", "--page", "1"])), Err("render: --scale needs a value".into()));
+        assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--page", "1", "--page", "2"])), Err("render: --page given twice".into()));
+        assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--scale", "1", "--scale", "2"])), Err("render: --scale given twice".into()));
+    }
+
+    #[test]
+    fn render_and_run_save_png_with_valid_page_and_scale() {
+        let dir = std::env::temp_dir().join(format!("wc-cli-page-scale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let docx = dir.join("t.docx").to_string_lossy().into_owned();
+        assert!(run(&args(&["run", "--template", "sample", "--save", &docx])).is_ok());
+        let rendered = dir.join("page2.png").to_string_lossy().into_owned();
+        assert!(run(&args(&["render", &docx, &rendered, "--page", "2", "--scale", "1"])).is_ok());
+        assert!(std::path::Path::new(&rendered).is_file());
+        let saved = dir.join("run-save.png").to_string_lossy().into_owned();
+        assert!(run(&args(&["run", "--file", &docx, "--save", &saved, "--page", "2", "--scale", "1"])).is_ok());
+        assert!(std::path::Path::new(&saved).is_file());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
