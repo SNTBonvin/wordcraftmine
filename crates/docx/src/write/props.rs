@@ -29,11 +29,18 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
     // The complex-script font is written only when set: without it, Persian/Arabic text keeps
     // the style's. Complex-script bold, italic and size default to the plain ones (they come in
     // pairs, see `CharProps::overlay`), so text formatted here looks the same in Word.
-    match (&c.font, &c.font_cs) {
-        (Some(f), Some(cs)) => w.empty("w:rFonts", &[("w:ascii", f), ("w:hAnsi", f), ("w:cs", cs)]),
-        (Some(f), None) => w.empty("w:rFonts", &[("w:ascii", f), ("w:hAnsi", f)]),
-        (None, Some(cs)) => w.empty("w:rFonts", &[("w:cs", cs)]),
-        (None, None) => {}
+    let mut fonts: Vec<(&str, &str)> = Vec::new();
+    if let Some(f) = &c.font {
+        fonts.extend([("w:ascii", f.as_str()), ("w:hAnsi", f.as_str())]);
+    }
+    if let Some(ea) = &c.font_ea {
+        fonts.push(("w:eastAsia", ea));
+    }
+    if let Some(cs) = &c.font_cs {
+        fonts.push(("w:cs", cs));
+    }
+    if !fonts.is_empty() {
+        w.empty("w:rFonts", &fonts);
     }
     toggle(w, "w:b", c.bold);
     toggle(w, "w:bCs", c.bold_cs.or(c.bold));
@@ -282,16 +289,29 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
         }
         w.empty("w:spacing", &a);
     }
-    if p.indent_left.is_some() || p.indent_right.is_some() || p.indent_first.is_some() {
+    let chars = [p.indent_left_chars, p.indent_right_chars, p.indent_first_chars];
+    if p.indent_left.is_some() || p.indent_right.is_some() || p.indent_first.is_some() || chars.iter().any(Option::is_some) {
         let l = p.indent_left.map(twips);
         let r = p.indent_right.map(twips);
         let f = p.indent_first.map(|v| (v < 0.0, twips(v.abs())));
+        // Character units in hundredths of a character.
+        let hundredths = |v: f32| ((v.clamp(-1584.0, 1584.0) * 100.0).round() as i64).to_string();
+        let [lc, rc, fc] = chars.map(|c| c.map(|v| (v < 0.0, hundredths(v.abs()), hundredths(v))));
         let mut a: Vec<(&str, &str)> = Vec::new();
+        if let Some((_, _, v)) = &lc {
+            a.push(("w:leftChars", v));
+        }
         if let Some(l) = &l {
             a.push(("w:left", l));
         }
+        if let Some((_, _, v)) = &rc {
+            a.push(("w:rightChars", v));
+        }
         if let Some(r) = &r {
             a.push(("w:right", r));
+        }
+        if let Some((hang, v, _)) = &fc {
+            a.push((if *hang { "w:hangingChars" } else { "w:firstLineChars" }, v));
         }
         if let Some((hang, v)) = &f {
             a.push((if *hang { "w:hanging" } else { "w:firstLine" }, v));
@@ -299,6 +319,7 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
         w.empty("w:ind", &a);
     }
     toggle(w, "w:contextualSpacing", p.contextual_spacing);
+    toggle(w, "w:mirrorIndents", p.mirror_indents);
     if let Some(a) = p.align {
         w.val("w:jc", align_val(a));
     }

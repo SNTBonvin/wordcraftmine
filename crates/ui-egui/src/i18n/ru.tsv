@@ -804,7 +804,6 @@ preview	Title	Пример
 	Wide	Широкие
 	Widow/Orphan Control	Запрет висячих строк
 	Widow/Orphan control	Запрет висячих строк
-	Wildcards (regex)	Подстановочные знаки (regex)
 	Window	Окно
 	Word Count	Число слов
 	Word document (*.docx)	Документ Word (*.docx)
@@ -1975,6 +1974,19 @@ preview	Title	Пример
 	Search icons	Поиск значков
 	No icons match your search.	Нет значков, соответствующих поиску.
 	Recolor a one-color picture, such as an icon	Перекрасить одноцветный рисунок, например значок
+	Templates	Шаблоны
+	Templates and Add-ins	Шаблоны и надстройки
+	Attach Template	Присоединить шаблон
+	Detach Template	Отсоединить шаблон
+	Automatically Update Document Styles	Автоматически обновлять стили документа
+	Update Styles from Template	Обновить стили из шаблона
+	Organizer	Организатор
+	Copy Styles	Копировать стили
+	Rename Style	Переименовать стиль
+	Document template:	Шаблон документа:
+	Attach…	Присоединить…
+	Automatically update document styles	Автоматически обновлять стили документа
+	Organizer…	Организатор…
 	1. Formatting restrictions	1. Ограничения форматирования
 	2. Editing restrictions	2. Ограничения редактирования
 	3. Start enforcement	3. Включение защиты
@@ -2100,6 +2112,114 @@ preview	Title	Пример
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Подстановочные знаки
+	Special	Специальный
+	Match prefix	Начало слова
+	Match suffix	Конец слова
+	Ignore punctuation characters	Не учитывать знаки препинания
+	Ignore white-space characters	Не учитывать пробелы
+	Regular expressions	Регулярные выражения
+	Search Options	Параметры поиска
+	Tab Character	Знак табуляции
+	Any Character	Любой знак
+	Any Digit	Любая цифра
+	Any Letter	Любая буква
+	Caret Character	Знак вставки (^)
+	Section Character	Знак раздела
+	Paragraph Character	Знак абзаца
+	Graphic	Графический объект
+	Manual Line Break	Разрыв строки
+	Manual Page Break	Разрыв страницы
+	Section Break	Разрыв раздела
+	White Space	Пробельный знак
+	Clipboard Contents	Содержимое буфера обмена
+	Find What Text	Текст для поиска
+	Find What Expression	Найденное выражение
+	Character in Range	Знак из диапазона
+	Beginning of Word	Начало слова
+	End of Word	Конец слова
+	Expression	Выражение
+	Not	Не
+	Num Occurrences	Число вхождений
+	Previous 1 or More	Предыдущий знак 1 или более раз
+	0 or More Characters	0 или более знаков
+# Insert SmartArt (#497).
+	Add Shape	Добавить фигуру
+	Change Colors	Изменить цвета
+	Change Layout	Изменить макет
+	Create Graphic	Создать графический элемент
+	Edit Items	Изменить элементы
+	Layouts	Макеты
+	Reset Graphic	Сбросить графический элемент
+	SmartArt Design	Конструктор SmartArt
+	SmartArt Styles	Стили SmartArt
+	Text Pane	Область текста
+	List	Список
+	Process	Процесс
+	Cycle	Цикл
+	Hierarchy	Иерархия
+	Relationship	Связь
+	Pyramid	Пирамида
+	Basic List	Простой список
+	Basic Process	Простой процесс
+	Basic Cycle	Простой цикл
+	Basic Pyramid	Простая пирамида
+	Basic Radial	Простая радиальная схема
+	Basic Matrix	Простая матрица
+	Basic Venn	Простая диаграмма Венна
+	Shows items of equal weight as blocks in rows.	Показывает равнозначные элементы блоками в строках.
+	Shows steps in order, left to right, with arrows between them.	Показывает шаги по порядку слева направо со стрелками между ними.
+	Shows steps that repeat, around a circle.	Показывает повторяющиеся шаги по кругу.
+	Shows a tree: each item below the item it belongs to.	Показывает дерево: каждый элемент находится под тем, к которому относится.
+	Shows parts that build on each other, largest at the bottom.	Показывает части, опирающиеся друг на друга; самая крупная внизу.
+	Shows items around a central idea: the first item is the centre.	Показывает элементы вокруг центральной идеи: первый элемент в центре.
+	Shows parts of a whole as quadrants.	Показывает части целого в виде четвертей.
+	Shows overlapping ideas as overlapping circles.	Показывает пересекающиеся идеи в виде пересекающихся кругов.
+	Accent {n}	Акцент {n}
+	Colorful	Разноцветный
+	Insert SmartArt	Вставка SmartArt
+	One line per item. Enter adds an item.	Одна строка на элемент. Enter добавляет элемент.
+	Add\nShape	Добавить\nфигуру
+	Change\nColors	Изменить\nцвета
+	Reset\nGraphic	Сбросить\nграфику
+# Outline view (#493).
+	Promote to Heading 1	Повысить до заголовка 1
+	Demote to Body Text	Понизить до обычного текста
+	Move Up	Переместить вверх
+	Move Down	Переместить вниз
+	Collapse	Свернуть
+	Expand or Collapse Heading	Развернуть или свернуть заголовок
+	Select Heading and Content	Выделить заголовок и содержимое
+	Show Level	Показать уровень
+	Show Level 1	Показать уровень 1
+	Show Level 2	Показать уровень 2
+	Show Level 3	Показать уровень 3
+	Show Level 4	Показать уровень 4
+	Show Level 5	Показать уровень 5
+	Show Level 6	Показать уровень 6
+	Show Level 7	Показать уровень 7
+	Show Level 8	Показать уровень 8
+	Show Level 9	Показать уровень 9
+	Show All Levels	Показать все уровни
+	All Levels	Все уровни
+	Show First Line Only	Показывать только первую строку
+	Show Text Formatting	Показывать форматирование текста
+	Close Outline View	Закрыть режим структуры
+	Outline State	Состояние структуры
+	Outlining	Структура
+	Outline Tools	Работа со структурой
+	Close Outline\nView	Закрыть режим\nструктуры
+# Wrap Text context menu (#513).
+	Move with Text	Перемещать вместе с текстом
+	Fix Position on Page	Зафиксировать положение на странице
+# Paragraph dialog options (#512).
+	Formatting exceptions	Исключения форматирования
+	Inside:	Внутри:
+	Mirror indents	Зеркальные отступы
+	Outside:	Снаружи:
 # WordArt and connectors (#416).
 	WordArt Styles	Стили WordArt
 	Text Fill	Заливка текста
@@ -2198,3 +2318,49 @@ preview	Title	Пример
 	Turkish	Турецкий
 	Ukrainian	Украинский
 	{language} is now the document's default language.	{language} теперь язык документа по умолчанию.
+# File > Options panes (#485).
+	As you type	По мере ввода
+	AutoSave writes your changes to the file a moment after you stop typing.	Автосохранение записывает изменения в файл вскоре после того, как вы перестанете печатать.
+	Centimeters	Сантиметры
+	Check spelling as you type	Проверять орфографию при вводе
+	Click to switch back to inserting	Нажмите, чтобы вернуться к вставке
+	Custom dictionary	Пользовательский словарь
+	Formatting marks	Знаки форматирования
+	Hidden text	Скрытый текст
+	Ignore web and file addresses	Пропускать веб-адреса и пути к файлам
+	Ignore words in capitals	Пропускать слова из прописных букв
+	Ignore words with numbers	Пропускать слова с цифрами
+	Inches	Дюймы
+	Initials:	Инициалы:
+	Interface	Интерфейс
+	Interface language	Язык интерфейса
+	Mark grammar errors as you type	Отмечать грамматические ошибки при вводе
+	Measurement units:	Единицы измерения:
+	Millimeters	Миллиметры
+	New comments and tracked changes are recorded under this name and these initials.	Новые примечания и исправления записываются под этим именем и инициалами.
+	New word	Новое слово
+	No words yet. Add to Dictionary on a misspelled word puts it here.	Слов пока нет. Команда «Добавить в словарь» для слова с ошибкой помещает его сюда.
+	Overtype	Замена
+	Overtype (typing replaces the characters after the caret)	Замена (вводимый текст заменяет символы после курсора)
+	Page display	Отображение страницы
+	Paragraph marks	Знаки абзаца
+	Personalize	Персонализация
+	Picas	Пики
+	Points	Пункты
+	Print the page color	Печатать цвет страницы
+	Printing	Печать
+	Proofing language	Язык проверки правописания
+	Recent documents to show:	Число недавних документов:
+	Save documents	Сохранение документов
+	Show the mini toolbar when text is selected	Показывать мини-панель при выделении текста
+	Spaces	Пробелы
+	Spelling	Орфография
+	Spelling and grammar are checked in English (United States).	Орфография и грамматика проверяются для английского языка (США).
+	Tab characters	Знаки табуляции
+	These marks show even when Show/Hide ¶ is off.	Эти знаки видны, даже когда «Показать все знаки» выключено.
+	Typing replaces selected text	Ввод заменяет выделенный текст
+	Update fields before printing	Обновлять поля перед печатью
+	Use the Insert key to switch overtype on and off	Клавиша Insert включает и выключает режим замены
+# Asian and Latin text fonts (#505).
+	Asian text font:	Шрифт азиатского текста:
+	Latin text font:	Шрифт латинского текста:

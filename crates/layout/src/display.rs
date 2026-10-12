@@ -152,10 +152,40 @@ impl Draw {
     }
 }
 
+/// Formatting marks shown even while Show/Hide ¶ is off (File › Options › Display, "Always show
+/// these formatting marks"). Show/Hide ¶ on shows them all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct FormattingMarks {
+    /// Tab characters (→).
+    pub tabs: bool,
+    /// Spaces (·).
+    pub spaces: bool,
+    /// Paragraph marks (¶), line breaks, page, column and section breaks.
+    pub paragraphs: bool,
+    /// Hidden text (shown with its dotted underline instead of left out).
+    pub hidden: bool,
+}
+
+impl FormattingMarks {
+    pub const ALL: FormattingMarks = FormattingMarks { tabs: true, spaces: true, paragraphs: true, hidden: true };
+
+    /// The marks on screen: all of them with Show/Hide ¶ on, else the chosen ones.
+    pub fn shown(self, show_all: bool) -> FormattingMarks {
+        if show_all { FormattingMarks::ALL } else { self }
+    }
+
+    pub fn any(self) -> bool {
+        self.tabs || self.spaces || self.paragraphs || self.hidden
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DisplayOptions {
-    /// Show formatting marks (¶).
+    /// Show formatting marks (¶): Show/Hide ¶, every mark.
     pub marks: bool,
+    /// Marks shown while `marks` is off (File › Options › Display).
+    pub always: FormattingMarks,
     /// Dim headers/footers (editing the body) or the body (editing a header/footer).
     pub dim_header: bool,
     pub dim_body: bool,
@@ -173,6 +203,7 @@ impl Default for DisplayOptions {
     fn default() -> Self {
         DisplayOptions {
             marks: false,
+            always: FormattingMarks::default(),
             dim_header: true,
             dim_body: false,
             markup: true,
@@ -530,6 +561,9 @@ fn item_in(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, outer
                     *link = None;
                 }
             }
+            if *turn == TextDirection::Down {
+                items = upright_east_asian(items);
+            }
             out.push(Draw::Turned { x: *x, y: *y, turn: *turn, items });
         }
         Placed::Lines { story, path, para, l0, l1, x, y, .. } => lines(doc, *story, path, para, *l0, *l1, *x, *y, opts, alpha, out),
@@ -617,21 +651,24 @@ fn lines(
         // Label.
         if li == 0
             && let Some(lab) = &pl.label
-            && let Some(st) = pl.styles.get(lab.style as usize)
         {
             let gx = x + lab.x;
-            out.push(Draw::Glyphs {
-                face: st.face,
-                size: st.size,
-                glyphs: lab.glyphs.iter().map(|g| (g.gid, gx + g.dx, base - st.shift - g.dy)).collect(),
-                color: text_color(&st.rc.color, None),
-                alpha,
-                synth_bold: st.synth_bold,
-                synth_italic: st.synth_italic,
-                text: lab.text.clone(),
-                link: None,
-                ranges: Vec::new(),
-            });
+            // One draw per font run: a glyph id only means something in its own face.
+            for run in &lab.runs {
+                let Some(st) = pl.styles.get(run.style as usize) else { continue };
+                out.push(Draw::Glyphs {
+                    face: st.face,
+                    size: st.size,
+                    glyphs: lab.glyphs.get(run.glyphs.clone()).into_iter().flatten().map(|g| (g.gid, gx + g.dx, base - st.shift - g.dy)).collect(),
+                    color: text_color(&st.rc.color, None),
+                    alpha,
+                    synth_bold: st.synth_bold,
+                    synth_italic: st.synth_italic,
+                    text: run.text.clone(),
+                    link: None,
+                    ranges: Vec::new(),
+                });
+            }
         }
         // Hyphen at a hyphenated line end.
         if let Some((si, gid, adv)) = line.hyphen
@@ -975,7 +1012,8 @@ fn lines(
             }
         }
         // Formatting marks.
-        if opts.marks {
+        let marks = opts.always.shown(opts.marks);
+        if marks.any() {
             let msize = pl.styles.first().map(|s| s.size).unwrap_or(11.0);
             for k in line.c0..line.c1 {
                 let Some(c) = pl.clusters.get(k) else { continue };
@@ -984,14 +1022,14 @@ fn lines(
                 let size = pl.styles.get(c.style as usize).map(|s| s.size).unwrap_or(msize);
                 let arrow = if line.rtl { '←' } else { '→' };
                 match c.kind {
-                    ClKind::Space => {
+                    ClKind::Space if marks.spaces => {
                         out.push(Draw::Mark { x: (cx + nx) / 2.0 - size * 0.12, baseline: base - size * 0.08, size, ch: '·', color: None })
                     }
-                    ClKind::Tab => {
+                    ClKind::Tab if marks.tabs => {
                         out.push(Draw::Mark { x: cx + ((nx - cx) / 2.0 - size * 0.3).max(0.0), baseline: base, size, ch: arrow, color: None })
                     }
-                    ClKind::LineBreak => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
-                    ClKind::PageBreak | ClKind::ColumnBreak => {
+                    ClKind::LineBreak if marks.paragraphs => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
+                    ClKind::PageBreak | ClKind::ColumnBreak if marks.paragraphs => {
                         let label = if c.kind == ClKind::PageBreak { '⤓' } else { '⇥' };
                         out.push(Draw::Line {
                             x0: cx + 2.0,
@@ -1008,7 +1046,7 @@ fn lines(
                     _ => {}
                 }
             }
-            if line.end == LineEnd::Para {
+            if line.end == LineEnd::Para && marks.paragraphs {
                 // The mark follows the line's visual end, past every glyph, even where the
                 // logically last text runs against the paragraph's direction.
                 let ex = x + line.visual_end_x();
@@ -1457,4 +1495,91 @@ pub(crate) fn inline_rect(obj: Option<&InlineObject>, cx: f32, base: f32, adv: f
 /// A Drawing Canvas's background and outline over its frame `rect`.
 fn canvas_background(rect: Rect, c: &wordcraft_doc::para::CanvasStyle) -> Draw {
     Draw::Shape { rect, kind: ShapeKind::Rectangle, fill: c.fill, stroke: c.stroke, stroke_width: c.stroke_width, effects: Default::default() }
+}
+
+/// Whether `c` stands upright in top-to-bottom East Asian text (`tbRl`) rather than turning with
+/// the line: ideographs, kana, Hangul, full-width letters and digits, and the ideographic comma
+/// and full stop (an approximation of Unicode's vertical orientation, UAX #50). Brackets, dashes
+/// and the prolonged sound mark turn with the line, as their vertical forms do.
+pub fn upright_in_vertical(c: char) -> bool {
+    matches!(c,
+        '\u{1100}'..='\u{11FF}'
+        | '\u{2E80}'..='\u{2FFF}'
+        | '\u{3001}'..='\u{3007}'
+        | '\u{3012}'..='\u{3013}'
+        | '\u{3020}'..='\u{302F}'
+        | '\u{3031}'..='\u{303F}'
+        | '\u{3040}'..='\u{30FB}'
+        | '\u{30FD}'..='\u{30FF}'
+        | '\u{3100}'..='\u{31EF}'
+        | '\u{31F0}'..='\u{4DBF}'
+        | '\u{4E00}'..='\u{9FFF}'
+        | '\u{A960}'..='\u{A97F}'
+        | '\u{AC00}'..='\u{D7FF}'
+        | '\u{F900}'..='\u{FAFF}'
+        | '\u{FE30}'..='\u{FE4F}'
+        | '\u{FF01}'..='\u{FF07}'
+        | '\u{FF0A}'..='\u{FF0C}'
+        | '\u{FF0E}'..='\u{FF3A}'
+        | '\u{FF3C}'
+        | '\u{FF3E}'..='\u{FF5A}'
+        | '\u{FFE0}'..='\u{FFE6}'
+        | '\u{20000}'..='\u{3FFFF}'
+    )
+}
+
+/// Top-to-bottom text drawn turned 90° clockwise, with its East Asian characters turned back
+/// upright, each about the centre of its em square (`tbRl`: ideographs stand, Latin lies).
+/// Glyph runs are split where uprightness changes, so the text keeps its order.
+fn upright_east_asian(items: Vec<Draw>) -> Vec<Draw> {
+    let mut out = Vec::with_capacity(items.len());
+    for d in items {
+        let Draw::Glyphs { face, size, glyphs, color, alpha, synth_bold, synth_italic, text, link, ranges } = d else {
+            out.push(d);
+            continue;
+        };
+        let up = |k: usize| ranges.get(k).and_then(|r| text.get(r.clone())).and_then(|t| t.chars().next()).is_some_and(upright_in_vertical);
+        if ranges.len() != glyphs.len() || !(0..glyphs.len()).any(up) {
+            out.push(Draw::Glyphs { face, size, glyphs, color, alpha, synth_bold, synth_italic, text, link, ranges });
+            continue;
+        }
+        let piece = |k0: usize, k1: usize| -> Draw {
+            let gs = glyphs.get(k0..k1).unwrap_or(&[]).to_vec();
+            let rs = ranges.get(k0..k1).unwrap_or(&[]);
+            let (b0, b1) = (rs.iter().map(|r| r.start).min().unwrap_or(0), rs.iter().map(|r| r.end).max().unwrap_or(0));
+            let t = text.get(b0..b1).unwrap_or("").to_string();
+            let rs = rs.iter().map(|r| r.start.saturating_sub(b0)..r.end.saturating_sub(b0)).collect();
+            Draw::Glyphs { face, size, glyphs: gs, color, alpha, synth_bold, synth_italic, text: t, link: link.clone(), ranges: rs }
+        };
+        let mut k0 = 0;
+        while k0 < glyphs.len() {
+            let u = up(k0);
+            let k1 = (k0 + 1..glyphs.len()).find(|&k| up(k) != u).unwrap_or(glyphs.len());
+            if !u {
+                out.push(piece(k0, k1));
+            } else {
+                for k in k0..k1 {
+                    let Some(&(_, gx, base)) = glyphs.get(k) else { continue };
+                    // The em square: one em along the line (the advance to the next glyph when
+                    // known), from about 0.88 em above the baseline to 0.12 em below it.
+                    let adv = glyphs.get(k + 1).map(|g| g.1 - gx).filter(|a| *a > 0.0 && *a < size * 2.0).unwrap_or(size);
+                    let (cx, cy) = (gx + adv / 2.0, base - size * 0.38);
+                    let mut g = piece(k, k + 1);
+                    // The ideographic comma and full stop sit in the upper right of their square in
+                    // vertical text (lower left in horizontal): moved there before standing up.
+                    if let Draw::Glyphs { text, glyphs, .. } = &mut g
+                        && matches!(text.chars().next(), Some('\u{3001}' | '\u{3002}' | '\u{FF0C}' | '\u{FF0E}'))
+                    {
+                        for (_, x, y) in glyphs.iter_mut() {
+                            *x += size * 0.55;
+                            *y -= size * 0.55;
+                        }
+                    }
+                    out.push(Draw::Rotated { cx, cy, spin: Spin::new(-90.0, false, false), items: vec![g] });
+                }
+            }
+            k0 = k1;
+        }
+    }
+    out
 }

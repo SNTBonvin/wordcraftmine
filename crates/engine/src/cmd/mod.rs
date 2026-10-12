@@ -14,6 +14,7 @@ pub mod edit;
 pub mod equation;
 pub mod fields;
 pub mod file;
+pub mod find_pattern;
 pub mod fmt_revisions;
 pub mod format;
 pub mod index;
@@ -24,6 +25,8 @@ pub mod lists;
 pub mod mailings;
 pub mod moves;
 pub mod objects;
+pub mod options;
+pub mod outline;
 pub mod page;
 pub mod para;
 pub mod paste;
@@ -31,10 +34,12 @@ pub mod phonetic;
 pub mod protect;
 pub mod references;
 pub mod review;
+pub mod smart_art;
 pub mod speech;
 pub mod table;
 pub mod table_draw;
 pub mod table_style;
+pub mod templates;
 pub mod text;
 pub mod tools;
 pub mod view;
@@ -60,6 +65,7 @@ pub fn registry() -> Registry {
     v.extend(lists::specs());
     v.extend(inspector::specs());
     v.extend(view::specs());
+    v.extend(outline::specs());
     v.extend(insert::specs());
     v.extend(equation::specs());
     v.extend(page::specs());
@@ -68,6 +74,7 @@ pub fn registry() -> Registry {
     v.extend(table_draw::specs());
     v.extend(review::specs());
     v.extend(file::specs());
+    v.extend(options::specs());
     v.extend(design::specs());
     v.extend(references::specs());
     v.extend(fields::specs());
@@ -75,12 +82,14 @@ pub fn registry() -> Registry {
     v.extend(citations::specs());
     v.extend(index::specs());
     v.extend(objects::specs());
+    v.extend(smart_art::specs());
     v.extend(chart::specs());
     v.extend(draw::specs());
     v.extend(canvas::specs());
     v.extend(wordart::specs());
     v.extend(connectors::specs());
     v.extend(tools::specs());
+    v.extend(templates::specs());
     v.extend(protect::specs());
     v.extend(speech::specs());
     v.extend(controls::specs());
@@ -282,6 +291,8 @@ pub fn leave_list(para: &mut wordcraft_doc::Paragraph) {
     }
     para.props.indent_left = None;
     para.props.indent_first = None;
+    para.props.indent_left_chars = None;
+    para.props.indent_first_chars = None;
     para.touch();
 }
 

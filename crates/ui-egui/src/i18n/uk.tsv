@@ -60,12 +60,15 @@
 	Arrange\nAll	Упорядкувати\nвсі
 	Arrow	Стрілка
 	Artistic Effects	Художні ефекти
+	As you type	Під час введення
+	Asian text font:	Шрифт азійського тексту:
 	Asian Typography	Азійська типографіка
 	Author	Автор
 	AutoCorrect Options	Параметри автовиправлення
 	AutoFit	Добір розміру
 	AutoFit Contents	Добір розміру за вмістом
 	AutoFit Window	Добір розміру за шириною вікна
+	AutoSave writes your changes to the file a moment after you stop typing.	Автозбереження записує зміни у файл невдовзі після того, як ви припините вводити текст.
 	Automatic	Автоматично
 	Automatic ({language})	Автоматично ({language})
 	Automatic follows your system's language. Menus and commands change; your documents don't.	Автоматичний режим використовує мову вашої системи. Змінюються меню й команди, а вміст документів залишається незмінним.
@@ -78,30 +81,67 @@
 	Balloons	Виноски
 	Bullet	Маркер
 	By author	За автором
+	Centimeters	Сантиметри
 	Changed lines:	Змінені рядки:
+	Check spelling as you type	Перевіряти правопис під час введення
 	Click level to modify:	Виберіть рівень для змінення:
+	Click to switch back to inserting	Клацніть, щоб повернутися до вставлення
 	Color only	Лише колір
+	Custom dictionary	Власний словник
 	Define New Multilevel List	Визначити новий багаторівневий список
 	Define New Multilevel List…	Визначити новий багаторівневий список…
 	Deletions:	Видалення:
 	Enter formatting for number:	Вигляд номера:
 	Follow number with:	Після номера:
 	Formatting	Форматування
+	Formatting marks	Знаки форматування
+	Hidden text	Прихований текст
+	Ignore web and file addresses	Пропускати веб-адреси та шляхи до файлів
+	Ignore words in capitals	Пропускати слова з великих літер
+	Ignore words with numbers	Пропускати слова з цифрами
+	Inches	Дюйми
+	Formatting exceptions	Винятки форматування
 	Include level number from:	Додати номер рівня:
+	Initials:	Ініціали:
 	Ink	Рукописні примітки
 	Insertions and Deletions	Вставлення й видалення
 	Insertions:	Вставлення:
+	Interface	Інтерфейс
+	Interface language	Мова інтерфейсу
+	Inside:	Усередині:
+	Latin text font:	Шрифт латинського тексту:
 	Left border	Ліва межа
 	Legal style numbering	Юридична нумерація
 	Link level to style:	Зв'язати рівень зі стилем:
 	List Definition	Визначення списку
+	Mark grammar errors as you type	Позначати граматичні помилки під час введення
+	Measurement units:	Одиниці виміру:
+	Millimeters	Міліметри
+	New comments and tracked changes are recorded under this name and these initials.	Нові коментарі та відстежувані зміни записуються під цим іменем і цими ініціалами.
+	New word	Нове слово
+	No words yet. Add to Dictionary on a misspelled word puts it here.	Слів ще немає. «Додати до словника» для слова з помилкою додає його сюди.
+	Mirror indents	Дзеркальні відступи
 	Nothing	Нічого
 	Number alignment:	Вирівнювання номера:
 	Number format	Формат номера
 	Number style for this level:	Стиль номера для цього рівня:
 	Outside border	Зовнішня межа
+	Overtype	Заміна
+	Overtype (typing replaces the characters after the caret)	Заміна (введений текст замінює символи після курсора)
+	Page display	Відображення сторінки
+	Paragraph marks	Знаки абзацу
+	Personalize	Персоналізація
+	Picas	Піки
+	Points	Пункти
+	Print the page color	Друкувати колір сторінки
+	Printing	Друк
+	Proofing language	Мова перевірки
+	Recent documents to show:	Кількість останніх документів:
+	Remove	Вилучити
+	Outside:	Зовні:
 	Restart list after:	Почати список знову після:
 	Right border	Права межа
+	Save documents	Збереження документів
 	Save the document to turn on AutoSave	Збережіть документ, щоб увімкнути автозбереження
 	Save the document to turn on AutoSave (a file you have only opened isn't rewritten until you save it)	Збережіть документ, щоб увімкнути автозбереження (файл, який ви лише відкрили, не перезаписується, доки ви його не збережете)
 	AutoText	Автоматичний текст
@@ -124,6 +164,11 @@
 	Border Painter	Пензель меж
 	Border\nPainter	Пензель\nмеж
 	Borders	Межі
+	Show the mini toolbar when text is selected	Показувати міні-панель інструментів під час виділення тексту
+	Spaces	Пробіли
+	Spelling	Правопис
+	Spelling and grammar are checked in English (United States).	Правопис і граматика перевіряються англійською (США).
+	Tab characters	Символи табуляції
 	Tab stop position:	Позиція табуляції:
 	Default tab stops:	Типові позиції табуляції:
 	Tab stops to be cleared:	Позиції, які буде видалено:
@@ -134,6 +179,10 @@
 	Set	Встановити
 	Page Border	Межа сторінки
 	Apply to:	Застосувати до:
+	These marks show even when Show/Hide ¶ is off.	Ці знаки відображаються, навіть коли «Показати/приховати ¶» вимкнено.
+	Typing replaces selected text	Введення замінює виділений текст
+	Update fields before printing	Оновлювати поля перед друком
+	Use the Insert key to switch overtype on and off	Клавіша Insert вмикає та вимикає режим заміни
 	Whole document	Увесь документ
 	This section	Цей розділ
 	Fill	Колір заливки
@@ -277,7 +326,6 @@
 	Distribute spacing	Розподілити інтервали
 	Offset (pt):	Зсув (пункти):
 	Phonetic Guide	Фонетична підказка
-	Remove	Прибрати
 	Right (vertical)	Праворуч (вертикально)
 	Ruby text:	Текст рубі:
 	Search for templates	Пошук шаблонів
@@ -905,10 +953,10 @@
 	Wide	Широкі
 	Widow/Orphan Control	Не залишати самотні рядки
 	Widow/Orphan control	Не залишати самотні рядки
-	Wildcards (regex)	Шаблони (регулярні вирази)
 	Window	Вікно
 	Word Count	Кількість слів
 	Word document (*.docx)	Документ Word (*.docx)
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
 	Word Left	На слово ліворуч
 	Word Right	На слово праворуч
 	WordArt	WordArt
@@ -1565,6 +1613,19 @@
 	Enlarge symbol	Збільшити символ
 	Enclosure	Обведення
 	Circle	Коло
+	Templates	Шаблони
+	Templates and Add-ins	Шаблони й надбудови
+	Attach Template	Приєднати шаблон
+	Detach Template	Від'єднати шаблон
+	Automatically Update Document Styles	Автоматично оновлювати стилі документа
+	Update Styles from Template	Оновити стилі із шаблону
+	Organizer	Організатор
+	Copy Styles	Копіювати стилі
+	Rename Style	Перейменувати стиль
+	Document template:	Шаблон документа:
+	Attach…	Приєднати…
+	Automatically update document styles	Автоматично оновлювати стилі документа
+	Organizer…	Організатор…
 	Change Chart Type	Змінити тип діаграми
 	Chart Design	Конструктор діаграми
 	Type	Тип
@@ -1617,6 +1678,70 @@
 	Continuous numbering	Наскрізна нумерація
 	Apply	Застосувати
 	Convert Notes	Перетворити примітки
+	Add Shape	Додати фігуру
+	Change Colors	Змінити кольори
+	Change Layout	Змінити макет
+	Create Graphic	Створення графіки
+	Edit Items	Редагувати елементи
+	Layouts	Макети
+	Reset Graphic	Скинути графіку
+	SmartArt Design	Конструктор SmartArt
+	SmartArt Styles	Стилі SmartArt
+	Text Pane	Область тексту
+	List	Список
+	Process	Процес
+	Cycle	Цикл
+	Hierarchy	Ієрархія
+	Relationship	Зв’язок
+	Pyramid	Піраміда
+	Basic List	Простий список
+	Basic Process	Простий процес
+	Basic Cycle	Простий цикл
+	Basic Pyramid	Проста піраміда
+	Basic Radial	Проста радіальна
+	Basic Matrix	Проста матриця
+	Basic Venn	Проста діаграма Венна
+	Shows items of equal weight as blocks in rows.	Показує рівноцінні елементи як блоки в рядках.
+	Shows steps in order, left to right, with arrows between them.	Показує кроки по порядку, зліва направо, зі стрілками між ними.
+	Shows steps that repeat, around a circle.	Показує кроки, що повторюються, по колу.
+	Shows a tree: each item below the item it belongs to.	Показує дерево: кожен елемент під елементом, до якого він належить.
+	Shows parts that build on each other, largest at the bottom.	Показує частини, що спираються одна на одну, найбільша внизу.
+	Shows items around a central idea: the first item is the centre.	Показує елементи навколо центральної ідеї: перший елемент — центр.
+	Shows parts of a whole as quadrants.	Показує частини цілого як квадранти.
+	Shows overlapping ideas as overlapping circles.	Показує ідеї, що перетинаються, як кола, що перетинаються.
+	Accent {n}	Акцент {n}
+	Colorful	Різнокольоровий
+	Insert SmartArt	Вставити SmartArt
+	One line per item. Enter adds an item.	Один рядок на елемент. Enter додає елемент.
+	Add\nShape	Додати\nфігуру
+	Change\nColors	Змінити\nкольори
+	Reset\nGraphic	Скинути\nграфіку
+	Promote to Heading 1	Підвищити до заголовка 1
+	Demote to Body Text	Понизити до основного тексту
+	Move Up	Перемістити вгору
+	Move Down	Перемістити вниз
+	Collapse	Згорнути
+	Expand or Collapse Heading	Розгорнути або згорнути заголовок
+	Select Heading and Content	Виділити заголовок із вмістом
+	Show Level	Показати рівень
+	Show Level 1	Показати рівень 1
+	Show Level 2	Показати рівень 2
+	Show Level 3	Показати рівень 3
+	Show Level 4	Показати рівень 4
+	Show Level 5	Показати рівень 5
+	Show Level 6	Показати рівень 6
+	Show Level 7	Показати рівень 7
+	Show Level 8	Показати рівень 8
+	Show Level 9	Показати рівень 9
+	Show All Levels	Показати всі рівні
+	All Levels	Усі рівні
+	Show First Line Only	Лише перший рядок
+	Show Text Formatting	Показати форматування тексту
+	Close Outline View	Закрити режим плану
+	Outline State	Стан плану
+	Outlining	Структура
+	Outline Tools	Знаряддя плану
+	Close Outline\nView	Закрити\nрежим плану
 	A, B, C, …	A, B, C, …
 	Above the item	Над елементом
 	Accessed on	Дата звернення
@@ -1726,6 +1851,39 @@
 	Rewind	На початок
 	Forward	Вперед
 	Stroke {n} of {total}	Штрих {n} з {total}
+	Use wildcards	Використовувати шаблони
+	Special	Спеціальні
+	Match prefix	Збіг префікса
+	Match suffix	Збіг суфікса
+	Ignore punctuation characters	Ігнорувати розділові знаки
+	Ignore white-space characters	Ігнорувати пробільні символи
+	Regular expressions	Регулярні вирази
+	Search Options	Параметри пошуку
+	Tab Character	Символ табуляції
+	Any Character	Будь-який символ
+	Any Digit	Будь-яка цифра
+	Any Letter	Будь-яка літера
+	Caret Character	Символ каретки
+	Section Character	Знак параграфа
+	Paragraph Character	Символ абзацу
+	Graphic	Графіка
+	Manual Line Break	Примусовий розрив рядка
+	Manual Page Break	Примусовий розрив сторінки
+	Section Break	Розрив розділу
+	White Space	Пробіл
+	Clipboard Contents	Вміст буфера обміну
+	Find What Text	Знайдений текст
+	Find What Expression	Знайдений вираз
+	Character in Range	Символ із діапазону
+	Beginning of Word	Початок слова
+	End of Word	Кінець слова
+	Expression	Вираз
+	Not	Не
+	Num Occurrences	Кількість повторень
+	Previous 1 or More	Попередній 1 або більше разів
+	0 or More Characters	0 або більше символів
+	Move with Text	Переміщувати з текстом
+	Fix Position on Page	Зафіксувати положення на сторінці
 
 # WordArt and connectors (#416).
 	WordArt Styles	Стилі WordArt
