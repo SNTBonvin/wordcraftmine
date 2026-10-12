@@ -252,6 +252,7 @@
 	Export a copy to share (PDF, Word document)	Paylaşmak için bir kopya dışa aktarın (PDF, Word belgesi)
 	Exported {path}	Dışa aktarıldı: {path}
 	Extend Selection	Seçimi Genişlet
+	Extend Selection by Units	Seçimi Birimlere Göre Genişlet
 	Field	Alan
 	File	Dosya
 	Find	Bul
@@ -798,7 +799,6 @@
 	Wide	Geniş
 	Widow/Orphan Control	Tek Kalan Satır Denetimi
 	Widow/Orphan control	Tek kalan satır denetimi
-	Wildcards (regex)	Joker karakterler (regex)
 	Window	Pencere
 	Word Count	Sözcük Sayısı
 	Word Left	Önceki Sözcük
@@ -1408,6 +1408,24 @@
 	Left Only	Yalnızca Sol
 	Right Only	Yalnızca Sağ
 	Largest Only	Yalnızca En Geniş
+	Add Font…	Yazı Tipi Ekle…
+	Added Fonts	Eklenen Yazı Tipleri
+	Remove Added Font	Eklenen Yazı Tipini Kaldır
+	Print Markup	İşaretlemeyi Yazdır
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	PDF'lerde, baskılarda ve görüntülerde her sayfanın yanında açıklamalar ve izlenen değişiklikler; web sayfalarının, Markdown ve metnin sonunda açıklama listesi.
+	Recent Colors	Son Kullanılan Renkler
+	More Colors…	Diğer Renkler…
+	Standard	Standart
+	Current	Geçerli
+	Colors:	Renkler:
+	Color model:	Renk modeli:
+	Red:	Kırmızı:
+	Green:	Yeşil:
+	Blue:	Mavi:
+	Hue:	Ton:
+	Sat:	Doygunluk:
+	Lum:	Parlaklık:
+	Hex:	Onaltılık:
 	Accessibility Pane	Erişilebilirlik Bölmesi
 	Alt Text Pane	Alternatif Metin Bölmesi
 	Alt\nText	Alternatif\nMetin
@@ -1734,7 +1752,57 @@
 	Continuous numbering	Sürekli numaralandırma
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
+	Hide White Space	Boşluğu gizle
+	All pages	Tüm sayfalar
+	Current page	Geçerli sayfa
+	Selected pages	Seçili sayfalar
+	Custom range	Özel aralık
+	All pages in the range	Aralıktaki tüm sayfalar
+	Odd pages only	Yalnızca tek sayfalar
+	Even pages only	Yalnızca çift sayfalar
+	Copies	Kopya
+	Collate copies	Kopyaları harmanla
+	Pages like 1-3, 5	Sayfalar, örn. 1-3, 5
+	{count} of {total} pages will print	{total} sayfadan {count} sayfa yazdırılacak
+	Save these pages as PDF…	Bu sayfaları PDF olarak kaydet…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Yazıcı, çift taraflı yazdırma ve yaprak başına sayfa sayısı o iletişim kutusunda seçilir.
+	Previous Page	Önceki sayfa
+	Print to PDF	PDF'ye yazdır
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Word XML Belgesi (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Joker karakter kullan
+	Special	Özel
+	Match prefix	Ön eke uy
+	Match suffix	Son eke uy
+	Ignore punctuation characters	Noktalama karakterlerini yoksay
+	Ignore white-space characters	Boşluk karakterlerini yoksay
+	Regular expressions	Düzenli ifadeler
+	Search Options	Arama Seçenekleri
+	Tab Character	Sekme Karakteri
+	Any Character	Herhangi Bir Karakter
+	Any Digit	Herhangi Bir Rakam
+	Any Letter	Herhangi Bir Harf
+	Caret Character	Şapka Karakteri
+	Section Character	Bölüm Karakteri
+	Paragraph Character	Paragraf Karakteri
+	Graphic	Grafik
+	Manual Line Break	El ile Satır Sonu
+	Manual Page Break	El ile Sayfa Sonu
+	Section Break	Bölüm Sonu
+	White Space	Boşluk
+	Clipboard Contents	Pano İçeriği
+	Find What Text	Aranan Metin
+	Find What Expression	Aranan İfade
+	Character in Range	Aralıktaki Karakter
+	Beginning of Word	Sözcük Başı
+	End of Word	Sözcük Sonu
+	Expression	İfade
+	Not	Değil
+	Num Occurrences	Tekrar Sayısı
+	Previous 1 or More	Öncekinin 1 veya Daha Fazlası
+	0 or More Characters	0 veya Daha Fazla Karakter
 # Insert SmartArt (#497).
 	Add Shape	Şekil Ekle
 	Change Colors	Renkleri Değiştir
@@ -1950,3 +2018,6 @@
 	Typing replaces selected text	Yazmak seçili metnin yerine geçer
 	Update fields before printing	Yazdırmadan önce alanları güncelle
 	Use the Insert key to switch overtype on and off	Üzerine yazmayı açıp kapatmak için Insert tuşunu kullan
+# Asian and Latin text fonts (#505).
+	Asian text font:	Asya metni yazı tipi:
+	Latin text font:	Latin metni yazı tipi:

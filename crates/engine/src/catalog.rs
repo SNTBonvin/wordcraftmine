@@ -13,6 +13,7 @@ File|Backstage|Open|file.open
 File|Backstage|Save|file.save
 File|Backstage|Save As|file.saveAs
 File|Backstage|Print|file.print
+File|Backstage|Print Markup|file.printMarkup
 File|Backstage|Close|file.close
 File|Backstage|Info|file.info
 File|Backstage|Properties|file.properties
@@ -254,6 +255,7 @@ References|Index|Insert Index|references.index
 References|Index|Update Index|references.updateIndex
 References|Table of Authorities|Mark Citation|references.markCitation
 References|Table of Authorities|Insert Table of Authorities|references.tableOfAuthorities
+References|Table of Authorities|Update Table|references.updateAuthorities
 References|Fields|Update Fields|references.updateFields
 Mailings|Create|Envelopes|mailings.envelopes
 Mailings|Create|Labels|mailings.labels

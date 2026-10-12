@@ -44,10 +44,10 @@ impl PartRels {
         }
         self.list.push((id.to_string(), kind.to_string(), target.to_string(), external));
     }
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.list.is_empty()
     }
-    fn xml(&self) -> Vec<u8> {
+    pub(crate) fn xml(&self) -> Vec<u8> {
         let mut w = W::new();
         w.open("Relationships", &[("xmlns", "http://schemas.openxmlformats.org/package/2006/relationships")]);
         for (id, kind, target, external) in &self.list {
@@ -117,6 +117,12 @@ pub fn write(doc: &Document) -> Result<Vec<u8>, DocxError> {
 
 /// Write a package of the given flavour (`.docx`, `.docm`, `.dotx`, `.dotm`).
 pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
+    zip_entries(&write_parts(doc, flavor)?)
+}
+
+/// The parts of the package [`write_as`] zips, in order, `[Content_Types].xml` first: (part name
+/// without the leading `/`, bytes).
+pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String, Vec<u8>)>, DocxError> {
     // A range field must be whole in the file: drop markers that lost their partner in editing.
     let balanced;
     let doc = if doc.has_unbalanced_field_ranges() {
@@ -451,8 +457,7 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
     }
     w.close("Types");
     entries.insert(0, ("[Content_Types].xml".into(), w.into_bytes()));
-
-    zip_entries(&entries)
+    Ok(entries)
 }
 
 fn push_part(entries: &mut Vec<(String, Vec<u8>)>, overrides: &mut Vec<(String, String)>, path: &str, bytes: Vec<u8>, ct: &str, rels: PartRels) {
@@ -626,11 +631,13 @@ fn styles_xml(doc: &Document) -> Vec<u8> {
     props::rpr_inner(&mut w, &s.default_chr);
     w.close("w:rPr");
     w.close("w:rPrDefault");
-    w.open("w:pPrDefault", &[]);
-    w.open("w:pPr", &[]);
-    props::ppr_inner(&mut w, &s.default_para, false, None);
-    w.close("w:pPr");
-    w.close("w:pPrDefault");
+    if s.default_para_present || s.default_para != wordcraft_doc::props::ParaProps::default() {
+        w.open("w:pPrDefault", &[]);
+        w.open("w:pPr", &[]);
+        props::ppr_inner(&mut w, &s.default_para, false, None);
+        w.close("w:pPr");
+        w.close("w:pPrDefault");
+    }
     w.close("w:docDefaults");
     for st in &s.styles {
         style_xml(&mut w, st);

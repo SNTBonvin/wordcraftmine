@@ -14,7 +14,9 @@ pub mod edit;
 pub mod equation;
 pub mod fields;
 pub mod file;
+pub mod find_pattern;
 pub mod fmt_revisions;
+pub mod font;
 pub mod format;
 pub mod index;
 pub mod ink_shape;
@@ -59,6 +61,7 @@ pub fn registry() -> Registry {
     v.extend(edit::specs());
     v.extend(paste::specs());
     v.extend(format::specs());
+    v.extend(font::specs());
     v.extend(phonetic::specs());
     v.extend(para::specs());
     v.extend(lists::specs());
@@ -290,6 +293,8 @@ pub fn leave_list(para: &mut wordcraft_doc::Paragraph) {
     }
     para.props.indent_left = None;
     para.props.indent_first = None;
+    para.props.indent_left_chars = None;
+    para.props.indent_first_chars = None;
     para.touch();
 }
 
