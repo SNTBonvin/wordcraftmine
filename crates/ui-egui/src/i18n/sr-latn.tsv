@@ -2069,3 +2069,28 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Sistem ne prijavljuje podešavanje animacije, pa efekti animacije ostaju uključeni.
 	Region:	Region:
 	Automatic ({region})	Automatski ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Filtriraj primaoce
+	Sort Recipients	Sortiraj primaoce
+	Filter and Sort	Filtriranje i sortiranje
+	And	I
+	Or	Ili
+	Comparison	Poređenje
+	Compare to	Uporedi sa
+	Add Condition	Dodaj uslov
+	Remove condition	Ukloni uslov
+	Sort by	Sortiraj po
+	Then by	Zatim po
+	Ascending	Rastuće
+	Descending	Opadajuće
+	Equal to	Jednako
+	Not equal to	Nije jednako
+	Less than	Manje od
+	Greater than	Veće od
+	Less than or equal	Manje ili jednako
+	Greater than or equal	Veće ili jednako
+	Is blank	Prazno
+	Is not blank	Nije prazno
+	Contains	Sadrži
+	Does not contain	Ne sadrži
+	{count} of {total} recipients will be merged.	Primalaca za spajanje: {count} od {total}.

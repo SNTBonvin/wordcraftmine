@@ -2099,3 +2099,28 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Tu sistema no indica ningún ajuste de animación, así que los efectos de animación siguen activados.
 	Region:	Región:
 	Automatic ({region})	Automático ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Filtrar destinatarios
+	Sort Recipients	Ordenar destinatarios
+	Filter and Sort	Filtrar y ordenar
+	And	Y
+	Or	O
+	Comparison	Comparación
+	Compare to	Comparar con
+	Add Condition	Agregar condición
+	Remove condition	Quitar condición
+	Sort by	Ordenar por
+	Then by	Luego por
+	Ascending	Ascendente
+	Descending	Descendente
+	Equal to	Igual a
+	Not equal to	Distinto de
+	Less than	Menor que
+	Greater than	Mayor que
+	Less than or equal	Menor o igual que
+	Greater than or equal	Mayor o igual que
+	Is blank	Está vacío
+	Is not blank	No está vacío
+	Contains	Contiene
+	Does not contain	No contiene
+	{count} of {total} recipients will be merged.	Se combinarán {count} de {total} destinatarios.

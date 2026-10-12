@@ -2450,3 +2450,28 @@ preview	Title	Örnek
 	Your system doesn't report an animation setting, so animation effects stay on.	Sisteminiz bir animasyon ayarı bildirmiyor, bu nedenle animasyon efektleri açık kalır.
 	Region:	Bölge:
 	Automatic ({region})	Otomatik ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Alıcıları filtrele
+	Sort Recipients	Alıcıları sırala
+	Filter and Sort	Filtrele ve sırala
+	And	Ve
+	Or	Veya
+	Comparison	Karşılaştırma
+	Compare to	Karşılaştırılacak değer
+	Add Condition	Koşul ekle
+	Remove condition	Koşulu kaldır
+	Sort by	Sıralama ölçütü
+	Then by	Sonra
+	Ascending	Artan
+	Descending	Azalan
+	Equal to	Eşittir
+	Not equal to	Eşit değildir
+	Less than	Küçüktür
+	Greater than	Büyüktür
+	Less than or equal	Küçük veya eşittir
+	Greater than or equal	Büyük veya eşittir
+	Is blank	Boştur
+	Is not blank	Boş değildir
+	Contains	İçerir
+	Does not contain	İçermez
+	{count} of {total} recipients will be merged.	Birleştirilecek alıcılar: {count} / {total}.

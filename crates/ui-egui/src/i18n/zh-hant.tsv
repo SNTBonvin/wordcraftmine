@@ -2060,3 +2060,28 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	系統未提供動畫設定，因此動畫效果保持開啟。
 	Region:	地區：
 	Automatic ({region})	自動（{region}）
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	篩選收件者
+	Sort Recipients	排序收件者
+	Filter and Sort	篩選與排序
+	And	且
+	Or	或
+	Comparison	比較
+	Compare to	比較值
+	Add Condition	新增條件
+	Remove condition	移除條件
+	Sort by	排序依據
+	Then by	次要依據
+	Ascending	遞增
+	Descending	遞減
+	Equal to	等於
+	Not equal to	不等於
+	Less than	小於
+	Greater than	大於
+	Less than or equal	小於或等於
+	Greater than or equal	大於或等於
+	Is blank	空白
+	Is not blank	非空白
+	Contains	包含
+	Does not contain	不包含
+	{count} of {total} recipients will be merged.	將合併 {total} 位收件者中的 {count} 位。

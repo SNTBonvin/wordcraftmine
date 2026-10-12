@@ -2071,3 +2071,28 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не повідомляє про налаштування анімації, тому ефекти анімації залишаються ввімкненими.
 	Region:	Регіон:
 	Automatic ({region})	Автоматично ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Фільтр одержувачів
+	Sort Recipients	Сортування одержувачів
+	Filter and Sort	Фільтр і сортування
+	And	І
+	Or	Або
+	Comparison	Порівняння
+	Compare to	Значення
+	Add Condition	Додати умову
+	Remove condition	Видалити умову
+	Sort by	Сортувати за
+	Then by	Потім за
+	Ascending	За зростанням
+	Descending	За спаданням
+	Equal to	Дорівнює
+	Not equal to	Не дорівнює
+	Less than	Менше
+	Greater than	Більше
+	Less than or equal	Менше або дорівнює
+	Greater than or equal	Більше або дорівнює
+	Is blank	Порожнє
+	Is not blank	Не порожнє
+	Contains	Містить
+	Does not contain	Не містить
+	{count} of {total} recipients will be merged.	Одержувачів для злиття: {count} з {total}.

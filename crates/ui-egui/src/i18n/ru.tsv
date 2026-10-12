@@ -2451,3 +2451,28 @@ preview	Title	Пример
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не сообщает о настройке анимации, поэтому эффекты анимации остаются включёнными.
 	Region:	Регион:
 	Automatic ({region})	Автоматически ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Фильтр получателей
+	Sort Recipients	Сортировка получателей
+	Filter and Sort	Фильтр и сортировка
+	And	И
+	Or	Или
+	Comparison	Сравнение
+	Compare to	Значение
+	Add Condition	Добавить условие
+	Remove condition	Удалить условие
+	Sort by	Сортировать по
+	Then by	Затем по
+	Ascending	По возрастанию
+	Descending	По убыванию
+	Equal to	Равно
+	Not equal to	Не равно
+	Less than	Меньше
+	Greater than	Больше
+	Less than or equal	Меньше или равно
+	Greater than or equal	Больше или равно
+	Is blank	Пусто
+	Is not blank	Не пусто
+	Contains	Содержит
+	Does not contain	Не содержит
+	{count} of {total} recipients will be merged.	Получателей для слияния: {count} из {total}.
