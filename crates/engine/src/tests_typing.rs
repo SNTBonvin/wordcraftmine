@@ -209,6 +209,22 @@ fn autocorrect_replacement_list_follows_the_texts_language() {
     assert_eq!(s.doc.plain_text(StoryRef::Body), "So I think the end ");
     let s = typed("so i think teh end ");
     assert_eq!(s.doc.plain_text(StoryRef::Body), "So I think the end ");
+    // A Polish interface: a new document is Polish by its default language, and text with no
+    // language at all (a .docx without `w:lang`) follows the editing language too.
+    let mut s = self::s();
+    s.set_editing_language(Some("pl-PL"));
+    typ(&mut s, "Ala i kot ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "Ala i kot ", "document default from the editing language");
+    let mut s = self::s();
+    s.set_editing_language(Some("pl-PL"));
+    s.doc.styles.default_chr.lang = None;
+    typ(&mut s, "Ala i kot ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "Ala i kot ", "untagged text in the editing language");
+    // `eng` is English too, as for proofing.
+    let mut s = self::s();
+    run(&mut s, "review.language", json!({"lang": "eng", "default": true}));
+    typ(&mut s, "so i think ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "So I think ");
 }
 
 #[test]

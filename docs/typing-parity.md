@@ -88,11 +88,14 @@ Applied when a word is finished by a space, punctuation **or Enter** (`enter_fin
   and "don't capitalize after" exceptions extend the abbreviation list. A replacement of several
   words takes a sentence capital on its first (`autocorrect_options_change_what_typing_does`).
 - The built-in replacement list is English: its words (`teh`, `i`, `dont`…) are replaced only
-  in English text, or text without a language when the default language is English (the run's
-  `w:lang`, then its style, then the document default). Polish `Ala i kot` keeps its `i`
-  ("and"); symbols (`(c)`, `->`, `1/2`) and the user's own entries apply in every language
-  (#835; `autocorrect_replacement_list_follows_the_texts_language`). Per-language lists for
-  other languages aren't there yet (#735).
+  in English text (the run's `w:lang`, then its style, then the document default; text with no
+  language at all is in the editing language, so with a Polish interface a `.docx` without
+  `w:lang` is Polish). English is decided as proofing decides it (`ProofLang`: `en`, `eng`).
+  Polish `Ala i kot` keeps its `i` ("and"); symbols (`(c)`, `->`, `1/2`) and the user's own
+  entries apply in every language (#835; `autocorrect_replacement_list_follows_the_texts_language`).
+  Croatian, Bosnian and Serbian `i` is kept only when the text is tagged with that language: those
+  interfaces don't set an editing language yet. Per-language lists for other languages aren't
+  there yet (#735).
 
 ¹ From Word's documented AutoFormat and AutoCorrect options; not yet keystroke-compared with
 Word.
@@ -141,6 +144,7 @@ Word.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | AutoCorrect: untagged text follows the editing language; English decided as proofing does (#835 review) |
 | 2026-10-11 | trivial | Grammar proofing (not AutoCorrect) no longer suggests capitalising a sentence after `...` or `…` (`proof::tests::ellipses_do_not_start_sentences`) |
 | 2026-10-12 | minor | AutoCorrect: the English replacement list applies only to English (or untagged) text; Polish `i` stays (#835) |
 | 2026-10-11 | minor | AutoFormat tables from `+---+`, arrow bullets, smileys inside words, undo after a border line (#546) |

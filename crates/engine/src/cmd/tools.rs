@@ -65,13 +65,6 @@ fn is_english_entry(from: &str) -> bool {
     from.chars().any(char::is_alphabetic) && from.chars().all(|c| c.is_alphabetic() || c == '\'')
 }
 
-/// Is a language tag (`w:lang`, "en-US") English? No tag anywhere means the default proofing
-/// language, which is English.
-fn is_english(lang: Option<&str>) -> bool {
-    let primary = lang.map(|l| l.trim().split(['-', '_']).next().unwrap_or_default());
-    primary.is_none_or(|p| p.is_empty() || p.eq_ignore_ascii_case("en"))
-}
-
 /// Compare and Combine take the same settings.
 const COMPARE_PARAMS: &str = r#"{"path"?: string (revised document), "text"?: string (revised text), "original"?: string (original document; default: this one), "author"?: string (label changes with), "caseChanges"?: bool, "whiteSpace"?: bool, "formatting"?: bool (default true: differences count), "level"?: "word|character", "showIn"?: "original|revised|new" (revised/new: an untitled document), "moves"|"comments"|"tables"|"headersFooters"|"footnotes"|"textBoxes"|"fields"?: bool (accepted; not honoured yet except tables, always compared)}"#;
 
@@ -751,9 +744,12 @@ pub fn autocorrect_word(s: &mut Session, on_enter: bool) -> Result<(), CmdError>
     }
     // A whole-word replacement, else "wait..." → "wait…".
     // The word's language (run, paragraph style, document default) picks the list (#835).
+    // Text with no language at all is in the editing language (a Polish interface writes Polish),
+    // else English. Proofing decides what is English the same way.
     let english = s.doc.para_at(&f).is_none_or(|p| {
         let rc = s.doc.styles.resolve_char(p.props.style.as_deref(), p.props_of_char(start));
-        is_english(rc.lang.as_deref())
+        let lang = rc.lang.as_deref().or(s.editing_lang.as_deref());
+        wordcraft_proof::ProofLang::from_tag(lang) == wordcraft_proof::ProofLang::En
     });
     let found = if ac.replace_text { ac.replacement_in(&word, english) } else { None };
     let (from, rep) = match found {
