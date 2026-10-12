@@ -11,13 +11,14 @@
 //! also be stored in WordCraft's compact format ([`AffixDict::to_bytes`]): the rules as text
 //! lines and the stems front-coded, raw-deflated together (the Polish dictionary is under 1 MB).
 //!
-//! Supported: one-character flags (at most 128 distinct, any Unicode character — `FLAG UTF-8`), `PFX`/`SFX` with strip, append and
-//! condition (`.`, letters, `[abc]`, `[^abc]`), cross products, continuation classes (depth-bounded),
+//! Supported: one-character flags (at most 128 distinct, any Unicode character — `FLAG UTF-8`),
+//! `PFX`/`SFX` with strip, append and condition (`.`, letters, `[abc]`, `[^abc]`), cross
+//! products, continuation classes on suffixes (at most two suffixes in a row, as in Hunspell),
 //! `FORBIDDENWORD`, and the suggestion tables `TRY`, `MAP` and `REP`. Rejected: compounding,
 //! long or numeric flags, `NEEDAFFIX` and the other directives that change which words are correct.
 //!
-//! Lookups never panic and never allocate per probe: stems sit in one string, found through an
-//! open-addressing hash table.
+//! Lookups never panic: stems sit in one string, found through an open-addressing hash table, and
+//! a probe allocates only small scratch strings for the candidate roots it tries.
 
 use std::collections::HashMap;
 use std::hash::Hasher;
@@ -113,10 +114,12 @@ fn parse_cond(text: &str) -> Result<Box<[Cond]>, String> {
     Ok(out.into_boxed_slice())
 }
 
-/// How many suffix rules may chain through continuation classes (`workable/B` → `workables`).
-/// Hunspell has no fixed limit; dictionaries chain at most twice or thrice, and a bound keeps
-/// hostile input from walking deep recursions.
-const MAX_CHAIN: u8 = 3;
+/// How many suffixes a word may carry in a row through continuation classes (`work` +
+/// `able/B` + `s` → `workables` is two). Hunspell strips at most two suffixes, so a third
+/// chained suffix is not a word; the bound also keeps hostile input from walking deep recursions.
+const MAX_CHAIN: u8 = 2;
+/// How many suffixes may sit under the outermost one: the depth `form_has_flag` walks.
+const INNER_CHAIN: u8 = MAX_CHAIN - 1;
 
 /// One prefix or suffix rule.
 #[derive(Clone, Debug)]
@@ -599,7 +602,7 @@ impl AffixDict {
             if self.stem_flags(&root).is_some_and(|f| f & r.bit != 0) {
                 return true;
             }
-            if self.form_has_flag(&root, r.bit, MAX_CHAIN) {
+            if self.form_has_flag(&root, r.bit, INNER_CHAIN) {
                 return true;
             }
             if r.cross && self.suffixed(&root, r.bit) {
@@ -634,7 +637,7 @@ impl AffixDict {
                 }
                 // Continuation classes: `root` need not be a stem carrying this rule's flag —
                 // it may be a form that gained the flag from another rule's continuation.
-                if need == 0 && rules().any(|r| r.cond_matches(&root, true) && self.form_has_flag(&root, r.bit, MAX_CHAIN)) {
+                if need == 0 && rules().any(|r| r.cond_matches(&root, true) && self.form_has_flag(&root, r.bit, INNER_CHAIN)) {
                     return true;
                 }
             }
@@ -680,9 +683,9 @@ impl AffixDict {
             }
             out.push(form);
         }
-        // Continuation classes chain suffixes (`workable/B` → `workables`), as deep as
-        // [`MAX_CHAIN`] allows — the same bound the checker walks.
-        for _ in 0..MAX_CHAIN {
+        // Continuation classes chain suffixes (`workable/B` → `workables`), up to [`MAX_CHAIN`]
+        // suffixes in all — the same bound the checker walks.
+        for _ in 0..INNER_CHAIN {
             let level = std::mem::take(&mut chain);
             if level.is_empty() {
                 break;
@@ -1001,6 +1004,16 @@ mod tests {
         assert!(!d.contains("works"), "the stem has A, not B");
         assert!(!d.contains("workabless"), "B declares no continuation");
         assert!(d.check("Workable") && d.check("WORKABLES"));
+    }
+
+    #[test]
+    fn continuation_chains_stop_at_two_suffixes() {
+        // Hunspell strips at most two suffixes: work + able/B + s/C is a word, a third (C) is not.
+        let aff = "SET UTF-8\nFLAG UTF-8\nSFX A N 1\nSFX A   0   able/B   .\nSFX B N 1\nSFX B   0   s/C   .\nSFX C N 1\nSFX C   0   x   .\n";
+        let d = AffixDict::from_hunspell(aff, "1\nwork/A\n", &[]).unwrap();
+        assert!(d.contains("workable") && d.contains("workables"));
+        assert!(!d.contains("workablesx"), "three chained suffixes exceed the limit");
+        assert!(!d.forms("work").iter().any(|f| f == "workablesx"));
     }
 
     #[test]
