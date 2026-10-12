@@ -73,9 +73,9 @@ fn open_filters(d: rfd::AsyncFileDialog, purpose: &str) -> rfd::AsyncFileDialog 
     if purpose == "picture" {
         d.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
     } else if purpose == "recipients" {
-        d.add_filter("Recipient lists", &["csv", "tsv", "txt"]).add_filter("All files", &["*"])
+        d.add_filter("Recipient lists", &["csv", "tsv", "txt", "xlsx", "xlsm", "ods"]).add_filter("All files", &["*"])
     } else {
-        d.add_filter("Documents", &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json"])
+        d.add_filter("Documents", &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json", "xml"])
             .add_filter("Word document", &["docx"])
             .add_filter("All files", &["*"])
     }

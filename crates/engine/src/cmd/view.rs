@@ -21,15 +21,11 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .key("Mod+Shift+8 / Mod+8")
         .pure(),
-        CommandSpec::new("view.printLayout", "Print Layout", "View › Views", |s, _| mode(s, ViewMode::Print, false)).pure(),
+        CommandSpec::new("view.printLayout", "Print Layout", "View › Views", |s, _| mode(s, ViewMode::Print, false)).key("Mod+Alt+P").pure(),
         CommandSpec::new("view.webLayout", "Web Layout", "View › Views", |s, _| mode(s, ViewMode::Web, false)).pure(),
-        CommandSpec::new("view.draft", "Draft", "View › Views", |s, _| mode(s, ViewMode::Draft, false)).pure(),
-        CommandSpec::new("view.outline", "Outline", "View › Views", |s, _| {
-            mode(s, ViewMode::Draft, false)?;
-            s.view.nav_pane = true;
-            sel_result(s)
-        })
-        .pure(),
+        CommandSpec::new("view.draft", "Draft", "View › Views", |s, _| mode(s, ViewMode::Draft, false)).key("Mod+Alt+N").pure(),
+        // The body as an outline of its headings, with the Outlining tab (`outline.*`).
+        CommandSpec::new("view.outline", "Outline", "View › Views", |s, _| mode(s, ViewMode::Outline, false)).key("Mod+Alt+O").pure(),
         CommandSpec::new("view.readMode", "Read Mode", "View › Views", |s, _| mode(s, ViewMode::Print, true)).pure(),
         CommandSpec::new("view.focus", "Focus", "View › Immersive", |s, v| toggle(s, v, |x| &mut x.focus_mode)).pure(),
         CommandSpec::new("view.ruler", "Ruler", "View › Show", |s, v| toggle(s, v, |x| &mut x.ruler)).pure(),
@@ -62,6 +58,14 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("view.darkMode", "Switch Modes", "View › Dark Mode", |s, v| toggle(s, v, |x| &mut x.dark_mode)).pure(),
         CommandSpec::new("view.stylesPane", "Styles Pane", "Home › Styles", |s, v| toggle(s, v, |x| &mut x.styles_pane)).pure(),
         CommandSpec::new("view.commentsPane", "Comments Pane", "Review › Comments", |s, v| toggle(s, v, |x| &mut x.comments_pane)).pure(),
+        CommandSpec::new("view.accessibilityPane", "Accessibility Pane", "Review › Accessibility", |s, v| {
+            toggle(s, v, |x| &mut x.accessibility_pane)
+        })
+        .params(r#"{"value"?: bool}"#)
+        .pure(),
+        CommandSpec::new("view.altTextPane", "Alt Text Pane", "Review › Accessibility", |s, v| toggle(s, v, |x| &mut x.alt_text_pane))
+            .params(r#"{"value"?: bool}"#)
+            .pure(),
         CommandSpec::new("view.newWindow", "New Window", "View › Window", |s, _| {
             s.ui_requests.push(json!({"open": "newWindow"}));
             sel_result(s)
@@ -71,6 +75,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.ui_requests.push(json!({"toggle": "split"}));
             sel_result(s)
         })
+        .key("Mod+Alt+S")
         .pure(),
         CommandSpec::new("view.state", "View State", "View", |s, _| serde_json::to_value(&s.view).map_err(|e| CmdError::Failed(e.to_string())))
             .pure(),
