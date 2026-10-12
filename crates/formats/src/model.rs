@@ -132,8 +132,15 @@ impl Para {
 
     /// Remove whitespace at the very start and end of the paragraph's text.
     pub fn trim(&mut self) {
+        const WS: &[char] = &[' ', '\t', '\r', '\n'];
+        self.trim_with(WS, WS);
+    }
+
+    /// Remove the characters in `start` from the start of the paragraph's text and those in
+    /// `end` from its end.
+    pub fn trim_with(&mut self, start: &[char], end: &[char]) {
         while let Some(Inline::Text(t, _)) = self.inlines.first_mut() {
-            let n = t.trim_start_matches([' ', '\t', '\r', '\n']).len();
+            let n = t.trim_start_matches(start).len();
             let cut = t.len() - n;
             t.replace_range(..cut, "");
             if t.is_empty() {
@@ -143,7 +150,7 @@ impl Para {
             }
         }
         while let Some(Inline::Text(t, _)) = self.inlines.last_mut() {
-            let n = t.trim_end_matches([' ', '\t', '\r', '\n']).len();
+            let n = t.trim_end_matches(end).len();
             t.truncate(n);
             if t.is_empty() {
                 self.inlines.pop();
@@ -502,7 +509,7 @@ impl Builder<'_> {
         }
         tb.rows.clear();
         for r in rows {
-            let mut row = wordcraft_doc::Row { props: RowProps::default(), cells: Vec::new() };
+            let mut row = wordcraft_doc::Row { props: RowProps::default(), cells: Vec::new(), controls: Default::default() };
             row.props.header = !r.is_empty() && r.iter().all(|c| c.header);
             let mut g = 0usize;
             for c in r.iter().take(wordcraft_doc::table::MAX_COLS) {
@@ -523,6 +530,7 @@ impl Builder<'_> {
                 row.cells.push(wordcraft_doc::Cell {
                     props: CellProps { width: Some(w), span: span as u32, vmerge, shading: c.shading, ..Default::default() },
                     blocks,
+                    controls: Default::default(),
                 });
             }
             if row.cells.is_empty() {
@@ -792,7 +800,11 @@ fn flow_table(doc: &Document, t: &Table, depth: usize) -> FTable {
         }
         rows.push(cells);
     }
-    FTable { rows, widths: t.grid.clone(), borderless: false }
+    // Without a table style and without visible table or cell borders the table shows no grid.
+    let visible = |b: &Option<wordcraft_doc::props::Borders>| b.as_ref().is_some_and(|b| b.any_visible());
+    let borderless =
+        t.props.style.is_none() && !visible(&t.props.borders) && t.rows.iter().flat_map(|r| &r.cells).all(|c| !visible(&c.props.borders));
+    FTable { rows, widths: t.grid.clone(), borderless }
 }
 
 /// The document body as a flow.

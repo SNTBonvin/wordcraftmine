@@ -14,12 +14,18 @@ fn has_sel(s: &Session) -> Option<&'static str> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("edit.undo", "Undo", "Quick Access Toolbar", |s, _| {
+            if s.step_lifts_protection(false) {
+                return Err(CmdError::Disabled("edit.undo: use Stop Protection to lift the document's protection".into()));
+            }
             s.undo();
             sel_result(s)
         })
         .key("Mod+Z")
         .pure(),
         CommandSpec::new("edit.redo", "Redo", "Quick Access Toolbar", |s, _| {
+            if s.step_lifts_protection(true) {
+                return Err(CmdError::Disabled("edit.redo: use Stop Protection to lift the document's protection".into()));
+            }
             s.redo();
             sel_result(s)
         })
@@ -64,8 +70,11 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("edit.advancedFind", "Advanced Find", "Home › Editing › Find", advanced_find)
             .params(r#"{"text"?: string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool, "in"?: "main|selection", "highlight"?: bool}"#)
             .pure(),
-        CommandSpec::new("edit.findNext", "Find Next", "Home › Editing › Find", |s, _| step(s, 1)).key("Mod+G / F3").pure(),
-        CommandSpec::new("edit.findPrevious", "Find Previous", "Home › Editing › Find", |s, _| step(s, -1)).key("Mod+Shift+G").pure(),
+        CommandSpec::new("edit.findNext", "Find Next", "Home › Editing › Find", |s, _| step(s, 1)).key("Mod+G / F3 / Mod+PageDown").pure(),
+        CommandSpec::new("edit.findPrevious", "Find Previous", "Home › Editing › Find", |s, _| step(s, -1))
+            // Elsewhere Ctrl+Shift+G is Word Count; Ctrl+Page Up/Down browse the find results.
+            .key(super::mac_or("Mod+Shift+G / Mod+PageUp", "Mod+PageUp"))
+            .pure(),
         CommandSpec::new("edit.replace", "Replace", "Home › Editing", replace).key("Mod+H").params(r#"{"text": string, "with": string}"#),
         CommandSpec::new("edit.replaceAll", "Replace All", "Home › Editing › Replace", replace_all)
             .params(r#"{"text": string, "with": string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool}"#),
@@ -73,6 +82,14 @@ pub fn specs() -> Vec<CommandSpec> {
             .key("Mod+Alt+G / F5")
             .params(r#"{"page"?: n, "bookmark"?: string, "paragraph"?: n}"#)
             .pure(),
+        CommandSpec::new("edit.goBack", "Go Back", "Navigation", |s, _| {
+            let p = s.go_back().ok_or_else(|| CmdError::Failed("no edits to go back to yet".into()))?;
+            s.sel = Selection::caret(p);
+            s.goal_x = None;
+            sel_result(s)
+        })
+        .key("Shift+F5")
+        .pure(),
         CommandSpec::new("edit.formatPainter", "Format Painter", "Home › Clipboard", painter).params(r#"{"sticky"?: bool}"#).pure(),
         CommandSpec::new("edit.copyFormat", "Copy Formatting", "Home › Clipboard", |s, _| {
             painter_pick(s);
@@ -98,7 +115,11 @@ fn copy(s: &mut Session, _: &Value) -> CmdResult {
 
 fn cut(s: &mut Session, v: &Value) -> CmdResult {
     let r = copy(s, v)?;
-    delete_selection(s)?;
+    // A tracked cut of a paragraph or sentence may become a move when pasted.
+    if !super::moves::cut_tracked(s)? {
+        delete_selection(s)?;
+    }
+    super::controls::restore_placeholder(s)?;
     Ok(r)
 }
 
@@ -253,7 +274,7 @@ fn paste_text(s: &mut Session, v: &Value) -> CmdResult {
         Some(t) => t.to_string(),
         None => s.clipboard.as_ref().map(Fragment::plain_text).unwrap_or_default(),
     };
-    super::type_text(s, &text.replace("\r\n", "\r").replace('\n', "\r"))?;
+    super::paste_text(s, &text.replace("\r\n", "\r").replace('\n', "\r"))?;
     sel_result(s)
 }
 
@@ -405,7 +426,7 @@ fn replace(s: &mut Session, v: &Value) -> CmdResult {
     // Replace the current match if selected, then move to the next.
     if results.iter().any(|(x, y)| *x == a && *y == b) {
         let with = s.find.replace.clone();
-        super::type_text(s, &with)?;
+        super::paste_text(s, &with)?;
     }
     let _ = step(s, 1);
     Ok(json!({"remaining": search(s, story)?.len()}))
@@ -422,12 +443,21 @@ fn replace_all(s: &mut Session, v: &Value) -> CmdResult {
         if s.doc.settings.track_changes {
             // Same path as a single replace, so the change is a reviewable revision.
             s.sel = Selection { anchor: a, focus: b };
-            super::type_text(s, &with)?;
+            super::paste_text(s, &with)?;
             continue;
         }
         let props = s.doc.para_at(&a).map(|p| p.props_of_char(a.off).clone()).unwrap_or_default();
         s.doc.delete_range(&a, &b)?;
-        s.doc.insert_text(&a, &with, &props)?;
+        // A paragraph mark in the replacement starts a new paragraph, as in a single replace.
+        let mut at = a;
+        for (i, part) in with.split(['\r', '\u{2029}']).enumerate() {
+            if i > 0 {
+                at = s.doc.split_paragraph(&at)?;
+            }
+            if !part.is_empty() {
+                at = s.doc.insert_text(&at, part, &props)?;
+            }
+        }
     }
     s.status = format!("All done. We made {n} replacements.");
     Ok(json!({"replaced": n}))

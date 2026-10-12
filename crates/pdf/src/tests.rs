@@ -221,8 +221,8 @@ fn hostile_documents_export() {
 fn tracked_deletions_are_left_out_without_markup() {
     use wordcraft_doc::{Revision, RevisionKind};
     let mut d = Document::new();
-    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Ada".into(), date: String::new() });
-    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Ada".into(), date: String::new() });
+    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Ada".into(), date: String::new(), move_name: None });
+    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Ada".into(), date: String::new(), move_name: None });
     let mut p = Paragraph::with_text("Keep ", CharProps::default());
     let n = p.len();
     p.insert_text(n, "DELETEDTEXT ", &CharProps { del: Some(0), ..Default::default() }).unwrap();
@@ -241,7 +241,7 @@ fn tracked_deletions_are_left_out_without_markup() {
 fn deleted_heading_text_stays_out_of_bookmarks_and_tags() {
     use wordcraft_doc::{Revision, RevisionKind};
     let mut d = Document::new();
-    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Ada".into(), date: String::new() });
+    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Ada".into(), date: String::new(), move_name: None });
     let del = CharProps { del: Some(0), ..Default::default() };
     // "Intro SECRET Part" with "SECRET " deleted, then a heading deleted as a whole.
     let mut h = Paragraph::with_text("Intro ", CharProps::default()).styled("Heading1");
@@ -414,7 +414,7 @@ fn fields_put_their_shown_text_in_the_text_layer() {
     // characters, are what copying, search and screen readers get.
     let mut d = Document::new();
     let mut f = Paragraph::with_text("Page  of ", CharProps::default());
-    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: String::new(), locked: false };
+    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: String::new(), locked: false, code: false };
     f.insert_object(5, field("PAGE"), &CharProps::default()).unwrap();
     let n = f.len();
     f.insert_object(n, field("NUMPAGES"), &CharProps::default()).unwrap();
@@ -538,7 +538,7 @@ fn field_results_are_extractable_text() {
     let mut p = Paragraph::with_text("See  for details.", CharProps::default());
     p.insert_object(
         4,
-        InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: "Section 3.01".into(), locked: false },
+        InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: "Section 3.01".into(), locked: false, code: false },
         &CharProps::default(),
     )
     .unwrap();
@@ -559,7 +559,8 @@ fn field_result_ligatures_extract_all_their_letters() {
     assert!(wordcraft_fonts::shape(&face, result, &[], |c| c).len() < result.chars().count(), "the result has ligatures");
     let mut d = Document::new();
     let mut p = Paragraph::with_text("See  here.", font.clone());
-    p.insert_object(4, InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: result.into(), locked: false }, &font).unwrap();
+    p.insert_object(4, InlineObject::Field { instr: " REF _RefTarget \\h ".into(), result: result.into(), locked: false, code: false }, &font)
+        .unwrap();
     d.body = vec![para_block(p)];
     let text = extract_text(&export(&d, &PdfOptions::default()).unwrap()).concat();
     assert!(squash(&text).contains("See the first office here."), "{text:?}");
@@ -762,4 +763,38 @@ fn cosmetic_metafile_pens_are_thin_but_visible() {
     let bytes = export(&d, &PdfOptions { compress: false, tagged: false, ..Default::default() }).unwrap();
     let raw = String::from_utf8_lossy(&bytes);
     assert!(raw.contains("0.25 w"), "the hairline is a quarter point wide");
+}
+
+/// #455: a link to a bookmark after a page break inside its paragraph goes to the page the
+/// bookmark is on, not the paragraph's first page.
+#[test]
+fn bookmark_destination_is_the_page_of_its_start() {
+    let mut d = Document::new();
+    let mut p = Paragraph::with_text("Paragraph start\u{c}Bookmark target", CharProps::default());
+    let at = "Paragraph start\u{c}".len();
+    p.insert_object(at, InlineObject::BookmarkStart { name: "target".into() }, &CharProps::default()).unwrap();
+    p.insert_object(0, InlineObject::BookmarkStart { name: "first".into() }, &CharProps::default()).unwrap();
+    d.body = vec![para_block(p)];
+    let lay = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+    assert_eq!(lay.pages.len(), 2);
+    let pages: Vec<usize> = (0..lay.pages.len()).collect();
+    let outlined = HashSet::new();
+    let ex = Exporter {
+        doc: &d,
+        lay: &lay,
+        opts: &PdfOptions::default(),
+        out_index: pages.iter().enumerate().map(|(o, p)| (*p, o)).collect(),
+        fonts: HashMap::new(),
+        outlined: &outlined,
+        cmaps: HashMap::new(),
+        images: HashMap::new(),
+        vectors: HashMap::new(),
+        tags: Vec::new(),
+        tag_index: HashMap::new(),
+        links: Vec::new(),
+    };
+    let (page, x, y) = ex.bookmark("target").unwrap();
+    assert_eq!(page, 1, "the bookmark is on the second page");
+    assert!((x - 72.0).abs() < 1.0 && y < 150.0, "{x} {y}");
+    assert_eq!(ex.bookmark("first").map(|b| b.0), Some(0));
 }

@@ -186,6 +186,23 @@ fn autocorrect_as_you_type() {
 }
 
 #[test]
+fn autocorrect_options_change_what_typing_does() {
+    let mut s = s();
+    // A user entry, a deleted built-in entry, an added exception; names of days.
+    run(&mut s, "tools.autocorrect", json!({"add": {"from": "wc", "to": "WordCraft"}}));
+    run(&mut s, "tools.autocorrect", json!({"delete": "teh"}));
+    run(&mut s, "tools.autocorrect", json!({"addException": "approx."}));
+    typ(&mut s, "wc ships on monday. teh end is approx. three weeks ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "WordCraft ships on Monday. Teh end is approx. three weeks ");
+    // AutoFormat options off: straight quotes, no dashes, no list; sentences not capitalised.
+    let mut s = self::s();
+    run(&mut s, "tools.autocorrect", json!({"smartQuotes": false, "dashes": false, "bullets": false, "capSentences": false, "capDays": false}));
+    typ(&mut s, "* \"hi\" a -- b sunday ");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "* \"hi\" a -- b sunday ");
+    assert_eq!(paras(&s)[0].1, None);
+}
+
+#[test]
 fn enter_finishes_a_word_for_autocorrect() {
     let s = typed("hello\nteh end\n");
     assert_eq!(s.doc.plain_text(StoryRef::Body), "Hello\nThe end\n");
@@ -376,4 +393,221 @@ fn typing_at_either_end_of_a_link_is_not_linked() {
     typ(&mut s, "\nmore");
     assert_eq!(texts(&s), ["see a sixte", "more! now"]);
     assert_eq!(links(&s), [("sixte".into(), false), (String::new(), false)]);
+}
+
+#[test]
+fn typing_then_selecting_then_typing_are_two_undo_steps() {
+    // #419: a selection that moves the insertion point ends the typing group, like a caret move.
+    let mut s = typed("alpha");
+    run(&mut s, "select.text", json!({"text": "ph"}));
+    run(&mut s, "text.insert", json!({"text": "X"}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().text, "alXa");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().text, "alpha");
+    assert_eq!(s.selected_text(), "ph");
+    assert!(s.can_undo());
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().text, "");
+    // Uninterrupted typing (a read-only command in between included) is still one step.
+    let mut s = typed("alpha");
+    run(&mut s, "document.inspect", json!({}));
+    typ(&mut s, "X");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().text, "");
+}
+
+#[test]
+fn undoing_bold_at_the_caret_turns_bold_typing_off_again() {
+    // #424: Bold at a caret in an empty paragraph, Undo, type: the text isn't bold.
+    let mut s = s();
+    run(&mut s, "format.bold", json!({"value": true}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_ne!(s.typing_props().bold, Some(true));
+    typ(&mut s, "abc");
+    let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
+    assert_eq!(p.text, "abc");
+    assert_ne!(p.props_of_char(0).bold, Some(true));
+    // Redo brings bold typing back.
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    run(&mut s, "format.bold", json!({"value": true}));
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.redo", json!({}));
+    typ(&mut s, "abc");
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props_of_char(0).bold, Some(true));
+}
+
+/// Press a shortcut the way the keyboard does: run the command bound to it.
+fn press(s: &mut Session, combo: &str) -> Result<serde_json::Value, crate::CmdError> {
+    let id = s.registry.by_shortcut(combo).map(|c| c.id).unwrap_or_else(|| panic!("nothing bound to {combo}"));
+    s.run(id, &json!({}))
+}
+
+/// Word's outline keys: Alt+Shift+arrows, ⌃⇧+arrows on macOS.
+fn outline_key(arrow: &str) -> String {
+    if cfg!(target_os = "macos") { format!("Ctrl+Shift+{arrow}") } else { format!("Alt+Shift+{arrow}") }
+}
+
+#[test]
+fn alt_shift_down_then_up_moves_a_paragraph_and_back_and_undoes() {
+    let mut s = typed("One\nTwo\nThree");
+    run(&mut s, "caret.docStart", json!({}));
+    press(&mut s, &outline_key("Down")).unwrap();
+    assert_eq!(texts(&s), ["two", "one", "three"]);
+    assert_eq!(s.sel.focus, Pos::body(1, 0), "the caret moves with the paragraph");
+    press(&mut s, &outline_key("Up")).unwrap();
+    assert_eq!(texts(&s), ["one", "two", "three"]);
+    assert!(press(&mut s, &outline_key("Up")).is_err(), "nothing above the first paragraph");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["two", "one", "three"], "each move is one undo step");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["one", "two", "three"]);
+    // A selected paragraph (with its mark) moves alone; list items keep their list.
+    let mut s = typed("1. First\nSecond\n\nAfter");
+    run(&mut s, "select.paragraph", json!({}));
+    press(&mut s, &outline_key("Up")).unwrap();
+    assert_eq!(paras(&s), vec![para("First", Some(0)), para("After", None), para("Second", Some(0))]);
+    assert!(press(&mut s, &outline_key("Down")).is_ok());
+    assert!(press(&mut s, &outline_key("Down")).is_err(), "nothing below the last paragraph");
+}
+
+fn style_of(s: &Session, i: usize) -> Option<String> {
+    s.doc.body.get(i).and_then(|b| b.as_para()).and_then(|p| p.props.style.clone())
+}
+
+#[test]
+fn alt_shift_left_and_right_promote_and_demote_headings_and_list_items() {
+    let mut s = typed("Intro\nBody");
+    run(&mut s, "caret.docStart", json!({}));
+    run(&mut s, "para.heading2", json!({}));
+    run(&mut s, "caret.docEnd", json!({}));
+    // Promoted body text takes the level of the heading before it; then one level at a time.
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading2"));
+    press(&mut s, &outline_key("Right")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading3"));
+    press(&mut s, &outline_key("Left")).unwrap();
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading1"));
+    assert!(press(&mut s, &outline_key("Left")).is_err(), "Heading 1 is the top level");
+    for _ in 0..8 {
+        press(&mut s, &outline_key("Right")).unwrap();
+    }
+    assert_eq!(style_of(&s, 1).as_deref(), Some("Heading9"));
+    assert!(press(&mut s, &outline_key("Right")).is_err(), "Heading 9 is the lowest heading");
+    // In a list they change the item's level, like Tab and Shift+Tab.
+    let mut s = typed("* One\nTwo");
+    press(&mut s, &outline_key("Right")).unwrap();
+    assert_eq!(paras(&s), vec![para("One", Some(0)), para("Two", Some(1))]);
+    press(&mut s, &outline_key("Left")).unwrap();
+    assert_eq!(paras(&s), vec![para("One", Some(0)), para("Two", Some(0))]);
+}
+
+#[test]
+fn alt_x_toggles_between_a_character_and_its_code() {
+    if !cfg!(target_os = "macos") {
+        assert_eq!(s().registry.by_shortcut("Alt+X").map(|c| c.id), Some("text.toggleUnicode"));
+    }
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "x 00e9"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é"]);
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x 00e9"]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(texts(&s), ["x é"], "one undo step");
+    run(&mut s, "text.insert", json!({"text": " U+1F600"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é 😀"]);
+    // A selected code converts too.
+    run(&mut s, "text.insert", json!({"text": " 2014"}));
+    run(&mut s, "select.text", json!({"text": "2014"}));
+    run(&mut s, "text.toggleUnicode", json!({}));
+    assert_eq!(texts(&s), ["x é 😀 —"]);
+}
+
+#[test]
+fn shift_f5_goes_back_through_the_last_edits() {
+    let mut s = typed("One\nTwo\nThree");
+    run(&mut s, "caret.docStart", json!({}));
+    let mut back = || {
+        press(&mut s, "Shift+F5").unwrap();
+        s.sel.focus.clone()
+    };
+    assert_eq!(back(), Pos::body(2, 5), "the last edit first");
+    assert_eq!(back(), Pos::body(1, 3));
+    assert_eq!(back(), Pos::body(0, 3));
+    assert_eq!(back(), Pos::body(2, 5), "then round again");
+    assert!(Session::new(wordcraft_doc::Document::new()).run("edit.goBack", &json!({})).is_err(), "nothing edited yet");
+}
+
+/// File › Options › Advanced, "Typing replaces selected text" (#485): on (Word's default) the
+/// typed text replaces the selection; off, it goes in front of the selection and keeps it.
+#[test]
+fn typing_over_a_selection_follows_the_replace_selection_option() {
+    let mut s = typed("One two");
+    run(&mut s, "select.text", json!({"text": "two"}));
+    typ(&mut s, "X");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "One X");
+    let mut s = typed("One two");
+    run(&mut s, "file.options", json!({"typingReplacesSelection": false}));
+    run(&mut s, "select.text", json!({"text": "two"}));
+    typ(&mut s, "XY");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "One XYtwo");
+}
+
+/// Overtype (#485): typed characters replace the ones after the caret, never past the end of the
+/// paragraph; the Insert key toggles it only with "Use the Insert key to control overtype" on
+/// (the UI checks that option; `text.overtype` is the switch).
+#[test]
+fn overtype_replaces_the_characters_after_the_caret() {
+    let mut s = typed("Abcdef\nXy");
+    run(&mut s, "caret.set", json!({"pos": Pos::body(0, 1)}));
+    run(&mut s, "text.overtype", json!({"value": true}));
+    typ(&mut s, "XY");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "AXYdef\nXy");
+    run(&mut s, "caret.set", json!({"pos": Pos::body(0, 5)}));
+    typ(&mut s, "123");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "AXYde123\nXy", "the paragraph mark isn't typed over");
+    run(&mut s, "text.overtype", json!({}));
+    run(&mut s, "caret.set", json!({"pos": Pos::body(0, 0)}));
+    typ(&mut s, "Z");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "ZAXYde123\nXy", "insert mode again");
+}
+
+#[test]
+fn reject_all_takes_out_the_paragraph_breaks_a_tracked_paste_inserted() {
+    // Issue #417: Paste's paragraph marks weren't tracked, so Reject All left the split.
+    for text in ["X\nY", "\n"] {
+        let mut s = s();
+        run(&mut s, "text.insert", json!({"text": "AB", "raw": true}));
+        run(&mut s, "caret.set", json!({"pos": {"block": 0, "off": 1}}));
+        run(&mut s, "review.trackChanges", json!({"value": true}));
+        run(&mut s, "edit.paste", json!({"text": text}));
+        let (head, tail) = text.split_once('\n').unwrap_or_default();
+        assert_eq!(texts(&s), [format!("a{}", head.to_lowercase()), format!("{}b", tail.to_lowercase())], "{text:?}");
+        let pasted = texts(&s);
+        run(&mut s, "review.rejectAll", json!({}));
+        assert_eq!(texts(&s), ["ab"], "{text:?}");
+        assert!(s.doc.revisions.is_empty(), "{text:?}");
+        run(&mut s, "edit.undo", json!({}));
+        run(&mut s, "review.acceptAll", json!({}));
+        assert_eq!(texts(&s), pasted, "{text:?}: accepting keeps the break");
+    }
+}
+
+#[test]
+fn plain_text_paste_keeps_an_empty_paragraph_in_a_list() {
+    // Issue #422: the pasted paragraph separators went through Enter, which ends the list on an
+    // empty item, so `A\n\nB` lost its empty paragraph.
+    for (id, v) in [("edit.pasteText", json!({"text": "A\n\nB"})), ("edit.pasteSpecial", json!({"as": "text", "text": "A\n\nB"}))] {
+        let mut s = s();
+        run(&mut s, "para.bullets", json!({}));
+        run(&mut s, id, v);
+        assert_eq!(texts(&s), ["a", "", "b"], "{id}");
+    }
+    // Enter twice still ends the list.
+    let mut s = s();
+    run(&mut s, "para.bullets", json!({}));
+    typ(&mut s, "A\n\nB");
+    assert_eq!(paras(&s), vec![para("A", Some(0)), para("B", None)]);
 }
