@@ -8,9 +8,9 @@ selects it explicitly, and `WORDCRAFT_LANGUAGE=hu-HU` does the same for a headle
 launch while the preference is `auto`. The choice is saved with the other interface settings.
 Document text, command ids, CLI/MCP/control responses and file paths do not change.
 
-`crates/ui-egui/src/i18n/hu.tsv` has 1,989 entries: built-in style names, equation gallery labels, paper
+`crates/ui-egui/src/i18n/hu.tsv` has 2,013 entries: built-in style names, equation gallery labels, paper
 sizes, watermarks, greetings, the citation style names and every tab and command label. It is
-partial: dialogs added after it (about 280 strings, such as Compare Documents and Math
+partial: dialogs added after it (about 250 strings, such as Compare Documents and Math
 AutoCorrect) show in English until they are translated. It is written from the
 meaning of the English labels; no proprietary translation resources were consulted. The catalog
 format has no plural forms, and Hungarian doesn't need them: a noun after a number stays singular
@@ -74,4 +74,4 @@ Hungarian proofing. A native-speaker review of the catalog is welcome.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | minor | Hungarian catalog (1,989 entries, partial: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |
+| 2026-10-11 | minor | Hungarian catalog (2,013 entries, partial: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |
