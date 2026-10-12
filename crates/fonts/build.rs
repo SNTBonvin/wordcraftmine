@@ -1,10 +1,14 @@
 //! Optional craft-fonts build input (https://github.com/storytold/craft-fonts, recipe from its
 //! `docs/integration.md`). With `CRAFT_FONTS_DIR=<checkout>` the fonts in its
 //! `fonts/manifest.txt` are embedded as `CRAFT_FONTS`; unset, `CRAFT_FONTS` is empty. Web
-//! (wasm32) builds embed only the UI face, BIZ UDPGothic Regular, to stay within the web size
-//! budget. With `CRAFT_FONTS_REQUIRED` (releases), a native build also fails when the checkout
+//! (wasm32) builds embed the UI face and metric-compatible document substitutes. Those
+//! substitutes keep fixed-height text boxes and floating anchors from drifting when a
+//! proprietary document font is unavailable in the browser. With `CRAFT_FONTS_REQUIRED` (releases), a native build also fails when the checkout
 //! has no font for a CJK interface language (Japanese, Simplified Chinese), as an outdated pin
 //! once did (#241). It only reads the local checkout: no network.
+#[path = "src/web_fonts.rs"]
+mod web_fonts;
+
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -55,7 +59,9 @@ fn craft_fonts(dir: &std::path::Path) -> Result<(String, Vec<String>), String> {
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
         };
-        if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {
+        // The browser cannot discover installed fonts. Keep metric-compatible substitutes
+        // as well as the UI face: generic fallback metrics can hide text in short boxes.
+        if wasm && !web_fonts::embed_for_web(family, style) {
             continue;
         }
         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;

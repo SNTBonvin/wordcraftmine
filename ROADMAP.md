@@ -324,3 +324,5 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-10 | major | Full re-measure; restructured to the progress-docs standard (stage banner, two numbers, dimensions, languages, upcoming, progress log); parity tables moved to `docs/target-app-parity.md`, milestones to `docs/roadmap.md` |
 | 2026-10-09 | minor | Recently landed: RTL, Ukrainian and Brazilian Portuguese |
 | 2026-10-06 | major | First honest estimate: 88% catalog, ~62% real parity, alpha ~85% of the way |
+
+Browser rendering fix: optional metric-compatible document fonts are retained and registered in web builds. DrawingML compatLnSpc is preserved on text bodies and honored in layout. Regression coverage includes short captions, oversized headings, and DOCX save/reopen. Arimo used for local browser verification is an optional OFL 1.1 font input, not a bundled asset in this repository.

@@ -330,8 +330,8 @@ mod tests {
 
     #[test]
     fn craft_fonts_japanese_faces_cover_japanese_and_have_vertical_forms() {
-        if CRAFT_FONTS.is_empty() {
-            eprintln!("skipped: built without craft-fonts (set CRAFT_FONTS_DIR to a checkout)");
+        if japanese_document_fonts().is_empty() {
+            eprintln!("skipped: no Japanese faces in the optional craft-fonts input");
             return;
         }
         let fonts = japanese_document_fonts();
@@ -365,7 +365,7 @@ mod tests {
         let db = FontDb::with_font_dirs(Vec::new());
         db.set_system_fallback(false);
         let latin = db.face(DEFAULT_FAMILY, "Regular");
-        if CRAFT_FONTS.is_empty() {
+        if !CRAFT_FONTS.iter().any(|f| f.scripts.contains(&"Jpan") || f.scripts.contains(&"Hans")) {
             // No bundled CJK font and no system fallback: nothing can draw the run.
             assert!(db.fallback_for_east_asian(&['分', '类'], latin.id(), false, false).is_none());
             return;
@@ -398,3 +398,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod web_fonts;

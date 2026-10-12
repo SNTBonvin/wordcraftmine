@@ -2214,3 +2214,32 @@ fn replace_part(zip_bytes: &[u8], name: &str, data: &[u8]) -> Vec<u8> {
     }
     out.finish().unwrap().into_inner()
 }
+
+#[test]
+fn compatible_text_box_spacing_round_trips() {
+    let mut d = Document::from_text("Body");
+    let id = d.add_part(PartKind::TextBox, vec![para_block(Paragraph::with_text("Heading", CharProps::default()))]);
+    d.parts.get_mut(&id).unwrap().body.compatible_line_spacing = true;
+    d.insert_object(
+        &wordcraft_doc::Pos::body(0, 0),
+        InlineObject::Shape {
+            kind: ShapeKind::TextBox,
+            w: 540.0,
+            h: 90.0,
+            fill: None,
+            stroke: None,
+            stroke_width: 0.0,
+            float: Float { wrap: Wrap::InFrontOfText, ..Default::default() },
+            story: Some(id),
+            freeform: None,
+            effects: Default::default(),
+            extra: Default::default(),
+        },
+        &CharProps::default(),
+    )
+    .unwrap();
+    let restored = rt(&d);
+    let part = restored.parts.values().find(|part| part.kind == PartKind::TextBox).unwrap();
+    assert!(part.body.compatible_line_spacing);
+    assert_eq!(part.blocks[0].as_para().unwrap().plain_text(), "Heading");
+}

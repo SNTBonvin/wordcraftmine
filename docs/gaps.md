@@ -141,3 +141,5 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-11 | trivial | #491: vertical sections landed; vertical text removed from the East Asian gap |
 | 2026-10-10 | major | First version, from the full re-measure: 29 ranked gaps with evidence, impact and hours |
 | 2026-10-10 | trivial | #307: Draw tab pens, eraser and Hide Ink landed; ink gap narrowed |
+
+Browser rendering fix: optional metric-compatible document fonts are retained and registered in web builds. DrawingML compatLnSpc is preserved on text bodies and honored in layout. Regression coverage includes short captions, oversized headings, and DOCX save/reopen. Arimo used for local browser verification is an optional OFL 1.1 font input, not a bundled asset in this repository.

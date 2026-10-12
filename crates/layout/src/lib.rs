@@ -852,6 +852,27 @@ fn footnote_pages(doc: &Document, pages: &[Page]) -> HashMap<u32, usize> {
 /// headers, footers, notes, text boxes. Returns items relative to (0, 0) and the height. `frame`
 /// says where the box sits on its page, for floating objects positioned relative to the page or
 /// its margins; without it (cells, notes, text boxes) they're positioned in the box.
+/// DrawingML compatible spacing measures the font scene rather than the face's full
+/// ascent/descent line box. Preserve explicit point spacing; multiples use the largest
+/// visible run size. The stored paragraph stays unchanged for editing and DOCX export.
+fn compatible_box_paragraph(doc: &Document, p: &Paragraph) -> Paragraph {
+    let mut adjusted = p.clone();
+    let rp = doc.styles.resolve_para(&p.props);
+    if let wordcraft_doc::props::LineSpacing::Multiple(factor) = rp.line_spacing {
+        let size = p
+            .runs
+            .iter()
+            .filter_map(|run| {
+                let rc = doc.styles.resolve_char_in(Some(&rp.style), None, &run.props);
+                (!rc.hidden).then_some(rc.size)
+            })
+            .fold(0.0_f32, f32::max);
+        let size = if size > 0.0 { size } else { doc.styles.resolve_char_in(Some(&rp.style), None, &p.mark).size };
+        adjusted.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Exactly((size * factor).clamp(0.1, 1584.0)));
+    }
+    adjusted
+}
+
 #[allow(clippy::too_many_arguments)]
 fn layout_box(
     ctx: &mut Ctx,
@@ -885,6 +906,17 @@ fn layout_box(
         path.push(i as u32);
         match &**b {
             Block::Para(p) => {
+                let compatible = match story {
+                    StoryRef::Part(id) => ctx.doc.parts.get(&id).is_some_and(|part| part.body.compatible_line_spacing),
+                    _ => false,
+                };
+                let adjusted;
+                let p = if compatible {
+                    adjusted = compatible_box_paragraph(ctx.doc, p);
+                    &adjusted
+                } else {
+                    p
+                };
                 let label = ctx.next_label(p);
                 let listed = label.is_some();
                 let mut pl = ctx.para_labelled(p, width, table, &[], label.clone());

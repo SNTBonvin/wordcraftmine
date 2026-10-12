@@ -114,3 +114,5 @@ font can't match Word's metrics.
 | 2026-10-10 | trivial | Long display equations wrap across lines (#326) |
 | 2026-10-10 | trivial | AutoFit Contents measures the text (#44) |
 | 2026-10-10 | major | First version: layout and pagination checklist with evidence from `crates/layout`, PRs and issues |
+
+Browser rendering fix: optional metric-compatible document fonts are retained and registered in web builds. DrawingML compatLnSpc is preserved on text bodies and honored in layout. Regression coverage includes short captions, oversized headings, and DOCX save/reopen. Arimo used for local browser verification is an optional OFL 1.1 font input, not a bundled asset in this repository.

@@ -4744,3 +4744,102 @@ fn automatic_spacing_drops_between_list_items() {
         );
     }
 }
+
+#[test]
+fn metric_compatible_font_keeps_the_second_line_in_a_short_banner() {
+    // The browser must embed this optional Arial substitute. Source Sans 3's taller
+    // metrics used to hide the 18pt second line after a 4pt spacer in a 36pt box.
+    if !wordcraft_fonts::CRAFT_FONTS.iter().any(|f| f.family == "Arimo") {
+        return;
+    }
+    use wordcraft_doc::props::{CharProps, LineSpacing, Rgb, TextColor};
+    let mut d = Document::from_text("Body");
+    let char_props = |size| CharProps {
+        font: Some("Arimo".into()),
+        size: Some(size),
+        bold: Some(true),
+        color: Some(TextColor::Rgb(Rgb(255, 255, 255))),
+        ..Default::default()
+    };
+    let mut spacer = wordcraft_doc::Paragraph::with_text("  ", char_props(4.0));
+    spacer.mark = char_props(4.0);
+    spacer.props.space_before = Some(0.0);
+    spacer.props.space_after = Some(0.0);
+    spacer.props.line_spacing = Some(LineSpacing::Multiple(1.0));
+    let mut caption = wordcraft_doc::Paragraph::with_text("PERSONALIZED RESULTS", char_props(18.0));
+    caption.mark = char_props(18.0);
+    caption.props.space_before = Some(0.0);
+    caption.props.space_after = Some(0.0);
+    caption.props.line_spacing = Some(LineSpacing::Multiple(1.15));
+    let id = d.add_part(wordcraft_doc::PartKind::TextBox, vec![wordcraft_doc::para_block(spacer), wordcraft_doc::para_block(caption)]);
+    d.insert_object(
+        &Pos::body(0, 0),
+        InlineObject::Shape {
+            kind: wordcraft_doc::para::ShapeKind::TextBox,
+            w: 540.0,
+            h: 36.0,
+            fill: Some(Rgb(0, 0, 0)),
+            stroke: None,
+            stroke_width: 0.0,
+            float: wordcraft_doc::para::Float { wrap: wordcraft_doc::para::Wrap::InFrontOfText, ..Default::default() },
+            story: Some(id),
+            freeform: None,
+            effects: Default::default(),
+            extra: Default::default(),
+        },
+        &Default::default(),
+    )
+    .unwrap();
+    let l = lay(&d);
+    let (shown, total, _) = box_lines(&l, id);
+    assert_eq!((shown, total), (2, 2), "both lines of the banner must remain visible");
+}
+
+#[test]
+fn compatible_text_box_heading_uses_font_scene_without_changing_stored_spacing() {
+    use wordcraft_doc::props::{CharProps, LineSpacing};
+    let mut d = Document::from_text("Body");
+    let props = CharProps { size: Some(72.0), font: Some("Source Sans 3".into()), ..Default::default() };
+    let mut heading = wordcraft_doc::Paragraph::with_text("Heading", props.clone());
+    heading.mark = props;
+    heading.props.line_spacing = Some(LineSpacing::Multiple(1.15));
+    let id = d.add_part(wordcraft_doc::PartKind::TextBox, vec![wordcraft_doc::para_block(heading)]);
+    d.insert_object(
+        &Pos::body(0, 0),
+        InlineObject::Shape {
+            kind: wordcraft_doc::para::ShapeKind::TextBox,
+            w: 540.0,
+            h: 90.0,
+            fill: None,
+            stroke: None,
+            stroke_width: 0.0,
+            float: wordcraft_doc::para::Float { wrap: wordcraft_doc::para::Wrap::InFrontOfText, ..Default::default() },
+            story: Some(id),
+            freeform: None,
+            effects: Default::default(),
+            extra: Default::default(),
+        },
+        &Default::default(),
+    )
+    .unwrap();
+    let height = |l: DocLayout| {
+        l.pages
+            .iter()
+            .flat_map(|p| &p.items)
+            .find_map(|item| {
+                if let Placed::Lines { story, para, .. } = item
+                    && *story == StoryRef::Part(id)
+                {
+                    return Some(para.lines[0].height);
+                }
+                None
+            })
+            .unwrap()
+    };
+    let ordinary = height(lay(&d));
+    d.parts.get_mut(&id).unwrap().body.compatible_line_spacing = true;
+    let compatible = height(lay(&d));
+    assert!(compatible < ordinary - 10.0, "the large heading must not use the full fallback line box");
+    assert!((compatible - 82.8).abs() < 0.1);
+    assert_eq!(d.parts[&id].blocks[0].as_para().unwrap().props.line_spacing, Some(LineSpacing::Multiple(1.15)));
+}

@@ -1038,6 +1038,9 @@ impl Writer<'_> {
                 attrs.push((n, v));
             }
         }
+        if body.compatible_line_spacing {
+            attrs.push(("compatLnSpc", "1"));
+        }
         let warp = extra.warp.as_ref().and_then(|t| t.sanitized());
         if warp.is_none() && !body.auto_fit {
             w.empty("wps:bodyPr", &attrs);

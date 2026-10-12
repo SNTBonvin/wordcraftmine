@@ -1231,6 +1231,7 @@ impl Reader<'_> {
             }
             part.body.inset = (inset != wordcraft_doc::TEXT_BOX_INSET).then_some(inset);
             part.body.auto_fit = bp.child("a:spAutoFit").is_some();
+            part.body.compatible_line_spacing = bp.attr("compatLnSpc").is_some_and(|v| v == "1" || v == "true");
         }
         let mut extra = ShapeExtra::default();
         // Arrowheads: any end type but `none` (ECMA-376 §20.1.10.33) is drawn as a triangle.

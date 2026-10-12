@@ -287,6 +287,8 @@ pub struct TextBody {
     /// Resize shape to fit text (`a:spAutoFit`): Word grows the box to its text, so none of
     /// the text is cut.
     pub auto_fit: bool,
+    /// DrawingML compatLnSpc: use font-scene line spacing in this text box.
+    pub compatible_line_spacing: bool,
 }
 
 /// Word's default text box margins (left, top, right, bottom), EMU: 0.1" and 0.05".
