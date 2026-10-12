@@ -2441,3 +2441,7 @@
 	Pastes the clipboard's picture.	Поставя картината от клипборда.
 	Region:	Регион:
 	Automatic ({region})	Автоматично ({region})
+	Minimize	Минимизиране
+	Maximize	Максимизиране
+	Restore	Възстановяване
+	Use the system title bar (after restarting WordCraft)	Използване на системната заглавна лента (след рестартиране на WordCraft)

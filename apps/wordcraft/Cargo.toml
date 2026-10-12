@@ -63,6 +63,10 @@ windows = { version = "0.62", features = ["UI_ViewManagement", "System_UserProfi
 # The clipboard's "Rich Text Format" and the names of its formats (#687, #833), which arboard
 # doesn't read. Already in the build through arboard, at this version.
 clipboard-win = { version = "5.4", features = ["std"] }
+# Keeps the custom title bar's window borderless (#523, `window_frame.rs`): safe wrappers for the
+# window style calls, where the Win32 ones need unsafe, which our workspace forbids. Same pin as
+# PhotoCraft's.
+winsafe = { version = "=0.0.29", default-features = false, features = ["user"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rfd = { workspace = true }

@@ -2071,3 +2071,7 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Seu sistema não informa uma configuração de animação, então os efeitos de animação continuam ativados.
 	Region:	Região:
 	Automatic ({region})	Automático ({region})
+	Minimize	Minimizar
+	Maximize	Maximizar
+	Restore	Restaurar
+	Use the system title bar (after restarting WordCraft)	Usar a barra de título do sistema (após reiniciar o WordCraft)

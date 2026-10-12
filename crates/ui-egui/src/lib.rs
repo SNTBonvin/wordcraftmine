@@ -70,6 +70,7 @@ pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
 pub mod theme;
+pub mod titlebar;
 pub mod widgets;
 pub mod window_geometry;
 pub mod wordart_menus;
@@ -217,6 +218,9 @@ pub struct UiState {
     /// fades, as Word's does on Windows (on, the default), or it jumps and blinks on and off
     /// (off).
     pub caret_animation: bool,
+    /// File › Options › General (Windows): use the system's title bar instead of WordCraft's own
+    /// (#523). Read before the window opens, so it applies at the next start.
+    pub system_title_bar: bool,
     /// Custom keyboard shortcuts (Customize Keyboard, #368); the session owns them while running.
     pub keyboard: wordcraft_engine::KeyMap,
     /// Custom ribbon tabs and groups, hidden tabs and the Quick Access Toolbar (Customize Ribbon,
@@ -281,6 +285,7 @@ impl Default for UiState {
             alt_chord_used: false,
             dark_page: false,
             caret_animation: true,
+            system_title_bar: false,
             keyboard: wordcraft_engine::KeyMap::default(),
             ribbon: wordcraft_engine::RibbonLayout::default(),
             caption_labels: Vec::new(),
@@ -358,6 +363,9 @@ pub struct WordApp {
     pub(crate) dialog_pick: Option<String>,
     /// macOS: the window has no title bar; leave room for the traffic lights.
     pub integrated_titlebar: bool,
+    /// Windows: the window has no OS decorations; the title bar carries the caption buttons and
+    /// the window's edges resize it ([`titlebar`], #523).
+    pub custom_titlebar: bool,
     control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -460,6 +468,7 @@ impl WordApp {
             status_msg: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
+            custom_titlebar: false,
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),
@@ -1471,10 +1480,14 @@ impl WordApp {
         // Keytips are read before layout so the frame paints the new state; badges paint after
         // the ribbon so they sit on top of it.
         crate::keytips::logic(self, &ctx);
+        // Without OS decorations the title bar is the only way to move, maximize or close the
+        // window, so it stays over the Backstage too (as Word's does on Windows).
+        if self.custom_titlebar || !self.ui.backstage {
+            chrome::title_bar(self, ui);
+        }
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
-            chrome::title_bar(self, ui);
             ribbon::show(self, ui);
             chrome::status_bar(self, ui);
             panes::show(self, ui);
@@ -1491,6 +1504,9 @@ impl WordApp {
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
         keys::global_shortcuts(self, &ctx);
+        if self.custom_titlebar {
+            titlebar::resize_zones(ui);
+        }
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }

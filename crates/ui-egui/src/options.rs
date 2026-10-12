@@ -181,6 +181,10 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
         let _ = app.run("view.darkMode", json!({"value": dark_page}));
     }
     ui.checkbox(&mut app.ui.show_discord, tl!("Show the community button in the title bar"));
+    // Read before the window opens (#523), so a change applies at the next start.
+    if cfg!(target_os = "windows") {
+        ui.checkbox(&mut app.ui.system_title_bar, tl!("Use the system title bar (after restarting WordCraft)"));
+    }
     default_app_button(app, ui);
     ui.add_space(8.0);
     section(ui, "Personalize");
