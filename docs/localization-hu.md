@@ -8,7 +8,7 @@ selects it explicitly, and `WORDCRAFT_LANGUAGE=hu-HU` does the same for a headle
 launch while the preference is `auto`. The choice is saved with the other interface settings.
 Document text, command ids, CLI/MCP/control responses and file paths do not change.
 
-`crates/ui-egui/src/i18n/hu.tsv` has 2,410 entries: every key of the Russian catalog (built-in style
+`crates/ui-egui/src/i18n/hu.tsv` has 2,419 entries: every key of the Russian catalog (built-in style
 names, equation gallery labels, paper sizes, watermarks and greetings included) plus the citation
 style names. It is written from the meaning of the English labels; no proprietary translation resources were consulted. The catalog
 format has no plural forms, and Hungarian doesn't need them: a noun after a number stays singular
@@ -72,4 +72,4 @@ Hungarian proofing. A native-speaker review of the catalog is welcome.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | minor | Hungarian catalog (2,410 entries: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |
+| 2026-10-11 | minor | Hungarian catalog (2,419 entries: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |

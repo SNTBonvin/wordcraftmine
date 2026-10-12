@@ -809,7 +809,6 @@
 	Wide	Széles
 	Widow/Orphan Control	Fattyú- és árvasorok kezelése
 	Widow/Orphan control	Fattyú- és árvasorok kezelése
-	Wildcards (regex)	Helyettesítő karakterek (reguláris kifejezés)
 	Window	Ablak
 	Word Count	Szavak száma
 	Word document (*.docx)	Word-dokumentum (*.docx)
@@ -2425,3 +2424,13 @@
 	MLA	MLA
 	SIST02	SIST02
 	Turabian	Turabian
+	Do Not Check Spelling or Grammar	Nincs helyesírás- és nyelvhelyesség-ellenőrzés
+	➕ New comment	➕ Új megjegyzés
+	📂  Browse…	📂  Tallózás…
+	Possible spelling mistake	Lehetséges helyesírási hiba
+	Extra space	Felesleges szóköz
+	Capitalize the first word of a sentence	A mondat első szava nagybetűvel kezdődjön
+	Remove the space before the punctuation	Töröld az írásjel előtti szóközt
+	Use "an" before a vowel sound	Magánhangzóval kezdődő szó előtt „an” áll
+	Use "a" before a consonant sound	Mássalhangzóval kezdődő szó előtt „a” áll
+	The spelling and grammar check is complete.	A helyesírás- és nyelvhelyesség-ellenőrzés befejeződött.
