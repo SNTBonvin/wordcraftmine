@@ -66,6 +66,7 @@ pub mod print_page;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
+pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
 pub mod theme;
@@ -120,6 +121,15 @@ pub struct Services {
     /// Desktop: the text on the system clipboard, if any. Ctrl+V gets it from egui's paste event;
     /// the ribbon and context-menu Paste read it here (#584).
     pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the HTML on the system clipboard — another program's formatted copy (a Word
+    /// document, a web page) — if any. Paste keeps its formatting (#687); see [`system_clipboard`].
+    pub clipboard_html: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the RTF on the system clipboard, where the platform offers it (#687).
+    pub clipboard_rtf: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: the names of the formats on the system clipboard (MIME types, Windows format
+    /// names), where the platform lists them, so a paste that finds nothing it can use says what
+    /// is there instead of "empty" (#833).
+    pub clipboard_formats: Option<Box<dyn Fn() -> Vec<String>>>,
     /// Web: keep a font the user added (stored file name, original bytes) for the next visit
     /// (#582). Desktop fonts are stored by the font database itself, in the app's font folder.
     pub store_font: Option<Box<dyn Fn(&str, &[u8])>>,
@@ -291,13 +301,32 @@ impl UiState {
     /// version's idea of it) falls back to its default instead of discarding every setting.
     /// `None` only when the file isn't a JSON object.
     pub fn from_json(bytes: &[u8]) -> Option<UiState> {
-        let v: Value = serde_json::from_slice(bytes).ok()?;
-        v.is_object().then(|| options::lenient(&v))
+        let mut v: Value = serde_json::from_slice(bytes).ok()?;
+        if !v.is_object() {
+            return None;
+        }
+        migrate_units(&mut v);
+        Some(options::lenient(&v))
     }
 
     /// How many recent documents to list.
     pub fn recent_shown(&self) -> usize {
         self.recent_count.min(MAX_RECENT)
+    }
+}
+
+/// Settings saved before #838 kept the measurement unit as `editing.units`, which defaulted to
+/// inches; it now lives in `editing.measurementUnits`, and no value there follows the region. A
+/// unit other than inches under the old key was the user's own choice, so it carries over (an
+/// inch value can't be told from the old default, so it follows the region).
+fn migrate_units(v: &mut Value) {
+    let Some(editing) = v.get_mut("editing").and_then(Value::as_object_mut) else { return };
+    if editing.contains_key("measurementUnits") {
+        return;
+    }
+    if let Some(old) = editing.get("units").and_then(Value::as_str).filter(|u| *u != "inches") {
+        let old = Value::String(old.to_string());
+        editing.insert("measurementUnits".into(), old);
     }
 }
 
@@ -549,23 +578,11 @@ impl WordApp {
             return Ok(json!({"pending": "saveChanges"}));
         }
         // The ribbon and context-menu Paste commands send no text: read the system clipboard's, as
-        // Ctrl+V's paste event carries it (#584).
+        // Ctrl+V's paste event carries it (#584), and its HTML and RTF, which egui's paste event
+        // doesn't carry (#687).
         let mut params = params;
-        if matches!(id, "edit.paste" | "edit.pasteText" | "edit.pasteMerge" | "edit.pasteSpecial")
-            && params.get("text").is_none()
-            && let Some(text) = self.services.clipboard_text.as_ref().and_then(|f| f()).filter(|t| !t.is_empty())
-            && let Some(o) = params.as_object_mut()
-        {
-            // Picture files copied in a file manager reach us as their paths: paste the pictures,
-            // as Ctrl+V does.
-            if id == "edit.paste"
-                && self.session.math.is_none()
-                && paste_picture::names_picture_files(&text)
-                && let Some(r) = paste_picture::paste(self)
-            {
-                return r;
-            }
-            o.insert("text".into(), Value::String(text));
+        if let Some(r) = system_clipboard::fill(self, id, &mut params) {
+            return r;
         }
         // Paste without system clipboard text: a picture there is newer than our own copy (copying
         // here replaces it with text), so it wins (#45).
@@ -576,6 +593,7 @@ impl WordApp {
             return r;
         }
         let r = self.execute_user(id, params);
+        let r = system_clipboard::explain(self, id, r);
         // Check Accessibility shows its findings in the Accessibility pane, kept up to date there.
         if id == "file.accessibility" && r.is_ok() {
             self.session.view.accessibility_pane = true;

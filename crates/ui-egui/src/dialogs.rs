@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use wordcraft_engine::Password;
 
 use crate::WordApp;
+use crate::options::MeasureExt;
 use crate::theme::{Tokens, semibold};
 
 /// The Find and Replace dialog's search options beyond the first row (#543).
@@ -317,6 +318,9 @@ pub enum Dialog {
         choice: usize,
         #[serde(skip)]
         payload: Value,
+        /// Shown when nothing can be pasted: what the clipboard holds, or that it is empty (#833).
+        #[serde(skip)]
+        note: String,
     },
     /// Tabs: 0 About, 1 Contributors, 2 Models.
     About {
@@ -1164,12 +1168,13 @@ impl Dialog {
     pub fn paste_special(app: &WordApp, payload: &Value) -> Dialog {
         let formats: Vec<String> = wordcraft_engine::cmd::paste::available(&app.session, payload).into_iter().map(str::to_string).collect();
         let mut kept = json!({});
-        for k in ["text", "html", "rtf"] {
+        for k in ["text", "html", "rtf", "picture"] {
             if let Some(t) = payload.get(k).and_then(Value::as_str) {
                 kept[k] = json!(t);
             }
         }
-        Dialog::PasteSpecial { formats, choice: 0, payload: kept }
+        let note = if formats.is_empty() { crate::system_clipboard::nothing_to_paste(app) } else { String::new() };
+        Dialog::PasteSpecial { formats, choice: 0, payload: kept, note }
     }
 
     pub fn modify_style(app: &WordApp, id: &str) -> Option<Dialog> {
@@ -1571,14 +1576,14 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         ui.add(
                             egui::DragValue::new(left)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.label(tl!(r_label));
                         ui.add(
                             egui::DragValue::new(right)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.end_row();
@@ -1586,7 +1591,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         ui.add(
                             egui::DragValue::new(first)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
-                                .suffix(crate::options::unit().suffix())
+                                .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.end_row();
@@ -1836,34 +1841,16 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.label(egui::RichText::new(tl!("Margins")).font(semibold(12.5)));
             egui::Grid::new("ps").num_columns(4).show(ui, |ui| {
                 ui.label(tl!("Top:"));
-                ui.add(
-                    egui::DragValue::new(top)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(top).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.label(tl!("Bottom:"));
                 ui.add(
-                    egui::DragValue::new(bottom)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
+                    egui::DragValue::new(bottom).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2),
                 );
                 ui.end_row();
                 ui.label(tl!("Left:"));
-                ui.add(
-                    egui::DragValue::new(left)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(left).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.label(tl!("Right:"));
-                ui.add(
-                    egui::DragValue::new(right)
-                        .speed(3.6 / crate::options::unit().pt_per_unit())
-                        .suffix(crate::options::unit().suffix())
-                        .max_decimals(2),
-                );
+                ui.add(egui::DragValue::new(right).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
                 ui.end_row();
             });
             ui.label(egui::RichText::new(tl!("Orientation")).font(semibold(12.5)));
@@ -2249,10 +2236,17 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             close || ui.input(|i| i.key_pressed(egui::Key::Escape))
         }
         Dialog::Icons { query, category, selected } => icons_body(app, ui, query, category, selected),
-        Dialog::PasteSpecial { formats, choice, payload } => {
+        Dialog::PasteSpecial { formats, choice, payload, note } => {
             ui.label(egui::RichText::new(tl!("Paste as:")).font(semibold(12.5)));
             if formats.is_empty() {
-                ui.label(egui::RichText::new(tl!("The clipboard is empty.")).weak());
+                // The engine's wording, sentence-cased; the format names in it aren't translated.
+                let text = if note.is_empty() || note == "the clipboard is empty" {
+                    tl!("The clipboard is empty.").to_string()
+                } else {
+                    let mut c = note.chars();
+                    c.next().map(|f| f.to_uppercase().chain(c).collect::<String>() + ".").unwrap_or_default()
+                };
+                ui.label(egui::RichText::new(text).weak());
             }
             for (i, f) in formats.iter().enumerate() {
                 let label = wordcraft_engine::cmd::paste::FORMATS.iter().find(|(id, _)| id == f).map(|(_, l)| *l).unwrap_or(f.as_str());
@@ -2265,6 +2259,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     "formatted" => "Keeps the fonts and formatting of the copied text.",
                     "rtf" => "Reads the clipboard's rich text and keeps its formatting.",
                     "html" => "Reads the clipboard's web content and keeps its formatting.",
+                    "picture" => "Pastes the clipboard's picture.",
                     _ => "Drops all formatting and pastes plain text.",
                 };
                 ui.label(egui::RichText::new(tl!(hint)).weak());
@@ -2707,7 +2702,7 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
 fn table_properties(ui: &mut Ui, f: &mut TableForm) {
     let unit = crate::options::unit();
     fn len(v: &mut f32, lo: f32, unit: wordcraft_geom::Unit) -> egui::DragValue<'_> {
-        egui::DragValue::new(v).speed(0.01).range(lo..=22.0).suffix(unit.suffix()).max_decimals(2)
+        egui::DragValue::new(v).speed(0.01).range(lo..=22.0).measure(unit).max_decimals(2)
     }
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
@@ -2726,7 +2721,7 @@ fn table_properties(ui: &mut Ui, f: &mut TableForm) {
         });
         ui.end_row();
         ui.label(tl!("Indent from left:"));
-        ui.add_enabled(f.align == "left", egui::DragValue::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).suffix(unit.suffix()).max_decimals(2));
+        ui.add_enabled(f.align == "left", egui::DragValue::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).measure(unit).max_decimals(2));
         ui.end_row();
         ui.label(tl!("Table direction:"));
         ui.horizontal(|ui| {
