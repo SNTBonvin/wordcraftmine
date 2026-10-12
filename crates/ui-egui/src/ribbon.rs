@@ -414,8 +414,12 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 let fams = app.previews.families();
                 let prev = app.previews.font_preview_fn();
                 if let Some(f) = font_combo(ui, "font", 150.0, &font, &fams, Some(&*prev)) {
-                    let f = app.previews.font_stored(&f);
-                    let _ = app.run("format.font", json!({"name": f}));
+                    let _ = if f == crate::widgets::ADD_FONT {
+                        app.run("font.add", json!({}))
+                    } else {
+                        let f = app.previews.font_stored(&f);
+                        app.run("format.font", json!({"name": f}))
+                    };
                 }
                 let size = st
                     .get("size")
@@ -1512,6 +1516,10 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
             let mut n = v.nav_pane;
             if ui.checkbox(&mut n, tl!("Navigation Pane")).changed() {
                 let _ = app.run("view.navigationPane", json!({"value": n}));
+            }
+            let mut w = v.hide_white_space;
+            if ui.checkbox(&mut w, tl!("Hide White Space")).changed() {
+                let _ = app.run("view.hideWhiteSpace", json!({"value": w}));
             }
         });
     });

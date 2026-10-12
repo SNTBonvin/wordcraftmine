@@ -1523,6 +1523,9 @@
 	Ribbon	Lint
 	Ribbon and Quick Access Toolbar:	Lint ja kiirpääsuriba:
 	Ribbon tabs	Lindi vahekaardid
+	Add Font…	Lisa font…
+	Added Fonts	Lisatud fondid
+	Remove Added Font	Eemalda lisatud font
 	Recent Colors	Viimati kasutatud värvid
 	More Colors…	Rohkem värve…
 	Standard	Standard
@@ -1659,6 +1662,7 @@
 	Continuous numbering	Pidev nummerdus
 	Apply	Rakenda
 	Convert Notes	Teisenda märkused
+	Hide White Space	Peida tühi ala lehtede vahel
 	All pages	Kõik leheküljed
 	Current page	Praegune lehekülg
 	Selected pages	Valitud leheküljed
