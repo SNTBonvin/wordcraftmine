@@ -18,6 +18,7 @@ pub mod a11y_pane;
 pub mod backstage;
 pub mod canvas;
 pub mod chrome;
+pub mod colors;
 pub mod content_controls;
 pub mod control;
 pub mod credits;
@@ -49,6 +50,7 @@ pub mod options;
 pub mod panes;
 pub mod paste_picture;
 pub mod previews;
+pub mod print_page;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -95,6 +97,11 @@ pub struct Services {
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
     pub clipboard_picture: Option<Box<dyn Fn() -> Option<paste_picture::ClipboardPicture>>>,
+    /// Web: keep a font the user added (stored file name, original bytes) for the next visit
+    /// (#582). Desktop fonts are stored by the font database itself, in the app's font folder.
+    pub store_font: Option<Box<dyn Fn(&str, &[u8])>>,
+    /// Web: forget a stored font (its stored file name) once the user removes it.
+    pub forget_font: Option<Box<dyn Fn(&str)>>,
 }
 
 /// Files delivered asynchronously.
@@ -107,10 +114,15 @@ pub struct UiState {
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
+    /// File › Print settings (#641); not saved.
+    #[serde(skip)]
+    pub print: print_page::PrintSettings,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
     /// Symbols inserted from the Symbol dialog, most recent first (#321).
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
+    /// Colours picked in the Colors dialog (More Colors…), most recent first (#606).
+    pub recent_colors: Vec<String>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
     /// Interface size in percent (#475): scales the whole interface on top of the system's
@@ -182,9 +194,11 @@ impl Default for UiState {
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
+            print: print_page::PrintSettings::default(),
             ribbon_collapsed: false,
             recent: Vec::new(),
             recent_symbols: Vec::new(),
+            recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
             interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
@@ -238,6 +252,8 @@ pub struct WordApp {
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
     pub dialog: Option<dialogs::Dialog>,
+    /// The Colors dialog (More Colors…), shown above any other dialog (#606).
+    pub colors: Option<colors::ColorsDialog>,
     /// The Restrict Editing pane (#412).
     pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
@@ -247,6 +263,9 @@ pub struct WordApp {
     /// Web: a recipient list was asked for (Select Recipients › Use an Existing List…), so the
     /// next text file from the picker loads as recipients instead of opening (#240).
     pub recipient_list_pending: bool,
+    /// The font database's [`generation`](wordcraft_fonts::FontDb::generation) last seen: when
+    /// fonts are added or removed (by any route) the font lists and the layout are refreshed.
+    font_generation: u64,
     /// A file picked for the open dialog (Templates and Add-ins › Attach…, Organizer ›
     /// Browse…); the dialog takes it on its next frame.
     pub(crate) dialog_pick: Option<String>,
@@ -332,6 +351,7 @@ impl WordApp {
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
+            colors: None,
             restrict: Default::default(),
             status_msg: None,
             previews: previews::Previews::default(),
@@ -365,6 +385,7 @@ impl WordApp {
             autosave_path: None,
             change_picture_target: None,
             recipient_list_pending: false,
+            font_generation: wordcraft_fonts::FontDb::global().generation(),
             dialog_pick: None,
             file_dialog: None,
             info_editing: None,
@@ -512,7 +533,8 @@ impl WordApp {
             // Word documents are encrypted with the document's password, if it has one.
             let password =
                 if matches!(id, "file.save" | "file.saveAs") { self.session.password.as_ref().map(wordcraft_engine::Password::as_str) } else { None };
-            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password)?;
+            let opts = wordcraft_engine::cmd::file::export_options(&self.session, &params);
+            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password, &opts)?;
             if let Some(d) = &self.services.download
                 && let Err(e) = d(&name, &bytes)
             {
@@ -546,11 +568,52 @@ impl WordApp {
         {
             self.autosave_path = self.session.path.clone();
         }
+        if let Ok(v) = &r {
+            self.keep_web_font(id, &params, v);
+        }
         self.after_command(id);
         if let Err(e) = &r {
             self.status(e.clone());
         }
         r
+    }
+
+    /// Web: store a font added from bytes, or forget the removed ones ([`Services::store_font`]).
+    fn keep_web_font(&self, id: &str, params: &Value, result: &Value) {
+        match id {
+            "font.add" => {
+                if let (Some(store), Some(file), Some(data)) =
+                    (&self.services.store_font, result.get("file").and_then(Value::as_str), params.get("data").and_then(Value::as_str))
+                    && let Some(bytes) = wordcraft_engine::cmd::insert::base64_decode(data)
+                {
+                    store(file, &bytes);
+                }
+            }
+            "font.remove" => {
+                if let Some(forget) = &self.services.forget_font {
+                    for f in result.get("removed").and_then(Value::as_array).into_iter().flatten() {
+                        if let Some(file) = f.get("file").and_then(Value::as_str) {
+                            forget(file);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Fonts were added or removed (a command, the web shell loading stored fonts): lay out
+    /// again and refresh the font lists and their previews.
+    fn watch_fonts(&mut self, ctx: &egui::Context) {
+        let db = wordcraft_fonts::FontDb::global();
+        let generation = db.generation();
+        if generation == self.font_generation {
+            return;
+        }
+        self.font_generation = generation;
+        self.session.relayout();
+        self.previews.fonts_changed(ctx, db.user_fonts().iter().flat_map(|f| f.families()));
+        ctx.request_repaint();
     }
 
     /// Answer the Save Changes prompt: Save (through Save As for a new document) and carry on,
@@ -660,6 +723,7 @@ impl WordApp {
                     self.save_as_dialog();
                 }
                 "insertPicture" => self.pick_picture(),
+                "addFont" => self.pick_font(),
                 "print" => {
                     self.ui.backstage = true;
                     self.ui.backstage_page = "print".into();
@@ -709,12 +773,25 @@ impl WordApp {
                 }
                 json!({"backstage": self.ui.backstage})
             }
+            "ui.dialog" if s("name") == Some("colors") => {
+                // The font colour's More Colors… (#606); `tab`: standard or custom.
+                let target = colors::Target::cmd("format.color").remember(colors::Remember::FontColor);
+                let current =
+                    self.session.run("format.state", &json!({})).ok().and_then(|st| st.get("color").and_then(Value::as_str).and_then(colors::parse));
+                let mut d = colors::ColorsDialog::new(current, target);
+                if s("tab") == Some("custom") {
+                    d.tab = colors::ColorsTab::Custom;
+                }
+                self.colors = Some(d);
+                json!({"dialog": "colors"})
+            }
             "ui.dialog" => {
                 self.dialog = dialogs::Dialog::open(s("name").unwrap_or(""), self);
                 json!({"dialog": self.dialog.as_ref().map(|d| d.name())})
             }
             "ui.closeDialog" => {
                 self.dialog = None;
+                self.colors = None;
                 json!({})
             }
             "ui.changePicture" => {
@@ -795,7 +872,7 @@ impl WordApp {
             // Send the document to the system print flow (web, desktop). `file.print` opens the Print
             // page; this is the button on it, and the one programmatic call that opens system UI
             // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system()),
+            "ui.print" => return Some(self.print_to_system(p)),
             "ui.discord" => {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
@@ -814,8 +891,10 @@ impl WordApp {
     }
 
     /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
+    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
+    /// `file.printPdf`); without any, every page prints once.
     /// An error when the host can't print (File › Print then only saves a PDF).
-    fn print_to_system(&mut self) -> Result<Value, String> {
+    fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
         if self.services.print.is_none() {
             return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
         }
@@ -825,13 +904,12 @@ impl WordApp {
         {
             log::warn!("updating fields before printing: {e}");
         }
-        let without_colour = (!self.ui.print_backgrounds && self.session.doc.settings.page_color.is_some()).then(|| {
-            let mut d = self.session.doc.clone();
-            d.settings.page_color = None;
-            d
-        });
-        let result = wordcraft_engine::io::save_bytes("document.pdf", without_colour.as_ref().unwrap_or(&self.session.doc))
-            .and_then(|bytes| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
+        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
+        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
+        if colour.is_some() {
+            self.session.doc.settings.page_color = colour;
+        }
+        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
         match result {
             Ok(len) => {
                 self.status(tl!("Opening print dialog…"));
@@ -976,6 +1054,7 @@ impl WordApp {
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
         self.drain_inbox();
+        self.watch_fonts(ctx);
         self.autosave_tick(now_ms());
         if self.autosaves() && self.session.dirty {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
@@ -997,6 +1076,8 @@ impl WordApp {
                 } else if sheet {
                     // A spreadsheet isn't a document: it's a recipient list (#334).
                     self.load_recipients(json!({"path": path}))
+                } else if wordcraft_fonts::is_font_file_name(&lp) {
+                    self.run("font.add", json!({"path": path}))
                 } else {
                     self.run("file.open", json!({"path": path}))
                 };
@@ -1110,6 +1191,7 @@ impl WordApp {
         }
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
@@ -1142,6 +1224,8 @@ impl WordApp {
             self.recipient_list_pending = asked && !list && !sheet;
             let r = if sheet {
                 self.load_recipients(json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
+            } else if wordcraft_fonts::is_font_file_name(&lower) {
+                self.run("font.add", json!({"name": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
             } else if list {
                 self.load_recipients(json!({"csv": wordcraft_engine::io::decode_text(&bytes)}))
             } else if img {
@@ -1616,6 +1700,59 @@ mod tests {
         assert!((a.canvas.scroll_offset.y - at - notch).abs() < 0.5, "a notch scrolls {notch}: {}", a.canvas.scroll_offset.y - at);
     }
 
+    /// Issue #688: dragging a selection past the viewport's bottom edge scrolls on, and the
+    /// selection keeps growing as the content moves under the stationary pointer.
+    #[test]
+    fn dragging_a_selection_past_the_viewport_edge_auto_scrolls() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        // A few pages of text, so there is content below the fold.
+        a.run("text.insert", json!({"text": "lorem ipsum dolor sit amet consectetur ".repeat(1200)})).unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 600.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp, events: Vec<egui::Event>| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { events, time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a, Vec::new());
+        }
+        let (Some(vp), Some(page)) = (a.canvas.viewport, a.canvas.page_rects.first()) else { panic!("the canvas laid out") };
+        let start = page.left_top() + egui::vec2(120.0, 150.0);
+        frame(&mut a, vec![egui::Event::PointerMoved(start)]);
+        frame(
+            &mut a,
+            vec![egui::Event::PointerButton { pos: start, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }],
+        );
+        assert!(a.canvas.drag_selecting(), "the press started a drag-select");
+        let base = a.session.sel.focus.clone();
+        // Hold the pointer just past the viewport's bottom edge and let the frames run.
+        let below = egui::pos2(vp.center().x, vp.max.y + 40.0);
+        for _ in 0..30 {
+            frame(&mut a, vec![egui::Event::PointerMoved(below)]);
+        }
+        assert!(a.canvas.scroll_offset.y > 0.0, "the view scrolled toward later content");
+        assert!(a.session.sel.focus > base, "the selection followed the content");
+        // The pointer never moves; the content keeps scrolling under it, so the selection must
+        // keep growing.
+        let grown = a.session.sel.focus.clone();
+        for _ in 0..15 {
+            frame(&mut a, vec![egui::Event::PointerMoved(below)]);
+        }
+        assert!(a.session.sel.focus > grown, "the selection keeps growing under a stationary pointer");
+        frame(
+            &mut a,
+            vec![egui::Event::PointerButton { pos: below, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+        );
+        assert!(!a.canvas.drag_selecting());
+        assert!(!a.session.sel.is_collapsed(), "the drag left a selection");
+    }
+
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
     #[test]
     fn zoomed_out_pages_sit_side_by_side_and_clicks_land_on_them() {
@@ -1901,6 +2038,23 @@ mod tests {
         let e = a.run("ui.print", json!({})).unwrap_err();
         assert!(e.contains("blocked by the browser"), "{e}");
         assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("blocked by the browser")), "the status bar says why");
+    }
+
+    /// The print settings reach the hook: bad ones print nothing, `copies` repeats the pages.
+    #[test]
+    fn ui_print_honours_the_print_settings() {
+        let mut a = typed();
+        let sizes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen = sizes.clone();
+        a.services.print = Some(Box::new(move |bytes| {
+            seen.borrow_mut().push(bytes.len());
+            Ok(())
+        }));
+        assert!(a.run("ui.print", json!({"pages": "7-9"})).is_err(), "page 7 doesn't exist");
+        assert!(a.run("ui.print", json!({"range": "nope"})).is_err());
+        assert!(sizes.borrow().is_empty(), "nothing was sent");
+        a.run("ui.print", json!({"range": "current", "copies": 3})).unwrap();
+        assert_eq!(sizes.borrow().len(), 1);
     }
 
     /// The Print page shows the Print button only when the host can print, and the button
@@ -2866,6 +3020,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Add Font… (#582), web: the picker asks for fonts, the picked file arrives through the
+    /// inbox and is added, listed in the font menu and kept in the browser; removing it forgets it.
+    #[test]
+    fn a_font_picked_on_the_web_is_added_listed_and_kept() {
+        const FAMILY: &str = "Uifont Sans 3";
+        let mut font = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/SourceSans3-Regular.ttf")).unwrap();
+        let utf16 = |s: &str| s.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>();
+        for (from, to) in [(utf16("Source Sans 3"), utf16(FAMILY)), (b"Source Sans 3".to_vec(), FAMILY.as_bytes().to_vec())] {
+            let mut i = 0;
+            while let Some(at) = font[i..].windows(from.len()).position(|w| w == from) {
+                font[i + at..i + at + to.len()].copy_from_slice(&to);
+                i += at + to.len();
+            }
+        }
+        let mut a = typed();
+        let asked = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+        let seen = asked.clone();
+        a.services.open_async = Some(Box::new(move |purpose| *seen.borrow_mut() = purpose.to_string()));
+        let kept = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(String, usize)>::new()));
+        let (k1, k2) = (kept.clone(), kept.clone());
+        a.services.store_font = Some(Box::new(move |name, bytes| k1.borrow_mut().push((name.to_string(), bytes.len()))));
+        a.services.forget_font = Some(Box::new(move |name| k2.borrow_mut().retain(|(n, _)| n != name)));
+        let inbox: Inbox = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        a.services.inbox = Some(inbox.clone());
+        let ctx = egui::Context::default();
+        assert!(!a.previews.families().iter().any(|f| f == FAMILY));
+        a.run("font.add", json!({})).unwrap();
+        assert_eq!(*asked.borrow(), "font");
+        inbox.lock().unwrap().push(("Uifont-Regular.ttf".into(), font.clone()));
+        a.drain_inbox();
+        a.watch_fonts(&ctx);
+        assert!(a.previews.families().iter().any(|f| f == FAMILY), "listed in the font menu at once");
+        assert_eq!(*kept.borrow(), vec![("Uifont-Regular.ttf".to_string(), font.len())]);
+        assert!(body_text(&a).contains(UNSAVED), "the document stays open");
+        // Junk named like a font is refused, and nothing is kept.
+        inbox.lock().unwrap().push(("junk.woff2".into(), b"wOF2junk".to_vec()));
+        a.drain_inbox();
+        assert_eq!(kept.borrow().len(), 1);
+        a.run("font.remove", json!({"family": FAMILY})).unwrap();
+        a.watch_fonts(&ctx);
+        assert!(kept.borrow().is_empty());
+        assert!(!a.previews.families().iter().any(|f| f == FAMILY));
+    }
+
     /// Web: the picked file arrives through the inbox and loads as recipients, even as .txt; a
     /// CSV dropped on the page does too. Anything else afterwards opens as before.
     #[test]
@@ -2901,5 +3099,30 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
         assert!(!a.recipient_list_pending);
+    }
+
+    /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of
+    /// writing a fixed name into the shared temporary folder, where another user could have
+    /// planted a link to one of this user's files.
+    #[test]
+    fn render_and_screenshot_without_a_path_reply_with_the_png() {
+        let ctx = egui::Context::default();
+        let mut a = typed();
+        let (req, _reply) = ControlRequest::new("ui.render", json!({"page": 1, "scale": 0.5}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("ui.render replies at once") };
+        assert_eq!(v["ok"], true, "{v}");
+        assert!(v["result"].get("path").is_none(), "no file: {v}");
+        let png = wordcraft_engine::cmd::insert::base64_decode(v["result"]["png"].as_str().expect("png")).expect("base64");
+        assert_eq!(&png[..4], b"\x89PNG", "{v}");
+        assert!(v["result"]["width"].as_u64().unwrap() > 0 && v["result"]["pages"].as_u64().unwrap() >= 1, "{v}");
+
+        let image = egui::ColorImage::from_rgba_unmultiplied([2, 1], &[255, 0, 0, 255, 0, 0, 255, 255]);
+        let v = control::save_screenshot(&image, None);
+        assert_eq!(v["ok"], true, "{v}");
+        assert!(v["result"].get("path").is_none(), "no file: {v}");
+        let png = wordcraft_engine::cmd::insert::base64_decode(v["result"]["png"].as_str().expect("png")).expect("base64");
+        assert_eq!(&png[..4], b"\x89PNG");
+        assert_eq!(v["result"]["width"], 2, "{v}");
+        assert_eq!(v["result"]["height"], 1, "{v}");
     }
 }

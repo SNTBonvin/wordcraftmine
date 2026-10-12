@@ -498,6 +498,29 @@ fn tables_lay_out_cells() {
     assert!(l.cell_at(0, c.x, c.top + 2.0).is_some());
 }
 
+/// A vertical merge is one cell: its box spans the rows, a click anywhere in it finds it, and the
+/// continuation row's box is `covered` (no gridline, not a hit).
+#[test]
+fn a_vertical_merge_lays_out_as_one_cell() {
+    let mut d = Document::from_text("before\nafter");
+    let mut t = Table::new(3, 2, 468.0);
+    t.rows[0].cells[0].props.vmerge = wordcraft_doc::props::VMerge::Restart;
+    t.rows[1].cells[0].props.vmerge = wordcraft_doc::props::VMerge::Continue;
+    d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+    let l = lay(&d);
+    let cells: Vec<_> = l.pages[0]
+        .items
+        .iter()
+        .filter_map(|i| if let Placed::Cell { rect, row, cell: 0, covered, .. } = i { Some((*row, *rect, *covered)) } else { None })
+        .collect();
+    let (r0, r1) = (cells[0].1, cells[1].1);
+    assert!(!cells[0].2 && cells[1].2 && !cells[2].2, "{cells:?}");
+    assert!((r0.bottom() - r1.bottom()).abs() < 0.01 && r0.h > r1.h * 1.9, "{r0:?} {r1:?}");
+    // The lower half of the merge hits the restart cell (row 0), not the continuation row.
+    let hit = l.cell_at(0, r1.x + 5.0, r1.y + r1.h / 2.0).unwrap();
+    assert_eq!((hit.2, hit.3), (0, 0));
+}
+
 /// A 1×3 table after "before" whose middle cell holds `text` running `dir`.
 fn turned_table(dir: TextDirection, text: &str, row: Option<f32>) -> Document {
     let mut d = Document::from_text("before\nafter");
@@ -1988,6 +2011,40 @@ fn line_spacing_does_not_scale_pictures() {
 }
 
 #[test]
+fn multiple_line_spacing_adds_its_leading_below_the_text() {
+    use wordcraft_doc::props::LineSpacing;
+    // (spacing, expected baseline below the line top as a share of the ascent)
+    for (spacing, share) in [(LineSpacing::Multiple(1.15), 1.0), (LineSpacing::Multiple(2.0), 1.0), (LineSpacing::Multiple(0.8), 0.8)] {
+        let mut d = Document::from_text(&"Several words wrap onto more lines. ".repeat(30));
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(spacing);
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        let asc = para.styles[0].ascent;
+        assert!(para.lines.len() > 1);
+        for line in &para.lines {
+            // Word's 1.15-spaced Times New Roman 12pt sits one ascent below the line top; the
+            // 0.15 extra goes below the descent (docxide-pdf's hyphenation fixtures).
+            assert!(
+                (line.baseline - line.top - asc * share).abs() < 0.01,
+                "{spacing:?}: baseline {} below the top, ascent {asc}",
+                line.baseline - line.top
+            );
+        }
+    }
+    // Exact spacing still keeps the descent below the baseline.
+    let mut d = Document::from_text("Exact");
+    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+        p.props.line_spacing = Some(LineSpacing::Exactly(30.0));
+    }
+    let l = lay(&d);
+    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+    let line = &para.lines[0];
+    assert!((line.top + line.height - line.baseline - para.styles[0].descent).abs() < 0.01);
+}
+
+#[test]
 fn body_starts_right_below_a_tall_header() {
     let mut d = Document::from_text("Body");
     let mut hp = wordcraft_doc::Paragraph::with_text("", Default::default());
@@ -3149,6 +3206,104 @@ fn footnote_longer_than_pages_ends() {
     assert!(pieces.windows(2).all(|w| w[0].2 == w[1].1 && w[1].0 == w[0].0 + 1), "{pieces:?}");
 }
 
+/// A comment by `author` saying `text` on body paragraph `para`, bytes `a..b`; its id.
+fn comment_on(d: &mut Document, para: usize, a: usize, b: usize, author: &str, text: &str, parent: Option<u32>) -> u32 {
+    let part = d.add_part(wordcraft_doc::PartKind::Comment, vec![wordcraft_doc::para_block(Paragraph::with_text(text, CharProps::default()))]);
+    let id = d.comments.keys().next_back().map_or(0, |k| k + 1);
+    d.comments.insert(id, wordcraft_doc::Comment { author: author.into(), part, parent, ..Default::default() });
+    if parent.is_none() {
+        let p = CharProps::default();
+        d.insert_object(&Pos::body(para, b), InlineObject::CommentEnd { id }, &p).unwrap();
+        d.insert_object(&Pos::body(para, a), InlineObject::CommentStart { id }, &p).unwrap();
+    }
+    id
+}
+
+fn balloon_layout(d: &Document) -> DocLayout {
+    layout(d, &mut LayoutCache::new(), &LayoutOptions { comment_balloons: true, ..Default::default() })
+}
+
+/// The comment text lines placed on page `pi` (story, top-left).
+fn comment_lines(l: &DocLayout, pi: usize) -> Vec<(StoryRef, f32, f32)> {
+    l.pages[pi]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            Placed::Lines { story: s @ StoryRef::Part(_), x, y, .. } => Some((*s, *x, *y)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Print Markup (#589): each page grows by the markup area, and the comment, its author and its
+/// reply are laid out there beside the line they comment on.
+#[test]
+fn comment_balloons_widen_pages_beside_their_anchors() {
+    let mut d = Document::from_text("Intro line.\nThe quarterly figures look strong.\nClosing line.");
+    let id = comment_on(&mut d, 1, 4, 13, "Ada Reviewer", "Check the totals", None);
+    comment_on(&mut d, 0, 0, 0, "Ben Editor", "Totals checked", Some(id));
+    let plain = lay(&d);
+    let l = balloon_layout(&d);
+    assert_eq!(l.pages.len(), plain.pages.len());
+    let (w, pw) = (l.pages[0].w, plain.pages[0].w);
+    assert_eq!(l.pages[0].markup, balloons::MARKUP_AREA);
+    assert!((w - pw - balloons::MARKUP_AREA).abs() < 0.01, "{w} vs {pw}");
+    assert_eq!(plain.pages[0].markup, 0.0);
+    // Author + text for the comment, then for the reply: four lines, all in the markup area.
+    let lines = comment_lines(&l, 0);
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert!(lines.iter().all(|(_, x, _)| *x > pw && *x < w), "{lines:?}");
+    assert!(lines.windows(2).all(|p| p[0].2 < p[1].2), "stacked top to bottom: {lines:?}");
+    // The card sits by the commented line.
+    let anchor = l.caret(&Pos::body(1, 5)).unwrap();
+    assert!((lines[0].2 - anchor.top).abs() < 30.0, "{lines:?} vs {anchor:?}");
+    // The body is laid out exactly as without balloons.
+    assert_eq!(lines_of(&plain), lines_of(&l) - 4);
+    // The leader starts at the anchor.
+    assert!(l.pages[0].items.iter().any(|it| matches!(it, Placed::Rule { x0, x1, .. } if (*x0 - anchor.x).abs() < 0.5 && (*x1 - pw).abs() < 0.5)));
+}
+
+#[test]
+fn no_balloons_without_anchored_comments() {
+    let d = Document::from_text("No comments here.");
+    let l = balloon_layout(&d);
+    assert_eq!(l.pages[0].markup, 0.0);
+    assert_eq!(l.pages[0].w, lay(&d).pages[0].w);
+    // A web view never gets a markup area.
+    let mut d = Document::from_text("Hello there.");
+    comment_on(&mut d, 0, 0, 5, "A", "x", None);
+    let opts = LayoutOptions { view: ViewMode::Web, web_width: 500.0, comment_balloons: true, ..Default::default() };
+    let l = layout(&d, &mut LayoutCache::new(), &opts);
+    assert_eq!(l.pages[0].markup, 0.0);
+}
+
+/// Hostile comments: parent cycles, a missing text part, and far more comments than fit beside
+/// one page. Nothing panics or hangs, and the cards stay on the page.
+#[test]
+fn comment_balloons_survive_hostile_comments() {
+    let mut d = Document::from_text(&"Commented words here. ".repeat(20));
+    let mut ids = Vec::new();
+    for i in 0..120 {
+        ids.push(comment_on(&mut d, 0, 0, 9, &format!("Author {i}"), &"A long remark that wraps over lines. ".repeat(4), None));
+    }
+    // A reply cycle and a comment whose text part is gone.
+    let a = comment_on(&mut d, 0, 0, 0, "R", "one", Some(ids[0]));
+    let b = comment_on(&mut d, 0, 0, 0, "R", "two", Some(a));
+    d.comments.get_mut(&a).unwrap().parent = Some(b);
+    d.comments.get_mut(&ids[1]).unwrap().parent = Some(ids[1]);
+    d.comments.get_mut(&ids[2]).unwrap().part = 9_999_999;
+    let l = balloon_layout(&d);
+    let page = &l.pages[0];
+    for (_, _, y) in comment_lines(&l, 0) {
+        assert!(y.is_finite() && y >= 0.0 && y <= page.h, "{y}");
+    }
+    for it in &page.items {
+        if let Placed::Fill { rect, .. } = it {
+            assert!(rect.y >= 0.0 && rect.bottom() <= page.h + 0.5, "{rect:?}");
+        }
+    }
+}
+
 /// The first paragraph's lines on page one: (top, bottom, left, right), relative to its column.
 fn line_spans(l: &DocLayout) -> Vec<(f32, f32, f32, f32)> {
     let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { return Vec::new() };
@@ -3767,4 +3922,29 @@ fn east_asian_text_takes_the_asian_font_and_latin_text_the_latin_font() {
         let want = if ch.is_ascii() { latin_face } else { asian_face };
         assert_eq!(face, want, "{ch:?} in {}", if ch.is_ascii() { latin } else { &asian });
     }
+}
+
+/// A page total in the footer ("Page X of Y") is filled in after pagination, so it doesn't make
+/// the body lay out a second time; one in the body still does.
+#[test]
+fn footer_page_total_needs_one_body_pass() {
+    let field = || InlineObject::Field { instr: "NUMPAGES".into(), result: "9".into(), locked: false, code: false };
+    let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
+    for i in 1..3 {
+        d.para_mut(StoryRef::Body, &Path::top(i)).unwrap().props.page_break_before = Some(true);
+    }
+    let mut fp = wordcraft_doc::Paragraph::new();
+    fp.insert_object(0, field(), &Default::default()).unwrap();
+    let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(fp)]);
+    d.last_section.footers.default = Some(id);
+    let first = |d: &Document| {
+        let totals = Totals::first_guess(d.sections().len());
+        layout_pass(d, &mut LayoutCache::new(), &LayoutOptions::default(), &HashMap::new(), &totals, true)
+    };
+    assert!(matches!(first(&d), Pass::Done(l) if l.pages.len() == 3), "the footer's total asked for another pass");
+    // The same field in the body is only known once every page is laid out.
+    let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    let n = p.len();
+    p.insert_object(n, field(), &Default::default()).unwrap();
+    assert!(matches!(first(&d), Pass::Again(t) if t.pages == 3));
 }
