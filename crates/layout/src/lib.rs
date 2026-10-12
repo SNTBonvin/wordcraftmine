@@ -2769,6 +2769,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
         anchor_y = y0 - applied_before;
     }
     let mut n = pl.lines.len();
+    let after_on_page = space_after_kept(ctx, block, &pl.rp, label.is_some());
     let mut l0 = 0;
     while l0 < n {
         // How many lines fit?
@@ -2807,6 +2808,13 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 - if pb.notes.is_empty() && !new_notes.is_empty() { pb.seps.sep_h(false) } else { 0.0 }
                 - extra;
             let bottom = pb.y + lead + (l.top + l.height - first.top);
+            // On a page with footnotes the paragraph's last line keeps its space after clear of
+            // the separator (Word): if the space doesn't fit, the line goes to the next page (and,
+            // with widow control, one more with it). Without notes the space after may run past
+            // the bottom margin as usual.
+            let has_notes = !pb.notes.is_empty() || !new_notes.is_empty() || !line_notes.is_empty();
+            let tail = if has_notes && l1 + 1 == n { after_on_page } else { 0.0 };
+            let over = bottom + tail > limit + 0.01;
             // Notes too long for the rest of the page continue on the next one: the line still
             // fits if the notes before its last one, and that one's first line, fit below it.
             // The notes then take the rest of the page.
@@ -2816,7 +2824,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     let sep = pb.seps.sep_h(pb.notes.first().is_some_and(|n| n.cont));
                     pb.body_floor().max(bottom) + sep + before + last.first_piece() + pb.seps.notice_h() <= pb.orig_bottom + 0.01
                 });
-            if bottom > limit + 0.01 && l1 > l0 && !split {
+            if over && l1 > l0 && !split {
                 break;
             }
             // A line holding nothing but a page or column break stays at the bottom of the page
@@ -2826,7 +2834,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 && p.text
                     .get(l.start..l.stop)
                     .is_some_and(|t| t.chars().all(|c| matches!(c, wordcraft_doc::para::PAGE_BREAK | wordcraft_doc::para::COLUMN_BREAK)));
-            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split && !only_break {
+            if over && l1 == l0 && !pb.at_top() && !split && !only_break {
                 break;
             }
             new_notes.extend(line_notes);
@@ -3053,6 +3061,27 @@ fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: boo
     }
     let (left, right) = rp.visual_indents();
     right - left
+}
+
+/// The space after body paragraph `block` (resolved as `rp`) that is really left below it: none
+/// when contextual spacing or automatic spacing between list items drops it before the next
+/// paragraph.
+fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::ResolvedPara, listed: bool) -> f32 {
+    let after = rp.space_after.max(0.0);
+    if after <= 0.0 {
+        return 0.0;
+    }
+    if let Some(Block::Para(next)) = ctx.doc.body.get(block + 1).map(|b| &**b) {
+        let nrp = ctx.doc.styles.resolve_para(&next.props);
+        if nrp.style == rp.style && (rp.contextual_spacing || nrp.contextual_spacing) {
+            return 0.0;
+        }
+        let next_listed = next.props.numbering.or(nrp.numbering).is_some_and(|n| n.num != 0);
+        if listed && next_listed && rp.after_auto {
+            return 0.0;
+        }
+    }
+    after
 }
 
 /// Height of the first line of the block after `block` (for keep-with-next).

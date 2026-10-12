@@ -4922,3 +4922,85 @@ fn automatic_spacing_drops_between_list_items() {
         );
     }
 }
+
+/// #1116: a document of a top paragraph with `before` points of space before, filler lines, a
+/// paragraph of several lines (block `t`) with 6 pt after and, when `note`, a footnote on its last line.
+fn space_after_doc(before: f32, note: bool) -> (Document, usize, Option<u32>) {
+    let text = format!("Top.\n{}{}\nAfter.", "Body text line.\n".repeat(14), "Words in a paragraph that wraps. ".repeat(14));
+    let mut d = Document::from_text(&text);
+    let t = 15;
+    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+        p.props.space_before = Some(before);
+    }
+    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(t).map(std::sync::Arc::make_mut) {
+        p.props.space_after = Some(6.0);
+        p.props.widow_control = Some(true);
+    }
+    let len = d.para(StoryRef::Body, &Path(vec![t as u32])).map(|p| p.text.len()).unwrap();
+    let id = note.then(|| footnote(&mut d, &Pos::body(t, len), "The note."));
+    (d, t, id)
+}
+
+/// The pieces of body paragraph `t` as (page, l0, l1, bottom), and its line count.
+fn para_pieces(l: &DocLayout, t: usize) -> (Vec<(usize, usize, usize, f32)>, usize) {
+    let mut v = Vec::new();
+    let mut n = 0;
+    for (pi, p) in l.pages.iter().enumerate() {
+        for it in &p.items {
+            if let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, y, .. } = it
+                && path.0 == [t as u32]
+            {
+                n = para.lines.len();
+                v.push((pi, *l0, *l1, item_bottom(*y, para, *l0, *l1).unwrap()));
+            }
+        }
+    }
+    (v, n)
+}
+
+#[test]
+fn space_after_stays_clear_of_the_footnote_separator() {
+    // #1116, measured in Word: on a page with footnotes a paragraph ending there keeps its space
+    // after above the separator, or its last lines (two, with widow control) go to the next page
+    // with the note.
+    let mut moved = 0;
+    for before in 0..=300 {
+        let (d, t, id) = space_after_doc(before as f32, true);
+        let l = lay(&d);
+        let (pieces, n) = para_pieces(&l, t);
+        assert!(n >= 4, "a paragraph of several lines: {n}");
+        let &(page, _, l1, bottom) = pieces.last().unwrap();
+        assert_eq!(l1, n);
+        let note = note_pieces(&l, id.unwrap());
+        assert_eq!(note.first().map(|p| p.0), Some(page), "before {before}: the note is on its reference's page");
+        // The separator's area (default separator: NOTE_SEP high, its rule half way down) sits
+        // right above the note.
+        let sep_top = note[0].3 - NOTE_SEP;
+        assert!(sep_top - bottom >= 6.0 - 0.01, "before {before}: last line ends at {bottom}, the separator starts at {sep_top}");
+        if pieces.len() > 1 {
+            assert_eq!(pieces.len(), 2, "{pieces:?}");
+            assert!(pieces[0].2 - pieces[0].1 >= 2 && pieces[1].2 - pieces[1].1 >= 2, "widow/orphan control: {pieces:?}");
+            moved += 1;
+        }
+    }
+    assert!(moved > 0, "the sweep crosses the page bottom");
+}
+
+#[test]
+fn space_after_may_overflow_the_bottom_margin_without_notes() {
+    // Without footnotes nothing changes: the last line only has to fit, its space after may run
+    // past the bottom margin (Word).
+    let mut tight = 0;
+    for before in 0..=300 {
+        let (d, t, _) = space_after_doc(before as f32, false);
+        let l = lay(&d);
+        let bottom_margin = d.last_section.page_h - d.last_section.margin_bottom;
+        let (pieces, _) = para_pieces(&l, t);
+        let &(_, _, _, bottom) = pieces.last().unwrap();
+        assert!(bottom <= bottom_margin + 0.01, "before {before}: {bottom}");
+        if bottom > bottom_margin - 6.0 {
+            tight += 1;
+        }
+    }
+    assert!(tight > 0, "some step leaves less than the space after below the last line");
+}
