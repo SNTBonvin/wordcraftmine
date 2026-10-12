@@ -5014,6 +5014,7 @@ dependencies = [
  "wordcraft-control-key",
  "wordcraft-doc",
  "wordcraft-engine",
+ "wordcraft-proof",
  "wordcraft-ui-egui",
 ]
 
@@ -5022,9 +5023,11 @@ name = "wordcraft-cli"
 version = "0.5.0"
 dependencies = [
  "serde_json",
+ "wordcraft-control-key",
  "wordcraft-doc",
  "wordcraft-engine",
  "wordcraft-mcp",
+ "wordcraft-proof",
  "wordcraft-render",
  "wordcraft-zotero",
 ]
@@ -5165,6 +5168,7 @@ dependencies = [
  "wordcraft-control-key",
  "wordcraft-doc",
  "wordcraft-engine",
+ "wordcraft-proof",
  "wordcraft-render",
 ]
 

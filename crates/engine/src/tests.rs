@@ -126,6 +126,25 @@ fn reset_shortcuts_remove_direct_formatting_but_keep_styles() {
 }
 
 #[test]
+fn custom_dictionary_words_persist_through_their_file() {
+    // #40: adding a word through a command writes it to the session's file, and loading
+    // that file makes the word known (the desktop app, CLI and MCP wire this up).
+    let dir = std::env::temp_dir().join(format!("wc-engdict-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("custom-dictionary.txt");
+    let _ = std::fs::remove_file(&path);
+    let mut s = s();
+    s.user_dict_path = Some(path.clone());
+    run(&mut s, "review.addToDictionary", json!({"word": "zxqengpersist"}));
+    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(saved.lines().any(|l| l == "zxqengpersist"), "the word reaches the file: {saved:?}");
+    run(&mut s, "file.options", json!({"removeWords": ["zxqengpersist"]}));
+    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(!saved.lines().any(|l| l == "zxqengpersist"), "removal reaches the file too: {saved:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn typing_enter_undo() {
     let mut s = s();
     run(&mut s, "text.insert", json!({"text": "Hello"}));

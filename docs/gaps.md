@@ -64,6 +64,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | Custom dictionary persists across sessions (`custom-dictionary.txt` in the settings folder; #40) |
 | 2026-10-11 | trivial | Word XML Document (Flat OPC) and Word 2003 XML opening landed (#548); gap #26 narrowed to 15–28 h |
 | 2026-10-11 | trivial | #13 narrowed: Insert › SmartArt with eight layouts, Text Pane and SmartArt Design landed (#497); 25–40 h left for charts |
 | 2026-10-11 | trivial | File › Options panes landed (#485); removed from the dialog-depth list |

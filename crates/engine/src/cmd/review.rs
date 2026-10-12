@@ -66,6 +66,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 return Err(CmdError::Params("no word".into()));
             }
             wordcraft_proof::add_word(&w);
+            s.persist_user_dictionary();
             s.relayout();
             Ok(json!({"added": w}))
         })
@@ -79,6 +80,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     .unwrap_or_default(),
             };
             wordcraft_proof::add_word(&w);
+            s.persist_user_dictionary();
             s.relayout();
             Ok(json!({"ignored": w}))
         })

@@ -16,7 +16,10 @@ workspace = true
 [dependencies]
 wordcraft-doc = { workspace = true }
 wordcraft-engine = { workspace = true }
+wordcraft-proof = { workspace = true }
 wordcraft-render = { workspace = true }
 wordcraft-mcp = { workspace = true }
 wordcraft-zotero = { workspace = true }
+# The settings folder location (custom dictionary persistence, #40).
+wordcraft-control-key = { workspace = true }
 serde_json = { workspace = true }

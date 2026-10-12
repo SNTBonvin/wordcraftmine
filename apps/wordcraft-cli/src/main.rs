@@ -36,7 +36,21 @@ fn open(path: &str) -> Result<Session, String> {
     let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
     let mut s = Session::new(doc);
     s.path = Some(path.into());
+    wire_user_dictionary(&mut s);
     Ok(s)
+}
+
+/// Custom dictionary persistence (#40): load the host's words and remember where to save
+/// them back on Add to Dictionary. Skipped for agents' test runs (`WORDCRAFT_NO_PREFS`)
+/// and where no settings folder resolves (words stay in memory there).
+fn wire_user_dictionary(s: &mut Session) {
+    if std::env::var_os("WORDCRAFT_NO_PREFS").is_some() {
+        return;
+    }
+    if let Some(p) = wordcraft_control_key::settings_dir().map(|b| b.join(Session::USER_DICT_FILE)) {
+        wordcraft_proof::load_user_dictionary(&p);
+        s.user_dict_path = Some(p);
+    }
 }
 
 /// `--author NAME`: the author recorded on tracked changes and comments (`file.setAuthor`).
@@ -196,6 +210,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 }
                 _ => Session::new(wordcraft_doc::Document::new()),
             };
+            wire_user_dictionary(&mut s);
             if let Some(name) = arg_value(&rest, "--author") {
                 set_author(&mut s, &name)?;
             }

@@ -25,7 +25,16 @@ pub struct Headless {
 
 impl Default for Headless {
     fn default() -> Self {
-        Headless { session: Session::new(wordcraft_doc::Document::new()) }
+        let mut session = Session::new(wordcraft_doc::Document::new());
+        // Custom dictionary persistence (#40): same wiring as the desktop app and CLI.
+        // Skipped for agents' test runs and where no settings folder resolves.
+        if std::env::var_os("WORDCRAFT_NO_PREFS").is_none()
+            && let Some(p) = wordcraft_control_key::settings_dir().map(|b| b.join(Session::USER_DICT_FILE))
+        {
+            wordcraft_proof::load_user_dictionary(&p);
+            session.user_dict_path = Some(p);
+        }
+        Headless { session }
     }
 }
 
