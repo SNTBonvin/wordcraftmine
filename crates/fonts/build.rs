@@ -55,7 +55,10 @@ fn craft_fonts(dir: &std::path::Path) -> Result<(String, Vec<String>), String> {
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
         };
-        if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {
+        // Web builds embed the UI face plus Arabic Regular faces (Arabic UI needs a face, and
+        // the web size budget covers one script more; CJK stays desktop-only).
+        let arab = *style == "Regular" && scripts.split(',').map(str::trim).any(|s| s == "Arab");
+        if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") && !arab {
             continue;
         }
         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;

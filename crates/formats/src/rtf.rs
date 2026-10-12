@@ -210,6 +210,9 @@ impl Writer {
             Some(Align::Justify) | Some(Align::Distribute) => out.push_str("\\qj"),
             _ => out.push_str("\\ql"),
         }
+        if p.rtl {
+            out.push_str("\\rtlpar");
+        }
         if p.page_break {
             out.push_str("\\pagebb");
         }
@@ -320,6 +323,9 @@ impl Writer {
         };
         for row in &t.rows {
             out.push_str("\\trowd\\trgaph108\\trleft0");
+            if t.rtl {
+                out.push_str("\\rtltbl");
+            }
             if !row.is_empty() && row.iter().all(|c| c.header) {
                 out.push_str("\\trhdr");
             }
@@ -505,6 +511,8 @@ struct Output {
     para_has: bool,
     table: Vec<Vec<Cell>>,
     row: Vec<Cell>,
+    row_rtl: bool,
+    table_rtl: bool,
     cell: Vec<FBlock>,
     defs: Vec<CellDef>,
     def_cur: CellDef,
@@ -521,6 +529,7 @@ struct St {
     hidden: bool,
     // Paragraph properties.
     align: Option<Align>,
+    rtl: bool,
     style: i32,
     intbl: bool,
     ls: Option<i32>,
@@ -553,6 +562,7 @@ impl Default for St {
             uc: 1,
             hidden: false,
             align: None,
+            rtl: false,
             style: 0,
             intbl: false,
             ls: None,
@@ -700,6 +710,8 @@ struct Reader {
     para_has: bool,
     table: Vec<Vec<Cell>>,
     row: Vec<Cell>,
+    row_rtl: bool,
+    table_rtl: bool,
     cell: Vec<FBlock>,
     defs: Vec<CellDef>,
     def_cur: CellDef,
@@ -723,6 +735,8 @@ impl Reader {
         std::mem::swap(&mut o.para_has, &mut self.para_has);
         std::mem::swap(&mut o.table, &mut self.table);
         std::mem::swap(&mut o.row, &mut self.row);
+        std::mem::swap(&mut o.row_rtl, &mut self.row_rtl);
+        std::mem::swap(&mut o.table_rtl, &mut self.table_rtl);
         std::mem::swap(&mut o.cell, &mut self.cell);
         std::mem::swap(&mut o.defs, &mut self.defs);
         std::mem::swap(&mut o.def_cur, &mut self.def_cur);
@@ -979,6 +993,7 @@ impl Reader {
         }
         self.rule_pending = false;
         p.align = self.st.align;
+        p.rtl = self.st.rtl;
         p.page_break = self.st.pagebb;
         p.spacing = self.spacing();
         p.borders = self.st.borders.any_visible().then_some(self.st.borders);
@@ -1057,6 +1072,8 @@ impl Reader {
         if self.para_has {
             self.end_cell();
         }
+        self.table_rtl |= self.row_rtl;
+        self.row_rtl = false;
         let mut cells = std::mem::take(&mut self.row);
         let defs = self.defs.clone();
         let mut out: Vec<Cell> = Vec::new();
@@ -1106,8 +1123,9 @@ impl Reader {
             let mut rows = std::mem::take(&mut self.table);
             let rights = std::mem::take(&mut self.table_rights);
             let widths = column_grid(&mut rows, &rights);
+            let rtl = std::mem::take(&mut self.table_rtl);
             // Word draws only the borders the cells name: no grid style, each cell its own.
-            self.body.push(FBlock::Table(FTable { rows, widths, borderless: true }));
+            self.body.push(FBlock::Table(FTable { rows, widths, borderless: true, rtl }));
         }
     }
 
@@ -1406,6 +1424,8 @@ impl Reader {
             "qc" => self.st.align = Some(Align::Center),
             "qr" => self.st.align = Some(Align::Right),
             "qj" | "qd" => self.st.align = Some(Align::Justify),
+            "rtlpar" => self.st.rtl = true,
+            "ltrpar" => self.st.rtl = false,
             "s" => self.st.style = pv,
             "outlinelevel" => self.st.outline = Some(pv.clamp(0, 9) as u8),
             "pagebb" => self.st.pagebb = on,
@@ -1422,7 +1442,9 @@ impl Reader {
                 self.defs.clear();
                 self.def_cur = CellDef::default();
                 self.row_header = false;
+                self.row_rtl = false;
             }
+            "rtltbl" => self.row_rtl = true,
             "trhdr" => self.row_header = true,
             "clvmgf" => self.def_cur.vmerge = 1,
             "clvmrg" => self.def_cur.vmerge = 2,
@@ -2090,5 +2112,33 @@ mod tests {
     #[test]
     fn escapes() {
         assert_eq!(esc("a{b}\\c\té😀"), "a\\{b\\}\\\\c\\tab \\u233?\\u-10179?\\u-8704?");
+    }
+
+    #[test]
+    fn rtl_paragraphs_and_tables() {
+        // Non-ASCII text travels as `\uN` escapes (one fallback char each, skipped on read).
+        let rtf = br#"{\rtf1\ansi\pard\qr\rtlpar \u1587?\u1604?\u1575?\u1605? World\par
+\trowd\rtltbl\cellx2000\cellx4000 \pard\intbl\rtlpar \u1571?\cell b\cell\row
+\pard between\par
+\trowd\cellx2000\cellx4000 \pard\intbl c\cell d\cell\row
+\pard\ltrpar after\par}"#;
+        let f = parse(rtf).unwrap();
+        let dirs: Vec<bool> = f.blocks.iter().filter_map(|b| if let FBlock::Para(p) = b { Some(p.rtl) } else { None }).collect();
+        assert_eq!(dirs, [true, false, false], "rtlpar, pard reset, explicit ltrpar");
+        assert_eq!(texts(&f)[0], "Normal:سلام World");
+        let tables: Vec<&FTable> = f.blocks.iter().filter_map(|b| if let FBlock::Table(t) = b { Some(t) } else { None }).collect();
+        assert_eq!(tables.len(), 2);
+        assert!(tables[0].rtl, "rtltbl");
+        assert!(!tables[1].rtl, "a plain trowd starts a new table");
+        assert_eq!(tables[0].rows[0].iter().map(|c| c.text()).collect::<Vec<_>>(), ["أ", "b"]);
+        // The writer marks both; reading them back preserves everything logically.
+        let d = crate::model::to_doc(&f);
+        let out = export(&d);
+        assert!(out.contains("\\rtlpar"), "paragraph mark");
+        assert!(out.contains("\\rtltbl"), "table mark");
+        let back = parse(out.as_bytes()).unwrap();
+        assert_eq!(texts(&back), texts(&f));
+        let rtls: Vec<bool> = back.blocks.iter().filter_map(|b| if let FBlock::Table(t) = b { Some(t.rtl) } else { None }).collect();
+        assert_eq!(rtls, [true, false]);
     }
 }

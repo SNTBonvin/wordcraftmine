@@ -387,7 +387,12 @@ pub(crate) fn search_full(s: &Session, story: StoryRef, with_rep: bool) -> Resul
         return Ok(Vec::new());
     }
     let opts = find_opts(f);
-    let c = find_pattern::compile(&f.query, &opts).map_err(CmdError::Params)?;
+    let mut c = find_pattern::compile(&f.query, &opts).map_err(CmdError::Params)?;
+    if !f.regex && !f.wildcards && !f.match_diacritics {
+        if let Some(p) = wordcraft_proof::arabic_search_pattern(&f.query) {
+            c.pattern = p;
+        }
+    }
     let re = meta::Regex::builder()
         .syntax(syntax::Config::new().case_insensitive(c.case_insensitive))
         .configure(meta::Config::new().nfa_size_limit(Some(1 << 20)))
@@ -525,6 +530,9 @@ fn read_opts(s: &mut Session, v: &Value) {
     }
     if let Some(b) = p::bool(v, "ignoreSpace") {
         s.find.ignore_space = b;
+    }
+    if let Some(b) = p::bool(v, "matchDiacritics") {
+        s.find.match_diacritics = b;
     }
     if let Some(t) = p::str(v, "with") {
         s.find.replace = t.to_string();
