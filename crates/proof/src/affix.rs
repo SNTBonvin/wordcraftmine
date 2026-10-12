@@ -645,6 +645,8 @@ impl AffixDict {
         let Some(f) = self.stem_flags(stem) else { return Vec::new() };
         let mut out = vec![stem.to_string()];
         let mut cross_sfx = Vec::new();
+        // Suffix forms queued with the continuation classes they carry, for chained expansion.
+        let mut chain: Vec<(String, u128)> = Vec::new();
         for r in &self.suffixes {
             if f & r.bit == 0 || !r.cond_matches(stem, true) {
                 continue;
@@ -654,7 +656,31 @@ impl AffixDict {
             if r.cross {
                 cross_sfx.push(form.clone());
             }
+            if r.cont != 0 {
+                chain.push((form.clone(), r.cont));
+            }
             out.push(form);
+        }
+        // Continuation classes chain suffixes (`workable/B` → `workables`), as deep as
+        // [`MAX_CHAIN`] allows — the same bound the checker walks.
+        for _ in 0..MAX_CHAIN {
+            let level = std::mem::take(&mut chain);
+            if level.is_empty() {
+                break;
+            }
+            for (form, flags) in level {
+                for r in &self.suffixes {
+                    if flags & r.bit == 0 || !r.cond_matches(&form, true) {
+                        continue;
+                    }
+                    let Some(base) = form.strip_suffix(&*r.strip) else { continue };
+                    let next = format!("{base}{}", r.add);
+                    if r.cont != 0 {
+                        chain.push((next.clone(), r.cont));
+                    }
+                    out.push(next);
+                }
+            }
         }
         for r in &self.prefixes {
             if f & r.bit == 0 || !r.cond_matches(stem, false) {
@@ -937,6 +963,19 @@ mod tests {
         assert!(!d.contains("works"), "the stem has A, not B");
         assert!(!d.contains("workabless"), "B declares no continuation");
         assert!(d.check("Workable") && d.check("WORKABLES"));
+    }
+
+    #[test]
+    fn forms_include_continuation_chains() {
+        let aff = "SET UTF-8\nFLAG UTF-8\nSFX A N 1\nSFX A   0   able/B   .\nSFX B N 1\nSFX B   0   s   .\n";
+        let d = AffixDict::from_hunspell(aff, "1\nwork/A\n", &[]).unwrap();
+        let mut f = d.forms("work");
+        f.sort();
+        f.dedup();
+        assert_eq!(f, ["work", "workable", "workables"]);
+        for form in d.forms("work") {
+            assert!(d.contains(&form), "every listed form is accepted: {form}");
+        }
     }
 
     #[test]
