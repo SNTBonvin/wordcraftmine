@@ -48,7 +48,7 @@ pub struct LangInfo {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 13] = [
+pub static LANGUAGES: [LangInfo; 14] = [
     LangInfo { code: "en", name: "English", source: "", prefer_hans: false, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` resolve here (see `candidates`).
     LangInfo { code: "zh-hans", name: "简体中文", source: include_str!("zh-hans.tsv"), prefer_hans: true, catalog: OnceLock::new() },
@@ -71,6 +71,8 @@ pub static LANGUAGES: [LangInfo; 13] = [
     // Russian; `ru`, `ru-RU`, `ru_RU.UTF-8` and other regions resolve here.
     LangInfo { code: "ru", name: "Русский", source: include_str!("ru.tsv"), prefer_hans: false, catalog: OnceLock::new() },
     LangInfo { code: "tr", name: "Türkçe", source: include_str!("tr.tsv"), prefer_hans: false, catalog: OnceLock::new() },
+    // Italian; `it-IT`, `it-CH` and `it-*` resolve here.
+    LangInfo { code: "it", name: "Italiano", source: include_str!("it.tsv"), prefer_hans: false, catalog: OnceLock::new() },
     // French; `fr`, `fr-FR`, `fr_CA` and other regions resolve here.
     LangInfo { code: "fr", name: "Français", source: include_str!("fr.tsv"), prefer_hans: false, catalog: OnceLock::new() },
 ];
@@ -241,7 +243,7 @@ pub fn t(s: &str) -> &str {
     tr(current(), s)
 }
 
-/// `s` in the current language as worded for `context` (one of [`catalog::CONTEXTS`]), falling
+/// `s` in the current language as worded for `context` (one of `catalog::CONTEXTS`), falling
 /// back to the plain translation and then to English.
 pub fn tc<'a>(context: &str, s: &'a str) -> &'a str {
     trc(current(), context, s)

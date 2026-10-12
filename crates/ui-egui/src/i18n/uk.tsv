@@ -61,6 +61,7 @@
 	Arrow	Стрілка
 	Artistic Effects	Художні ефекти
 	As you type	Під час введення
+	Asian text font:	Шрифт азійського тексту:
 	Asian Typography	Азійська типографіка
 	Author	Автор
 	AutoCorrect Options	Параметри автовиправлення
@@ -108,6 +109,7 @@
 	Interface	Інтерфейс
 	Interface language	Мова інтерфейсу
 	Inside:	Усередині:
+	Latin text font:	Шрифт латинського тексту:
 	Left border	Ліва межа
 	Legal style numbering	Юридична нумерація
 	Link level to style:	Зв'язати рівень зі стилем:
@@ -388,6 +390,7 @@
 	Export PDF	Експортувати PDF
 	Exported {path}	Експортовано {path}
 	Extend Selection	Розширити виділення
+	Extend Selection by Units	Розширити виділення за одиницями
 	Field	Поле
 	File	Файл
 	Find	Знайти
@@ -807,6 +810,9 @@
 	Show only comments and formatting in balloons	Показувати у виносках лише коментарі й форматування
 	Show revisions in balloons	Показувати виправлення у виносках
 	Show rulers	Показати лінійки
+	Animation	Анімація
+	Animate the caret (it glides and fades)	Анімувати каретку (плавно рухається та згасає)
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Увімкнено: каретка плавно переходить на нове місце, коли ви вводите текст або користуєтеся стрілками, а її блимання згасає поступово. Вимкнено: вона перестрибує й блимає різко.
 	Show the community button in the title bar	Показувати кнопку спільноти в заголовку вікна
 	Show/Hide ¶	Показати/приховати ¶
 	Show\nComments	Показати\nкоментарі
@@ -951,10 +957,10 @@
 	Wide	Широкі
 	Widow/Orphan Control	Не залишати самотні рядки
 	Widow/Orphan control	Не залишати самотні рядки
-	Wildcards (regex)	Шаблони (регулярні вирази)
 	Window	Вікно
 	Word Count	Кількість слів
 	Word document (*.docx)	Документ Word (*.docx)
+	Word XML Document (*.xml)	Документ Word XML (*.xml)
 	Word Left	На слово ліворуч
 	Word Right	На слово праворуч
 	WordArt	WordArt
@@ -1406,8 +1412,12 @@
 	Selected Fields	Вибрані поля
 	Edit Field…	Змінити поле…
 	Formatted	Відформатовано
+	Deleted	Видалено
 	Interface size:	Розмір інтерфейсу:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Збільшує або зменшує стрічку, меню й діалогові вікна понад системне масштабування екрана. Масштаб документа налаштовується окремо.
+	Resize Table by Dragging	Змінити розмір таблиці перетягуванням
+	Print Markup	Друкувати примітки та виправлення
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Коментарі біля кожної сторінки й відстежені зміни в PDF, друку та зображеннях; список коментарів наприкінці вебсторінок, Markdown і тексту.
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. Обмеження форматування
@@ -1528,6 +1538,22 @@
 	New Group	Нова група
 	Rename…	Перейменувати…
 	Ribbon and Quick Access Toolbar:	Стрічка й панель швидкого доступу:
+	Add Font…	Додати шрифт…
+	Added Fonts	Додані шрифти
+	Remove Added Font	Видалити доданий шрифт
+	Recent Colors	Останні кольори
+	More Colors…	Інші кольори…
+	Standard	Стандартні
+	Current	Поточний
+	Colors:	Кольори:
+	Color model:	Колірна модель:
+	Red:	Червоний:
+	Green:	Зелений:
+	Blue:	Синій:
+	Hue:	Відтінок:
+	Sat:	Насиченість:
+	Lum:	Яскравість:
+	Hex:	Hex:
 	Accessibility Pane	Панель доступності
 	Alt Text Pane	Панель альтернативного тексту
 	Alt\nText	Альтернативний\nтекст
@@ -1676,6 +1702,38 @@
 	Continuous numbering	Наскрізна нумерація
 	Apply	Застосувати
 	Convert Notes	Перетворити примітки
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	Документи
+	Word document	Документ Word
+	All files	Усі файли
+	Recipient lists	Списки одержувачів
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Системне діалогове вікно файлів недоступне, тож WordCraft показує власне. Щоб отримати системне вікно, установіть портал вибору файлів (наприклад, xdg-desktop-portal-gtk) або zenity.
+	Up one level	На рівень вище
+	Home folder	Домашня тека
+	{name} wasn't found.	{name} не знайдено.
+	{name} already exists. Choose Save again to replace it.	{name} уже існує. Щоб замінити файл, виберіть «Зберегти» ще раз.
+	This folder can't be read: {error}	Не вдається прочитати цю теку: {error}
+	Showing the first {count} items.	Показано лише перші елементи: {count}.
+	File name:	Ім'я файлу:
+	Browse in WordCraft…	Огляд у WordCraft…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Відкрити файл власним оглядачем WordCraft, коли системне діалогове вікно файлів не з'являється.
+	Hide White Space	Приховати порожній простір
+	All pages	Усі сторінки
+	Current page	Поточна сторінка
+	Selected pages	Вибрані сторінки
+	Custom range	Власний діапазон
+	All pages in the range	Усі сторінки діапазону
+	Odd pages only	Лише непарні сторінки
+	Even pages only	Лише парні сторінки
+	Copies	Копії
+	Collate copies	Розсортувати копії
+	Pages like 1-3, 5	Сторінки, наприклад 1-3, 5
+	{count} of {total} pages will print	Буде надруковано {count} зі сторінок: {total}
+	Save these pages as PDF…	Зберегти ці сторінки як PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Принтер, двобічний друк і кількість сторінок на аркуші вибирають у цьому діалозі.
+	Previous Page	Попередня сторінка
+	Print to PDF	Друк у PDF
 	Add Shape	Додати фігуру
 	Change Colors	Змінити кольори
 	Change Layout	Змінити макет
@@ -1849,6 +1907,37 @@
 	Rewind	На початок
 	Forward	Вперед
 	Stroke {n} of {total}	Штрих {n} з {total}
+	Use wildcards	Використовувати шаблони
+	Special	Спеціальні
+	Match prefix	Збіг префікса
+	Match suffix	Збіг суфікса
+	Ignore punctuation characters	Ігнорувати розділові знаки
+	Ignore white-space characters	Ігнорувати пробільні символи
+	Regular expressions	Регулярні вирази
+	Search Options	Параметри пошуку
+	Tab Character	Символ табуляції
+	Any Character	Будь-який символ
+	Any Digit	Будь-яка цифра
+	Any Letter	Будь-яка літера
+	Caret Character	Символ каретки
+	Section Character	Знак параграфа
+	Paragraph Character	Символ абзацу
+	Graphic	Графіка
+	Manual Line Break	Примусовий розрив рядка
+	Manual Page Break	Примусовий розрив сторінки
+	Section Break	Розрив розділу
+	White Space	Пробіл
+	Clipboard Contents	Вміст буфера обміну
+	Find What Text	Знайдений текст
+	Find What Expression	Знайдений вираз
+	Character in Range	Символ із діапазону
+	Beginning of Word	Початок слова
+	End of Word	Кінець слова
+	Expression	Вираз
+	Not	Не
+	Num Occurrences	Кількість повторень
+	Previous 1 or More	Попередній 1 або більше разів
+	0 or More Characters	0 або більше символів
 	Move with Text	Переміщувати з текстом
 	Fix Position on Page	Зафіксувати положення на сторінці
 
@@ -1950,3 +2039,11 @@
 	Turkish	Турецька
 	Ukrainian	Українська
 	{language} is now the document's default language.	{language} тепер типова мова документа.
+	Visual effects	Візуальні ефекти
+	Animation effects:	Ефекти анімації:
+	On	Увімкнено
+	Off	Вимкнено
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Плавне прокручування й масштабування, а також поступова поява меню та кнопок. Якщо вибрано «Вимкнено», усі зміни відображаються одразу.
+	Your system has animation effects turned on.	У вашій системі ефекти анімації ввімкнено.
+	Your system has animation effects turned off.	У вашій системі ефекти анімації вимкнено.
+	Your system doesn't report an animation setting, so animation effects stay on.	Система не повідомляє про налаштування анімації, тому ефекти анімації залишаються ввімкненими.
