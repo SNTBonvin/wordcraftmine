@@ -440,6 +440,10 @@ pub enum InlineObject {
         result: String,
         #[serde(default)]
         locked: bool,
+        /// Marked for Word to rebuild when it opens the file (`w:dirty`): set by generators
+        /// that can't paginate. Kept through open and save, never set by WordCraft itself.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dirty: bool,
         /// Shows its code (`{ PAGE }`) instead of its result, the other way round from the
         /// document-wide View › Field Codes setting (`fields.toggleCode`, Shift+F9). A view
         /// toggle: never written to files.
@@ -454,6 +458,9 @@ pub enum InlineObject {
         instr: String,
         #[serde(default)]
         locked: bool,
+        /// `w:dirty`, as on [`InlineObject::Field`].
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dirty: bool,
     },
     /// The end of the innermost open [`InlineObject::FieldStart`].
     FieldEnd,
@@ -1312,8 +1319,12 @@ mod tests {
     fn text_without_takes_ranges_in_any_order() {
         // Multi-byte chars at range edges, an object, and ranges unsorted, overlapping, nested and empty.
         let mut p = Paragraph::with_text("añb€c", CharProps::default());
-        p.insert_object(3, InlineObject::Field { instr: "PAGE".into(), result: "7".into(), locked: false, code: false }, &CharProps::default())
-            .unwrap();
+        p.insert_object(
+            3,
+            InlineObject::Field { dirty: false, instr: "PAGE".into(), result: "7".into(), locked: false, code: false },
+            &CharProps::default(),
+        )
+        .unwrap();
         let text = p.text.clone();
         let naive = |dropped: &[std::ops::Range<usize>]| {
             let mut out = String::new();
@@ -1382,8 +1393,12 @@ mod tests {
     #[test]
     fn objects_track_text() {
         let mut p = Paragraph::with_text("ab", CharProps::default());
-        p.insert_object(1, InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false, code: false }, &CharProps::default())
-            .unwrap();
+        p.insert_object(
+            1,
+            InlineObject::Field { dirty: false, instr: "PAGE".into(), result: "1".into(), locked: false, code: false },
+            &CharProps::default(),
+        )
+        .unwrap();
         p.insert_object(0, InlineObject::BookmarkStart { name: "x".into() }, &CharProps::default()).unwrap();
         assert_eq!(p.objects.len(), 2);
         assert!(matches!(p.object_at(0), Some(InlineObject::BookmarkStart { .. })));

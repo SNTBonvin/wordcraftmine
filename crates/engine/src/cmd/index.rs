@@ -65,7 +65,7 @@ fn mark_entry(s: &mut Session, v: &Value) -> CmdResult {
     }
     let instr = xe_instr(s, v, &main)?;
     let hidden = CharProps { hidden: Some(true), ..Default::default() };
-    let field = || InlineObject::Field { instr: instr.clone(), result: String::new(), locked: false, code: false };
+    let field = || InlineObject::Field { dirty: false, instr: instr.clone(), result: String::new(), locked: false, code: false };
     if !p::bool(v, "all").unwrap_or(false) {
         let (_, b) = s.sel.ordered();
         s.doc.insert_object(&b, field(), &hidden)?;
@@ -85,7 +85,7 @@ fn mark_entry(s: &mut Session, v: &Value) -> CmdResult {
         if para.props.style.as_deref().is_some_and(|st| st == ENTRY_STYLE || st.starts_with("TOC")) {
             continue;
         }
-        if para.objects.iter().any(|o| matches!(o, InlineObject::Field { instr: i, .. } if *i == instr)) {
+        if para.objects.iter().any(|o| matches!(o, InlineObject::Field { dirty: false, instr: i, .. } if *i == instr)) {
             continue;
         }
         let whole = |a: usize, b: usize| {
@@ -140,7 +140,7 @@ fn insert_index(s: &mut Session, v: &Value) -> CmdResult {
             // Settings for the index that is there: a new field code, then rebuild it.
             let para = s.doc.para_mut(StoryRef::Body, &Path::top(i))?;
             for o in para.objects.iter_mut() {
-                if let InlineObject::Field { instr: old, .. } = o
+                if let InlineObject::Field { dirty: false, instr: old, .. } = o
                     && FieldCode::parse(old).name == "INDEX"
                 {
                     *old = instr.clone();

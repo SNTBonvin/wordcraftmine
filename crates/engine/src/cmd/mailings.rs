@@ -154,7 +154,7 @@ fn insert_field(s: &mut Session, instr: &str, placeholder: &str) -> CmdResult {
     let at = delete_selection(s)?;
     let end = s.doc.insert_object(
         &at,
-        InlineObject::Field { instr: instr.to_string(), result: placeholder.to_string(), locked: false, code: false },
+        InlineObject::Field { dirty: false, instr: instr.to_string(), result: placeholder.to_string(), locked: false, code: false },
         &props,
     )?;
     s.sel = Selection::caret(end);

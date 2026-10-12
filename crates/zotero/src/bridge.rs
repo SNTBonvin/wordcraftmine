@@ -387,7 +387,7 @@ impl Bridge {
         let start = at.clone();
         let mut cur = s
             .doc
-            .insert_object(&start, InlineObject::FieldStart { instr: fields::PREFIX.to_string(), locked: false }, &base)
+            .insert_object(&start, InlineObject::FieldStart { dirty: false, instr: fields::PREFIX.to_string(), locked: false }, &base)
             .map_err(|e| e.to_string())?;
         match content {
             Some(frag) => cur = s.doc.insert_fragment(&cur, &frag).map_err(|e| e.to_string())?,

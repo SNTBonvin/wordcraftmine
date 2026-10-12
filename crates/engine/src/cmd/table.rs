@@ -690,7 +690,7 @@ fn formula(s: &mut Session, v: &Value) -> CmdResult {
     let at = s.sel.focus.clone();
     let end = s.doc.insert_object(
         &at,
-        wordcraft_doc::InlineObject::Field { instr: f.clone(), result: text.clone(), locked: false, code: false },
+        wordcraft_doc::InlineObject::Field { dirty: false, instr: f.clone(), result: text.clone(), locked: false, code: false },
         &props,
     )?;
     s.sel = Selection::caret(end);
