@@ -60,7 +60,7 @@ pub(crate) fn each_para<'a>(b: &'a Block, depth: usize, f: &mut dyn FnMut(&'a Pa
     }
 }
 
-fn each_para_mut(b: &mut Block, depth: usize, f: &mut dyn FnMut(&mut Paragraph)) {
+pub(crate) fn each_para_mut(b: &mut Block, depth: usize, f: &mut dyn FnMut(&mut Paragraph)) {
     match b {
         Block::Para(p) => f(p),
         Block::Table(t) if depth < 16 => {
@@ -397,9 +397,21 @@ impl Document {
         Ok(())
     }
 
-    /// Apply `f` to the paragraph properties of every paragraph touched by `a..b`.
+    /// The paragraphs paragraph formatting of `a..b` applies to: [`Self::paths_between`] without
+    /// the last paragraph when a non-empty range ends at its start (Select Paragraph ends there
+    /// to include the paragraph mark). A caret applies to its own paragraph (Word, #418).
+    pub fn para_paths_in(&self, a: &Pos, b: &Pos) -> Vec<Path> {
+        let (a, b) = order(a, b);
+        let mut paths = self.paths_between(&a, &b);
+        if b.off == 0 && a.path != b.path && paths.len() > 1 && paths.last() == Some(&b.path) {
+            paths.pop();
+        }
+        paths
+    }
+
+    /// Apply `f` to the paragraph properties of every paragraph `a..b` covers ([`Self::para_paths_in`]).
     pub fn format_paragraphs(&mut self, a: &Pos, b: &Pos, f: &dyn Fn(&mut ParaProps)) -> Result<()> {
-        for p in self.paths_between(a, b) {
+        for p in self.para_paths_in(a, b) {
             let para = self.para_mut(a.story, &p)?;
             f(&mut para.props);
             para.touch();
@@ -688,6 +700,7 @@ mod tests {
             story,
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         }
     }
 

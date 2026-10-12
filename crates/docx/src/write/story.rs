@@ -440,6 +440,18 @@ impl Writer<'_> {
                 let id = self.bookmark_id(name);
                 w.empty("w:bookmarkEnd", &[("w:id", &id)]);
             }
+            InlineObject::PermStart { id, group, editor } => {
+                let id = id.to_string();
+                let mut a = vec![("w:id", id.as_str())];
+                if !group.is_empty() {
+                    a.push(("w:edGrp", group.as_str()));
+                }
+                if !editor.is_empty() {
+                    a.push(("w:ed", editor.as_str()));
+                }
+                w.empty("w:permStart", &a);
+            }
+            InlineObject::PermEnd { id } => w.empty("w:permEnd", &[("w:id", &id.to_string())]),
             InlineObject::CommentStart { id } => {
                 if self.doc.comments.contains_key(id) {
                     w.empty("w:commentRangeStart", &[("w:id", &id.to_string())]);
@@ -514,17 +526,22 @@ impl Writer<'_> {
             }
             // A chart or diagram read from a file: its frame from the object's size and position,
             // the graphic inside as read. Ones made some other way have nothing to write, except
-            // charts with a model (made or edited in WordCraft).
+            // charts and SmartArt with a model (made or edited in WordCraft): their parts are
+            // written from it.
             InlineObject::Graphic { w: gw, h: gh, alt, float, graphic } => {
-                // A chart WordCraft can edit: a chart part written from its model.
-                let inner = match (graphic.chart.as_deref(), graphic.source.as_deref()) {
-                    (Some(spec), _) => self.chart_graphic(spec, rels),
-                    (None, Some(src)) => {
+                let inner = match (graphic.chart.as_deref(), graphic.smart_art.as_deref(), graphic.source.as_deref()) {
+                    // A chart WordCraft can edit: a chart part written from its model.
+                    (Some(spec), _, _) => self.chart_graphic(spec, rels),
+                    (None, Some(spec), _) => self.smart_art_graphic(spec, *gw, *gh, rels),
+                    (None, None, Some(src)) => {
                         let Some(inner) = self.embedded_xml(src, rels, None) else { return };
                         inner
                     }
-                    (None, None) => return,
+                    (None, None, None) => return,
                 };
+                if inner.is_empty() {
+                    return;
+                }
                 self.rev_open(w, props);
                 w.open("w:r", &[]);
                 self.rpr(w, props);
@@ -574,12 +591,12 @@ impl Writer<'_> {
                 w.close("w:r");
                 self.rev_close(w, props);
             }
-            InlineObject::Shape { kind, w: sw, h: sh, float, effects, freeform, .. } => {
+            InlineObject::Shape { kind, w: sw, h: sh, float, effects, freeform, extra, .. } => {
                 self.rev_open(w, props);
                 w.open("w:r", &[]);
                 self.rpr(w, props);
                 w.open("w:drawing", &[]);
-                let docpr = self.next_docpr();
+                let docpr = self.shape_docpr(extra.id);
                 // Ink is told apart by its name (and its pen), which reading looks for.
                 let name = shape_name(*kind, freeform.as_deref(), &docpr);
                 // The effect extent leaves room for the shadow and glow.
@@ -660,8 +677,8 @@ impl Writer<'_> {
                                 self.pic(w, &c.obj, &file, at, rels);
                             }
                         }
-                        InlineObject::Shape { .. } => {
-                            let id = self.next_docpr();
+                        InlineObject::Shape { extra, .. } => {
+                            let id = self.shape_docpr(extra.id);
                             self.wsp(w, &c.obj, Some(&id), at, rels, depth);
                         }
                         _ => {}
@@ -884,14 +901,28 @@ impl Writer<'_> {
     /// A shape's or text box's `wps:wsp`, at `off` in its group (or 0, 0). In a group it carries
     /// its own `wps:cNvPr` with drawing id `id`.
     fn wsp(&mut self, w: &mut W, o: &InlineObject, id: Option<&str>, off: (f32, f32), rels: &mut PartRels, depth: usize) {
-        let InlineObject::Shape { kind, w: sw, h: sh, fill, stroke, stroke_width, story, effects, float, freeform } = o else { return };
+        let InlineObject::Shape { kind, w: sw, h: sh, fill, stroke, stroke_width, story, effects, float, freeform, extra } = o else { return };
         let geom = freeform.as_deref().filter(|_| *kind == ShapeKind::Freeform);
         w.open("wps:wsp", &[]);
         if let Some(id) = id {
             let name = shape_name(*kind, freeform.as_deref(), id);
             nv_props(w, "wps:cNvPr", id, &name, &float.alt.text, &float.alt);
         }
-        if *kind == ShapeKind::TextBox {
+        if kind.is_connector() {
+            // A connector's glued ends (ECMA-376 §20.1.2.2.8 `cNvCxnSpPr`).
+            let ends = [("a:stCxn", extra.start), ("a:endCxn", extra.end)];
+            if ends.iter().any(|(_, e)| e.is_some()) {
+                w.open("wps:cNvCnPr", &[]);
+                for (tag, e) in ends {
+                    if let Some(e) = e {
+                        w.empty(tag, &[("id", &e.id.to_string()), ("idx", &e.site.to_string())]);
+                    }
+                }
+                w.close("wps:cNvCnPr");
+            } else {
+                w.empty("wps:cNvCnPr", &[]);
+            }
+        } else if *kind == ShapeKind::TextBox {
             w.empty("wps:cNvSpPr", &[("txBox", "1")]);
         } else {
             w.empty("wps:cNvSpPr", &[]);
@@ -905,6 +936,9 @@ impl Writer<'_> {
             ShapeKind::Triangle => "triangle",
             ShapeKind::Diamond => "diamond",
             ShapeKind::Line => "line",
+            ShapeKind::StraightConnector => "straightConnector1",
+            ShapeKind::ElbowConnector => "bentConnector3",
+            ShapeKind::CurvedConnector => "curvedConnector3",
             ShapeKind::Arrow => "rightArrow",
             ShapeKind::Star => "star5",
             ShapeKind::Heart => "heart",
@@ -919,7 +953,7 @@ impl Writer<'_> {
         }
         let alpha = geom.map_or(1.0, |f| f.alpha);
         let ink = geom.is_some_and(|f| f.is_ink());
-        match fill.filter(|_| !ink) {
+        match fill.filter(|_| !ink && !kind.is_open()) {
             Some(c) => {
                 w.open("a:solidFill", &[]);
                 w.empty("a:srgbClr", &[("val", &c.hex())]);
@@ -944,6 +978,7 @@ impl Writer<'_> {
                 if ink {
                     w.empty("a:round", &[]);
                 }
+                arrow_ends(w, extra);
                 w.close("a:ln");
             }
             None => {
@@ -984,7 +1019,14 @@ impl Writer<'_> {
         if body.anchor != wordcraft_doc::props::VAlign::Top {
             attrs.push(("anchor", wordcraft_doc::props::anchor_ooxml(body.anchor)));
         }
-        w.empty("wps:bodyPr", &attrs);
+        match extra.warp.as_ref().and_then(|t| t.sanitized()) {
+            Some(warp) => {
+                w.open("wps:bodyPr", &attrs);
+                text_warp(w, &warp);
+                w.close("wps:bodyPr");
+            }
+            None => w.empty("wps:bodyPr", &attrs),
+        }
         w.close("wps:wsp");
     }
 
@@ -1246,6 +1288,9 @@ fn sectpr_body(w: &mut W, s: &SectionProps) {
         if s.title_page {
             w.empty("w:titlePg", &[]);
         }
+        if s.text_direction.is_turned() {
+            w.val("w:textDirection", s.text_direction.ooxml());
+        }
         if s.rtl {
             w.empty("w:bidi", &[]);
         }
@@ -1324,6 +1369,31 @@ fn cust_geom(w: &mut W, f: &wordcraft_doc::freeform::Freeform, sw: f32, sh: f32)
 }
 
 /// A shape's `a:effectLst` (ECMA-376 Part 1 §20.1.8.26), children in schema order.
+/// A line's arrowheads (`a:headEnd`, `a:tailEnd`, ECMA-376 §20.1.8.38 / §20.1.8.57).
+fn arrow_ends(w: &mut W, extra: &wordcraft_doc::connector::ShapeExtra) {
+    if extra.arrow_start {
+        w.empty("a:headEnd", &[("type", "triangle")]);
+    }
+    if extra.arrow_end {
+        w.empty("a:tailEnd", &[("type", "triangle")]);
+    }
+}
+
+/// A preset text warp (`a:prstTxWarp`, ECMA-376 §20.1.9.19) with its adjust values.
+fn text_warp(w: &mut W, warp: &wordcraft_doc::wordart::TextWarp) {
+    w.open("a:prstTxWarp", &[("prst", &warp.preset)]);
+    if warp.adj.is_empty() {
+        w.empty("a:avLst", &[]);
+    } else {
+        w.open("a:avLst", &[]);
+        for (name, v) in &warp.adj {
+            w.empty("a:gd", &[("name", name), ("fmla", &format!("val {v}"))]);
+        }
+        w.close("a:avLst");
+    }
+    w.close("a:prstTxWarp");
+}
+
 fn effect_list(w: &mut W, effects: &ShapeEffects) {
     let fx = effects.sanitized();
     if fx.is_empty() {

@@ -16,7 +16,7 @@ use crate::WordApp;
 /// A file dialog the app asks the host to show ([`Services::file_dialog`](crate::Services::file_dialog)).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileDialogRequest {
-    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`), as for
+    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`, `font`), as for
     /// `pick_open`.
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
@@ -33,8 +33,17 @@ pub(crate) enum AfterPick {
     SaveAs(AfterSave),
     /// Save a copy there in this format (`pdf`, `docx`, `png`…).
     Export { ext: String },
+    /// Write the PDF of these print settings there (File › Print › Save these pages as PDF).
+    PrintPdf { settings: Value },
     /// Load the picked CSV/TSV/text file or spreadsheet as the mail-merge recipients (#240, #334).
     Recipients,
+    /// Add the picked font file (#582).
+    Font,
+    /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
+    /// Organizer (#377).
+    ForDialog,
+    /// Put the picked document into the Compare dialog (original or revised, #412).
+    ComparePath { revised: bool },
 }
 
 /// What to do once Save As has written the document.
@@ -123,13 +132,38 @@ impl WordApp {
                 };
                 self.insert_or_change_picture(json!({"path": path}))
             }
+            AfterPick::Font => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                self.run("font.add", json!({"path": path}))
+            }
+            AfterPick::ForDialog => {
+                let picked = picked.filter(|p| !p.is_empty());
+                let r = json!({"picked": picked});
+                self.dialog_pick = picked;
+                Ok(r)
+            }
             AfterPick::Recipients => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 self.load_recipients(json!({"path": path}))
             }
+            AfterPick::ComparePath { revised } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                crate::dialogs_review::set_compare_path(self, revised, path);
+                Ok(json!({"picked": true}))
+            }
             AfterPick::Export { ext } => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 let r = if ext == "png" { self.run("file.exportPng", json!({"path": path})) } else { self.run("file.saveAs", json!({"path": path})) };
+                if r.is_ok() {
+                    self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
+                }
+                r
+            }
+            AfterPick::PrintPdf { settings } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                let mut params = settings;
+                params["path"] = json!(path);
+                let r = self.run("file.printPdf", params);
                 if r.is_ok() {
                     self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
                 }
@@ -175,6 +209,14 @@ impl WordApp {
         let _ = self.ask_file(FileDialogRequest::Save { name }, AfterPick::Export { ext: ext.to_string() });
     }
 
+    /// File › Print › Save these pages as PDF: ask where, then write the pages the print
+    /// settings choose.
+    pub(crate) fn print_pdf_dialog(&mut self) {
+        let name = format!("{}.pdf", self.title_stem());
+        let settings = self.ui.print.params();
+        let _ = self.ask_file(FileDialogRequest::Save { name }, AfterPick::PrintPdf { settings });
+    }
+
     pub(crate) fn open_dialog(&mut self) {
         if let Some(f) = &self.services.open_async {
             f("document");
@@ -189,6 +231,15 @@ impl WordApp {
             return;
         }
         let _ = self.ask_file(FileDialogRequest::Open { purpose: "picture".into() }, AfterPick::Picture);
+    }
+
+    /// Pick a font file to add (Add Font…; web: it arrives through the inbox).
+    pub(crate) fn pick_font(&mut self) {
+        if let Some(f) = &self.services.open_async {
+            f("font");
+            return;
+        }
+        let _ = self.ask_file(FileDialogRequest::Open { purpose: "font".into() }, AfterPick::Font);
     }
 }
 
