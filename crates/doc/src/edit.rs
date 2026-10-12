@@ -135,6 +135,83 @@ fn restyle_block(b: &mut Block, from: &str, to: &Option<String>, depth: usize) -
 }
 
 /// Text box story ids of a paragraph's shapes.
+/// What [`Document::adopt`] renumbers in another document's content: media keys, lists, note
+/// and comment stories, comment ids, text boxes (one it doesn't bring is dropped) and revisions
+/// (after ours, at `rev`).
+struct Relink<'a> {
+    media: &'a BTreeMap<String, String>,
+    nums: &'a BTreeMap<u32, u32>,
+    notes: &'a BTreeMap<u32, u32>,
+    comments: &'a BTreeMap<u32, u32>,
+    boxes: &'a BTreeMap<u32, Part>,
+    rev: u32,
+}
+
+impl Relink<'_> {
+    // shortcut: tracked changes of table, row and cell properties keep their revision ids; renumber them too when tables from other documents carry revisions.
+    fn block(&self, b: &mut Block) {
+        each_para_mut(b, 0, &mut |p| self.para(p));
+    }
+
+    fn para(&self, p: &mut Paragraph) {
+        if let Some(n) = p.props.numbering.as_mut()
+            && n.num != 0
+        {
+            n.num = self.nums.get(&n.num).copied().unwrap_or(0);
+        }
+        let shift = |r: &mut u32| *r = r.saturating_add(self.rev);
+        for c in p.runs.iter_mut().map(|r| &mut r.props).chain([&mut p.mark]) {
+            c.ins.iter_mut().chain(c.del.iter_mut()).for_each(shift);
+            if let Some(f) = c.fmt_change.as_mut() {
+                shift(&mut f.rev);
+            }
+        }
+        if let Some(f) = p.props.fmt_change.as_mut() {
+            shift(&mut f.rev);
+        }
+        if let Some(f) = p.props.num_change.as_mut() {
+            shift(&mut f.rev);
+        }
+        for o in &mut p.objects {
+            self.object(o, 0);
+        }
+        p.touch();
+    }
+
+    fn object(&self, o: &mut InlineObject, depth: usize) {
+        // An id that names nothing here becomes one that names nothing at all.
+        let map = |m: &BTreeMap<u32, u32>, id: &mut u32| *id = m.get(id).copied().unwrap_or(u32::MAX);
+        match o {
+            InlineObject::Image { media, .. } => {
+                if let Some(k) = self.media.get(media.as_str()) {
+                    *media = k.clone();
+                }
+            }
+            InlineObject::Graphic { graphic, .. } => {
+                let mapped = |m: &str| self.media.get(m).filter(|k| k.as_str() != m);
+                if graphic.items.iter().any(|i| matches!(i, crate::graphic::GraphicItem::Image { media, .. } if mapped(media).is_some())) {
+                    for i in &mut Arc::make_mut(graphic).items {
+                        if let crate::graphic::GraphicItem::Image { media, .. } = i
+                            && let Some(k) = self.media.get(media.as_str())
+                        {
+                            *media = k.clone();
+                        }
+                    }
+                }
+            }
+            InlineObject::Group { children, .. } if depth < MAX_BOX_DEPTH => children.iter_mut().for_each(|c| self.object(&mut c.obj, depth + 1)),
+            InlineObject::NoteRef { id, .. } => map(self.notes, id),
+            InlineObject::CommentStart { id } | InlineObject::CommentEnd { id } => map(self.comments, id),
+            _ => {}
+        }
+        for story in o.text_box_slots() {
+            if story.is_some_and(|id| !self.boxes.contains_key(&id)) {
+                *story = None;
+            }
+        }
+    }
+}
+
 fn box_ids(p: &Paragraph) -> impl Iterator<Item = u32> + '_ {
     p.objects.iter().flat_map(InlineObject::text_boxes)
 }
@@ -442,6 +519,96 @@ impl Document {
         Fragment { blocks, parts }
     }
 
+    /// Another document's body as a fragment of this one, to insert: the media, lists, styles,
+    /// notes, comments and tracked changes it refers to come along (lists, notes, comments and
+    /// revisions renumbered so they can't collide with ours; a style we already have by id stays
+    /// ours), and its text boxes ride in [`Fragment::parts`].
+    pub fn adopt(&mut self, src: Document) -> Fragment {
+        let mut media = BTreeMap::new();
+        for (key, data) in &src.media {
+            let ext = key.rsplit_once('.').map(|(_, e)| e).unwrap_or("png");
+            media.insert(key.clone(), self.add_media(data.to_vec(), ext));
+        }
+        let next_abs = self.numbering.abstracts.iter().map(|a| a.id.saturating_add(1)).max().unwrap_or(0);
+        let mut abs_map = BTreeMap::new();
+        for (i, a) in src.numbering.abstracts.iter().enumerate() {
+            let id = next_abs.saturating_add(i as u32);
+            abs_map.insert(a.id, id);
+            self.numbering.abstracts.push(crate::numbering::AbstractNum { id, ..a.clone() });
+        }
+        let next_num = self.numbering.nums.iter().map(|n| n.id.saturating_add(1)).max().unwrap_or(1).max(1);
+        let mut nums = BTreeMap::new();
+        for (i, n) in src.numbering.nums.iter().enumerate() {
+            let id = next_num.saturating_add(i as u32);
+            nums.insert(n.id, id);
+            let abstract_id = abs_map.get(&n.abstract_id).copied().unwrap_or(n.abstract_id);
+            self.numbering.nums.push(crate::numbering::Num { id, abstract_id, ..n.clone() });
+        }
+        let renumber = |n: &mut Option<crate::props::NumRef>| {
+            if let Some(n) = n.as_mut()
+                && n.num != 0
+            {
+                n.num = nums.get(&n.num).copied().unwrap_or(0);
+            }
+        };
+        for st in &src.styles.styles {
+            if self.styles.get(&st.id).is_none() {
+                let mut st = st.clone();
+                renumber(&mut st.para.numbering);
+                self.styles.upsert(st);
+            }
+        }
+        let rev = u32::try_from(self.revisions.len()).unwrap_or(u32::MAX);
+        self.revisions.extend(src.revisions.iter().cloned());
+        // Notes and comments get stories (and comments ids) of their own here; their text is
+        // relinked below, once every new id is known.
+        let mut notes = BTreeMap::new();
+        for (id, part) in src.parts.iter().filter(|(_, p)| matches!(p.kind, PartKind::Footnote | PartKind::Endnote)) {
+            notes.insert(*id, self.add_part(part.kind, Vec::new()));
+        }
+        let mut comments = BTreeMap::new();
+        let mut next_comment = self.comments.keys().next_back().map_or(0, |k| k.saturating_add(1));
+        for (id, c) in &src.comments {
+            if src.parts.get(&c.part).is_some_and(|p| p.kind == PartKind::Comment) {
+                notes.insert(c.part, self.add_part(PartKind::Comment, Vec::new()));
+                comments.insert(*id, next_comment);
+                next_comment = next_comment.saturating_add(1);
+            }
+        }
+        let boxes: BTreeMap<u32, Part> = src.parts.iter().filter(|(_, p)| p.kind == PartKind::TextBox).map(|(k, p)| (*k, p.clone())).collect();
+        let link = Relink { media: &media, nums: &nums, notes: &notes, comments: &comments, boxes: &boxes, rev };
+        for (old, new) in &notes {
+            let Some(part) = src.parts.get(old) else { continue };
+            let mut blocks: Vec<Block> = part.blocks.iter().map(|b| (**b).clone()).collect();
+            blocks.iter_mut().for_each(|b| link.block(b));
+            if let Some(p) = self.parts.get_mut(new) {
+                p.blocks = blocks.into_iter().map(Arc::new).collect();
+            }
+        }
+        for (id, c) in &src.comments {
+            if let (Some(new), Some(part)) = (comments.get(id), notes.get(&c.part)) {
+                let parent = c.parent.and_then(|p| comments.get(&p).copied());
+                self.comments.insert(*new, crate::Comment { parent, part: *part, ..c.clone() });
+            }
+        }
+        let mut blocks: Vec<Block> = src.body.iter().map(|b| (**b).clone()).collect();
+        blocks.iter_mut().for_each(|b| link.block(b));
+        let mut parts = boxes.clone();
+        for part in parts.values_mut() {
+            part.blocks.iter_mut().for_each(|b| link.block(Arc::make_mut(b)));
+        }
+        Fragment { blocks, parts }
+    }
+
+    /// [`Self::adopt`] as blocks to place in a story directly (a reader building one): its text
+    /// boxes already have stories of their own here.
+    pub fn adopt_blocks(&mut self, src: Document) -> Vec<Block> {
+        let Fragment { mut blocks, parts } = self.adopt(src);
+        let mut budget = MAX_PASTED_BOXES;
+        self.adopt_text_boxes(&mut blocks, &parts, 0, &mut budget);
+        blocks
+    }
+
     /// Copies of the text box stories shapes in `blocks` show, nested boxes included.
     fn text_box_parts(&self, blocks: &[Block]) -> BTreeMap<u32, Part> {
         let mut out = BTreeMap::new();
@@ -642,6 +809,60 @@ mod tests {
 
     fn doc(lines: &[&str]) -> Document {
         Document::from_text(&lines.join("\n"))
+    }
+
+    #[test]
+    fn adopting_a_document_renumbers_what_it_refers_to() {
+        use crate::para::NoteKind;
+        use crate::{Comment, Revision, RevisionKind};
+        // Ours already has a footnote, a comment, a list and a revision with the ids the other's use.
+        let mut ours = doc(&["ours"]);
+        let our_note = ours.add_part(PartKind::Footnote, vec![para_block(Paragraph::with_text("our note", CharProps::default()))]);
+        ours.comments.insert(0, Comment { part: our_note, ..Comment::default() });
+        let our_list = ours.numbering.add_list(crate::numbering::ListKind::Bullet);
+        ours.revisions.push(Revision { kind: RevisionKind::Insert, ..Revision::default() });
+
+        let mut theirs = doc(&["theirs"]);
+        let note = theirs.add_part(PartKind::Footnote, vec![para_block(Paragraph::with_text("their note", CharProps::default()))]);
+        let said = theirs.add_part(PartKind::Comment, vec![para_block(Paragraph::with_text("their comment", CharProps::default()))]);
+        theirs.comments.insert(0, Comment { author: "Them".into(), part: said, ..Comment::default() });
+        let list = theirs.numbering.add_list(crate::numbering::ListKind::Bullet);
+        assert_eq!(list, our_list);
+        theirs.revisions.push(Revision { kind: RevisionKind::Delete, ..Revision::default() });
+        let mut style = crate::styles::Style { id: "TheirList".into(), name: "Their List".into(), ..Default::default() };
+        style.para.numbering = Some(crate::props::NumRef { num: list, level: 0 });
+        theirs.styles.upsert(style);
+        let p = theirs.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+        p.props.numbering = Some(crate::props::NumRef { num: list, level: 0 });
+        p.runs[0].props.del = Some(0);
+        let props = p.props_of_char(0).clone();
+        p.insert_object(0, InlineObject::NoteRef { kind: NoteKind::Footnote, id: note, custom: String::new() }, &props).unwrap();
+        p.insert_object(0, InlineObject::CommentStart { id: 0 }, &props).unwrap();
+
+        let frag = ours.adopt(theirs);
+        let Some(Block::Para(p)) = frag.blocks.first() else { panic!() };
+        let new_list = p.props.numbering.unwrap().num;
+        assert_ne!(new_list, our_list);
+        assert!(ours.numbering.num(new_list).is_some());
+        assert_eq!(ours.styles.get("TheirList").and_then(|s| s.para.numbering).map(|n| n.num), Some(new_list));
+        // Their deletion is their revision, after ours.
+        let del = p.runs.iter().find_map(|r| r.props.del).unwrap();
+        assert_eq!(ours.revisions.get(del as usize).map(|r| r.kind), Some(RevisionKind::Delete));
+        // Their note and comment come along under ids of their own.
+        let (note_id, comment_id) = p.objects.iter().fold((None, None), |(n, c), o| match o {
+            InlineObject::NoteRef { id, .. } => (Some(*id), c),
+            InlineObject::CommentStart { id } => (n, Some(*id)),
+            _ => (n, c),
+        });
+        let text = |id: u32| {
+            ours.parts
+                .get(&id)
+                .map(|p| p.blocks.iter().map(|b| if let Block::Para(p) = &**b { p.text.clone() } else { String::new() }).collect::<String>())
+        };
+        assert_eq!(text(note_id.unwrap()).as_deref(), Some("their note"));
+        let comment = ours.comments.get(&comment_id.unwrap()).unwrap();
+        assert_eq!((comment.author.as_str(), text(comment.part).as_deref()), ("Them", Some("their comment")));
+        assert_eq!(text(our_note).as_deref(), Some("our note"));
     }
 
     #[test]

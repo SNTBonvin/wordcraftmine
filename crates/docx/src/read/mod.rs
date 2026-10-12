@@ -1,6 +1,7 @@
 //! DOCX → [`Document`].
 
 pub(crate) mod chart;
+mod chunk;
 pub(crate) mod diagram;
 mod drawing_color;
 mod embed;
@@ -30,6 +31,9 @@ use crate::units::{flag, int, on_off, tw, u32_of};
 use crate::xml::El;
 pub(crate) use props::PropCtx;
 use story::StoryCtx;
+
+use chunk::ChunkState;
+pub use chunk::{AltChunk, ChunkImporter, ReadOptions};
 
 /// Most parts (headers, notes, comments, text boxes) we create from one file.
 const MAX_PARTS: usize = 50_000;
@@ -91,6 +95,8 @@ pub(crate) struct Reader<'p> {
     content_types: Option<ContentTypes>,
     /// Parts kept for charts, diagrams and OLE objects (see `embed`).
     embedded: EmbeddedManifest,
+    /// What alternative format chunks may still bring in, and how (see [`chunk`]).
+    chunks: ChunkState<'p>,
     /// Linked text boxes as read: (`wps:txbx/@id` or `wps:linkedTxbx/@id`, `seq` (0 for the box
     /// holding the text), text box part). See [`link_text_boxes`].
     pub txbx_links: Vec<(u32, u32, u32)>,
@@ -109,17 +115,24 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocxError> {
     if crate::is_encrypted(bytes) {
         return crate::read_with_password(bytes, None);
     }
-    read_package(bytes)
+    read_package(bytes, None)
 }
 
-/// [`read`] for bytes known not to be an encrypted package.
-pub(crate) fn read_package(bytes: &[u8]) -> Result<Document, DocxError> {
-    read_opened(&Package::open(bytes)?)
+/// [`read`] for bytes known not to be an encrypted package; `chunks` imports alternative format
+/// chunks in formats other than WordprocessingML.
+pub(crate) fn read_package(bytes: &[u8], chunks: Option<ChunkImporter>) -> Result<Document, DocxError> {
+    read_opened(&Package::open(bytes)?, chunks)
 }
 
 /// Read a package whose parts are already unpacked (from a zip, a Flat OPC file or a converted
 /// Word 2003 XML document).
-pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
+pub(crate) fn read_opened(pkg: &Package, chunks: Option<ChunkImporter>) -> Result<Document, DocxError> {
+    read_opened_in(pkg, ChunkState::new(chunks)).map(|(doc, ..)| doc)
+}
+
+/// [`read_opened`] with what chunks may still bring in; also gives the chunks and chunk bytes
+/// left of that.
+fn read_opened_in(pkg: &Package, chunks: ChunkState) -> Result<(Document, usize, u64), DocxError> {
     let root_rels = pkg.rels("");
     let main = root_rels.by_type(rt::OFFICE_DOC).filter(|r| !r.external).map(|r| r.target.clone()).unwrap_or_else(|| "word/document.xml".to_string());
     let Some(root) = pkg.xml(&main)? else {
@@ -156,6 +169,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         content_types: None,
         embedded: EmbeddedManifest::default(),
         txbx_links: Vec::new(),
+        chunks,
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
     r.pc.minor_font = r.doc.settings.minor_font.clone();
@@ -231,7 +245,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     if let Some(body) = root.child("w:body") {
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();
-        r.read_blocks(&mut sc, body, &rels, &mut blocks, 0);
+        r.read_blocks(&mut sc, body, &rels, &mut blocks, r.chunks.depth);
         r.flush_pending(&mut sc, &mut blocks);
         r.doc.body = blocks;
         unstyle_toc_links(&mut r.doc);
@@ -268,9 +282,10 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     if r.shape_ids {
         keep_glued_ids(&mut r.doc, &r.glued);
     }
+    let (left, bytes) = (r.chunks.left, r.chunks.bytes);
     let mut doc = r.doc;
     doc.ensure_nonempty();
-    Ok(doc)
+    Ok((doc, left, bytes))
 }
 
 /// Most move ranges open at once, and most move names tracked, per file.
@@ -637,7 +652,7 @@ impl Reader<'_> {
         let rels = self.pkg.rels(path);
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();
-        self.read_blocks(&mut sc, &root, &rels, &mut blocks, 0);
+        self.read_blocks(&mut sc, &root, &rels, &mut blocks, self.chunks.depth);
         self.flush_pending(&mut sc, &mut blocks);
         if let Some(p) = self.doc.parts.get_mut(&id)
             && !blocks.is_empty()
@@ -1076,7 +1091,7 @@ impl Reader<'_> {
             let mut sc = StoryCtx::default();
             let mut blocks = Blocks::new();
             self.current_note = Some((kind, id));
-            self.read_blocks(&mut sc, n, &rels, &mut blocks, 0);
+            self.read_blocks(&mut sc, n, &rels, &mut blocks, self.chunks.depth);
             self.flush_pending(&mut sc, &mut blocks);
             self.current_note = None;
             if let Some(p) = self.doc.parts.get_mut(&id)
@@ -1108,7 +1123,7 @@ impl Reader<'_> {
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();
         self.in_note_sep = true;
-        self.read_blocks(&mut sc, n, rels, &mut blocks, 0);
+        self.read_blocks(&mut sc, n, rels, &mut blocks, self.chunks.depth);
         self.flush_pending(&mut sc, &mut blocks);
         self.in_note_sep = false;
         if blocks.is_empty() {
@@ -1148,7 +1163,7 @@ impl Reader<'_> {
             };
             let mut sc = StoryCtx::default();
             let mut blocks = Blocks::new();
-            self.read_blocks(&mut sc, c, &rels, &mut blocks, 0);
+            self.read_blocks(&mut sc, c, &rels, &mut blocks, self.chunks.depth);
             self.flush_pending(&mut sc, &mut blocks);
             let part = self.doc.add_part(PartKind::Comment, blocks);
             if let Some(pid) = c.children("w:p").last().and_then(|p| p.attr("w14:paraId")) {
