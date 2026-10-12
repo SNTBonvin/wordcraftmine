@@ -201,7 +201,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
         "text" => {
             validate_options("text", &rest, NO_OPTIONS)?;
             let s = open(&pos(0)?)?;
-            write_stdout(|o| writeln!(o, "{}", s.doc.plain_text(wordcraft_doc::StoryRef::Body)))
+            write_stdout(|o| writeln!(o, "{}", s.doc.final_text(wordcraft_doc::StoryRef::Body)))
         }
         "inspect" => {
             validate_options("inspect", &rest, NO_OPTIONS)?;

@@ -783,14 +783,12 @@ impl Document {
 
     /// The whole text of a story, paragraphs separated by `\n` (tables: cells by `\t`).
     pub fn plain_text(&self, s: StoryRef) -> String {
-        let mut out = String::new();
-        if let Some(bl) = self.story(s) {
-            text_of(bl, &mut out, 0);
-        }
-        if out.ends_with('\n') {
-            out.pop();
-        }
-        out
+        story_text(self, s, false)
+    }
+
+    /// [`Self::plain_text`] without tracked-deleted runs. A deleted paragraph mark still yields `\n`.
+    pub fn final_text(&self, s: StoryRef) -> String {
+        story_text(self, s, true)
     }
 
     /// Section properties in effect for each top-level body block (index → section number), and
@@ -1258,14 +1256,25 @@ fn walk(bl: &Blocks, prefix: &mut Vec<u32>, out: &mut Vec<Path>, depth: usize) {
     }
 }
 
-fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
+fn story_text(doc: &Document, s: StoryRef, accepted: bool) -> String {
+    let mut out = String::new();
+    if let Some(bl) = doc.story(s) {
+        text_of(bl, &mut out, 0, accepted);
+    }
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+fn text_of(bl: &Blocks, out: &mut String, depth: usize, accepted: bool) {
     if depth > 16 {
         return;
     }
     for b in bl {
         match &**b {
             Block::Para(p) => {
-                out.push_str(&p.plain_text());
+                out.push_str(&if accepted { p.final_text() } else { p.plain_text() });
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -1273,7 +1282,7 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
                     let mut cells = Vec::new();
                     for c in &row.cells {
                         let mut s = String::new();
-                        text_of(&c.blocks, &mut s, depth + 1);
+                        text_of(&c.blocks, &mut s, depth + 1, accepted);
                         cells.push(s.trim_end_matches('\n').replace('\n', " "));
                     }
                     out.push_str(&cells.join("\t"));
