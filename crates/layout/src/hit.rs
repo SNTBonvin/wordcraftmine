@@ -176,6 +176,24 @@ fn turned_hit(page: &Page, story: StoryRef, x: f32, y: f32) -> Option<Pos> {
     })
 }
 
+/// The position in the turned text of `story` nearest to page point (x, y), wherever it is.
+fn nearest_turned(page: &Page, story: StoryRef, x: f32, y: f32) -> Option<Pos> {
+    let dist = |r: Rect| band_dist(x, r.x, r.w).hypot(band_dist(y, r.y, r.h));
+    let it = items_of(page, story)
+        .filter(|it| matches!(it, Placed::Lines { story: s, .. } if *s == story))
+        .filter_map(|it| it.turned_bounds().map(|r| (it, dist(r))))
+        .min_by(|a, b| a.1.total_cmp(&b.1))?
+        .0;
+    let Placed::Lines { path, para, l0, l1, x: ox, y: oy, turn, .. } = it else { return None };
+    let (u, v) = crate::unturn_point(*turn, *ox, *oy, x, y);
+    let first = para.lines.get(*l0)?;
+    let li = (*l0..*l1)
+        .filter_map(|li| para.lines.get(li).map(|l| (li, l.top - first.top, l.height)))
+        .min_by(|a, b| band_dist(v, a.1, a.2).total_cmp(&band_dist(v, b.1, b.2)))?
+        .0;
+    Some(Pos { story, path: path.clone(), off: para.off_at_x(li, u) })
+}
+
 /// How far `v` is outside the band `top..top + h`.
 fn band_dist(v: f32, top: f32, h: f32) -> f32 {
     if v < top {
@@ -195,6 +213,10 @@ impl DocLayout {
             return Some(pos);
         }
         let lines = page_lines(p, story);
+        if lines.is_empty() {
+            // A page of turned text (a vertical section): the nearest turned line.
+            return nearest_turned(p, story, x, y);
+        }
         let best = lines.iter().min_by(|a, b| score(a, x, y).total_cmp(&score(b, x, y)))?;
         let off = best.para.off_at_x(best.li, x - best.x);
         Some(Pos { story: best.story, path: best.path.clone(), off })
@@ -280,16 +302,47 @@ impl DocLayout {
             order.insert(0, page_hint);
         }
         for pi in order {
-            let Some(p) = self.pages.get(pi) else { continue };
-            let found: Vec<(usize, &Placed)> = items_of(p, story)
-                .filter(|it| matches!(it, Placed::Lines { story: s, path: q, .. } if *s == story && q == path))
-                .map(|it| (pi, it))
-                .collect();
-            if !found.is_empty() {
-                return found;
+            let mut found = self.pieces_on(pi, story, path);
+            if found.is_empty() {
+                continue;
             }
+            // A note continued over pages has the rest of the paragraph on the pages before or
+            // after (a repeated header shows all of it on every page: one page is enough).
+            let lines = |v: &[(usize, &Placed)]| {
+                v.iter()
+                    .filter_map(|(_, it)| if let Placed::Lines { para, l0, l1, .. } = it { Some((*l0, *l1, para.lines.len())) } else { None })
+                    .fold((usize::MAX, 0, 0), |(a, b, _), (l0, l1, n)| (a.min(l0), b.max(l1), n))
+            };
+            let (mut lo, mut hi, n) = lines(&found);
+            let mut k = pi;
+            while lo > 0 && k > 0 {
+                k -= 1;
+                let more = self.pieces_on(k, story, path);
+                if more.is_empty() {
+                    break;
+                }
+                lo = lo.min(lines(&more).0);
+                found.extend(more);
+            }
+            let mut k = pi;
+            while hi < n && k + 1 < self.pages.len() {
+                k += 1;
+                let more = self.pieces_on(k, story, path);
+                if more.is_empty() {
+                    break;
+                }
+                hi = hi.max(lines(&more).1);
+                found.extend(more);
+            }
+            return found;
         }
         Vec::new()
+    }
+
+    /// Pieces of a paragraph of story part `story` on page `pi`.
+    fn pieces_on(&self, pi: usize, story: StoryRef, path: &Path) -> Vec<(usize, &Placed)> {
+        let Some(p) = self.pages.get(pi) else { return Vec::new() };
+        items_of(p, story).filter(|it| matches!(it, Placed::Lines { story: s, path: q, .. } if *s == story && q == path)).map(|it| (pi, it)).collect()
     }
 
     /// Caret geometry for a position.

@@ -215,8 +215,13 @@ impl Line {
 #[derive(Clone, Debug)]
 pub struct Label {
     pub text: String,
+    /// Style of the label's last run (the suffix space and the bidi tests measure with it).
     pub style: u16,
     pub glyphs: Vec<Glyph>,
+    /// Font runs over `glyphs`, in drawing order: font fallback can split a label ("1、" takes
+    /// the digit from the Latin face and the comma from a CJK one), and each glyph id only means
+    /// something in the face it was shaped with.
+    pub runs: Vec<LabelRun>,
     pub x: f32,
     pub width: f32,
 }
@@ -234,6 +239,17 @@ pub struct RubyLayout {
     pub ranges: Vec<std::ops::Range<usize>>,
     /// The ruby's baseline above the base text's, points.
     pub raise: f32,
+}
+
+/// One font run of a list label.
+#[derive(Clone, Debug)]
+pub struct LabelRun {
+    /// Index into `ParaLayout::styles`.
+    pub style: u16,
+    /// Glyph range in `Label::glyphs`.
+    pub glyphs: std::ops::Range<usize>,
+    /// The run's characters (for the PDF text layer).
+    pub text: String,
 }
 
 /// A laid-out paragraph.
@@ -316,7 +332,8 @@ pub struct ParaEnv<'a> {
     pub hide_deleted: bool,
     /// The table style's formatting for text in this paragraph's cell (`None` outside tables).
     pub table: Option<&'a CellText>,
-    pub proofing: bool,
+    /// Check spelling (and grammar, as the options say) for squiggles; `None` = no squiggles.
+    pub proofing: Option<crate::ProofOptions>,
     /// Areas text must flow around (floating objects), relative to the paragraph: x from the
     /// column's left edge, y from the top of the first line.
     pub exclusions: &'a [Exclusion],
@@ -493,6 +510,12 @@ pub fn visual_order(levels: &[u8]) -> Vec<usize> {
     order
 }
 
+/// Text Word sets in the East Asian font: CJK ideographs, kana, bopomofo, CJK punctuation and
+/// fullwidth forms, and Hangul.
+fn east_asian(c: char) -> bool {
+    crate::kinsoku::is_east_asian(c) || matches!(u32::from(c), 0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF)
+}
+
 impl<'a> Builder<'a> {
     /// Style index for a resolved char in `face` (caps-scaled `size` override for small caps).
     fn style(&mut self, rc: &Arc<ResolvedChar>, face_override: Option<FaceRef>, small: bool) -> u16 {
@@ -562,6 +585,15 @@ impl<'a> Builder<'a> {
         let rc_cs: Option<Arc<ResolvedChar>> = text.chars().any(|c| rc.uses_complex(c)).then(|| Arc::new(rc.complex()));
         let primary = wordcraft_fonts::word::resolve(&rc.font, rc.bold, rc.italic).face;
         let primary_cs = rc_cs.as_ref().map(|r| wordcraft_fonts::word::resolve(&r.font, r.bold, r.italic).face);
+        // Chinese, Japanese and Korean characters use the run's East Asian font (`w:eastAsia`) when
+        // it is installed and has them.
+        let primary_ea = rc
+            .font_ea
+            .as_ref()
+            .filter(|f| !f.eq_ignore_ascii_case(&rc.font) && text.chars().any(east_asian))
+            .map(|f| wordcraft_fonts::word::resolve(f, rc.bold, rc.italic))
+            .filter(|r| !r.substituted)
+            .map(|r| r.face);
         let use_levels = para_text && !self.levels.is_empty();
         // Split by font coverage (fallback faces), small caps case, script formatting and direction.
         let mut seg_start = 0;
@@ -576,6 +608,7 @@ impl<'a> Builder<'a> {
             let prim = if complex { primary_cs.unwrap_or(primary) } else { primary };
             let face = match cur {
                 Some(k) if mark => k.face,
+                _ if !complex && east_asian(c) && primary_ea.is_some_and(|f| f.covers(c)) => primary_ea,
                 _ if prim.covers(c) || c.is_whitespace() || c.is_control() || c == SOFT_HYPHEN => None,
                 // Stay in the fallback face the word started in while it covers the letters.
                 Some(SegKey { face: Some(f), .. }) if f.covers(c) => Some(f),
@@ -919,17 +952,21 @@ pub(crate) fn left_out(rc: &ResolvedChar, show_hidden: bool, hide_deleted: bool)
 pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let doc = env.doc;
     let mut rp = doc.styles.resolve_para_in(&p.props, env.table.map(|t| &t.para));
+    let para_style = p.props.style.as_deref();
+    let table_chr = env.table.map(|t| &t.chr);
+    // Indents in characters are measured in the paragraph mark's font size.
+    if rp.indent_chars.iter().any(|c| *c != 0.0) {
+        rp.set_char_unit(doc.styles.resolve_char_in(para_style, table_chr, &p.mark).size);
+    }
     // List level indents apply unless the paragraph sets its own.
     if let Some((_, lvl)) = &env.label {
-        if p.props.indent_left.is_none() {
+        if p.props.indent_left.is_none() && p.props.indent_left_chars.is_none_or(|c| c == 0.0) {
             rp.indent_left = lvl.indent;
         }
-        if p.props.indent_first.is_none() {
+        if p.props.indent_first.is_none() && p.props.indent_first_chars.is_none_or(|c| c == 0.0) {
             rp.indent_first = -lvl.hanging;
         }
     }
-    let para_style = p.props.style.as_deref();
-    let table_chr = env.table.map(|t| &t.chr);
     let resolve = |c: &CharProps| -> Arc<ResolvedChar> { Arc::new(doc.styles.resolve_char_in(para_style, table_chr, c)) };
     let levels = bidi_levels(&p.text, rp.bidi);
     let mut b =
@@ -1217,17 +1254,27 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             cl = order.iter().filter_map(|&i| cl.get(i).cloned()).collect();
         }
         let mut glyphs = Vec::new();
+        let mut runs: Vec<LabelRun> = Vec::new();
         let mut x = 0.0;
         let mut style = mark_style;
         for c in &cl {
             style = c.style;
+            let g0 = glyphs.len();
             for g in b.glyphs.get(c.g0 as usize..c.g1 as usize).into_iter().flatten() {
                 glyphs.push(Glyph { dx: g.dx + x, ..*g });
+            }
+            let chars = text.get(c.start..c.end).unwrap_or("");
+            match runs.last_mut() {
+                Some(r) if r.style == c.style => {
+                    r.glyphs.end = glyphs.len();
+                    r.text.push_str(chars);
+                }
+                _ => runs.push(LabelRun { style: c.style, glyphs: g0..glyphs.len(), text: chars.to_string() }),
             }
             x += c.adv;
         }
         b.glyphs.truncate(before_g);
-        Label { text, style, glyphs, x: 0.0, width: x }
+        Label { text, style, glyphs, runs, x: 0.0, width: x }
     });
 
     let mut pl = ParaLayout {
@@ -1242,7 +1289,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         text_len: p.text.len(),
         has_page_fields,
         notes,
-        issues: if env.proofing { proof_issues(p) } else { Vec::new() },
+        issues: env.proofing.map(|o| proof_issues(p, &o)).unwrap_or_default(),
         drop_cap,
         hyph_after: Vec::new(),
         bidi_levels: b.levels,
@@ -1253,7 +1300,8 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         left_out: Vec::new(),
         enclosures,
     };
-    pl.hyph_after = hyphenation_points(&text, to_para, &pl, env.doc.settings.auto_hyphenation && !pl.rp.suppress_hyphens);
+    let auto = env.doc.settings.auto_hyphenation && !pl.rp.suppress_hyphens;
+    pl.hyph_after = hyphenation_points(&text, to_para, &pl, auto, env.doc.settings.hyphenate_caps);
     pl.left_out = left;
     for k in pl.hyph_after.clone() {
         if let Some(c) = pl.clusters.get_mut(k as usize) {
@@ -1292,6 +1340,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
     // spaces, up to MAX_SPACE_SHRINK of their width; never on lines with tabs.
     let shrink_spaces = rp.align == Align::Justify && env.doc.settings.compat_mode >= wordcraft_doc::COMPAT_MODE_CURRENT;
     let hanging_at = if rp.indent_first < 0.0 { Some(rp.indent_left) } else { None };
+    // Hyphenation Options: the zone, and how many lines in a row may end with a hyphen.
+    let zone = Some(env.doc.settings.hyphenation_zone).filter(|z| z.is_finite() && *z >= 0.0).unwrap_or(HYPHENATION_ZONE).min(1584.0);
+    let hyph_limit = env.doc.settings.consecutive_hyphen_limit as usize;
     let n = pl.clusters.len();
     // A right-to-left paragraph is laid out from its start edge, as if mirrored: indents, tabs,
     // the list label and alignment are measured from the right. Lines are mirrored back (and
@@ -1398,6 +1449,8 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         let mut leaders = Vec::new();
         let mut last_break: Option<usize> = None; // cluster index after which we may break
         let mut last_plain: Option<(usize, f32)> = None; // last non-hyphen break and the x after it
+        // After `hyph_limit` hyphenated lines in a row this one may not end with a hyphen.
+        let hyph_ok = hyph_limit == 0 || lines.iter().rev().take_while(|l| l.hyphen.is_some()).count() < hyph_limit;
         let mut end = LineEnd::Para;
         let mut j = i;
         let mut pending_tab: Option<(usize, TabStop, f32)> = None; // tab cluster, stop, x where tab started
@@ -1481,7 +1534,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     && pj >= c0
                     && pj < bk
                     && pl.hyph_after.binary_search(&(bk as u32)).is_ok()
-                    && right_edge - px <= HYPHENATION_ZONE
+                    && right_edge - px <= zone
                 {
                     last_break = Some(pj);
                 }
@@ -1555,7 +1608,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                 if !hyph {
                     last_break = Some(j);
                     last_plain = Some((j, x));
-                } else if x + hyphen_glyph(pl, c.style, &mut hcache).2 <= right_edge + shrink + 0.01 {
+                } else if hyph_ok && x + hyphen_glyph(pl, c.style, &mut hcache).2 <= right_edge + shrink + 0.01 {
                     last_break = Some(j);
                 }
             }
@@ -1625,12 +1678,11 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             asc = st.ascent;
             desc = st.descent;
         }
-        if first
-            && let Some(lab) = &pl.label
-            && let Some(st) = pl.styles.get(lab.style as usize)
-        {
-            asc = asc.max(st.ascent);
-            desc = desc.max(st.descent);
+        if first && let Some(lab) = &pl.label {
+            for st in lab.runs.iter().filter_map(|r| pl.styles.get(r.style as usize)) {
+                asc = asc.max(st.ascent);
+                desc = desc.max(st.descent);
+            }
         }
         // Line spacing scales the text's height, never a picture's: a line is at least as tall
         // as its tallest picture plus the descent below the baseline.
@@ -1948,7 +2000,7 @@ fn row_spans(exclusions: &[Exclusion], top: f32, h: f32, lo: f32, hi: f32) -> Re
 }
 
 /// Word's default hyphenation zone (0.25"), points.
-const HYPHENATION_ZONE: f32 = 18.0;
+const HYPHENATION_ZONE: f32 = wordcraft_doc::DEFAULT_HYPHENATION_ZONE;
 
 /// How much of their width the spaces of a justified line may give up to fit more text (Word
 /// 2013+, compatibility mode 15).
@@ -2005,7 +2057,7 @@ fn hyphen_glyph(pl: &ParaLayout, style: u16, cache: &mut Vec<(u16, u32, f32)>) -
 /// pattern hyphenation points of each word when automatic hyphenation is on. Both are found in
 /// `text`, the paragraph as laid out (without what the layout leaves out, [`left_out`]), and
 /// `to_para` maps the end of a char there to the paragraph's text.
-fn hyphenation_points(text: &str, to_para: impl Fn(usize) -> Option<usize>, pl: &ParaLayout, auto: bool) -> Vec<u32> {
+fn hyphenation_points(text: &str, to_para: impl Fn(usize) -> Option<usize>, pl: &ParaLayout, auto: bool, caps: bool) -> Vec<u32> {
     let mut bytes: Vec<usize> = text.char_indices().filter(|(_, c)| *c == SOFT_HYPHEN).map(|(i, c)| i + c.len_utf8()).collect();
     if auto {
         let lim = wordcraft_proof::hyphen::Limits::default();
@@ -2016,9 +2068,12 @@ fn hyphenation_points(text: &str, to_para: impl Fn(usize) -> Option<usize>, pl: 
                 (None, true) => start = Some(i),
                 (Some(a), false) => {
                     // The patterns are for Latin-script languages: never hyphenate Persian/Arabic words.
+                    // Words in capitals (`NASA`, `README`) only when the document allows it.
+                    let all_caps = |w: &str| w.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase);
                     if let Some(w) = text.get(a..i)
                         && w.chars().count() >= lim.min_word
                         && !w.chars().any(wordcraft_fonts::is_rtl)
+                        && (caps || !all_caps(w))
                     {
                         let offs: Vec<usize> = w.char_indices().map(|(o, _)| o).collect();
                         for pt in wordcraft_proof::hyphen::hyphen_points(w, &lim) {
@@ -2200,7 +2255,7 @@ impl ParaLayout {
 }
 
 /// Spelling and grammar issues in a paragraph (skipping "do not check" and hidden runs).
-fn proof_issues(p: &Paragraph) -> Vec<(usize, usize, bool)> {
+fn proof_issues(p: &Paragraph, opts: &crate::ProofOptions) -> Vec<(usize, usize, bool)> {
     if p.text.trim().is_empty() || p.text.len() > 100_000 {
         return Vec::new();
     }
@@ -2208,9 +2263,14 @@ fn proof_issues(p: &Paragraph) -> Vec<(usize, usize, bool)> {
     let skip = |a: usize, b: usize| {
         p.run_ranges().any(|(r, c)| r.start < b && a < r.end && (c.no_proof == Some(true) || c.hidden == Some(true) || c.link.is_some()))
     };
-    let mut v: Vec<(usize, usize, bool)> =
-        wordcraft_proof::check_spelling(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, false)).collect();
-    v.extend(wordcraft_proof::check_grammar(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, true)));
+    let mut v: Vec<(usize, usize, bool)> = wordcraft_proof::check_spelling_with(&text, &opts.spelling)
+        .into_iter()
+        .filter(|i| !skip(i.start, i.end))
+        .map(|i| (i.start, i.end, false))
+        .collect();
+    if opts.grammar {
+        v.extend(wordcraft_proof::check_grammar(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, true)));
+    }
     v
 }
 
