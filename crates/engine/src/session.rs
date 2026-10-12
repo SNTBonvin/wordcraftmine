@@ -1127,6 +1127,11 @@ impl Session {
 
     /// Selected plain text.
     pub fn selected_text(&self) -> String {
+        // A column block or whole cells that aren't one run of the text: each piece's own text,
+        // a line each, so the status bar and Word Count count those cells only.
+        if let Some(segs) = self.column_segments() {
+            return segs.iter().map(|(a, b)| self.doc.copy_range(a.min(b), a.max(b)).plain_text()).collect::<Vec<_>>().join("\n");
+        }
         let (a, b) = self.sel.ordered();
         self.doc.copy_range(&a, &b).plain_text()
     }

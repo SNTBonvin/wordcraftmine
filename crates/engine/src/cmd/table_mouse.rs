@@ -237,7 +237,9 @@ pub fn cell_rects(l: &DocLayout, doc: &Document, range: &CellRange) -> Vec<(usiz
     let mut out = Vec::new();
     for (pi, pg) in l.pages.iter().enumerate() {
         for it in &pg.items {
-            if let Placed::Cell { rect, table, row, cell, story } = it
+            // A vertically merged cell's box spans its rows (#640); its continuation rows'
+            // `covered` boxes would shade it twice.
+            if let Placed::Cell { rect, table, row, cell, story, covered: false } = it
                 && *story == range.story
                 && *table == range.table
                 && picked.contains(&(*row, *cell))
@@ -510,6 +512,18 @@ mod tests {
         // Another story's tables aren't in reach.
         let l = s.layout();
         assert!(target_at(&l, &s.doc, StoryRef::Part(7), 0, b.x + b.w / 2.0, top - 3.0, REACH).is_none());
+    }
+
+    /// A selected column's text is its own cells', so the status bar and Word Count count only
+    /// them, not the cells between its ends in the text.
+    #[test]
+    fn a_selected_columns_text_is_its_cells() {
+        let mut s = table_session(3, 3);
+        fill(&mut s);
+        let b = cell_rect(&mut s, 0, 1);
+        s.run("table.selectAt", &json!({"page": 0, "x": b.x + b.w / 2.0, "y": b.y - 3.0})).unwrap();
+        assert_eq!(s.selected_text(), "r0c1\nr1c1\nr2c1");
+        assert_eq!(s.run("review.wordCount", &json!({})).unwrap()["words"], 3);
     }
 
     /// A click above a column selects just its cells: formatting, alignment and Delete leave the
