@@ -1789,6 +1789,9 @@ pub fn now_ms() -> f64 {
 }
 
 #[cfg(test)]
+mod tests_perf;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
