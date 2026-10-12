@@ -202,6 +202,8 @@ pub(crate) struct ParaOut {
     pub(crate) end_cp: u32,
     /// Table context from the mark's PAPX (empty default = not in a table).
     pub(crate) row: RowInfo,
+    /// The paragraph's text-frame properties ([`crate::frame`]), when it is framed.
+    pub(crate) frame: Option<crate::frame::FrameInfo>,
 }
 
 /// Group consecutive in-table paragraphs into [`Table`] blocks; the rest pass through.

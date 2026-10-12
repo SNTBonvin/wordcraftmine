@@ -12,6 +12,7 @@ mod drawing;
 mod fib;
 mod fkp;
 mod fmt;
+mod frame;
 mod list;
 mod media;
 mod notes;
@@ -261,6 +262,9 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
     }
 
     doc.media.extend(pics.media);
+    // Paragraph text frames: framed groups leave the body flow for floating parts, each
+    // leaving one anchor paragraph behind.
+    let paras = frame::extract(paras, &sects, &sheet, &mut doc);
     doc.body = table::assemble(paras);
     doc.ensure_nonempty();
     Ok(doc)
@@ -486,6 +490,7 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, sect_ends: &[u32], pics: &mut
             para: Paragraph { text: done.text, runs: done.runs, props: done.props, mark: done.mark, objects: done.objects, ..Default::default() },
             end_cp: cp_end,
             row: table::RowInfo::default(),
+            frame: None,
         });
     }
     out
@@ -504,6 +509,9 @@ fn end_paragraph(ctx: &WalkCtx, cp: u32, c: char, pb: &mut ParaBuild, out: &mut 
     }
     let mut row = table::decode(papx);
     row.cell_mark = c == '\u{7}';
+    // Frame sprms resolve through the style chain too: covers built from frame styles carry
+    // their geometry on the styles, not on the paragraphs (the 3GPP repro).
+    let frame = frame::decode(ctx.raw_styles, istd, papx);
     let mut ilvl = 0u8;
     let mut ilfo = 0i32;
     for prl in sprm::iter(papx) {
@@ -532,6 +540,7 @@ fn end_paragraph(ctx: &WalkCtx, cp: u32, c: char, pb: &mut ParaBuild, out: &mut 
         para: Paragraph { text: done.text, runs: done.runs, props: done.props, mark: done.mark, objects: done.objects, ..Default::default() },
         end_cp: cp.saturating_add(1),
         row,
+        frame,
     });
 }
 
