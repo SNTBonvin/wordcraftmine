@@ -1943,6 +1943,16 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             for v in xs.iter_mut().skip(align_from - c0) {
                 *v += shift;
             }
+            // A list label followed by a space or nothing moves with the text it precedes: Word
+            // centres (or right-aligns) "§ 1. Title" from the indent to the end of the text, the
+            // label keeping its alignment at the indent, instead of leaving it at the margin.
+            if first
+                && align_from == c0
+                && matches!(suffix, Some(LevelSuffix::Space | LevelSuffix::Nothing))
+                && let Some(lab) = pl.label.as_mut()
+            {
+                lab.x += shift;
+            }
         }
         let justify = display.is_none() && ((rp.align == Align::Justify && end == LineEnd::Wrap) || rp.align == Align::Distribute);
         // A line that only fits with shrunk spaces is shrunk, the last line of the paragraph too.
