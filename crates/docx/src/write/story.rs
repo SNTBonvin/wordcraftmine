@@ -526,17 +526,22 @@ impl Writer<'_> {
             }
             // A chart or diagram read from a file: its frame from the object's size and position,
             // the graphic inside as read. Ones made some other way have nothing to write, except
-            // charts with a model (made or edited in WordCraft).
+            // charts and SmartArt with a model (made or edited in WordCraft): their parts are
+            // written from it.
             InlineObject::Graphic { w: gw, h: gh, alt, float, graphic } => {
-                // A chart WordCraft can edit: a chart part written from its model.
-                let inner = match (graphic.chart.as_deref(), graphic.source.as_deref()) {
-                    (Some(spec), _) => self.chart_graphic(spec, rels),
-                    (None, Some(src)) => {
+                let inner = match (graphic.chart.as_deref(), graphic.smart_art.as_deref(), graphic.source.as_deref()) {
+                    // A chart WordCraft can edit: a chart part written from its model.
+                    (Some(spec), _, _) => self.chart_graphic(spec, rels),
+                    (None, Some(spec), _) => self.smart_art_graphic(spec, *gw, *gh, rels),
+                    (None, None, Some(src)) => {
                         let Some(inner) = self.embedded_xml(src, rels, None) else { return };
                         inner
                     }
-                    (None, None) => return,
+                    (None, None, None) => return,
                 };
+                if inner.is_empty() {
+                    return;
+                }
                 self.rev_open(w, props);
                 w.open("w:r", &[]);
                 self.rpr(w, props);
@@ -1283,6 +1288,9 @@ fn sectpr_body(w: &mut W, s: &SectionProps) {
         if s.title_page {
             w.empty("w:titlePg", &[]);
         }
+        if s.text_direction.is_turned() {
+            w.val("w:textDirection", s.text_direction.ooxml());
+        }
         if s.rtl {
             w.empty("w:bidi", &[]);
         }
@@ -1480,7 +1488,7 @@ const TOC_SDT_OPEN: &str =
     r#"<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>"#;
 
 fn is_toc(instr: &str) -> bool {
-    instr.trim_start().get(..3).is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
+    instr.split_whitespace().next().is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
 }
 
 /// The engine's TOC: a paragraph holding an empty `TOC` field, then its TOC-styled entries.
