@@ -1,13 +1,13 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (bookmark around a final table and `INCLUDEPICTURE` pictures kept, #464 #465; formatting revisions landed, #41; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Word XML Document (Flat OPC) opens and saves, Word 2003 XML opens, #548; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
 write: Word opens it showing the same). Summary in [`target-app-parity.md`](target-app-parity.md);
 the work items are in [`gaps.md`](gaps.md).
 
-**Dimension: ~60% (estimated), 185–300 h to full** (the sum of the rows below). The weighted table
+**Dimension: ~60% (estimated), 179–290 h to full** (the sum of the rows below). The weighted table
 gives ~64%; we discount it to ~60% because DOCX fidelity has never been checked on real-world
 files. DOCX dominates the weight: a Word user sends and receives .docx; everything else is
 occasional.
@@ -30,8 +30,8 @@ Weights are the share of a Word user's file traffic (estimate). Read/write: ✅ 
 | `.txt` Plain text | 2% | R/W | ✅ | ✅ | ~95% | 1–2 | unit tests | Encoding detection; Word's encoding choice dialog and line-ending options missing |
 | `.htm/.html` Web Page and Web Page, Filtered | 1% | R/W | 🟡 | 🟡 | ~60% | 6–10 | `crates/formats/src/tests.rs` | Tables (#102), relative pictures embedded (#113), missing `</head>` tolerated (#154). No Word "Web Page" (with `_files` folder) round-trip |
 | `.mht/.mhtml` Single File Web Page | <1% | R/W | ❌ | ❌ | 0% | 3–5 | — | |
-| `.xml` Word XML Document (Flat OPC) | <1% | R/W | ❌ | ❌ | 0% | 3–5 | — | The DOCX parts in one XML file; cheap once the DOCX code is reused |
-| `.xml` Word 2003 XML (WordprocessingML 2003) | <1% | R/W | ❌ | ❌ | 0% | 5–8 | — | Legacy |
+| `.xml` Word XML Document (Flat OPC) | <1% | R/W | ✅ | ✅ | ~65% | — | `crates/docx/tests/word_xml.rs`, `roundtrip.rs` (`flat_opc_round_trip_equals_docx`) | The DOCX package in one XML file, read and written by the DOCX code (#548); File › Export › Word XML Document. `.xml` files are told apart by their root element |
+| `.xml` Word 2003 XML (WordprocessingML 2003) | <1% | R/W | 🟡 | ❌ | ~55% | 2–3 | `crates/docx/tests/word_xml.rs` | Opened by rewriting it as a package for the DOCX reader (#548): styles, default fonts, lists, tables, sections, headers/footers, footnotes/endnotes, comments, bookmarks, tracked insertions/deletions, hyperlinks, `w:binData` pictures, document properties. Not read: formatting changes, `w:docPr` settings, smart tags. Saving as 2003 XML is not planned (legacy) |
 | `.wps` Works 6–9, WordPerfect `.wpd` (Windows) | <1% | R | ❌ | — | 0% | 10–20 | — | Windows-only converters; low value |
 | Encrypted/password-protected `.docx`/`.doc` | 1% | R/W | ❌ | ❌ | 0% | 6–10 | — | ECMA-376 Agile Encryption; `.doc` RC4/XOR detected and refused (`docbin` fib). Issue #55 |
 | `.xlsx`/`.xlsm`/`.ods` as a mail-merge recipient list | — | R (data source) | ✅ | — | ~90% | 1–3 | `crates/formats/src/sheet.rs`, `cmd/mailings.rs` | Read-only, one sheet's cell values (#334): shared/inline/rich strings, numbers, booleans, cached formula results, dates and times as ISO 8601 (`yyyy-mm-dd`) from the cell's number format, sparse cells; ODS value types, repeated rows/columns, covered cells. Select Table picks the sheet. Capped (64 MiB per part, 100,000 rows, 1,000 columns, 2 M cells, 32,767 characters a cell). Not shown: number formats other than dates (currency, percent, thousands separators) in `.xlsx`; no `.xls`, Access or Outlook sources |
@@ -46,7 +46,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Feature | Read | Write | Notes |
 |---|---|---|---|
-| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111) |
+| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534); every ST_NumberFormat value of `w:numFmt` is kept on save, Chinese/Japanese/Korean, enclosed and full-width formats are drawn, the rest (Hebrew, Arabic, Hindi, Thai…) show decimal (#534). `w:beforeLines`/`w:afterLines` not kept (the points are) |
 | Tables incl. floating (`w:tblpPr`), table styles and conditional formatting | ✅ | ✅ | Custom table styles round-trip (#256); right-to-left tables (`w:bidiVisual`) and sections (`w:bidi`) round-trip (#362) |
 | Headers/footers (first, even/odd), page borders, line numbers, gutter, mirror margins | ✅ | ✅ | |
 | Hyphenation settings (`w:autoHyphenation`, `w:hyphenationZone`, `w:doNotHyphenateCaps`, `w:consecutiveHyphenLimit`) | ✅ | ✅ | Zone, capitals and limit kept and honoured by layout (#407) |
@@ -65,7 +65,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Group shapes (`wpg:`), drawing canvas (`wpc:`) | ✅ | ✅ | Groups (#267) and canvases (#344) with pictures, shapes and text boxes; nested groups flattened. The canvas schema has no transform, so a turned or flipped canvas keeps its turn in our own `wpc:extLst` extension (`urn:wordcraft:canvas-xfrm`; Word shows it unturned). Legacy VML canvases (`v:group editas="canvas"`) aren't read as canvases |
 | VML (`w:pict`, `v:shape`, `v:textbox`) | 🟡 | ❌ | Pictures and text boxes, best effort (#242) |
 | Alt text of drawings (`wp:docPr`/`cNvPr` `descr` and `title`, decorative mark `adec:decorative` from [MS-ODRAWXML]) and tables (`w:tblCaption`, `w:tblDescription`) | ✅ | ✅ | Pictures, shapes, text boxes, groups and their members, charts and SmartArt; OLE objects get theirs written into the kept XML (#386) |
-| Charts (`c:chart`), SmartArt (`dgm`) | ✅ | ✅ | Drawn from the chart's cached data and SmartArt's stored drawing (#292), with data labels (`c:showVal`). Charts made in WordCraft (Insert › Chart, #409) are written as a `c:chartSpace` part with their data as literals (`c:strLit`/`c:numLit`, no embedded workbook, so Word shows them and offers to create a workbook on Edit Data) and read back as editable; a chart part holding anything more (any chart from Word, or one re-saved by Word) stays read-only. Saved back as read, with every part they reach (chart, embedded workbook, colours and style; diagram data, layout, quick style, colours and drawing) and their content types; a moved or resized one keeps its new frame, and a pasted copy gets its own parts (#319) |
+| Charts (`c:chart`), SmartArt (`dgm`) | ✅ | ✅ | Drawn from the chart's cached data and SmartArt's stored drawing (#292), with data labels (`c:showVal`). Charts made in WordCraft (Insert › Chart, #409) are written as a `c:chartSpace` part with their data as literals (`c:strLit`/`c:numLit`, no embedded workbook, so Word shows them and offers to create a workbook on Edit Data) and read back as editable; a chart part holding anything more (any chart from Word, or one re-saved by Word) stays read-only. Saved back as read, with every part they reach (chart, embedded workbook, colours and style; diagram data, layout, quick style, colours and drawing) and their content types; a moved or resized one keeps its new frame, and a pasted copy gets its own parts (#319). SmartArt made in WordCraft (#497) is written from its model: data (`dgm:dataModel` points and connections), our own layout, quick-style and colour definitions under the built-in layout identifiers, and a `dsp:drawing` with every shape placed; it reads back editable only when its data part is exactly what WordCraft writes |
 | OLE objects (`w:object`: embedded or linked files, ActiveX) | 🟡 | ✅ | Shown as their picture (VML or DrawingML); saved back whole with the embedding and picture parts, at the size, rotation and flips set in WordCraft (#319, #332). Can't be opened or edited |
 | Word ink (`w14:contentPart`, InkML), 3D models | ❌ | ❌ | Dropped on read, not preserved on save |
 | Equations (OMML `m:oMath`) | ✅ | ✅ | #191; manual breaks (`m:brk`) and the settings' `m:mathPr` wrapping options (#326) |
@@ -91,6 +91,10 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Word XML Document (Flat OPC) read and written, Word 2003 XML read (#548) |
+| 2026-10-11 | trivial | #534: DOCX indents in characters read and written; `.doc` first-line indents (`sprmPDxaLeft1`, its two-byte operand, and `sprmPDxaLeft1_80`), indents in characters (`sprmPDxc*`) and exact/at-least line spacing (LSPD) read correctly |
+| 2026-10-11 | trivial | List and page number formats: all ST_NumberFormat values round-trip; Chinese, Japanese and Korean counting, legal and digit formats, stems/branches, kana, hangul, enclosed and full-width numbers drawn; unknown values are decimal; .doc number format codes mapped (#534) |
+| 2026-10-11 | trivial | SmartArt made in WordCraft written as diagram parts (data, layout, quick style, colours, drawing) and read back editable (#497) |
 | 2026-10-11 | trivial | Attached template (`w:attachedTemplate`, external relationship of the settings part) and `w:linkStyles` read and written in schema order; opening never reads the template (#377) |
 | 2026-10-11 | trivial | A bookmark (or comment range) ending after the document's last table keeps its end, in the table's last cell (#464); a field whose cached result is a picture (`INCLUDEPICTURE`) is kept as a range field around the picture, so the picture survives save; the linked file is never read (#465) |
 | 2026-10-11 | trivial | Restrict Editing: Word's legacy password hash (`w:cryptAlgorithmSid`, `w:hash`, `w:salt`, `w:cryptSpinCount`) verified per ECMA-376 Part 4 §14.8.1; unsupported hash forms refused (#412) |

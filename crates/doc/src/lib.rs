@@ -12,6 +12,7 @@
 
 pub mod bidi;
 pub mod chart;
+mod cjk_numbers;
 pub mod connector;
 pub mod control;
 pub mod edit;
@@ -31,6 +32,7 @@ pub mod para;
 pub mod props;
 pub mod resolve;
 pub mod section;
+pub mod smart_art;
 pub mod styles;
 pub mod table;
 pub mod wordart;

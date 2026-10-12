@@ -798,7 +798,6 @@
 	Wide	Geniş
 	Widow/Orphan Control	Tek Kalan Satır Denetimi
 	Widow/Orphan control	Tek kalan satır denetimi
-	Wildcards (regex)	Joker karakterler (regex)
 	Window	Pencere
 	Word Count	Sözcük Sayısı
 	Word Left	Önceki Sözcük
@@ -1735,6 +1734,79 @@
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Word XML Belgesi (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Joker karakter kullan
+	Special	Özel
+	Match prefix	Ön eke uy
+	Match suffix	Son eke uy
+	Ignore punctuation characters	Noktalama karakterlerini yoksay
+	Ignore white-space characters	Boşluk karakterlerini yoksay
+	Regular expressions	Düzenli ifadeler
+	Search Options	Arama Seçenekleri
+	Tab Character	Sekme Karakteri
+	Any Character	Herhangi Bir Karakter
+	Any Digit	Herhangi Bir Rakam
+	Any Letter	Herhangi Bir Harf
+	Caret Character	Şapka Karakteri
+	Section Character	Bölüm Karakteri
+	Paragraph Character	Paragraf Karakteri
+	Graphic	Grafik
+	Manual Line Break	El ile Satır Sonu
+	Manual Page Break	El ile Sayfa Sonu
+	Section Break	Bölüm Sonu
+	White Space	Boşluk
+	Clipboard Contents	Pano İçeriği
+	Find What Text	Aranan Metin
+	Find What Expression	Aranan İfade
+	Character in Range	Aralıktaki Karakter
+	Beginning of Word	Sözcük Başı
+	End of Word	Sözcük Sonu
+	Expression	İfade
+	Not	Değil
+	Num Occurrences	Tekrar Sayısı
+	Previous 1 or More	Öncekinin 1 veya Daha Fazlası
+	0 or More Characters	0 veya Daha Fazla Karakter
+# Insert SmartArt (#497).
+	Add Shape	Şekil Ekle
+	Change Colors	Renkleri Değiştir
+	Change Layout	Düzeni Değiştir
+	Create Graphic	Grafik Oluştur
+	Edit Items	Öğeleri Düzenle
+	Layouts	Düzenler
+	Reset Graphic	Grafiği Sıfırla
+	SmartArt Design	SmartArt Tasarımı
+	SmartArt Styles	SmartArt Stilleri
+	Text Pane	Metin Bölmesi
+	List	Liste
+	Process	Süreç
+	Cycle	Döngü
+	Hierarchy	Hiyerarşi
+	Relationship	İlişki
+	Pyramid	Piramit
+	Basic List	Temel Liste
+	Basic Process	Temel Süreç
+	Basic Cycle	Temel Döngü
+	Basic Pyramid	Temel Piramit
+	Basic Radial	Temel Radyal
+	Basic Matrix	Temel Matris
+	Basic Venn	Temel Venn
+	Shows items of equal weight as blocks in rows.	Eşit ağırlıktaki öğeleri satırlar halinde bloklar olarak gösterir.
+	Shows steps in order, left to right, with arrows between them.	Adımları soldan sağa sırayla, aralarında oklarla gösterir.
+	Shows steps that repeat, around a circle.	Yinelenen adımları daire etrafında gösterir.
+	Shows a tree: each item below the item it belongs to.	Bir ağaç gösterir: her öğe ait olduğu öğenin altındadır.
+	Shows parts that build on each other, largest at the bottom.	Birbirinin üzerine kurulan parçaları, en büyüğü altta olacak şekilde gösterir.
+	Shows items around a central idea: the first item is the centre.	Öğeleri merkezi bir fikrin çevresinde gösterir: ilk öğe merkezdedir.
+	Shows parts of a whole as quadrants.	Bütünün parçalarını dörtte birlikler olarak gösterir.
+	Shows overlapping ideas as overlapping circles.	Örtüşen fikirleri iç içe geçen daireler olarak gösterir.
+	Accent {n}	Vurgu {n}
+	Colorful	Renkli
+	Insert SmartArt	SmartArt Ekle
+	One line per item. Enter adds an item.	Öğe başına bir satır. Enter bir öğe ekler.
+	Add\nShape	Şekil\nEkle
+	Change\nColors	Renkleri\nDeğiştir
+	Reset\nGraphic	Grafiği\nSıfırla
 # Outline view (#493).
 	Promote to Heading 1	Başlık 1'e yükselt
 	Demote to Body Text	Gövde metnine düşür
@@ -1911,3 +1983,6 @@
 	Typing replaces selected text	Yazmak seçili metnin yerine geçer
 	Update fields before printing	Yazdırmadan önce alanları güncelle
 	Use the Insert key to switch overtype on and off	Üzerine yazmayı açıp kapatmak için Insert tuşunu kullan
+# Asian and Latin text fonts (#505).
+	Asian text font:	Asya metni yazı tipi:
+	Latin text font:	Latin metni yazı tipi:

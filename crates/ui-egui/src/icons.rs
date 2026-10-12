@@ -2067,6 +2067,39 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.page_h(2.5, 1.0, 14.0);
             pen.cross(8.25, 10.0, 2.0, red);
         }
+        // SmartArt Design: the graphic's shapes as small boxes.
+        "addShape" => {
+            pen.panel(1.5, 1.5, 7.5, 6.0, 1.0);
+            pen.panel(1.5, 10.0, 7.5, 14.5, 1.0);
+            pen.line(&[(4.5, 7.25), (4.5, 8.75)]);
+            pen.plus(12.0, 12.25, green);
+        }
+        "promote" | "demote" => {
+            for y in [1.5, 6.5, 11.5] {
+                pen.panel(7.5, y, 14.5, y + 3.0, 0.75);
+            }
+            if name == "promote" {
+                pen.head(2.0, 8.0, 180.0, a);
+            } else {
+                pen.head(5.0, 8.0, 0.0, a);
+            }
+        }
+        "textPane" => {
+            pen.rect(1.5, 1.5, 14.5, 14.5, 1.0);
+            pen.inner(&[(6.5, 1.5), (6.5, 14.5)]);
+            pen.rows(3.25, 4.75, &[4.5, 8.0, 11.5]);
+            pen.block(8.5, 4.0, 12.5, 6.5, 0.5, a);
+            pen.block(8.5, 9.5, 12.5, 12.0, 0.5, a);
+        }
+        "smartArtColors" => {
+            pen.dot(4.5, 5.5, 2.25, a);
+            pen.dot(11.5, 5.5, 2.25, orange);
+            pen.dot(8.0, 11.5, 2.25, green);
+        }
+        "resetGraphic" => {
+            pen.panel(1.5, 8.0, 8.5, 14.5, 1.0);
+            pen.cycle(11.5, 4.5, 3.0, a);
+        }
         "addins" => {
             pen.panel(1.5, 1.5, 6.5, 6.5, 1.0);
             pen.panel(9.5, 1.5, 14.5, 6.5, 1.0);
@@ -2433,6 +2466,12 @@ pub const NAMES: &[&str] = &[
     "outlineExpand",
     "outlineCollapse",
     "closeOutline",
+    "addShape",
+    "promote",
+    "demote",
+    "textPane",
+    "smartArtColors",
+    "resetGraphic",
 ];
 
 /// Names that are deliberately the same drawing as another (aliases of one command or one idea).

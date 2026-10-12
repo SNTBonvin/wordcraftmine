@@ -66,6 +66,7 @@
 	Artistic Effects	Umetnički efekti
 	As Recommended	Kao što je preporučeno
 	As you type	Tokom kucanja
+	Asian text font:	Font azijskog teksta:
 	Asian Typography	Azijska tipografija
 	Author	Autor
 	AutoCorrect Options	Opcije automatske ispravke
@@ -129,6 +130,7 @@
 	Interface	Interfejs
 	Interface language	Jezik interfejsa
 	Inside:	Unutra:
+	Latin text font:	Font latiničnog teksta:
 	Left border	Leva ivica
 	Left Margin	Leva margina
 	Legal style numbering	Pravno numerisanje
@@ -985,10 +987,10 @@
 	Wide	Široko
 	Widow/Orphan Control	Kontrola usamljenih redova
 	Widow/Orphan control	Kontrola usamljenih redova
-	Wildcards (regex)	Džoker znaci (regex)
 	Window	Prozor
 	Word Count	Broj reči
 	Word document (*.docx)	Word dokument (*.docx)
+	Word XML Document (*.xml)	Word XML dokument (*.xml)
 	Word Left	Reč levo
 	Word Right	Reč desno
 	WordArt	WordArt
@@ -1674,6 +1676,44 @@
 	Continuous numbering	Neprekidna numeracija
 	Apply	Primeni
 	Convert Notes	Pretvori napomene
+	Add Shape	Dodaj oblik
+	Change Colors	Promeni boje
+	Change Layout	Promeni raspored
+	Create Graphic	Kreiranje grafike
+	Edit Items	Uredi stavke
+	Layouts	Rasporedi
+	Reset Graphic	Resetuj grafiku
+	SmartArt Design	SmartArt dizajn
+	SmartArt Styles	SmartArt stilovi
+	Text Pane	Okno za tekst
+	List	Lista
+	Process	Proces
+	Cycle	Ciklus
+	Hierarchy	Hijerarhija
+	Relationship	Odnos
+	Pyramid	Piramida
+	Basic List	Osnovna lista
+	Basic Process	Osnovni proces
+	Basic Cycle	Osnovni ciklus
+	Basic Pyramid	Osnovna piramida
+	Basic Radial	Osnovni radijalni
+	Basic Matrix	Osnovna matrica
+	Basic Venn	Osnovni Venov dijagram
+	Shows items of equal weight as blocks in rows.	Prikazuje stavke jednake važnosti kao blokove u redovima.
+	Shows steps in order, left to right, with arrows between them.	Prikazuje korake redom, sleva nadesno, sa strelicama između njih.
+	Shows steps that repeat, around a circle.	Prikazuje korake koji se ponavljaju, oko kruga.
+	Shows a tree: each item below the item it belongs to.	Prikazuje stablo: svaka stavka ispod stavke kojoj pripada.
+	Shows parts that build on each other, largest at the bottom.	Prikazuje delove koji se oslanjaju jedan na drugi, najveći na dnu.
+	Shows items around a central idea: the first item is the centre.	Prikazuje stavke oko centralne ideje: prva stavka je u sredini.
+	Shows parts of a whole as quadrants.	Prikazuje delove celine kao kvadrante.
+	Shows overlapping ideas as overlapping circles.	Prikazuje ideje koje se preklapaju kao krugove koji se preklapaju.
+	Accent {n}	Akcenat {n}
+	Colorful	Šareno
+	Insert SmartArt	Umetni SmartArt
+	One line per item. Enter adds an item.	Jedan red po stavci. Enter dodaje stavku.
+	Add\nShape	Dodaj\noblik
+	Change\nColors	Promeni\nboje
+	Reset\nGraphic	Resetuj\ngrafiku
 	Promote to Heading 1	Podigni na Naslov 1
 	Demote to Body Text	Spusti na osnovni tekst
 	Move Up	Pomeri nagore
@@ -1809,6 +1849,37 @@
 	Rewind	Na početak
 	Forward	Napred
 	Stroke {n} of {total}	Potez {n} od {total}
+	Use wildcards	Koristi džoker znake
+	Special	Posebno
+	Match prefix	Podudari prefiks
+	Match suffix	Podudari sufiks
+	Ignore punctuation characters	Zanemari znake interpunkcije
+	Ignore white-space characters	Zanemari beline
+	Regular expressions	Regularni izrazi
+	Search Options	Opcije pretrage
+	Tab Character	Znak tabulatora
+	Any Character	Bilo koji znak
+	Any Digit	Bilo koja cifra
+	Any Letter	Bilo koje slovo
+	Caret Character	Znak kapice
+	Section Character	Znak odeljka
+	Paragraph Character	Simbol pasusa
+	Graphic	Grafika
+	Manual Line Break	Ručni prekid reda
+	Manual Page Break	Ručni prekid strane
+	Section Break	Prekid odeljka
+	White Space	Belina
+	Clipboard Contents	Sadržaj ostave
+	Find What Text	Pronađeni tekst
+	Find What Expression	Pronađeni izraz
+	Character in Range	Znak u opsegu
+	Beginning of Word	Početak reči
+	End of Word	Kraj reči
+	Expression	Izraz
+	Not	Nije
+	Num Occurrences	Broj ponavljanja
+	Previous 1 or More	Prethodno 1 ili više puta
+	0 or More Characters	0 ili više znakova
 	Move with Text	Pomeraj sa tekstom
 	Fix Position on Page	Fiksiraj položaj na stranici
 

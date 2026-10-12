@@ -70,6 +70,7 @@
 	Artistic Effects	Уметнички ефекти
 	As Recommended	Као што је препоручено
 	As you type	Током куцања
+	Asian text font:	Фонт азијског текста:
 	Asian Typography	Азијска типографија
 	Author	Аутор
 	AutoCorrect Options	Опције аутоматске исправке
@@ -133,6 +134,7 @@
 	Interface	Интерфејс
 	Interface language	Језик интерфејса
 	Inside:	Унутра:
+	Latin text font:	Фонт латиничног текста:
 	Left border	Лева ивица
 	Left Margin	Лева маргина
 	Legal style numbering	Правно нумерисање
@@ -989,10 +991,10 @@
 	Wide	Широко
 	Widow/Orphan Control	Контрола усамљених редова
 	Widow/Orphan control	Контрола усамљених редова
-	Wildcards (regex)	Џокер знаци (regex)
 	Window	Прозор
 	Word Count	Број речи
 	Word document (*.docx)	Word документ (*.docx)
+	Word XML Document (*.xml)	Word XML документ (*.xml)
 	Word Left	Реч лево
 	Word Right	Реч десно
 	WordArt	WordArt
@@ -1678,6 +1680,44 @@
 	Continuous numbering	Непрекидна нумерација
 	Apply	Примени
 	Convert Notes	Претвори напомене
+	Add Shape	Додај облик
+	Change Colors	Промени боје
+	Change Layout	Промени распоред
+	Create Graphic	Креирање графике
+	Edit Items	Уреди ставке
+	Layouts	Распореди
+	Reset Graphic	Ресетуј графику
+	SmartArt Design	SmartArt дизајн
+	SmartArt Styles	SmartArt стилови
+	Text Pane	Окно за текст
+	List	Листа
+	Process	Процес
+	Cycle	Циклус
+	Hierarchy	Хијерархија
+	Relationship	Однос
+	Pyramid	Пирамида
+	Basic List	Основна листа
+	Basic Process	Основни процес
+	Basic Cycle	Основни циклус
+	Basic Pyramid	Основна пирамида
+	Basic Radial	Основни радијални
+	Basic Matrix	Основна матрица
+	Basic Venn	Основни Венов дијаграм
+	Shows items of equal weight as blocks in rows.	Приказује ставке једнаке важности као блокове у редовима.
+	Shows steps in order, left to right, with arrows between them.	Приказује кораке редом, слева надесно, са стрелицама између њих.
+	Shows steps that repeat, around a circle.	Приказује кораке који се понављају, око круга.
+	Shows a tree: each item below the item it belongs to.	Приказује стабло: свака ставка испод ставке којој припада.
+	Shows parts that build on each other, largest at the bottom.	Приказује делове који се ослањају један на други, највећи на дну.
+	Shows items around a central idea: the first item is the centre.	Приказује ставке око централне идеје: прва ставка је у средини.
+	Shows parts of a whole as quadrants.	Приказује делове целине као квадранте.
+	Shows overlapping ideas as overlapping circles.	Приказује идеје које се преклапају као кругове који се преклапају.
+	Accent {n}	Акценат {n}
+	Colorful	Шарено
+	Insert SmartArt	Уметни SmartArt
+	One line per item. Enter adds an item.	Један ред по ставци. Enter додаје ставку.
+	Add\nShape	Додај\nоблик
+	Change\nColors	Промени\nбоје
+	Reset\nGraphic	Ресетуј\nграфику
 	Promote to Heading 1	Подигни на Наслов 1
 	Demote to Body Text	Спусти на основни текст
 	Move Up	Помери нагоре
@@ -1813,6 +1853,37 @@
 	Rewind	На почетак
 	Forward	Напред
 	Stroke {n} of {total}	Потез {n} од {total}
+	Use wildcards	Користи џокер знаке
+	Special	Посебно
+	Match prefix	Подудари префикс
+	Match suffix	Подудари суфикс
+	Ignore punctuation characters	Занемари знаке интерпункције
+	Ignore white-space characters	Занемари белине
+	Regular expressions	Регуларни изрази
+	Search Options	Опције претраге
+	Tab Character	Знак табулатора
+	Any Character	Било који знак
+	Any Digit	Било која цифра
+	Any Letter	Било које слово
+	Caret Character	Знак капице
+	Section Character	Знак одељка
+	Paragraph Character	Симбол пасуса
+	Graphic	Графика
+	Manual Line Break	Ручни прекид реда
+	Manual Page Break	Ручни прекид стране
+	Section Break	Прекид одељка
+	White Space	Белина
+	Clipboard Contents	Садржај оставе
+	Find What Text	Пронађени текст
+	Find What Expression	Пронађени израз
+	Character in Range	Знак у опсегу
+	Beginning of Word	Почетак речи
+	End of Word	Крај речи
+	Expression	Израз
+	Not	Није
+	Num Occurrences	Број понављања
+	Previous 1 or More	Претходно 1 или више пута
+	0 or More Characters	0 или више знакова
 	Move with Text	Померај са текстом
 	Fix Position on Page	Фиксирај положај на страници
 

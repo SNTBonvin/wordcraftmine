@@ -33,6 +33,7 @@ pub mod dialogs_para;
 pub mod dialogs_refs;
 pub mod dialogs_review;
 pub mod dialogs_ribbon;
+pub mod dialogs_smart_art;
 pub mod dialogs_templates;
 pub mod equation_tab;
 pub mod file_dialogs;
@@ -278,6 +279,10 @@ pub struct WordApp {
     last_autosave: f64,
     /// The tab shown before the Equation tab came up (restored when editing ends).
     pub(crate) equation_prev_tab: Option<String>,
+    /// SmartArt Text Pane: the item last focused (Promote, Demote and Add Shape act on it) and
+    /// the item being typed in (its keystrokes join one undo step).
+    pub smart_art_item: Option<usize>,
+    pub(crate) smart_art_typing: Option<usize>,
     /// The tab shown before Outline view brought up the Outlining tab (restored when it closes).
     pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
@@ -350,6 +355,8 @@ impl WordApp {
             word_count: (0, 0),
             last_autosave: 0.0,
             equation_prev_tab: None,
+            smart_art_item: None,
+            smart_art_typing: None,
             outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
             ctx: None,
@@ -938,7 +945,7 @@ impl WordApp {
         // interface that doesn't open the language list.
         let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
         if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
-            theme::install_fonts_with(ctx, lang.prefers_hans(), system_cjk);
+            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
             self.fonts_hans = lang.prefers_hans();
             self.fonts_system_cjk = system_cjk;
             // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
@@ -1128,11 +1135,12 @@ impl WordApp {
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
             let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
-            let list =
-                lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && std::mem::take(&mut self.recipient_list_pending));
+            // Any recipient file ends the pending picker request, so a later .txt drop opens normally.
+            let asked = std::mem::take(&mut self.recipient_list_pending);
+            let list = lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && asked);
             let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lower.ends_with(e));
+            self.recipient_list_pending = asked && !list && !sheet;
             let r = if sheet {
-                self.recipient_list_pending = false;
                 self.load_recipients(json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
             } else if list {
                 self.load_recipients(json!({"csv": wordcraft_engine::io::decode_text(&bytes)}))
@@ -1259,7 +1267,7 @@ impl AutoSaveBlock {
 /// copy that leaves it unsaved. AutoSave writes only these formats.
 fn keeps_everything(name: &str) -> bool {
     let ext = std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json")
+    matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "odt" | "rtf" | "json" | "xml")
 }
 
 /// The dialog a user-run command opens when it lacks the input it needs (scripts and agents get
@@ -1285,6 +1293,8 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "insert.field" if !has("instr") => Some("field"),
         // Edit Field Code shows the selected field's code (#339).
         "fields.setCode" if !has("code") => Some("editFieldCode"),
+        // SmartArt without a layout or items shows the layout picker.
+        "insert.smartArt" if !has("layout") && !has("items") => Some("insertSmartArt"),
         // Chart without a type shows the gallery; Change Chart Type and Edit Data their dialogs.
         "insert.chart" if !has("type") && !has("data") => Some("insertChart"),
         "chart.type" if !has("type") => Some("changeChartType"),
@@ -2876,6 +2886,17 @@ mod tests {
         inbox.lock().unwrap().push(("more.csv".into(), b"Name\nBo\nCy\n".to_vec()));
         a.drain_inbox();
         assert_eq!(a.session.merge.rows.len(), 2);
+        // A CSV picked through the picker must not turn the next .txt drop into recipients.
+        a.run("ui.openRecipientList", json!({})).unwrap();
+        inbox.lock().unwrap().push(("people.csv".into(), b"Name,City\nAda,London\n".to_vec()));
+        a.drain_inbox();
+        assert!(!a.recipient_list_pending);
+        inbox.lock().unwrap().push(("notes.txt".into(), b"A plain text document.\nAnother line.\n".to_vec()));
+        a.drain_inbox();
+        assert_eq!(prompt(&a), Some("saveChanges"), "the TXT opens like any document");
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_eq!(a.session.merge.headers, vec!["Name", "City"], "the recipients stay");
+        assert!(body_text(&a).contains("A plain text document."), "the TXT opened as a document");
         // A cancelled picker leaves nothing pending once the user does something else.
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
