@@ -120,6 +120,10 @@ pub struct CanvasState {
     pub(crate) link_from: Option<wordcraft_doc::Pos>,
     /// What screen readers were last told about the document (#488).
     pub(crate) a11y: crate::a11y::A11yCache,
+    /// The kind of tab stop a click on the ruler sets (the selector in the rulers' corner).
+    pub tab_kind: wordcraft_doc::props::TabAlign,
+    /// A tab stop being placed or dragged on the ruler (`ruler_tabs`).
+    pub(crate) tab_drag: Option<crate::ruler_tabs::TabDrag>,
 }
 
 impl CanvasState {
@@ -184,6 +188,8 @@ impl Default for CanvasState {
             table_resize: None,
             link_from: None,
             a11y: Default::default(),
+            tab_kind: Default::default(),
+            tab_drag: None,
         }
     }
 }
@@ -1844,9 +1850,11 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
 fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layout: &DocLayout, scale: f32) {
     let t = Tokens::get(ui.ctx());
     let p = ui.painter();
-    p.rect_filled(Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y)), 0.0, t.canvas);
+    let corner = Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y));
+    p.rect_filled(corner, 0.0, t.canvas);
     p.rect_filled(h, 0.0, t.canvas);
     p.rect_filled(v, 0.0, t.canvas);
+    crate::ruler_tabs::selector(app, ui, corner);
     let pi = app.session.page_hint.min(layout.pages.len().saturating_sub(1));
     let (Some(page), Some(pr)) = (layout.pages.get(pi), rects.get(pi)) else { return };
     let scale = page_screen_scale(*pr, page, scale);
@@ -1923,19 +1931,10 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             t.ruler,
             Stroke::new(1.0, c),
         ));
-        let mut open_tabs = false;
-        for (i, tab) in rp.tabs.iter().enumerate() {
-            let tx = px(tab.pos);
-            let foot = if rtl { -4.0 } else { 4.0 };
-            hp.line_segment([pos2(tx, bar.max.y - 6.0), pos2(tx, bar.max.y - 1.0)], Stroke::new(1.5, t.text));
-            hp.line_segment([pos2(tx, bar.max.y - 1.0), pos2(tx + foot, bar.max.y - 1.0)], Stroke::new(1.5, t.text));
-            // Double-clicking a tab marker opens the Tabs dialog (#320).
-            let zone = Rect::from_center_size(pos2(tx, bar.max.y - 4.0), vec2(8.0, 9.0));
-            open_tabs |= ui.interact(zone, ui.id().with(("ruler_tab", i)), Sense::click()).double_clicked();
-        }
-        if open_tabs {
-            let _ = app.run("para.tabs", json!({}));
-        }
+        // Tab stops: drawn and registered before the indent markers' drags, which win where they overlap.
+        let step = unit / div as f32 / 2.0;
+        let ruler = crate::ruler_tabs::Ruler { bar, text, width: w, step, rtl, x_of: &px, dist_at: &dist_at };
+        crate::ruler_tabs::stops(app, ui, &hp, &ruler, &rp.tabs);
         // Dragging the left-indent marker.
         let id = ui.id().with("ruler_left");
         let mr = Rect::from_center_size(pos2(left, bar.max.y - 3.0), vec2(12.0, 12.0));
@@ -2945,6 +2944,95 @@ mod tests {
         assert!(after1 > centre && after1 > after2, "right to left: the numbers rise away from the right margin");
         assert!((after1 - (2.0 * centre - before1)).abs() < 1.0, "1 mirrors about the page centre: {before1} → {after1}");
         assert!((after2 - (2.0 * centre - before2)).abs() < 1.0, "2 mirrors about the page centre: {before2} → {after2}");
+    }
+
+    /// Tab stops on the ruler: the corner selector picks the kind, a click sets a stop, dragging
+    /// moves it, dragging it off clears it, and each gesture is one undo step.
+    #[test]
+    fn ruler_tab_stops_are_set_moved_and_cleared_with_the_pointer() {
+        use egui::{Event, PointerButton};
+        use wordcraft_doc::props::TabAlign;
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "Name\tScore"})).unwrap();
+        a.run("view.ruler", json!({"value": true})).unwrap();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let area = h.state().canvas.canvas_rect.expect("the canvas is laid out");
+        // The middle of the ruler's strip, over a point `d` points from the paragraph's start.
+        let on_ruler = |h: &mut egui_kittest::Harness<'_, WordApp>, d: f32| {
+            let body_x = h.state_mut().session.layout().pages[0].body.x;
+            let x = page_to_screen(h.state_mut(), 0, body_x + d, 0.0).expect("on screen").x;
+            pos2(x, area.min.y - 7.0)
+        };
+        let button =
+            |at: Pos2, pressed: bool| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        let click = |h: &mut egui_kittest::Harness<'_, WordApp>, at: Pos2| {
+            h.event(Event::PointerMoved(at));
+            h.event(button(at, true));
+            h.step();
+            h.event(button(at, false));
+            for _ in 0..3 {
+                h.step();
+            }
+            // Let the double-click time pass before the next press.
+            for _ in 0..30 {
+                h.step();
+            }
+        };
+        let drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: Pos2, to: Pos2| {
+            h.event(Event::PointerMoved(from));
+            h.event(button(from, true));
+            h.step();
+            for k in 1..=6 {
+                h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 6.0)));
+                h.step();
+            }
+            h.event(button(to, false));
+            for _ in 0..3 {
+                h.step();
+            }
+        };
+        let stops = |h: &egui_kittest::Harness<'_, WordApp>| {
+            let s = &h.state().session;
+            let para = s.doc.para_at(&s.sel.focus).expect("a paragraph");
+            s.doc.styles.resolve_para(&para.props).tabs.iter().map(|t| (t.pos, t.align)).collect::<Vec<_>>()
+        };
+
+        // The selector starts at Left; a click moves it to Center.
+        assert_eq!(h.state().canvas.tab_kind, TabAlign::Left);
+        click(&mut h, pos2(area.min.x - RULER / 2.0, area.min.y - RULER / 2.0));
+        assert_eq!(h.state().canvas.tab_kind, TabAlign::Center);
+
+        // A click on the ruler sets a centre stop at 2 inches (on the 1/16 inch grid).
+        let at = on_ruler(&mut h, 144.0);
+        click(&mut h, at);
+        assert_eq!(stops(&h), vec![(144.0, TabAlign::Center)]);
+
+        // Dragging it to 3 inches moves it, keeping its kind.
+        let (from, to) = (on_ruler(&mut h, 144.0), on_ruler(&mut h, 216.0));
+        drag(&mut h, from, to);
+        assert_eq!(stops(&h), vec![(216.0, TabAlign::Center)]);
+
+        // Dragging it down into the page clears it.
+        let from = on_ruler(&mut h, 216.0);
+        drag(&mut h, from, from + vec2(0.0, 80.0));
+        assert!(stops(&h).is_empty(), "the stop came off: {:?}", stops(&h));
+
+        // Each gesture was one step: undo brings back the moved stop, then the first one.
+        assert!(h.state_mut().session.undo());
+        assert_eq!(stops(&h), vec![(216.0, TabAlign::Center)]);
+        assert!(h.state_mut().session.undo());
+        assert_eq!(stops(&h), vec![(144.0, TabAlign::Center)]);
     }
 
     #[test]
