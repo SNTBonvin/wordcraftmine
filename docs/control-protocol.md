@@ -20,8 +20,10 @@ window's key. Once the port is bound, the app writes a random key (256 bits, as 
 `<settings>/control-key.<instance>` and removes the file when the window closes; a new start
 writes a new key. `<settings>` is the folder that holds the preferences: on Linux
 `$XDG_CONFIG_HOME/wordcraft` (by default `~/.config/wordcraft`), on macOS
-`~/Library/Application Support/WordCraft`, on Windows `%APPDATA%\WordCraft`. `<instance>` is the
-Flatpak instance id inside Flatpak, and `local-<port>` otherwise. On Unix the file has mode 0600.
+`~/Library/Application Support/WordCraft`, on Windows `%APPDATA%\WordCraft` (or `WordCraftData`
+next to the executable, or to `WordCraft.app`, when a `portable.txt` sits there). `<instance>` is
+the Flatpak instance id inside Flatpak, and `local-<port>` otherwise. On Unix the file has mode
+0600.
 
 ```sh
 cat ~/.config/wordcraft/control-key.local-7981   # Linux, outside Flatpak, port 7981
