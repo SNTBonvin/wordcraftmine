@@ -416,8 +416,15 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     if let Some(m) = fonts.families.get_mut(&FontFamily::Monospace) {
         m.insert(0, "Mono".into());
     }
-    fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
-    fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
+    // Named weights need the same symbol/emoji fallbacks as regular text. In particular,
+    // keep the replacement-square face before the CJK faces: egui's has_glyph currently
+    // compares the resolved face to the replacement face, even for supported characters.
+    let defaults = FontDefinitions::default().families.remove(&FontFamily::Proportional).unwrap_or_default();
+    for (family, primary) in [("medium", "InterMedium"), ("semibold", "InterSemiBold")] {
+        let mut chain = vec![primary.into(), "Inter".into(), "SourceSans".into()];
+        chain.extend(defaults.iter().cloned());
+        fonts.families.insert(FontFamily::Name(family.into()), chain);
+    }
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
@@ -435,10 +442,12 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     // without its Chinese face, #241, or with faces lacking catalog characters, #486): an
     // installed CJK font after them, so the menus don't show boxes or `?`.
     #[cfg(not(target_arch = "wasm32"))]
-    if system_cjk && let Some(f) = system_cjk_font(prefer_hans) {
-        let mut data = FontData::from_static(&f.bytes);
-        data.index = f.index;
-        add_cjk(&mut fonts, format!("system {}", f.family), data);
+    if system_cjk {
+        for (index, f) in [system_cjk_font(prefer_hans), additional_system_cjk_font(prefer_hans)].into_iter().flatten().enumerate() {
+            let mut data = FontData::from_static(&f.bytes);
+            data.index = f.index;
+            add_cjk(&mut fonts, format!("system {index} {}", f.family), data);
+        }
     }
     #[cfg(target_arch = "wasm32")]
     let _ = system_cjk;
@@ -467,6 +476,29 @@ fn system_cjk_font(hans: bool) -> Option<&'static wordcraft_fonts::SystemUiFont>
             }
             log::debug!("interface: {} CJK characters lack an embedded glyph", needed.len());
             wordcraft_fonts::system_cjk_ui_font(hans, &needed)
+        })
+        .as_ref()
+}
+
+/// A second installed face when the first one covers Japanese/Chinese but leaves Hangul (or
+/// other catalog characters) missing. Japanese system fonts commonly have no Korean glyphs;
+/// choosing just the single face with the largest coverage would leave Korean menus as boxes.
+#[cfg(not(target_arch = "wasm32"))]
+fn additional_system_cjk_font(hans: bool) -> Option<&'static wordcraft_fonts::SystemUiFont> {
+    static ZH: std::sync::OnceLock<Option<wordcraft_fonts::SystemUiFont>> = std::sync::OnceLock::new();
+    static OTHER: std::sync::OnceLock<Option<wordcraft_fonts::SystemUiFont>> = std::sync::OnceLock::new();
+    (if hans { &ZH } else { &OTHER })
+        .get_or_init(|| {
+            let first = system_cjk_font(hans)?;
+            let (mut catalogs, names) = crate::i18n::Lang::cjk_font_text(hans);
+            catalogs.push(&names);
+            let needed = wordcraft_fonts::ui_uncovered_cjk_with_system(&catalogs, &wordcraft_fonts::ui_cjk_fonts(hans), first);
+            if needed.is_empty() {
+                return None;
+            }
+            // The language list contains 한국어 even in a Chinese interface; the non-Chinese
+            // candidate list includes Korean faces as well as the Chinese fallback files.
+            wordcraft_fonts::system_cjk_ui_font(false, &needed)
         })
         .as_ref()
 }

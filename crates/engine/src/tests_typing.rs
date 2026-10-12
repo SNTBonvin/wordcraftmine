@@ -841,3 +841,17 @@ fn typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl() {
     let x = doc.layout().caret(&doc.sel.focus).map(|c| c.x).unwrap_or(f32::MAX);
     assert!(x < 300.0, "left-to-right paragraph: caret at {x}");
 }
+
+/// The UI sends committed IME syllables, while the input method owns the pending one.
+#[test]
+fn committed_korean_syllables_insert_and_backspace_without_splitting_jamo() {
+    let mut s = s();
+    for syllable in ["가", "나", "다", "라"] {
+        run(&mut s, "text.insert", json!({"text": syllable}));
+    }
+    assert_eq!(paras(&s), vec![para("가나다라", None)]);
+    run(&mut s, "text.backspace", json!({}));
+    assert_eq!(paras(&s), vec![para("가나다", None)]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(paras(&s), vec![para("가나다라", None)]);
+}

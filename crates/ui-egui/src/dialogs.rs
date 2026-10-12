@@ -3349,10 +3349,10 @@ mod tests {
         assert!(!command_matches(table, "   "));
     }
 
-    /// Ordinary Turkish queries must find dotted-I labels, while canonical English labels and
-    /// ASCII command IDs retain their old case-insensitive search in every interface language.
+    /// Translated queries find Korean labels and Turkish dotted-I labels; canonical English
+    /// labels and ASCII command IDs remain searchable in every interface language.
     #[test]
-    fn command_search_respects_turkish_i_pairs_and_keeps_canonical_matches() {
+    fn command_search_matches_translated_labels_and_canonical_commands() {
         use egui_kittest::kittest::Queryable;
         let mut fonts = false;
         let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
@@ -3378,6 +3378,12 @@ mod tests {
             ("tr", "INSERT.TABLE", "Tablo   —   Ekle › Tablolar"),
             ("tr", "FORMAT.ITALIC", "İtalik   —   Giriş › Yazı Tipi"),
             ("tr", "TABLE OF CONTENTS", "İçindekiler Tablosu   —   Başvurular › İçindekiler Tablosu"),
+            ("ko", "기울임꼴", "기울임꼴   —   홈 › 글꼴"),
+            ("ko", "목차", "목차   —   참조 › 목차"),
+            ("ko", "글꼴", "기울임꼴   —   홈 › 글꼴"),
+            ("ko", "INSERT.TABLE", "표   —   삽입 › 표"),
+            ("ko", "FORMAT.ITALIC", "기울임꼴   —   홈 › 글꼴"),
+            ("ko", "TABLE OF CONTENTS", "목차   —   참조 › 목차"),
             ("en", "ITALIC", "Italic   —   Home › Font"),
             ("en", "FORMAT.ITALIC", "Italic   —   Home › Font"),
             ("en", "INSERT.TABLE", "Table   —   Insert › Tables"),
