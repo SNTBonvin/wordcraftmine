@@ -1,4 +1,6 @@
-//! Side panes: Navigation (headings, pages, search results), Clipboard, Styles, Style Inspector, Comments.
+//! Side panes: Navigation (headings, pages, search results), Clipboard, Styles, Style Inspector,
+//! Accessibility and Alt Text (see `a11y_pane`), Restrict Editing ([`crate::dialogs_review`]), Comments,
+//! and the SmartArt Text Pane.
 
 use egui::{Stroke, Ui, vec2};
 use serde_json::{Value, json};
@@ -9,6 +11,20 @@ use crate::theme::{Tokens, regular, semibold};
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    // SmartArt Design › Text Pane, while a SmartArt graphic WordCraft can edit is selected.
+    if app.session.view.smart_art_pane && wordcraft_engine::cmd::smart_art::selected_smart_art(&app.session).is_some() {
+        egui::Panel::left("smart_art_pane")
+            .default_size(250.0)
+            .resizable(true)
+            .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| {
+                if header(ui, "Text Pane") {
+                    let _ = app.run("smartArt.textPane", json!({"value": false}));
+                    return;
+                }
+                crate::dialogs_smart_art::text_pane(app, ui);
+            });
+    }
     if app.session.view.nav_pane {
         egui::Panel::left("nav_pane")
             .default_size(260.0)
@@ -37,6 +53,33 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
             .show(ui, |ui| inspector(app, ui));
     }
+    if app.session.view.accessibility_pane {
+        egui::Panel::right("accessibility_pane")
+            .default_size(280.0)
+            .resizable(true)
+            .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| crate::a11y_pane::accessibility(app, ui));
+    }
+    if app.session.view.alt_text_pane {
+        egui::Panel::right("alt_text_pane")
+            .default_size(260.0)
+            .resizable(true)
+            .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| crate::a11y_pane::alt_text(app, ui));
+    }
+    if app.restrict.open {
+        egui::Panel::right("restrict_pane")
+            .default_size(270.0)
+            .resizable(true)
+            .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| {
+                if header(ui, "Restrict Editing") {
+                    app.restrict.open = false;
+                    return;
+                }
+                crate::dialogs_review::restrict_pane(app, ui);
+            });
+    }
     if app.session.view.comments_pane {
         egui::Panel::right("comments_pane")
             .default_size(290.0)
@@ -46,7 +89,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
 }
 
-fn header(ui: &mut Ui, title: &str) -> bool {
+pub(crate) fn header(ui: &mut Ui, title: &str) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
@@ -205,10 +248,14 @@ fn styles(app: &mut WordApp, ui: &mut Ui) {
     }
     let st = app.session.run("format.state", &json!({})).unwrap_or_default();
     let cur = st.get("style").and_then(Value::as_str).unwrap_or("Normal").to_string();
-    ui.label(
-        egui::RichText::new(crate::i18n::fmt(tl!("Current style: {style}"), &[("style", st.get("styleName").and_then(Value::as_str).unwrap_or(""))]))
-            .small(),
-    );
+    let current_name = app
+        .session
+        .doc
+        .styles
+        .get(&cur)
+        .map(crate::i18n::style_name)
+        .unwrap_or_else(|| st.get("styleName").and_then(Value::as_str).unwrap_or("").to_string());
+    ui.label(egui::RichText::new(crate::i18n::fmt(tl!("Current style: {style}"), &[("style", &current_name)])).small());
     ui.horizontal(|ui| {
         if ui.button(tl!("New Style…")).clicked() {
             app.dialog = crate::dialogs::Dialog::open("newStyle", app);
@@ -234,7 +281,7 @@ fn styles(app: &mut WordApp, ui: &mut Ui) {
         .styles
         .iter()
         .filter(|s| !s.hidden && s.kind != wordcraft_doc::StyleKind::Table)
-        .map(|s| (s.id.clone(), s.name.clone(), s.kind == wordcraft_doc::StyleKind::Character))
+        .map(|s| (s.id.clone(), crate::i18n::style_name(s), s.kind == wordcraft_doc::StyleKind::Character))
         .collect();
     list.sort_by_key(|s| s.1.to_lowercase());
     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -425,12 +472,18 @@ fn inspector(app: &mut WordApp, ui: &mut Ui) {
     let chr = &r["character"];
     let pstyle = para["styleName"].as_str().unwrap_or("Normal").to_string();
     let cstyle = chr["styleName"].as_str().map(str::to_string);
+    // Built-in style names show in the interface language; the document keeps the English ones.
+    let shown = |id: &Value, name: &str| {
+        id.as_str().and_then(|id| app.session.doc.styles.get(id)).map(crate::i18n::style_name).unwrap_or_else(|| name.to_string())
+    };
+    let pstyle_shown = shown(&para["style"], &pstyle);
+    let cstyle_shown = cstyle.as_deref().map(|n| shown(&chr["style"], n));
     let pdirect = direct_list(&para["direct"]);
     let cdirect = direct_list(&chr["direct"]);
     let mut clear: Option<&str> = None;
     egui::ScrollArea::vertical().show(ui, |ui| {
         section(ui, &t, "Paragraph", |ui| {
-            if level_row(ui, &t, "Style", &pstyle, false, "Reset to Normal", pstyle == "Normal" && para["style"] == "Normal") {
+            if level_row(ui, &t, "Style", &pstyle_shown, false, "Reset to Normal", pstyle == "Normal" && para["style"] == "Normal") {
                 clear = Some("paragraphStyle");
             }
             let (txt, empty) = if pdirect.is_empty() { (none.clone(), true) } else { (pdirect.join(", "), false) };
@@ -440,7 +493,7 @@ fn inspector(app: &mut WordApp, ui: &mut Ui) {
         });
         ui.add_space(8.0);
         section(ui, &t, "Characters", |ui| {
-            let (txt, empty) = match &cstyle {
+            let (txt, empty) = match &cstyle_shown {
                 Some(n) => (n.clone(), false),
                 None => (none.clone(), true),
             };
@@ -556,6 +609,7 @@ fn describe(prop: &str, v: &Value) -> String {
         "spaceAfter" => "Space after",
         "lineSpacing" => "Line spacing",
         "contextualSpacing" => "Don't add space between paragraphs of the same style",
+        "mirrorIndents" => "Mirror indents",
         "keepNext" => "Keep with next",
         "keepLines" => "Keep lines together",
         "pageBreakBefore" => "Page break before",

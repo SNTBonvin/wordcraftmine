@@ -1,8 +1,10 @@
 //! WordCraft proofing.
 //!
 //! - **Spelling** against the public-domain Moby word list (~160k words, the same list that
-//!   drives hyphenation), with inflections (`-s`, `-es`, `-ed`, `-ing`, `-ly`, `'s`…), a user
-//!   dictionary and ignore lists; suggestions by edit distance.
+//!   drives hyphenation) plus our supplement of modern words it lacks
+//!   (`assets/spelling/en-extra.txt`: `desktop`, `email`, `download`…), with inflections (`-s`,
+//!   `-es`, `-ed`, `-ing`, `-ly`, `'s`…), a user dictionary and ignore lists; suggestions by edit
+//!   distance.
 //! - **Grammar** checks that are cheap and reliable: repeated words, `a`/`an`, capital letter
 //!   after a sentence end, spaces before punctuation, doubled spaces.
 //! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns, heuristic.
@@ -13,7 +15,25 @@ pub mod hyphen;
 pub mod patterns;
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
+
+/// What the spelling check skips (File › Options › Proofing). Word's defaults: all on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Options {
+    /// Words in capitals (`NASA`, `WORDCRAFT`) are taken as correct.
+    pub ignore_uppercase: bool,
+    /// Words containing digits (`B2B`, `mp3`) are taken as correct.
+    pub ignore_numbers: bool,
+    /// Web and email addresses and file paths (`https://…`, `a@b.org`, `www.…`) are skipped.
+    pub ignore_internet: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options { ignore_uppercase: true, ignore_numbers: true, ignore_internet: true }
+    }
+}
 
 /// A problem found in text: byte range, kind, message and suggestions.
 #[derive(Clone, Debug, PartialEq)]
@@ -36,9 +56,28 @@ fn user_words() -> &'static RwLock<HashSet<String>> {
     U.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
+/// Bumped whenever the user dictionary changes, so cached proofing results can be dropped.
+static DICTIONARY_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Add a word to the user dictionary ("Add to Dictionary").
 pub fn add_word(w: &str) {
-    user_words().write().unwrap_or_else(|e| e.into_inner()).insert(w.to_lowercase());
+    if user_words().write().unwrap_or_else(|e| e.into_inner()).insert(w.to_lowercase()) {
+        DICTIONARY_GENERATION.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Take a word out of the user dictionary (File › Options › Proofing). Returns whether it was there.
+pub fn remove_word(w: &str) -> bool {
+    let removed = user_words().write().unwrap_or_else(|e| e.into_inner()).remove(&w.to_lowercase());
+    if removed {
+        DICTIONARY_GENERATION.fetch_add(1, Ordering::Relaxed);
+    }
+    removed
+}
+
+/// A number that changes whenever a word is added to or removed from the user dictionary.
+pub fn dictionary_generation() -> u64 {
+    DICTIONARY_GENERATION.load(Ordering::Relaxed)
 }
 
 /// Words in the user dictionary.
@@ -51,86 +90,23 @@ pub fn user_dictionary() -> Vec<String> {
 /// Common words the source list lacks (modern vocabulary, contractions).
 const COMMON: &str = "a an the and or but if of to in on at by for with from as is am are was were be been being it its we us our you your he him his she her they them their i me my mine this that these those there here what which who whom whose when where why how all any both each few more most other some such no nor not only own same so than too very can will just should now do does did done has have had having may might must shall would could up down out over under again further then once off into onto upon about above below between through during before after until while because per via vs etc ok yes yeah oh ah hi hey bye one two three four five six seven eight nine ten first last next new old get got go goes went gone see saw seen say said make made take took come came give gave know knew think thought look want need use used find found tell told ask asked feel felt try left keep let put mean set run show turn move live play pay hear hold bring begin seem help talk start might";
 
-const EXTRA: &[&str] = &[
-    "don't",
-    "doesn't",
-    "didn't",
-    "can't",
-    "won't",
-    "isn't",
-    "aren't",
-    "wasn't",
-    "weren't",
-    "shouldn't",
-    "wouldn't",
-    "couldn't",
-    "i'm",
-    "i've",
-    "i'd",
-    "i'll",
-    "you're",
-    "you've",
-    "you'll",
-    "you'd",
-    "we're",
-    "we've",
-    "we'll",
-    "they're",
-    "they've",
-    "they'll",
-    "it's",
-    "that's",
-    "there's",
-    "here's",
-    "what's",
-    "let's",
-    "email",
-    "emails",
-    "online",
-    "website",
-    "websites",
-    "internet",
-    "software",
-    "app",
-    "apps",
-    "smartphone",
-    "blog",
-    "login",
-    "logout",
-    "username",
-    "wifi",
-    "toolbar",
-    "workflow",
-    "workflows",
-    "dataset",
-    "datasets",
-    "metadata",
-    "startup",
-    "startups",
-    "covid",
-    "selfie",
-    "podcast",
-    "podcasts",
-    "hashtag",
-    "wordcraft",
-    "artcraft",
-    "discord",
-    "github",
-    "rust",
-    "ok",
-    "okay",
-    "unlabelled",
-    "labelled",
-    "colour",
-    "colours",
-    "favourite",
-    "centre",
-    "organise",
-];
+/// Our supplement of common words the Moby list lacks (`desktop`, `email`, `download`…): one
+/// lowercase base form per line, `#` comments. Inflections come from [`known_core`].
+const EXTRA_EN: &str = include_str!("../../../assets/spelling/en-extra.txt");
+
+fn extra_words() -> &'static HashSet<&'static str> {
+    static E: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    E.get_or_init(|| EXTRA_EN.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).collect())
+}
+
+/// A base form in the dictionary or the supplement.
+fn base_known(d: &dict::Dictionary, w: &str) -> bool {
+    d.get(w).is_some() || extra_words().contains(w)
+}
 
 fn known_core(w: &str) -> bool {
     let d = dict::Dictionary::en_us();
-    if d.get(w).is_some() || EXTRA.contains(&w) || COMMON.split(' ').any(|c| c == w) {
+    if base_known(d, w) || COMMON.split(' ').any(|c| c == w) {
         return true;
     }
     if user_words().read().unwrap_or_else(|e| e.into_inner()).contains(w) {
@@ -157,7 +133,7 @@ fn known_core(w: &str) -> bool {
         {
             for a in adds {
                 let s = format!("{stem}{a}");
-                if d.get(&s).is_some() || EXTRA.contains(&s.as_str()) {
+                if base_known(d, &s) {
                     return true;
                 }
             }
@@ -167,7 +143,7 @@ fn known_core(w: &str) -> bool {
                 && b.len() >= 3
                 && b.last() == b.get(b.len() - 2)
                 && let Some(s) = stem.get(..stem.len() - 1)
-                && d.get(s).is_some()
+                && base_known(d, s)
             {
                 return true;
             }
@@ -177,7 +153,7 @@ fn known_core(w: &str) -> bool {
     for pre in ["un", "re", "non", "pre", "over", "under", "co", "mis"] {
         if let Some(rest) = w.strip_prefix(pre)
             && rest.len() >= 3
-            && d.get(rest).is_some()
+            && base_known(d, rest)
         {
             return true;
         }
@@ -185,15 +161,24 @@ fn known_core(w: &str) -> bool {
     false
 }
 
-/// Is `word` spelled correctly? Numbers, single letters, ALL-CAPS acronyms, URLs and words with
-/// digits are accepted.
+/// Is `word` spelled correctly? Numbers, single letters, words in capitals and words with
+/// digits are accepted (Word's default [`Options`]).
 pub fn is_correct(word: &str) -> bool {
+    is_correct_with(word, &Options::default())
+}
+
+/// [`is_correct`] with the File › Options › Proofing choices.
+pub fn is_correct_with(word: &str, opts: &Options) -> bool {
     let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'');
     let w = w.trim_matches('\'');
-    if w.chars().count() <= 1 || w.chars().any(|c| c.is_ascii_digit()) || !w.chars().any(char::is_alphabetic) {
+    if w.chars().count() <= 1 || !w.chars().any(char::is_alphabetic) {
         return true;
     }
-    if w.chars().all(|c| !c.is_lowercase()) && w.chars().count() <= 6 {
+    let digits = w.chars().any(|c| c.is_ascii_digit());
+    if digits && opts.ignore_numbers {
+        return true;
+    }
+    if opts.ignore_uppercase && w.chars().all(|c| !c.is_lowercase()) {
         return true;
     }
     if !w.is_ascii() && !w.chars().any(|c| c.is_ascii_alphabetic()) {
@@ -220,7 +205,7 @@ pub fn suggest(word: &str, max: usize) -> Vec<String> {
     let d = dict::Dictionary::en_us();
     let mut scored: Vec<(usize, i64, String)> = Vec::new();
     let target: Vec<char> = lower.chars().collect();
-    for (w, _) in d.iter() {
+    for w in d.iter().map(|(w, _)| w).chain(extra_words().iter().copied()) {
         let wn = w.chars().count();
         if wn + 2 < n || wn > n + 2 {
             continue;
@@ -316,6 +301,11 @@ pub fn words(text: &str) -> Vec<(usize, usize)> {
 
 /// Spelling issues in a paragraph of text (no suggestions; ask [`suggest`] on demand).
 pub fn check_spelling(text: &str) -> Vec<Issue> {
+    check_spelling_with(text, &Options::default())
+}
+
+/// [`check_spelling`] with the File › Options › Proofing choices.
+pub fn check_spelling_with(text: &str, opts: &Options) -> Vec<Issue> {
     let mut v = Vec::new();
     for (a, b) in words(text) {
         let Some(w) = text.get(a..b) else { continue };
@@ -323,10 +313,10 @@ pub fn check_spelling(text: &str) -> Vec<Issue> {
         let ts = text.get(..a).and_then(|t| t.rfind(char::is_whitespace)).map(|i| i + 1).unwrap_or(0);
         let te = text.get(b..).and_then(|t| t.find(char::is_whitespace)).map(|i| b + i).unwrap_or(text.len());
         let token = text.get(ts..te).unwrap_or("");
-        if token.contains("://") || token.contains('@') || token.starts_with("www.") {
+        if opts.ignore_internet && (token.contains("://") || token.contains('@') || token.starts_with("www.")) {
             continue;
         }
-        if !is_correct(w) {
+        if !is_correct_with(w, opts) {
             v.push(Issue { start: a, end: b, kind: IssueKind::Spelling, message: "Possible spelling mistake".into(), suggestions: Vec::new() });
         }
     }
@@ -460,6 +450,50 @@ mod tests {
         assert!(suggest("Wrold", 3).contains(&"World".to_string()));
     }
 
+    /// #520: common modern words (and their inflections) are known; misspellings still flagged.
+    #[test]
+    fn common_modern_words() {
+        for w in [
+            "desktop",
+            "Desktops",
+            "laptop",
+            "download",
+            "downloaded",
+            "uploading",
+            "email",
+            "emailing",
+            "website",
+            "online",
+            "offline",
+            "smartphones",
+            "login",
+            "username",
+            "spreadsheet",
+            "database",
+            "screenshots",
+            "blogging",
+            "inbox",
+            "workplace",
+            "uploader",
+        ] {
+            assert!(is_correct(w), "{w}");
+        }
+        for w in ["dekstop", "laptp", "dowload", "spreadshet"] {
+            assert!(!is_correct(w), "{w}");
+        }
+        assert!(suggest("dekstop", 5).contains(&"desktop".to_string()), "{:?}", suggest("dekstop", 5));
+        assert!(check_spelling("My desktop and laptop download email online.").is_empty());
+    }
+
+    /// The supplement stays a sorted list of lowercase base forms.
+    #[test]
+    fn supplement_is_sorted_lowercase() {
+        let words: Vec<&str> = EXTRA_EN.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
+        assert!(words.len() > 100);
+        assert!(words.windows(2).all(|p| p[0] < p[1]), "not sorted / duplicate");
+        assert!(words.iter().all(|w| w.chars().all(|c| c.is_lowercase() || c == '\'' || c == '-')), "not lowercase");
+    }
+
     #[test]
     fn spelling_issues_in_text() {
         let t = "This sentense has a mispelled word, see https://example.com/xyzq.";
@@ -487,6 +521,18 @@ mod tests {
         assert!(!is_correct("zxqwordcrafty"));
         add_word("zxqwordcrafty");
         assert!(is_correct("zxqwordcrafty"));
+    }
+
+    /// File › Options › Proofing (#485): each "Ignore" choice turned off makes those words count.
+    #[test]
+    fn ignore_options_decide_what_is_checked() {
+        let t = "SENTENSE helo2 www.exampel.org";
+        let bad = |o: Options| check_spelling_with(t, &o).iter().map(|i| t[i.start..i.end].to_string()).collect::<Vec<_>>();
+        assert!(bad(Options::default()).is_empty(), "Word's defaults skip all three");
+        let all = Options { ignore_uppercase: false, ignore_numbers: false, ignore_internet: false };
+        assert_eq!(bad(all), ["SENTENSE", "helo2", "www", "exampel"]);
+        assert_eq!(bad(Options { ignore_uppercase: false, ..Options::default() }), ["SENTENSE"]);
+        assert!(is_correct_with("NASA", &all), "capitals that are a word stay correct");
     }
 
     #[test]

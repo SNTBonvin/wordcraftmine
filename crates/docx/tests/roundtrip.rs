@@ -8,7 +8,7 @@ use wordcraft_doc::props::{
     Align, Border, BorderStyle, Borders, CharProps, HeightRule, Highlight, LineSpacing, NumRef, ParaProps, Rgb, RowProps, TabAlign, TabLeader,
     TabStop, TableLook, TextColor, TextDirection, Underline, VAlign, VMerge, VertAlign,
 };
-use wordcraft_doc::section::{Columns, LineNumberRestart, LineNumbering, NumFormat, SectionProps, SectionStart};
+use wordcraft_doc::section::{Columns, DocGrid, DocGridType, LineNumberRestart, LineNumbering, NumFormat, SectionProps, SectionStart};
 use wordcraft_doc::styles::{Style, StyleKind};
 use wordcraft_doc::table::{Cell, Table};
 use wordcraft_doc::{Block, Blocks, Comment, Document, InlineObject, Paragraph, PartKind, Revision, RevisionKind, Watermark, para_block};
@@ -79,11 +79,33 @@ fn every_char_prop_round_trips() {
         shadow: Some(true),
         emboss: Some(false),
         engrave: Some(true),
+        // WordArt effects ([MS-DOCX] w14 run properties).
+        text_effects: Some(Box::new(wordcraft_doc::wordart::TextEffects {
+            fill: Some(wordcraft_doc::wordart::TextFill::Gradient {
+                stops: vec![
+                    wordcraft_doc::wordart::GradStop { pos: 0.0, color: Rgb(0x15, 0x60, 0x82), transparency: 0.0 },
+                    wordcraft_doc::wordart::GradStop { pos: 100.0, color: Rgb(0xE9, 0x71, 0x32), transparency: 25.0 },
+                ],
+                angle: 90.0,
+            }),
+            outline: Some(wordcraft_doc::wordart::TextOutline { color: Some(Rgb(0x0E, 0x28, 0x41)), width: 1.5, transparency: 0.0 }),
+            shadow: Some(wordcraft_doc::effects::Shadow {
+                color: Rgb::BLACK,
+                transparency: 60.0,
+                blur: 4.0,
+                distance: 3.0,
+                angle: 45.0,
+                rot_with_shape: false,
+            }),
+            glow: Some(wordcraft_doc::effects::Glow { color: Rgb(0x0F, 0x9E, 0xD5), size: 5.0, transparency: 40.0 }),
+            reflection: Some(wordcraft_doc::wordart::Reflection::default()),
+        })),
         lang: Some("fr-FR".into()),
         no_proof: Some(true),
         rtl: Some(false),
         cs: Some(true),
         font_cs: Some("B Nazanin".into()),
+        font_ea: Some("宋体".into()),
         size_cs: Some(13.0),
         bold_cs: Some(false),
         italic_cs: Some(true),
@@ -114,10 +136,14 @@ fn every_para_prop_round_trips() {
         indent_left: Some(36.0),
         indent_right: Some(18.0),
         indent_first: Some(-18.0),
+        indent_left_chars: Some(1.5),
+        indent_right_chars: Some(0.0),
+        indent_first_chars: Some(-1.0),
         space_before: Some(6.0),
         space_after: Some(12.0),
         line_spacing: Some(LineSpacing::Multiple(1.5)),
         contextual_spacing: Some(true),
+        mirror_indents: Some(true),
         keep_next: Some(true),
         keep_lines: Some(false),
         page_break_before: Some(true),
@@ -145,6 +171,7 @@ fn every_para_prop_round_trips() {
         auto_space_dn: Some(true),
         num_change: None,
         fmt_change: None,
+        snap_to_grid: Some(false),
     };
     let variants = [
         ParaProps { line_spacing: Some(LineSpacing::AtLeast(14.0)), indent_first: Some(24.0), align: Some(Align::Center), ..Default::default() },
@@ -186,6 +213,7 @@ fn styles_and_lists_round_trip() {
         quick: true,
         hidden: false,
         builtin: false,
+        locked: true,
         table: None,
     });
     d.styles.upsert(Style {
@@ -277,7 +305,8 @@ fn sections_headers_footers_round_trip() {
     let mut d = Document::new();
     let page = |instr: &str| {
         let mut p = Paragraph::with_text("Page ", CharProps::default());
-        p.insert_object(5, InlineObject::Field { instr: instr.into(), result: "1".into(), locked: false }, &CharProps::default()).unwrap();
+        p.insert_object(5, InlineObject::Field { instr: instr.into(), result: "1".into(), locked: false, code: false }, &CharProps::default())
+            .unwrap();
         p
     };
     let h1 = d.add_part(PartKind::Header, vec![para_block(Paragraph::with_text("Header one", CharProps::default()))]);
@@ -292,12 +321,14 @@ fn sections_headers_footers_round_trip() {
         page_borders: Some(Borders::box_(Border::single(1.0))),
         line_numbers: Some(LineNumbering { count_by: 5, start: 1, distance: 18.0, restart: LineNumberRestart::Section }),
         gutter: 18.0,
+        // #391: a line and character grid (Word writes `w:docGrid` even without a grid).
+        doc_grid: Some(DocGrid { kind: DocGridType::LinesAndChars, line_pitch: 17.5, char_space: -1843 }),
         ..Default::default()
     };
     s1.headers.default = Some(h1);
     s1.headers.first = Some(hf);
     s1.footers.default = Some(f1);
-    let mut s2 = SectionProps { start: SectionStart::OddPage, rtl: true, ..Default::default() };
+    let mut s2 = SectionProps { start: SectionStart::OddPage, rtl: true, doc_grid: Some(DocGrid::default()), ..Default::default() };
     s2.set_landscape(true);
     s2.columns = Columns { count: 2, space: 24.0, separator: true, widths: Vec::new() };
     s2.footers.default = Some(f2);
@@ -322,7 +353,7 @@ fn sections_headers_footers_round_trip() {
     assert_eq!(part_text(&r, secs[0].1.headers.first), "First page header");
     assert_eq!(secs[0].1.headers.default, secs[1].1.headers.default, "shared header part stays shared");
     let fp = r.parts.get(&secs[0].1.footers.default.unwrap()).unwrap().blocks[0].as_para().unwrap();
-    assert_eq!(fp.objects, vec![InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false }]);
+    assert_eq!(fp.objects, vec![InlineObject::Field { instr: "PAGE".into(), result: "1".into(), locked: false, code: false }]);
     assert_eq!(part_text(&r, secs[1].1.footers.default), "Page 1");
     assert_eq!(r.parts.get(&secs[0].1.headers.default.unwrap()).unwrap().kind, PartKind::Header);
 }
@@ -528,6 +559,44 @@ fn notes_round_trip() {
     assert_eq!(r.settings.endnote_format, NumFormat::UpperRoman);
 }
 
+/// #385: footnote and endnote options round-trip for the document (settings) and per section
+/// (`w:sectPr`), in schema order: `w:footnotePr` and `w:endnotePr` before `w:type`.
+#[test]
+fn note_options_round_trip_per_section() {
+    use wordcraft_doc::section::{NotePos, NoteProps, NoteRestart};
+    let mut d = Document::new();
+    d.settings.footnote_format = NumFormat::UpperLetter;
+    d.settings.footnote_pr =
+        NoteProps { pos: Some(NotePos::BeneathText), num_start: Some(4), num_restart: Some(NoteRestart::EachPage), ..Default::default() };
+    d.settings.endnote_pr = NoteProps { pos: Some(NotePos::SectEnd), ..Default::default() };
+    let mut first = Paragraph::with_text("Section one", CharProps::default());
+    let own = NoteProps { num_fmt: Some(NumFormat::LowerRoman), num_start: Some(7), num_restart: Some(NoteRestart::EachSect), ..Default::default() };
+    first.section = Some(Box::new(SectionProps {
+        footnote_pr: own,
+        endnote_pr: NoteProps { num_fmt: Some(NumFormat::Decimal), ..Default::default() },
+        ..Default::default()
+    }));
+    d.body = vec![para_block(first), para_block(Paragraph::with_text("Section two", CharProps::default()))];
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let r = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(r.settings.footnote_format, NumFormat::UpperLetter);
+    assert_eq!((r.settings.footnote_pr, r.settings.endnote_pr), (d.settings.footnote_pr, d.settings.endnote_pr));
+    let sections = r.sections();
+    assert_eq!(sections[0].1.footnote_pr, own);
+    assert_eq!(sections[0].1.endnote_pr.num_fmt, Some(NumFormat::Decimal));
+    assert!(sections[1].1.footnote_pr.is_empty() && sections[1].1.endnote_pr.is_empty());
+    assert_eq!(r.note_options(sections[0].1, false).num_start, 7);
+    assert_eq!(r.note_options(sections[1].1, false).num_start, 4);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    let at = |s: &str| xml.find(s).unwrap_or_else(|| panic!("{s} missing"));
+    assert!(
+        at("<w:footnotePr><w:numFmt w:val=\"lowerRoman\"/><w:numStart w:val=\"7\"/><w:numRestart w:val=\"eachSect\"/></w:footnotePr>")
+            < at("<w:type")
+    );
+}
+
 /// `references.footnote` starts the note's own text with a reference to the note, so the editor shows
 /// its number. In the file that is the `w:footnoteRef` mark; a `w:footnoteReference` there would make
 /// the note cite itself, which LibreOffice refuses to open.
@@ -620,7 +689,7 @@ fn toc_field_wraps_its_entries() {
     let end = head.len();
     head.insert_object(
         end,
-        InlineObject::Field { instr: "TOC \\o \"1-2\" \\h \\z \\u".into(), result: String::new(), locked: false },
+        InlineObject::Field { instr: "TOC \\o \"1-2\" \\h \\z \\u".into(), result: String::new(), locked: false, code: false },
         &CharProps::default(),
     )
     .unwrap();
@@ -694,13 +763,14 @@ fn toc_field_skips_nested_stories() {
             story: Some(story),
             freeform: None,
             effects: Default::default(),
+            extra: Default::default(),
         }
     };
     let mut head = Paragraph::with_text("Contents", CharProps::default()).styled("TOCHeading");
     let end = head.len();
     head.insert_object(
         end,
-        InlineObject::Field { instr: "TOC \\o \"1-1\" \\h \\z \\u".into(), result: String::new(), locked: false },
+        InlineObject::Field { instr: "TOC \\o \"1-1\" \\h \\z \\u".into(), result: String::new(), locked: false, code: false },
         &CharProps::default(),
     )
     .unwrap();
@@ -730,8 +800,8 @@ fn toc_field_skips_nested_stories() {
 #[test]
 fn tracked_changes_round_trip() {
     let mut d = Document::new();
-    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Alice".into(), date: "2026-05-01T10:00:00Z".into() });
-    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Bob".into(), date: "2026-05-02T10:00:00Z".into() });
+    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Alice".into(), date: "2026-05-01T10:00:00Z".into(), move_name: None });
+    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Bob".into(), date: "2026-05-02T10:00:00Z".into(), move_name: None });
     d.settings.track_changes = true;
     let ins = CharProps { ins: Some(0), ..Default::default() };
     let del = CharProps { del: Some(1), bold: Some(true), ..Default::default() };
@@ -739,7 +809,7 @@ fn tracked_changes_round_trip() {
     let p = para_runs(&[("kept ", CharProps::default()), ("added\t", ins.clone()), ("removed", del.clone()), ("gone", both.clone())]);
     let mut p = p;
     let end = p.len();
-    p.insert_object(end, InlineObject::Field { instr: "DATE".into(), result: "today".into(), locked: false }, &del).unwrap();
+    p.insert_object(end, InlineObject::Field { instr: "DATE".into(), result: "today".into(), locked: false, code: false }, &del).unwrap();
     d.body = vec![para_block(p.clone())];
     let r = rt(&d);
     assert_eq!(r.revisions, d.revisions);
@@ -755,8 +825,8 @@ fn tracked_paragraph_marks_round_trip() {
     // Issue #229: an inserted / deleted paragraph mark is `w:ins` / `w:del` in the mark's
     // `w:rPr` (ECMA-376 §17.13.5.16, §17.13.5.15), alone or with mark formatting.
     let mut d = Document::new();
-    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Alice".into(), date: "2026-05-01T10:00:00Z".into() });
-    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Bob".into(), date: "2026-05-02T10:00:00Z".into() });
+    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "Alice".into(), date: "2026-05-01T10:00:00Z".into(), move_name: None });
+    d.revisions.push(Revision { kind: RevisionKind::Delete, author: "Bob".into(), date: "2026-05-02T10:00:00Z".into(), move_name: None });
     let mut split = Paragraph::with_text("Owned ALPHA ", CharProps::default());
     split.mark.ins = Some(0);
     let mut joined = Paragraph::with_text("Owned BETA", CharProps::default());
@@ -786,9 +856,9 @@ fn tracked_paragraph_marks_round_trip() {
 fn fields_and_special_chars_round_trip() {
     let mut p = Paragraph::with_text("a\tb\nc\u{000C}d\u{000E}e\u{2011}f\u{00AD}g  spaced  ", CharProps::default());
     let fields = [
-        InlineObject::Field { instr: "PAGE".into(), result: "4".into(), locked: false },
-        InlineObject::Field { instr: "DATE \\@ \"M/d/yyyy\"".into(), result: "1/2/2026".into(), locked: true },
-        InlineObject::Field { instr: "NUMPAGES".into(), result: String::new(), locked: false },
+        InlineObject::Field { instr: "PAGE".into(), result: "4".into(), locked: false, code: false },
+        InlineObject::Field { instr: "DATE \\@ \"M/d/yyyy\"".into(), result: "1/2/2026".into(), locked: true, code: false },
+        InlineObject::Field { instr: "NUMPAGES".into(), result: String::new(), locked: false, code: false },
     ];
     for f in &fields {
         let end = p.len();
@@ -817,6 +887,7 @@ fn shapes_textboxes_equations_dropcaps_round_trip() {
         story: Some(story),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     let star = InlineObject::Shape {
         kind: ShapeKind::Star,
@@ -829,6 +900,7 @@ fn shapes_textboxes_equations_dropcaps_round_trip() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     let eq = InlineObject::Equation { linear: "x=(-b±√(b^2-4ac))/2a".into(), display: false, math: Default::default() };
     let mut p = Paragraph::with_text("shapes ", CharProps::default());
@@ -900,6 +972,7 @@ fn groups_round_trip() {
             glow: None,
             soft_edge: Some(2.5),
         },
+        extra: Default::default(),
     };
     let tb = InlineObject::Shape {
         kind: ShapeKind::TextBox,
@@ -912,12 +985,13 @@ fn groups_round_trip() {
         story: Some(story),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     let float = Float { wrap: Wrap::Square, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x: 20.0, y: 10.0, dist: 9.0, ..Default::default() };
     let group = InlineObject::Group {
         w: 240.0,
         h: 120.0,
-        float,
+        float: float.clone(),
         ch_w: 200.0,
         ch_h: 100.0,
         children: vec![
@@ -925,6 +999,7 @@ fn groups_round_trip() {
             GroupChild { x: 150.0, y: 10.0, obj: oval.clone() },
             GroupChild { x: 50.0, y: 60.0, obj: tb },
         ],
+        canvas: None,
     };
     let mut p = Paragraph::with_text("grouped ", CharProps::default());
     let end = p.len();
@@ -932,7 +1007,7 @@ fn groups_round_trip() {
     d.body = vec![para_block(p)];
     let r = rt(&d);
     let got = paras(&r);
-    let InlineObject::Group { w, h, float: f, ch_w, ch_h, children } = &got[0].objects[0] else { panic!("{:?}", got[0].objects) };
+    let InlineObject::Group { w, h, float: f, ch_w, ch_h, children, .. } = &got[0].objects[0] else { panic!("{:?}", got[0].objects) };
     assert_eq!((*w, *h, *ch_w, *ch_h), (240.0, 120.0, 200.0, 100.0));
     assert_eq!(*f, float);
     assert_eq!(children.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(), [(0.0, 0.0), (150.0, 10.0), (50.0, 60.0)]);
@@ -953,6 +1028,108 @@ fn groups_round_trip() {
     }
 }
 
+/// A Drawing Canvas (`wpc:wpc`, #344) with a picture and a shape comes back as a canvas: its
+/// frame, background and outline, and each member at its offset in the canvas, unscaled.
+#[test]
+fn drawing_canvas_round_trips() {
+    use wordcraft_doc::para::{CanvasStyle, GroupChild};
+    let mut d = Document::new();
+    let key = d.add_media(tiny_png(), "png");
+    let pic = InlineObject::Image { media: key, w: 60.0, h: 40.0, alt: "In the canvas".into(), float: Float::default(), crop: [0.0; 4], ole: None };
+    let star = InlineObject::Shape {
+        kind: ShapeKind::Star,
+        w: 72.0,
+        h: 72.0,
+        fill: Some(Rgb(0xE0, 0xA0, 0x20)),
+        stroke: Some(Rgb(0x40, 0x40, 0x40)),
+        stroke_width: 1.0,
+        float: Float::default(),
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+        extra: Default::default(),
+    };
+    let style = CanvasStyle { fill: Some(Rgb(0xF0, 0xF4, 0xFF)), stroke: Some(Rgb(0x20, 0x40, 0x80)), stroke_width: 1.5 };
+    let canvas = InlineObject::Group {
+        w: 432.0,
+        h: 216.0,
+        float: Float::default(),
+        ch_w: 432.0,
+        ch_h: 216.0,
+        children: vec![GroupChild { x: 12.0, y: 18.0, obj: pic }, GroupChild { x: 300.0, y: 100.0, obj: star.clone() }],
+        canvas: Some(style),
+    };
+    let mut p = Paragraph::with_text("drawn ", CharProps::default());
+    let end = p.len();
+    p.insert_object(end, canvas, &CharProps::default()).unwrap();
+    d.body = vec![para_block(p)];
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains("wordprocessingCanvas") && xml.contains("<wpc:wpc>") && xml.contains("<wpc:bg>") && xml.contains("<wpc:whole>"), "{xml}");
+    let r = wordcraft_docx::read(&bytes).unwrap();
+    let got = paras(&r);
+    let InlineObject::Group { w, h, ch_w, ch_h, children, canvas, .. } = &got[0].objects[0] else { panic!("{:?}", got[0].objects) };
+    assert_eq!((*w, *h, *ch_w, *ch_h), (432.0, 216.0, 432.0, 216.0));
+    assert_eq!(*canvas, Some(style));
+    assert_eq!(children.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(), [(12.0, 18.0), (300.0, 100.0)]);
+    assert!(matches!(&children[0].obj, InlineObject::Image { w, h, alt, .. } if (*w, *h, alt.as_str()) == (60.0, 40.0, "In the canvas")));
+    assert_eq!(children[1].obj, star);
+}
+
+/// A turned and flipped Drawing Canvas (#344 with #332): the canvas schema has no transform, so
+/// its turn rides in our `wpc:extLst` extension, after its members; members keep their own turn.
+/// An unturned canvas writes no extension.
+#[test]
+fn rotated_drawing_canvas_round_trips() {
+    use wordcraft_doc::para::{CanvasStyle, GroupChild};
+    let member = InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 60.0,
+        h: 40.0,
+        fill: Some(Rgb(1, 2, 3)),
+        stroke: None,
+        stroke_width: 0.0,
+        float: Float { rot: 15.0, ..Default::default() },
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+        extra: Default::default(),
+    };
+    let canvas = |float: Float| InlineObject::Group {
+        w: 200.0,
+        h: 100.0,
+        float,
+        ch_w: 200.0,
+        ch_h: 100.0,
+        children: vec![GroupChild { x: 10.0, y: 20.0, obj: member.clone() }],
+        canvas: Some(CanvasStyle { fill: Some(Rgb(0xF0, 0xF4, 0xFF)), stroke: None, stroke_width: 0.0 }),
+    };
+    let square = Float { wrap: Wrap::Square, ..Default::default() };
+    let mut p = Paragraph::with_text("c", CharProps::default());
+    p.insert_object(1, canvas(Float { rot: 30.0, flip_h: true, ..square.clone() }), &CharProps::default()).unwrap();
+    let end = p.len();
+    p.insert_object(end, canvas(square), &CharProps::default()).unwrap();
+    let bytes = wordcraft_docx::write(&doc_with(vec![p])).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(
+        xml.contains(r#"<wpc:extLst><a:ext uri="urn:wordcraft:canvas-xfrm"><a:xfrm rot="1800000" flipH="1"/></a:ext></wpc:extLst></wpc:wpc>"#),
+        "{xml}"
+    );
+    assert_eq!(xml.matches("<wpc:extLst>").count(), 1, "{xml}");
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    let got = &paras(&r)[0].objects;
+    let spins: Vec<(f32, bool, bool)> = got.iter().map(|o| o.frame().unwrap().2).map(|f| (f.rot, f.flip_h, f.flip_v)).collect();
+    assert_eq!(spins, [(30.0, true, false), (0.0, false, false)]);
+    let InlineObject::Group { children, canvas, .. } = &got[0] else { panic!("{got:?}") };
+    assert!(canvas.is_some());
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].obj.frame().unwrap().2.rot, 15.0);
+}
+
 #[test]
 fn compatibility_mode_round_trips() {
     // New documents are Word 2013+ documents; an older file keeps its mode, so saving it doesn't
@@ -965,6 +1142,38 @@ fn compatibility_mode_round_trips() {
     }
 }
 
+/// Tools › Templates and Add-ins: the attached template (an external relationship of the settings
+/// part) and "Automatically update document styles" (`w:linkStyles`) round-trip, written in the
+/// schema's order (after `w:mirrorMargins`, before `w:trackRevisions`).
+#[test]
+fn attached_template_and_link_styles_round_trip() {
+    let mut d = Document::new();
+    d.settings.attached_template = Some("file:///C:/Templates/Report & Co.dotx".into());
+    d.settings.link_styles = true;
+    d.settings.mirror_margins = true;
+    d.settings.track_changes = true;
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/settings.xml").unwrap(), &mut xml).unwrap();
+    let at = |tag: &str| xml.find(tag).unwrap_or_else(|| panic!("{tag} missing: {xml}"));
+    assert!(at("<w:mirrorMargins") < at("<w:attachedTemplate"));
+    assert!(at("<w:attachedTemplate") < at("<w:linkStyles"));
+    assert!(at("<w:linkStyles") < at("<w:trackRevisions"));
+    let mut rels = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/_rels/settings.xml.rels").unwrap(), &mut rels).unwrap();
+    assert!(rels.contains("relationships/attachedTemplate") && rels.contains("TargetMode=\"External\""), "{rels}");
+
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    assert_eq!(r.settings.attached_template.as_deref(), Some("file:///C:/Templates/Report & Co.dotx"));
+    assert!(r.settings.link_styles);
+
+    // Detached: neither element nor relationship is written.
+    let plain = rt(&Document::new());
+    assert_eq!(plain.settings.attached_template, None);
+    assert!(!plain.settings.link_styles);
+}
+
 #[test]
 fn settings_core_theme_round_trip() {
     let mut d = Document::new();
@@ -973,6 +1182,10 @@ fn settings_core_theme_round_trip() {
     d.settings.even_odd_headers = true;
     d.settings.mirror_margins = true;
     d.settings.auto_hyphenation = true;
+    // Hyphenation Options (#407): zone, words in capitals, consecutive hyphens.
+    d.settings.hyphenation_zone = 27.0;
+    d.settings.hyphenate_caps = false;
+    d.settings.consecutive_hyphen_limit = 2;
     d.settings.page_color = Some(Rgb(250, 240, 230));
     d.settings.major_font = "Cambria".into();
     d.settings.minor_font = "Calibri".into();
@@ -1016,7 +1229,7 @@ fn kitchen_sink() -> Document {
     let f = d.add_part(PartKind::Footnote, vec![para_block(Paragraph::with_text("Note", CharProps::default()))]);
     let c = d.add_part(PartKind::Comment, vec![para_block(Paragraph::with_text("Comment", CharProps::default()))]);
     d.comments.insert(3, Comment { author: "X".into(), part: c, ..Default::default() });
-    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "A".into(), date: String::new() });
+    d.revisions.push(Revision { kind: RevisionKind::Insert, author: "A".into(), date: String::new(), move_name: None });
     d.last_section.headers.default = Some(h);
     let mut blocks: Blocks = Vec::new();
     let mut p = para_runs(&[
@@ -1063,6 +1276,21 @@ fn second_generation_is_stable() {
     assert_eq!(d2.settings, d1.settings);
     assert_eq!(d2.media, d1.media);
     assert_eq!(d2, d1);
+}
+
+/// A Word XML Document (Flat OPC) carries the same package as a .docx: reading it back gives
+/// what the .docx round trip gives, pictures included (#548).
+#[test]
+fn flat_opc_round_trip_equals_docx() {
+    let d = kitchen_sink();
+    let xml = wordcraft_docx::write_flat(&d).expect("write flat");
+    let text = std::str::from_utf8(&xml).expect("utf-8");
+    assert!(text.starts_with("<?xml") && text.contains("<?mso-application progid=\"Word.Document\"?>"));
+    assert!(text.contains("pkg:name=\"/word/document.xml\"") && text.contains("<pkg:binaryData>"));
+    assert_eq!(wordcraft_docx::sniff_xml(&xml), wordcraft_docx::XmlKind::FlatOpc);
+    let back = wordcraft_docx::read_xml(&xml).expect("read flat");
+    assert_eq!(back, rt(&d));
+    assert_eq!(back.media.len(), 1);
 }
 
 #[test]
@@ -1148,6 +1376,7 @@ fn self_showing_text_box_saves_bounded() {
         story: Some(id),
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     for _ in 0..30 {
         d.insert_object(
@@ -1230,7 +1459,8 @@ fn list_level_overrides_round_trip() {
 }
 
 /// Ink strokes and freeform shapes are written as DrawingML custom geometry (`a:custGeom`,
-/// `a:moveTo`/`a:lnTo`) in floating drawings and read back with their points, pen and opacity.
+/// `a:moveTo`/`a:lnTo`) in floating drawings and read back with their points, pen, opacity and
+/// drawing order.
 #[test]
 fn ink_and_freeforms_round_trip_as_custom_geometry() {
     use wordcraft_doc::freeform::{FreePath, Freeform, InkTool};
@@ -1245,8 +1475,15 @@ fn ink_and_freeforms_round_trip_as_custom_geometry() {
         story: None,
         freeform: Some(Arc::new(f)),
         effects: Default::default(),
+        extra: Default::default(),
     };
-    let pen = shape(None, 2.0, Wrap::InFrontOfText, Freeform::ink(InkTool::Pen, 60.0, 20.0, vec![[1.0, 1.0], [30.0, 19.0], [59.0, 4.0]]));
+    // The pen stroke was the seventh drawn: Ink Replay's order comes back too.
+    let pen = shape(
+        None,
+        2.0,
+        Wrap::InFrontOfText,
+        Freeform { order: Some(7), ..Freeform::ink(InkTool::Pen, 60.0, 20.0, vec![[1.0, 1.0], [30.0, 19.0], [59.0, 4.0]]) },
+    );
     let marker = shape(None, 12.0, Wrap::BehindText, Freeform::ink(InkTool::Highlighter, 80.0, 12.0, vec![[6.0, 6.0], [74.0, 6.0]]));
     let triangle = Freeform {
         w: 40.0,
@@ -1298,6 +1535,7 @@ fn shape_effects_round_trip() {
         story: None,
         freeform: None,
         effects,
+        extra: Default::default(),
     };
     let mut p = Paragraph::with_text("x", CharProps::default());
     p.insert_object(1, shape, &CharProps::default()).unwrap();
@@ -1373,10 +1611,11 @@ fn rotation_and_flips_round_trip() {
         story: None,
         freeform: None,
         effects: Default::default(),
+        extra: Default::default(),
     };
     let square = Float { wrap: Wrap::Square, ..Default::default() };
-    let tri = shape(ShapeKind::Triangle, Float { rot: 90.0, flip_h: true, ..square });
-    let flipped = shape(ShapeKind::Rectangle, Float { rot: 315.5, flip_v: true, ..square });
+    let tri = shape(ShapeKind::Triangle, Float { rot: 90.0, flip_h: true, ..square.clone() });
+    let flipped = shape(ShapeKind::Rectangle, Float { rot: 315.5, flip_v: true, ..square.clone() });
     let group = InlineObject::Group {
         w: 120.0,
         h: 60.0,
@@ -1384,6 +1623,7 @@ fn rotation_and_flips_round_trip() {
         ch_w: 120.0,
         ch_h: 60.0,
         children: vec![wordcraft_doc::para::GroupChild { x: 0.0, y: 0.0, obj: shape(ShapeKind::Ellipse, Float { rot: 10.0, ..Default::default() }) }],
+        canvas: None,
     };
     let mut p = Paragraph::with_text("turned ", CharProps::default());
     for o in [pic, tri, flipped, group] {
@@ -1428,6 +1668,7 @@ fn rotated_group_and_shadow_rotation_round_trip() {
         story: None,
         freeform: None,
         effects: ShapeEffects { shadow: Some(Shadow { rot_with_shape, ..Default::default() }), ..Default::default() },
+        extra: Default::default(),
     };
     let group = InlineObject::Group {
         w: 120.0,
@@ -1439,6 +1680,7 @@ fn rotated_group_and_shadow_rotation_round_trip() {
             wordcraft_doc::para::GroupChild { x: 0.0, y: 0.0, obj: member(true) },
             wordcraft_doc::para::GroupChild { x: 60.0, y: 0.0, obj: member(false) },
         ],
+        canvas: None,
     };
     let mut p = Paragraph::with_text("g", CharProps::default());
     p.insert_object(1, group, &CharProps::default()).unwrap();
@@ -1459,4 +1701,331 @@ fn rotated_group_and_shadow_rotation_round_trip() {
         })
         .collect();
     assert_eq!(got, [(20.0, Some(true)), (20.0, Some(false))]);
+}
+
+#[test]
+fn wrap_polygons_round_trip() {
+    use wordcraft_doc::wrap::{WrapPolygon, shape_outline};
+    let mut d = Document::new();
+    let shape = |kind, float| InlineObject::Shape {
+        kind,
+        w: 80.0,
+        h: 40.0,
+        fill: Some(Rgb(1, 2, 3)),
+        stroke: None,
+        stroke_width: 0.0,
+        float,
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+        extra: Default::default(),
+    };
+    // A hand-edited polygon, including points outside the frame.
+    let poly = WrapPolygon::new(true, [(-300, 0), (21_600, 1200), (18_000, 21_900), (0, 21_600)]).map(Arc::new);
+    let edited = Float { wrap: Wrap::Tight, v_rel: Anchor::Paragraph, wrap_polygon: poly.clone(), ..Default::default() };
+    // None: Through wrapping needs one, so the ellipse's own outline is written.
+    let derived = Float { wrap: Wrap::Through, ..Default::default() };
+    let mut p = Paragraph::with_text("wrapped ", CharProps::default());
+    for o in [shape(ShapeKind::Rectangle, edited.clone()), shape(ShapeKind::Ellipse, derived)] {
+        let end = p.len();
+        p.insert_object(end, o, &CharProps::default()).unwrap();
+    }
+    d.body = vec![para_block(p)];
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains(r#"<wp:wrapPolygon edited="1"><wp:start x="-300" y="0"/><wp:lineTo x="21600" y="1200"/>"#), "{xml}");
+    assert!(xml.contains(r#"<wp:lineTo x="-300" y="0"/></wp:wrapPolygon>"#), "closed: {xml}");
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    let got = paras(&r)[0];
+    let floats: Vec<Float> = got.objects.iter().filter_map(|o| o.frame().map(|(_, _, f)| f.clone())).collect();
+    assert_eq!(floats[0], edited);
+    let ellipse = WrapPolygon::from_unit(false, &shape_outline(ShapeKind::Ellipse, 80.0, 40.0).unwrap());
+    assert_eq!(floats[1].wrap, Wrap::Through);
+    assert_eq!(floats[1].wrap_polygon.as_deref(), ellipse.as_ref());
+}
+
+/// Enclosed characters (#297) are written as Word stores them — an `eq \o\ac(○,字)` field with no
+/// result, the symbol and the text in runs of their own sizes — and read back with their style,
+/// whether the field's size is set on the run or comes from the styles.
+#[test]
+fn enclosed_characters_round_trip_in_words_structure() {
+    use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
+    let mut p = Paragraph::new();
+    let cases = [
+        (EncloseShape::Circle, EncloseStyle::Shrink, Some(11.0)),
+        (EncloseShape::Triangle, EncloseStyle::Enlarge, Some(11.0)),
+        (EncloseShape::Square, EncloseStyle::Shrink, None),
+        (EncloseShape::Diamond, EncloseStyle::Enlarge, None),
+    ];
+    for (shape, style, size) in cases {
+        let e = Enclosure { shape, style, text: "字".into() };
+        let off = p.len();
+        p.insert_object(
+            off,
+            InlineObject::Field { instr: e.instr(), result: "字".into(), locked: false, code: false },
+            &CharProps { size, ..Default::default() },
+        )
+        .unwrap();
+    }
+    let doc = doc_with(vec![p]);
+    let bytes = wordcraft_docx::write(&doc).unwrap();
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.clone())).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains(r#"<w:instrText xml:space="preserve"> eq \o\ac(○</w:instrText>"#), "{xml}");
+    assert!(!xml.contains("separate") && !xml.contains("enlarge"), "{xml}");
+    // Shrink text at 11 pt: the character at 7.5 pt (half-points 15), raised.
+    assert!(xml.contains(r#"<w:sz w:val="15"/>"#), "{xml}");
+    let back = wordcraft_docx::read(&bytes).unwrap();
+    let got: Vec<Enclosure> = paras(&back)[0]
+        .objects
+        .iter()
+        .filter_map(|o| if let InlineObject::Field { instr, result, .. } = o { Enclosure::parse(instr).filter(|_| result == "字") } else { None })
+        .collect();
+    let want: Vec<Enclosure> = cases.iter().map(|(shape, style, _)| Enclosure { shape: *shape, style: *style, text: "字".into() }).collect();
+    assert_eq!(got, want);
+}
+
+#[test]
+fn ruby_phonetic_guide_round_trips_as_w_ruby() {
+    use wordcraft_doc::para::RubyAlign;
+    let mut p = Paragraph::with_text("Read  daily.", CharProps::default());
+    let bold = CharProps { bold: Some(true), ..Default::default() };
+    let ruby = InlineObject::Ruby {
+        base: "漢字".into(),
+        ruby: "かんじ".into(),
+        align: RubyAlign::DistributeSpace,
+        size: 5.5,
+        raise: 10.0,
+        base_size: 11.0,
+        lang: "ja-JP".into(),
+        props: Box::new(CharProps { font: Some("Noto Sans CJK JP".into()), ..Default::default() }),
+    };
+    p.insert_object(5, ruby.clone(), &bold).unwrap();
+    let d = doc_with(vec![p]);
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    for part in [
+        r#"<w:rubyAlign w:val="distributeSpace"/><w:hps w:val="11"/><w:hpsRaise w:val="20"/><w:hpsBaseText w:val="22"/><w:lid w:val="ja-JP"/>"#,
+        "<w:rt><w:r>",
+        ">かんじ</w:t>",
+        "<w:rubyBase><w:r><w:rPr><w:b/>",
+        ">漢字</w:t>",
+    ] {
+        assert!(xml.contains(part), "missing {part}: {xml}");
+    }
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    let q = paras(&r)[0];
+    assert_eq!(q.plain_text(), "Read 漢字 daily.");
+    assert_eq!(q.objects, vec![ruby]);
+    assert_eq!(q.props_of_char(5).bold, Some(true));
+}
+
+/// #354: the sides text wraps on (`@wrapText`) are read and written for Square, Tight and
+/// Through; both sides is the default.
+#[test]
+fn wrap_text_sides_round_trip() {
+    use wordcraft_doc::para::WrapText;
+    let mut d = Document::new();
+    let shape = |float| InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 80.0,
+        h: 40.0,
+        fill: Some(Rgb(1, 2, 3)),
+        stroke: None,
+        stroke_width: 0.0,
+        float,
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+        extra: Default::default(),
+    };
+    let sides =
+        [(Wrap::Square, WrapText::Left), (Wrap::Tight, WrapText::Right), (Wrap::Through, WrapText::Largest), (Wrap::Square, WrapText::BothSides)];
+    let mut p = Paragraph::with_text("wrapped ", CharProps::default());
+    for (wrap, side) in sides {
+        let end = p.len();
+        p.insert_object(end, shape(Float { wrap, wrap_text: side, v_rel: Anchor::Paragraph, ..Default::default() }), &CharProps::default()).unwrap();
+    }
+    d.body = vec![para_block(p)];
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    for tag in [
+        r#"<wp:wrapSquare wrapText="left"/>"#,
+        r#"<wp:wrapTight wrapText="right">"#,
+        r#"<wp:wrapThrough wrapText="largest">"#,
+        r#"<wp:wrapSquare wrapText="bothSides"/>"#,
+    ] {
+        assert!(xml.contains(tag), "{tag}: {xml}");
+    }
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    let got: Vec<_> = paras(&r)[0].objects.iter().filter_map(|o| o.frame().map(|(_, _, f)| (f.wrap, f.wrap_text))).collect();
+    assert_eq!(got, sides);
+    // A value outside the schema is no side (read as both sides).
+    assert_eq!(WrapText::from_ooxml("middle"), None);
+}
+
+#[test]
+fn alt_text_title_and_decorative_round_trip_for_every_object() {
+    use wordcraft_doc::para::AltText;
+    let mut d = Document::new();
+    let key = d.add_media(tiny_png(), "png");
+    let pic = InlineObject::Image {
+        media: key,
+        w: 100.0,
+        h: 50.0,
+        alt: "A kiln at dusk".into(),
+        float: Float { alt: AltText { title: "Kiln".into(), ..Default::default() }, ..Default::default() },
+        crop: [0.0; 4],
+        ole: None,
+    };
+    let shape = |alt: AltText| InlineObject::Shape {
+        kind: ShapeKind::Ellipse,
+        w: 80.0,
+        h: 40.0,
+        fill: Some(Rgb(1, 2, 3)),
+        stroke: None,
+        stroke_width: 0.0,
+        float: Float { alt, ..Default::default() },
+        story: None,
+        effects: Default::default(),
+        freeform: None,
+        extra: Default::default(),
+    };
+    let described = shape(AltText { text: "Process flow & \"steps\"".into(), ..Default::default() });
+    let decorative = shape(AltText { decorative: true, ..Default::default() });
+    let group = InlineObject::Group {
+        w: 120.0,
+        h: 60.0,
+        float: Float { alt: AltText { text: "Two circles".into(), ..Default::default() }, ..Default::default() },
+        ch_w: 120.0,
+        ch_h: 60.0,
+        children: vec![wordcraft_doc::para::GroupChild { x: 0.0, y: 0.0, obj: shape(AltText { text: "Left circle".into(), ..Default::default() }) }],
+        canvas: None,
+    };
+    let mut p = Paragraph::with_text("objects ", CharProps::default());
+    for o in [pic, described, decorative, group] {
+        let end = p.len();
+        p.insert_object(end, o, &CharProps::default()).unwrap();
+    }
+    let mut t = Table::new(2, 2, 300.0);
+    t.props.caption = Some("Prices".into());
+    t.props.description = Some("Prices by year".into());
+    d.body = vec![para_block(p), Arc::new(Block::Table(t))];
+    let bytes = wordcraft_docx::write(&d).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains(r#"{C183D7F6-B498-43B3-948B-1728B52AA6E4}"><adec:decorative xmlns:adec="http://schemas.microsoft.com/office/drawing/2017/decorative" val="1"/>"#), "{xml}");
+    assert!(
+        xml.contains(r#"<w:tblLook "#) && xml.contains(r#"<w:tblCaption w:val="Prices"/><w:tblDescription w:val="Prices by year"/></w:tblPr>"#),
+        "{xml}"
+    );
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    let objs = &paras(&r)[0].objects;
+    let alts: Vec<_> =
+        objs.iter().map(|o| (o.alt_text().to_string(), o.frame().map(|f| f.2.alt.title.clone()).unwrap_or_default(), o.is_decorative())).collect();
+    assert_eq!(
+        alts,
+        [
+            ("A kiln at dusk".into(), "Kiln".into(), false),
+            ("Process flow & \"steps\"".into(), String::new(), false),
+            (String::new(), String::new(), true),
+            ("Two circles".into(), String::new(), false),
+        ]
+    );
+    let InlineObject::Group { children, .. } = &objs[3] else { panic!("{objs:?}") };
+    assert_eq!(children[0].obj.alt_text(), "Left circle");
+    let Some(Block::Table(t)) = r.body.iter().map(|b| &**b).find(|b| matches!(b, Block::Table(_))) else { panic!() };
+    assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), Some("Prices by year")));
+}
+
+/// WordArt's warp (`a:prstTxWarp` with its adjust value) and connectors glued to shapes
+/// (`a:stCxn`/`a:endCxn`, with arrowheads) come back as saved; a shape no connector is glued to
+/// loses its drawing id, and hostile values are reduced.
+#[test]
+fn warps_and_glued_connectors_round_trip() {
+    use wordcraft_doc::connector::{ConnEnd, ShapeExtra};
+    use wordcraft_doc::wordart::TextWarp;
+    let mut d = Document::new();
+    let story = d.add_part(PartKind::TextBox, vec![para_block(Paragraph::with_text("Bent", CharProps::default()))]);
+    let float = |x: f32| Float { wrap: Wrap::InFrontOfText, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, x, y: 10.0, ..Default::default() };
+    let shape = |kind, story, extra| InlineObject::Shape {
+        kind,
+        w: 72.0,
+        h: 36.0,
+        fill: None,
+        stroke: Some(Rgb(0, 0, 0)),
+        stroke_width: 1.0,
+        float: float(0.0),
+        story,
+        freeform: None,
+        effects: Default::default(),
+        extra,
+    };
+    let mut warp = TextWarp::new("textArchUp").unwrap();
+    warp.set_adj("adj", 9_000_000);
+    let art = shape(ShapeKind::TextBox, Some(story), ShapeExtra { id: 5, warp: Some(warp), ..Default::default() });
+    let target = shape(ShapeKind::Ellipse, None, ShapeExtra { id: 7, ..Default::default() });
+    let lonely = shape(ShapeKind::Rectangle, None, ShapeExtra { id: 9, ..Default::default() });
+    let link = ShapeExtra { start: Some(ConnEnd { id: 5, site: 3 }), end: Some(ConnEnd { id: 7, site: 2 }), arrow_end: true, ..Default::default() };
+    let mut conn = shape(ShapeKind::ElbowConnector, None, link);
+    if let InlineObject::Shape { float: f, .. } = &mut conn {
+        *f = Float { flip_v: true, ..float(80.0) };
+    }
+    let mut p = Paragraph::with_text("", CharProps::default());
+    for o in [art.clone(), conn.clone(), target.clone(), lonely] {
+        let end = p.len();
+        p.insert_object(end, o, &CharProps::default()).unwrap();
+    }
+    d.body = vec![para_block(p)];
+    let r = rt(&d);
+    let got = &paras(&r)[0].objects;
+    // The glued-to shapes keep their ids, the connector its ends, arrowhead and flip.
+    let extra = |o: &InlineObject| match o {
+        InlineObject::Shape { extra, .. } => extra.clone(),
+        _ => panic!("{o:?}"),
+    };
+    assert_eq!(extra(&got[0]), extra(&art));
+    assert_eq!(extra(&got[1]), extra(&conn));
+    assert!(matches!(&got[1], InlineObject::Shape { kind: ShapeKind::ElbowConnector, float, .. } if float.flip_v));
+    assert_eq!(extra(&got[2]), extra(&target));
+    assert_eq!(extra(&got[3]).id, 0, "nothing is glued to it");
+
+    // Hostile: an unknown warp, a huge adjust value, a glue to a missing shape.
+    let xml = wordcraft_docx::write(&r).unwrap();
+    let mut pkg = zip::ZipArchive::new(std::io::Cursor::new(xml)).unwrap();
+    let mut doc_xml = String::new();
+    std::io::Read::read_to_string(&mut pkg.by_name("word/document.xml").unwrap(), &mut doc_xml).unwrap();
+    let doc_xml = doc_xml
+        .replace("prst=\"textArchUp\"", "prst=\"textNotAWarp\"")
+        .replace("a:stCxn id=\"5\" idx=\"3\"", "a:stCxn id=\"404\" idx=\"99999999999\"");
+    let bytes = replace_part(&wordcraft_docx::write(&r).unwrap(), "word/document.xml", doc_xml.as_bytes());
+    let h = wordcraft_docx::read(&bytes).unwrap();
+    let got = &paras(&h)[0].objects;
+    assert_eq!(extra(&got[0]).warp, None);
+    assert_eq!(extra(&got[1]).start, Some(ConnEnd { id: 404, site: wordcraft_doc::connector::MAX_SITE }));
+}
+
+/// `zip` with part `name` replaced by `data`.
+fn replace_part(zip_bytes: &[u8], name: &str, data: &[u8]) -> Vec<u8> {
+    let mut src = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..src.len() {
+        let mut f = src.by_index(i).unwrap();
+        let n = f.name().to_string();
+        out.start_file(n.as_str(), zip::write::SimpleFileOptions::default()).unwrap();
+        if n == name {
+            std::io::Write::write_all(&mut out, data).unwrap();
+        } else {
+            std::io::copy(&mut f, &mut out).unwrap();
+        }
+    }
+    out.finish().unwrap().into_inner()
 }
