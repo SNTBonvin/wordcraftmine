@@ -21,7 +21,7 @@ use wordcraft_doc::section::NumFormat;
 use wordcraft_doc::{Document, Path, StoryRef, StyleKind};
 
 /// The result when no paragraph has the style (or the style doesn't exist).
-pub const NO_TEXT: &str = "Error! No text of specified style in document.";
+pub const NO_TEXT: &str = "Error: no paragraph in this style.";
 
 /// Which number a STYLEREF shows instead of the text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
