@@ -48,6 +48,17 @@ pub fn ui_uncovered_cjk(texts: &[&str], embedded: &[&CraftFont]) -> Vec<char> {
     chars.into_iter().filter(|c| !faces.iter().any(|m| m.map(*c).is_some())).collect()
 }
 
+/// CJK characters still missing after the embedded faces and one installed interface face.
+/// Collections are checked at the index actually drawn by egui; malformed data covers nothing.
+pub fn ui_uncovered_cjk_with_system(texts: &[&str], embedded: &[&CraftFont], system: &SystemUiFont) -> Vec<char> {
+    let mut needed = ui_uncovered_cjk(texts, embedded);
+    if let Ok(font) = skrifa::FontRef::from_index(&system.bytes, system.index) {
+        let charmap = font.charmap();
+        needed.retain(|c| charmap.map(*c).is_none());
+    }
+    needed
+}
+
 /// Do the embedded interface faces (`ui_cjk_fonts`) leave CJK characters of `texts` (the
 /// interface catalogs and language names that can be on screen) without a glyph? Then an
 /// installed CJK font goes after them. No embedded face (a build without craft-fonts) leaves
@@ -72,10 +83,14 @@ fn probe(hans: bool) -> char {
 }
 
 /// Font files to look for, relative to a font folder (or absolute), best first. Chinese faces
-/// cover kana too, so the Japanese list ends with the Chinese one.
+/// cover kana too, so the non-Chinese list ends with the Chinese one. It also includes Korean
+/// system faces for builds without embedded Hangul coverage.
 fn candidates(hans: bool) -> Vec<&'static str> {
     let (zh, ja): (&[&str], &[&str]) = if cfg!(windows) {
-        (&["Deng.ttf", "msyh.ttc", "simhei.ttf", "simsun.ttc", "NotoSansSC-VF.ttf"], &["YuGothR.ttc", "meiryo.ttc", "msgothic.ttc"])
+        (
+            &["Deng.ttf", "msyh.ttc", "simhei.ttf", "simsun.ttc", "NotoSansSC-VF.ttf"],
+            &["YuGothR.ttc", "meiryo.ttc", "msgothic.ttc", "malgun.ttf", "NotoSansKR-VF.ttf"],
+        )
     } else if cfg!(target_os = "macos") {
         (
             &[
@@ -87,7 +102,7 @@ fn candidates(hans: bool) -> Vec<&'static str> {
                 // The system interface's own copy, present when the PingFang asset isn't.
                 "/System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc",
             ],
-            &["ヒラギノ角ゴシック W3.ttc", "Hiragino Sans W3.ttc"],
+            &["ヒラギノ角ゴシック W3.ttc", "Hiragino Sans W3.ttc", "AppleSDGothicNeo.ttc", "AppleGothic.ttf"],
         )
     } else {
         (
@@ -105,7 +120,13 @@ fn candidates(hans: bool) -> Vec<&'static str> {
                 "truetype/wqy/wqy-zenhei.ttc",
                 "truetype/droid/DroidSansFallbackFull.ttf",
             ],
-            &["noto-cjk/NotoSansCJKjp-Regular.otf", "opentype/noto/NotoSansCJKjp-Regular.otf"],
+            &[
+                "noto-cjk/NotoSansCJKjp-Regular.otf",
+                "opentype/noto/NotoSansCJKjp-Regular.otf",
+                "noto-cjk/NotoSansCJKkr-Regular.otf",
+                "opentype/noto/NotoSansCJKkr-Regular.otf",
+                "truetype/unfonts-core/UnDotum.ttf",
+            ],
         )
     };
     if hans { zh.to_vec() } else { ja.iter().chain(zh).copied().collect() }
@@ -214,6 +235,8 @@ mod tests {
         // A damaged embedded face counts as covering nothing; it never panics.
         let broken = CraftFont { family: "x", style: "Regular", scripts: &["Hans"], bytes: b"OTTO" };
         assert!(ui_needs_system_cjk(&["页"], &[&broken]));
+        let damaged_system = SystemUiFont { family: "broken".into(), bytes: b"ttcf".to_vec(), index: u32::MAX };
+        assert_eq!(ui_uncovered_cjk_with_system(&["한국어"], &[], &damaged_system), ui_uncovered_cjk(&["한국어"], &[]));
         // The real faces, when built with craft-fonts: the Chinese face covers simplified and
         // traditional hanzi the Japanese one lacks (#241, #486).
         let embedded = crate::ui_cjk_fonts(true);

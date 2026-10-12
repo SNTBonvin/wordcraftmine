@@ -440,7 +440,7 @@ fn cjk_catalogs_are_covered_by_the_embedded_interface_faces() {
         return;
     }
     let names: String = Lang::all().map(Lang::name).collect();
-    for code in ["zh-hans", "zh-hant", "ja"] {
+    for code in ["zh-hans", "zh-hant", "ja", "ko"] {
         let l = lang(code);
         let ctx = egui::Context::default();
         ctx.set_fonts(crate::theme::font_definitions(l.prefers_hans(), false));
@@ -463,7 +463,7 @@ fn cjk_catalogs_are_covered_by_the_embedded_interface_faces() {
 fn only_cjk_languages_ask_for_an_installed_cjk_font() {
     // #241 follow-up: an English interface must not read a large system CJK font on startup.
     let cjk: Vec<&str> = Lang::all().filter(|l| l.uses_cjk()).map(Lang::code).collect();
-    assert_eq!(cjk, ["zh-hans", "zh-hant", "ja"]);
+    assert_eq!(cjk, ["zh-hans", "zh-hant", "ko", "ja"]);
 }
 
 #[test]
@@ -924,9 +924,9 @@ fn polish_covers_every_key_of_every_other_catalog() {
     let polish = keys(lang("pl").0.source);
     // Italian and Hungarian still carry "Style: APA", which the interface no longer shows;
     // Hungarian and Bulgarian also name the citation styles, and Bulgarian has a few one-line
-    // pieces of gallery labels. Polish matches every other catalog, including the style names and
+    // pieces of gallery labels. Korean covers their union, including those extra keys. Polish matches every other catalog, including the style names and
     // equation gallery Russian translates.
-    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg")) {
+    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg" | "ko")) {
         let mut missing: Vec<String> = keys(other.0.source).difference(&polish).cloned().collect();
         missing.sort();
         assert!(missing.is_empty(), "pl lacks {}'s {missing:?}", other.code());
@@ -1121,7 +1121,7 @@ fn bulgarian_locales_and_saved_preference_work_without_changing_the_document() {
     for tag in ["bg", "bg-BG", "bg_BG.UTF-8", "BG-bg", "bg-Cyrl-BG"] {
         assert_eq!(lang_from_tag(tag), Some(bg), "{tag}");
     }
-    assert_eq!(first_supported(["ko-KR", "bg-BG", "en-US"]), Some(bg));
+    assert_eq!(first_supported([UNSUPPORTED, "bg-BG", "en-US"]), Some(bg));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
     let before = serde_json::to_value(&app.session.doc).unwrap();
     let result = app.run("ui.language", serde_json::json!({"value": "BG"})).unwrap();
@@ -1190,4 +1190,86 @@ fn bundled_interface_fonts_cover_bulgarian_without_system_fallbacks() {
         }
     }
     assert!(!lang("bg").uses_cjk());
+}
+
+#[test]
+fn korean_locales_and_saved_preference_do_not_change_document_content() {
+    let ko = lang("ko");
+    for tag in ["ko", "ko-KR", "KO_kr.UTF-8", "ko-KP", "ko-Kore-KR", "ko_KR.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(ko), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "ko-KR", "en-US"]), Some(ko));
+    assert_eq!(normalize_pref("KO"), Some("ko"));
+    assert!(ko.uses_cjk());
+    assert!(!ko.prefers_hans());
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "KO"})).unwrap();
+    assert_eq!(result["effective"], "ko");
+    assert_eq!(app.ui.language, "ko");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "ko" && l["name"] == "한국어"));
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), ko);
+    assert!(app.run("ui.language", serde_json::json!({"value": "ko-unknown"})).is_err());
+    assert_eq!(app.ui.language, "ko");
+    app.run("ui.language", serde_json::json!({"value": "auto"})).unwrap();
+    assert_eq!(app.ui.language, AUTO);
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+}
+
+#[test]
+fn korean_covers_all_existing_catalogs_and_keeps_templates_and_counts() {
+    use std::collections::HashSet;
+    let ko = lang("ko");
+    let (entries, errors) = parse_entries(ko.0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+    let keys: HashSet<_> = entries.iter().map(|e| (e.context.as_str(), e.source.as_str())).collect();
+    for other in Lang::all().filter(|l| l.code() != "ko") {
+        for entry in parse_entries(other.0.source).0 {
+            assert!(keys.contains(&(entry.context.as_str(), entry.source.as_str())), "{}: missing {:?}", other.code(), entry.source);
+        }
+    }
+    assert_eq!(tr(ko, "Save"), "저장");
+    assert_eq!(tr(ko, "Review"), "검토");
+    assert_eq!(tr(ko, "Track Changes"), "변경 내용 추적");
+    assert_eq!(tr(ko, "WordCraft"), "WordCraft");
+    assert_eq!(tr(ko, "unknown future label"), "unknown future label");
+    assert_eq!(trc(ko, "preview", "Title"), "제목");
+    assert_eq!(fmt(tr(ko, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "전체 9쪽 중 3쪽");
+    assert_eq!(fmt(tr(ko, "Exported {path}"), &[("path", "초안-{words}.docx")]), "내보낸 파일: 초안-{words}.docx");
+    for count in [0, 1, 2, 21, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(ko, "{words} words"), &[("words", &words)]), format!("{count}단어"));
+        assert_eq!(fmt(tr(ko, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("전체 {count}단어 중 1단어"));
+    }
+    set_current(ko);
+    assert_eq!(location("Home › Font"), "홈 › 글꼴");
+    assert_eq!(prefixed("Undo", "Bold"), "실행 취소: 굵게");
+    assert_eq!(builtin_style_name("Heading 12"), "제목 12");
+    assert_eq!(builtin_style_name("TOC 12"), "목차 12");
+    set_current(Lang::EN);
+}
+
+#[test]
+fn korean_interface_font_chain_covers_catalog_hangul_when_fonts_are_available() {
+    let ko = lang("ko");
+    let (catalogs, names) = Lang::cjk_font_text(false);
+    assert!(catalogs.contains(&ko.0.source));
+    assert!(names.contains("한국어"));
+    let needed = wordcraft_fonts::ui_uncovered_cjk(&[ko.0.source], &wordcraft_fonts::ui_cjk_fonts(false));
+    if !needed.is_empty() && wordcraft_fonts::system_cjk_ui_font(false, &needed).is_none() {
+        eprintln!("skipped: neither embedded nor installed Hangul font available");
+        return;
+    }
+    let chars: std::collections::BTreeSet<_> =
+        parse_entries(ko.0.source).0.iter().flat_map(|e| e.translation.chars()).filter(|c| ('\u{AC00}'..='\u{D7AF}').contains(c)).collect();
+    assert!(chars.len() > 300);
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::theme::font_definitions(false, true));
+    ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+    for font in [crate::theme::regular(14.0), crate::theme::medium(14.0), crate::theme::semibold(14.0)] {
+        let missing: String = ctx.fonts_mut(|f| chars.iter().filter(|c| !f.has_glyph(&font, **c)).collect());
+        assert!(missing.is_empty(), "{font:?} lacks Hangul: {missing}");
+    }
 }

@@ -196,6 +196,56 @@ fn is_paste_special_release(key: Key, modifiers: egui::Modifiers) -> bool {
     key == Key::V && modifiers.command && modifiers.alt && !modifiers.shift
 }
 
+/// Commit pending input before an application action changes its insertion point.
+pub(crate) fn finish_preedit(app: &mut WordApp, ctx: &egui::Context) {
+    if app.canvas.ime_preedit.is_empty() {
+        return;
+    }
+    let command = if app.session.math.is_some() { "equation.type" } else { "text.insert" };
+    if app.run(command, json!({"text": app.canvas.ime_preedit})).is_ok() {
+        app.canvas.ime_preedit.clear();
+        app.canvas.ime_interrupt_frame = Some(ctx.cumulative_frame_nr());
+    }
+}
+
+/// Finish at the old caret before a pointer press can move it or run a ribbon command.
+/// Native IME events in the same batch belong to the canvas until that focus change.
+pub(crate) fn prepare_ime(app: &mut WordApp, ctx: &egui::Context) {
+    if !app.canvas.focused && app.canvas.ime_preedit.is_empty() {
+        return;
+    }
+    let leaving = ctx.input(|i| !i.focused || i.events.iter().any(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. })));
+    if !leaving {
+        return;
+    }
+    let events = ctx.input_mut(|i| {
+        let mut ime = Vec::new();
+        i.events.retain(|e| {
+            if let egui::Event::Ime(event) = e {
+                ime.push(event.clone());
+                false
+            } else {
+                true
+            }
+        });
+        ime
+    });
+    for event in events {
+        match event {
+            egui::ImeEvent::Preedit { text, .. } => app.canvas.ime_preedit = text,
+            egui::ImeEvent::Commit(text) => {
+                app.canvas.ime_preedit.clear();
+                if !text.is_empty() {
+                    let command = if app.session.math.is_some() { "equation.type" } else { "text.insert" };
+                    let _ = app.run(command, json!({"text": text}));
+                }
+            }
+            _ => {}
+        }
+    }
+    finish_preedit(app, ctx);
+}
+
 /// Events for the focused canvas: text, editing keys, clipboard, IME. While keytips are showing
 /// every key belongs to them (letters pick badges, Escape cancels), so nothing here runs.
 pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
@@ -229,7 +279,56 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         }
         return;
     }
+    let mut preedit_updated = false;
+    let mut ime_committed = false;
     for e in events {
+        // Some backends send both a preedit update and its editing key. The IME already
+        // applied that Backspace/Delete/Escape; never erase committed text a second time.
+        match &e {
+            egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
+                if !text.is_empty() {
+                    ime_committed = false;
+                }
+                preedit_updated = !ime_committed;
+            }
+            egui::Event::Ime(egui::ImeEvent::Commit(_)) => {
+                ime_committed = true;
+                preedit_updated = false;
+            }
+            egui::Event::Key { key: Key::Backspace | Key::Delete | Key::Escape, pressed: true, modifiers, .. }
+                if preedit_updated && !modifiers.command =>
+            {
+                continue;
+            }
+            egui::Event::Key { key: Key::Backspace | Key::Delete, pressed: true, .. } if !app.canvas.ime_preedit.is_empty() => continue,
+            egui::Event::Key { key: Key::Escape, pressed: true, .. } if !app.canvas.ime_preedit.is_empty() => {
+                app.canvas.ime_preedit.clear();
+                app.canvas.ime_interrupt_frame = Some(ctx.cumulative_frame_nr());
+                ctx.request_repaint();
+                continue;
+            }
+            egui::Event::Key { key, pressed: true, modifiers, .. }
+                if modifiers.command
+                    || is_function_key(*key)
+                    || matches!(
+                        key,
+                        Key::Enter
+                            | Key::Tab
+                            | Key::ArrowLeft
+                            | Key::ArrowRight
+                            | Key::ArrowUp
+                            | Key::ArrowDown
+                            | Key::Home
+                            | Key::End
+                            | Key::PageUp
+                            | Key::PageDown
+                    ) =>
+            {
+                finish_preedit(app, ctx)
+            }
+            egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Copy | egui::Event::Cut => finish_preedit(app, ctx),
+            _ => {}
+        }
         // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
         match &e {
             egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,
@@ -296,9 +395,15 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("text.insert", json!({"text": t}));
                 }
             }
-            egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => app.canvas.ime_preedit = text,
+            egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
+                app.canvas.ime_preedit = text;
+                // Events are handled after the canvas is painted. Show the new composition
+                // immediately, rather than waiting for the next caret-blink repaint.
+                ctx.request_repaint();
+            }
             egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
                 app.canvas.ime_preedit.clear();
+                ctx.request_repaint();
                 if !text.is_empty() {
                     let _ = app.run("text.insert", json!({"text": text}));
                 }
@@ -401,6 +506,206 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ime_frame(app: &mut WordApp, ctx: &egui::Context, events: Vec<egui::Event>) {
+        ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            prepare_ime(app, ui.ctx());
+            canvas_events(app, ui.ctx());
+        })
+        .drop_without_applying_deltas();
+    }
+
+    fn text(app: &WordApp) -> &str {
+        &app.session.doc.para_at(&wordcraft_doc::Pos::body(0, 0)).unwrap().text
+    }
+
+    fn preedit(text: &str) -> egui::Event {
+        egui::Event::Ime(egui::ImeEvent::Preedit { text: text.into(), active_range_chars: None })
+    }
+
+    fn key(key: Key) -> egui::Event {
+        egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }
+    }
+
+    #[test]
+    fn korean_preedit_backspace_does_not_erase_committed_syllables() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        for syllable in ["가", "나", "다"] {
+            ime_frame(&mut app, &ctx, vec![preedit(""), egui::Event::Ime(egui::ImeEvent::Commit(syllable.into()))]);
+        }
+        ime_frame(&mut app, &ctx, vec![preedit("라")]);
+        assert_eq!(text(&app), "가나다");
+        assert_eq!(app.canvas.ime_preedit, "라");
+        ime_frame(&mut app, &ctx, vec![preedit("ㄹ"), key(Key::Backspace)]);
+        assert_eq!(text(&app), "가나다");
+        assert_eq!(app.canvas.ime_preedit, "ㄹ");
+        ime_frame(&mut app, &ctx, vec![preedit(""), key(Key::Backspace)]);
+        assert_eq!(text(&app), "가나다");
+        assert!(app.canvas.ime_preedit.is_empty());
+        ime_frame(&mut app, &ctx, vec![key(Key::Backspace)]);
+        assert_eq!(text(&app), "가나");
+    }
+
+    #[test]
+    fn physical_letter_keys_do_not_commit_the_first_korean_consonant() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![preedit("ㄷ")]);
+        ime_frame(&mut app, &ctx, vec![key(Key::H)]);
+        assert_eq!(text(&app), "");
+        assert_eq!(app.canvas.ime_preedit, "ㄷ");
+        assert!(app.canvas.ime_interrupt_frame.is_none());
+        ime_frame(&mut app, &ctx, vec![preedit("도")]);
+        ime_frame(&mut app, &ctx, vec![preedit("동")]);
+        ime_frame(&mut app, &ctx, vec![preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("동".into()))]);
+        assert_eq!(text(&app), "동");
+    }
+
+    #[test]
+    fn korean_ascii_korean_without_spaces_preserves_syllables_and_order() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        let commit = |text: &str| egui::Event::Ime(egui::ImeEvent::Commit(text.into()));
+        ime_frame(&mut app, &ctx, vec![commit("재"), preedit("현")]);
+        // The input-source switch completes the old syllable before ASCII input starts.
+        ime_frame(&mut app, &ctx, vec![preedit(""), commit("현"), egui::Event::Text("asdf".into())]);
+        for pending in ["ㄷ", "도", "동"] {
+            ime_frame(&mut app, &ctx, vec![preedit(pending)]);
+            assert_eq!(text(&app), "재현asdf");
+        }
+        ime_frame(&mut app, &ctx, vec![preedit(""), commit("동"), preedit("해")]);
+        ime_frame(&mut app, &ctx, vec![preedit(""), commit("해"), preedit("물")]);
+        ime_frame(&mut app, &ctx, vec![preedit(""), commit("물"), preedit("과")]);
+        assert_eq!(text(&app), "재현asdf동해물");
+        assert_eq!(app.canvas.ime_preedit, "과");
+        ime_frame(&mut app, &ctx, vec![preedit(""), commit("과")]);
+        assert_eq!(text(&app), "재현asdf동해물과");
+    }
+
+    #[test]
+    fn korean_commit_then_empty_preedit_does_not_swallow_enter() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![preedit("라")]);
+        // Actual macOS sequence: native commit, trailing empty preedit, forwarded Enter.
+        ime_frame(&mut app, &ctx, vec![preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("라".into())), preedit(""), key(Key::Enter)]);
+        let paragraphs: Vec<_> = app.session.doc.body.iter().filter_map(|b| b.as_para()).map(|p| p.text.as_str()).collect();
+        assert_eq!(paragraphs, ["라", ""], "the first Enter both completes the syllable and splits the paragraph");
+        ime_frame(&mut app, &ctx, vec![key(Key::Enter)]);
+        assert_eq!(app.session.doc.body.len(), 3, "the next Enter adds exactly one more paragraph");
+    }
+
+    #[test]
+    fn korean_space_commit_inserts_one_space() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![preedit("라")]);
+        ime_frame(
+            &mut app,
+            &ctx,
+            vec![preedit("라 "), preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("라 ".into())), preedit(""), key(Key::Space)],
+        );
+        assert_eq!(text(&app), "라 ");
+        assert!(app.canvas.ime_preedit.is_empty());
+    }
+
+    #[test]
+    fn punctuation_completes_korean_preedit_and_inserts_the_delimiter_once() {
+        for punctuation in [".", ",", "!", "?"] {
+            for native_includes_punctuation in [false, true] {
+                let ctx = egui::Context::default();
+                let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+                app.canvas.focused = true;
+                ime_frame(&mut app, &ctx, vec![preedit("라")]);
+                let committed = if native_includes_punctuation { format!("라{punctuation}") } else { "라".into() };
+                let mut events = vec![preedit(""), egui::Event::Ime(egui::ImeEvent::Commit(committed)), preedit("")];
+                if !native_includes_punctuation {
+                    events.push(egui::Event::Text(punctuation.into()));
+                }
+                ime_frame(&mut app, &ctx, events);
+                assert_eq!(text(&app), format!("라{punctuation}"));
+                assert!(app.canvas.ime_preedit.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn korean_commit_then_empty_preedit_does_not_swallow_document_backspace() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![egui::Event::Ime(egui::ImeEvent::Commit("가나다".into())), preedit("ㄹ")]);
+        ime_frame(&mut app, &ctx, vec![preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("ㄹ".into())), preedit(""), key(Key::Backspace)]);
+        assert_eq!(text(&app), "가나다", "the forwarded Backspace removes the committed consonant");
+    }
+
+    #[test]
+    fn clicking_finishes_the_last_korean_syllable_at_the_old_caret() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![egui::Event::Ime(egui::ImeEvent::Commit("가나다".into())), preedit("라")]);
+        ime_frame(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerButton {
+                pos: egui::Pos2::ZERO,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }],
+        );
+        assert_eq!(text(&app), "가나다라");
+        assert!(app.canvas.ime_preedit.is_empty());
+        assert!(app.canvas.ime_interrupt_frame.is_some());
+    }
+
+    #[test]
+    fn native_commit_on_click_is_inserted_once() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![preedit("라")]);
+        ime_frame(
+            &mut app,
+            &ctx,
+            vec![
+                preedit(""),
+                egui::Event::Ime(egui::ImeEvent::Commit("라".into())),
+                egui::Event::PointerButton { pos: egui::Pos2::ZERO, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
+            ],
+        );
+        assert_eq!(text(&app), "라");
+    }
+
+    #[test]
+    fn navigation_finishes_preedit_before_moving_the_caret() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![egui::Event::Ime(egui::ImeEvent::Commit("가나다".into())), preedit("라")]);
+        ime_frame(&mut app, &ctx, vec![key(Key::ArrowLeft)]);
+        assert_eq!(text(&app), "가나다라");
+        assert_eq!(app.session.sel.focus.off, "가나다".len());
+        assert!(app.canvas.ime_preedit.is_empty());
+    }
+
+    #[test]
+    fn losing_window_focus_finishes_pending_korean_input() {
+        let ctx = egui::Context::default();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.canvas.focused = true;
+        ime_frame(&mut app, &ctx, vec![preedit("라")]);
+        ctx.run_ui(egui::RawInput { focused: false, ..Default::default() }, |ui| prepare_ime(&mut app, ui.ctx())).drop_without_applying_deltas();
+        assert_eq!(text(&app), "라");
+        assert!(app.canvas.ime_preedit.is_empty());
+    }
 
     #[test]
     fn shift_backspace_still_erases() {

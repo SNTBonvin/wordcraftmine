@@ -7,7 +7,7 @@ static site in `wordcraft-web-<version>/`:
 |---|---|
 | `index.html` | The page. It loads everything through relative URLs. |
 | `wordcraft-web-<hash>.js` | wasm-bindgen glue (generated, ES module) |
-| `wordcraft-web-<hash>_bg.wasm` | The app, about 13 MB, or 5 MB with compression |
+| `wordcraft-web-<hash>_bg.wasm` | The app; size depends on embedded fonts (CJK coverage adds Noto Sans CJK SC) |
 | `_headers`, `.htaccess` | Sample header rules for Netlify/Cloudflare Pages and Apache |
 
 There is no server-side code. Upload the folder's contents anywhere that serves static files.
@@ -24,8 +24,8 @@ hash, so they can be cached forever. Only `index.html` needs revalidation.
 - **MIME type:** serve `.wasm` as `application/wasm`. Browsers refuse to stream-compile it under
   any other type, and the app then loads slowly or not at all. Serve `.js` as `text/javascript`.
   Most hosts already do both. For nginx, check that `mime.types` has `application/wasm wasm;`.
-- **Compression:** turn on gzip or Brotli for `.wasm`, `.js` and `.html`. That takes the
-  download from about 13 MB to about 5 MB. You can also precompress (`brotli -k *.wasm`) and let
+- **Compression:** turn on gzip or Brotli for `.wasm`, `.js` and `.html`. This reduces the
+  download size, including embedded CJK fonts. You can also precompress (`brotli -k *.wasm`) and let
   the server send `Content-Encoding: br`.
 - **Caching:** `Cache-Control: public, max-age=31536000, immutable` on the hashed `.wasm` and
   `.js` files, and `no-cache` on `index.html`.
