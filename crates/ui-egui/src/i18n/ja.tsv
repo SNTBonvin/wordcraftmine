@@ -907,6 +907,10 @@
 	Underline Words Only	単語のみ下線
 	Undo	元に戻す
 	Undo {action}	元に戻す: {action}
+	Undo Actions	複数の操作を元に戻す
+	Undo History	元に戻す履歴
+	Undo 1 Action	1 件の操作を元に戻す
+	Undo {n} Actions	{n} 件の操作を元に戻す
 	Ungroup	グループ解除
 	Up	上
 	Update Field	フィールドの更新
@@ -2057,5 +2061,13 @@
 	Your system has animation effects turned on.	システムのアニメーション効果はオンです。
 	Your system has animation effects turned off.	システムのアニメーション効果はオフです。
 	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。
+	Select Column	列の選択
+	Select Table Cells by Clicking	クリックで表のセルを選択
+	Insert Row or Column by Clicking	クリックで行または列を挿入
+	Move Table by Dragging	ドラッグで表を移動
+	AutoFit Column by Double-Clicking	ダブルクリックで列の幅を自動調整
 	Region:	地域:
 	Automatic ({region})	自動 ({region})
+	Start-up	起動
+	Show the Start screen when WordCraft starts	WordCraft の起動時にスタート画面を表示する
+	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	オン: WordCraft は [ファイル] › [ホーム] で開き、白紙の文書、テンプレート、最近使った文書を表示します。オフ: 白紙の文書を開きます。

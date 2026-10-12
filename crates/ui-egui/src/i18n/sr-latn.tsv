@@ -966,6 +966,10 @@
 	Underline Words Only	Podvuci samo reči
 	Undo	Opozovi
 	Undo {action}	Opozovi {action}
+	Undo Actions	Opozovi radnje
+	Undo History	Istorija opozivanja
+	Undo 1 Action	Opozovi 1 radnju
+	Undo {n} Actions	Opozovi radnje: {n}
 	Ungroup	Razgrupisanje
 	Up	Gore
 	Update Field	Ažuriraj polje
@@ -2067,5 +2071,13 @@
 	Your system has animation effects turned on.	U sistemu su efekti animacije uključeni.
 	Your system has animation effects turned off.	U sistemu su efekti animacije isključeni.
 	Your system doesn't report an animation setting, so animation effects stay on.	Sistem ne prijavljuje podešavanje animacije, pa efekti animacije ostaju uključeni.
+	Select Column	Izaberi kolonu
+	Select Table Cells by Clicking	Izbor ćelija tabele klikom
+	Insert Row or Column by Clicking	Umetanje reda ili kolone klikom
+	Move Table by Dragging	Premeštanje tabele prevlačenjem
+	AutoFit Column by Double-Clicking	Automatsko uklapanje kolone dvostrukim klikom
 	Region:	Region:
 	Automatic ({region})	Automatski ({region})
+	Start-up	Pokretanje
+	Show the Start screen when WordCraft starts	Prikaži početni ekran pri pokretanju programa WordCraft
+	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Uključeno: WordCraft se otvara na Fajl › Početak, sa praznim dokumentom, šablonima i nedavnim dokumentima. Isključeno: otvara prazan dokument.

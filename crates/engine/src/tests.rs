@@ -203,6 +203,68 @@ fn typing_enter_undo() {
     assert_eq!(text(&s), "Hello world");
 }
 
+/// The Undo button's list (#701): several steps undone at once, newest first.
+#[test]
+fn undo_to_takes_several_steps_back_at_once() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello"}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.bold", json!({}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "World"}));
+    let h = run(&mut s, "edit.undoHistory", json!({}));
+    assert_eq!(h["undo"], json!(["Typing", "New Paragraph", "Bold", "Typing"]));
+    assert_eq!(h["depth"], 4);
+    assert_eq!(s.undo_history(), ["Typing", "New Paragraph", "Bold", "Typing"]);
+    // Three steps in one command: World, the paragraph and the bold go; Hello stays.
+    let r = run(&mut s, "edit.undoTo", json!({"count": 3}));
+    assert_eq!(r["undone"], 3);
+    assert_eq!(r["depth"], 1);
+    assert_eq!(text(&s), "Hello");
+    assert_eq!(s.doc.para_at(&s.sel.focus).map(|p| p.props_of_char(1).bold), Some(None));
+    assert_eq!(s.undo_history(), ["Typing"]);
+    // Each undone step is one redo step.
+    run(&mut s, "edit.redo", json!({}));
+    run(&mut s, "edit.redo", json!({}));
+    run(&mut s, "edit.redo", json!({}));
+    assert_eq!(text(&s), "Hello\nWorld");
+    // More than the depth undoes everything.
+    let r = run(&mut s, "edit.undoTo", json!({"count": 1e300}));
+    assert_eq!(r["undone"], 4);
+    assert_eq!(text(&s), "");
+    assert!(!s.can_undo());
+    assert!(s.run("edit.undoTo", &json!({"count": 1})).is_err(), "nothing to undo");
+}
+
+#[test]
+fn undo_to_rejects_bad_counts_and_leaves_the_document_alone() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    let before = (s.doc.clone(), s.undo_depth());
+    for junk in
+        [json!({}), json!(null), json!({"count": 0}), json!({"count": -3}), json!({"count": "2"}), json!({"count": [2]}), json!({"count": -1e308})]
+    {
+        assert!(s.run("edit.undoTo", &junk).is_err(), "{junk}");
+        assert_eq!((s.doc.clone(), s.undo_depth()), before, "{junk}");
+    }
+    // A fraction counts whole steps.
+    let r = run(&mut s, "edit.undoTo", json!({"count": 1.9}));
+    assert_eq!(r["undone"], 1);
+    assert_eq!(text(&s), "Hello");
+}
+
+#[test]
+fn undo_history_is_capped() {
+    let mut s = s();
+    for i in 0..(crate::UNDO_LIST_MAX + 20) {
+        run(&mut s, "para.indents", json!({"left": i as f64}));
+    }
+    assert_eq!(s.undo_history().len(), crate::UNDO_LIST_MAX);
+    assert_eq!(run(&mut s, "edit.undoHistory", json!({}))["undo"].as_array().map(Vec::len), Some(crate::UNDO_LIST_MAX));
+}
+
 #[test]
 fn joined_commands_are_one_undo_step() {
     let mut s = s();
@@ -2761,6 +2823,25 @@ fn page_and_table_gridlines_toggle_independently() {
     assert_eq!(state["tableGridlines"], false);
 }
 
+/// Issue #768: zooming by percent after One Page or Page Width keeps one page per row.
+#[test]
+fn zoom_after_one_page_keeps_single_column() {
+    let mut s = s();
+    run(&mut s, "view.onePage", json!({}));
+    assert!(s.view.single_column);
+    run(&mut s, "view.zoomOut", json!({}));
+    assert!(s.view.fit.is_empty() && s.view.single_column);
+    run(&mut s, "view.zoom", json!({"value": 50}));
+    assert!(s.view.single_column);
+    run(&mut s, "view.multiplePages", json!({}));
+    assert!(!s.view.single_column);
+    run(&mut s, "view.zoomIn", json!({}));
+    assert!(!s.view.single_column);
+    run(&mut s, "view.pageWidth", json!({}));
+    run(&mut s, "view.sideToSide", json!({}));
+    assert!(!s.view.single_column);
+}
+
 #[test]
 fn navigation_pane_opens_without_changing_view_mode() {
     // Reading Mode's heading navigation is the Navigation pane; Outline is an editing view (#493).
@@ -4512,6 +4593,133 @@ fn update_fields_recalculates_a_table_formula() {
     assert_eq!(formula_result(&s, 4, 1).as_deref(), Some("21"));
 }
 
+/// A one-column table (no header row) holding `cells`, in a document whose default language
+/// is `lang`; the caret ends in the last cell.
+fn column_table(lang: &str, cells: &[&str]) -> Session {
+    let mut s = s();
+    run(&mut s, "review.language", json!({"lang": lang, "default": true}));
+    run(&mut s, "insert.table", json!({"rows": cells.len(), "cols": 1}));
+    for (k, c) in cells.iter().enumerate() {
+        if k > 0 {
+            run(&mut s, "text.tab", json!({}));
+        }
+        if !c.is_empty() {
+            run(&mut s, "text.insert", json!({"text": c}));
+        }
+    }
+    s
+}
+
+fn column_texts(s: &Session) -> Vec<String> {
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    t.rows.iter().map(|r| r.cells[0].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect::<String>()).collect()
+}
+
+/// #836: table sort reads numbers in the text's language: `1,5` is one and a half in Polish.
+#[test]
+fn table_sort_reads_decimal_comma_in_polish() {
+    let mut s = column_table("pl-PL", &["12", "1,5", "2"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["1,5", "2", "12"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false, "descending": true}));
+    assert_eq!(column_texts(&s), ["12", "2", "1,5"]);
+    // English keeps the comma as a thousands separator.
+    let mut s = column_table("en-US", &["1,250", "12.5", "2"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["2", "12.5", "1,250"]);
+}
+
+/// #836: table formulas read each cell in its language and write the result with its decimal
+/// separator.
+#[test]
+fn table_formula_reads_and_writes_decimal_comma_in_polish() {
+    let mut s = column_table("pl-PL", &["3,50", "2,25", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "5,75");
+    let mut s = column_table("pl-PL", &["1 250,00", "100", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1350");
+    let mut s = column_table("pl-PL", &["1\u{a0}250,50 zł", "100", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1350,50");
+    let mut s = column_table("en-US", &["$1,250.50", "3.25", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1253.75");
+}
+
+/// #837: text sorts follow the language's alphabet: Polish `ł` after `l`, `ć` after `c`.
+#[test]
+fn table_and_paragraph_sort_use_polish_alphabet() {
+    let mut s = column_table("pl-PL", &["Zakopane", "Łódź", "Kraków"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["Kraków", "Łódź", "Zakopane"]);
+    let mut s = Session::new(wordcraft_doc::Document::from_text("zebra\nćma\ndom"));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "para.sort", json!({}));
+    assert_eq!(text(&s), "ćma\ndom\nzebra");
+    // Swedish puts å ä ö after z; German sorts ä with a.
+    let mut s = column_table("sv-SE", &["ödla", "zebra", "åka", "apa"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["apa", "zebra", "åka", "ödla"]);
+    let mut s = column_table("de-DE", &["Zug", "Äpfel", "Bach"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["Äpfel", "Bach", "Zug"]);
+}
+
+/// #837: index entries and letter headings follow the language: `Łódź` files under its own
+/// `Ł` heading between `K` and `Z` in Polish.
+#[test]
+fn index_sorts_polish_entries_and_headings() {
+    let mut s = Session::new(wordcraft_doc::Document::from_text("Zakopane.\nŁódź.\nKraków."));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    for w in ["Zakopane", "Łódź", "Kraków"] {
+        run(&mut s, "select.text", json!({"text": w}));
+        run(&mut s, "references.markEntry", json!({}));
+    }
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "references.index", json!({}));
+    let lines: Vec<String> =
+        s.doc.body.iter().filter_map(|b| b.as_para()).filter(|p| p.props.style.as_deref() == Some("ListEntry")).map(|p| p.plain_text()).collect();
+    let order: Vec<&str> = lines.iter().map(|l| l.split([',', '\t']).next().unwrap_or("")).collect();
+    let pos = |w: &str| order.iter().position(|x| *x == w).unwrap_or(usize::MAX);
+    assert!(pos("Kraków") < pos("Łódź") && pos("Łódź") < pos("Zakopane"), "{lines:?}");
+}
+
+/// Review of #844: a numbered column (`1.`, `2.`, `10.`) sorts as numbers; text with no language
+/// at all follows the editing language (a Polish interface reads `3,50` as 3.5).
+#[test]
+fn ordinals_and_untagged_text_sort_and_sum_as_numbers() {
+    let mut t = column_table("pl-PL", &["10.", "2.", "1."]);
+    run(&mut t, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&t), ["1.", "2.", "10."]);
+
+    let mut s = s();
+    s.set_editing_language(Some("pl-PL"));
+    s.doc.styles.default_chr.lang = None;
+    run(&mut s, "insert.table", json!({"rows": 3, "cols": 1}));
+    run(&mut s, "text.insert", json!({"text": "3,50"}));
+    run(&mut s, "text.tab", json!({}));
+    run(&mut s, "text.insert", json!({"text": "2,25"}));
+    run(&mut s, "text.tab", json!({}));
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "5,75");
+}
+
+/// Review of #844: the bibliography lists Polish authors in the Polish alphabet.
+#[test]
+fn bibliography_sorts_polish_authors() {
+    let mut s = s();
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    for author in ["Mazur, Jan", "Łukasiewicz, Jan", "Lis, Anna"] {
+        run(&mut s, "references.citation", json!({"source": {"author": author, "title": format!("Książka {author}"), "year": "2020"}}));
+        run(&mut s, "text.insert", json!({"text": " "}));
+    }
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "references.bibliography", json!({}));
+    let all = text(&s);
+    // The list, not the citations before it.
+    let t = all.split_once("References").map_or(all.as_str(), |(_, list)| list);
+    let at = |name: &str| t.find(&format!("{name}, ")).unwrap_or_else(|| panic!("{name} in {all}"));
+    assert!(at("Lis") < at("Łukasiewicz") && at("Łukasiewicz") < at("Mazur"), "{t}");
+}
+
 /// A new blank document takes its paper from the region, and lengths are shown in the region's
 /// unit with its decimal separator; an explicit Measurement units choice still wins (#838).
 #[test]
@@ -4572,4 +4780,24 @@ fn new_documents_follow_the_region() {
     run(&mut t, "file.options", json!({"region": "\u{0}\u{FFFF}-zz-ZZZZZZZZ"}));
     assert_eq!(t.region(), wordcraft_geom::Region::default());
     assert_eq!(t.prefs.region.as_deref(), Some("en-US"), "junk is saved as en-US");
+}
+
+/// Automatic (HTML-style) paragraph spacing: `para.spacing` turns it on and off, and a number
+/// replaces it, as typing one in Word's Paragraph dialog does; Ctrl+0 and Remove Space After work
+/// on it too.
+#[test]
+fn spacing_commands_handle_automatic_spacing() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Pasted from the web"}));
+    let rp = |s: &Session| s.doc.styles.resolve_para(&s.doc.para_at(&s.sel.focus).unwrap().props);
+    run(&mut s, "para.spacing", json!({"beforeAuto": true, "afterAuto": true}));
+    assert_eq!((rp(&s).space_before, rp(&s).space_after, rp(&s).before_auto), (14.0, 14.0, true));
+    run(&mut s, "para.spacing", json!({"before": 6}));
+    assert_eq!((rp(&s).space_before, rp(&s).before_auto, rp(&s).after_auto), (6.0, false, true), "a number replaces Auto");
+    run(&mut s, "para.removeSpaceAfter", json!({}));
+    assert_eq!((rp(&s).space_after, rp(&s).after_auto), (0.0, false));
+    run(&mut s, "para.spacing", json!({"beforeAuto": true}));
+    run(&mut s, "para.addSpaceBefore", json!({}));
+    assert_eq!((rp(&s).space_before, rp(&s).before_auto), (0.0, false), "Ctrl+0 removes the automatic space");
+    assert!(s.run("para.spacing", &json!({"beforeAuto": "yes"})).is_ok(), "junk is ignored, never a panic");
 }
