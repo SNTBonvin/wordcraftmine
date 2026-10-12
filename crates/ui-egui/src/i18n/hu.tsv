@@ -2451,6 +2451,8 @@
 	Reading Column Width	Olvasási oszlopszélesség
 	Reading Line Spacing	Olvasási sorköz
 	Reading Text Size	Olvasási szövegméret
+	Correct TWo INitial CApitals	KÉt KEzdő NAgybetű javítása
+	Correct accidental usage of cAPS LOCK key	A cAPS LOCK billentyű véletlen használatának javítása
 	Check spelling and grammar with LanguageTool	Helyesírás és nyelvtan ellenőrzése a LanguageTool segítségével
 	Sends the text of your paragraphs to the LanguageTool server below. Off, WordCraft's built-in checker is used and nothing leaves this computer.	A bekezdések szövegét elküldi az alábbi LanguageTool-kiszolgálónak. Kikapcsolva a WordCraft beépített ellenőrzője működik, és semmi sem hagyja el ezt a számítógépet.
 	Server:	Kiszolgáló:

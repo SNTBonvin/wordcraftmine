@@ -2061,6 +2061,8 @@
 	Reading Column Width	Largeur de colonne de lecture
 	Reading Line Spacing	Interligne de lecture
 	Reading Text Size	Taille du texte de lecture
+	Correct TWo INitial CApitals	Corriger DEux MAjuscules EN début de mot
+	Correct accidental usage of cAPS LOCK key	Corriger l’utilisation accidentelle de la touche vERR. mAJ
 	Check spelling and grammar with LanguageTool	Vérifier l'orthographe et la grammaire avec LanguageTool
 	Sends the text of your paragraphs to the LanguageTool server below. Off, WordCraft's built-in checker is used and nothing leaves this computer.	Envoie le texte de vos paragraphes au serveur LanguageTool ci-dessous. Désactivé, le correcteur intégré de WordCraft est utilisé et rien ne quitte cet ordinateur.
 	Server:	Serveur :

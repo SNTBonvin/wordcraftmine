@@ -2052,6 +2052,8 @@
 	Reading Column Width	Spaltenbreite beim Lesen
 	Reading Line Spacing	Zeilenabstand beim Lesen
 	Reading Text Size	Textgröße beim Lesen
+	Correct TWo INitial CApitals	ZWei GRoßbuchstaben am WOrtanfang korrigieren
+	Correct accidental usage of cAPS LOCK key	Unbeabsichtigtes Verwenden der fESTSTELLTASTE korrigieren
 	API key:	API-Schlüssel:
 	Check spelling and grammar with LanguageTool	Rechtschreibung und Grammatik mit LanguageTool prüfen
 	Detect automatically	Automatisch erkennen
