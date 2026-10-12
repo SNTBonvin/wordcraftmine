@@ -311,12 +311,21 @@ fn untranslated_interface_text() {
         report.push_str(&format!("{:?}  [{}]\n", pseudo::unmarked(text), states.join(", ")));
     }
     assert!(found.is_empty(), "{} interface texts skip translation (wrap them in tl!):\n{report}", found.len());
-    russian_has_every_string_the_interface_looked_up(pseudo::looked_up());
+    let looked_up = pseudo::looked_up();
+    russian_has_every_string_the_interface_looked_up(looked_up.clone());
+    has_every_string_the_interface_looked_up("bg", "Bulgarian", looked_up);
 }
 
 /// Russian covers everything the audit saw translated, plus the equation gallery's labels (shown
 /// in menus the audit doesn't open one by one). Numbered style names go through a template.
-fn russian_has_every_string_the_interface_looked_up(mut keys: std::collections::BTreeSet<String>) {
+fn russian_has_every_string_the_interface_looked_up(keys: std::collections::BTreeSet<String>) {
+    has_every_string_the_interface_looked_up("ru", "Russian", keys);
+}
+
+/// `code`'s catalog covers everything the audit saw translated, plus the equation gallery's
+/// labels (shown in menus the audit doesn't open one by one). Numbered style names go through a
+/// template.
+fn has_every_string_the_interface_looked_up(code: &str, name: &str, mut keys: std::collections::BTreeSet<String>) {
     use wordcraft_engine::math_gallery::{BUILT_INS, STRUCTURES, SYMBOL_SETS};
     keys.extend(BUILT_INS.iter().map(|(_, label, _)| label.to_string()));
     keys.extend(SYMBOL_SETS.iter().map(|(name, _)| name.to_string()));
@@ -327,10 +336,10 @@ fn russian_has_every_string_the_interface_looked_up(mut keys: std::collections::
             keys.extend(templates.iter().map(|t| t.label.to_string()));
         }
     }
-    let ru = super::Lang::from_code("ru").unwrap_or(super::Lang::EN);
+    let lang = super::Lang::from_code(code).unwrap_or(super::Lang::EN);
     let numbered = |s: &str| ["Heading ", "TOC "].iter().any(|p| s.strip_prefix(p).is_some_and(|n| n.chars().all(|c| c.is_ascii_digit())));
-    // Names that read the same in Russian.
+    // Names that read the same in every language.
     let same = |s: &str| matches!(s, "LaTeX" | "LaTeX (*.tex)" | "Unicode" | "I. II. III." | "i. ii. iii.");
-    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(ru, s) && !numbered(s) && !same(s)).collect();
-    assert!(missing.is_empty(), "{} strings have no Russian entry:\n{missing:#?}", missing.len());
+    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(lang, s) && !numbered(s) && !same(s)).collect();
+    assert!(missing.is_empty(), "{} strings have no {name} entry:\n{missing:#?}", missing.len());
 }
