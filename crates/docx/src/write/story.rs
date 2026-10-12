@@ -209,10 +209,10 @@ impl Writer<'_> {
         }
         // Taken before the content so a nested story (a text box in an entry) can't claim them.
         if std::mem::take(&mut self.toc_begin_here)
-            && let Some((instr, locked, props)) = self.toc_field.take()
+            && let Some((instr, locked, dirty, props)) = self.toc_field.take()
         {
             self.rev_open(w, &props);
-            self.field_start(w, &instr, locked, &props);
+            self.field_start(w, &instr, locked, dirty, &props);
             self.rev_close(w, &props);
         }
         let toc_end = std::mem::take(&mut self.toc_end_here);
@@ -476,10 +476,10 @@ impl Writer<'_> {
                     None => super::math::write_equation(w, linear, *display, math),
                 }
             }
-            InlineObject::Field { instr, result, locked, .. } => self.field(w, instr, result, *locked, props),
-            InlineObject::FieldStart { instr, locked } => {
+            InlineObject::Field { instr, result, locked, dirty, .. } => self.field(w, instr, result, *locked, *dirty, props),
+            InlineObject::FieldStart { instr, locked, dirty } => {
                 self.rev_open(w, props);
-                self.field_start(w, instr, *locked, props);
+                self.field_start(w, instr, *locked, *dirty, props);
                 self.rev_close(w, props);
             }
             InlineObject::FieldEnd => {
@@ -760,11 +760,11 @@ impl Writer<'_> {
         }
     }
 
-    fn field(&mut self, w: &mut W, instr: &str, result: &str, locked: bool, props: &CharProps) {
+    fn field(&mut self, w: &mut W, instr: &str, result: &str, locked: bool, dirty: bool, props: &CharProps) {
         if self.toc_hold_end && is_toc(instr) {
             // A TOC heading's field opens in the first entry and closes after the last (see `toc_span`).
             self.toc_hold_end = false;
-            self.toc_field = Some((instr.to_string(), locked, props.clone()));
+            self.toc_field = Some((instr.to_string(), locked, dirty, props.clone()));
             return;
         }
         if let Some(e) = wordcraft_doc::eq::Enclosure::parse(instr) {
@@ -781,7 +781,7 @@ impl Writer<'_> {
             w.close("w:r");
         };
         self.rev_open(w, props);
-        self.field_start(w, instr, locked, props);
+        self.field_start(w, instr, locked, dirty, props);
         if !result.is_empty() {
             run(w, &|w| {
                 let mut buf = String::new();
@@ -859,7 +859,7 @@ impl Writer<'_> {
     }
 
     /// A field's begin, instruction and separate runs.
-    fn field_start(&self, w: &mut W, instr: &str, locked: bool, props: &CharProps) {
+    fn field_start(&self, w: &mut W, instr: &str, locked: bool, dirty: bool, props: &CharProps) {
         let del = self.is_del(props);
         let run = |w: &mut W, f: &dyn Fn(&mut W)| {
             w.open("w:r", &[]);
@@ -868,11 +868,14 @@ impl Writer<'_> {
             w.close("w:r");
         };
         run(w, &|w| {
+            let mut attrs: Vec<(&str, &str)> = vec![("w:fldCharType", "begin")];
             if locked {
-                w.empty("w:fldChar", &[("w:fldCharType", "begin"), ("w:fldLock", "1")])
-            } else {
-                w.empty("w:fldChar", &[("w:fldCharType", "begin")])
+                attrs.push(("w:fldLock", "1"));
             }
+            if dirty {
+                attrs.push(("w:dirty", "true"));
+            }
+            w.empty("w:fldChar", &attrs)
         });
         let instr_text = format!(" {} ", instr.trim());
         run(w, &|w| w.leaf(if del { "w:delInstrText" } else { "w:instrText" }, &[("xml:space", "preserve")], &instr_text));
