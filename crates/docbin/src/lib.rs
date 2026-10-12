@@ -48,6 +48,12 @@ const C_PIC_LOCATION: u16 = 0x6A03;
 /// `sprmPIlvl` / `sprmPIlfo`: the paragraph's list level and list.
 const P_ILVL: u16 = 0x260A;
 const P_ILFO: u16 = 0x460B;
+/// `sprmPHugePapx`: the PAPX is too large for the FKP, so the grpprl lives in the Data
+/// stream at the fc this sprm's 4-byte operand names ([MS-DOC] §2.6.68).
+const P_HUGE_PAPX: u16 = 0x6646;
+/// Most bytes one huge PAPX occupies in the Data stream: the `cb` u16 plus the grpprl it
+/// counts.
+const MAX_HUGE_PAPX: usize = 65_537;
 
 /// Errors from reading a Word 97-2003 binary file.
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
@@ -353,9 +359,10 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -
         match c {
             '\r' | '\u{7}' => {
                 // Paragraph mark: its PAPX covers the FC range of the paragraph it ends, so
-                // querying at the mark's own FC finds that paragraph's properties.
+                // querying at the mark's own FC finds that paragraph's properties. An
+                // oversized PAPX is swapped for its Data-stream grpprl in `resolve_papx`.
                 let fc_mark = ctx.pieces.fc_of_cp(cp).unwrap_or(0);
-                let (istd, papx) = ctx.papx_bins.papx(ctx.word, fc_mark);
+                let (istd, papx) = resolve_papx(ctx.papx_bins, ctx.word, ctx.data, fc_mark);
                 if let Some(st) = ctx.raw_styles.get(istd as usize).filter(|s| !s.name.is_empty()) {
                     pb.props.style = Some(fmt::style_id(&st.name));
                 }
@@ -489,6 +496,29 @@ fn walk(ctx: &WalkCtx, cp_start: u32, cp_end: u32, pics: &mut media::Pictures) -
         });
     }
     out
+}
+
+/// The PAPX of a paragraph mark: the FKP lookup, then the huge-PAPX swap. When the grpprl
+/// is exactly one `sprmPHugePapx` with its 4-byte operand, the real grpprl lives in the
+/// Data stream at that fc as `cb: u16` followed by `cb` bytes; every other grpprl passes
+/// through unchanged. The Data-stream read is clamped to the stream, so a hostile fc or cb
+/// loses the properties, never the paragraph.
+fn resolve_papx<'a>(bins: &Bins, word: &'a [u8], data: &'a [u8], fc: u32) -> (u16, &'a [u8]) {
+    let (istd, papx) = bins.papx(word, fc);
+    // The huge form is the whole grpprl being that one sprm (a trailing pad byte is fine:
+    // PapxInFkp grpprls are odd-sized, so the marker itself may carry one).
+    let mut prls = sprm::iter(papx);
+    let at = match (prls.next(), prls.next()) {
+        (Some(prl), None) if prl.op == P_HUGE_PAPX => match prl.operand {
+            [b0, b1, b2, b3] => u32::from_le_bytes([*b0, *b1, *b2, *b3]) as usize,
+            _ => return (istd, papx),
+        },
+        _ => return (istd, papx),
+    };
+    let blob = data.get(at..at.saturating_add(MAX_HUGE_PAPX).min(data.len())).unwrap_or(&[]);
+    let cb = blob.get(..2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize).unwrap_or(0);
+    // `cb` is hostile: clamp the grpprl to what the stream really holds.
+    (istd, blob.get(2..(2 + cb).min(blob.len())).unwrap_or(&[]))
 }
 
 /// Field assembly: `instr` collects everything before the separator (nested fields

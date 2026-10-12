@@ -1108,6 +1108,60 @@ fn table_merges_borders_shading() {
     assert_eq!(top.width, 0.5);
 }
 
+/// #880. A PAPX too large for the FKP is stored in the Data stream: the FKP grpprl is just
+/// `sprmPHugePapx` with the fc of the real grpprl, which sits there as `cb: u16` plus bytes
+/// ([MS-DOC] §2.6.68). Before the swap, the whole row shape (and any other huge-paragraph
+/// properties) was lost.
+#[test]
+fn huge_papx_row_properties_apply() {
+    // One row, one cell: the row-end mark's PAPX is the huge marker pointing at fc 0.
+    let real: Vec<u8> = [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(&[0, 2880, 5760])].concat();
+    let mut data_stream = (real.len() as u16).to_le_bytes().to_vec();
+    data_stream.extend_from_slice(&real);
+    let text = "a\u{7}tail\r";
+    let spec = StructSpec {
+        text,
+        papx_entries: vec![
+            (0, 0, grpprl(&[(0x6646, &0u32.to_le_bytes())])), // "a" cell paragraph, huge PAPX
+            (2, 0, Vec::new()),                               // "tail" paragraph
+        ],
+        data_stream,
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 1);
+    assert_eq!(tbl.rows[0].cells.len(), 1);
+    let cell: String = tbl.rows[0].cells[0].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect();
+    assert_eq!(cell, "a");
+    // The grid comes from the huge grpprl's TDefTable, not from the FKP.
+    assert_eq!(tbl.grid.len(), 2, "grid: {tbl:?}");
+    assert_eq!(tbl.grid[0], 144.0); // 2880 twips = 144 pt
+    assert_eq!(tbl.total_width(), 288.0);
+    let last = doc.body.last().and_then(|b| b.as_para()).expect("tail para");
+    assert_eq!(last.text, "tail");
+}
+
+/// #880: a huge-PAPX marker whose fc points past the Data stream, and one whose cb claims
+/// 65 535 bytes when only the count exists: both fall back to no properties, keep the
+/// paragraphs and never panic.
+#[test]
+fn hostile_huge_papx() {
+    let data_stream = [0xFFu8, 0xFF]; // cb = 0xFFFF, nothing after it
+    let text = "one\rtwo\r";
+    let huge = |fc: u32| grpprl(&[(0x6646, &fc.to_le_bytes())]);
+    let spec = StructSpec {
+        text,
+        // Paragraph 1's marker points past the stream; paragraph 2's cb overruns it.
+        papx_entries: vec![(0, 0, huge(data_stream.len() as u32 + 1000)), (4, 0, huge(0))],
+        data_stream: data_stream.to_vec(),
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    assert_eq!(body_texts(&doc), ["one", "two"]);
+    assert!(doc.body.iter().all(|b| b.as_table().is_none()), "no row detected");
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 
