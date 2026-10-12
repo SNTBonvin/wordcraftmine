@@ -105,6 +105,16 @@ pub(crate) fn bg(ui: &Ui, r: Rect, resp: &Response, checked: bool, t: &Tokens) {
     }
 }
 
+/// Runs a ribbon button's command, then hands keyboard focus back to the document so typing
+/// continues without another click, as in Word (#686). Interface commands (`ui.*`) open dialogs,
+/// panes and tabs that take focus themselves, so they keep it.
+pub(crate) fn run_from_ribbon(app: &mut WordApp, id: &str, params: Value) {
+    let _ = app.run(id, params);
+    if !id.starts_with("ui.") {
+        app.canvas.want_focus = true;
+    }
+}
+
 /// A large ribbon button: 32 px icon over a (possibly two-line) label.
 pub fn big(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str, params: Value, menu: bool) -> Response {
     big_button(ui, app, icon, label, id, params, menu, false)
@@ -139,7 +149,7 @@ fn big_button(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str,
     let resp = tooltip(app, resp, &label.replace('\n', " "), id);
     command_menu(&resp, app, id);
     if resp.clicked() && on && !menu {
-        let _ = app.run(id, params);
+        run_from_ribbon(app, id, params);
     }
     resp
 }
@@ -162,8 +172,9 @@ pub fn small(ui: &mut Ui, app: &mut WordApp, icon: &str, label: Option<&str>, ti
     let resp = tooltip(app, resp, tip, id);
     command_menu(&resp, app, id);
     if resp.clicked() && on {
-        let _ = app.run(id, params);
+        run_from_ribbon(app, id, params);
     }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, on, tip));
     resp
 }
 
@@ -195,7 +206,7 @@ pub fn split(
     let resp = tooltip(app, resp, tip, id);
     command_menu(&resp, app, id);
     if resp.clicked() {
-        let _ = app.run(id, params);
+        run_from_ribbon(app, id, params);
     }
     egui::Popup::menu(&aresp).show(|ui| {
         ui.set_min_width(180.0);
@@ -399,7 +410,7 @@ pub fn color_grid(ui: &mut Ui, theme: &[wordcraft_doc::Rgb]) -> Option<String> {
     picked
 }
 
-fn swatch(ui: &mut Ui, c: wordcraft_doc::Rgb) -> bool {
+pub(crate) fn swatch(ui: &mut Ui, c: wordcraft_doc::Rgb) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(15.0, 15.0), Sense::click());
     ui.painter().rect_filled(r, 0.0, Color32::from_rgb(c.0, c.1, c.2));
     let t = Tokens::get(ui.ctx());
@@ -425,7 +436,12 @@ pub fn combo(
     combo_impl(ui, id, width, current, items, preview, false)
 }
 
+/// What [`font_combo`] returns when its list's last entry, Add Font…, is chosen (#582): the
+/// caller runs `font.add`, which shows a file picker. Not a family name anyone can type.
+pub const ADD_FONT: &str = "\u{1}font.add";
+
 /// The font box: a [`combo`] where typing lists the matching families under the field (#359).
+/// Its list ends with Add Font… ([`ADD_FONT`]).
 /// Up/Down move the highlight, Enter or a click applies the highlighted family ("arial" applies
 /// "Arial"), Escape restores the current font. Text matching no family is applied as typed, as
 /// Word allows fonts that are not installed.
@@ -559,11 +575,19 @@ fn combo_impl(
         }
         let (ar, aresp) = ui.allocate_exact_size(vec2(16.0, resp.rect.height()), Sense::click());
         ui.painter().rect(ar, 0.0, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
-        icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
-        egui::Popup::menu(&aresp).show(|ui| {
+        icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(10.0, 10.0)), "dropdown", t.icon, t.accent);
+        // The list drops from the box's left edge, as in Word, not from the arrow (#535).
+        egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).show(|ui| {
             if let Some(v) = combo_list(ui, width, current, items, preview) {
                 out = Some(v);
                 ui.close();
+            }
+            if search {
+                ui.separator();
+                if ui.button(tl!("Add Font…")).clicked() {
+                    out = Some(ADD_FONT.to_string());
+                    ui.close();
+                }
             }
         });
         if s.open && !s.matches.is_empty() {
@@ -672,7 +696,8 @@ fn list_rows<'a>(
 /// How a drawn button looks this frame. Hover fades in over egui's animation time and the
 /// pressed state blends in while the pointer is down, as on egui's own buttons. Framed buttons
 /// take egui's widget visuals (fill, stroke, text colour, expansion) so they match `ui.button`;
-/// frameless ones take the ribbon's hover/pressed tokens, like [`small`] and [`big`].
+/// frameless ones take the ribbon's hover/pressed tokens, like [`small`] and [`big`]. With
+/// animation effects off (egui's animation time is zero) both states show at once.
 pub struct DrawnState {
     pub fill: Color32,
     pub stroke: Stroke,
@@ -683,7 +708,7 @@ pub struct DrawnState {
 pub fn drawn_state(ui: &Ui, resp: &Response, framed: bool) -> DrawnState {
     let pressed = resp.is_pointer_button_down_on();
     let h = ui.ctx().animate_bool_responsive(resp.id.with("hover"), resp.hovered() || pressed);
-    let p = ui.ctx().animate_bool_with_time(resp.id.with("press"), pressed, 0.06);
+    let p = ui.ctx().animate_bool_with_time(resp.id.with("press"), pressed, ui.style().animation_time.min(0.06));
     if framed {
         let w = &ui.visuals().widgets;
         let mix = |a: Color32, b: Color32, c: Color32| a.lerp_to_gamma(b, h).lerp_to_gamma(c, p);
@@ -706,6 +731,12 @@ pub fn drawn_state(ui: &Ui, resp: &Response, framed: bool) -> DrawnState {
             expansion: 0.0,
         }
     }
+}
+
+/// A dialog's primary button (OK, Save, Close): the accent fill with `on_accent` text, per theme.
+pub fn primary_button(ui: &Ui, text: impl Into<String>) -> egui::Button<'static> {
+    let t = Tokens::get(ui.ctx());
+    egui::Button::new(egui::RichText::new(text.into()).color(t.on_accent)).fill(t.accent)
 }
 
 /// A frameless 22 px icon button (pane close buttons): ribbon-style hover and press feedback.

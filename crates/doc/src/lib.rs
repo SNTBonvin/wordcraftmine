@@ -12,6 +12,8 @@
 
 pub mod bidi;
 pub mod chart;
+mod cjk_numbers;
+pub mod cluster;
 pub mod connector;
 pub mod control;
 pub mod edit;
@@ -21,6 +23,7 @@ pub mod eq;
 pub mod fields;
 pub mod freeform;
 pub mod graphic;
+pub mod link;
 pub mod math;
 pub mod math_edit;
 pub mod math_latex;
@@ -442,6 +445,10 @@ pub struct Settings {
     /// Equation options (`m:mathPr`), when the document has them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub math: Option<math::MathProps>,
+    /// Citation and bibliography style (References › Style) by name, when the document
+    /// records one (OOXML's `b:Sources/@StyleName`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bib_style: Option<String>,
     /// The template the document is attached to (Tools › Templates and Add-ins): the target of
     /// `w:attachedTemplate`'s relationship, a path or `file:` URL as the file gives it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -522,6 +529,7 @@ impl Default for Settings {
             grid_h: DEFAULT_GRID,
             grid_v: DEFAULT_GRID,
             math: None,
+            bib_style: None,
             attached_template: None,
             link_styles: false,
         }
