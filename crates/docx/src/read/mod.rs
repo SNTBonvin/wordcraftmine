@@ -1161,10 +1161,10 @@ impl Reader<'_> {
                     let auth = a
                         .els()
                         .find(|e| e.local() == "Author")
-                        .map(&parse_persons)
+                        .map(parse_persons)
                         .filter(|s| !s.is_empty())
                         .unwrap_or_else(|| parse_persons(a));
-                    let ed = a.els().find(|e| e.local() == "Editor").map(&parse_persons).unwrap_or_default();
+                    let ed = a.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default();
                     (auth, ed)
                 }
                 None => (String::new(), String::new()),
