@@ -60,3 +60,6 @@ sync_github_name = false
 [people.alexanderalber]
 real_name = "Alexander Alber"
 [people.edurbs]
+
+[people.rbr48]
+sync_github_name = true
