@@ -62,6 +62,11 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"value"?: bool (omit to toggle)} — PDFs, prints and copies show comments (balloons beside each page; a list at the end of HTML, Markdown and text) and tracked changes"#)
         .pure(),
+        CommandSpec::new("file.printPdf", "Print to PDF", "File › Print", crate::print::print_pdf_to_file)
+            .params(
+                r#"{"path": string, "range"?: "all" | "current" | "selection" (the pages the selection touches) | "custom", "pages"?: "1-3,5" (implies custom), "parity"?: "all" | "odd" | "even", "copies"?: 1-999, "collate"?: bool (default true)}"#,
+            )
+            .pure(),
         CommandSpec::new("file.print", "Print", "File", |s, _| {
             s.ui_requests.push(json!({"open": "print"}));
             sel_result(s)
@@ -184,7 +189,7 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
     crate::io::save_path_with(&path, &s.doc, password, &export_options(s, v)).map_err(CmdError::Failed)?;
     let encrypted = password.is_some() && crate::io::can_encrypt(&path.to_string_lossy());
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ["docx", "docm", "dotx", "dotm", "odt", "rtf", "json"].contains(&ext.as_str()) {
+    if ["docx", "docm", "dotx", "dotm", "odt", "rtf", "json", "xml"].contains(&ext.as_str()) {
         s.path = Some(path.clone());
         s.dirty = false;
     }

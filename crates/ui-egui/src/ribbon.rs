@@ -3,8 +3,9 @@
 use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 
+use crate::colors::{Remember, Target};
 use crate::theme::{Tokens, medium, regular, semibold};
-use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, color_grid, combo, font_combo, group, menu_button, small, split};
+use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, combo, font_combo, group, menu_button, small, split};
 use crate::{WordApp, icons};
 
 pub const TABS: [&str; 13] = wordcraft_engine::ribbon::TABS;
@@ -505,11 +506,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 split(ui, app, "fontcolor", "Font Color", "format.color", json!({"color": fc}), false, sw, |ui, app| {
                     mi(ui, app, "Automatic", "format.color", json!({"color": "auto"}));
                     let theme = app.session.doc.settings.theme_colors.clone();
-                    if let Some(hex) = color_grid(ui, &theme) {
-                        app.canvas.last_font_color = hex.clone();
-                        let _ = app.run("format.color", json!({"color": hex}));
-                        ui.close();
-                    }
+                    crate::colors::menu(ui, app, &theme, Target::cmd("format.color").remember(Remember::FontColor));
                 });
             });
         });
@@ -598,11 +595,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                 split(ui, app, "shading", "Shading", "para.shading", json!({"color": app.canvas.last_shading.clone()}), false, None, |ui, app| {
                     mi(ui, app, "No Color", "para.shading", json!({"color": null}));
                     let theme = app.session.doc.settings.theme_colors.clone();
-                    if let Some(hex) = color_grid(ui, &theme) {
-                        app.canvas.last_shading = hex.clone();
-                        let _ = app.run("para.shading", json!({"color": hex}));
-                        ui.close();
-                    }
+                    crate::colors::menu(ui, app, &theme, Target::cmd("para.shading").remember(Remember::Shading));
                 });
                 split(ui, app, "borders", "Borders", "para.borders", json!({"kind": "bottom"}), false, None, |ui, app| {
                     for (l, k) in [
@@ -840,15 +833,11 @@ fn draw(app: &mut WordApp, ui: &mut Ui) {
             let sw = Some(crate::theme::c32(set.color));
             split(ui, app, "fontcolor", "Color", pen_command(tool), json!({}), false, sw, |ui, app| {
                 let theme = app.session.doc.settings.theme_colors.clone();
-                if let Some(hex) = color_grid(ui, &theme) {
-                    // With ink lasso-selected the colour goes to the selection, else to the pen.
-                    if lasso_on {
-                        let _ = app.run("draw.lassoColor", json!({"color": hex}));
-                    } else {
-                        let _ = app.run(pen_command(tool), json!({"color": hex}));
-                        update_gallery_pen(app, custom, tool);
-                    }
-                    ui.close();
+                // With ink lasso-selected the colour goes to the selection, else to the pen.
+                let cmd = if lasso_on { "draw.lassoColor" } else { pen_command(tool) };
+                crate::colors::menu(ui, app, &theme, Target::cmd(cmd));
+                if !lasso_on {
+                    update_gallery_pen(app, custom, tool);
                 }
             });
             menu_button(ui, app, "thickness", None, "Thickness", false, |ui, app| {
@@ -984,17 +973,14 @@ fn design(app: &mut WordApp, ui: &mut Ui) {
         menu_button(ui, app, "pageColor", Some("Page\nColor"), "Page Color", true, |ui, app| {
             mi(ui, app, "No Color", "design.pageColor", json!({"color": null}));
             let theme = app.session.doc.settings.theme_colors.clone();
-            if let Some(hex) = color_grid(ui, &theme) {
-                let _ = app.run("design.pageColor", json!({"color": hex}));
-                ui.close();
-            }
+            crate::colors::menu(ui, app, &theme, Target::cmd("design.pageColor"));
         });
         big(ui, app, "pageBorders", "Page\nBorders", "design.pageBorders", json!({}), false);
     });
 }
 
 fn layout(app: &mut WordApp, ui: &mut Ui) {
-    group(ui, "Page Setup", Some("ui.dialog"), app, |ui, app| {
+    group(ui, "Page Setup", Some("layout.pageSetup"), app, |ui, app| {
         // Text Direction works on what the caret is in: table cells, a text box, else the section.
         let dir = wordcraft_engine::cmd::page::text_direction_at(&app.session);
         menu_button(ui, app, "textDirection", Some("Text\nDirection"), "Text Direction", true, |ui, app| {
@@ -1733,17 +1719,11 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
         stack(ui, |ui| {
             menu_button(ui, app, "shading", Some("Shape Fill"), "Shape Fill", false, |ui, app| {
                 mi(ui, app, "No Color", "shape.fill", json!({"color": null}));
-                if let Some(hex) = color_grid(ui, &theme) {
-                    let _ = app.run("shape.fill", json!({"color": hex}));
-                    ui.close();
-                }
+                crate::colors::menu(ui, app, &theme, Target::cmd("shape.fill"));
             });
             menu_button(ui, app, "pen", Some("Shape Outline"), "Shape Outline", false, |ui, app| {
                 mi(ui, app, "No Color", "shape.outline", json!({"color": null}));
-                if let Some(hex) = color_grid(ui, &theme) {
-                    let _ = app.run("shape.outline", json!({"color": hex}));
-                    ui.close();
-                }
+                crate::colors::menu(ui, app, &theme, Target::cmd("shape.outline"));
                 ui.separator();
                 ui.menu_button(tl!("Weight"), |ui| {
                     let color = stroke.unwrap_or(wordcraft_doc::Rgb::BLACK).hex();
@@ -1875,10 +1855,8 @@ fn shape_effects_menu(ui: &mut Ui, app: &mut WordApp, theme: &[wordcraft_doc::Rg
         }
         ui.separator();
         ui.menu_button(tl!("Glow Colors"), |ui| {
-            if let Some(hex) = color_grid(ui, theme) {
-                let _ = app.run("shape.effects", json!({"glow": {"color": hex, "size": glow_size.unwrap_or(8.0)}}));
-                ui.close();
-            }
+            let target = Target::at("shape.effects", json!({"glow": {"color": null, "size": glow_size.unwrap_or(8.0)}}), "/glow/color");
+            crate::colors::menu(ui, app, theme, target);
         });
     });
     ui.menu_button(tl!("Soft Edges"), |ui| {
@@ -1913,10 +1891,7 @@ fn picture_format(app: &mut WordApp, ui: &mut Ui) {
         });
         menu_button(ui, app, "icons", Some("Icon Color"), "Recolor a one-color picture, such as an icon", true, |ui, app| {
             let theme = app.session.doc.settings.theme_colors.clone();
-            if let Some(hex) = color_grid(ui, &theme) {
-                let _ = app.run("picture.iconColor", json!({"color": hex}));
-                ui.close();
-            }
+            crate::colors::menu(ui, app, &theme, Target::cmd("picture.iconColor"));
         });
         menu_button(ui, app, "picture", Some("Transparency"), "Picture transparency", true, |ui, app| {
             for v in [0.0, 15.0, 30.0, 50.0, 65.0, 80.0, 95.0] {
@@ -2102,11 +2077,7 @@ fn table_design(app: &mut WordApp, ui: &mut Ui) {
             split(ui, app, "shading", "Shading", "table.shading", json!({"color": app.canvas.last_shading.clone()}), false, None, |ui, app| {
                 mi(ui, app, "No Color", "table.shading", json!({"color": null}));
                 let theme = app.session.doc.settings.theme_colors.clone();
-                if let Some(hex) = color_grid(ui, &theme) {
-                    app.canvas.last_shading = hex.clone();
-                    let _ = app.run("table.shading", json!({"color": hex}));
-                    ui.close();
-                }
+                crate::colors::menu(ui, app, &theme, Target::cmd("table.shading").remember(Remember::Shading));
             });
         });
     });
@@ -2137,14 +2108,27 @@ fn cell_size_boxes(ui: &mut Ui, app: &mut WordApp) {
     let row = t.rows.get(r).map(|x| x.props.clone()).unwrap_or_default();
     let stored_w = t.grid.get(t.grid_col(r, c)).copied();
     let laid = app.session.layout().pages.iter().flat_map(|pg| pg.items.iter()).find_map(|it| match it {
-        wordcraft_layout::Placed::Cell { rect, table, row, cell, story: st } if *table == tp && *row == r && *cell == c && *st == story => {
+        wordcraft_layout::Placed::Cell { rect, table, row, cell, story: st, .. } if *table == tp && *row == r && *cell == c && *st == story => {
             Some(*rect)
         }
         _ => None,
     });
+    // The row's own height: a vertically merged cell's box spans several rows, so take the
+    // shortest box in this row.
+    let row_h = app
+        .session
+        .layout()
+        .pages
+        .iter()
+        .flat_map(|pg| pg.items.iter())
+        .filter_map(|it| match it {
+            wordcraft_layout::Placed::Cell { rect, table, row, story: st, .. } if *table == tp && *row == r && *st == story => Some(rect.h),
+            _ => None,
+        })
+        .reduce(f32::min);
     let unit = crate::options::unit();
     let k = unit.pt_per_unit();
-    let h0 = row.height.or(laid.map(|x| x.h)).unwrap_or(0.0);
+    let h0 = row.height.or(row_h).unwrap_or(0.0);
     let w0 = laid.map(|x| x.w).or(stored_w).unwrap_or(0.0);
     let exact = row.height_rule == wordcraft_doc::props::HeightRule::Exact;
     // The edited value in points, and whether it continues a drag (joins the previous Undo step).
@@ -2291,6 +2275,21 @@ mod tests {
         s.run("select.collapse", &json!({"end": true})).unwrap();
         s.run("text.insert", &json!({"text": "x"})).unwrap();
         assert!(!contextual_tabs(&s).contains(&"Shape Format"));
+    }
+
+    #[test]
+    fn page_setup_launcher_opens_the_dialog() {
+        // A group launcher runs its command with no parameters (#471).
+        let mut app = crate::WordApp::new(Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        app.run("layout.pageSetup", json!({})).unwrap();
+        assert!(matches!(app.dialog, Some(crate::dialogs::Dialog::PageSetup { .. })));
+        // `ui.dialog` needs a dialog name, so it can't be a launcher.
+        let launchers: Vec<&str> = include_str!("ribbon.rs")
+            .split("group(ui, \"")
+            .filter_map(|g| g.split_once('"')?.1.strip_prefix(", Some(\"")?.split('"').next())
+            .collect();
+        assert!(launchers.contains(&"layout.pageSetup"), "{launchers:?}");
+        assert!(!launchers.contains(&"ui.dialog"), "{launchers:?}");
     }
 
     #[test]

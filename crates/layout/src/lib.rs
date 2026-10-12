@@ -157,9 +157,12 @@ pub enum Placed {
         spin: Spin,
         items: Vec<Placed>,
     },
-    /// A table cell's area (for hit testing and cell selection).
+    /// A table cell's area (for hit testing and cell selection). A vertically merged cell is
+    /// one `Cell` as tall as all its rows; its continuation rows get a `covered` `Cell` (their
+    /// own row's height) so the rows keep a box each, but it isn't a cell of its own on screen.
     Cell {
         rect: Rect,
+        covered: bool,
         table: Path,
         row: usize,
         cell: usize,
@@ -2465,7 +2468,14 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
             if bottom > limit + 0.01 && l1 > l0 && !split {
                 break;
             }
-            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split {
+            // A line holding nothing but a page or column break stays at the bottom of the page
+            // even when it doesn't fit: it only ends the page, and moving it would leave a blank
+            // page behind it (Word does the same).
+            let only_break = matches!(l.end, LineEnd::PageBreak | LineEnd::ColumnBreak)
+                && p.text
+                    .get(l.start..l.stop)
+                    .is_some_and(|t| t.chars().all(|c| matches!(c, wordcraft_doc::para::PAGE_BREAK | wordcraft_doc::para::COLUMN_BREAK)));
+            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split && !only_break {
                 break;
             }
             new_notes.extend(line_notes);
@@ -2807,7 +2817,16 @@ fn place_floating_table(pb: &mut PageBuilder, tl: &table::TableLayout, f: &Table
         };
         let x = float_table_x(pb, w, f, legacy);
         let r = clear_of_float_tables(Rect::new(x, align_in(v_area, f.y, h, f.v_align), w, h), f, legacy, h_area.0, &pb.float_tables);
-        if attempt == 0 && r.bottom() > pb.bottom + 0.01 && !pb.at_top() && f.v_rel == Anchor::Paragraph {
+        // Like Word, a table that doesn't fit below the text before it moves to the next page with
+        // its anchor: one placed relative to the paragraph when it would run off the page, one
+        // placed on the page or margin when it would also cover the text already on the page.
+        let moves = if f.v_rel == Anchor::Paragraph {
+            r.bottom() > pb.bottom + 0.01
+        } else {
+            let covers_text = r.y < pb.y - 0.01 && r.bottom() > pb.top + 0.01 && r.x < pb.col_x() + pb.col_w() && r.right() > pb.col_x();
+            covers_text && pb.y + h > pb.bottom + 0.01
+        };
+        if attempt == 0 && moves && !pb.at_top() {
             pb.advance(block, body_top);
             continue;
         }
@@ -2987,6 +3006,8 @@ pub fn now_ms() -> f64 {
 mod tests;
 #[cfg(test)]
 mod tests_bidi;
+#[cfg(test)]
+mod tests_complex;
 #[cfg(test)]
 mod tests_grid;
 #[cfg(test)]

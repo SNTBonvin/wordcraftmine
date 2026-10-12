@@ -59,6 +59,7 @@
 	Arrow	Seta
 	Artistic Effects	Efeitos artísticos
 	As you type	Enquanto você digita
+	Asian text font:	Fonte de texto asiático:
 	Asian Typography	Tipografia asiática
 	Author	Autor
 	AutoCorrect Options	Opções de autocorreção
@@ -106,6 +107,7 @@
 	Interface	Interface
 	Interface language	Idioma da interface
 	Inside:	Interno:
+	Latin text font:	Fonte de texto latino:
 	Left border	Borda esquerda
 	Legal style numbering	Numeração no estilo legal
 	Link level to style:	Vincular nível ao estilo:
@@ -379,6 +381,7 @@
 	Export PDF	Exportar PDF
 	Exported {path}	Exportado {path}
 	Extend Selection	Expandir seleção
+	Extend Selection by Units	Expandir seleção por unidades
 	Field	Campo
 	File	Arquivo
 	Find	Localizar
@@ -925,10 +928,10 @@
 	Wide	Ampla
 	Widow/Orphan Control	Controle de viúvas e órfãs
 	Widow/Orphan control	Controle de viúvas e órfãs
-	Wildcards (regex)	Curingas (regex)
 	Window	Janela
 	Word Count	Contagem de palavras
 	Word document (*.docx)	Documento Word (*.docx)
+	Word XML Document (*.xml)	Documento XML do Word (*.xml)
 	Word Left	Palavra à esquerda
 	Word Right	Palavra à direita
 	WordArt	Texto artístico
@@ -1530,6 +1533,19 @@
 	New Group	Novo Grupo
 	Rename…	Renomear…
 	Ribbon and Quick Access Toolbar:	Faixa de Opções e Barra de Acesso Rápido:
+	Recent Colors	Cores recentes
+	More Colors…	Mais cores…
+	Standard	Padrão
+	Current	Atual
+	Colors:	Cores:
+	Color model:	Modelo de cor:
+	Red:	Vermelho:
+	Green:	Verde:
+	Blue:	Azul:
+	Hue:	Matiz:
+	Sat:	Sat.:
+	Lum:	Lum.:
+	Hex:	Hex.:
 	Accessibility Pane	Painel de acessibilidade
 	Alt Text Pane	Painel de texto alternativo
 	Alt\nText	Texto\nalternativo
@@ -1678,6 +1694,21 @@
 	Continuous numbering	Numeração contínua
 	Apply	Aplicar
 	Convert Notes	Converter notas
+	All pages	Todas as páginas
+	Current page	Página atual
+	Selected pages	Páginas selecionadas
+	Custom range	Intervalo personalizado
+	All pages in the range	Todas as páginas do intervalo
+	Odd pages only	Somente páginas ímpares
+	Even pages only	Somente páginas pares
+	Copies	Cópias
+	Collate copies	Agrupar cópias
+	Pages like 1-3, 5	Páginas como 1-3, 5
+	{count} of {total} pages will print	{count} de {total} páginas serão impressas
+	Save these pages as PDF…	Salvar estas páginas como PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	A impressora, a impressão frente e verso e as páginas por folha são escolhidas nessa caixa de diálogo.
+	Previous Page	Página anterior
+	Print to PDF	Imprimir em PDF
 	Add Shape	Adicionar forma
 	Change Colors	Alterar cores
 	Change Layout	Alterar layout
@@ -1851,6 +1882,37 @@
 	Rewind	Retroceder
 	Forward	Avançar
 	Stroke {n} of {total}	Traço {n} de {total}
+	Use wildcards	Usar caracteres curinga
+	Special	Especial
+	Match prefix	Coincidir prefixo
+	Match suffix	Coincidir sufixo
+	Ignore punctuation characters	Ignorar sinais de pontuação
+	Ignore white-space characters	Ignorar espaços em branco
+	Regular expressions	Expressões regulares
+	Search Options	Opções de pesquisa
+	Tab Character	Caractere de tabulação
+	Any Character	Qualquer caractere
+	Any Digit	Qualquer dígito
+	Any Letter	Qualquer letra
+	Caret Character	Acento circunflexo
+	Section Character	Símbolo de seção
+	Paragraph Character	Símbolo de parágrafo
+	Graphic	Gráfico
+	Manual Line Break	Quebra de linha manual
+	Manual Page Break	Quebra de página manual
+	Section Break	Quebra de seção
+	White Space	Espaço em branco
+	Clipboard Contents	Conteúdo da área de transferência
+	Find What Text	Texto localizado
+	Find What Expression	Expressão localizada
+	Character in Range	Caractere no intervalo
+	Beginning of Word	Início da palavra
+	End of Word	Fim da palavra
+	Expression	Expressão
+	Not	Não
+	Num Occurrences	Número de ocorrências
+	Previous 1 or More	Anterior 1 ou mais vezes
+	0 or More Characters	0 ou mais caracteres
 	Move with Text	Mover com o texto
 	Fix Position on Page	Fixar posição na página
 
