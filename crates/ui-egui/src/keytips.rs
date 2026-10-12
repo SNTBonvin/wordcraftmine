@@ -192,7 +192,7 @@ fn controls(tab: &str) -> Vec<Control> {
             m("Page Number", "insert.pageNumber"),
             c("Text Box", "insert.textBox"),
             c("Quick Parts", "insert.quickParts"),
-            c("WordArt", "insert.wordArt"),
+            m("WordArt", "insert.wordArt"),
             c("Drop Cap", "insert.dropCap"),
             c("Signature Line", "insert.signatureLine"),
             c("Date & Time", "insert.dateTime"),
@@ -225,6 +225,7 @@ fn controls(tab: &str) -> Vec<Control> {
             m("Page Borders", "design.pageBorders"),
         ],
         "Layout" => vec![
+            m("Text Direction", "layout.textDirection"),
             m("Margins", "layout.margins"),
             m("Orientation", "layout.orientation"),
             m("Size", "layout.size"),
