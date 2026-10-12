@@ -343,6 +343,10 @@ impl AffixDict {
     /// Build from Hunspell `.aff` and `.dic` text (decoded to UTF-8; the `.dic` count line and
     /// morphological fields are ignored). `comments` (provenance, licence) are kept with the data.
     pub fn from_hunspell(aff: &str, dic: &str, comments: &[&str]) -> Result<AffixDict, String> {
+        // Some dictionaries open with a UTF-8 BOM; it must not glue itself to the first
+        // directive or turn the `.dic` count line into a stem.
+        let aff = aff.strip_prefix('\u{feff}').unwrap_or(aff);
+        let dic = dic.strip_prefix('\u{feff}').unwrap_or(dic);
         let rules = parse_aff(aff)?;
         let mut stems: Vec<(String, String)> = Vec::new();
         for (n, line) in dic.lines().enumerate() {
@@ -1020,6 +1024,15 @@ mod tests {
         assert!(back.contains("work") && back.contains("workable") && back.contains("workables"));
         assert!(!back.contains("works"), "the stem has A, not B, after a round trip");
         assert!(!back.check("imundo") && !back.contains("imundoy"), "forbidden survives a round trip");
+    }
+
+    #[test]
+    fn dic_bom_glued_to_the_count_line_is_skipped() {
+        // VERO's .dic opens with a UTF-8 BOM glued to its count line; it must not become a stem.
+        let aff = "SET UTF-8\nSFX a Y 1\nSFX a   0   y   [^y]\n";
+        let d = AffixDict::from_hunspell(aff, "\u{feff}1\nkot/a\n", &[]).unwrap();
+        assert_eq!(d.len(), 1);
+        assert!(d.contains("kot") && d.contains("koty"));
     }
 
     #[test]
