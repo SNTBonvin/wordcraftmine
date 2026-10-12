@@ -91,8 +91,34 @@ pub fn visible(app: &WordApp) -> bool {
     if app.session.cell_range().is_some() {
         return false;
     }
+    // Nor once a click outside the document put it away for this selection (`track_dismissal`).
+    if app.canvas.mini_dismissed.as_ref() == Some(&app.session.sel) {
+        return false;
+    }
     // Never for a collapsed caret.
     !app.session.sel.is_collapsed()
+}
+
+/// Puts the bar away when the user turns to the ribbon (or a pane, the rulers, the status bar):
+/// a press outside the document hides it until the selection changes, so it never covers the
+/// ribbon's drop-downs. Runs every frame; `viewport` is the document area.
+pub fn track_dismissal(app: &mut WordApp, ctx: &egui::Context, viewport: Rect) {
+    if app.canvas.mini_dismissed.as_ref().is_some_and(|d| *d != app.session.sel) {
+        app.canvas.mini_dismissed = None;
+    }
+    let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { i.pointer.press_origin() } else { None }) else { return };
+    // A press on a popup (the bar's own lists, or a ribbon list already open) neither hides the
+    // bar nor brings it back: hiding it would close its own list before the click lands.
+    if ctx.layer_id_at(p).is_some_and(|l| l.order >= Order::Foreground) {
+        return;
+    }
+    app.canvas.mini_dismissed = if viewport.contains(p) {
+        // A press in the document starts a new selection, which gets the bar again even when it
+        // covers the same text.
+        None
+    } else {
+        Some(app.session.sel.clone())
+    };
 }
 
 /// Show the bar: `selection` is the screen rect of the selection's first line, `viewport` the
@@ -103,11 +129,11 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
     }
     let Some(bar) = anchor_rect(selection.min.y, selection.min.x, viewport) else { return };
     let t = Tokens::get(ctx);
-    // The bar sits above the document but below every popup, and is not movable: it is an overlay
-    // pinned to the selection, so moving it would lose the association.
-    // Draw the bar pinned above the selection. egui stops a click at the topmost widget, so a
-    // click on the bar never reaches the document underneath.
-    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Tooltip).interactable(true).fixed_pos(bar.min);
+    // The bar sits on the Middle layer: above the document (Background), below every popup and
+    // menu (Foreground: the ribbon's drop-downs, the context menu, its own lists) and tooltip, so
+    // it never covers one. It is pinned to the selection, not movable, and egui stops a click at
+    // the topmost layer, so a click on the bar never reaches the document underneath.
+    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Middle).interactable(true).fixed_pos(bar.min);
     _area.show(ctx, |ui| {
         ui.set_clip_rect(bar);
         let painter = ui.painter();
@@ -341,5 +367,125 @@ mod tests {
         );
         assert!((used.width() - inner.width()).abs() < 0.5, "the bar ({}) should be as wide as its controls ({})", inner.width(), used.width());
         assert!(used.min.x - inner.min.x < 0.5, "the font box starts at the bar's left edge");
+    }
+
+    /// The whole window over a document with `pick` selected, run until the bar is up.
+    fn bar_over(pick: &str) -> egui_kittest::Harness<'static, WordApp> {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "The quick brown fox jumps over the lazy dog"})).unwrap();
+        a.run("select.text", json!({"text": pick})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(Vec2::new(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        steps(&mut h);
+        h
+    }
+
+    fn steps(h: &mut egui_kittest::Harness<'static, WordApp>) {
+        for _ in 0..6 {
+            h.step();
+        }
+    }
+
+    /// The bar's layer, when it was drawn last frame.
+    fn bar_layer(h: &egui_kittest::Harness<'static, WordApp>) -> Option<egui::LayerId> {
+        h.ctx.memory(|m| m.areas().visible_layer_ids().into_iter().find(|l| l.id == egui::Id::new("wc_mini_toolbar")))
+    }
+
+    fn click_at(h: &mut egui_kittest::Harness<'static, WordApp>, at: egui::Pos2) {
+        h.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+        steps(h);
+    }
+
+    fn format_state(h: &mut egui_kittest::Harness<'static, WordApp>) -> Value {
+        h.state_mut().session.run("format.state", &json!({})).unwrap()
+    }
+
+    /// The bar was drawn on the Tooltip layer, over every drop-down: the ribbon's font size list
+    /// opened under it. Popups and menus are on Foreground; the bar must sit below them.
+    #[test]
+    fn the_bar_draws_below_popups() {
+        let h = bar_over("brown fox");
+        let layer = bar_layer(&h).expect("the bar is shown over a selection");
+        assert!(layer.order < Order::Foreground, "the bar is on {:?}, over the ribbon's drop-downs", layer.order);
+    }
+
+    /// Turning to the ribbon puts the bar away (it covered the ribbon's drop-downs); it comes back
+    /// for the next selection, even one over the same text.
+    #[test]
+    fn a_click_on_the_ribbon_puts_the_bar_away_until_the_selection_changes() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = bar_over("brown fox");
+        assert!(visible(h.state()) && bar_layer(&h).is_some(), "the bar is up over the selection");
+        // The ribbon's Bold is the topmost one; the bar has its own lower down.
+        let ribbon_bold = |h: &egui_kittest::Harness<'static, WordApp>| {
+            h.get_all_by_label("Bold").map(|n| n.rect().center()).min_by(|a, b| a.y.total_cmp(&b.y)).expect("the ribbon has Bold")
+        };
+        let at = ribbon_bold(&h);
+        click_at(&mut h, at);
+        assert_eq!(format_state(&mut h).get("bold"), Some(&json!(true)), "the click ran the ribbon's Bold");
+        assert!(!visible(h.state()), "a click on the ribbon puts the bar away");
+        assert!(bar_layer(&h).is_none(), "the bar is no longer drawn");
+
+        h.state_mut().run("select.text", json!({"text": "lazy"})).unwrap();
+        steps(&mut h);
+        assert!(visible(h.state()) && bar_layer(&h).is_some(), "a new selection brings the bar back");
+
+        let at = ribbon_bold(&h);
+        click_at(&mut h, at);
+        assert!(bar_layer(&h).is_none());
+        h.state_mut().run("select.text", json!({"text": "quick"})).unwrap();
+        steps(&mut h);
+        h.state_mut().run("select.text", json!({"text": "lazy"})).unwrap();
+        steps(&mut h);
+        assert!(bar_layer(&h).is_some(), "selecting the same text again brings the bar back");
+    }
+
+    /// The ribbon's size list hangs over the page: picking from it is no press in the document, so
+    /// the bar stays away (it would cover the list again otherwise).
+    #[test]
+    fn picking_from_a_ribbon_list_over_the_page_keeps_the_bar_away() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut h = bar_over("brown fox");
+        let size = format_state(&mut h).get("size").and_then(Value::as_f64).unwrap_or_default();
+        let size = if size.fract() == 0.0 { format!("{size:.0}") } else { size.to_string() };
+        // The ribbon's size box is the topmost one showing the size; the bar has its own.
+        let size_box = h.get_all_by_role(Role::TextInput).filter(|n| n.value().as_deref() == Some(size.as_str())).map(|n| n.rect());
+        let size_box = size_box.min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("the ribbon has a size box");
+        click_at(&mut h, pos2(size_box.max.x + 8.0, size_box.center().y));
+        assert!(bar_layer(&h).is_none(), "opening the ribbon's list puts the bar away");
+        let page = h.state().canvas.canvas_rect.expect("the document is shown");
+        let item = h.get_by_label("28").rect().center();
+        assert!(page.contains(item), "the list's 28 ({item:?}) should hang over the page ({page:?}) for this test");
+        click_at(&mut h, item);
+        assert_eq!(format_state(&mut h).get("size").and_then(Value::as_f64), Some(28.0), "the ribbon's size list applied 28 pt");
+        assert!(!visible(h.state()) && bar_layer(&h).is_none(), "the bar stays away after a pick from the ribbon's list");
+    }
+
+    /// Picking from one of the bar's own lists (popups below it) keeps the bar up.
+    #[test]
+    fn picking_from_the_bars_own_list_keeps_it() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut h = bar_over("brown fox");
+        let [bar, _] = h.ctx.data(|d| d.get_temp::<[Rect; 2]>(shown_id())).expect("the bar is shown over a selection");
+        // Its two boxes are font and size; the size box's arrow is just right of the rightmost.
+        let size_box =
+            h.get_all_by_role(Role::TextInput).map(|n| n.rect()).filter(|r| bar.contains_rect(*r)).max_by(|a, b| a.min.x.total_cmp(&b.min.x));
+        let size_box = size_box.expect("the bar has a size box");
+        click_at(&mut h, pos2(size_box.max.x + 8.0, size_box.center().y));
+        let twenty = h.get_by_label("20").rect().center();
+        click_at(&mut h, twenty);
+        assert_eq!(format_state(&mut h).get("size").and_then(Value::as_f64), Some(20.0), "the bar's size list applied 20 pt");
+        assert!(visible(h.state()) && bar_layer(&h).is_some(), "the bar stays up after its own list is used");
     }
 }
