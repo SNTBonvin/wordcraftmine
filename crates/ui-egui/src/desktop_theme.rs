@@ -91,9 +91,13 @@ struct Bus;
 impl Bus {
     fn new() -> Self {
         #[cfg(target_os = "linux")]
-        { Self(None) }
+        {
+            Self(None)
+        }
         #[cfg(not(target_os = "linux"))]
-        { Self }
+        {
+            Self
+        }
     }
 }
 
