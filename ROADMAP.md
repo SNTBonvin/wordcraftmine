@@ -135,6 +135,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
+| 2026-10-12 | File › Export › Word 2003 XML Document (#1081): documents save as WordprocessingML 2003 (`format: "wordml2003"` on the save commands, `wordcraft-cli convert --format wordml2003`); shapes, text boxes, charts and SmartArt don't survive, and it hasn't been opened in Word yet |
 | 2026-10-12 | RTF import now uses the RTF spec's defaults where a file names none (#902): no space before or after paragraphs, single line spacing, and the `\deff` default font, instead of WordCraft's Normal style; RTF files that relied on the old defaults open tighter, like in Word |
 | 2026-10-11 | Right-clicking a table cell offers the table's commands, and as in Word they follow the selection: with the caret in a cell Insert, Delete Cells, Split Cells, Text Direction and Table Properties…; with several cells Merge Cells instead of Split; with whole columns or rows Delete Columns or Rows, Merge Cells and Distribute Rows and Columns; with the whole table Delete Table, Distribute, AutoFit and Insert Caption…. A right-click beside selected cells moves the caret there instead of keeping them |
 | 2026-10-11 | Drags, Shift+arrows and Shift+click over table cells select whole cells, as in Word: from one cell into another the rectangle between them (bold, alignment and Delete leave the other cells alone), into or out of a table whole rows; extending again goes on from where the selection started |
