@@ -66,13 +66,18 @@ pub struct CanvasState {
     pub focused: bool,
     pub render_ms: f64,
     pub ime_preedit: String,
-    /// Document faces added to the interface fonts to draw the input method's composition (#565).
+    /// Document faces added to the interface fonts so the input method's composition (#565) and a
+    /// file name in the window caption can be drawn.
     pub(crate) ime_faces: Vec<std::sync::Arc<wordcraft_fonts::FontFace>>,
     pub want_focus: bool,
     pub context_issue: Option<serde_json::Value>,
     pub context_synonyms: Option<serde_json::Value>,
     /// The right-click context menu is open (the mini toolbar stands down while it is).
     pub context_menu_open: bool,
+    /// Shift+F10 (or `ui.contextMenu`) asked for the context menu at the caret (#821).
+    pub context_menu_from_keys: bool,
+    /// Where the context menu stands: the right-click point, or below the caret.
+    pub context_menu_at: Option<Pos2>,
     /// Screen rect of the selection's first line, for the floating mini toolbar.
     pub mini_anchor: Option<Rect>,
     /// A picture, shape or text box being dragged by its frame.
@@ -120,6 +125,8 @@ pub struct CanvasState {
     pub(crate) link_from: Option<wordcraft_doc::Pos>,
     /// What screen readers were last told about the document (#488).
     pub(crate) a11y: crate::a11y::A11yCache,
+    /// A press on a table's selection area or move handle, held (`table_mouse`).
+    pub(crate) table_drag: Option<crate::table_mouse::TableDrag>,
 }
 
 impl CanvasState {
@@ -165,6 +172,8 @@ impl Default for CanvasState {
             erasing: None,
             ink_ui: Default::default(),
             context_menu_open: false,
+            context_menu_from_keys: false,
+            context_menu_at: None,
             mini_anchor: None,
             pasted: false,
             swallow_text: false,
@@ -184,6 +193,7 @@ impl Default for CanvasState {
             table_resize: None,
             link_from: None,
             a11y: Default::default(),
+            table_drag: None,
         }
     }
 }
@@ -478,8 +488,8 @@ pub fn geometry(app: &WordApp, l: &DocLayout, avail: egui::Vec2) -> Geometry {
         scale = PX_PER_PT;
     }
     // Pages flow side by side in Print Layout whenever more than one fits across; One Page and
-    // Page Width show one per row, Web Layout has no pages. Reading Mode is handled above.
-    let (min_cols, auto) = if web || v.fit == "onePage" || v.fit == "pageWidth" {
+    // Page Width show one per row (and so does a zoom after One Page, #768), Web Layout has no pages. Reading Mode is handled above.
+    let (min_cols, auto) = if web || v.fit == "onePage" || v.fit == "pageWidth" || v.single_column {
         (1, false)
     } else if v.multi_page {
         (2, true)
@@ -695,7 +705,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.canvas.scroll_to_caret = true;
         }
     }
-    let caret = layout.caret_on(&app.session.sel.focus, app.session.page_hint);
+    // Where the selection really ends, also when it took whole table cells.
+    let caret = layout.caret_on(&app.session.sel_ends().focus, app.session.page_hint);
     // Editing a header/footer (or a note) dims the body; once per frame, for every page.
     let dim_body = dims_body(app, &layout);
     if let Some(c) = caret {
@@ -980,31 +991,34 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
-        // Selection (a selected object shows its frame instead).
-        if !app.session.sel.is_collapsed() && crate::objects::selected(app).is_none() {
-            // A column selection highlights each row's piece.
+        // Selection (a selected object shows its frame instead): whole table cells shade the
+        // cells (an empty one too), a column selection each row's piece.
+        let selected: Vec<_> = if crate::objects::selected(app).is_some() {
+            Vec::new()
+        } else if let Some(range) = app.session.cell_range() {
+            wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &app.session.doc, range)
+        } else if !app.session.sel.is_collapsed() {
             let pieces: Vec<(Pos, Pos)> = match app.session.column_segments() {
                 Some(segs) => segs.to_vec(),
                 None => vec![app.session.sel.ordered()],
             };
-            let mut first: Option<Rect> = None;
-            for (a, b) in &pieces {
-                for (pi, r) in layout.selection_rects(&app.session.doc, a, b, app.session.page_hint) {
-                    if let Some(pr) = rects.get(pi) {
-                        let scale = layout.pages.get(pi).map_or(geo.scale, |page| page_screen_scale(*pr, page, geo.scale));
-                        let sr = Rect::from_min_size(pos2(pr.min.x + r.x * scale, pr.min.y + r.y * scale), vec2(r.w * scale, r.h * scale));
-                        painter.rect_filled(sr, 0.0, t.selection);
-                        // Track the topmost rect: the mini toolbar anchors on the selection's first line.
-                        if first.is_none_or(|f| sr.min.y < f.min.y) {
-                            first = Some(sr);
-                        }
-                    }
+            pieces.iter().flat_map(|(a, b)| layout.selection_rects(&app.session.doc, a, b, app.session.page_hint)).collect()
+        } else {
+            Vec::new()
+        };
+        let mut first: Option<Rect> = None;
+        for (pi, r) in selected {
+            if let Some(pr) = rects.get(pi) {
+                let scale = layout.pages.get(pi).map_or(geo.scale, |page| page_screen_scale(*pr, page, geo.scale));
+                let sr = Rect::from_min_size(pos2(pr.min.x + r.x * scale, pr.min.y + r.y * scale), vec2(r.w * scale, r.h * scale));
+                painter.rect_filled(sr, 0.0, t.selection);
+                // Track the topmost rect: the mini toolbar anchors on the selection's first line.
+                if first.is_none_or(|f| sr.min.y < f.min.y) {
+                    first = Some(sr);
                 }
             }
-            app.canvas.mini_anchor = first;
-        } else {
-            app.canvas.mini_anchor = None;
         }
+        app.canvas.mini_anchor = first;
         // Content controls: the frame of the one the caret is in (all of them in Design Mode).
         crate::content_controls::paint(app, &painter, &t, &layout, &rects, geo.scale);
         // Read Aloud: the sentence being spoken.
@@ -1113,6 +1127,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         crate::ink::paint(app, &painter, &rects, &layout, geo.scale);
         crate::table_pen::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::table_resize::paint(app, &painter, &t, &layout, &rects, geo.scale);
+        crate::table_mouse::paint(app, &painter, &t, &layout, &rects, geo.scale);
         (resp, rects)
     });
     app.canvas.scroll_offset = out.state.offset;
@@ -1161,6 +1176,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     // A click on a check box ticks it; on a list's button opens the list.
     crate::content_controls::clicks(app, &resp);
+    // Selected table cells: a right-click off them drops them, even between the selection's ends
+    // (beside a selected column), so the menu acts on the cell clicked.
+    if resp.secondary_clicked()
+        && let Some(range) = app.session.cell_range()
+        && let Some(p) = resp.interact_pointer_pos()
+        && let Some((page, x, y)) = page_at(&rects, &layout, geo.scale, p)
+    {
+        let at = wordcraft_geom::Point::new(x, y);
+        let on_cells =
+            wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &app.session.doc, range).iter().any(|(pi, r)| *pi == page && r.contains(at));
+        if !on_cells && let Some(pos) = layout.hit(page, x, y, app.session.sel.focus.story) {
+            app.session.sel = wordcraft_engine::Selection::caret(pos);
+        }
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
     if resp.secondary_clicked()
@@ -1192,14 +1221,33 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             if !(a <= pos && pos <= b) || app.session.sel.is_collapsed() {
                 app.session.sel = wordcraft_engine::Selection::caret(pos);
             }
-            app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
-            app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
+            context_suggestions(app);
         }
     }
-    resp.context_menu(|ui| context_menu(app, ui));
-    // Stand down while the context menu owns the pointer so the two never double up;
-    // `context_menu_opened` also covers the click that dismisses the menu.
-    app.canvas.context_menu_open = resp.context_menu_opened();
+    // Shift+F10 opens the same menu below the caret, for the selection or the word there (#821).
+    let from_keys = std::mem::take(&mut app.canvas.context_menu_from_keys);
+    if from_keys {
+        context_suggestions(app);
+        app.canvas.context_menu_at = caret_screen(app).map(|(p, h)| p + egui::vec2(0.0, h));
+    } else if resp.secondary_clicked() {
+        app.canvas.context_menu_at = resp.interact_pointer_pos();
+    }
+    let open = if resp.secondary_clicked() || from_keys {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if resp.clicked() {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    let menu = egui::Popup::menu(&resp).open_memory(open);
+    let menu = match app.canvas.context_menu_at {
+        Some(p) => menu.at_position(p),
+        None => menu.at_pointer_fixed(),
+    };
+    menu.show(|ui| context_menu(app, ui));
+    // Stand down while the context menu owns the pointer so the two never double up; the open
+    // state also covers the click that dismisses the menu.
+    app.canvas.context_menu_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     if let Some(c) = crate::ink::cursor(app).filter(|_| resp.hovered() || app.canvas.ink.is_some()) {
         ui.ctx().set_cursor_icon(c);
     } else if resp.hovered() || app.canvas.obj_drag.is_some() {
@@ -1207,6 +1255,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         ui.ctx().set_cursor_icon(over_object.unwrap_or(egui::CursorIcon::Text));
     }
     crate::table_resize::cursor(app, ui, &resp, &layout, &rects, geo.scale);
+    crate::table_mouse::cursor(app, ui, &resp, &layout, &rects, geo.scale);
     crate::table_pen::cursor(app, ui, &resp);
     // While "Save changes?" is up, keys answer it rather than edit the document behind it.
     if app.canvas.focused && !matches!(app.dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })) {
@@ -1623,6 +1672,10 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     if crate::table_resize::pointer(app, ui, resp, rects, layout, scale) {
         return;
     }
+    // A press on a table's selection area, insert button or move handle.
+    if crate::table_mouse::pointer(app, ui, resp, rects, layout, scale) {
+        return;
+    }
     let Some(p) = pointer else { return };
     // While drag-selecting, the pointer may sit past the viewport's edge (or the window's):
     // hit-test where it would be inside the view, so as the edge auto-scroll moves the content the
@@ -1809,10 +1862,13 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             app.canvas.caret_visible_since = crate::now_ms();
         }
     } else if app.canvas.dragging && ui.input(|i| i.pointer.primary_down()) {
+        // Through the command, so from one table cell into another the drag takes whole cells
+        // (Word); straight to the session, as the app's `run` would scroll on every frame.
         if let Some(pos) = layout.hit(page, x, y, story)
-            && pos != app.session.sel.focus
+            && pos != app.session.sel_ends().focus
         {
-            app.session.sel.focus = pos;
+            let pj = serde_json::to_value(&pos).unwrap_or_default();
+            let _ = app.session.run("caret.set", &json!({"pos": pj, "extend": true}));
             app.session.page_hint = page;
             app.canvas.caret_visible_since = crate::now_ms();
         }
@@ -1860,7 +1916,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
     hp.rect_filled(text, 0.0, t.ruler);
     let rp = app.session.doc.para_at(&app.session.sel.focus).map(|para| app.session.doc.styles.resolve_para(&para.props));
     // Graduations in the File › Options unit.
-    let (unit, div, step) = ruler_scale(app.session.prefs.units);
+    let (unit, div, step) = ruler_scale(app.session.units());
     // The caret paragraph's reading direction anchors the whole scale (#692): for a right-to-left
     // paragraph it runs from the page's right edge and the numbers increase right-to-left, so the
     // ruler matches the indent and tab markers, which sit at the paragraph's start edge.
@@ -1889,14 +1945,19 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
     ] {
         margin_handle(app, ui, edge, zone, |p| (p.x - x0) / scale, &sect);
     }
-    // Indent markers for the caret's paragraph (relative to its column).
-    let col_x = page.body.x;
+    // In a table, its column borders; registered before the indent markers, which keep the
+    // pointer where they overlap.
+    crate::table_ruler::columns(app, ui, layout, pi, bar, x0, scale);
+    // Indent markers for the caret's paragraph (relative to its column, or in a table to the
+    // cell's text).
+    let (col_x, w) = crate::table_ruler::text_area(app, layout, pi).unwrap_or((page.body.x, page.body.w));
+    // Where the paragraph starts, from the page's start edge (the right edge when right-to-left).
+    let start = if rtl { page.w - (col_x + w) } else { col_x };
     if let Some(rp) = rp {
         // Indents and tabs are measured from the paragraph's start edge: the right margin of a
         // right-to-left paragraph, where the start-indent markers sit.
-        let w = page.body.w;
-        let px = |s: f32| sx(origin + s);
-        let dist_at = |x: f32| s_at(x) - origin;
+        let px = |s: f32| sx(start + s);
+        let dist_at = |x: f32| s_at(x) - start;
         let first = px(rp.indent_left + rp.indent_first);
         let left = px(rp.indent_left);
         let right = px(w - rp.indent_right);
@@ -1943,7 +2004,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
         if r.dragged()
             && let Some(pp) = r.interact_pointer_pos()
         {
-            let pt = dist_at(pp.x).clamp(-col_x, page.body.w - 18.0);
+            let pt = dist_at(pp.x).clamp(-col_x, (w - 18.0).max(-col_x));
             let snapped = (pt / 4.5).round() * 4.5;
             if !r.drag_started() {
                 app.session.join_next_undo();
@@ -1966,7 +2027,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
         if r.dragged()
             && let Some(pp) = r.interact_pointer_pos()
         {
-            let pt = page.body.w - dist_at(pp.x);
+            let pt = w - dist_at(pp.x);
             if !r.drag_started() {
                 app.session.join_next_undo();
             }
@@ -2008,6 +2069,8 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             break;
         }
     }
+    // In a table, its rows' bottom borders.
+    crate::table_ruler::rows(app, ui, layout, pi, vbar, y0, scale);
 }
 
 /// One mark drawn along a horizontal ruler.
@@ -2190,6 +2253,13 @@ fn dims_body(app: &WordApp, layout: &DocLayout) -> bool {
     }
 }
 
+/// The spelling suggestions and synonyms the context menu offers for the selection or the word
+/// at the caret.
+fn context_suggestions(app: &mut WordApp) {
+    app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
+    app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
+}
+
 /// Caret position on screen.
 pub fn caret_screen(app: &mut WordApp) -> Option<(Pos2, f32)> {
     let l = app.session.layout();
@@ -2343,19 +2413,76 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         ui.menu_button(tl!("Wrap Text"), |ui| crate::ribbon::wrap_text_items(ui, app));
     }
     if app.session.sel.focus.path.cell().is_some() {
+        // The table's items follow what is selected, as in Word (2019, Windows).
+        let pick = table_pick(&app.session);
         ui.separator();
         ui.menu_button(tl!("Insert"), |ui| {
-            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
-            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
             item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
             item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
+            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
+            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
         });
-        ui.menu_button(tl!("Delete"), |ui| {
-            item(ui, app, "Delete Rows", "table.deleteRow", json!({}));
-            item(ui, app, "Delete Columns", "table.deleteColumn", json!({}));
-            item(ui, app, "Delete Table", "table.deleteTable", json!({}));
-        });
-        item(ui, app, "Merge Cells", "table.merge", json!({}));
+        match pick {
+            TablePick::Cell | TablePick::Cells => item(ui, app, "Delete Cells", "table.deleteCells", json!({})),
+            TablePick::Rows => item(ui, app, "Delete Rows", "table.deleteRow", json!({})),
+            TablePick::Columns => item(ui, app, "Delete Columns", "table.deleteColumn", json!({})),
+            TablePick::Table => item(ui, app, "Delete Table", "table.deleteTable", json!({})),
+        }
+        if pick == TablePick::Cell {
+            item(ui, app, "Split Cells", "table.split", json!({}));
+        }
+        if matches!(pick, TablePick::Cells | TablePick::Rows | TablePick::Columns) {
+            item(ui, app, "Merge Cells", "table.merge", json!({}));
+        }
+        if matches!(pick, TablePick::Rows | TablePick::Columns | TablePick::Table) {
+            item(ui, app, "Distribute Rows", "table.distributeRows", json!({}));
+            item(ui, app, "Distribute Columns", "table.distributeColumns", json!({}));
+        }
+        if pick == TablePick::Table {
+            ui.menu_button(tl!("AutoFit"), |ui| {
+                item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
+                item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
+                item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
+            });
+        }
+        item(ui, app, "Text Direction", "table.textDirection", json!({}));
+        if pick == TablePick::Table {
+            item(ui, app, "Insert Caption…", "references.caption", json!({}));
+        }
+        item(ui, app, "Table Properties…", "table.properties", json!({}));
+    }
+}
+
+/// What of a table the selection is: Word's context menu offers different table items for each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TablePick {
+    /// The caret or text in one cell, or that one cell.
+    Cell,
+    /// Cells of more than one row or column, but not whole rows or columns.
+    Cells,
+    Rows,
+    Columns,
+    Table,
+}
+
+fn table_pick(s: &wordcraft_engine::Session) -> TablePick {
+    if let Some(r) = s.cell_range()
+        && let Some(t) = s.doc.table(r.story, &r.table)
+    {
+        let all_rows = r.rows == (0, t.rows.len().saturating_sub(1));
+        let all_cols = r.cols == (0, t.cols().saturating_sub(1));
+        return match (all_rows, all_cols) {
+            (true, true) => TablePick::Table,
+            (true, false) => TablePick::Columns,
+            (false, true) => TablePick::Rows,
+            _ if r.cells(t).len() > 1 => TablePick::Cells,
+            _ => TablePick::Cell,
+        };
+    }
+    // Text running from one cell into another of the same table.
+    match (s.sel.anchor.path.cell(), s.sel.focus.path.cell()) {
+        (Some((ta, ra, ca)), Some((tb, rb, cb))) if ta == tb && (ra, ca) != (rb, cb) => TablePick::Cells,
+        _ => TablePick::Cell,
     }
 }
 
@@ -2402,6 +2529,7 @@ fn is_followable_link(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::table_resize::tests::{H, cell, screen, steps, table_window};
 
     #[test]
     fn reading_animation_eases_then_lands_exactly_on_column_start() {
@@ -2733,6 +2861,112 @@ mod tests {
         assert_eq!(clamped_scroll(vec2(0.0, 400.0), vec2(0.0, -50.0), max).y, 400.0, "never past the bottom");
         assert_eq!(clamped_scroll(vec2(0.0, 300.0), vec2(0.0, 50.0), max).y, 250.0);
         assert_eq!(clamped_scroll(egui::Vec2::ZERO, vec2(0.0, 50.0), egui::Vec2::ZERO).y, 0.0, "nothing to scroll");
+    }
+
+    /// A right-click at `at`, the button pressed and released a frame apart.
+    fn right_click(h: &mut H, at: Pos2) {
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        steps(h, 2);
+    }
+
+    /// Where the open context menu's entry holding `label` is (an entry's label also has its
+    /// shortcut or submenu arrow, and the ribbon above the page may show the same name).
+    fn menu_entry(h: &H, label: &str) -> Option<Pos2> {
+        use egui_kittest::kittest::Queryable;
+        let top = h.state().canvas.page_rects.first().map_or(0.0, |r| r.min.y);
+        h.query_all_by_label_contains(label).map(|n| n.rect()).find(|r| r.min.y >= top).map(|r| r.center())
+    }
+
+    /// Picks `path` in the open context menu with the mouse: over each submenu on the way, then a
+    /// click on the last entry.
+    fn pick(h: &mut H, path: &[&str]) {
+        let Some((last, submenus)) = path.split_last() else { return };
+        for label in submenus {
+            let at = menu_entry(h, label).expect(label);
+            h.event(egui::Event::PointerMoved(at));
+            steps(h, 2);
+        }
+        let at = menu_entry(h, last).expect(last);
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        steps(h, 2);
+    }
+
+    /// Whether the open context menu has an entry holding each of `labels` (`true`) or none
+    /// (`false`).
+    fn assert_menu(h: &H, labels: &[&str], there: bool) {
+        for label in labels {
+            assert_eq!(menu_entry(h, label).is_some(), there, "{label} in the menu: {there}");
+        }
+    }
+
+    /// Right-clicking a table cell puts the caret there, and the table's items follow what is
+    /// selected, as in Word: with the caret in a cell, Delete Cells and Split Cells; with the
+    /// whole table, Delete Table, Distribute, AutoFit and Insert Caption… (never Select or Cell
+    /// Alignment).
+    #[test]
+    fn the_context_menu_in_a_table_follows_the_selection() {
+        let mut h = table_window();
+        let b = cell(&mut h, 1, 2);
+        let at = screen(&mut h, b.x + b.w / 2.0, b.y + b.h / 2.0);
+        right_click(&mut h, at);
+        assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((1, 2)), "the caret moved to the cell");
+        assert_menu(&h, &["Insert", "Delete Cells", "Split Cells", "Text Direction", "Table Properties…"], true);
+        assert_menu(&h, &["Merge Cells", "Distribute Rows", "Delete Table", "AutoFit", "Select", "Cell Alignment"], false);
+        let depth = h.state().session.undo_depth();
+        pick(&mut h, &["Insert", "Insert Rows Below"]);
+        assert_eq!(h.state().session.doc.body.iter().find_map(|b| b.as_table()).map(|t| t.rows.len()), Some(3));
+        assert_eq!(h.state().session.undo_depth(), depth + 1);
+        h.state_mut().run("table.selectTable", json!({})).unwrap();
+        right_click(&mut h, at);
+        assert!(h.state().session.cell_range().is_some(), "a right-click on the selected table keeps it");
+        assert_menu(&h, &["Delete Table", "Distribute Rows", "Distribute Columns", "AutoFit", "Insert Caption…", "Table Properties…"], true);
+        assert_menu(&h, &["Delete Cells", "Split Cells", "Merge Cells"], false);
+        pick(&mut h, &["Delete Table"]);
+        assert!(h.state().session.doc.body.iter().all(|b| b.as_table().is_none()));
+    }
+
+    /// With a column's cells selected, a right-click on one of them keeps them: the menu is a
+    /// column's (Delete Columns, Merge Cells, Distribute) and its Text Direction turns just the
+    /// column, in one undo step; one on a cell beside them drops them, though that cell lies
+    /// between the selection's ends in the text, and the menu is a cell's again.
+    #[test]
+    fn a_right_click_keeps_selected_cells_only_on_them() {
+        use wordcraft_doc::props::TextDirection;
+        let mut h = table_window();
+        h.state_mut().run("table.selectColumn", json!({})).unwrap();
+        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (0, 0))));
+        let on = cell(&mut h, 1, 0);
+        let at = screen(&mut h, on.x + on.w / 2.0, on.y + on.h / 2.0);
+        right_click(&mut h, at);
+        assert_eq!(h.state().session.cell_range().map(|r| r.cols), Some((0, 0)), "still the column");
+        assert_menu(&h, &["Delete Columns", "Merge Cells", "Distribute Rows", "Distribute Columns", "Text Direction"], true);
+        assert_menu(&h, &["Delete Cells", "Split Cells", "AutoFit"], false);
+        let depth = h.state().session.undo_depth();
+        pick(&mut h, &["Text Direction"]);
+        assert_eq!(h.state().session.undo_depth(), depth + 1);
+        let t = h.state().session.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+        let dir = |r: usize, c: usize| t.rows[r].cells[c].props.text_direction;
+        assert_eq!(
+            [dir(0, 0), dir(1, 0), dir(0, 1), dir(1, 2)],
+            [TextDirection::Down, TextDirection::Down, TextDirection::Horizontal, TextDirection::Horizontal]
+        );
+        let beside = cell(&mut h, 0, 2);
+        let at = screen(&mut h, beside.x + beside.w / 2.0, beside.y + beside.h / 2.0);
+        right_click(&mut h, at);
+        assert!(h.state().session.cell_range().is_none(), "the column is no longer selected");
+        assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((0, 2)));
+        assert_menu(&h, &["Split Cells"], true);
+        assert_menu(&h, &["Delete Columns", "Merge Cells"], false);
     }
 
     /// Issue #123: zoomed out, pages sit side by side in rows when the width allows; at 100% a
