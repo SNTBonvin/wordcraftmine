@@ -33,6 +33,8 @@ pub mod dialogs_para;
 pub mod dialogs_refs;
 pub mod dialogs_review;
 pub mod dialogs_ribbon;
+pub mod dialogs_smart_art;
+pub mod dialogs_templates;
 pub mod equation_tab;
 pub mod file_dialogs;
 pub mod frame;
@@ -245,6 +247,9 @@ pub struct WordApp {
     /// Web: a recipient list was asked for (Select Recipients › Use an Existing List…), so the
     /// next text file from the picker loads as recipients instead of opening (#240).
     pub recipient_list_pending: bool,
+    /// A file picked for the open dialog (Templates and Add-ins › Attach…, Organizer ›
+    /// Browse…); the dialog takes it on its next frame.
+    pub(crate) dialog_pick: Option<String>,
     /// macOS: the window has no title bar; leave room for the traffic lights.
     pub integrated_titlebar: bool,
     control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
@@ -274,6 +279,12 @@ pub struct WordApp {
     last_autosave: f64,
     /// The tab shown before the Equation tab came up (restored when editing ends).
     pub(crate) equation_prev_tab: Option<String>,
+    /// SmartArt Text Pane: the item last focused (Promote, Demote and Add Shape act on it) and
+    /// the item being typed in (its keystrokes join one undo step).
+    pub smart_art_item: Option<usize>,
+    pub(crate) smart_art_typing: Option<usize>,
+    /// The tab shown before Outline view brought up the Outlining tab (restored when it closes).
+    pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
     pub zotero: zotero::ZoteroLink,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
@@ -344,6 +355,9 @@ impl WordApp {
             word_count: (0, 0),
             last_autosave: 0.0,
             equation_prev_tab: None,
+            smart_art_item: None,
+            smart_art_typing: None,
+            outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
             ctx: None,
             read_aloud_at: None,
@@ -351,6 +365,7 @@ impl WordApp {
             autosave_path: None,
             change_picture_target: None,
             recipient_list_pending: false,
+            dialog_pick: None,
             file_dialog: None,
             info_editing: None,
         }
@@ -1286,6 +1301,8 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "insert.field" if !has("instr") => Some("field"),
         // Edit Field Code shows the selected field's code (#339).
         "fields.setCode" if !has("code") => Some("editFieldCode"),
+        // SmartArt without a layout or items shows the layout picker.
+        "insert.smartArt" if !has("layout") && !has("items") => Some("insertSmartArt"),
         // Chart without a type shows the gallery; Change Chart Type and Edit Data their dialogs.
         "insert.chart" if !has("type") && !has("data") => Some("insertChart"),
         "chart.type" if !has("type") => Some("changeChartType"),
@@ -1324,6 +1341,9 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "references.markEntry" if !has("entry") => Some("markEntry"),
         "references.sources" if params.as_object().is_none_or(|m| m.is_empty()) => Some("sourceManager"),
         "references.citation" if !has("tag") && !has("source") => Some("createSource"),
+        // Templates and Add-ins, and the Organizer without a file to list (#377).
+        "tools.templates" => Some("templates"),
+        "styles.organizer" if !has("path") => Some("organizer"),
         // Language, Envelopes and Labels without settings show their dialogs (#407).
         "review.language" if params.as_object().is_none_or(|m| m.is_empty()) => Some("language"),
         "mailings.envelopes" if params.as_object().is_none_or(|m| m.is_empty()) => Some("envelopes"),
@@ -1692,7 +1712,7 @@ mod tests {
         // A heading navigation request must position its column at the leading edge,
         // not wherever egui's generic scroll_to_rect decides the caret is visible.
         let target = wordcraft_doc::Pos::body(0, 5000);
-        a.run("view.outline", json!({})).unwrap();
+        a.run("view.navigationPane", json!({"value": true})).unwrap();
         a.run("caret.set", json!({"pos": target})).unwrap();
         a.canvas.nav_to_caret = true;
         a.canvas.scroll_to_caret = false;

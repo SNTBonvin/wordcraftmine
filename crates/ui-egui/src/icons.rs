@@ -354,6 +354,40 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(10.0, 6.5), (10.0, 10.0), (5.0, 10.0), (5.0, 13.0)]);
             pen.line(&[(10.0, 10.0), (15.0, 10.0), (15.0, 13.0)]);
         }
+        "addShape" => {
+            pen.frect(2.5, 3.0, 9.5, 8.0, a);
+            pen.rect(2.5, 12.0, 9.5, 17.0, c);
+            pen.line(&[(6.0, 8.0), (6.0, 12.0)]);
+            pen.line_c(&[(14.5, 10.5), (14.5, 17.5)], green);
+            pen.line_c(&[(11.0, 14.0), (18.0, 14.0)], green);
+        }
+        "promote" => {
+            pen.lines(9.0, 17.5, &[5.0, 10.0, 15.0]);
+            pen.line_c(&[(6.5, 7.5), (3.0, 10.0), (6.5, 12.5)], a);
+        }
+        "demote" => {
+            pen.lines(9.0, 17.5, &[5.0, 10.0, 15.0]);
+            pen.line_c(&[(3.0, 7.5), (6.5, 10.0), (3.0, 12.5)], a);
+        }
+        "textPane" => {
+            pen.rect(2.5, 3.0, 17.5, 17.0, c);
+            pen.line(&[(9.0, 3.0), (9.0, 17.0)]);
+            pen.lines(4.0, 7.5, &[6.5, 10.0, 13.5]);
+            pen.frect(11.0, 6.0, 16.0, 9.0, a);
+            pen.frect(11.0, 11.5, 16.0, 14.5, a);
+        }
+        "smartArtColors" => {
+            pen.fcircle(7.0, 7.5, 4.0, a);
+            pen.fcircle(13.0, 7.5, 4.0, orange);
+            pen.fcircle(10.0, 13.0, 4.0, green);
+            pen.circle(10.0, 10.0, 8.0, c);
+        }
+        "resetGraphic" => {
+            pen.rect(7.5, 6.5, 16.5, 15.5, c);
+            pen.frect(9.5, 8.5, 14.5, 13.5, a);
+            pen.line(&[(3.5, 13.0), (3.5, 4.0), (11.0, 4.0)]);
+            pen.line(&[(1.5, 6.0), (3.5, 4.0), (5.5, 6.0)]);
+        }
         "chart" => {
             pen.frect(3.5, 11.0, 6.5, 17.0, a);
             pen.frect(8.5, 6.0, 11.5, 17.0, orange);
@@ -1024,6 +1058,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rect(3.0, 3.0, 17.0, 17.0, c);
             pen.fill(&[(8.0, 6.5), (8.0, 13.5), (14.0, 10.0)], a);
         }
+        // A page with a filled band at the top and a style mark: the document's template.
+        "documentTemplate" => {
+            pen.page(4.0, 2.0, 16.0, 18.0);
+            pen.frect(6.0, 5.0, 11.5, 7.0, a);
+            pen.text(10.0, 13.0, 8.0, "A", a, false);
+        }
         "properties" | "info" => {
             pen.circle(10.0, 10.0, 7.0, c);
             pen.line_c(&[(10.0, 9.0), (10.0, 14.5)], a);
@@ -1254,6 +1294,45 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             if name == "textBoxUnlink" {
                 pen.line_c(&[(6.5, 16.5), (9.0, 11.5)], c);
             }
+        }
+
+        // Outlining tab: arrows moving a paragraph between outline levels and along the outline.
+        "outlinePromote" | "outlineDemote" => {
+            pen.lines(9.0, 17.0, &[6.0, 10.0, 14.0]);
+            if name == "outlinePromote" {
+                pen.line_c(&[(7.0, 10.0), (2.5, 10.0)], a);
+                pen.line_c(&[(5.0, 7.5), (2.5, 10.0), (5.0, 12.5)], a);
+            } else {
+                pen.line_c(&[(2.5, 10.0), (7.0, 10.0)], a);
+                pen.line_c(&[(4.5, 7.5), (7.0, 10.0), (4.5, 12.5)], a);
+            }
+        }
+        "outlineTop" | "outlineBody" => {
+            pen.lines(11.0, 17.0, &[6.0, 10.0, 14.0]);
+            let (x, d) = if name == "outlineTop" { (3.0, 1.0) } else { (9.0, -1.0) };
+            for k in [0.0, 3.5] {
+                pen.line_c(&[(x + d * k + d * 2.5, 7.0), (x + d * k, 10.0), (x + d * k + d * 2.5, 13.0)], a);
+            }
+        }
+        "outlineUp" | "outlineDown" => {
+            pen.lines(3.0, 11.0, &[6.0, 10.0, 14.0]);
+            let up = name == "outlineUp";
+            let (tip, tail) = if up { (3.0, 17.0) } else { (17.0, 3.0) };
+            pen.line_c(&[(15.0, tail), (15.0, tip)], a);
+            let wing = if up { tip + 3.0 } else { tip - 3.0 };
+            pen.line_c(&[(12.0, wing), (15.0, tip), (18.0, wing)], a);
+        }
+        "outlineExpand" | "outlineCollapse" => {
+            pen.fcircle(10.0, 10.0, 6.5, c);
+            pen.line_c(&[(6.5, 10.0), (13.5, 10.0)], Color32::WHITE);
+            if name == "outlineExpand" {
+                pen.line_c(&[(10.0, 6.5), (10.0, 13.5)], Color32::WHITE);
+            }
+        }
+        "closeOutline" => {
+            pen.page(4.0, 2.0, 16.0, 18.0);
+            pen.line_c(&[(7.0, 8.0), (13.0, 14.0)], red);
+            pen.line_c(&[(13.0, 8.0), (7.0, 14.0)], red);
         }
         "help" => {
             pen.circle(10.0, 10.0, 7.0, c);

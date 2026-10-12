@@ -68,6 +68,9 @@ pub struct ViewState {
     /// The Clipboard pane (Home › Clipboard): items collected by Copy and Cut.
     #[serde(default)]
     pub clipboard_pane: bool,
+    /// SmartArt Design › Text Pane: the selected SmartArt graphic's items as an editable outline.
+    #[serde(default)]
+    pub smart_art_pane: bool,
     /// The Accessibility pane (Review › Check Accessibility): the checker's findings.
     #[serde(default)]
     pub accessibility_pane: bool,
@@ -105,6 +108,9 @@ pub struct ViewState {
     /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
     #[serde(default)]
     pub field_codes: bool,
+    /// Outline view: collapsed headings, Show Level, first lines, text formatting.
+    #[serde(default)]
+    pub outline: crate::cmd::outline::OutlineState,
     /// Developer › Design Mode: every content control shows its frame and title.
     #[serde(default)]
     pub design_mode: bool,
@@ -142,6 +148,7 @@ impl Default for ViewState {
             style_inspector: false,
             comments_pane: false,
             clipboard_pane: false,
+            smart_art_pane: false,
             accessibility_pane: false,
             alt_text_pane: false,
             multi_page: false,
@@ -159,6 +166,7 @@ impl Default for ViewState {
             hide_ink: false,
             draw: Default::default(),
             field_codes: false,
+            outline: Default::default(),
             design_mode: false,
         }
     }
@@ -276,7 +284,7 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    layout: Option<(u64, f32, f32, ViewMode, Option<u32>, Arc<DocLayout>, bool)>,
+    layout: Option<(u64, f32, f32, ViewMode, Option<u32>, Arc<DocLayout>, bool, Option<wordcraft_layout::outline::OutlineView>)>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -538,13 +546,15 @@ impl Session {
         let width = if self.view.read_mode { self.view.read_width } else { self.view.web_width };
         let height = if self.view.read_mode { self.view.read_height } else { 0.0 };
         let spacing = if self.view.read_mode { self.view.read_line_spacing.map(f32::to_bits) } else { None };
-        if let Some((r, w, h, m, sp, l, pf)) = &self.layout
+        let outline = (mode == ViewMode::Outline).then(|| self.view.outline.view());
+        if let Some((r, w, h, m, sp, l, pf, o)) = &self.layout
             && *r == self.rev
             && (*w == width || mode == ViewMode::Print)
             && *h == height
             && *m == mode
             && *sp == spacing
             && *pf == self.view.proofing
+            && *o == outline
         {
             return l.clone();
         }
@@ -557,16 +567,16 @@ impl Session {
             hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
             proofing: self.view.proofing,
             field_codes: self.view.field_codes,
+            outline: outline.clone(),
             proof: wordcraft_layout::ProofOptions { grammar: self.prefs.mark_grammar, spelling: self.prefs.spelling() },
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing));
+        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing, outline));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
     pub fn export_layout(&self) -> Arc<DocLayout> {
-        let opts =
-            LayoutOptions { view: ViewMode::Print, web_width: 0.0, show_hidden: false, hide_deleted: false, proofing: false, ..Default::default() };
+        let opts = LayoutOptions { view: ViewMode::Print, ..Default::default() };
         Arc::new(wordcraft_layout::layout(&self.doc, &mut LayoutCache::new(), &opts))
     }
 
@@ -691,6 +701,7 @@ impl Session {
         self.column_mode = false;
         self.edit_marks.clear();
         self.go_back_step = 0;
+        self.view.outline.collapsed.clear();
         self.reset_history();
         self.touch();
         self.dirty = false;
@@ -944,6 +955,8 @@ impl Session {
                 if spec.mutates && !matches!(id, "edit.undo" | "edit.redo") {
                     self.note_edit();
                 }
+                // Outline view: collapsed headings follow edits; the caret stays where it shows.
+                crate::cmd::outline::after_command(self, &sel_before);
                 // Extra selected objects last until something else is edited or selected.
                 if !matches!(id, "select.addObject" | "arrange.ungroup") && (spec.mutates || self.sel != sel_before) {
                     self.also_selected.clear();

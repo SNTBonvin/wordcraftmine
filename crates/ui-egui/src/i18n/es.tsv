@@ -1615,6 +1615,19 @@
 	Enlarge symbol	Agrandar símbolo
 	Enclosure	Contorno
 	Circle	Círculo
+	Templates	Plantillas
+	Templates and Add-ins	Plantillas y complementos
+	Attach Template	Adjuntar plantilla
+	Detach Template	Quitar plantilla
+	Automatically Update Document Styles	Actualizar automáticamente los estilos del documento
+	Update Styles from Template	Actualizar estilos desde la plantilla
+	Organizer	Organizador
+	Copy Styles	Copiar estilos
+	Rename Style	Cambiar nombre del estilo
+	Document template:	Plantilla del documento:
+	Attach…	Adjuntar…
+	Automatically update document styles	Actualizar automáticamente los estilos del documento
+	Organizer…	Organizador…
 	Change Chart Type	Cambiar tipo de gráfico
 	Chart Design	Diseño de gráfico
 	Type	Tipo
@@ -1671,6 +1684,70 @@
 	Reading Column Width	Ancho de columna de lectura
 	Reading Line Spacing	Interlineado de lectura
 	Reading Text Size	Tamaño del texto de lectura
+	Add Shape	Agregar forma
+	Change Colors	Cambiar colores
+	Change Layout	Cambiar diseño
+	Create Graphic	Crear gráfico
+	Edit Items	Editar elementos
+	Layouts	Diseños
+	Reset Graphic	Restablecer gráfico
+	SmartArt Design	Diseño de SmartArt
+	SmartArt Styles	Estilos de SmartArt
+	Text Pane	Panel de texto
+	List	Lista
+	Process	Proceso
+	Cycle	Ciclo
+	Hierarchy	Jerarquía
+	Relationship	Relación
+	Pyramid	Pirámide
+	Basic List	Lista básica
+	Basic Process	Proceso básico
+	Basic Cycle	Ciclo básico
+	Basic Pyramid	Pirámide básica
+	Basic Radial	Radial básico
+	Basic Matrix	Matriz básica
+	Basic Venn	Venn básico
+	Shows items of equal weight as blocks in rows.	Muestra elementos de igual peso como bloques en filas.
+	Shows steps in order, left to right, with arrows between them.	Muestra pasos en orden, de izquierda a derecha, con flechas entre ellos.
+	Shows steps that repeat, around a circle.	Muestra pasos que se repiten, alrededor de un círculo.
+	Shows a tree: each item below the item it belongs to.	Muestra un árbol: cada elemento debajo del elemento al que pertenece.
+	Shows parts that build on each other, largest at the bottom.	Muestra partes que se apoyan unas en otras, la mayor abajo.
+	Shows items around a central idea: the first item is the centre.	Muestra elementos alrededor de una idea central: el primer elemento es el centro.
+	Shows parts of a whole as quadrants.	Muestra las partes de un todo como cuadrantes.
+	Shows overlapping ideas as overlapping circles.	Muestra ideas que se superponen como círculos superpuestos.
+	Accent {n}	Énfasis {n}
+	Colorful	Multicolor
+	Insert SmartArt	Insertar SmartArt
+	One line per item. Enter adds an item.	Una línea por elemento. Intro agrega un elemento.
+	Add\nShape	Agregar\nforma
+	Change\nColors	Cambiar\ncolores
+	Reset\nGraphic	Restablecer\ngráfico
+	Promote to Heading 1	Promover a Título 1
+	Demote to Body Text	Degradar a texto independiente
+	Move Up	Subir
+	Move Down	Bajar
+	Collapse	Contraer
+	Expand or Collapse Heading	Expandir o contraer título
+	Select Heading and Content	Seleccionar título y contenido
+	Show Level	Mostrar nivel
+	Show Level 1	Mostrar nivel 1
+	Show Level 2	Mostrar nivel 2
+	Show Level 3	Mostrar nivel 3
+	Show Level 4	Mostrar nivel 4
+	Show Level 5	Mostrar nivel 5
+	Show Level 6	Mostrar nivel 6
+	Show Level 7	Mostrar nivel 7
+	Show Level 8	Mostrar nivel 8
+	Show Level 9	Mostrar nivel 9
+	Show All Levels	Mostrar todos los niveles
+	All Levels	Todos los niveles
+	Show First Line Only	Mostrar solo la primera línea
+	Show Text Formatting	Mostrar formato de texto
+	Close Outline View	Cerrar vista Esquema
+	Outline State	Estado del esquema
+	Outlining	Esquema
+	Outline Tools	Herramientas de esquema
+	Close Outline\nView	Cerrar vista\nEsquema
 	A, B, C, …	A, B, C, …
 	Above the item	Encima del elemento
 	Accessed on	Consultado el

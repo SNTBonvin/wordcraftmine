@@ -1553,6 +1553,19 @@
 	Right (vertical)	Paremal (vertikaalne)
 	Ruby text:	Ruby-tekst:
 	Size (pt):	Suurus (pt):
+	Templates	Mallid
+	Templates and Add-ins	Mallid ja lisandmoodulid
+	Attach Template	Manusta mall
+	Detach Template	Eemalda mall
+	Automatically Update Document Styles	Uuenda dokumendi stiile automaatselt
+	Update Styles from Template	Uuenda stiile mallist
+	Organizer	Korraldaja
+	Copy Styles	Kopeeri stiilid
+	Rename Style	Nimeta stiil ümber
+	Document template:	Dokumendi mall:
+	Attach…	Manusta…
+	Automatically update document styles	Uuenda dokumendi stiile automaatselt
+	Organizer…	Korraldaja…
 	Moved from	Teisaldatud kohast
 	Moved to	Teisaldatud kohta
 	Change Chart Type	Muuda diagrammi tüüpi
@@ -1632,6 +1645,70 @@
 	Reading Column Width	Lugemisveeru laius
 	Reading Line Spacing	Lugemise reavahe
 	Reading Text Size	Lugemisteksti suurus
+	Add Shape	Lisa kujund
+	Change Colors	Muuda värve
+	Change Layout	Muuda paigutust
+	Create Graphic	Loo graafika
+	Edit Items	Redigeeri üksusi
+	Layouts	Paigutused
+	Reset Graphic	Lähtesta graafika
+	SmartArt Design	SmartArti kujundus
+	SmartArt Styles	SmartArti laadid
+	Text Pane	Tekstipaan
+	List	Loend
+	Process	Protsess
+	Cycle	Tsükkel
+	Hierarchy	Hierarhia
+	Relationship	Seos
+	Pyramid	Püramiid
+	Basic List	Lihtne loend
+	Basic Process	Lihtne protsess
+	Basic Cycle	Lihtne tsükkel
+	Basic Pyramid	Lihtne püramiid
+	Basic Radial	Lihtne radiaal
+	Basic Matrix	Lihtne maatriks
+	Basic Venn	Lihtne Venni diagramm
+	Shows items of equal weight as blocks in rows.	Näitab võrdse kaaluga üksusi plokkidena ridades.
+	Shows steps in order, left to right, with arrows between them.	Näitab samme järjekorras vasakult paremale, nende vahel nooled.
+	Shows steps that repeat, around a circle.	Näitab korduvaid samme ringi ümber.
+	Shows a tree: each item below the item it belongs to.	Näitab puud: iga üksus on selle üksuse all, kuhu see kuulub.
+	Shows parts that build on each other, largest at the bottom.	Näitab teineteisele toetuvaid osi, suurim all.
+	Shows items around a central idea: the first item is the centre.	Näitab üksusi keskse idee ümber: esimene üksus on keskel.
+	Shows parts of a whole as quadrants.	Näitab terviku osi veeranditena.
+	Shows overlapping ideas as overlapping circles.	Näitab kattuvaid ideid kattuvate ringidena.
+	Accent {n}	Rõhk {n}
+	Colorful	Värviline
+	Insert SmartArt	Lisa SmartArt
+	One line per item. Enter adds an item.	Üks rida üksuse kohta. Sisestusklahv lisab üksuse.
+	Add\nShape	Lisa\nkujund
+	Change\nColors	Muuda\nvärve
+	Reset\nGraphic	Lähtesta\ngraafika
+	Promote to Heading 1	Tõsta pealkirjaks 1
+	Demote to Body Text	Langeta põhitekstiks
+	Move Up	Teisalda üles
+	Move Down	Teisalda alla
+	Collapse	Ahenda
+	Expand or Collapse Heading	Laienda või ahenda pealkiri
+	Select Heading and Content	Vali pealkiri koos sisuga
+	Show Level	Kuva tase
+	Show Level 1	Kuva tase 1
+	Show Level 2	Kuva tase 2
+	Show Level 3	Kuva tase 3
+	Show Level 4	Kuva tase 4
+	Show Level 5	Kuva tase 5
+	Show Level 6	Kuva tase 6
+	Show Level 7	Kuva tase 7
+	Show Level 8	Kuva tase 8
+	Show Level 9	Kuva tase 9
+	Show All Levels	Kuva kõik tasemed
+	All Levels	Kõik tasemed
+	Show First Line Only	Kuva ainult esimene rida
+	Show Text Formatting	Kuva teksti vorming
+	Close Outline View	Sule liigendusvaade
+	Outline State	Liigenduse olek
+	Outlining	Liigendamine
+	Outline Tools	Liigendustööriistad
+	Close Outline\nView	Sule\nliigendusvaade
 	A, B, C, …	A, B, C, …
 	Above the item	Objekti kohal
 	Accessed on	Vaadatud
