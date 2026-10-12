@@ -136,11 +136,18 @@ const MAX_RULES: usize = 64;
 const MAX_SORT_KEYS: usize = 8;
 
 /// Two cell values compared: as numbers when both are numbers, else as text ignoring case.
+/// Orders two cells: numbers (compared numerically) before text (compared
+/// case-insensitively). This is a total order, so `sort_by` stays consistent
+/// (and can't panic) on columns that mix numbers and text, such as `9`, `10`, `1A`.
 fn compare_cells(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering::{Greater, Less};
+    let number = |s: &str| s.parse::<f64>().ok().filter(|x| x.is_finite());
     let (a, b) = (a.trim(), b.trim());
-    match (a.parse::<f64>(), b.parse::<f64>()) {
-        (Ok(x), Ok(y)) if x.is_finite() && y.is_finite() => x.total_cmp(&y),
-        _ => a.to_lowercase().cmp(&b.to_lowercase()),
+    match (number(a), number(b)) {
+        (Some(x), Some(y)) => x.total_cmp(&y),
+        (Some(_), None) => Less,
+        (None, Some(_)) => Greater,
+        (None, None) => a.to_lowercase().cmp(&b.to_lowercase()),
     }
 }
 
@@ -1795,6 +1802,36 @@ mod tests {
         s.run("mailings.editRecipients", &json!({"fields": ["Name"], "rows": [["X"], ["Y"]]})).unwrap();
         assert!(s.merge.filter.is_empty());
         assert_eq!(names(&s), ["X", "Y"]);
+    }
+
+    /// Review fix for #885: sorting a column that mixes numbers and text is a total order
+    /// (numbers first, numerically; then text; ties keep list order) and never panics.
+    #[test]
+    fn sort_mixed_number_and_text_column() {
+        let headers = vec!["Id".to_string()];
+        let rows = |vals: &[&str]| vals.iter().map(|v| vec![v.to_string()]).collect::<Vec<_>>();
+        let sorted = |rows: &[Vec<String>], desc: bool| {
+            let order = select_records(&headers, rows, &[], &[SortKey { field: "Id".into(), descending: desc }]);
+            order.iter().map(|&i| rows[i][0].clone()).collect::<Vec<_>>()
+        };
+        let r = rows(&["1a", "9", "10", "b", "2"]);
+        assert_eq!(sorted(&r, false), ["2", "9", "10", "1a", "b"]);
+        assert_eq!(sorted(&r, true), ["b", "1a", "10", "9", "2"]);
+        // Equal keys stay in list order.
+        let r = rows(&["x", "1", "X", "1.0", ""]);
+        assert_eq!(sorted(&r, false), ["1", "1.0", "", "x", "X"]);
+        // A long mixed column (where an inconsistent comparator makes `sort_by` panic).
+        let vals: Vec<String> = (0..400)
+            .map(|i| match i % 4 {
+                0 => format!("{}", (i * 37) % 101),
+                1 => format!("{}a", (i * 13) % 17),
+                2 => format!("{}", (i * 7) % 23),
+                _ => format!("Z{}", i % 11),
+            })
+            .collect();
+        let r: Vec<Vec<String>> = vals.iter().map(|v| vec![v.clone()]).collect();
+        let out = sorted(&r, false);
+        assert!(out.windows(2).all(|w| compare_cells(&w[0], &w[1]) != std::cmp::Ordering::Greater));
     }
 
     /// #778: preview, Finish & Merge and labels use only the filtered records, in sort order; a

@@ -2441,3 +2441,28 @@
 	Pastes the clipboard's picture.	Поставя картината от клипборда.
 	Region:	Регион:
 	Automatic ({region})	Автоматично ({region})
+# Mail merge: filter and sort recipients (#778)
+	Filter Recipients	Филтриране на получателите
+	Sort Recipients	Сортиране на получателите
+	Filter and Sort	Филтриране и сортиране
+	And	И
+	Or	Или
+	Comparison	Сравнение
+	Compare to	Стойност за сравнение
+	Add Condition	Добавяне на условие
+	Remove condition	Премахване на условието
+	Sort by	Сортиране по
+	Then by	След това по
+	Ascending	Възходящо
+	Descending	Низходящо
+	Equal to	Равно на
+	Not equal to	Не е равно на
+	Less than	По-малко от
+	Greater than	По-голямо от
+	Less than or equal	По-малко или равно на
+	Greater than or equal	По-голямо или равно на
+	Is blank	Празно
+	Is not blank	Не е празно
+	Contains	Съдържа
+	Does not contain	Не съдържа
+	{count} of {total} recipients will be merged.	Ще бъдат обединени {count} от {total} получатели.
