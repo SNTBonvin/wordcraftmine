@@ -49,6 +49,7 @@
 	Arrow	矢印
 	Artistic Effects	アート効果
 	As you type	入力中
+	Asian text font:	アジア文字のフォント:
 	Asian Typography	アジア文字の組版
 	Author	作成者
 	AutoCorrect Options	オートコレクトのオプション
@@ -102,6 +103,7 @@
 	Interface	インターフェイス
 	Interface language	表示言語
 	Inside:	内側:
+	Latin text font:	ラテン文字のフォント:
 	Left border	左罫線
 	Left Margin	左余白
 	Indents and Spacing	インデントと間隔
@@ -378,6 +380,7 @@
 	Export PDF	PDF にエクスポート
 	Exported {path}	{path} にエクスポートしました
 	Extend Selection	選択範囲の拡張
+	Extend Selection by Units	単位ごとに選択範囲を拡張
 	Field	フィールド
 	File	ファイル
 	Find	検索
@@ -783,6 +786,9 @@
 	Show only comments and formatting in balloons	コメントと書式のみを吹き出しに表示
 	Show revisions in balloons	変更履歴を吹き出しに表示
 	Show rulers	ルーラーを表示する
+	Animation	アニメーション
+	Animate the caret (it glides and fades)	カーソルをアニメーション表示する（滑らかに移動してフェードする）
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	オン: 入力や矢印キーの操作でカーソルが新しい位置へ滑らかに移動し、点滅もフェードします。オフ: カーソルは瞬時に移動し、点滅は表示と非表示が切り替わるだけです。
 	Show the community button in the title bar	タイトル バーにコミュニティ ボタンを表示する
 	Show/Hide ¶	編集記号の表示/非表示 ¶
 	Show\nComments	コメントの表示
@@ -925,10 +931,10 @@
 	Wide	広い
 	Widow/Orphan Control	改ページ時 1 行残して段落を区切らない
 	Widow/Orphan control	改ページ時 1 行残して段落を区切らない
-	Wildcards (regex)	ワイルドカード（正規表現）
 	Window	ウィンドウ
 	Word Count	文字カウント
 	Word document (*.docx)	Word 文書 (*.docx)
+	Word XML Document (*.xml)	Word XML ドキュメント (*.xml)
 	Word Left	前の単語へ
 	Word Right	次の単語へ
 	WordArt	ワードアート
@@ -1394,8 +1400,11 @@
 	Selected Fields	選択したフィールド
 	Edit Field…	フィールドの編集…
 	Formatted	書式変更
+	Deleted	削除
 	Interface size:	表示サイズ:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	リボン、メニュー、ダイアログを、システムの表示倍率に加えて拡大または縮小します。文書のズームは別に設定します。
+	Print Markup	変更履歴とコメントを印刷
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	PDF、印刷、画像では各ページの横にコメントと変更履歴を表示し、Web ページ、Markdown、テキストでは末尾にコメント一覧を付けます。
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. 書式の制限
@@ -1516,6 +1525,22 @@
 	New Group	新しいグループ
 	Rename…	名前の変更…
 	Ribbon and Quick Access Toolbar:	リボンとクイック アクセス ツール バー:
+	Add Font…	フォントの追加…
+	Added Fonts	追加したフォント
+	Remove Added Font	追加したフォントの削除
+	Recent Colors	最近使用した色
+	More Colors…	その他の色…
+	Standard	標準
+	Current	現在
+	Colors:	色:
+	Color model:	カラー モデル:
+	Red:	赤:
+	Green:	緑:
+	Blue:	青:
+	Hue:	色合い:
+	Sat:	鮮やかさ:
+	Lum:	明るさ:
+	Hex:	16 進数:
 	Accessibility Pane	アクセシビリティ ウィンドウ
 	Alt Text Pane	代替テキスト ウィンドウ
 	Alt\nText	代替\nテキスト
@@ -1664,6 +1689,38 @@
 	Continuous numbering	通し番号
 	Apply	適用
 	Convert Notes	注の変換
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	ドキュメント
+	Word document	Word 文書
+	All files	すべてのファイル
+	Recipient lists	宛先リスト
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	システムのファイル ダイアログを利用できないため、WordCraft 独自のダイアログを表示しています。システムのダイアログを使うには、ファイル選択ポータル (xdg-desktop-portal-gtk など) または zenity をインストールしてください。
+	Up one level	1 つ上のフォルダー
+	Home folder	ホーム フォルダー
+	{name} wasn't found.	{name} が見つかりません。
+	{name} already exists. Choose Save again to replace it.	{name} は既に存在します。置き換えるには、もう一度 [保存] を選んでください。
+	This folder can't be read: {error}	このフォルダーを読み取れません: {error}
+	Showing the first {count} items.	最初の {count} 項目を表示しています。
+	File name:	ファイル名:
+	Browse in WordCraft…	WordCraft で参照…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	システムのファイル ダイアログが表示されないときに、WordCraft 独自のブラウザーでファイルを開きます。
+	Hide White Space	余白を非表示
+	All pages	すべてのページ
+	Current page	現在のページ
+	Selected pages	選択したページ
+	Custom range	ページ範囲を指定
+	All pages in the range	範囲内のすべてのページ
+	Odd pages only	奇数ページのみ
+	Even pages only	偶数ページのみ
+	Copies	部数
+	Collate copies	部単位で印刷
+	Pages like 1-3, 5	ページ指定(例: 1-3, 5)
+	{count} of {total} pages will print	{total} ページ中 {count} ページを印刷します
+	Save these pages as PDF…	このページを PDF として保存…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	プリンター、両面印刷、1 枚あたりのページ数は、そのダイアログで選択します。
+	Previous Page	前のページ
+	Print to PDF	PDF に印刷
 	Add Shape	図形の追加
 	Change Colors	色の変更
 	Change Layout	レイアウトの変更
@@ -1837,6 +1894,37 @@
 	Rewind	巻き戻し
 	Forward	早送り
 	Stroke {n} of {total}	ストローク {n}/{total}
+	Use wildcards	ワイルドカードを使う
+	Special	特殊文字
+	Match prefix	語頭が一致する
+	Match suffix	語尾が一致する
+	Ignore punctuation characters	句読点を無視する
+	Ignore white-space characters	空白文字を無視する
+	Regular expressions	正規表現
+	Search Options	検索オプション
+	Tab Character	タブ文字
+	Any Character	任意の 1 文字
+	Any Digit	任意の数字
+	Any Letter	任意の英字
+	Caret Character	キャレット記号
+	Section Character	セクション記号
+	Paragraph Character	段落記号文字
+	Graphic	図
+	Manual Line Break	手動の改行
+	Manual Page Break	手動の改ページ
+	Section Break	セクション区切り
+	White Space	空白
+	Clipboard Contents	クリップボードの内容
+	Find What Text	検索した文字列
+	Find What Expression	検索した式
+	Character in Range	範囲内の文字
+	Beginning of Word	単語の先頭
+	End of Word	単語の末尾
+	Expression	式
+	Not	否定
+	Num Occurrences	繰り返し回数
+	Previous 1 or More	直前の 1 回以上の繰り返し
+	0 or More Characters	0 文字以上の文字列
 	Move with Text	文字列と一緒に移動する
 	Fix Position on Page	ページ上で位置を固定する
 
@@ -1938,3 +2026,11 @@
 	Turkish	トルコ語
 	Ukrainian	ウクライナ語
 	{language} is now the document's default language.	{language} がこの文書の既定の言語になりました。
+	Visual effects	視覚効果
+	Animation effects:	アニメーション効果:
+	On	オン
+	Off	オフ
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	スクロールやズームのなめらかな動きと、メニューやボタンのフェード表示です。「オフ」にすると、すべての変化がすぐに表示されます。
+	Your system has animation effects turned on.	システムのアニメーション効果はオンです。
+	Your system has animation effects turned off.	システムのアニメーション効果はオフです。
+	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。

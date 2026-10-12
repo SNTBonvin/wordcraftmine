@@ -51,7 +51,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 );
                 resp
             };
-            if back.clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // Escape in the built-in file browser closes only the browser.
+            if back.clicked() || (!app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
@@ -262,6 +263,16 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
         let _ = app.run("ui.openFileDialog", json!({}));
     }
+    // Linux and the BSDs (#576): the system dialog needs a file chooser portal or zenity; when it
+    // doesn't show up, WordCraft's own browser is always one click away.
+    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+    if ui
+        .button(egui::RichText::new(tl!("Browse in WordCraft…")).font(medium(14.0)))
+        .on_hover_text(tl!("Open a file with WordCraft's own browser when the system file dialog doesn't appear."))
+        .clicked()
+    {
+        let _ = app.run("ui.fileBrowser", json!({}));
+    }
     ui.add_space(18.0);
     open_list(app, ui);
 }
@@ -331,38 +342,27 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
 }
 
 fn export_page(app: &mut WordApp, ui: &mut Ui) {
-    let is_print = app.ui.backstage_page == "print";
-    heading(ui, if is_print { "Print" } else { "Export" });
-    if is_print && app.services.print.is_some() {
-        ui.label(tl!("Send the document straight to the system print dialog, or save a copy in another format below."));
-        ui.add_space(12.0);
-        if ui.add(egui::Button::new(egui::RichText::new(tl!("Print")).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
-            let _ = app.run("ui.print", json!({}));
+    if app.ui.backstage_page == "print" {
+        heading(ui, "Print");
+        // Print Markup (a print setting, as in Word): the comments beside each page.
+        let mut markup = app.session.prefs.print_markup;
+        if ui
+            .checkbox(&mut markup, tl!("Print Markup"))
+            .on_hover_text(tl!(
+                "Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text."
+            ))
+            .changed()
+        {
+            let _ = app.run("file.printMarkup", json!({"value": markup}));
         }
         ui.add_space(12.0);
-        ui.separator();
-        ui.add_space(12.0);
-        ui.label(tl!("Or save a copy in another format:"));
-    } else {
-        ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
+        crate::print_page::show(app, ui);
+        return;
     }
+    heading(ui, "Export");
+    ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
     ui.add_space(12.0);
-    for (label, ext) in [
-        ("PDF document (*.pdf)", "pdf"),
-        ("Word document (*.docx)", "docx"),
-        ("OpenDocument Text (*.odt)", "odt"),
-        ("Rich Text Format (*.rtf)", "rtf"),
-        ("Web page (*.html)", "html"),
-        ("Markdown (*.md)", "md"),
-        ("LaTeX (*.tex)", "tex"),
-        ("Plain text (*.txt)", "txt"),
-        ("Page image (*.png)", "png"),
-    ] {
-        if ui.add(egui::Button::new(egui::RichText::new(tl!(label)).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
-            app.export_dialog(ext);
-        }
-        ui.add_space(4.0);
-    }
+    crate::print_page::export_formats(app, ui);
 }
 
 #[cfg(test)]
