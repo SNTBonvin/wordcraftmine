@@ -217,6 +217,7 @@ impl Vector {
             .iter()
             .map(|it| match it {
                 Item::Path { segs, .. } => segs.len() * std::mem::size_of::<Seg>(),
+                Item::Text { text, font, .. } => text.len() + font.len(),
                 Item::Bitmap { .. } => 0,
             })
             .sum();
@@ -296,6 +297,9 @@ fn draw_vector(ctx: &mut RenderContext, v: &Vector, r: &kurbo::Rect, crop: &[f32
                 ctx.fill_rect(&rect);
                 ctx.reset_paint_transform();
             }
+            PlacedItem::Text { pos, text, font, size, color } => {
+                draw_vector_text(ctx, view, pos, &text, &font, size, color);
+            }
         }
     }
     ctx.set_fill_rule(peniko::Fill::NonZero);
@@ -303,6 +307,30 @@ fn draw_vector(ctx: &mut RenderContext, v: &Vector, r: &kurbo::Rect, crop: &[f32
     if faded {
         ctx.pop_layer();
     }
+}
+
+/// One metafile text run, drawn as filled glyph outlines (the watermark's drawing path): the face
+/// substitutes by facename through the Word font stack, the colour is the run's, and the baseline
+/// sits one ascent below the reference point, as GM_COMPATIBLE text does.
+fn draw_vector_text(ctx: &mut RenderContext, view: Affine, pos: (f64, f64), text: &str, font: &str, size: f64, color: [u8; 4]) {
+    if text.is_empty() || !size.is_finite() || size <= 0.0 {
+        return;
+    }
+    let face = wordcraft_fonts::word::resolve(font, false, false).face;
+    let glyphs = wordcraft_fonts::shape(&face, text, &[], |c| c);
+    let upem = face.upem.max(1.0);
+    let k = size / upem;
+    let base = pos.1 + face.ascent * k;
+    ctx.set_paint(rgba_color(color));
+    let db = FontDb::global();
+    let mut x = 0.0;
+    for g in &glyphs {
+        let outline = db.outline(&face, g.gid);
+        ctx.set_transform(view * Affine::translate((pos.0 + x, base)) * Affine::scale(k));
+        ctx.fill_path(&outline);
+        x += g.x_advance as f64 * k;
+    }
+    ctx.set_transform(view);
 }
 
 /// One device pixel in page points under `view` (its mean axis scale); 1 for a degenerate transform.
@@ -1130,6 +1158,75 @@ mod tests {
         let left = img.pixel((rect.x + rect.w * 0.25) as u32, y);
         assert!(right[0] > 200 && right[1] < 60 && right[2] < 60, "right half should be red: {right:?}");
         assert!(left[..3].iter().all(|c| *c > 200), "left half should be paper, not the grey box: {left:?}");
+    }
+
+    /// A 25 mm square EMF (device units 0.04 per 0.01 mm, so 100 device units) with a blue "KDF"
+    /// label: SetTextColor, a 20-unit Arial font, then ExtTextOutW at (10, 25).
+    fn blue_label_emf() -> Vec<u8> {
+        let mut h = vec![0u8; 88];
+        h[0..4].copy_from_slice(&1u32.to_le_bytes());
+        h[4..8].copy_from_slice(&88u32.to_le_bytes());
+        h[8..24].copy_from_slice(&le32(&[0, 0, 100, 100]));
+        h[24..40].copy_from_slice(&le32(&[0, 0, 2500, 2500]));
+        h[40..44].copy_from_slice(&0x464D_4520u32.to_le_bytes());
+        h[72..88].copy_from_slice(&le32(&[1000, 1000, 250, 250]));
+        let mut font = le32(&[1, -20]);
+        font.extend(vec![0u8; 24]);
+        font.extend("Arial".chars().flat_map(|c| (c as u16).to_le_bytes()));
+        font.extend([0u8, 0]);
+        // ExtTextOutW: the payload starts at record offset 8, so EMRTEXT fields sit 8 lower than
+        // the record offsets in MS-EMF (reference 28, nChars 36, offString 40, string at 68).
+        let mut text = vec![0u8; 68];
+        text[28..36].copy_from_slice(&le32(&[10, 25]));
+        text[36..40].copy_from_slice(&3u32.to_le_bytes());
+        text[40..44].copy_from_slice(&76u32.to_le_bytes());
+        let mut string: Vec<u8> = "KDF".chars().flat_map(|c| (c as u16).to_le_bytes()).collect();
+        string.extend([0u8, 0]);
+        let eof = emf_rec(14, &[0; 12]);
+        [h, emf_rec(24, &le32(&[0x00FF_0000])), emf_rec(82, &font), emf_rec(37, &le32(&[1])), emf_rec(84, &[text, string].concat()), eof].concat()
+    }
+
+    #[test]
+    fn metafile_text_labels_are_drawn() {
+        let mut d = Document::new();
+        let media = d.add_media(blue_label_emf(), "emf");
+        let mut p = wordcraft_doc::Paragraph::new();
+        let obj = wordcraft_doc::para::InlineObject::Image {
+            media,
+            w: 70.0,
+            h: 70.0,
+            alt: String::new(),
+            float: Default::default(),
+            crop: [0.0; 4],
+            ole: None,
+        };
+        p.insert_object(0, obj, &Default::default()).unwrap();
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+        let opts = RenderOptions::default();
+        let rect = page_display(&d, &l.pages[0], &opts.display)
+            .iter()
+            .find_map(|i| match i {
+                Draw::Image { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .expect("a picture on the page");
+        let img = render_page(&d, &l.pages[0], 1.0, &opts);
+        // The 20-unit label starts 10 units in and 25 down: glyph strokes in the band y 25–45%.
+        let in_band = |fx: f32, fy: f32| {
+            let x = (rect.x + rect.w * fx) as u32;
+            let y = (rect.y + rect.h * fy) as u32;
+            img.pixel(x, y)
+        };
+        let blue = |p: [u8; 4]| p[2] > 150 && p[0] < 100 && p[1] < 100;
+        let hits =
+            (12..45).flat_map(|fx| (25..45).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(in_band(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert!(hits > 30, "{hits} blue pixels where the label should be");
+        let below =
+            (5..95).flat_map(|fx| (75..95).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(in_band(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert_eq!(below, 0, "no label below the text band");
+        let corner = in_band(0.875, 0.1);
+        assert!(corner[..3].iter().all(|c| *c > 200), "empty corner stays paper, not the grey box: {corner:?}");
     }
 
     #[test]

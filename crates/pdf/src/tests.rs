@@ -775,6 +775,44 @@ fn metafile_fill_items_carry_no_stroke_state() {
 }
 
 #[test]
+fn metafile_text_labels_are_drawn() {
+    // SetTextColor blue, a 20-unit Arial font, then ExtTextOutW "KDF" at (10, 25): the glyphs are
+    // filled blue in the content stream (as embedded text or outlines).
+    let le32 = |vals: &[i32]| -> Vec<u8> { vals.iter().flat_map(|v| v.to_le_bytes()).collect() };
+    let mut text = vec![0u8; 68];
+    text[28..36].copy_from_slice(&[10i32, 25].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
+    text[36..40].copy_from_slice(&3u32.to_le_bytes());
+    text[40..44].copy_from_slice(&76u32.to_le_bytes());
+    let mut string: Vec<u8> = "KDF".chars().flat_map(|c| (c as u16).to_le_bytes()).collect();
+    string.extend([0u8, 0]);
+    let mut font = le32(&[1, -20, 0, 0, 0, 0, 0]);
+    font.extend("Arial".chars().flat_map(|c| (c as u16).to_le_bytes()));
+    font.extend([0u8, 0]);
+    let rec = |typ: u32, payload: &[u8]| {
+        let mut v = typ.to_le_bytes().to_vec();
+        v.extend(((8 + payload.len()) as u32).to_le_bytes());
+        v.extend(payload);
+        v
+    };
+    let recs = [rec(24, &le32(&[0x00FF_0000u32 as i32])), rec(82, &font), rec(37, &le32(&[1])), rec(84, &[text, string].concat()), rec(14, &[0; 12])];
+    let mut d = Document::new();
+    let media = d.add_media(emf_file(&recs), "emf");
+    let mut p = Paragraph::with_text("Figure: ", CharProps::default());
+    let n = p.len();
+    p.insert_object(
+        n,
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
+        &CharProps::default(),
+    )
+    .unwrap();
+    d.body = vec![para_block(p)];
+    let bytes = export(&d, &PdfOptions { compress: false, tagged: false, ..Default::default() }).unwrap();
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(raw.contains("0 0 1 rg"), "the label text is filled blue");
+    assert!(!raw.contains("0.8156"), "the grey placeholder box is not drawn");
+}
+
+#[test]
 fn cosmetic_metafile_pens_are_thin_but_visible() {
     // MOVETO, LINETO with the default cosmetic (width 0) pen: drawn 0.25 pt wide, not 0.1 pt.
     let recs = [emf_rec(27, &[0, 50]), emf_rec(54, &[100, 50]), emf_rec(14, &[0; 3])];

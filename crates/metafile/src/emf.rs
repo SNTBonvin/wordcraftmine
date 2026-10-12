@@ -2,7 +2,7 @@
 //! record (bitmap info and bits) are relative to the record start, so each handler reads the record slice.
 
 use crate::bytes::Bytes;
-use crate::canvas::{BS_NULL, Brush, Canvas, Obj, PS_NULL, PS_STYLE_MASK, Pen, Xform, colorref};
+use crate::canvas::{BS_NULL, Brush, Canvas, Font, Obj, PS_NULL, PS_STYLE_MASK, Pen, Xform, colorref};
 use crate::dib::{self, Blend};
 use crate::geom::{self, ArcKind, P};
 use crate::{Error, Frame, MAX_PATH_OPS};
@@ -89,6 +89,7 @@ fn record(cv: &mut Canvas, typ: u32, r: Bytes) {
         17 => r.u32(8).map(|m| cv.set_map_mode(m)),
         19 => r.u32(8).map(|m| cv.set_polyfill(m)),
         20 => r.u32(8).map(|m| cv.set_rop2(m)),
+        24 => r.u32(8).map(|c| cv.set_text_color(colorref(c))),
         33 => {
             cv.save_dc();
             Some(())
@@ -100,6 +101,8 @@ fn record(cv: &mut Canvas, typ: u32, r: Bytes) {
         38 => create_pen(cv, r),
         95 => create_ext_pen(cv, r),
         39 => create_brush(cv, r),
+        82 => create_font(cv, r),
+        83 | 84 => ext_text_out(cv, r, typ == 84),
         40 => r.u32(8).map(|i| cv.delete_object(i)),
         27 => xy32(r, 8).map(|p| cv.move_to(p)),
         54 => xy32(r, 8).map(|p| cv.line_to(p)),
@@ -248,6 +251,62 @@ fn create_brush(cv: &mut Canvas, r: Bytes) -> Option<()> {
     let color = r.u32(16)?;
     cv.add_object(Some(slot), Obj::Brush(Brush { style, color: colorref(color) }));
     Some(())
+}
+
+/// EMR_EXTCREATEFONTINDIRECTW: handle, then LogFontW. Only the character height and the facename
+/// matter here (no rotation or per-character positioning). A negative `lfHeight` is the character
+/// height, a positive one the cell height; the difference is the font's internal leading, which a
+/// metafile does not carry, so the value is used as-is with a floor of 1.
+fn create_font(cv: &mut Canvas, r: Bytes) -> Option<()> {
+    let slot = r.u32(8)? as usize;
+    let lf_height = r.i32(12)?;
+    // A zero height means GDI's default, like no font selected at all.
+    let height = if lf_height == 0 { Font::default().height } else { f64::from(lf_height.unsigned_abs()).max(1.0) };
+    let name = r.tail(12 + 28).map(|t| utf16_z(t.0)).unwrap_or_default();
+    cv.add_object(Some(slot), Obj::Font(Font { name, height }));
+    Some(())
+}
+
+/// EMR_EXTTEXTOUTA/W (MS-EMF 2.3.5.7): bounds, graphics mode, scales, then one EMRTEXT — reference
+/// point at 36, character count at 44 and the string offset at 48, relative to the record start.
+/// The string is UTF-16LE for W and 8-bit ANSI for A; the options rectangle and the per-character
+/// `Dx` array are ignored.
+fn ext_text_out(cv: &mut Canvas, r: Bytes, wide: bool) -> Option<()> {
+    let at = xy32(r, 36)?;
+    let n = r.u32(44)? as usize;
+    let off = r.u32(48)? as usize;
+    let len = n.checked_mul(if wide { 2 } else { 1 })?;
+    let bytes = r.slice(off, len)?;
+    let text = if wide { utf16(bytes) } else { ansi(bytes) };
+    cv.text(at, text);
+    Some(())
+}
+
+/// UTF-16LE bytes as text; unpaired surrogates become replacement characters.
+fn utf16(bytes: &[u8]) -> String {
+    utf16_pairs(bytes.as_chunks::<2>().0)
+}
+
+/// The NUL-terminated UTF-16LE string at the start of `bytes` (at most LogFontW's 32 characters).
+fn utf16_z(bytes: &[u8]) -> String {
+    let pairs = bytes.as_chunks::<2>().0;
+    let n = pairs.iter().position(|p| *p == [0, 0]).unwrap_or(pairs.len()).min(32);
+    utf16_pairs(&pairs[..n])
+}
+
+fn utf16_pairs(pairs: &[[u8; 2]]) -> String {
+    let units: Vec<u16> = pairs.iter().map(|p| u16::from_le_bytes(*p)).collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// 8-bit ANSI text (CP1252): the defined 0x80–0x9F characters, Latin-1 for the rest.
+fn ansi(bytes: &[u8]) -> String {
+    const HIGH: [char; 32] = [
+        '\u{20AC}', '\u{FFFD}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{02C6}', '\u{2030}', '\u{0160}',
+        '\u{2039}', '\u{0152}', '\u{FFFD}', '\u{017D}', '\u{FFFD}', '\u{FFFD}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}',
+        '\u{2013}', '\u{2014}', '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{FFFD}', '\u{017E}', '\u{0178}',
+    ];
+    bytes.iter().map(|&b| if b >= 0x80 { HIGH[(b - 0x80) as usize] } else { char::from(b) }).collect()
 }
 
 /// BITBLT (76) and STRETCHBLT (77): dest at 24..40, rop at 40, source x/y at 44, bmi at 84, bits at

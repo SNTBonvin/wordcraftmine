@@ -1021,7 +1021,7 @@ impl Exporter<'_> {
     fn picture(&mut self, s: &mut Surface, rect: &Rect, media: &str, crop: &[f32; 4], alpha: f32) {
         let Some(clip) = rect_path(rect) else { return };
         if let Some(v) = self.vector(media) {
-            vector_picture(s, &v, rect, crop, &clip, alpha);
+            self.vector_picture(s, &v, rect, crop, &clip, alpha);
             return;
         }
         let Some(img) = self.image(media) else {
@@ -1382,6 +1382,116 @@ impl Exporter<'_> {
         s.set_fill(None);
         s.pop();
     }
+
+    /// Draws a metafile picture into the clip (the picture frame): paths are filled and stroked in page
+    /// space (strokes keep their width under non-uniform scaling), bitmaps stretched, text drawn with
+    /// the substituted font, all faded by `alpha`. Every path sets its fill and stroke, so none carries
+    /// over; strokes have round caps and joins.
+    fn vector_picture(&mut self, s: &mut Surface, v: &Vector, r: &Rect, crop: &[f32; 4], clip: &Path, alpha: f32) {
+        let target = kurbo::Rect::new(f64::from(r.x), f64::from(r.y), f64::from(r.x + r.w), f64::from(r.y + r.h));
+        let fade = alpha < 0.999;
+        if fade {
+            s.push_opacity(norm(alpha));
+        }
+        s.push_clip_path(clip, &FillRule::NonZero);
+        for it in v.pic.place(target, *crop) {
+            match it {
+                PlacedItem::Path { path, fill, stroke, even_odd } => {
+                    let Some(p) = path_from(&path) else { continue };
+                    let fill = fill.map(|c| {
+                        let (paint, opacity) = paint_of(c);
+                        let rule = if even_odd { FillRule::EvenOdd } else { FillRule::NonZero };
+                        Fill { paint: paint.into(), opacity, rule }
+                    });
+                    let stroke = stroke.map(|(c, w)| {
+                        let (paint, opacity) = paint_of(c);
+                        Stroke {
+                            paint: paint.into(),
+                            width: w.max(HAIRLINE) as f32,
+                            opacity,
+                            line_cap: LineCap::Round,
+                            line_join: LineJoin::Round,
+                            ..Default::default()
+                        }
+                    });
+                    s.set_fill(fill);
+                    s.set_stroke(stroke);
+                    s.draw_path(&p);
+                }
+                PlacedItem::Bitmap { index, rect } => {
+                    let Some(Some(img)) = v.images.get(index) else { continue };
+                    let Some(size) = Size::from_wh(rect.width() as f32, rect.height() as f32) else { continue };
+                    s.push_transform(&Transform::from_translate(rect.x0 as f32, rect.y0 as f32));
+                    s.draw_image(img.clone(), size);
+                    s.pop();
+                }
+                PlacedItem::Text { pos, text, font, size, color } => {
+                    self.vector_text(s, pos, &text, &font, size, color);
+                }
+            }
+        }
+        s.set_fill(None);
+        s.set_stroke(None);
+        s.pop();
+        if fade {
+            s.pop();
+        }
+    }
+
+    /// One metafile text run, drawn the way the watermark is: the facename substitutes through the Word
+    /// font stack, glyphs come out as embedded text (or outlines when krilla cannot subset the face),
+    /// and the baseline sits one ascent below the reference point, as GM_COMPATIBLE text does.
+    fn vector_text(&mut self, s: &mut Surface, pos: (f64, f64), text: &str, font: &str, size: f64, color: [u8; 4]) {
+        if text.is_empty() || !size.is_finite() || size <= 0.0 {
+            return;
+        }
+        let text: String = text.chars().take(1000).collect();
+        let face = wordcraft_fonts::word::resolve(font, false, false).face;
+        let shaped = wordcraft_fonts::shape(&face, &text, &[], |c| c);
+        let upem = face.upem.max(1.0) as f32;
+        let size = size as f32;
+        let k = size / upem;
+        let baseline = pos.1 as f32 + face.ascent as f32 * k;
+        let glyphs: Vec<KrillaGlyph> = shaped
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let end = shaped.iter().skip(i + 1).map(|n| n.cluster).find(|cl| *cl > g.cluster).unwrap_or(text.len());
+                let start = g.cluster.min(end);
+                KrillaGlyph::new(
+                    GlyphId::new(g.gid),
+                    g.x_advance as f32 / upem,
+                    g.x_offset as f32 / upem,
+                    g.y_offset as f32 / upem,
+                    0.0,
+                    start..end,
+                    None,
+                )
+            })
+            .collect();
+        s.push_transform(&Transform::from_translate(pos.0 as f32, baseline));
+        s.set_stroke(None);
+        let (paint, opacity) = paint_of(color);
+        s.set_fill(Some(Fill { paint: paint.into(), opacity, rule: FillRule::NonZero }));
+        match self.font(&face) {
+            Some(embedded) => {
+                s.draw_glyphs(Point::from_xy(0.0, 0.0), &glyphs, embedded, &text, size, false);
+            }
+            None => {
+                let mut x = 0.0;
+                let mut pen = Vec::with_capacity(shaped.len());
+                for g in &shaped {
+                    pen.push((g.gid, x + g.x_offset as f32 * k, -(g.y_offset as f32) * k));
+                    x += g.x_advance as f32 * k;
+                }
+                if let Some(path) = glyph_outlines(&face, size, &pen) {
+                    s.draw_path(&path);
+                }
+            }
+        }
+        s.set_fill(None);
+        s.pop();
+    }
 }
 
 /// A metafile picture, parsed once. The geometry comes placed by the metafile crate; the bitmaps are
@@ -1410,57 +1520,6 @@ fn paint_of(c: [u8; 4]) -> (rgb::Color, NormalizedF32) {
 /// "thinnest line": krilla bounds a 0-width stroke by the bare path, which is empty for a horizontal
 /// line, so a faded (grouped) picture would clip it away.
 const HAIRLINE: f64 = 0.25;
-
-/// Draws a metafile picture into the clip (the picture frame): paths are filled and stroked in page
-/// space (strokes keep their width under non-uniform scaling), bitmaps stretched, all faded by `alpha`.
-/// Every path sets its fill and stroke, so none carries over; strokes have round caps and joins.
-fn vector_picture(s: &mut Surface, v: &Vector, r: &Rect, crop: &[f32; 4], clip: &Path, alpha: f32) {
-    let target = kurbo::Rect::new(f64::from(r.x), f64::from(r.y), f64::from(r.x + r.w), f64::from(r.y + r.h));
-    let fade = alpha < 0.999;
-    if fade {
-        s.push_opacity(norm(alpha));
-    }
-    s.push_clip_path(clip, &FillRule::NonZero);
-    for it in v.pic.place(target, *crop) {
-        match it {
-            PlacedItem::Path { path, fill, stroke, even_odd } => {
-                let Some(p) = path_from(&path) else { continue };
-                let fill = fill.map(|c| {
-                    let (paint, opacity) = paint_of(c);
-                    let rule = if even_odd { FillRule::EvenOdd } else { FillRule::NonZero };
-                    Fill { paint: paint.into(), opacity, rule }
-                });
-                let stroke = stroke.map(|(c, w)| {
-                    let (paint, opacity) = paint_of(c);
-                    Stroke {
-                        paint: paint.into(),
-                        width: w.max(HAIRLINE) as f32,
-                        opacity,
-                        line_cap: LineCap::Round,
-                        line_join: LineJoin::Round,
-                        ..Default::default()
-                    }
-                });
-                s.set_fill(fill);
-                s.set_stroke(stroke);
-                s.draw_path(&p);
-            }
-            PlacedItem::Bitmap { index, rect } => {
-                let Some(Some(img)) = v.images.get(index) else { continue };
-                let Some(size) = Size::from_wh(rect.width() as f32, rect.height() as f32) else { continue };
-                s.push_transform(&Transform::from_translate(rect.x0 as f32, rect.y0 as f32));
-                s.draw_image(img.clone(), size);
-                s.pop();
-            }
-        }
-    }
-    s.set_fill(None);
-    s.set_stroke(None);
-    s.pop();
-    if fade {
-        s.pop();
-    }
-}
 
 /// A kurbo path as a krilla path (None when empty).
 fn path_from(b: &kurbo::BezPath) -> Option<Path> {

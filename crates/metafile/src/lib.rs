@@ -60,6 +60,11 @@ pub enum Item {
     },
     /// A bitmap stretched into `rect` = `[x, y, w, h]` (picture units), RGBA8 rows top-down.
     Bitmap { rect: [f32; 4], width: u32, height: u32, rgba: Vec<u8> },
+    /// A text run (EMR_EXTTEXTOUTA/W) at the reference point, the top of the character cell in
+    /// GM_COMPATIBLE, in picture coordinates. `h` is the character height in picture units and
+    /// `font` the facename (empty: the caller's default). The baseline comes from the substituted
+    /// face when drawing, so the label sits where GDI put it.
+    Text { at: (f32, f32), text: String, font: String, h: f32, color: [u8; 4] },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +142,12 @@ fn build(raw: Vec<Raw>, frame: Option<Frame>) -> Picture {
             let rect = [f(x)?, f(y)?, f(r[2] * sx)?, f(r[3] * sy)?];
             Some(Item::Bitmap { rect, width: img.w as u32, height: img.h as u32, rgba: img.px })
         }
+        Raw::Text { at, text, font, h, color } => {
+            // No label is taller than the picture's diagonal: anything taller is a mapping artefact.
+            let h = f((h * stroke_scale).min(diag))?;
+            let (x, y) = tf(at);
+            Some(Item::Text { at: (f(x)?, f(y)?), text, font, h, color })
+        }
     });
     let items = items.collect();
     Picture { width: f(size.0).unwrap_or(0.0), height: f(size.1).unwrap_or(0.0), items }
@@ -200,6 +211,11 @@ fn bbox(raw: &[Raw]) -> Option<[f64; 4]> {
             Raw::Bitmap { rect, .. } => {
                 grow((rect[0], rect[1]));
                 grow((rect[0] + rect[2], rect[1] + rect[3]));
+            }
+            // The run's rough extent: the reference point down to the baseline.
+            Raw::Text { at, h, .. } => {
+                grow(*at);
+                grow((at.0, at.1 + h));
             }
         }
     }

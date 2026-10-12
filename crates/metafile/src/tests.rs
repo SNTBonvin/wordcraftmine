@@ -120,7 +120,7 @@ const DIB24_RGBA: [u8; 16] = [255, 0, 0, 255, 255, 255, 255, 255, 0, 0, 255, 255
 fn path_segs(item: &Item) -> (&Vec<Seg>, Option<[u8; 4]>, Option<([u8; 4], f32)>, bool) {
     match item {
         Item::Path { segs, fill, stroke, even_odd } => (segs, *fill, *stroke, *even_odd),
-        Item::Bitmap { .. } => panic!("expected a path"),
+        Item::Bitmap { .. } | Item::Text { .. } => panic!("expected a path"),
     }
 }
 
@@ -336,6 +336,10 @@ fn truncated_random_and_mutated_inputs_never_panic() {
     payload.extend(dib24_bottom_up().get(40..).unwrap_or_default());
     let efile = emf(
         &[
+            erec(24, &h32(0)),
+            erec(82, &font_payload(-30, "Arial")),
+            erec(37, &h32(1)),
+            textout_rec(84, (10, 10), &utf16le("KDF")),
             erec(59, &[]),
             erec(27, &cat(vec![e32(0), e32(0)])),
             erec(54, &cat(vec![e32(9), e32(9)])),
@@ -517,6 +521,98 @@ fn dib_rec(typ: u32, fields: &[(usize, u32)], blobs: &[(usize, &[u8])], info: &[
 fn bitblt_rec(rop: u32, dst: [u32; 4], info: &[u8], bits: &[u8]) -> Vec<u8> {
     let fields = [(24, dst[0]), (28, dst[1]), (32, dst[2]), (36, dst[3]), (40, rop)];
     dib_rec(76, &fields, &[], info, bits)
+}
+
+/// `s` as UTF-16LE bytes.
+fn utf16le(s: &str) -> Vec<u8> {
+    s.chars().flat_map(|c| (c as u16).to_le_bytes().to_vec()).collect()
+}
+
+/// An EMR_EXTCREATEFONTINDIRECTW payload: ihFont 1, then LogFontW (height at 0, facename at 28).
+fn font_payload(height: i32, face: &str) -> Vec<u8> {
+    let mut v = h32(1);
+    v.extend(e32(height));
+    v.extend(vec![0u8; 24]);
+    v.extend(utf16le(face));
+    v.extend([0u8, 0]);
+    v
+}
+
+/// EMR_EXTTEXTOUTA/W at reference point `at` with the string bytes at the spec's offset 76.
+fn textout_rec(typ: u32, at: (i32, i32), string: &[u8]) -> Vec<u8> {
+    let wide = typ == 84;
+    let n_chars = if wide { string.len() / 2 } else { string.len() };
+    let total = (76 + string.len()).div_ceil(4) * 4;
+    erec_at(typ, total, &[(36, at.0 as u32), (40, at.1 as u32), (44, n_chars as u32), (48, 76), (52, 0), (72, 0)], &[(76, string)])
+}
+
+#[test]
+fn emf_exttextoutw_becomes_text_item() {
+    // SetTextColor blue, a 120-unit Arial font selected, then ExtTextOutW "KDF" at (100, 200).
+    let recs = [erec(24, &h32(0x00FF_0000)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1)), textout_rec(84, (100, 200), &utf16le("KDF"))];
+    let p = parse(&emf(&recs, [0, 0, 1000, 1000], [0; 4])).unwrap();
+    let Item::Text { at, text, font, h, color } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert_eq!(*at, (100.0, 200.0));
+    assert_eq!(text, "KDF");
+    assert_eq!(font, "Arial");
+    assert_eq!(*color, [0, 0, 255, 255]);
+    assert!(close(*h, 120.0));
+    // Placed 2000 x 1000: x doubles, y keeps, and the height takes the mean axis factor 1.5.
+    let placed = p.place(kurbo::Rect::new(0.0, 0.0, 2000.0, 1000.0), [0.0; 4]);
+    let crate::PlacedItem::Text { pos, text, size, .. } = &placed[0] else { panic!("expected placed text") };
+    assert_eq!(*pos, (200.0, 200.0));
+    assert_eq!(text, "KDF");
+    assert!(close(*size as f32, 180.0), "size {size}");
+}
+
+#[test]
+fn emf_exttextouta_decodes_ansi() {
+    // CP1252 0x96 is an en dash; without a font selected the default (empty facename) draws it.
+    let recs = [textout_rec(83, (10, 20), b"K\x96DF")];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let Item::Text { text, font, h, color, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert_eq!(text, "K\u{2013}DF");
+    assert_eq!(font, "");
+    assert!(close(*h, 12.0), "default font height, got {h}");
+    assert_eq!(*color, [0, 0, 0, 255]);
+}
+
+#[test]
+fn hostile_exttextout() {
+    let state = [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1))];
+    // offString far past the record end, and nChars = 0: both are dropped.
+    let far = erec_at(84, 84, &[(36, 0), (40, 0), (44, 3), (48, 100_000)], &[]);
+    let empty = textout_rec(84, (0, 0), &[]);
+    let p = parse(&emf(&[state.concat(), far, empty], [0, 0, 100, 100], [0; 4])).unwrap();
+    assert!(p.items.is_empty(), "{:?}", p.items);
+    // A pen selected instead of a font: the label falls back to the default font, not a panic.
+    let pen = erec_at(38, 28, &[(8, 0), (12, 0), (16, 4), (24, 0)], &[]);
+    let p = parse(&emf(&[pen, erec(37, &h32(0)), textout_rec(84, (10, 10), &utf16le("K"))], [0, 0, 100, 100], [0; 4])).unwrap();
+    let Item::Text { font, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert_eq!(font, "");
+    // Random mutations of a text-bearing file: dropped or defaulted, never a panic.
+    let good = emf(&[state.concat(), textout_rec(84, (50, 50), &utf16le("KDF"))], [0, 0, 100, 100], [0; 4]);
+    let mut rng = Lcg(0x0123_4567_89AB_CDEF);
+    for _ in 0..2000 {
+        let mut buf = good.clone();
+        for _ in 0..8 {
+            let at = rng.rnd() as usize % buf.len();
+            buf[at] = rng.rnd() as u8;
+        }
+        let _ = parse(&buf);
+    }
+}
+
+#[test]
+fn place_maps_text_and_drops_far_or_empty_items() {
+    let text = |at: (f32, f32), t: &str| Item::Text { at, text: t.to_string(), font: String::new(), h: 10.0, color: [0, 0, 0, 255] };
+    let pic = crate::Picture { width: 100.0, height: 50.0, items: vec![text((2e6, 0.0), "x"), text((0.0, 0.0), ""), text((10.0, 5.0), "K")] };
+    let placed = pic.place(kurbo::Rect::new(0.0, 0.0, 200.0, 100.0), [0.0; 4]);
+    assert_eq!(placed.len(), 1);
+    let crate::PlacedItem::Text { pos, text, font, size, color } = &placed[0] else { panic!("expected text") };
+    assert_eq!(pos, &(20.0, 10.0));
+    assert_eq!((text.as_str(), font.as_str()), ("K", ""));
+    assert_eq!((*size, *color), (20.0, [0, 0, 0, 255]));
 }
 
 #[test]
@@ -923,6 +1019,8 @@ fn take_pixels_returns_only_drawable_bitmaps() {
     assert_eq!(wide.take_pixels(), None);
     let mut path = Item::Path { segs: Vec::new(), fill: None, stroke: None, even_odd: false };
     assert_eq!(path.take_pixels(), None);
+    let mut text = Item::Text { at: (0.0, 0.0), text: "K".to_string(), font: String::new(), h: 10.0, color: [0, 0, 0, 255] };
+    assert_eq!(text.take_pixels(), None);
     let pic = |width: f32, height: f32| crate::Picture { width, height, items: Vec::new() };
     assert!(pic(1.0, 2.0).has_size());
     assert!(!pic(0.0, 2.0).has_size() && !pic(f32::NAN, 2.0).has_size() && !pic(1.0, f32::INFINITY).has_size());

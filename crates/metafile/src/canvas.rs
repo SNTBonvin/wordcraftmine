@@ -54,11 +54,27 @@ pub(crate) struct Brush {
     pub color: [u8; 4],
 }
 
-#[derive(Clone, Copy, Debug)]
+/// A logical font for text records: the facename (empty for GDI's default) and the character height
+/// in logical units. Metafiles carry no font metrics, so the renderers substitute the face by name.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) struct Font {
+    pub name: String,
+    pub height: f64,
+}
+
+impl Default for Font {
+    fn default() -> Self {
+        // GDI's default font: no facename, a 12-unit body.
+        Font { name: String::new(), height: 12.0 }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum Obj {
     Pen(Pen),
     Brush(Brush),
-    /// Fonts, palettes, pattern brushes and regions: they take a table slot but draw nothing.
+    Font(Font),
+    /// Palettes, pattern brushes and regions: they take a table slot but draw nothing.
     Other,
 }
 
@@ -166,8 +182,24 @@ fn ratio(num: f64, den: f64) -> f64 {
 
 /// Output of drawing, in device units. Path points are already mapped; `lib.rs` normalises them.
 pub(crate) enum Raw {
-    Path { ops: Vec<Op>, fill: Option<[u8; 4]>, stroke: Option<([u8; 4], f64)>, even_odd: bool },
-    Bitmap { rect: [f64; 4], img: Rgba },
+    Path {
+        ops: Vec<Op>,
+        fill: Option<[u8; 4]>,
+        stroke: Option<([u8; 4], f64)>,
+        even_odd: bool,
+    },
+    Bitmap {
+        rect: [f64; 4],
+        img: Rgba,
+    },
+    /// A text run: the reference point and character height in device units, the facename and colour.
+    Text {
+        at: P,
+        text: String,
+        font: String,
+        h: f64,
+        color: [u8; 4],
+    },
 }
 
 #[derive(Clone)]
@@ -175,6 +207,8 @@ struct Saved {
     map: Mapping,
     pen: Pen,
     brush: Brush,
+    font: Font,
+    text_color: [u8; 4],
     even_odd: bool,
     nop: bool,
 }
@@ -192,6 +226,9 @@ pub(crate) struct Canvas {
     objects: Vec<Option<Obj>>,
     pen: Pen,
     brush: Brush,
+    font: Font,
+    /// The colour text records draw in (SETTEXTCOLOR); opaque black by default.
+    text_color: [u8; 4],
     even_odd: bool,
     /// The mix mode is R2_NOP: shapes draw nothing.
     nop: bool,
@@ -213,6 +250,8 @@ impl Canvas {
             objects: Vec::new(),
             pen: Pen { style: 0, width: 0.0, color: [0, 0, 0, 255] },
             brush: Brush { style: BS_SOLID, color: [255, 255, 255, 255] },
+            font: Font::default(),
+            text_color: [0, 0, 0, 255],
             even_odd: true,
             nop: false,
             pos: (0.0, 0.0),
@@ -231,6 +270,7 @@ impl Canvas {
         let cost = match &raw {
             Raw::Path { ops, .. } => ops.len() * std::mem::size_of::<Op>(),
             Raw::Bitmap { img, .. } => img.px.len(),
+            Raw::Text { text, font, .. } => text.len() + font.len(),
         };
         if self.items.len() >= MAX_ITEMS || self.used.saturating_add(cost) > MAX_BYTES {
             self.full = true;
@@ -293,6 +333,25 @@ impl Canvas {
         self.nop = mode == R2_NOP;
     }
 
+    /// EMR_SETTEXTCOLOR: the colour text records draw in.
+    pub fn set_text_color(&mut self, color: [u8; 4]) {
+        self.text_color = color;
+    }
+
+    /// Draws a text run at the logical reference point with the selected font and the text colour.
+    /// The point maps through the DC transform; the height scales by its mean factor, as pen widths
+    /// do. Per-character positions, rotation and clipping are out of scope.
+    pub fn text(&mut self, at: P, text: String) {
+        if text.is_empty() || self.nop {
+            return;
+        }
+        let at = self.map.device(at);
+        let h = self.font.height * self.map.scale();
+        let font = self.font.name.clone();
+        let color = self.text_color;
+        self.push(Raw::Text { at, text, font, h, color });
+    }
+
     /// EMF SETWORLDTRANSFORM (`mode` 4) and MODIFYWORLDTRANSFORM (1 identity, 2 left, 3 right, 4 set).
     /// An unknown mode leaves the world transform as it was.
     pub fn modify_world(&mut self, x: Xform, mode: u32) {
@@ -309,7 +368,15 @@ impl Canvas {
     /// could no longer match the file.
     pub fn save_dc(&mut self) {
         if self.saved.len() < MAX_STACK {
-            self.saved.push(Saved { map: self.map, pen: self.pen, brush: self.brush, even_odd: self.even_odd, nop: self.nop });
+            self.saved.push(Saved {
+                map: self.map,
+                pen: self.pen,
+                brush: self.brush,
+                font: self.font.clone(),
+                text_color: self.text_color,
+                even_odd: self.even_odd,
+                nop: self.nop,
+            });
         } else {
             self.full = true;
         }
@@ -324,6 +391,8 @@ impl Canvas {
         self.map = s.map;
         self.pen = s.pen;
         self.brush = s.brush;
+        self.font = s.font;
+        self.text_color = s.text_color;
         self.even_odd = s.even_odd;
         self.nop = s.nop;
     }
@@ -363,9 +432,10 @@ impl Canvas {
         if i & STOCK != 0 {
             return self.select_stock(i & !STOCK);
         }
-        match self.objects.get(i as usize).copied().flatten() {
+        match self.objects.get(i as usize).cloned().flatten() {
             Some(Obj::Pen(p)) => self.pen = p,
             Some(Obj::Brush(b)) => self.brush = b,
+            Some(Obj::Font(f)) => self.font = f,
             Some(Obj::Other) | None => {}
         }
     }
@@ -384,6 +454,8 @@ impl Canvas {
             6 => self.pen = Pen { style: 0, width: 0.0, color: white },
             7 | 19 => self.pen = Pen { style: 0, width: 0.0, color: black },
             8 => self.pen = Pen { style: PS_NULL, width: 0.0, color: black },
+            // The stock fonts (OEM_FIXED_FONT, SYSTEM_FONT, DEVICE_DEFAULT_FONT, DEFAULT_GUI_FONT).
+            10 | 12 | 13 | 14 => self.font = Font::default(),
             _ => {}
         }
     }

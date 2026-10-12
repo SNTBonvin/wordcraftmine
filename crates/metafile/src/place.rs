@@ -19,6 +19,9 @@ pub enum PlacedItem {
     Path { path: BezPath, fill: Option<[u8; 4]>, stroke: Option<([u8; 4], f64)>, even_odd: bool },
     /// `Picture::items[index]`, a bitmap, stretched into `rect`.
     Bitmap { index: usize, rect: Rect },
+    /// A text run at `pos`, the top of the character cell, drawn in `size`-point characters of the
+    /// substituted `font` (empty: the renderer's default) in `color`.
+    Text { pos: (f64, f64), text: String, font: String, size: f64, color: [u8; 4] },
 }
 
 impl Picture {
@@ -63,6 +66,13 @@ impl Picture {
                         out.push(PlacedItem::Bitmap { index, rect });
                     }
                 }
+                Item::Text { at, text, font, h, color } => {
+                    let p = tf * kurbo::Point::new(f64::from(at.0), f64::from(at.1));
+                    let size = f64::from(*h) * k;
+                    if !text.is_empty() && size.is_finite() && size > 0.0 && [p.x, p.y].iter().all(|v| v.is_finite() && v.abs() < MAX_COORD) {
+                        out.push(PlacedItem::Text { pos: (p.x, p.y), text: text.clone(), font: font.clone(), size, color: *color });
+                    }
+                }
             }
         }
         out
@@ -72,7 +82,7 @@ impl Picture {
 impl Item {
     /// Takes a bitmap's pixels out of the item (its geometry stays) and returns them as (width, height,
     /// RGBA) when a renderer can draw them: both sides in 1..=[`MAX_BITMAP_SIDE`] and exactly that many
-    /// pixels. None for paths and for bitmaps that cannot be drawn.
+    /// pixels. None for paths and text, and for bitmaps that cannot be drawn.
     pub fn take_pixels(&mut self) -> Option<(u32, u32, Vec<u8>)> {
         let Item::Bitmap { width, height, rgba, .. } = self else { return None };
         let (w, h, px) = (*width, *height, std::mem::take(rgba));
