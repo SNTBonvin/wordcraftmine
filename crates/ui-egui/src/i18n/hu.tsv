@@ -255,6 +255,7 @@
 	Export PDF	PDF exportálása
 	Exported {path}	Exportálva: {path}
 	Extend Selection	Kijelölés bővítése
+	Extend Selection by Units	Kijelölés bővítése egységenként
 	Field	Mező
 	File	Fájl
 	Find	Keresés
@@ -661,6 +662,9 @@
 	Show Markup	Jelölések megjelenítése
 	Show Notes	Jegyzetek megjelenítése
 	Show rulers	Vonalzók megjelenítése
+	Animate the caret (it glides and fades)	Animált kurzor (csúszva mozog, halványulva villog)
+	Animation	Animáció
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Be: gépeléskor és a nyílbillentyűk használatakor a kurzor csúszva mozog az új helyére, és halványulva villog. Ki: a kurzor ugrik, és egyszerűen ki-be villog.
 	Show the community button in the title bar	Közösség gomb megjelenítése a címsorban
 	Show/Hide ¶	Megjelenítés/elrejtés ¶
 	Show\nComments	Megjegyzések\nmegjelenítése
@@ -1567,6 +1571,36 @@
 	Number style for this level:	A szint számstílusa:
 	Outside border	Külső szegély
 	Overtype	Felülírás
+	Overtype (typing replaces the characters after the caret)	Felülírás (a gépelés a kurzor utáni karaktereket cseréli)
+	Page display	Oldalmegjelenítés
+	Paragraph marks	Bekezdésjelek
+	Personalize	Személyre szabás
+	Picas	Pica
+	Points	Pont
+	Print the page color	Oldalszín nyomtatása
+	Printing	Nyomtatás
+	Proofing language	Nyelvi ellenőrzés nyelve
+	Recent documents to show:	Megjelenített legutóbbi dokumentumok:
+	Save documents	Dokumentumok mentése
+	Show the mini toolbar when text is selected	Mini eszköztár megjelenítése szövegkijelöléskor
+	Spaces	Szóközök
+	Spelling	Helyesírás
+	Spelling and grammar are checked in English (United States).	A helyesírás- és nyelvhelyesség-ellenőrzés nyelve: angol (Egyesült Államok).
+	Tab characters	Tabulátorok
+	These marks show even when Show/Hide ¶ is off.	Ezek a jelek akkor is látszanak, ha a Megjelenítés/elrejtés ¶ ki van kapcsolva.
+	Typing replaces selected text	A gépelés felülírja a kijelölt szöveget
+	Update fields before printing	Mezők frissítése nyomtatás előtt
+	Use the Insert key to switch overtype on and off	Az Insert billentyű ki- és bekapcsolja a felülírást
+	Asian text font:	Ázsiai szöveg betűtípusa:
+	Latin text font:	Latin szöveg betűtípusa:
+	Visual effects	Vizuális effektusok
+	Animation effects:	Animációs effektusok:
+	On	Be
+	Off	Ki
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Sima görgetés és nagyítás, fokozatosan megjelenő menük és gombok. Kikapcsolva minden változás azonnal látszik.
+	Your system has animation effects turned on.	A rendszereden be vannak kapcsolva az animációs effektusok.
+	Your system has animation effects turned off.	A rendszereden ki vannak kapcsolva az animációs effektusok.
+	Your system doesn't report an animation setting, so animation effects stay on.	A rendszered nem jelez animációs beállítást, ezért az animációs effektusok bekapcsolva maradnak.
 	Restart list after:	Lista újrakezdése ezután:
 	Right border	Jobb szegély
 	Show all revisions inline	Minden változat a szövegben
@@ -1691,6 +1725,7 @@
 	Centered as Group	Középre igazítva csoportként
 	✓ None	✓ Nincs
 	Formatted	Formázott
+	Deleted	Törölve
 	Interface size:	Felület mérete:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	A menüszalag, a menük és a párbeszédablakok nagyítása vagy kicsinyítése a rendszer kijelzőméretezésén felül. A dokumentum nagyítása ettől független.
 	Copyright Sign	Copyright jel
@@ -1766,6 +1801,82 @@
 	Organizer	Rendező
 	Copy Styles	Stílusok másolása
 	Rename Style	Stílus átnevezése
+	Document template:	Dokumentumsablon:
+	Attach…	Csatolás…
+	Automatically update document styles	Dokumentumstílusok automatikus frissítése
+	Organizer…	Rendező…
+	1. Formatting restrictions	1. Formázási korlátozások
+	2. Editing restrictions	2. Szerkesztési korlátozások
+	3. Start enforcement	3. A korlátozások érvényesítése
+	<< Less	<< Kevesebb
+	Another file	Másik fájl
+	Apply as you type	Alkalmazás gépelés közben
+	AutoCorrect	Automatikus javítás
+	AutoFormat As You Type	Automatikus formázás gépelés közben
+	Automatic bulleted lists	Automatikus felsorolásjeles listák
+	Automatic numbered lists	Automatikus számozott listák
+	Border lines	Szegélyvonalak
+	Capitalize first letter of sentences	Mondatok első betűjének nagybetűsítése
+	Capitalize first letter of table cells	Táblázatcellák első betűjének nagybetűsítése
+	Capitalize names of days	Napnevek nagybetűsítése
+	Case changes	Kis- és nagybetű-változások
+	Character level	Karakterszinten
+	Checked styles are allowed:	A bejelölt stílusok engedélyezettek:
+	Combine Documents	Dokumentumok kombinálása
+	Compare Documents	Dokumentumok összehasonlítása
+	Compared: {changes} changes	Összehasonlítás kész: {changes} módosítás
+	Comparing with another file needs the desktop app.	Másik fájllal való összehasonlításhoz az asztali alkalmazás kell.
+	Comparison settings	Összehasonlítási beállítások
+	Don't capitalize after:	Nincs nagybetű ezek után:
+	Editing in this document is restricted.	A dokumentum szerkesztése korlátozott.
+	Every change is recorded as a tracked change.	Minden módosítás követett módosításként rögzül.
+	Everyone	Mindenki
+	Exceptions (optional)	Kivételek (nem kötelező)
+	Exceptions…	Kivételek…
+	Fields	Mezők
+	Filling in forms	Űrlapok kitöltése
+	Find Next Editable Region	Következő szerkeszthető terület keresése
+	Footnotes and endnotes	Láb- és végjegyzetek
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	A formázás, a kis- és nagybetű-változások, az üres karakterek és a táblázatok összevetése működik; a többi beállítás egyelőre csak megőrződik.
+	Fractions (1/2) as fraction characters (½)	Törtek (1/2) törtkarakterként (½)
+	Headers and footers	Élőfejek és élőlábak
+	Hyphens (--) as dashes (—)	Kötőjelek (--) gondolatjelként (—)
+	In equations, typing a name after a backslash replaces it with its symbol.	Egyenletben a fordított perjel után beírt név helyére a hozzá tartozó szimbólum kerül.
+	Internet addresses as links	Internetcímek linkként
+	Label changes with:	Módosítások szerzője:
+	Limit formatting to a selection of styles	Formázás korlátozása a kiválasztott stílusokra
+	Math AutoCorrect	Matematikai automatikus javítás
+	More >>	Több >>
+	Moves	Áthelyezések
+	New document	Új dokumentum
+	No changes (read only)	Nincs módosítás (csak olvasható)
+	Only allow this kind of editing:	Csak ez a fajta szerkesztés engedélyezett:
+	Only comments can be added, except in regions marked editable.	Csak megjegyzés fűzhető a szöveghez, kivéve a szerkeszthetőnek jelölt területeken.
+	Only form fields can be filled in.	Csak az űrlapmezők tölthetők ki.
+	Only the allowed styles can be applied.	Csak az engedélyezett stílusok alkalmazhatók.
+	Ordinals (1st) as superscript	Sorszámnevek (1st) felső indexben
+	Original document	Eredeti dokumentum
+	This password type isn't supported.	Ez a jelszótípus nem támogatott.
+	Replace as you type	Csere gépelés közben
+	Replace text as you type	Szöveg cseréje gépelés közben
+	Replace:	Mit:
+	Revised document	Módosított dokumentum
+	Select text, then tick who can still edit it.	Jelölj ki szöveget, majd pipáld be, ki szerkesztheti továbbra is.
+	Settings…	Beállítások…
+	Show changes at:	Módosítások szintje:
+	Show changes in:	Módosítások megjelenítése itt:
+	Smart quotes instead of straight quotes	Tipográfiai idézőjelek az egyenesek helyett
+	Start Enforcing Protection	Védelem bekapcsolása
+	Stop Protection	Védelem kikapcsolása
+	Text boxes	Szövegdobozok
+	The document is read only, except for regions marked editable.	A dokumentum csak olvasható, kivéve a szerkeszthetőnek jelölt területeket.
+	The password is optional; without it anyone can stop the protection.	A jelszó nem kötelező; nélküle bárki kikapcsolhatja a védelmet.
+	This document	Ez a dokumentum
+	Tracked changes	Követett módosítások
+	Type the password to stop the protection.	A védelem kikapcsolásához add meg a jelszót.
+	White space	Üres karakterek
+	With:	Mire:
+	Word level	Szószinten
 	Change Chart Type	Diagramtípus módosítása
 	Chart Design	Diagramtervezés
 	Type	Típus
@@ -1775,6 +1886,28 @@
 	Add Chart Element	Diagramelem hozzáadása
 	Legend	Jelmagyarázat
 	Data Labels	Adatfeliratok
+	Above Chart	Diagram fölött
+	Insert Chart	Diagram beszúrása
+	Clustered Column	Csoportosított oszlop
+	Stacked Column	Halmozott oszlop
+	Clustered Bar	Csoportosított sáv
+	Stacked Bar	Halmozott sáv
+	Area	Terület
+	Pie	Kör
+	Doughnut	Gyűrű
+	Scatter	Pont (XY)
+	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) nem szám.
+	Category {n}	Kategória {n}
+	Series {n}	Adatsor {n}
+	Type the categories down the side and a column of values per series.	Írd a kategóriákat a bal oldali oszlopba, az értékeket pedig adatsoronként egy-egy oszlopba.
+	Categories	Kategóriák
+	Series name	Adatsor neve
+	Remove series	Adatsor eltávolítása
+	Remove row	Sor eltávolítása
+	Add Row	Sor hozzáadása
+	Add Series	Adatsor hozzáadása
+	Edit\nData	Adatok\nszerkesztése
+	Change\nChart Type	Diagramtípus\nmódosítása
 	Base text:	Alapszöveg:
 	Distribute letters	Betűk egyenletes elosztása
 	Distribute spacing	Térköz egyenletes elosztása
@@ -1793,6 +1926,24 @@
 	Left Only	Csak bal
 	Right Only	Csak jobb
 	Largest Only	Csak a szélesebb oldal
+	Add Font…	Betűtípus hozzáadása…
+	Added Fonts	Hozzáadott betűtípusok
+	Remove Added Font	Hozzáadott betűtípus eltávolítása
+	Print Markup	Jelölések nyomtatása
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	PDF-ben, nyomtatásban és képen: megjegyzések az oldalak mellett és követett módosítások. Weboldal, Markdown és szöveg esetén: megjegyzéslista a végén.
+	Recent Colors	Legutóbbi színek
+	More Colors…	További színek…
+	Standard	Alapszínek
+	Current	Jelenlegi
+	Colors:	Színek:
+	Color model:	Színmodell:
+	Red:	Vörös:
+	Green:	Zöld:
+	Blue:	Kék:
+	Hue:	Árnyalat:
+	Sat:	Telítettség:
+	Lum:	Fényesség:
+	Hex:	Hex:
 	Accessibility Pane	Akadálymentesség panel
 	Alt Text Pane	Helyettesítő szöveg panel
 	Alt\nText	Helyettesítő\nszöveg
@@ -1820,19 +1971,20 @@
 	Controls	Vezérlők
 	Rich Text Content Control	Formázott szöveges tartalomvezérlő
 	Plain Text Content Control	Egyszerű szöveges tartalomvezérlő
-	Picture Content Control	Képes tartalomvezérlő
+	Picture Content Control	Kép típusú tartalomvezérlő
 	Building Block Gallery Content Control	Építőelemgaléria-tartalomvezérlő
 	Check Box Content Control	Jelölőnégyzet-tartalomvezérlő
 	Combo Box Content Control	Kombinált listás tartalomvezérlő
 	Drop-Down List Content Control	Legördülő listás tartalomvezérlő
-	Date Picker Content Control	Dátumválasztó tartalomvezérlő
+	Date Picker Content Control	Dátumválasztó-tartalomvezérlő
 	Repeating Section Content Control	Ismétlődő szakaszos tartalomvezérlő
-	Design Mode	Tervező mód
+	Design Mode	Tervezőmód
 	Content Control at Selection	Tartalomvezérlő a kijelölésnél
 	Toggle Check Box	Jelölőnégyzet átváltása
 	Choose List Item	Listaelem kiválasztása
 	Set Date	Dátum beállítása
 	Remove Content Control	Tartalomvezérlő eltávolítása
+	Content Control Properties	Tartalomvezérlő tulajdonságai
 	Right-to-Left Table	Jobbról balra író táblázat
 	Right-to-Left Section	Jobbról balra író szakasz
 	Table direction:	Táblázat iránya:
@@ -1923,6 +2075,19 @@
 	Table of Contents Options	Tartalomjegyzék beállításai
 	Table of Contents Styles	Tartalomjegyzék stílusai
 	Tag	Azonosító
+	Placeholder text	Helyőrző szöveg
+	Can't be deleted	Nem törölhető
+	Contents can't be edited	A tartalom nem szerkeszthető
+	Remove the control once edited	A vezérlő eltávolítása szerkesztés után
+	Allow line breaks	Sortörések engedélyezése
+	Date format	Dátumformátum
+	Checked symbol	Bejelölt állapot szimbóluma
+	Unchecked symbol	Bejelöletlen állapot szimbóluma
+	List entries	Listaelemek
+	Display text	Megjelenített szöveg
+	Value	Érték
+	Today	Ma
+	Put the caret in a content control first.	Előbb vidd a kurzort egy tartalomvezérlőbe.
 	This page	Ez az oldal
 	Type:	Típus:
 	URL	URL
@@ -1946,12 +2111,129 @@
 	Forward	Előretekerés
 	Stroke {n} of {total}	Vonás: {n}/{total}
 	Move with Text	Mozgatás a szöveggel
+	Fix Position on Page	Rögzített hely az oldalon
+	Formatting exceptions	Formázási kivételek
+	Inside:	Belső:
+	Mirror indents	Tükrözött behúzások
+	Outside:	Külső:
 	WordArt Styles	WordArt-stílusok
 	Text Fill	Szövegkitöltés
 	Text Outline	Szöveg körvonala
 	Transform	Átalakítás
+	No Fill	Nincs kitöltés
+	No Outline	Nincs körvonal
+	Reflection	Tükröződés
+	No Reflection	Nincs tükröződés
+	No Transform	Nincs átalakítás
 	Connect Shapes	Alakzatok összekötése
+	Straight Connector	Egyenes összekötő
+	Straight Arrow Connector	Egyenes nyilas összekötő
+	Elbow Connector	Derékszögű összekötő
+	Elbow Arrow Connector	Derékszögű nyilas összekötő
+	Curved Connector	Ívelt összekötő
+	Curved Arrow Connector	Ívelt nyilas összekötő
+	Arch Up	Ív felfelé
+	Arch Down	Ív lefelé
+	Slant Up	Dőlés felfelé
+	Slant Down	Dőlés lefelé
+	Inflate	Felfújás
+	Deflate	Leeresztés
+	Chevron Up	Ék felfelé
+	Chevron Down	Ék lefelé
+	Triangle Up	Háromszög felfelé
+	Triangle Down	Háromszög lefelé
+	Solid Accent	Teli kiemelőszín
+	Light with Outline	Világos, körvonallal
+	Hollow	Üreges
+	Accent Gradient	Kiemelőszínes színátmenet
+	Dark with Shadow	Sötét, árnyékkal
+	Soft Glow	Lágy ragyogás
+	Accent with Reflection	Kiemelőszín tükröződéssel
+	Warm Gradient with Outline	Meleg színátmenet körvonallal
+	Add line numbering	Sorszámozás hozzáadása
+	Add to Document	Hozzáadás a dokumentumhoz
+	Address labels	Címcímkék
+	Arabic	Arab
+	Auto	Automatikus
+	Automatically hyphenate document	Automatikus elválasztás a dokumentumban
+	Chinese (Simplified)	Kínai (egyszerűsített)
+	Chinese (Traditional)	Kínai (hagyományos)
+	Column:	Oszlop:
+	Count by:	Lépésköz:
+	Czech	Cseh
+	Danish	Dán
+	Delivery address:	Kézbesítési cím:
+	Detect language automatically	Nyelv automatikus felismerése
+	Do not check spelling or grammar	Nincs helyesírás- és nyelvhelyesség-ellenőrzés
+	Dutch	Holland
+	English (United Kingdom)	Angol (Egyesült Királyság)
+	Envelope size:	Borítékméret:
+	Estonian	Észt
+	Finnish	Finn
+	French (France)	Francia (Franciaország)
+	From text:	Távolság a szövegtől:
+	Full page of the same label	Teljes oldal azonos címkével
+	German (Germany)	Német (Németország)
+	Greek	Görög
+	Hebrew	Héber
+	Hyphenate at:	Elválasztási hely:
+	Hyphenate words in CAPS	Csupa nagybetűs szavak elválasztása
+	Hyphenation Options…	Elválasztási beállítások…
+	Hyphenation zone:	Elválasztási zóna:
+	Italian	Olasz
+	Japanese	Japán
+	Korean	Koreai
+	Limit consecutive hyphens to:	Egymást követő elválasztások legfeljebb:
+	Line Numbering Options…	Sorszámozás beállításai…
 	Manual Hyphenation	Kézi elválasztás
+	Manual hyphenation is complete.	A kézi elválasztás befejeződött.
+	Manual…	Kézi…
+	Mark selected text as:	A kijelölt szöveg nyelve:
+	New Document	Új dokumentum
+	No limit	Nincs korlát
+	Norwegian (Bokmål)	Norvég (bokmål)
+	Numbering:	Számozás:
+	Omit	Elhagyás
+	One label per recipient	Címzettenként egy címke
+	Polish	Lengyel
+	Portuguese (Brazil)	Portugál (Brazília)
+	Portuguese (Portugal)	Portugál (Portugália)
+	Return address labels	Feladócímkék
+	Return address:	Feladó címe:
+	Row:	Sor:
+	Russian	Orosz
+	Serbian (Cyrillic)	Szerb (cirill)
+	Serbian (Latin)	Szerb (latin)
+	Set As Default	Beállítás alapértelmezettként
+	Shipping labels	Szállítási címkék
+	Single label	Egyetlen címke
+	Spanish (Mexico)	Spanyol (Mexikó)
+	Spanish (Spain)	Spanyol (Spanyolország)
+	Swedish	Svéd
+	Turkish	Török
+	Ukrainian	Ukrán
+	{language} is now the document's default language.	A dokumentum alapértelmezett nyelve mostantól: {language}
+	As you type	Gépelés közben
+	AutoSave writes your changes to the file a moment after you stop typing.	Az automatikus mentés néhány pillanattal a gépelés abbahagyása után a fájlba írja a módosításaidat.
+	Centimeters	Centiméter
+	Check spelling as you type	Helyesírás ellenőrzése gépelés közben
+	Click to switch back to inserting	Kattints ide a beszúrásra való visszaváltáshoz
+	Custom dictionary	Egyéni szótár
+	Formatting marks	Formázási jelek
+	Hidden text	Rejtett szöveg
+	Ignore web and file addresses	Web- és fájlcímek kihagyása
+	Ignore words in capitals	Csupa nagybetűs szavak kihagyása
+	Ignore words with numbers	Számot tartalmazó szavak kihagyása
+	Inches	Hüvelyk
+	Initials:	Monogram:
+	Interface	Felület
+	Interface language	Felület nyelve
+	Mark grammar errors as you type	Nyelvhelyességi hibák jelölése gépelés közben
+	Measurement units:	Mértékegység:
+	Millimeters	Milliméter
+	New comments and tracked changes are recorded under this name and these initials.	Az új megjegyzések és követett módosítások ezzel a névvel és monogrammal rögzülnek.
+	New word	Új szó
+	No words yet. Add to Dictionary on a misspelled word puts it here.	Még nincs szó. Ha egy hibás szón a Felvétel a szótárba parancsot választod, ide kerül.
 	Drawing Canvas	Rajzvászon
 	New Drawing Canvas	Új rajzvászon
 	Fit	Illesztés
@@ -1992,18 +2274,108 @@
 	Continuous numbering	Folyamatos számozás
 	Apply	Alkalmaz
 	Convert Notes	Jegyzetek átalakítása
+	Documents	Dokumentumok
+	Word document	Word-dokumentum
+	All files	Minden fájl
+	Recipient lists	Címzettlisták
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	A rendszer fájlpárbeszédablaka nem érhető el, ezért a WordCraft a sajátját mutatja. A rendszer párbeszédablakához telepíts egy fájlválasztó portált (például xdg-desktop-portal-gtk) vagy a zenity programot.
+	Up one level	Egy szinttel feljebb
+	Home folder	Saját mappa
+	{name} wasn't found.	Nem található: {name}
+	{name} already exists. Choose Save again to replace it.	Már létezik: {name}. A felülírásához válaszd újra a Mentést.
+	This folder can't be read: {error}	Ez a mappa nem olvasható: {error}
+	Showing the first {count} items.	Az első {count} elem látható.
+	File name:	Fájlnév:
+	Browse in WordCraft…	Tallózás a WordCraftban…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Fájl megnyitása a WordCraft saját tallózójával, ha a rendszer fájlpárbeszédablaka nem jelenik meg.
+	Hide White Space	Üres terület elrejtése
+	All pages	Minden oldal
+	Current page	Aktuális oldal
+	Selected pages	Kijelölt oldalak
+	Custom range	Egyéni tartomány
+	All pages in the range	A tartomány minden oldala
+	Odd pages only	Csak a páratlan oldalak
+	Even pages only	Csak a páros oldalak
+	Copies	Példányszám
+	Collate copies	Példányok szétválogatása
+	Pages like 1-3, 5	Oldalak, például 1-3, 5
+	{count} of {total} pages will print	Nyomtatandó oldalak: {count}/{total}
+	Save these pages as PDF…	Az oldalak mentése PDF-ként…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	A nyomtatót, a kétoldalas nyomtatást és a laponkénti oldalszámot abban a párbeszédablakban választhatod ki.
+	Previous Page	Előző oldal
+	Print to PDF	Nyomtatás PDF-be
+	Word XML Document (*.xml)	Word XML-dokumentum (*.xml)
+	Use wildcards	Helyettesítő karakterek használata
+	Special	Különleges
+	Match prefix	Egyezés a szó elején
+	Match suffix	Egyezés a szó végén
+	Ignore punctuation characters	Írásjelek figyelmen kívül hagyása
+	Ignore white-space characters	Üres karakterek figyelmen kívül hagyása
+	Regular expressions	Reguláris kifejezések
+	Search Options	Keresési beállítások
+	Tab Character	Tabulátor karakter
+	Any Character	Bármely karakter
+	Any Digit	Bármely számjegy
+	Any Letter	Bármely betű
+	Caret Character	Kalap karakter (^)
+	Section Character	Paragrafusjel (§)
+	Paragraph Character	Bekezdésjel karakter (¶)
+	Graphic	Grafika
+	Manual Line Break	Kézi sortörés
+	Manual Page Break	Kézi oldaltörés
+	Section Break	Szakasztörés
+	White Space	Üres karakter
+	Clipboard Contents	Vágólap tartalma
+	Find What Text	A keresett szöveg
+	Find What Expression	A keresett kifejezés
+	Character in Range	Karakter a tartományban
+	Beginning of Word	Szó eleje
+	End of Word	Szó vége
+	Expression	Kifejezés
+	Not	Kivéve
+	Num Occurrences	Előfordulások száma
+	Previous 1 or More	Előző 1 vagy több
+	0 or More Characters	0 vagy több karakter
 	Add Shape	Alakzat hozzáadása
 	Change Colors	Színek módosítása
 	Change Layout	Elrendezés módosítása
 	Create Graphic	Ábra létrehozása
 	Edit Items	Elemek szerkesztése
 	Layouts	Elrendezések
-	Reset Graphic	Ábra alaphelyzetbe állítása
+	Reset Graphic	Ábra visszaállítása
 	SmartArt Design	SmartArt-tervezés
 	SmartArt Styles	SmartArt-stílusok
-	Text Pane	Szöveg ablaktábla
-	Promote to Heading 1	Előléptetés Címsor 1 szintre
-	Demote to Body Text	Lefokozás szövegtörzzsé
+	Text Pane	Szöveg panel
+	List	Lista
+	Process	Folyamat
+	Cycle	Körforgás
+	Hierarchy	Hierarchia
+	Relationship	Kapcsolat
+	Pyramid	Piramis
+	Basic List	Egyszerű lista
+	Basic Process	Egyszerű folyamat
+	Basic Cycle	Egyszerű körforgás
+	Basic Pyramid	Egyszerű piramis
+	Basic Radial	Egyszerű sugaras
+	Basic Matrix	Egyszerű mátrix
+	Basic Venn	Egyszerű Venn-diagram
+	Shows items of equal weight as blocks in rows.	Az egyenrangú elemeket sorokba rendezett blokkokként mutatja.
+	Shows steps in order, left to right, with arrows between them.	A lépéseket sorrendben, balról jobbra, nyilakkal összekötve ábrázolja.
+	Shows steps that repeat, around a circle.	Az ismétlődő lépések egy kör mentén követik egymást.
+	Shows a tree: each item below the item it belongs to.	Faszerkezet: minden elem az alatt az elem alatt áll, amelyikhez tartozik.
+	Shows parts that build on each other, largest at the bottom.	Egymásra épülő részek, alul a legnagyobb.
+	Shows items around a central idea: the first item is the centre.	Egy központi gondolat köré rendezett elemek: az első elem a középpont.
+	Shows parts of a whole as quadrants.	Az egész részei negyedekre osztva.
+	Shows overlapping ideas as overlapping circles.	Az átfedő gondolatokat egymást metsző körök jelenítik meg.
+	Accent {n}	Kiemelőszín {n}
+	Colorful	Színes
+	Insert SmartArt	SmartArt beszúrása
+	One line per item. Enter adds an item.	Elemenként egy sor. Az Enter új elemet ad hozzá.
+	Add\nShape	Alakzat\nhozzáadása
+	Change\nColors	Színek\nmódosítása
+	Reset\nGraphic	Ábra\nvisszaállítása
+	Promote to Heading 1	Előléptetés: Címsor 1
+	Demote to Body Text	Lefokozás: Szövegtörzs
 	Move Up	Mozgatás felfelé
 	Move Down	Mozgatás lefelé
 	Collapse	Összecsukás
@@ -2020,12 +2392,14 @@
 	Show Level 8	8. szint megjelenítése
 	Show Level 9	9. szint megjelenítése
 	Show All Levels	Összes szint megjelenítése
+	All Levels	Minden szint
 	Show First Line Only	Csak az első sor megjelenítése
 	Show Text Formatting	Szövegformázás megjelenítése
 	Close Outline View	Vázlatnézet bezárása
 	Outline State	Vázlatállapot
 	Outlining	Vázlatkészítés
 	Outline Tools	Vázlateszközök
+	Close Outline\nView	Vázlatnézet\nbezárása
 	APA	APA
 	Chicago	Chicago
 	GB/T 7714	GB/T 7714
