@@ -1318,6 +1318,65 @@ fn hostile_edges() {
     assert_eq!(last.text, "tail");
 }
 
+/// #880 fix round 1: the union grid interleaves every row's edges, so a coarse row's cell
+/// (a change-history banner: `2018-06`, `SP-230144`) covers several union columns. With
+/// span 1 it was laid out inside the first narrow column and wrapped mid-value
+/// (`SP-230` + `144`); a cell must span the union-grid columns it covers. Explicit
+/// `sprmTMerge` spans keep winning over the computed ones.
+#[test]
+fn union_grid_cells_span_covered_columns() {
+    let coarse_edges: [i16; 3] = [0, 1000, 2000]; // 2 cells over the fine grid
+    let fine_edges: [i16; 5] = [0, 500, 1000, 1500, 2000]; // 4 cells = the grid itself
+    let mut data_stream = Vec::new();
+    let huge_at = |data_stream: &mut Vec<u8>, real: Vec<u8>| -> Vec<u8> {
+        let fc = data_stream.len() as u32;
+        data_stream.extend_from_slice(&(real.len() as u16).to_le_bytes());
+        data_stream.extend_from_slice(&real);
+        grpprl(&[(0x6646, &fc.to_le_bytes())])
+    };
+    let ttp_row = |edges: &[i16]| [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(edges)].concat();
+    // sprmTMerge over both cells of the coarse row: the sprm span (2) must win.
+    let merged_row = [ttp_row(&coarse_edges), grpprl(&[(0x5624, &[0, 2])])].concat();
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let text = "a\u{7}b\u{7}c\u{7}d\u{7}e\u{7}f\u{7}g\u{7}h\u{7}tail\r";
+    let spec = StructSpec {
+        text,
+        // Coarse row (a-b), fine row (c-f), merged coarse row (g-h), then a tail paragraph.
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),
+            (2, 0, huge_at(&mut data_stream, ttp_row(&coarse_edges))),
+            (4, 0, in_tbl.clone()),
+            (10, 0, huge_at(&mut data_stream, ttp_row(&fine_edges))),
+            (12, 0, in_tbl),
+            (14, 0, huge_at(&mut data_stream, merged_row)),
+            (16, 0, Vec::new()),
+        ],
+        data_stream,
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 3);
+    assert_eq!(tbl.grid, vec![25.0f32; 4], "grid: {:?}", tbl.grid);
+    // The coarse row's two cells each cover two grid columns — their text lays out across
+    // both instead of wrapping inside the first.
+    assert_eq!(tbl.rows[0].cells.len(), 2);
+    assert_eq!(tbl.rows[0].cells[0].props.span, 2);
+    assert_eq!(tbl.rows[0].cells[1].props.span, 2);
+    // The cell width covers its spanned union columns (50pt = 25 + 25).
+    assert_eq!(tbl.rows[0].cells[0].props.width, Some(tbl.grid[0] + tbl.grid[1]));
+    assert_eq!(tbl.rows[0].cells[1].props.width, Some(tbl.grid[2] + tbl.grid[3]));
+    // The fine row defines the grid: one column per cell.
+    assert_eq!(tbl.rows[1].cells.len(), 4);
+    assert!(tbl.rows[1].cells.iter().all(|c| c.props.span == 1), "fine row spans");
+    // sprmTMerge keeps winning: the merged cell's span is the sprm's 2, not the 4 grid
+    // columns its edges cover.
+    assert_eq!(tbl.rows[2].cells.len(), 1);
+    assert_eq!(tbl.rows[2].cells[0].props.span, 2);
+    let last = doc.body.last().and_then(|b| b.as_para()).expect("tail para");
+    assert_eq!(last.text, "tail");
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 
