@@ -2116,3 +2116,16 @@
 	Automatic ({region})	Automatycznie ({region})
 	Search	Wyszukaj
 	Title Bar	Pasek tytułu
+
+# Native macOS application menus.
+	About {app}	O {app}
+	Bring All to Front	Pokaż wszystkie na wierzchu
+	Edit	Edycja
+	Hide Others	Ukryj pozostałe
+	Hide {app}	Ukryj {app}
+	Minimize	Minimalizuj
+	Open Recent	Otwórz ostatnie
+	Quit {app}	Zakończ {app}
+	Services	Usługi
+	Show All	Pokaż wszystkie
+	Zoom…	Powiększenie…

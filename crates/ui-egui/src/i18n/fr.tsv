@@ -2083,3 +2083,16 @@
 	Table Properties…	Propriétés du tableau…
 	Search	Rechercher
 	Title Bar	Barre de titre
+
+# Native macOS application menus.
+	About {app}	À propos de {app}
+	Bring All to Front	Tout ramener au premier plan
+	Edit	Édition
+	Hide Others	Masquer les autres
+	Hide {app}	Masquer {app}
+	Minimize	Réduire
+	Open Recent	Ouvrir un fichier récent
+	Quit {app}	Quitter {app}
+	Services	Services
+	Show All	Tout afficher
+	Zoom…	Zoom…

@@ -2474,3 +2474,16 @@ preview	Title	Пример
 	Level 7	Уровень 7
 	Level 8	Уровень 8
 	Level 9	Уровень 9
+
+# Native macOS application menus.
+	About {app}	О программе {app}
+	Bring All to Front	Все окна на передний план
+	Edit	Редактирование
+	Hide Others	Скрыть остальные
+	Hide {app}	Скрыть {app}
+	Minimize	Свернуть
+	Open Recent	Открыть недавние
+	Quit {app}	Завершить {app}
+	Services	Службы
+	Show All	Показать все
+	Zoom…	Масштаб…

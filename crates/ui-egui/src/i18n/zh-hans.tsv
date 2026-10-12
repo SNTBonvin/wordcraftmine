@@ -2087,3 +2087,16 @@
 	Start-up	启动
 	Show the Start screen when WordCraft starts	启动 WordCraft 时显示开始屏幕
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	开：WordCraft 打开时显示“文件 › 开始”，其中有空白文档、模板和最近使用的文档。关：直接打开空白文档。
+
+# Native macOS application menus.
+	About {app}	关于 {app}
+	Bring All to Front	全部置于前端
+	Edit	编辑
+	Hide Others	隐藏其他
+	Hide {app}	隐藏 {app}
+	Minimize	最小化
+	Open Recent	打开最近文件
+	Quit {app}	退出 {app}
+	Services	服务
+	Show All	全部显示
+	Zoom…	缩放…

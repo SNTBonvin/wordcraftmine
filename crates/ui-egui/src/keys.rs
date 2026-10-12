@@ -117,6 +117,9 @@ fn ui_shortcut(key: Key, m: Modifiers) -> Option<(&'static str, Value)> {
 
 /// Find and run the command bound to this key. Returns true if handled.
 fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
+    if crate::native_menu::blocks_document(app) {
+        return false;
+    }
     if let Some((id, params)) = ui_shortcut(key, m) {
         let _ = app.run(id, params);
         return true;
@@ -124,6 +127,11 @@ fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
     let Some(name) = key_name(key) else { return false };
     let reg = app.session.registry.clone();
     if let Some(spec) = app.session.keymap.resolve(&reg, &combo(m, name, true)) {
+        // A native-menu key equivalent supplies a real key-down. Its later key-up must not
+        // paste a second picture (or paste at all when Command-V was reassigned).
+        if key == Key::V && m.command {
+            app.canvas.pasted = true;
+        }
         let _ = app.run(spec.id, json!({}));
         return true;
     }
@@ -230,6 +238,9 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         return;
     }
     for e in events {
+        if crate::native_menu::blocks_document(app) {
+            break;
+        }
         // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
         match &e {
             egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,

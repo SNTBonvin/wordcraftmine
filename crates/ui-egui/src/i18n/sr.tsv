@@ -2089,3 +2089,16 @@
 	Start-up	Покретање
 	Show the Start screen when WordCraft starts	Прикажи почетни екран при покретању програма WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Укључено: WordCraft се отвара на Фајл › Почетак, са празним документом, шаблонима и недавним документима. Искључено: отвара празан документ.
+
+# Native macOS application menus.
+	About {app}	О програму {app}
+	Bring All to Front	Постави све у први план
+	Edit	Уређивање
+	Hide Others	Сакриј остале
+	Hide {app}	Сакриј {app}
+	Minimize	Умањи
+	Open Recent	Отвори недавне
+	Quit {app}	Изађи из {app}
+	Services	Услуге
+	Show All	Прикажи све
+	Zoom…	Увећање…

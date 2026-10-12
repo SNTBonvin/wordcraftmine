@@ -2080,3 +2080,16 @@
 	Automatic ({region})	Automaticky ({region})
 	Search	Hledat
 	Title Bar	Záhlaví okna
+
+# Native macOS application menus.
+	About {app}	O aplikaci {app}
+	Bring All to Front	Přenést vše do popředí
+	Edit	Úpravy
+	Hide Others	Skrýt ostatní
+	Hide {app}	Skrýt {app}
+	Minimize	Minimalizovat
+	Open Recent	Otevřít nedávné
+	Quit {app}	Ukončit {app}
+	Services	Služby
+	Show All	Zobrazit vše
+	Zoom…	Zvětšení…
