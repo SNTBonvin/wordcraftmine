@@ -342,8 +342,12 @@ pub struct ParaEnv<'a> {
     pub exclusions: &'a [Exclusion],
     /// Automatic equation numbers used before this paragraph.
     pub eq_number: u32,
+    pub read_line_spacing: Option<f32>,
     /// The section's document grid (`Grid::default()`: none).
     pub grid: Grid,
+    /// Shrink inline drawings wider than the line to fit it: in text boxes, which don't clip what
+    /// runs past their sides. Elsewhere such a drawing keeps its size and the page edge clips it.
+    pub fit_objects: bool,
 }
 
 /// The section's document grid as layout applies it (`w:docGrid`, ECMA-376 §17.6.5).
@@ -726,6 +730,7 @@ impl<'a> Builder<'a> {
         if let Some(p) = cur {
             segs.push((seg_start, text.len(), p));
         }
+        let no_kern = [wordcraft_fonts::feature_value(b"kern", 0)];
         for (a, b, key) in segs {
             let Some(sub) = text.get(a..b) else { continue };
             let rc = match (&rc_cs, key.complex) {
@@ -755,10 +760,12 @@ impl<'a> Builder<'a> {
             }
             let shape_text = if substituted { mapped.as_str() } else { sub };
             let map = |c: char| if upper { c.to_uppercase().next().unwrap_or(c) } else { c };
+            // The shaper kerns by default; Word kerns only when Kerning for fonts covers the size.
+            let features: &[wordcraft_fonts::Feature] = if rc.kerned() { &[] } else { &no_kern };
             let shaped = if use_levels {
-                wordcraft_fonts::shape_run(&st.face, shape_text, &[], map, key.rtl)
+                wordcraft_fonts::shape_run(&st.face, shape_text, features, map, key.rtl)
             } else {
-                wordcraft_fonts::shape(&st.face, shape_text, &[], map)
+                wordcraft_fonts::shape(&st.face, shape_text, features, map)
             };
             let k = st.size / st.face.upem.max(1.0) as f32;
             let hscale = rc.scale / 100.0;
@@ -1066,19 +1073,35 @@ pub(crate) fn left_out(rc: &ResolvedChar, show_hidden: bool, hide_deleted: bool)
 pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let doc = env.doc;
     let mut rp = doc.styles.resolve_para_in(&p.props, env.table.map(|t| &t.para));
+    if let Some(spacing) = env.read_line_spacing.filter(|s| s.is_finite() && (1.0..=2.0).contains(s)) {
+        rp.line_spacing = wordcraft_doc::props::LineSpacing::Multiple(spacing);
+    }
     let para_style = p.props.style.as_deref();
     let table_chr = env.table.map(|t| &t.chr);
     // Indents in characters are measured in the paragraph mark's font size.
     if rp.indent_chars.iter().any(|c| *c != 0.0) {
         rp.set_char_unit(doc.styles.resolve_char_in(para_style, table_chr, &p.mark).size);
     }
-    // List level indents apply unless the paragraph sets its own.
+    // List level indents apply unless the paragraph sets its own, or, for a list from the style,
+    // the style giving the list (or one based on it) does (`indents_over_list`). A paragraph
+    // that switches its style's list off (`num: 0`) drops the styles' indents, as Word does.
+    let own_left = p.props.indent_left.is_some() || p.props.indent_left_chars.is_some_and(|c| c != 0.0);
+    let own_first = p.props.indent_first.is_some() || p.props.indent_first_chars.is_some_and(|c| c != 0.0);
     if let Some((_, lvl)) = &env.label {
-        if p.props.indent_left.is_none() && p.props.indent_left_chars.is_none_or(|c| c == 0.0) {
+        let (style_left, style_first) =
+            if p.props.numbering.is_some() { (false, false) } else { doc.styles.indents_over_list(para_style.unwrap_or("Normal")) };
+        if !own_left && !style_left {
             rp.indent_left = lvl.indent;
         }
-        if p.props.indent_first.is_none() && p.props.indent_first_chars.is_none_or(|c| c == 0.0) {
+        if !own_first && !style_first {
             rp.indent_first = -lvl.hanging;
+        }
+    } else if p.props.numbering.is_some_and(|n| n.num == 0) {
+        if !own_left {
+            rp.indent_left = 0.0;
+        }
+        if !own_first {
+            rp.indent_first = 0.0;
         }
     }
     let resolve = |c: &CharProps| -> Arc<ResolvedChar> { Arc::new(doc.styles.resolve_char_in(para_style, table_chr, c)) };
@@ -1204,9 +1227,11 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                             if let Some((w, h, float)) = o.frame()
                                 && float.wrap == wordcraft_doc::para::Wrap::Inline
                             {
+                                // A picture wider than the line keeps its size, as in Word: it runs past
+                                // the margin and the page edge clips it (see `ParaEnv::fit_objects`).
                                 let maxw = (env.width - rp.indent_left.max(0.0) - rp.indent_right.max(0.0)).max(18.0);
                                 let (w, h) = (w.clamp(1.0, 4000.0), h.clamp(1.0, 4000.0));
-                                let s = if w > maxw { maxw / w } else { 1.0 };
+                                let s = if env.fit_objects && w > maxw { maxw / w } else { 1.0 };
                                 // The line makes room for effects (shadows) around the picture too, and
                                 // for a rotated one's bounds, as Word does.
                                 let [el, et, er, eb] = float.effect_extent();
@@ -1772,7 +1797,10 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         let mut any = false;
         let dropped = pl.drop_cap.map_or(0, |d| d.0);
         for (k, c) in pl.clusters.get(c0..c1).into_iter().flatten().enumerate() {
-            if c.kind == ClKind::Marker || c0 + k < dropped {
+            // Spaces and tabs never make a line taller, whatever their size: Word sizes a line by
+            // its other characters (a line of only them takes the paragraph mark's), measured in
+            // Word for Windows with 9 pt text and 11–20 pt tabs, spaces and ideographic spaces.
+            if matches!(c.kind, ClKind::Marker | ClKind::Space | ClKind::Tab) || c0 + k < dropped {
                 continue;
             }
             if let Some(st) = pl.styles.get(c.style as usize) {
@@ -1801,10 +1829,12 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             asc = st.ascent;
             desc = st.descent;
         }
+        // A list label can make the line taller above the baseline, never below it: Word keeps
+        // the text's descent (measured in Word for Windows: a Symbol bullet's taller ascent
+        // counts, a Courier New label's deeper descent doesn't).
         if first && let Some(lab) = &pl.label {
             for st in lab.runs.iter().filter_map(|r| pl.styles.get(r.style as usize)) {
                 asc = asc.max(st.ascent);
-                desc = desc.max(st.descent);
             }
         }
         // Line spacing scales the text's height, never a picture's: a line is at least as tall
