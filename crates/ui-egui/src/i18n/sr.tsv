@@ -1143,6 +1143,8 @@
 	Keeps the fonts and formatting of the copied text.	Задржава фонтове и форматирање копираног текста.
 	Reads the clipboard's rich text and keeps its formatting.	Чита обогаћени текст (RTF) из оставе и задржава његово форматирање.
 	Reads the clipboard's web content and keeps its formatting.	Чита веб садржај из оставе и задржава његово форматирање.
+	Picture	Слика
+	Pastes the clipboard's picture.	Лепи слику из оставе.
 	Drops all formatting and pastes plain text.	Уклања све форматирање и лепи обичан текст.
 	Advanced Find	Напредна претрага
 	Advanced Find…	Напредна претрага…
@@ -1442,6 +1444,8 @@
 	Border lines	Линије ивица
 	Capitalize first letter of sentences	Велико прво слово реченице
 	Capitalize first letter of table cells	Велико прво слово у ћелијама табеле
+	Correct TWo INitial CApitals	Исправи ДВа ПОчетна велика слова
+	Correct accidental usage of cAPS LOCK key	Исправи случајно укључен cAPS LOCK
 	Capitalize names of days	Велико слово у називима дана
 	Case changes	Промене величине слова
 	Character level	Ниво знака
@@ -2067,3 +2071,5 @@
 	Your system has animation effects turned on.	У систему су ефекти анимације укључени.
 	Your system has animation effects turned off.	У систему су ефекти анимације искључени.
 	Your system doesn't report an animation setting, so animation effects stay on.	Систем не пријављује подешавање анимације, па ефекти анимације остају укључени.
+	Region:	Регион:
+	Automatic ({region})	Аутоматски ({region})

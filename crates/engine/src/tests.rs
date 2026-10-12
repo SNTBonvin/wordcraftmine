@@ -829,6 +829,92 @@ fn paste_special_respects_track_changes_and_brings_lists() {
     assert!(text(&s).starts_with("one\ntwo"));
 }
 
+/// Character formatting at a body offset of the first paragraph.
+fn props_at(s: &Session, off: usize) -> wordcraft_doc::CharProps {
+    let pos = Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off };
+    s.doc.para_at(&pos).map(|p| p.props_of_char(off).clone()).unwrap_or_default()
+}
+
+/// Paste of another program's formatted copy keeps its formatting (#687); Merge Formatting keeps
+/// only its emphasis, in the destination's font; Keep Text Only drops it all.
+#[test]
+fn paste_keeps_source_formatting_from_other_programs() {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    run(&mut s, "caret.docEnd", json!({}));
+    let html = "<p><span style=\"font-family:'Courier New';color:#ff0000\">red <b>bold</b></span></p>";
+    let clip = json!({"text": "red bold", "html": html});
+    run(&mut s, "edit.paste", clip.clone());
+    assert_eq!(text(&s), "xred bold");
+    assert_eq!(props_at(&s, 1).font.as_deref(), Some("Courier New"));
+    assert!(props_at(&s, 1).color.is_some());
+    assert!(!bold_at(&s, 0, 1) && bold_at(&s, 0, 5));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(text(&s), "x");
+    run(&mut s, "edit.pasteMerge", clip.clone());
+    assert_eq!(text(&s), "xred bold");
+    assert_eq!(props_at(&s, 1).font, None, "Merge Formatting takes the destination's font");
+    assert_eq!(props_at(&s, 1).color, None);
+    assert!(bold_at(&s, 0, 5), "and keeps the emphasis");
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.pasteText", clip);
+    assert_eq!(text(&s), "xred bold");
+    assert!(!bold_at(&s, 0, 5));
+
+    // Windows' "HTML Format" carries a header with the fragment's byte offsets.
+    run(&mut s, "document.setText", json!({"text": ""}));
+    let body = "<html><body><!--StartFragment--><b>win</b><!--EndFragment--></body></html>";
+    let head = "Version:0.9\r\nStartHTML:0000000000\r\nEndHTML:0000000000\r\nStartFragment:SSSSSSSSSS\r\nEndFragment:EEEEEEEEEE\r\n";
+    let start = head.len() + body.find("<b>").unwrap();
+    let end = head.len() + body.find("<!--EndFragment").unwrap();
+    let cf = format!("{head}{body}").replace("SSSSSSSSSS", &format!("{start:010}")).replace("EEEEEEEEEE", &format!("{end:010}"));
+    run(&mut s, "edit.paste", json!({"text": "win", "html": cf}));
+    assert_eq!(text(&s), "win");
+    assert!(bold_at(&s, 0, 0));
+    assert_eq!(crate::cmd::paste::html_fragment("Version:1\r\nStartFragment:99999\r\nEndFragment:5\r\n<i>x</i>"), "<i>x</i>");
+
+    // RTF when there is no HTML.
+    run(&mut s, "document.setText", json!({"text": ""}));
+    run(&mut s, "edit.paste", json!({"text": "bold then", "rtf": r"{\rtf1\ansi {\b bold}\b0  then}"}));
+    assert!(text(&s).starts_with("bold"), "{}", text(&s));
+    assert!(bold_at(&s, 0, 0));
+
+    // HTML with nothing to paste (a web picture by address) or too large: the text is pasted.
+    run(&mut s, "document.setText", json!({"text": ""}));
+    run(&mut s, "edit.paste", json!({"text": "alt", "html": "<img src='https://example.com/a.png'>"}));
+    assert_eq!(text(&s), "alt");
+    let huge = format!("<b>{}</b>", "a".repeat(crate::cmd::paste::MAX_PASTE_BYTES));
+    run(&mut s, "edit.paste", json!({"text": "!", "html": huge}));
+    assert_eq!(text(&s), "alt!");
+    assert!(s.run("edit.paste", &json!({"html": "<p> </p>"})).is_err(), "nothing to paste is an error");
+    assert!(s.run("edit.pasteMerge", &json!({"rtf": "not rtf"})).is_err());
+    assert!(s.run("edit.pasteText", &json!({})).is_err());
+
+    // Our own copy still wins while the system clipboard holds its text.
+    run(&mut s, "document.setText", json!({"text": "Own"}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.italic", json!({}));
+    run(&mut s, "edit.copy", json!({}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "edit.paste", json!({"text": "Own"}));
+    assert_eq!(text(&s), "OwnOwn");
+    assert_eq!(props_at(&s, 4).italic, Some(true));
+}
+
+/// Paste Special lists a picture on the system clipboard and pastes it (#687).
+#[test]
+fn paste_special_lists_and_pastes_a_picture() {
+    let mut s = s();
+    let png = crate::cmd::insert::base64_encode(&tiny_png());
+    let r = run(&mut s, "edit.pasteSpecial", json!({"picture": png, "html": "<img src='x.png'>"}));
+    let ids: Vec<&str> = r["formats"].as_array().unwrap().iter().map(|f| f["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["html", "picture"]);
+    run(&mut s, "edit.pasteSpecial", json!({"as": "picture", "picture": png}));
+    assert_eq!(s.doc.media.len(), 1);
+    assert!(s.run("edit.pasteSpecial", &json!({"as": "picture", "picture": "%%%"})).is_err());
+    assert!(s.run("edit.pasteSpecial", &json!({"as": "picture"})).is_err());
+}
+
 #[test]
 fn clipboard_pane_collects_copies_and_pastes_one_undoably() {
     let mut s = s();
@@ -3882,6 +3968,50 @@ fn polish_test_dictionary() {
     wordcraft_proof::pl::install_dictionary(aff, dic).unwrap();
 }
 
+/// A tiny synthetic Portuguese Hunspell dictionary (written for these tests). Real dictionaries
+/// are installed on the system, never bundled; every Portuguese test installs this same one.
+fn portuguese_test_dictionary() {
+    let aff = "SET UTF-8\nFLAG UTF-8\nFORBIDDENWORD F\nTRY aeiousrntmdlcpvgqbzfhjxçãõáéíóúâêô\nMAP 2\nMAP aáã\nMAP eé\nREP 1\nREP seje seja\n";
+    let dic = "11\nsaudade\ncoração\ne\nele\ndisse\nnão\né\nque\nseja\nfrequencia/F\nmuito\n";
+    wordcraft_proof::pt::install_dictionary(aff, dic).unwrap();
+}
+
+/// Review › Language and the proofing commands work in Portuguese end to end: the language makes
+/// the document's words Portuguese, F7 and the issue list use the Portuguese dictionary and
+/// grammar, suggestions come from it, and a suggestion fixes the text.
+#[test]
+fn portuguese_proofing_through_the_review_commands() {
+    portuguese_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Saudade coraçao, e ele ele disse."}));
+    // English by default: the Portuguese words are English misspellings.
+    assert!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len() >= 5);
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "pt_br", "default": true}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("pt-BR"), "the tag is normalized");
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "pt-BR");
+    let issues = run(&mut s, "review.issues", json!({}));
+    let arr = issues.as_array().unwrap();
+    let has = |text: &str, kind: &str, sugg: &str| {
+        arr.iter()
+            .any(|i| i["text"] == text && i["kind"] == kind && i["lang"] == "pt" && i["suggestions"].as_array().unwrap().iter().any(|x| x == sugg))
+    };
+    assert!(has("coraçao", "spelling", "coração"), "{issues}");
+    assert!(has("ele ele", "grammar", "ele"), "{issues}");
+    assert_eq!(arr.len(), 2, "{issues}");
+    assert!(arr.iter().any(|i| i["message"] == "Palavra repetida: \"ele\""), "{issues}");
+    // F7 from the start selects the first issue; Change applies a suggestion.
+    run(&mut s, "caret.docStart", json!({}));
+    let first = run(&mut s, "review.spelling", json!({}));
+    assert_eq!(first["text"], "coraçao");
+    run(&mut s, "review.applySuggestion", json!({"text": "coração"}));
+    assert!(text(&s).starts_with("Saudade coração,"), "{}", text(&s));
+    // Add to Dictionary works for Portuguese words too.
+    run(&mut s, "review.addToDictionary", json!({"word": "coraçao"}));
+    let left = run(&mut s, "review.issues", json!({}));
+    assert_eq!(left.as_array().unwrap().len(), 1, "{left}");
+}
+
 /// Review › Language and the proofing commands work in Polish end to end: the language makes
 /// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
 /// suggestions come from it, and a suggestion fixes the text.
@@ -4442,4 +4572,66 @@ fn bibliography_sorts_polish_authors() {
     let t = all.split_once("References").map_or(all.as_str(), |(_, list)| list);
     let at = |name: &str| t.find(&format!("{name}, ")).unwrap_or_else(|| panic!("{name} in {all}"));
     assert!(at("Lis") < at("Łukasiewicz") && at("Łukasiewicz") < at("Mazur"), "{t}");
+}
+
+/// A new blank document takes its paper from the region, and lengths are shown in the region's
+/// unit with its decimal separator; an explicit Measurement units choice still wins (#838).
+#[test]
+fn new_documents_follow_the_region() {
+    // Poland: A4, centimetres, decimal comma.
+    let mut s = s();
+    run(&mut s, "file.options", json!({"region": "pl-PL"}));
+    run(&mut s, "file.new", json!({}));
+    let sp = &s.doc.last_section;
+    assert_eq!(wordcraft_geom::paper_name(sp.page_w, sp.page_h), Some("A4"));
+    assert_eq!(sp.margin_left, 72.0);
+    assert_eq!(s.units(), wordcraft_geom::Unit::Centimeters);
+    assert_eq!(s.format_length(sp.margin_left), "2,54 cm");
+    let o = run(&mut s, "file.options", json!({"pane": "advanced", "units": "auto"}));
+    assert_eq!((o["units"].as_str(), o["unitsFromRegion"].as_bool()), (Some("centimeters"), Some(true)));
+    assert_eq!((o["region"]["paper"].as_str(), o["region"]["decimal"].as_str()), (Some("A4"), Some(",")));
+
+    // The user's own choice wins over the region, and `auto` gives the region's back.
+    run(&mut s, "file.options", json!({"units": "inches"}));
+    assert_eq!(s.units(), wordcraft_geom::Unit::Inches);
+    assert_eq!(s.format_length(108.0), "1,5\"");
+    run(&mut s, "file.options", json!({"units": "auto"}));
+    assert_eq!(s.units(), wordcraft_geom::Unit::Centimeters);
+
+    // A chosen region is a saved preference over the system's; `auto` returns to the system's.
+    assert_eq!(s.prefs.region.as_deref(), Some("pl-PL"));
+    let saved: serde_json::Value = serde_json::to_value(&s.prefs).unwrap();
+    assert_eq!(saved["region"], "pl-PL");
+    s.system_region = wordcraft_geom::Region::from_tag("ja-JP");
+    assert_eq!(s.region().territory, "PL", "the choice wins over the system");
+    let o = run(&mut s, "file.options", json!({"region": "auto"}));
+    assert_eq!((o["regionFromSystem"].as_bool(), o["region"]["territory"].as_str()), (Some(true), Some("JP")));
+    assert_eq!(s.prefs.region, None);
+    run(&mut s, "file.options", json!({"region": "de_AT.UTF-8@euro"}));
+    assert_eq!(s.prefs.region.as_deref(), Some("de-AT"), "kept as a short tag");
+    run(&mut s, "file.options", json!({"region": ""}));
+    assert_eq!(s.prefs.region, None);
+
+    // The United States: Letter and inches.
+    let mut us = Session::new(wordcraft_doc::Document::new());
+    run(&mut us, "file.options", json!({"region": "en-US"}));
+    run(&mut us, "file.new", json!({"template": "blank"}));
+    let sp = &us.doc.last_section;
+    assert_eq!((sp.page_w, sp.page_h), (612.0, 792.0));
+    assert_eq!(us.units(), wordcraft_geom::Unit::Inches);
+    assert_eq!(us.format_length(72.0), "1\"");
+    run(&mut us, "file.options", json!({"units": "centimeters"}));
+    assert_eq!(us.format_length(72.0), "2.54 cm");
+
+    // Templates keep their own size; a headless session is en-US; junk is refused or read as en-US.
+    let mut t = Session::new(wordcraft_doc::Document::new());
+    run(&mut t, "file.options", json!({"region": "de-DE"}));
+    run(&mut t, "file.new", json!({"template": "letter"}));
+    assert_eq!(t.doc.last_section.page_w, crate::sample::letter().last_section.page_w);
+    assert_eq!(Session::new(wordcraft_doc::Document::new()).blank_document().last_section.page_w, 612.0);
+    assert!(t.run("file.options", &json!({"region": 7})).is_err());
+    assert!(t.run("file.options", &json!({"units": "furlongs"})).is_err());
+    run(&mut t, "file.options", json!({"region": "\u{0}\u{FFFF}-zz-ZZZZZZZZ"}));
+    assert_eq!(t.region(), wordcraft_geom::Region::default());
+    assert_eq!(t.prefs.region.as_deref(), Some("en-US"), "junk is saved as en-US");
 }

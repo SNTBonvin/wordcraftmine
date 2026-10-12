@@ -595,6 +595,8 @@
 	Read\nMode	Lugemis-\nrežiim
 	Reads the clipboard's rich text and keeps its formatting.	Loeb lõikelaualt vormindatud teksti ja säilitab vorminduse.
 	Reads the clipboard's web content and keeps its formatting.	Loeb lõikelaualt veebisisu ja säilitab vorminduse.
+	Picture	Pilt
+	Pastes the clipboard's picture.	Kleebib lõikelaual oleva pildi.
 	Reading Highlight	Otsingutulemuste esiletõst
 	Recent	Hiljutised
 	Recent documents to show:	Kuvatavad hiljutised dokumendid:
@@ -1447,6 +1449,8 @@
 	Border lines	Äärisjooned
 	Capitalize first letter of sentences	Lausete esitäht suureks
 	Capitalize first letter of table cells	Tabelilahtrite esitäht suureks
+	Correct TWo INitial CApitals	Paranda KAks SUurt algustähte
+	Correct accidental usage of cAPS LOCK key	Paranda kogemata sisse jäänud cAPS LOCK
 	Capitalize names of days	Nädalapäevade nimed suure algustähega
 	Case changes	Tähesuuruse muutused
 	Character level	Märgi tasandil
@@ -2087,3 +2091,5 @@
 	Your system has animation effects turned on.	Süsteemis on animatsiooniefektid sisse lülitatud.
 	Your system has animation effects turned off.	Süsteemis on animatsiooniefektid välja lülitatud.
 	Your system doesn't report an animation setting, so animation effects stay on.	Süsteem ei teata animatsiooniseadet, seega jäävad animatsiooniefektid sisse.
+	Region:	Piirkond:
+	Automatic ({region})	Automaatne ({region})
