@@ -873,7 +873,9 @@ fn layout_box(
     let mut y = 0.0f32;
     let mut prev_after = 0.0f32;
     let mut prev_style: Option<(String, bool)> = None;
+    let mut last_top = 0.0f32;
     for (i, b) in blocks.iter().enumerate() {
+        last_top = y;
         let mut path = prefix.to_vec();
         path.push(i as u32);
         match &**b {
@@ -958,15 +960,17 @@ fn layout_box(
     }
     let floats_bottom = float_tables.iter().map(|r| r.bottom()).fold(0.0, f32::max);
     ctx.hide_deleted = outer_hide;
-    BoxLayout { items, height: y.max(0.0), floats_bottom }
+    BoxLayout { items, height: y.max(0.0), floats_bottom, last_top: last_top.max(0.0) }
 }
 
-/// A laid-out box: items relative to its top-left, the height of its text flow, and where its
-/// floating tables end (a table cell grows to hold them).
+/// A laid-out box: items relative to its top-left, the height of its text flow, where its
+/// floating tables end (a table cell grows to hold them) and where its last block starts (the
+/// height without it).
 struct BoxLayout {
     items: Vec<Placed>,
     height: f32,
     floats_bottom: f32,
+    last_top: f32,
 }
 
 /// Where floating table `tl` goes in a box `width` wide whose next paragraph starts at `y`, and
@@ -1026,8 +1030,11 @@ fn clear_of_float_tables(mut r: Rect, f: &TableFloat, legacy: f32, text_left: f3
     r
 }
 
-/// A text box's internal margins (Word's defaults: 0.1" left/right, 0.05" top/bottom).
+/// A text box's default internal margins (Word's: 0.1" left/right, 0.05" top/bottom); a box's
+/// own come from its [`wordcraft_doc::TextBody`].
+#[cfg(test)]
 const BOX_INSET_X: f32 = 7.2;
+#[cfg(test)]
 const BOX_INSET_Y: f32 = 3.6;
 
 /// Keep what fits in a box `height` tall (items relative to its top): lines that don't fit are

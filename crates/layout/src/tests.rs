@@ -4143,3 +4143,123 @@ fn bulgarian_text_is_hyphenated_by_its_own_rules() {
         assert!(wordcraft_proof::hyphen::hyphen_points_in(&word, &lim, wordcraft_proof::ProofLang::Bg).contains(&at), "{head}-{tail}");
     }
 }
+
+/// Spaces and tabs never make a line taller in Word, whatever their size (measured in Word for
+/// Windows: 9 pt text with 11–20 pt tabs, spaces and ideographic spaces kept the 9 pt line; a
+/// line of only big spaces took the paragraph mark's height; a big letter or no-break space did
+/// grow it). Tables of contents with big tab runs were a third taller than Word's.
+#[test]
+fn spaces_and_tabs_do_not_make_a_line_taller() {
+    use wordcraft_doc::props::CharProps;
+    let small = CharProps { size: Some(9.0), ..Default::default() };
+    let big = CharProps { size: Some(20.0), ..Default::default() };
+    let pitch = |middle: &str, middle_props: &CharProps| {
+        let mut d = Document::new();
+        d.body = (0..3)
+            .map(|i| {
+                let mut p = wordcraft_doc::Paragraph::with_text(&format!("L{i}A"), small.clone());
+                let n = p.len();
+                p.insert_text(n, middle, middle_props).unwrap();
+                let n = p.len();
+                p.insert_text(n, "B", &small).unwrap();
+                p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+                p.mark = small.clone();
+                wordcraft_doc::para_block(p)
+            })
+            .collect();
+        let l = lay(&d);
+        l.caret(&Pos::body(1, 0)).unwrap().top - l.caret(&Pos::body(0, 0)).unwrap().top
+    };
+    let plain = pitch(" ", &small);
+    for (what, middle) in [("a tab", "\t"), ("a space", " "), ("two spaces", "  "), ("an ideographic space", "\u{3000}")] {
+        assert!((pitch(middle, &big) - plain).abs() < 0.01, "{what} at 20 pt: {} vs {plain}", pitch(middle, &big));
+    }
+    assert!(pitch("x", &big) > plain + 5.0, "a 20 pt letter does make it taller");
+    assert!(pitch("\u{A0}", &big) > plain + 5.0, "so does a no-break space");
+}
+
+/// A list label taller than its text makes the first line taller above the baseline only: Word
+/// keeps the text's descent below it (measured in Word for Windows, `plan/word` R18: a Symbol
+/// bullet's taller ascent counts, a Courier New label's deeper descent doesn't). NIH's bulleted
+/// items each came out a fifth of a point taller, enough to push a paragraph's last lines over
+/// the page bottom.
+#[test]
+fn a_list_label_adds_ascent_but_not_descent() {
+    let first_line = |label_size: Option<f32>| {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        for a in &mut d.numbering.abstracts {
+            for l in &mut a.levels {
+                l.chr.size = label_size;
+            }
+        }
+        let ten = wordcraft_doc::props::CharProps { size: Some(10.0), ..Default::default() };
+        let mut p = wordcraft_doc::Paragraph::with_text("Item", ten.clone());
+        p.props.numbering = Some(wordcraft_doc::props::NumRef { num, level: 0 });
+        p.mark = ten;
+        p.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = lay(&d);
+        l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { para.lines.first().cloned() } else { None }).unwrap()
+    };
+    let plain = first_line(None);
+    let big = first_line(Some(30.0));
+    let below = |l: &crate::para::Line| l.top + l.height - l.baseline;
+    assert!(big.baseline - big.top > plain.baseline - plain.top + 5.0, "the big label raises the baseline");
+    assert!((below(&big) - below(&plain)).abs() < 0.01, "the text's descent: {} vs {}", below(&big), below(&plain));
+}
+
+/// A cell's hidden end-of-cell mark (`w:hideMark`), measured in Word for Windows (`plan/word`
+/// R20, 9 cases): its empty last paragraph takes no room, spacing and all, so a row of such empty
+/// cells is only its borders; one ordinary empty cell keeps the row a line tall, and a paragraph
+/// with text is never hidden. NIH's Table A showed a blank row Word doesn't.
+#[test]
+fn a_hidden_cell_mark_takes_no_room() {
+    let row3_top = |hide: [bool; 2], second: Option<&str>| {
+        let mut d = Document::from_text("Above");
+        let mut t = Table::new(3, 2, 300.0);
+        for (r, text) in [(0, "R1"), (2, "R3")] {
+            for c in 0..2 {
+                t.rows[r].cells[c].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, Default::default()))];
+            }
+        }
+        for c in 0..2 {
+            let cell = &mut t.rows[1].cells[c];
+            cell.props.hide_mark = hide[c];
+            let mut blocks = Vec::new();
+            if let Some(text) = second {
+                blocks.push(wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, Default::default())));
+            }
+            let mut mark = wordcraft_doc::Paragraph::with_text("", Default::default());
+            mark.props.space_before = Some(10.0);
+            blocks.push(wordcraft_doc::para_block(mark));
+            cell.blocks = blocks;
+        }
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        let at = |r: u32| l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, r, 0, 0]), off: 0 }).unwrap().top;
+        // Rows 1 and 2 together.
+        at(2) - at(0)
+    };
+    // Row 1 is one line of text; row 2's height is what's left.
+    let line = {
+        let both = row3_top([false, false], Some("Tx"));
+        let mut d = Document::from_text("Above");
+        let mut t = Table::new(2, 1, 300.0);
+        t.rows[0].cells[0].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("R1", Default::default()))];
+        t.rows[1].cells[0].blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("R3", Default::default()))];
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        let at = |r: u32| l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, r, 0, 0]), off: 0 }).unwrap().top;
+        assert!(both > at(1) - at(0));
+        at(1) - at(0)
+    };
+    let row2 = |hide: [bool; 2], second: Option<&str>| row3_top(hide, second) - line;
+    let hidden = row2([true, true], None);
+    assert!(hidden < 1.5, "a row of hidden marks is only its borders: {hidden} vs a line of {line}");
+    let mixed = row2([true, false], None);
+    let plain = row2([false, false], None);
+    assert!(plain > 5.0 && (mixed - plain).abs() < 0.01, "an ordinary empty cell keeps the row: {mixed} vs {plain}");
+    let text = row2([true, true], Some("Tx"));
+    assert!((text - line).abs() < 0.5, "text stays, the empty mark after it goes: {text} vs {line}");
+}

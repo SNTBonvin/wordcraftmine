@@ -1231,6 +1231,25 @@ impl WordApp {
         }
     }
 
+    /// The window caption is painted with the semibold interface face (Inter). A file name in a
+    /// script those faces lack would otherwise be drawn as `?`. Borrow the document fonts'
+    /// fallback faces, as IME composition does (#565). A CJK name uses the CJK UI font instead:
+    /// those collections are too large to add here.
+    fn ensure_caption_fonts(&mut self) {
+        let stem = self.title_stem();
+        if stem.chars().any(wordcraft_fonts::is_cjk) {
+            self.want_system_cjk = true;
+        }
+        let new = theme::faces_for_preedit(&stem, &self.canvas.ime_faces, theme::caption_char_covered, |c| {
+            wordcraft_fonts::FontDb::global().fallback_for(c, u32::MAX)
+        });
+        if !new.is_empty() {
+            self.canvas.ime_faces.extend(new);
+            // Fonts are already installed for this frame's language; load the new faces too.
+            self.styled = false;
+        }
+    }
+
     /// Document title for the title bar (and the suggested file name). An untitled document is
     /// named in the interface language, as `Document1` is in English.
     pub fn title_stem(&self) -> String {
@@ -1258,18 +1277,11 @@ impl WordApp {
         }
         options::sync(self);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
-        // An installed CJK font is read only once CJK text is shown (#241): never for an English
-        // interface that doesn't open the language list.
-        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
-        if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
-            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
-            self.fonts_hans = lang.prefers_hans();
-            self.fonts_system_cjk = system_cjk;
-            // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
-            // egui's keyboard zoom would also scale the whole window on them. Zoom is View › Zoom.
-            ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            self.styled = true;
-        }
+        // An installed CJK font is read only once CJK text is shown (#241): a CJK interface, the
+        // language names in Options, or a file name the caption is drawing. A file opened later
+        // in this frame (dialog, drop, control channel) is picked up again at the end.
+        self.ensure_caption_fonts();
+        self.install_ui_fonts(ctx, lang);
         if let Some(answer) = self.desktop_theme.take_change() {
             self.desktop_dark = Some(answer);
         }
@@ -1342,7 +1354,25 @@ impl WordApp {
                 };
             }
         }
+        // The open above may have changed the file name the caption draws.
+        self.ensure_caption_fonts();
+        self.install_ui_fonts(ctx, lang);
         self.report_dirty();
+    }
+
+    /// Install the interface fonts when the language, the CJK fallback, or a caption fallback
+    /// face has changed since the last install.
+    fn install_ui_fonts(&mut self, ctx: &egui::Context, lang: i18n::Lang) {
+        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
+        if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
+            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
+            self.fonts_hans = lang.prefers_hans();
+            self.fonts_system_cjk = system_cjk;
+            // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
+            // egui's keyboard zoom would also scale the whole window on them. Zoom is View › Zoom.
+            ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            self.styled = true;
+        }
     }
 
     /// Tell the host whether the document has unsaved changes ([`Services::on_dirty`]).
@@ -1773,6 +1803,39 @@ mod tests {
         assert_eq!(titles(&mut app), 1);
     }
 
+    /// The caption is Inter semibold, which has no Hebrew (or Arabic, Thai, …), so egui would
+    /// paint each of those letters as `?`. Opening such a file borrows one document fallback
+    /// face. A CJK name uses the CJK UI font instead of that list.
+    #[test]
+    fn non_latin_file_name_is_drawn_in_the_caption() {
+        let ctx = egui::Context::default();
+        let frame = |app: &mut WordApp| {
+            ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+        };
+        let mut latin = app();
+        latin.session.path = Some("report.docx".into());
+        frame(&mut latin);
+        assert!(!latin.want_system_cjk);
+        assert!(latin.canvas.ime_faces.is_empty(), "a Latin name needs no extra face");
+
+        let mut hebrew = app();
+        hebrew.session.path = Some("מסמך.docx".into());
+        frame(&mut hebrew);
+        let letter = 'מ';
+        if wordcraft_fonts::FontDb::global().fallback_for(letter, u32::MAX).is_some_and(|f| f.data().len() <= 16 << 20) {
+            assert!(hebrew.canvas.ime_faces.iter().any(|f| f.covers(letter)), "the caption borrows a face that covers the file name");
+        }
+        let n = hebrew.canvas.ime_faces.len();
+        frame(&mut hebrew);
+        assert_eq!(hebrew.canvas.ime_faces.len(), n, "the face is added once");
+
+        let mut cjk = app();
+        cjk.session.path = Some("文档.docx".into());
+        frame(&mut cjk);
+        assert!(cjk.want_system_cjk, "a CJK file name loads the CJK UI font");
+        assert!(cjk.canvas.ime_faces.is_empty(), "CJK collections are not copied into the fallback list");
+    }
+
     fn app() -> WordApp {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
     }
@@ -1860,6 +1923,35 @@ mod tests {
         a.run("format.enclose", json!({})).unwrap();
         let Some(dialogs::Dialog::Enclose { style, shape, .. }) = a.dialog.clone() else { panic!("no dialog") };
         assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
+    }
+
+    /// Issue #772: Ctrl/⌘+F left focus on the document, so typing didn't go into Find what.
+    #[test]
+    fn find_shortcut_focuses_find_what() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let frame = |a: &mut WordApp, events: Vec<egui::Event>| {
+            let input = egui::RawInput { events, ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        // The first frames install fonts; the canvas appears after them.
+        for _ in 0..3 {
+            frame(&mut a, Vec::new());
+        }
+        let key = egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        frame(&mut a, vec![key]);
+        for _ in 0..2 {
+            frame(&mut a, Vec::new());
+        }
+        assert!(ctx.memory(|m| m.has_focus(egui::Id::new("find_what"))), "Find what has the focus");
+        frame(&mut a, vec![egui::Event::Text("abc".into())]);
+        let Some(dialogs::Dialog::Find { query, .. }) = &a.dialog else { panic!("no Find dialog") };
+        assert!(query.ends_with("abc"), "typing went into Find what: {query:?}");
+        assert!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).is_empty(), "nothing was typed into the document");
     }
 
     /// Issue #139: Ctrl+wheel over the page didn't zoom.
@@ -2383,6 +2475,43 @@ mod tests {
         assert_eq!(caret.page, 3);
     }
 
+    /// Issue #768: after One Page, zooming out (Zoom Out, the Zoom box, Ctrl + wheel) keeps one page per row.
+    #[test]
+    fn zoom_after_one_page_keeps_one_page_per_row() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for _ in 0..3 {
+            a.run("insert.pageBreak", json!({})).unwrap();
+        }
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        a.run("view.onePage", json!({})).unwrap();
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        assert_eq!(a.canvas.cols, 1);
+        a.run("view.zoom", json!({"value": 30})).unwrap();
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        assert_eq!(a.canvas.cols, 1, "30% after One Page: still one page per row");
+        a.run("view.multiplePages", json!({})).unwrap();
+        a.run("view.zoom", json!({"value": 30})).unwrap();
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        assert_eq!(a.canvas.cols, 4, "30% after Multiple Pages: all four pages fit across");
+    }
+
     #[test]
     fn user_name_survives_restart() {
         let mut first = app();
@@ -2891,6 +3020,30 @@ mod tests {
         h.event(key(egui::Key::F7, egui::Modifiers::ALT));
         h.event(egui::Event::Text("x".into()));
         h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
+    }
+
+    /// #819: Alt+Q moves to "Tell me" command search, as in Word for Windows, without typing a q.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn alt_q_opens_command_search_from_the_page() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        h.event(egui::Event::Text("Kilns".into()));
+        h.step();
+        h.event(egui::Event::Key { key: egui::Key::Q, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::ALT });
+        h.event(egui::Event::Text("q".into()));
+        h.step();
+        assert!(matches!(h.state().dialog, Some(dialogs::Dialog::Commands { .. })), "command search is open");
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
     }
 
