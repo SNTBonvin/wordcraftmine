@@ -1,0 +1,92 @@
+{
+  "crate": "winit",
+  "version": "0.30.13",
+  "pristine_archive_sha256": "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d",
+  "changed_source_files": [
+    {
+      "path": "src/platform_impl/linux/wayland/seat/mod.rs",
+      "fixes": [
+        "02"
+      ],
+      "pristine_sha256": "70bbd2a8c43a898f4cb2580d38c4f14e478e7331ab65d2e115feb0377fe2fc44",
+      "vendor_sha256": "603c6005e1cba46941ed5f10c115a12b844151152f474ac537fd098cc04be415"
+    },
+    {
+      "path": "src/platform_impl/linux/x11/event_processor.rs",
+      "fixes": [
+        "05"
+      ],
+      "pristine_sha256": "eefe47e789dae7cd56f3579eb292935d6237c886d486688ed2649b2aa6a76237",
+      "vendor_sha256": "6eff6e5ab03efc0e546c61d98373d6c6091e8f023ff42842d531740685d2c69e"
+    },
+    {
+      "path": "src/platform_impl/linux/x11/ime/mod.rs",
+      "fixes": [
+        "05"
+      ],
+      "pristine_sha256": "efa84f5da26bdb10bbed3c0c5089e4aa719985b96fa18215db9c71bf3dcd5f10",
+      "vendor_sha256": "a5865d98d57b132a0c1ca6a39c78c792347743487fa49a9c41ea60f27d4daeff"
+    },
+    {
+      "path": "src/platform_impl/macos/ime_startup.rs",
+      "fixes": [
+        "10"
+      ],
+      "pristine_sha256": null,
+      "vendor_sha256": "3b0c8bfabdd1ddfa9f30e5b130e7e8db1cc576c92c1ae8daf5fa0e7a6d8d5b10"
+    },
+    {
+      "path": "src/platform_impl/macos/mod.rs",
+      "fixes": [
+        "10"
+      ],
+      "pristine_sha256": "584af72536847910a3e461fb40b9a0f9a375da3200f7ecf38f5d989b3c143d9d",
+      "vendor_sha256": "d183cc83359309dd62f5f11eeba88f965a2c68f3aaa84daf501005ea90034a6f"
+    },
+    {
+      "path": "src/platform_impl/macos/view.rs",
+      "fixes": [
+        "06",
+        "07",
+        "08",
+        "09",
+        "10"
+      ],
+      "pristine_sha256": "de63351d7a757d58883600c3f1702fc369cb77b2ae323a4efca7cb520e9da90e",
+      "vendor_sha256": "542805d2b1bf8d6eee264de4178d8b8c21d14b05588a2632ce05ec18bd194e2b"
+    },
+    {
+      "path": "src/platform_impl/windows/dark_mode.rs",
+      "fixes": [
+        "01"
+      ],
+      "pristine_sha256": "9fa225a2462e0a0467b7608fc126515f5138d7762f0f86688b17ef9d627f0fe1",
+      "vendor_sha256": "653e4162571d02e8c1c39e67bdc2ca5f11b2955bf299aa39e494db0b5bfb4ac3"
+    },
+    {
+      "path": "src/platform_impl/windows/event_loop.rs",
+      "fixes": [
+        "01",
+        "03"
+      ],
+      "pristine_sha256": "f99c748e189ea8ce4bde08ec186ee27306756ce93d5235371e198c07e582c52d",
+      "vendor_sha256": "8c4acaee2fcdfa6cf8d59888cabf986aa41898070ab31a10651bc1cd14dddbec"
+    },
+    {
+      "path": "src/platform_impl/windows/ime.rs",
+      "fixes": [
+        "03"
+      ],
+      "pristine_sha256": "fb98b36a12d98bacf7fa88e8444f5d85713d51110e9ada028ce5ca12677a7feb",
+      "vendor_sha256": "999b2d0869632d4d00928a35033fbdd303eef3d28fc7cdf5bd360d195793aee3"
+    },
+    {
+      "path": "src/platform_impl/windows/window_state.rs",
+      "fixes": [
+        "04"
+      ],
+      "pristine_sha256": "505e7ea90e1fa75500cb296cf6ec4cf3f04407c44731ffc9ae1f48e78d8d0f34",
+      "vendor_sha256": "915b62177311626be88cbd6ca51f28b265946e692394f26e6d26eb879acac746"
+    }
+  ]
+}

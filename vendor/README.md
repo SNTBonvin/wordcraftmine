@@ -6,4 +6,4 @@ directory.
 
 | Crate | Version | License | Local patch | Regression evidence |
 |---|---|---|---|---|
-| winit | 0.30.13 | Apache-2.0 | See per-fix notes under `patches/winit/`; the source baseline is unchanged. | `apps/wordcraft/tests/winit_vendor.rs` |
+| winit | 0.30.13 | Apache-2.0 | Ten narrowly scoped platform fixes; see `patches/winit/01` through `10` and the exact file/hash map in `patches/winit/source-delta.json`. | `apps/wordcraft/tests/winit_*.rs` |
