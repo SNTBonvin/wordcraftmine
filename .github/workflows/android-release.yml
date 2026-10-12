@@ -1,0 +1,322 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "android-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. 0.5.1 (creates tag android-v0.5.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate source and release version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.version_code }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve and validate release version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_REF" == refs/tags/android-v* ]]; then
+            VERSION="$(echo "$EVENT_REF_NAME" | sed 's/^android-v//')"
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Version must use MAJOR.MINOR.PATCH, e.g. 0.5.1" >&2
+            exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          if (( MAJOR >= 1000 || MINOR >= 1000 || PATCH >= 1000 )); then
+            echo "Each version component must be less than 1000." >&2
+            exit 1
+          fi
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          if (( VERSION_CODE < 1 )); then
+            echo "Android versionCode must be positive." >&2
+            exit 1
+          fi
+          TAG="android-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release: $TAG (versionCode=$VERSION_CODE)"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Run core document and layout tests
+        run: cargo test -p wordcraft-geom -p wordcraft-doc -p wordcraft-layout
+
+  build-release:
+    name: Build and sign release APK
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      ANDROID_NDK_VERSION: "27.2.12479018"
+      WORDCRAFT_VERSION: ${{ needs.validate.outputs.version }}
+      WORDCRAFT_VERSION_CODE: ${{ needs.validate.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require persistent release-signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Missing ANDROID_KEYSTORE_BASE64" >&2; exit 1; }
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "Missing ANDROID_KEYSTORE_PASSWORD" >&2; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "Missing ANDROID_KEY_ALIAS" >&2; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "Missing ANDROID_KEY_PASSWORD" >&2; exit 1; }
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android SDK and NDK components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android-release
+      - name: Configure Android native toolchains
+        run: |
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$TOOLCHAIN/x86_64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CC_aarch64-linux-android=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CXX_aarch64-linux-android=$TOOLCHAIN/aarch64-linux-android24-clang++" >> "$GITHUB_ENV"
+          echo "AR_aarch64-linux-android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CC_x86_64-linux-android=$TOOLCHAIN/x86_64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CXX_x86_64-linux-android=$TOOLCHAIN/x86_64-linux-android24-clang++" >> "$GITHUB_ENV"
+          echo "AR_x86_64-linux-android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+      - name: Build optimized native libraries
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs build --release --lib -p wordcraft --features eframe/android-game-activity
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+      - name: Assemble Android release variant
+        run: |
+          gradle -p android --no-daemon --stacktrace assembleRelease \
+            -PwordcraftVersionName="$WORDCRAFT_VERSION" \
+            -PwordcraftVersionCode="$WORDCRAFT_VERSION_CODE"
+      - name: Align, sign and verify release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [[ ! -s "$UNSIGNED_APK" ]]; then
+            echo "Expected release APK was not created: $UNSIGNED_APK" >&2
+            find android/app/build/outputs/apk -maxdepth 3 -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          KEYSTORE="$RUNNER_TEMP/wordcraft-release.jks"
+          OUT_DIR="$RUNNER_TEMP/wordcraft-android-release"
+          ALIGNED="$RUNNER_TEMP/wordcraft-release-aligned.apk"
+          APK_NAME="WordCraft-Android-$WORDCRAFT_VERSION.apk"
+          mkdir -p "$OUT_DIR"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          "$BUILD_TOOLS/zipalign" -f -v 4 "$UNSIGNED_APK" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "env:ANDROID_KEYSTORE_PASSWORD" --key-pass "env:ANDROID_KEY_PASSWORD" \
+            --out "$OUT_DIR/$APK_NAME" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$OUT_DIR/$APK_NAME"
+          "$BUILD_TOOLS/aapt" dump badging "$OUT_DIR/$APK_NAME" | grep -F "package: name='ai.storyteller.wordcraft'"
+          "$BUILD_TOOLS/aapt" dump badging "$OUT_DIR/$APK_NAME" | grep -F "application-label:'WordCraft'"
+          unzip -l "$OUT_DIR/$APK_NAME" | grep -F "lib/arm64-v8a/libwordcraft.so"
+          unzip -l "$OUT_DIR/$APK_NAME" | grep -F "lib/x86_64/libwordcraft.so"
+          unzip -t "$OUT_DIR/$APK_NAME"
+          (cd "$OUT_DIR" && sha256sum "$APK_NAME" > "$APK_NAME.sha256")
+          cat > "$OUT_DIR/BUILD-INFO.txt" <<EOF
+          App: WordCraft
+          Package: ai.storyteller.wordcraft
+          Version: $WORDCRAFT_VERSION
+          Android versionCode: $WORDCRAFT_VERSION_CODE
+          Commit: $GITHUB_SHA
+          Release tag: ${{ needs.validate.outputs.tag }}
+          Signed with: persistent repository release keystore
+          Built at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          rm -f "$KEYSTORE" "$ALIGNED"
+      - name: Upload verified release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: wordcraft-android-release-${{ needs.validate.outputs.version }}
+          path: ${{ runner.temp }}/wordcraft-android-release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  emulator-smoke:
+    name: Android 16 emulator launch smoke test
+    needs: [validate, build-release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install Android 16 emulator image
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "emulator" "system-images;android-36;google_apis;x86_64"
+
+      - name: Download signed release candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: wordcraft-android-release-${{ needs.validate.outputs.version }}
+          path: release-assets
+
+      - name: Create and boot Android 16 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          AVD_NAME="wordcraft-api36"
+          echo "no" | avdmanager create avd \
+            --name "$AVD_NAME" \
+            --package "system-images;android-36;google_apis;x86_64" \
+            --device pixel_2 \
+            --force
+          "$ANDROID_SDK_ROOT/emulator/emulator" \
+            -avd "$AVD_NAME" \
+            -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
+            -gpu swiftshader_indirect -wipe-data \
+            > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/emulator.pid"
+          adb wait-for-device
+          BOOTED=0
+          for attempt in $(seq 1 90); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+              BOOTED=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$BOOTED" != "1" ]]; then
+            echo "Android emulator did not finish booting." >&2
+            tail -n 200 "$RUNNER_TEMP/emulator.log" || true
+            exit 1
+          fi
+          adb shell input keyevent 82 || true
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
+
+      - name: Install and launch the release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find release-assets -maxdepth 1 -type f -name 'WordCraft-Android-*.apk' -print -quit)"
+          if [[ -z "$APK" ]]; then
+            echo "Release APK not found in downloaded candidate artifact." >&2
+            find release-assets -maxdepth 2 -type f -print
+            exit 1
+          fi
+          adb install "$APK"
+          adb shell am force-stop ai.storyteller.wordcraft
+          adb shell am start -W -n ai.storyteller.wordcraft/.MainActivity 2>&1 | tee "$RUNNER_TEMP/launch-result.txt"
+          if ! grep -Fq "Status: ok" "$RUNNER_TEMP/launch-result.txt"; then
+            echo "Android activity did not report a successful launch." >&2
+            adb logcat -d -v threadtime > "$RUNNER_TEMP/startup-log.txt" || true
+            tail -n 200 "$RUNNER_TEMP/startup-log.txt" || true
+            exit 1
+          fi
+          sleep 12
+          PID="$(adb shell pidof -s ai.storyteller.wordcraft 2>/dev/null | tr -d '\r' || true)"
+          if [[ -z "$PID" ]]; then
+            echo "WordCraft process exited after launch." >&2
+            adb logcat -d -v threadtime > "$RUNNER_TEMP/startup-log.txt" || true
+            tail -n 200 "$RUNNER_TEMP/startup-log.txt" || true
+            exit 1
+          fi
+          if adb logcat -d --pid="$PID" -v brief | grep -E "FATAL EXCEPTION|Fatal signal"; then
+            echo "WordCraft logged a fatal exception during startup." >&2
+            exit 1
+          fi
+          echo "Android 16 emulator smoke test passed: APK installed, MainActivity launched, process remained alive."
+
+      - name: Upload emulator diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wordcraft-android-emulator-failure-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/emulator.log
+            ${{ runner.temp }}/launch-result.txt
+            ${{ runner.temp }}/startup-log.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: [validate, build-release, emulator-smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: wordcraft-android-release-${{ needs.validate.outputs.version }}
+          path: release-assets
+      - name: Publish versioned Android release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: WordCraft Android v${{ needs.validate.outputs.version }}
+          body: |
+            WordCraft Android release ${{ needs.validate.outputs.version }}.
+
+            The APK is built from commit ${{ github.sha }}, signed with the persistent Android release key, and verified with Android build-tools. SHA-256 checksum and build metadata are attached.
+          files: |
+            release-assets/*.apk
+            release-assets/*.sha256
+            release-assets/BUILD-INFO.txt
+          fail_on_unmatched_files: true

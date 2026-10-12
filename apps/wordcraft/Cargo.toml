@@ -7,6 +7,10 @@ publish = false
 default-run = "wordcraft"
 description = "WordCraft desktop app"
 
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
 [lints]
 workspace = true
 
@@ -56,6 +60,10 @@ zbus = { version = "5", default-features = false, features = ["async-io", "block
 windows = { version = "0.62", features = ["UI_ViewManagement"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The control server's random key (also needed on Android).
+getrandom = "0.3"
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 rfd = { workspace = true }
 # Waits for an `rfd::AsyncFileDialog` on a background thread (the dialogs don't block the UI, #94);
 # rfd itself already depends on it.
@@ -63,8 +71,16 @@ pollster = "0.4"
 # Pictures and copied files on the system clipboard (#45); egui's paste only carries text. Already
 # in the build through egui-winit, with the same features.
 arboard = { workspace = true, features = ["image-data"] }
-# The control server's random key.
-getrandom = "0.3"
 # File › Print opens the PDF in the system's default viewer (`xdg-open`/`gio` on Linux and BSD, the
 # file association on Windows, `open` on macOS) without blocking; already in the tree via egui_kittest.
 open = "5.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["android-game-activity"] }
+
+[package.metadata.android]
+package = "ai.storyteller.wordcraft"
+apk_name = "wordcraft"
+
+[package.metadata.android.application]
+label = "WordCraft"

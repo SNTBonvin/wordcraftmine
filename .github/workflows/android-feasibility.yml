@@ -1,0 +1,113 @@
+name: Android QA APK
+
+on:
+  push:
+    branches: [pr1]
+    paths: ["android/**", "apps/wordcraft/**", "crates/ui-egui/**", ".github/workflows/android-feasibility.yml"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android-feasibility.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-qa-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa-apk:
+    name: Build, inspect and sign QA APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      ANDROID_NDK_VERSION: "27.2.12479018"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android SDK and NDK components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android-qa
+      - name: Configure Android native toolchains
+        run: |
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$TOOLCHAIN/x86_64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CC_aarch64-linux-android=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CXX_aarch64-linux-android=$TOOLCHAIN/aarch64-linux-android24-clang++" >> "$GITHUB_ENV"
+          echo "AR_aarch64-linux-android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CC_x86_64-linux-android=$TOOLCHAIN/x86_64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "CXX_x86_64-linux-android=$TOOLCHAIN/x86_64-linux-android24-clang++" >> "$GITHUB_ENV"
+          echo "AR_x86_64-linux-android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build debug-profile native libraries for phones and emulator
+        run: cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs build --lib -p wordcraft --features eframe/android-game-activity
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+      - name: Assemble debug APK
+        run: gradle -p android --no-daemon --stacktrace assembleDebug
+      - name: Inspect APK package and native libraries
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "package: name='ai.storyteller.wordcraft'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "application-label:'WordCraft'"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libwordcraft.so"
+          unzip -l "$APK" | grep -F "lib/x86_64/libwordcraft.so"
+          unzip -t "$APK"
+      - name: Sign QA APK with disposable test key
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          INPUT_APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          OUT_DIR="$RUNNER_TEMP/wordcraft-qa"
+          KEYSTORE="$RUNNER_TEMP/wordcraft-qa-temporary.jks"
+          ALIGNED="$RUNNER_TEMP/wordcraft-qa-aligned.apk"
+          APK_NAME="WordCraft-Android-QA-$(echo "$GITHUB_SHA" | cut -c1-7).apk"
+          PASSWORD="$(openssl rand -hex 24)"
+          mkdir -p "$OUT_DIR"
+          keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storetype JKS \
+            -storepass "$PASSWORD" -keypass "$PASSWORD" -alias wordcraft-qa \
+            -keyalg RSA -keysize 2048 -validity 30 \
+            -dname "CN=WordCraft QA Build,O=WordCraft,C=IN"
+          "$BUILD_TOOLS/zipalign" -f -v 4 "$INPUT_APK" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias wordcraft-qa \
+            --ks-pass "pass:$PASSWORD" --key-pass "pass:$PASSWORD" \
+            --out "$OUT_DIR/$APK_NAME" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify --verbose "$OUT_DIR/$APK_NAME"
+          "$BUILD_TOOLS/aapt" dump badging "$OUT_DIR/$APK_NAME" | grep -F "package: name='ai.storyteller.wordcraft'"
+          (cd "$OUT_DIR" && sha256sum "$APK_NAME" > SHA256SUMS)
+          cat > "$OUT_DIR/BUILD-INFO.txt" <<EOF
+          App: WordCraft
+          Package: ai.storyteller.wordcraft
+          Build type: QA/debug (disposable CI signing key)
+          Commit: $GITHUB_SHA
+          Ref: $GITHUB_REF
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Built at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          rm -f "$KEYSTORE" "$ALIGNED"
+      - name: Upload installable QA APK, checksum and build metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: wordcraft-android-qa-${{ github.sha }}
+          path: ${{ runner.temp }}/wordcraft-qa/*
+          if-no-files-found: error
+          retention-days: 14

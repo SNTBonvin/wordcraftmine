@@ -5022,6 +5022,7 @@ dependencies = [
  "wordcraft-fonts",
  "wordcraft-ui-egui",
  "zbus",
+ "winit",
 ]
 
 [[package]]
