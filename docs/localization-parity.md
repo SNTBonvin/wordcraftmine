@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Czech proofing review fixes; previously trivial: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -29,7 +29,7 @@ native-speaker review (human).
   Read Aloud, Backstage greetings) aren't wrapped in `tl!` yet, so they show in English in every
   language: the true share of visible strings is **~93–95%** (estimated).
 - Pending PRs: Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20).
-- **Proofing: English, Polish and Portuguese**, chosen per run from its language (`w:lang`, resolved through
+- **Proofing: English, Polish, Portuguese and Czech**, chosen per run from its language (`w:lang`, resolved through
   the styles; Review › Language and the status bar set it). Languages without proofing tools get
   no spelling or grammar marks (as in Word without the language's tools) instead of being flagged
   as English. Detail in [Proofing per language](#proofing-per-language).
@@ -74,8 +74,8 @@ Hungarian follows `hu-HU` system locales and `{"value":"hu"}`, with a complete c
 the Russian catalog, built-in style names shown translated, plus the citation style names. Hungarian proofing is not included; terminology and conventions:
 [`localization-hu.md`](localization-hu.md).
 
-Polish is the only one besides English with proofing tools, and a Polish interface writes new
-documents in Polish (`pl-PL`).
+Polish, Portuguese and Czech interfaces write new documents and opened TXT/Markdown text
+in their proofing languages (`pl-PL`, `pt-BR`, `cs-CZ`).
 
 ## Proofing per language
 
@@ -84,11 +84,12 @@ documents in Polish (`pl-PL`).
 | English (`en`, any region; text with no language) | Moby word list (public domain, ~160k words) with inflection rules | edit distance | repeated word, `a`/`an`, sentence capital, space before punctuation, double space | Moby dictionary, our Liang patterns, heuristic |
 | Polish (`pl`) | The Hunspell `pl_PL` dictionary installed on the system (OS package, Homebrew, LibreOffice, or the `WORDCRAFT_DICTIONARIES` folder; not bundled, so no Polish spelling marks without it), read at runtime by a Hunspell-style affix engine (`crates/proof/src/affix.rs`); names capitalized, compounds part by part, `Kennedy'ego` | missing diacritics first (`zolw` → `żółw`), the dictionary's confusion table (`żeka` → `rzeka`, `chuśtawka` → `huśtawka`), missing space (`napewno` → `na pewno`), one typo, then a stem scan within two typos | Polish messages: repeated word, space before punctuation, double space, sentence capital (knows `np.`, `r.`, initials, ordinals, dialogue dashes), missing comma before `że`/`który`/`ponieważ`/`gdyż`/`aby`/`żeby`/`jeśli`/`jeżeli`/`gdyby`/`lecz` (not after `mimo`, `chyba`, `tak`, prepositions…), `we`/`ze` (`we wtorek`, `ze szkoły`), doubled punctuation | TeX Polish patterns (Kołodziejska, Jackowski, Ryćko; MIT option) with their 20 exception words; a Polish syllable heuristic for letters outside the alphabet |
 | Portuguese (`pt`, any region) | The Hunspell `pt_BR` dictionary installed on the system — VERO and its derivatives (same places as Polish; not bundled, LGPL/MPL), read at runtime by the same affix engine, which reads its `FLAG UTF-8`, 106 flags, continuation classes and `FORBIDDENWORD` spellings; names capitalized, compounds part by part (`guarda-roupa`, `ex-marido`) | missing accents first (`coraçao` → `coração`, `saude` → `saúde`), the dictionary's confusion table (`seje` → `seja`, `excessão` → `exceção`), missing space (`nãoé` → `não é`), one typo, then an accent-folding stem scan | Portuguese messages: repeated word (the emphatic doubles are allowed), space before punctuation, double space, sentence capital (knows `etc.`, `pág.`, `Dr.`, initials, ordinals, dialogue dashes), doubled punctuation; no comma rule — `que` opens a clause only sometimes | TeX Portuguese patterns (Rezende, Almeida, Araujo, Benevides; BSD 3-clause) with their 2 exception words |
+| Czech (`cs`, `cs-CZ`, `ces`, `cze`) | The system Hunspell `cs_CZ` dictionary, read at runtime (Debian/Ubuntu: `hunspell-cs`; the same system, LibreOffice and `WORDCRAFT_DICTIONARIES` search paths as Polish). No dictionary data is bundled; without an installed dictionary spelling stays off | suggestions from the loaded dictionary's MAP/REP/TRY/KEY tables, missing spaces and a stem scan; short-word splits rank after deleting an extra letter; NOSUGGEST stems and their derived forms are accepted when typed but excluded from suggestions | Czech messages (including Czech quotation marks) for repeated words, space before punctuation and double spaces only; digit-space-colon-space-digit ratios keep their spaces; no Czech-specific grammar rules | existing English fallback, as for `Other`; no Czech patterns bundled (the TeX/LibreOffice Czech patterns are GPL-2) |
 | Any other | — (no marks) | — | — | the English patterns, as before |
 
 Measured with the SJP.PL dictionary: every one of the ~4.5 million forms an independent expansion of its affix file
 produces is accepted, and 200,000 one-edit mutations that aren't words are all rejected; a check
-takes ~1 µs, a suggestion list 1–35 ms (release build). Not yet: other languages' dictionaries,
+takes ~1 µs, a suggestion list 1–35 ms (release build). Not yet: Czech hyphenation patterns or Czech-specific grammar, other languages' dictionaries,
 a thesaurus for Polish, Word's style and clarity refinements, Polish-specific AutoCorrect.
 
 Italian (`it`, #594) follows `it`, `it-IT` and `it-CH` system locales. Its catalog has every key of
@@ -158,6 +159,8 @@ WordCraft keeps 2,54 cm).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Czech proofing review: short-word splits rank after deletion, NOSUGGEST excludes suggestions while accepting typed forms, affix comments apply only to headers, ratios keep spaces and repeated-word messages use Czech quotes; synthetic engine end-to-end and latency checks |
+| 2026-10-12 | minor | Czech spelling from the installed Hunspell dictionary, runtime-table suggestions and generic checks; Czech interface writes cs-CZ documents; no Czech hyphenation patterns bundled; estimates unchanged |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
 | 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |
