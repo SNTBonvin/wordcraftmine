@@ -135,9 +135,10 @@ fn restyle_block(b: &mut Block, from: &str, to: &Option<String>, depth: usize) -
 }
 
 /// Text box story ids of a paragraph's shapes.
-/// What [`Document::adopt`] renumbers in another document's content: media keys, lists, note
-/// and comment stories, comment ids, text boxes (one it doesn't bring is dropped) and revisions
-/// (after ours, at `rev`).
+/// What [`Document::adopt_with`] renumbers in another document's content: media keys, lists,
+/// note and comment stories, comment ids, text boxes (one it doesn't bring is dropped), revisions
+/// (after ours, at `rev`) and styles (those kept under new ids; unstyled paragraphs take
+/// `default_style` when it's given).
 struct Relink<'a> {
     media: &'a BTreeMap<String, String>,
     nums: &'a BTreeMap<u32, u32>,
@@ -145,12 +146,45 @@ struct Relink<'a> {
     comments: &'a BTreeMap<u32, u32>,
     boxes: &'a BTreeMap<u32, Part>,
     rev: u32,
+    styles: &'a BTreeMap<String, String>,
+    default_style: Option<&'a str>,
 }
 
 impl Relink<'_> {
-    // shortcut: tracked changes of table, row and cell properties keep their revision ids; renumber them too when tables from other documents carry revisions.
     fn block(&self, b: &mut Block) {
-        each_para_mut(b, 0, &mut |p| self.para(p));
+        self.block_in(b, 0);
+    }
+
+    fn block_in(&self, b: &mut Block, depth: usize) {
+        match b {
+            Block::Para(p) => self.para(p),
+            Block::Table(t) if depth < 16 => {
+                self.style(&mut t.props.style);
+                self.shift_change(&mut t.props.fmt_change);
+                for row in &mut t.rows {
+                    self.shift_change(&mut row.props.fmt_change);
+                    for cell in &mut row.cells {
+                        self.shift_change(&mut cell.props.fmt_change);
+                        for cb in &mut cell.blocks {
+                            self.block_in(Arc::make_mut(cb), depth + 1);
+                        }
+                    }
+                }
+            }
+            Block::Table(_) => {}
+        }
+    }
+
+    fn style(&self, id: &mut Option<String>) {
+        if let Some(new) = id.as_ref().and_then(|i| self.styles.get(i)) {
+            *id = Some(new.clone());
+        }
+    }
+
+    fn shift_change<T>(&self, c: &mut Option<Box<crate::props::PropChange<T>>>) {
+        if let Some(c) = c.as_mut() {
+            c.rev = c.rev.saturating_add(self.rev);
+        }
     }
 
     fn para(&self, p: &mut Paragraph) {
@@ -159,16 +193,20 @@ impl Relink<'_> {
         {
             n.num = self.nums.get(&n.num).copied().unwrap_or(0);
         }
+        match (&p.props.style, self.default_style) {
+            (None, Some(d)) => p.props.style = Some(d.to_string()),
+            _ => self.style(&mut p.props.style),
+        }
+        for r in &mut p.runs {
+            self.style(&mut r.props.style);
+        }
+        self.style(&mut p.mark.style);
         let shift = |r: &mut u32| *r = r.saturating_add(self.rev);
         for c in p.runs.iter_mut().map(|r| &mut r.props).chain([&mut p.mark]) {
             c.ins.iter_mut().chain(c.del.iter_mut()).for_each(shift);
-            if let Some(f) = c.fmt_change.as_mut() {
-                shift(&mut f.rev);
-            }
+            self.shift_change(&mut c.fmt_change);
         }
-        if let Some(f) = p.props.fmt_change.as_mut() {
-            shift(&mut f.rev);
-        }
+        self.shift_change(&mut p.props.fmt_change);
         if let Some(f) = p.props.num_change.as_mut() {
             shift(&mut f.rev);
         }
@@ -524,6 +562,36 @@ impl Document {
     /// revisions renumbered so they can't collide with ours; a style we already have by id stays
     /// ours), and its text boxes ride in [`Fragment::parts`].
     pub fn adopt(&mut self, src: Document) -> Fragment {
+        self.adopt_with(src, false)
+    }
+
+    /// [`Self::adopt`]; with `keep_styles` its content keeps its own formatting (Word's
+    /// `w:matchSrc`): a style whose id we already have comes along under a new id, and its
+    /// document defaults go into its base styles, which its unstyled paragraphs then use.
+    pub fn adopt_with(&mut self, mut src: Document, keep_styles: bool) -> Fragment {
+        let mut renamed = BTreeMap::new();
+        let mut default_style = None;
+        if keep_styles {
+            if src.styles.get("Normal").is_none() {
+                src.styles.upsert(crate::styles::Style { id: "Normal".into(), name: "Normal".into(), ..Default::default() });
+            }
+            for st in &src.styles.styles {
+                if self.styles.get(&st.id).is_some() {
+                    let fresh = (1..=src.styles.styles.len() + self.styles.styles.len() + 1)
+                        .map(|n| format!("{}{n}", st.id))
+                        .find(|id| self.styles.get(id).is_none() && src.styles.get(id).is_none());
+                    if let Some(fresh) = fresh {
+                        renamed.insert(st.id.clone(), fresh);
+                    }
+                }
+            }
+            default_style = Some(renamed.get("Normal").cloned().unwrap_or_else(|| "Normal".into()));
+        }
+        let restyle = |id: &mut Option<String>| {
+            if let Some(new) = id.as_ref().and_then(|i| renamed.get(i)) {
+                *id = Some(new.clone());
+            }
+        };
         let mut media = BTreeMap::new();
         for (key, data) in &src.media {
             let ext = key.rsplit_once('.').map(|(_, e)| e).unwrap_or("png");
@@ -551,9 +619,34 @@ impl Document {
                 n.num = nums.get(&n.num).copied().unwrap_or(0);
             }
         };
+        // What a style in the other document doesn't set comes from its defaults there, and
+        // Word's own (no space, single lines) where those don't say.
+        let mut para_defaults = src.styles.default_para.clone();
+        para_defaults.space_before.get_or_insert(0.0);
+        para_defaults.space_after.get_or_insert(0.0);
+        para_defaults.line_spacing.get_or_insert(crate::props::LineSpacing::Multiple(1.0));
         for st in &src.styles.styles {
+            let mut st = st.clone();
+            if keep_styles {
+                if let Some(new) = renamed.get(&st.id) {
+                    st.name = format!("{} ({new})", st.name);
+                    st.id = new.clone();
+                }
+                restyle(&mut st.based_on);
+                restyle(&mut st.next);
+                restyle(&mut st.linked);
+                if st.based_on.is_none() {
+                    let mut chr = src.styles.default_chr.clone();
+                    chr.overlay(&st.chr);
+                    st.chr = chr;
+                    if st.kind != crate::styles::StyleKind::Character {
+                        let mut para = para_defaults.clone();
+                        para.overlay(&st.para);
+                        st.para = para;
+                    }
+                }
+            }
             if self.styles.get(&st.id).is_none() {
-                let mut st = st.clone();
                 renumber(&mut st.para.numbering);
                 self.styles.upsert(st);
             }
@@ -576,7 +669,16 @@ impl Document {
             }
         }
         let boxes: BTreeMap<u32, Part> = src.parts.iter().filter(|(_, p)| p.kind == PartKind::TextBox).map(|(k, p)| (*k, p.clone())).collect();
-        let link = Relink { media: &media, nums: &nums, notes: &notes, comments: &comments, boxes: &boxes, rev };
+        let link = Relink {
+            media: &media,
+            nums: &nums,
+            notes: &notes,
+            comments: &comments,
+            boxes: &boxes,
+            rev,
+            styles: &renamed,
+            default_style: default_style.as_deref(),
+        };
         for (old, new) in &notes {
             let Some(part) = src.parts.get(old) else { continue };
             let mut blocks: Vec<Block> = part.blocks.iter().map(|b| (**b).clone()).collect();
@@ -600,10 +702,10 @@ impl Document {
         Fragment { blocks, parts }
     }
 
-    /// [`Self::adopt`] as blocks to place in a story directly (a reader building one): its text
-    /// boxes already have stories of their own here.
-    pub fn adopt_blocks(&mut self, src: Document) -> Vec<Block> {
-        let Fragment { mut blocks, parts } = self.adopt(src);
+    /// [`Self::adopt_with`] as blocks to place in a story directly (a reader building one): its
+    /// text boxes already have stories of their own here.
+    pub fn adopt_blocks(&mut self, src: Document, keep_styles: bool) -> Vec<Block> {
+        let Fragment { mut blocks, parts } = self.adopt_with(src, keep_styles);
         let mut budget = MAX_PASTED_BOXES;
         self.adopt_text_boxes(&mut blocks, &parts, 0, &mut budget);
         blocks
