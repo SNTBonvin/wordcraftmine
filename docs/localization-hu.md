@@ -8,9 +8,10 @@ selects it explicitly, and `WORDCRAFT_LANGUAGE=hu-HU` does the same for a headle
 launch while the preference is `auto`. The choice is saved with the other interface settings.
 Document text, command ids, CLI/MCP/control responses and file paths do not change.
 
-`crates/ui-egui/src/i18n/hu.tsv` has 1,946 entries: every key of the Russian catalog (built-in style
-names, equation gallery labels, paper sizes, watermarks and greetings included) plus the citation
-style names. It is written from the
+`crates/ui-egui/src/i18n/hu.tsv` has 1,989 entries: built-in style names, equation gallery labels, paper
+sizes, watermarks, greetings, the citation style names and every tab and command label. It is
+partial: dialogs added after it (about 280 strings, such as Compare Documents and Math
+AutoCorrect) show in English until they are translated. It is written from the
 meaning of the English labels; no proprietary translation resources were consulted. The catalog
 format has no plural forms, and Hungarian doesn't need them: a noun after a number stays singular
 (`0 szó`, `1 szó`, `21 szó`). Placeholders, `\n` breaks in ribbon labels and dialog ellipses are
@@ -60,11 +61,11 @@ acute capitals.
 ## Verification and remaining scope
 
 `cargo test -p wordcraft-ui-egui --lib i18n::tests` covers Hungarian locale tags and preference
-order, saving and restoring `hu`, unchanged document content, every key of the Russian catalog,
+order, saving and restoring `hu`, unchanged document content,
 built-in style names, placeholders, count wording, the font sample's capitals, English fallback,
 and the glyphs `ÁáÉéÍíÓóÖöŐőÚúÜüŰű` in the bundled Inter (Regular, Medium, SemiBold) and JetBrains Mono. The shared catalog checks
-(validation, every tab and command translated) include Hungarian automatically, and the on-demand
-interface audit (`untranslated_interface_text`) checks Hungarian alongside Russian.
+(validation, every tab and command translated) include Hungarian automatically. The on-demand interface audit
+(`untranslated_interface_text`) requires completeness from Russian only; Hungarian is partial.
 
 Spelling, grammar and hyphenation stay English-only: this is an interface translation, not
 Hungarian proofing. A native-speaker review of the catalog is welcome.
@@ -73,4 +74,4 @@ Hungarian proofing. A native-speaker review of the catalog is welcome.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | minor | Hungarian catalog (1,946 entries: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |
+| 2026-10-11 | minor | Hungarian catalog (1,989 entries, partial: built-in style names, equation gallery, citation styles), conventions, terminology, scope and regression checks |

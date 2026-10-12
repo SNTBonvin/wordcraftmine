@@ -1566,6 +1566,7 @@
 	Number format	Számformátum
 	Number style for this level:	A szint számstílusa:
 	Outside border	Külső szegély
+	Overtype	Felülírás
 	Restart list after:	Lista újrakezdése ezután:
 	Right border	Jobb szegély
 	Show all revisions inline	Minden változat a szövegben
@@ -1756,6 +1757,24 @@
 	Enlarge symbol	Szimbólum nagyítása
 	Enclosure	Keret
 	Circle	Kör
+	Templates	Sablonok
+	Templates and Add-ins	Sablonok és bővítmények
+	Attach Template	Sablon csatolása
+	Detach Template	Sablon leválasztása
+	Automatically Update Document Styles	Dokumentumstílusok automatikus frissítése
+	Update Styles from Template	Stílusok frissítése a sablonból
+	Organizer	Rendező
+	Copy Styles	Stílusok másolása
+	Rename Style	Stílus átnevezése
+	Change Chart Type	Diagramtípus módosítása
+	Chart Design	Diagramtervezés
+	Type	Típus
+	Edit Data	Adatok szerkesztése
+	Chart Title	Diagramcím
+	Chart Layouts	Diagramelrendezések
+	Add Chart Element	Diagramelem hozzáadása
+	Legend	Jelmagyarázat
+	Data Labels	Adatfeliratok
 	Base text:	Alapszöveg:
 	Distribute letters	Betűk egyenletes elosztása
 	Distribute spacing	Térköz egyenletes elosztása
@@ -1797,6 +1816,23 @@
 	Lines per page:	Sorok oldalanként:
 	Moved from	Áthelyezve innen
 	Moved to	Áthelyezve ide
+	Developer	Fejlesztőeszközök
+	Controls	Vezérlők
+	Rich Text Content Control	Formázott szöveges tartalomvezérlő
+	Plain Text Content Control	Egyszerű szöveges tartalomvezérlő
+	Picture Content Control	Képes tartalomvezérlő
+	Building Block Gallery Content Control	Építőelemgaléria-tartalomvezérlő
+	Check Box Content Control	Jelölőnégyzet-tartalomvezérlő
+	Combo Box Content Control	Kombinált listás tartalomvezérlő
+	Drop-Down List Content Control	Legördülő listás tartalomvezérlő
+	Date Picker Content Control	Dátumválasztó tartalomvezérlő
+	Repeating Section Content Control	Ismétlődő szakaszos tartalomvezérlő
+	Design Mode	Tervező mód
+	Content Control at Selection	Tartalomvezérlő a kijelölésnél
+	Toggle Check Box	Jelölőnégyzet átváltása
+	Choose List Item	Listaelem kiválasztása
+	Set Date	Dátum beállítása
+	Remove Content Control	Tartalomvezérlő eltávolítása
 	Right-to-Left Table	Jobbról balra író táblázat
 	Right-to-Left Section	Jobbról balra író szakasz
 	Table direction:	Táblázat iránya:
@@ -1909,6 +1945,13 @@
 	Rewind	Visszatekerés
 	Forward	Előretekerés
 	Stroke {n} of {total}	Vonás: {n}/{total}
+	Move with Text	Mozgatás a szöveggel
+	WordArt Styles	WordArt-stílusok
+	Text Fill	Szövegkitöltés
+	Text Outline	Szöveg körvonala
+	Transform	Átalakítás
+	Connect Shapes	Alakzatok összekötése
+	Manual Hyphenation	Kézi elválasztás
 	Drawing Canvas	Rajzvászon
 	New Drawing Canvas	Új rajzvászon
 	Fit	Illesztés
