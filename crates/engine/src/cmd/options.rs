@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.options", "Options", "File", options)
             .params(
-                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL: the paper File › New starts on, the default units and the decimal separator), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
+                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL, saved: the paper File › New starts on, the default units and the decimal separator; auto: the system's), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
             )
             .pure(),
         CommandSpec::new("text.overtype", "Overtype", "File › Options › Advanced", |s, v| {
@@ -104,8 +104,14 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
     };
     let region = match v.get("region") {
         None | Some(Value::Null) => None,
-        Some(Value::String(t)) => Some(wordcraft_geom::Region::from_tag(t)),
-        Some(_) => return Err(CmdError::Params("`region` must be a locale tag like pl-PL".into())),
+        // `auto` (or an empty tag) forgets the choice: the system's region again.
+        Some(Value::String(t)) if t.trim().is_empty() || t.trim().eq_ignore_ascii_case("auto") => Some(None),
+        // Kept as the tag (normalised, short), so it is saved and read back as chosen.
+        Some(Value::String(t)) => {
+            let r = wordcraft_geom::Region::from_tag(t);
+            Some(Some(if r.territory.is_empty() { r.language } else { format!("{}-{}", r.language, r.territory) }))
+        }
+        Some(_) => return Err(CmdError::Params("`region` must be a locale tag like pl-PL, or auto".into())),
     };
     let mut flag_values = Vec::new();
     for (k, f) in flags() {
@@ -148,7 +154,7 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         s.prefs.units = u;
     }
     if let Some(r) = region {
-        s.region = r;
+        s.prefs.region = r;
     }
     for (f, b) in flag_values {
         *f(&mut s.prefs) = b;
@@ -181,12 +187,14 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
 /// The settings `file.options` reads and sets.
 pub fn current(s: &Session) -> Value {
     let pr = &s.prefs;
+    let region = s.region();
     json!({
         "author": s.author,
         "initials": s.user_initials(),
         "units": s.units(),
         "unitsFromRegion": pr.units.is_none(),
-        "region": {"language": s.region.language, "territory": s.region.territory, "paper": s.region.paper().0, "decimal": s.region.decimal().to_string()},
+        "region": {"language": region.language, "territory": region.territory, "paper": region.paper().0, "decimal": region.decimal().to_string()},
+        "regionFromSystem": pr.region.is_none(),
         "typingReplacesSelection": pr.typing_replaces_selection,
         "insertKeyOvertype": pr.insert_key_overtype,
         "overtype": pr.overtype,

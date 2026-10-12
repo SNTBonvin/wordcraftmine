@@ -276,23 +276,23 @@ pub fn system_region() -> wordcraft_engine::Region {
     if cfg!(test) {
         return wordcraft_engine::Region::default();
     }
-    wordcraft_engine::Region::from_tag(&system_region_tag())
+    let var = |name: &str| std::env::var(name).ok().filter(|v| usable_locale(v));
+    // One tag for everything: an explicit override, or `LC_ALL`.
+    if let Some(tag) = var("WORDCRAFT_REGION").or_else(|| var("LC_ALL")) {
+        return wordcraft_engine::Region::from_tag(&tag);
+    }
+    // Unix sets each convention on its own: numbers (`LC_NUMERIC`, else `LANG`), paper
+    // (`LC_PAPER`) and measurement (`LC_MEASUREMENT`). Elsewhere, and when none is set, the
+    // platform's first preferred locale (on macOS it carries the region, as in `en-PL`; on the web
+    // it is the browser's language).
+    let base = var("LC_NUMERIC").or_else(|| var("LANG")).unwrap_or_else(|| sys_locale::get_locale().unwrap_or_default());
+    wordcraft_engine::Region::from_tag(&base).with_paper_and_measurement(var("LC_PAPER").as_deref(), var("LC_MEASUREMENT").as_deref())
 }
 
-/// The locale tag the region comes from: `WORDCRAFT_REGION`, then on Unix the paper,
-/// measurement and number locales (`LC_ALL`, `LC_PAPER`, `LC_MEASUREMENT`, `LC_NUMERIC`,
-/// `LANG`), then the platform's first preferred locale (on macOS it carries the region, as in
-/// `en-PL`; on the web it is the browser's language).
-fn system_region_tag() -> String {
-    for var in ["WORDCRAFT_REGION", "LC_ALL", "LC_PAPER", "LC_MEASUREMENT", "LC_NUMERIC", "LANG"] {
-        if let Ok(v) = std::env::var(var) {
-            let v = v.trim();
-            if !v.is_empty() && !v.eq_ignore_ascii_case("c") && !v.eq_ignore_ascii_case("posix") && !v.starts_with("C.") {
-                return v.to_string();
-            }
-        }
-    }
-    sys_locale::get_locale().unwrap_or_default()
+/// A locale variable that names a locale (not empty, `C` or `POSIX`).
+fn usable_locale(v: &str) -> bool {
+    let v = v.trim();
+    !v.is_empty() && !v.eq_ignore_ascii_case("c") && !v.eq_ignore_ascii_case("posix") && !v.starts_with("C.")
 }
 
 thread_local! {

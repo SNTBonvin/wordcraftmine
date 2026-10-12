@@ -43,7 +43,7 @@ pub fn length(pt: f32) -> String {
 /// Copy the session's settings the UI reads without the app.
 pub(crate) fn sync(app: &WordApp) {
     UNIT.set(app.session.units());
-    DECIMAL.set(app.session.region.decimal());
+    DECIMAL.set(app.session.region().decimal());
 }
 
 /// A length field: the unit's suffix, and numbers written and read with the region's decimal
@@ -67,6 +67,12 @@ impl MeasureExt for egui::DragValue<'_> {
             })
     }
 }
+
+/// Regions offered in File › Options › Advanced › Region (any locale tag works through
+/// `file.options`): Letter and A4 countries, decimal point and decimal comma.
+const REGIONS: [&str; 16] = [
+    "en-US", "en-CA", "en-GB", "en-AU", "en-IN", "es-MX", "es-ES", "pt-BR", "fr-FR", "de-DE", "it-IT", "pl-PL", "ru-RU", "ja-JP", "zh-CN", "ko-KR",
+];
 
 /// The units offered, with their names.
 pub const UNITS: [(Unit, &str); 5] = [
@@ -346,13 +352,37 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         }
         ui.end_row();
         ui.label(tl!("Measurement units:"));
-        // The user's choice, else the region's (#838).
+        // The user's choice, else the region's (#838): Automatic follows the region.
         let units = app.session.units();
+        let auto = app.session.prefs.units.is_none();
         let name = UNITS.iter().find(|(u, _)| *u == units).map_or("Inches", |(_, n)| n);
-        egui::ComboBox::from_id_salt("options_units").selected_text(tl!(name)).width(160.0).show_ui(ui, |ui| {
+        let shown = if auto { format!("{} ({})", tl!("Automatic"), tl!(name)) } else { tl!(name).to_string() };
+        egui::ComboBox::from_id_salt("options_units").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+            if ui.selectable_label(auto, tl!("Automatic")).clicked() {
+                set(app, json!({"units": "auto"}));
+            }
             for (u, label) in UNITS {
-                if ui.selectable_label(units == u, tl!(label)).clicked() {
+                if ui.selectable_label(!auto && units == u, tl!(label)).clicked() {
                     set(app, json!({"units": u}));
+                }
+            }
+        });
+        ui.end_row();
+        // The region new documents, units and the decimal separator follow; Automatic is the
+        // system's (#838).
+        ui.label(tl!("Region:"));
+        let chosen = app.session.prefs.region.clone();
+        let system = &app.session.system_region;
+        let system_tag = if system.territory.is_empty() { system.language.clone() } else { format!("{}-{}", system.language, system.territory) };
+        let automatic = crate::i18n::fmt(tl!("Automatic ({region})"), &[("region", system_tag.as_str())]);
+        let shown = chosen.clone().unwrap_or_else(|| automatic.clone());
+        egui::ComboBox::from_id_salt("options_region").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+            if ui.selectable_label(chosen.is_none(), automatic.as_str()).clicked() {
+                set(app, json!({"region": "auto"}));
+            }
+            for tag in REGIONS {
+                if ui.selectable_label(chosen.as_deref() == Some(tag), tag).clicked() {
+                    set(app, json!({"region": tag}));
                 }
             }
         });

@@ -4196,6 +4196,20 @@ fn new_documents_follow_the_region() {
     run(&mut s, "file.options", json!({"units": "auto"}));
     assert_eq!(s.units(), wordcraft_geom::Unit::Centimeters);
 
+    // A chosen region is a saved preference over the system's; `auto` returns to the system's.
+    assert_eq!(s.prefs.region.as_deref(), Some("pl-PL"));
+    let saved: serde_json::Value = serde_json::to_value(&s.prefs).unwrap();
+    assert_eq!(saved["region"], "pl-PL");
+    s.system_region = wordcraft_geom::Region::from_tag("ja-JP");
+    assert_eq!(s.region().territory, "PL", "the choice wins over the system");
+    let o = run(&mut s, "file.options", json!({"region": "auto"}));
+    assert_eq!((o["regionFromSystem"].as_bool(), o["region"]["territory"].as_str()), (Some(true), Some("JP")));
+    assert_eq!(s.prefs.region, None);
+    run(&mut s, "file.options", json!({"region": "de_AT.UTF-8@euro"}));
+    assert_eq!(s.prefs.region.as_deref(), Some("de-AT"), "kept as a short tag");
+    run(&mut s, "file.options", json!({"region": ""}));
+    assert_eq!(s.prefs.region, None);
+
     // The United States: Letter and inches.
     let mut us = Session::new(wordcraft_doc::Document::new());
     run(&mut us, "file.options", json!({"region": "en-US"}));
@@ -4216,5 +4230,6 @@ fn new_documents_follow_the_region() {
     assert!(t.run("file.options", &json!({"region": 7})).is_err());
     assert!(t.run("file.options", &json!({"units": "furlongs"})).is_err());
     run(&mut t, "file.options", json!({"region": "\u{0}\u{FFFF}-zz-ZZZZZZZZ"}));
-    assert_eq!(t.region, wordcraft_geom::Region::default());
+    assert_eq!(t.region(), wordcraft_geom::Region::default());
+    assert_eq!(t.prefs.region.as_deref(), Some("en-US"), "junk is saved as en-US");
 }

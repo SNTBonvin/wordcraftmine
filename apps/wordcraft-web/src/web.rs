@@ -60,7 +60,7 @@ pub fn start() {
                         wordcraft_engine::blank_document(&region)
                     };
                     let mut session = Session::new(doc);
-                    session.region = region;
+                    session.system_region = region;
                     let mut app = WordApp::new(session, services(inbox.clone(), cc.egui_ctx.clone(), dirty, saves.clone()));
                     app.autosave = false;
                     Ok(Box::new(WebShell { app, inbox, saves }))

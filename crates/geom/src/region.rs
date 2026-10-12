@@ -43,11 +43,19 @@ pub struct Region {
     pub language: String,
     /// Upper-case territory (`PL`, or a UN M.49 number like `419`); empty when the tag has none.
     pub territory: String,
+    /// US Letter or not, when a separate paper locale says so (Unix `LC_PAPER`); otherwise the
+    /// territory decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter: Option<bool>,
+    /// Inches or not, when a separate measurement locale says so (Unix `LC_MEASUREMENT`);
+    /// otherwise the territory decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inches: Option<bool>,
 }
 
 impl Default for Region {
     fn default() -> Self {
-        Region { language: "en".into(), territory: "US".into() }
+        Region { language: "en".into(), territory: "US".into(), letter: None, inches: None }
     }
 }
 
@@ -84,7 +92,7 @@ impl Region {
         if territory.is_empty() && language == "en" {
             territory = "US".into();
         }
-        Region { language, territory }
+        Region { language, territory, letter: None, inches: None }
     }
 
     /// This region with another territory (from a platform setting that names only the
@@ -98,9 +106,22 @@ impl Region {
         self
     }
 
+    /// This region with the paper and the measurement system taken from their own locale tags,
+    /// when the platform sets them apart (Unix `LC_PAPER`, `LC_MEASUREMENT`): `LANG=pl_PL.UTF-8`
+    /// with `LC_PAPER=en_US.UTF-8` writes `2,54 cm` on Letter.
+    pub fn with_paper_and_measurement(mut self, paper: Option<&str>, measurement: Option<&str>) -> Region {
+        if let Some(t) = paper {
+            self.letter = Some(Region::from_tag(t).uses_letter());
+        }
+        if let Some(t) = measurement {
+            self.inches = Some(Region::from_tag(t).units() == Unit::Inches);
+        }
+        self
+    }
+
     /// Does a new document start on US Letter here (otherwise A4)?
     pub fn uses_letter(&self) -> bool {
-        LETTER.contains(&self.territory.as_str())
+        self.letter.unwrap_or_else(|| LETTER.contains(&self.territory.as_str()))
     }
 
     /// The default paper's name and portrait size in points: Letter (612 × 792) or A4.
@@ -110,7 +131,7 @@ impl Region {
 
     /// The unit lengths are shown in by default: inches in the US, centimetres elsewhere.
     pub fn units(&self) -> Unit {
-        if INCHES.contains(&self.territory.as_str()) { Unit::Inches } else { Unit::Centimeters }
+        if self.inches.unwrap_or_else(|| INCHES.contains(&self.territory.as_str())) { Unit::Inches } else { Unit::Centimeters }
     }
 
     /// The decimal separator numbers are written with here (`,` or `.`).
@@ -136,7 +157,7 @@ mod tests {
 
     #[test]
     fn reads_locale_tags() {
-        assert_eq!(Region::from_tag("pl-PL"), Region { language: "pl".into(), territory: "PL".into() });
+        assert_eq!(Region::from_tag("pl-PL"), Region { language: "pl".into(), territory: "PL".into(), ..Region::default() });
         assert_eq!(Region::from_tag("de_AT.UTF-8@euro").territory, "AT");
         assert_eq!(Region::from_tag("zh-Hans-CN").territory, "CN");
         assert_eq!(Region::from_tag("es-419").territory, "419");
@@ -166,6 +187,12 @@ mod tests {
         assert_eq!(Region::from_tag("es-MX").paper().0, "Letter");
         assert_eq!(Region::from_tag("ja-JP").paper().0, "A4");
         assert_eq!(pl.format(Unit::Centimeters, 72.0), "2,54 cm");
+        // Unix sets paper and measurement apart from the number locale.
+        let mixed = Region::from_tag("pl_PL.UTF-8").with_paper_and_measurement(Some("en_US.UTF-8"), None);
+        assert_eq!((mixed.paper().0, mixed.units(), mixed.decimal()), ("Letter", Unit::Centimeters, ','));
+        let mixed = Region::from_tag("en_US.UTF-8").with_paper_and_measurement(Some("de_DE.UTF-8"), Some("de_DE.UTF-8"));
+        assert_eq!((mixed.paper().0, mixed.units(), mixed.decimal()), ("A4", Unit::Centimeters, '.'));
+        assert_eq!(Region::from_tag("pl-PL").with_paper_and_measurement(Some(""), Some("junk")).paper().0, "Letter", "junk is en-US");
         assert_eq!(us.format(Unit::Inches, 90.0), "1.25\"");
     }
 }

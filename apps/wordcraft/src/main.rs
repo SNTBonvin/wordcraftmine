@@ -304,9 +304,15 @@ fn main() -> eframe::Result {
             let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_engine::blank_document(&region) };
             let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
             let mut session = Session::new(doc);
-            session.region = region;
+            session.system_region = region;
             let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
+            // A region chosen in File › Options replaces the system's for the first blank
+            // document too (#838).
+            if !sample && app.session.prefs.region.is_some() {
+                let doc = app.session.blank_document();
+                app.session.set_document(doc);
+            }
             app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;
             app.integrated_titlebar = cfg!(target_os = "macos");
