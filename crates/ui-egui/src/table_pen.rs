@@ -1,8 +1,8 @@
 //! Draw Table and Eraser as canvas modes (Insert › Tables, Table Layout › Draw). The buttons
 //! toggle a pen or an eraser; while one is on, presses on the page draw (or erase) instead of
-//! moving the caret, a preview follows the pointer, and each finished stroke or click runs
-//! `table.draw` / `table.eraser` with page coordinates (one undo step each). Esc or the button
-//! again turns it off. The geometry decisions are the engine's (`cmd::table_draw`).
+//! moving the caret, a preview follows the pointer, and each finished stroke, eraser drag or
+//! click runs `table.draw` / `table.eraser` with page coordinates (one undo step each). Esc or
+//! the button again turns it off. The geometry decisions are the engine's (`cmd::table_draw`).
 
 use egui::{Pos2, Rect, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
@@ -28,12 +28,32 @@ impl TableTool {
     }
 }
 
-/// A stroke in progress: its page and its start and current end (page points).
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// A stroke in progress: its page and its start and current end (page points). An eraser drag
+/// also keeps the points it went through and the borders it passed over (the preview).
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PenStroke {
     page: usize,
     from: (f32, f32),
     to: (f32, f32),
+    trail: Vec<(f32, f32)>,
+    erased: Vec<table_draw::EraseTarget>,
+}
+
+impl PenStroke {
+    /// The eraser moved to `to`: keep the point, 2 pt or more from the last one (so a click that
+    /// wobbles stays a click; up to the engine's limit), and the borders passed over on the way.
+    fn pass(&mut self, layout: &DocLayout, to: (f32, f32)) {
+        let Some(&last) = self.trail.last() else { return };
+        if (to.0 - last.0).hypot(to.1 - last.1) < 2.0 || self.trail.len() >= table_draw::MAX_TRAIL {
+            return;
+        }
+        for e in table_draw::erase_targets(layout, self.page, &[last, to]) {
+            if !self.erased.contains(&e) {
+                self.erased.push(e);
+            }
+        }
+        self.trail.push(to);
+    }
 }
 
 /// The ribbon buttons (no page coordinates): turn the tool on, or off when it already is.
@@ -87,21 +107,23 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
         if let Some(p) = latest
             && let Some((page, x, y)) = crate::canvas::page_at(rects, layout, scale, p)
         {
-            app.canvas.table_stroke = Some(PenStroke { page, from: (x, y), to: (x, y) });
+            app.canvas.table_stroke = Some(PenStroke { page, from: (x, y), to: (x, y), trail: vec![(x, y)], erased: Vec::new() });
         }
         return true;
     }
-    let Some(mut st) = app.canvas.table_stroke else { return true };
+    let Some(mut st) = app.canvas.table_stroke.take() else { return true };
     if let Some(p) = latest
         && let Some(to) = on_page(rects, layout, scale, st.page, p)
     {
         st.to = to;
-        app.canvas.table_stroke = Some(st);
+        if tool == TableTool::Erase {
+            st.pass(layout, to);
+        }
     }
     if ui.input(|i| i.pointer.primary_down()) {
+        app.canvas.table_stroke = Some(st);
         return true;
     }
-    app.canvas.table_stroke = None;
     let params = match tool {
         TableTool::Draw => {
             // A click without a drag draws nothing.
@@ -110,6 +132,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
             }
             json!({"page": st.page, "x0": st.from.0, "y0": st.from.1, "x1": st.to.0, "y1": st.to.1})
         }
+        // A drag erases every border it passed over; a click, the one under it.
+        TableTool::Erase if st.trail.len() > 1 => json!({"page": st.page, "points": st.trail}),
         TableTool::Erase => json!({"page": st.page, "x": st.to.0, "y": st.to.1}),
     };
     if let Err(e) = app.run(tool.id(), params) {
@@ -141,7 +165,7 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
     };
     let ink = Stroke::new(1.5, t.accent);
     let hover = painter.ctx().input(|i| i.pointer.hover_pos());
-    match (tool, app.canvas.table_stroke) {
+    match (tool, &app.canvas.table_stroke) {
         (TableTool::Draw, Some(st)) => match table_draw::stroke(layout, st.page, st.from.0, st.from.1, st.to.0, st.to.1) {
             Some(Kind::Rect(r)) => {
                 if let (Some(a), Some(b)) = (to_screen(st.page, r.x, r.y), to_screen(st.page, r.right(), r.bottom())) {
@@ -165,6 +189,14 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
                 }
             }
         },
+        // Dragging: the borders passed over so far. Otherwise the one a click would take.
+        (TableTool::Erase, Some(st)) if st.trail.len() > 1 => {
+            for e in &st.erased {
+                if let (Some(a), Some(b)) = (to_screen(st.page, e.from.0, e.from.1), to_screen(st.page, e.to.0, e.to.1)) {
+                    painter.line_segment([a, b], Stroke::new(3.0, t.red));
+                }
+            }
+        }
         (TableTool::Erase, _) => {
             if let Some(p) = hover
                 && let Some((page, x, y)) = crate::canvas::page_at(pages, layout, scale, p)
@@ -186,6 +218,36 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An eraser drag along a row of a 2×3 table: both borders it passes over previewed while
+    /// dragging, nothing changed until the release, then the row merged in one undo step.
+    #[test]
+    fn dragging_the_eraser_erases_the_borders_it_passes_in_one_step() {
+        use crate::table_resize::tests::{button, cell, screen, steps, table_window};
+        let mut h = table_window();
+        h.state_mut().run("table.eraser", json!({"on": true})).unwrap();
+        let depth = h.state().session.undo_depth();
+        let (a, c) = (cell(&mut h, 1, 0), cell(&mut h, 1, 2));
+        let y = a.y + a.h / 2.0;
+        let (from, to) = (screen(&mut h, a.x + 5.0, y), screen(&mut h, c.right() - 5.0, y));
+        h.event(egui::Event::PointerMoved(from));
+        h.step();
+        button(&h, from, true);
+        h.step();
+        for k in 1..=8 {
+            h.event(egui::Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
+            h.step();
+        }
+        let previewed = h.state().canvas.table_stroke.as_ref().map_or(0, |st| st.erased.len());
+        assert_eq!(previewed, 2, "both borders previewed");
+        assert_eq!(h.state().session.undo_depth(), depth, "nothing changes while dragging");
+        button(&h, to, false);
+        steps(&mut h, 3);
+        assert!(h.state().canvas.table_stroke.is_none());
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
+        let t = h.state().session.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+        assert_eq!((t.rows[0].cells.len(), t.rows[1].cells.len()), (3, 1), "the second row is one cell");
+    }
 
     /// The buttons toggle the tools (one at a time); coordinates go to the engine.
     #[test]
