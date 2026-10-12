@@ -49,7 +49,9 @@ fn grouped_digits(int: &str, groups: &[char]) -> Option<String> {
     }
     let parts: Vec<&str> = int.split(groups).collect();
     let (first, rest) = parts.split_first()?;
+    // A first group of `0` is never grouping (`0.125` is a fraction, not 125).
     let ok = (1..=3).contains(&first.len())
+        && !first.starts_with('0')
         && first.chars().all(|c| c.is_ascii_digit())
         && rest.iter().all(|g| g.len() == 3 && g.chars().all(|c| c.is_ascii_digit()));
     ok.then(|| parts.concat())
@@ -58,13 +60,17 @@ fn grouped_digits(int: &str, groups: &[char]) -> Option<String> {
 /// Parse `s` as a number written in language `lang`, or `None` when it isn't one. The decimal
 /// separator is the language's; group separators are spaces (and `.` or `'` where the decimal
 /// separator is a comma, `,` or `'` where it is a point) between groups of three digits. A
-/// currency sign or short currency word is ignored. In comma languages a lone `.` that cannot
-/// be a group separator (`1.5`) is read as a decimal point.
+/// currency sign or short currency word is ignored, and so is a trailing `%` (`12 %` is 12, as
+/// table sort reads it). In comma languages a lone `.` that cannot be a group separator (`1.5`)
+/// is read as a decimal point. A trailing separator with no digits after it (`1.`, an ordinal
+/// in a numbered column) is the whole number. A minus may be `-`, `−` or an en dash.
 pub fn parse_number(s: &str, lang: Option<&str>) -> Option<f64> {
     let dec = decimal_separator(lang);
+    let s = s.trim();
+    let s = s.strip_suffix('%').map_or(s, str::trim_end);
     let mut body = strip_currency(s);
     let mut neg = false;
-    if let Some(rest) = body.strip_prefix(['-', '\u{2212}']) {
+    if let Some(rest) = body.strip_prefix(['-', '\u{2212}', '\u{2013}']) {
         neg = true;
         body = strip_currency(rest);
     } else if let Some(rest) = body.strip_prefix('+') {
@@ -88,7 +94,7 @@ pub fn parse_number(s: &str, lang: Option<&str>) -> Option<f64> {
         None => return None,
     };
     let frac_digits = match frac {
-        Some(f) if !f.is_empty() && f.chars().all(|c| c.is_ascii_digit()) => f,
+        Some(f) if f.chars().all(|c| c.is_ascii_digit()) => f,
         Some(_) => return None,
         None => "",
     };
@@ -129,6 +135,16 @@ mod tests {
         assert_eq!(parse_number("PLN 12", pl), Some(12.0));
         assert_eq!(parse_number("abc", pl), None);
         assert_eq!(parse_number("1,2,3", pl), None);
+        // From review: ordinals, a leading zero, percentages and an en dash minus.
+        assert_eq!(parse_number("1.", pl), Some(1.0), "a numbered column: 1.");
+        assert_eq!(parse_number("10.", pl), Some(10.0));
+        assert_eq!(parse_number("0.125", pl), Some(0.125), "a leading 0 is never a group");
+        assert_eq!(parse_number("0,125", pl), Some(0.125));
+        assert_eq!(parse_number("12 %", pl), Some(12.0));
+        assert_eq!(parse_number("12%", pl), Some(12.0));
+        assert_eq!(parse_number("\u{2013}2,5", pl), Some(-2.5));
+        assert_eq!(parse_number("%", pl), None);
+        assert_eq!(parse_number(".", pl), None);
         assert_eq!(format_number(5.75, pl), "5,75");
         assert_eq!(format_number(1350.0, pl), "1350");
     }
@@ -142,6 +158,8 @@ mod tests {
         assert_eq!(parse_number("12", None), Some(12.0));
         assert_eq!(parse_number(".5", None), Some(0.5));
         assert_eq!(parse_number("1,5", en), None);
+        assert_eq!(parse_number("1.", en), Some(1.0));
+        assert_eq!(parse_number("0,125", en), None, "never 125");
         assert_eq!(format_number(5.75, en), "5.75");
         assert_eq!(decimal_separator(Some("de-CH")), '.');
         assert_eq!(decimal_separator(Some("de-DE")), ',');

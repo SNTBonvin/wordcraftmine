@@ -4261,3 +4261,40 @@ fn index_sorts_polish_entries_and_headings() {
     let pos = |w: &str| order.iter().position(|x| *x == w).unwrap_or(usize::MAX);
     assert!(pos("Kraków") < pos("Łódź") && pos("Łódź") < pos("Zakopane"), "{lines:?}");
 }
+
+/// Review of #844: a numbered column (`1.`, `2.`, `10.`) sorts as numbers; text with no language
+/// at all follows the editing language (a Polish interface reads `3,50` as 3.5).
+#[test]
+fn ordinals_and_untagged_text_sort_and_sum_as_numbers() {
+    let mut t = column_table("pl-PL", &["10.", "2.", "1."]);
+    run(&mut t, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&t), ["1.", "2.", "10."]);
+
+    let mut s = s();
+    s.set_editing_language(Some("pl-PL"));
+    s.doc.styles.default_chr.lang = None;
+    run(&mut s, "insert.table", json!({"rows": 3, "cols": 1}));
+    run(&mut s, "text.insert", json!({"text": "3,50"}));
+    run(&mut s, "text.tab", json!({}));
+    run(&mut s, "text.insert", json!({"text": "2,25"}));
+    run(&mut s, "text.tab", json!({}));
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "5,75");
+}
+
+/// Review of #844: the bibliography lists Polish authors in the Polish alphabet.
+#[test]
+fn bibliography_sorts_polish_authors() {
+    let mut s = s();
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    for author in ["Mazur, Jan", "Łukasiewicz, Jan", "Lis, Anna"] {
+        run(&mut s, "references.citation", json!({"source": {"author": author, "title": format!("Książka {author}"), "year": "2020"}}));
+        run(&mut s, "text.insert", json!({"text": " "}));
+    }
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "references.bibliography", json!({}));
+    let all = text(&s);
+    // The list, not the citations before it.
+    let t = all.split_once("References").map_or(all.as_str(), |(_, list)| list);
+    let at = |name: &str| t.find(&format!("{name}, ")).unwrap_or_else(|| panic!("{name} in {all}"));
+    assert!(at("Lis") < at("Łukasiewicz") && at("Łukasiewicz") < at("Mazur"), "{t}");
+}

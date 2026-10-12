@@ -281,7 +281,7 @@ pub fn rebuild(s: &mut Session, i: usize, leader: Option<TabLeader>) -> Result<(
     let run_in = f.has('r');
     let headings = f.switches.iter().find(|(c, _)| *c == 'h').map(|(_, a)| a.clone().unwrap_or_default());
     // Entries sort in the language of the index's paragraph (else the document's).
-    let lang = s.doc.body.get(i).and_then(|b| b.as_para()).and_then(|p| super::para_lang(&s.doc, p)).or_else(|| super::doc_lang(&s.doc));
+    let lang = s.doc.body.get(i).and_then(|b| b.as_para()).and_then(|p| super::para_lang(&s.doc, p)).or_else(|| super::default_lang(s));
     let tree = collect(s, lang.as_deref());
     let mut lines: Vec<(usize, Line)> = Vec::new();
     let mut letter: Option<String> = None;

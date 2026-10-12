@@ -635,7 +635,7 @@ fn sort_table(s: &mut Session, v: &Value) -> CmdResult {
     let t = s.doc.table(s.sel.focus.story, &tp).ok_or_else(|| CmdError::Failed("no table".into()))?;
     let skip = usize::from(header.unwrap_or(t.rows.first().is_some_and(|r| r.props.header))).min(t.rows.len());
     let column = || t.rows.iter().skip(skip).map(|r| r.cells.get(col));
-    let lang = column().flatten().find_map(|c| cell_lang(&s.doc, c)).or_else(|| super::doc_lang(&s.doc));
+    let lang = column().flatten().find_map(|c| cell_lang(&s.doc, c)).or_else(|| super::default_lang(s));
     // A total order (numbers, then text), so sorting never sees inconsistent comparisons.
     let keys: Vec<(Option<f64>, SortKey)> = column()
         .map(|c| {
@@ -698,7 +698,7 @@ fn formula(s: &mut Session, v: &Value) -> CmdResult {
     } else {
         t.rows.iter().take(r).filter_map(|row| row.cells.get(c)).collect()
     };
-    let default_lang = super::doc_lang(&s.doc);
+    let default_lang = super::default_lang(s);
     let nums: Vec<f64> = sources
         .iter()
         .filter_map(|x| parse_number(cell_text(x).trim(), cell_lang(&s.doc, x).or_else(|| default_lang.clone()).as_deref()))

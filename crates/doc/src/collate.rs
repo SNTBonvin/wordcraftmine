@@ -196,6 +196,157 @@ fn tailoring(lang: Option<&str>) -> &'static [Tailor] {
     }
 }
 
+/// A lowercase Latin letter followed by a combining mark, and the single letter Unicode
+/// composes them to (NFC; generated from the Unicode Character Database). Text pasted from
+/// decomposed sources (macOS file names: `z` + U+0307) collates like the composed letter.
+const COMPOSE: &[(char, char, char)] = &[
+    ('a', '\u{300}', 'à'),
+    ('a', '\u{301}', 'á'),
+    ('a', '\u{302}', 'â'),
+    ('a', '\u{303}', 'ã'),
+    ('a', '\u{304}', 'ā'),
+    ('a', '\u{306}', 'ă'),
+    ('a', '\u{307}', 'ȧ'),
+    ('a', '\u{308}', 'ä'),
+    ('a', '\u{30a}', 'å'),
+    ('a', '\u{30c}', 'ǎ'),
+    ('a', '\u{328}', 'ą'),
+    ('b', '\u{307}', 'ḃ'),
+    ('c', '\u{301}', 'ć'),
+    ('c', '\u{302}', 'ĉ'),
+    ('c', '\u{307}', 'ċ'),
+    ('c', '\u{30c}', 'č'),
+    ('c', '\u{327}', 'ç'),
+    ('d', '\u{307}', 'ḋ'),
+    ('d', '\u{30c}', 'ď'),
+    ('d', '\u{327}', 'ḑ'),
+    ('e', '\u{300}', 'è'),
+    ('e', '\u{301}', 'é'),
+    ('e', '\u{302}', 'ê'),
+    ('e', '\u{303}', 'ẽ'),
+    ('e', '\u{304}', 'ē'),
+    ('e', '\u{306}', 'ĕ'),
+    ('e', '\u{307}', 'ė'),
+    ('e', '\u{308}', 'ë'),
+    ('e', '\u{30c}', 'ě'),
+    ('e', '\u{327}', 'ȩ'),
+    ('e', '\u{328}', 'ę'),
+    ('f', '\u{307}', 'ḟ'),
+    ('g', '\u{301}', 'ǵ'),
+    ('g', '\u{302}', 'ĝ'),
+    ('g', '\u{304}', 'ḡ'),
+    ('g', '\u{306}', 'ğ'),
+    ('g', '\u{307}', 'ġ'),
+    ('g', '\u{30c}', 'ǧ'),
+    ('g', '\u{327}', 'ģ'),
+    ('h', '\u{302}', 'ĥ'),
+    ('h', '\u{307}', 'ḣ'),
+    ('h', '\u{308}', 'ḧ'),
+    ('h', '\u{30c}', 'ȟ'),
+    ('h', '\u{327}', 'ḩ'),
+    ('i', '\u{300}', 'ì'),
+    ('i', '\u{301}', 'í'),
+    ('i', '\u{302}', 'î'),
+    ('i', '\u{303}', 'ĩ'),
+    ('i', '\u{304}', 'ī'),
+    ('i', '\u{306}', 'ĭ'),
+    ('i', '\u{308}', 'ï'),
+    ('i', '\u{30c}', 'ǐ'),
+    ('i', '\u{328}', 'į'),
+    ('j', '\u{302}', 'ĵ'),
+    ('j', '\u{30c}', 'ǰ'),
+    ('k', '\u{301}', 'ḱ'),
+    ('k', '\u{30c}', 'ǩ'),
+    ('k', '\u{327}', 'ķ'),
+    ('l', '\u{301}', 'ĺ'),
+    ('l', '\u{30c}', 'ľ'),
+    ('l', '\u{327}', 'ļ'),
+    ('m', '\u{301}', 'ḿ'),
+    ('m', '\u{307}', 'ṁ'),
+    ('n', '\u{300}', 'ǹ'),
+    ('n', '\u{301}', 'ń'),
+    ('n', '\u{303}', 'ñ'),
+    ('n', '\u{307}', 'ṅ'),
+    ('n', '\u{30c}', 'ň'),
+    ('n', '\u{327}', 'ņ'),
+    ('o', '\u{300}', 'ò'),
+    ('o', '\u{301}', 'ó'),
+    ('o', '\u{302}', 'ô'),
+    ('o', '\u{303}', 'õ'),
+    ('o', '\u{304}', 'ō'),
+    ('o', '\u{306}', 'ŏ'),
+    ('o', '\u{307}', 'ȯ'),
+    ('o', '\u{308}', 'ö'),
+    ('o', '\u{30b}', 'ő'),
+    ('o', '\u{30c}', 'ǒ'),
+    ('o', '\u{328}', 'ǫ'),
+    ('p', '\u{301}', 'ṕ'),
+    ('p', '\u{307}', 'ṗ'),
+    ('r', '\u{301}', 'ŕ'),
+    ('r', '\u{307}', 'ṙ'),
+    ('r', '\u{30c}', 'ř'),
+    ('r', '\u{327}', 'ŗ'),
+    ('s', '\u{301}', 'ś'),
+    ('s', '\u{302}', 'ŝ'),
+    ('s', '\u{307}', 'ṡ'),
+    ('s', '\u{30c}', 'š'),
+    ('s', '\u{326}', 'ș'),
+    ('s', '\u{327}', 'ş'),
+    ('t', '\u{307}', 'ṫ'),
+    ('t', '\u{308}', 'ẗ'),
+    ('t', '\u{30c}', 'ť'),
+    ('t', '\u{326}', 'ț'),
+    ('t', '\u{327}', 'ţ'),
+    ('u', '\u{300}', 'ù'),
+    ('u', '\u{301}', 'ú'),
+    ('u', '\u{302}', 'û'),
+    ('u', '\u{303}', 'ũ'),
+    ('u', '\u{304}', 'ū'),
+    ('u', '\u{306}', 'ŭ'),
+    ('u', '\u{308}', 'ü'),
+    ('u', '\u{30a}', 'ů'),
+    ('u', '\u{30b}', 'ű'),
+    ('u', '\u{30c}', 'ǔ'),
+    ('u', '\u{328}', 'ų'),
+    ('v', '\u{303}', 'ṽ'),
+    ('w', '\u{300}', 'ẁ'),
+    ('w', '\u{301}', 'ẃ'),
+    ('w', '\u{302}', 'ŵ'),
+    ('w', '\u{307}', 'ẇ'),
+    ('w', '\u{308}', 'ẅ'),
+    ('w', '\u{30a}', 'ẘ'),
+    ('x', '\u{307}', 'ẋ'),
+    ('x', '\u{308}', 'ẍ'),
+    ('y', '\u{300}', 'ỳ'),
+    ('y', '\u{301}', 'ý'),
+    ('y', '\u{302}', 'ŷ'),
+    ('y', '\u{303}', 'ỹ'),
+    ('y', '\u{304}', 'ȳ'),
+    ('y', '\u{307}', 'ẏ'),
+    ('y', '\u{308}', 'ÿ'),
+    ('y', '\u{30a}', 'ẙ'),
+    ('z', '\u{301}', 'ź'),
+    ('z', '\u{302}', 'ẑ'),
+    ('z', '\u{307}', 'ż'),
+    ('z', '\u{30c}', 'ž'),
+];
+
+/// `s` lowercased, with each letter + combining mark that has a single-letter form composed.
+fn lower_composed(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.to_lowercase().chars() {
+        if let Some(prev) = out.chars().next_back()
+            && let Some((_, _, composed)) = COMPOSE.iter().find(|(b, m, _)| *b == prev && *m == c)
+        {
+            out.pop();
+            out.push(*composed);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn weight(c: char, rank: u32) -> u32 {
     ((c as u32) << 4).saturating_add(rank)
 }
@@ -240,7 +391,7 @@ pub struct SortKey {
 /// The sort key of `s` for language `lang` (a BCP 47 tag such as `pl-PL`; `None` sorts like
 /// English).
 pub fn sort_key(s: &str, lang: Option<&str>) -> SortKey {
-    let text = s.to_lowercase();
+    let text = lower_composed(s);
     let rules = tailoring(lang);
     let mut key = SortKey::default();
     let mut i = 0;
@@ -270,7 +421,7 @@ pub fn collate(a: &str, b: &str, lang: Option<&str>) -> Ordering {
 /// The index heading letter `s` files under in language `lang`: `Ł` for `Łódź` in Polish, `L`
 /// in English; `Ch` for `chata` in Czech; `A` for `Äpfel` in German, `Ä` in Swedish.
 pub fn heading_letter(s: &str, lang: Option<&str>) -> Option<String> {
-    let low = s.trim_start().to_lowercase();
+    let low = lower_composed(s.trim_start());
     let (e, _) = next_elem(&low, tailoring(lang))?;
     let shown = if e.own || e.sec == 0 {
         e.text.to_string()
@@ -298,6 +449,20 @@ mod tests {
         assert_eq!(sorted(&["zebra", "ćma", "dom"], "pl-PL"), ["ćma", "dom", "zebra"]);
         assert_eq!(sorted(&["żaba", "źle", "zebra", "ząb", "lato", "łapa", "mama"], "pl"), ["lato", "łapa", "mama", "ząb", "zebra", "źle", "żaba"]);
         assert_eq!(sorted(&["b", "ą", "a"], "pl"), ["a", "ą", "b"]);
+        // Every Polish letter is a letter of its own, after its base letter (review of #844).
+        assert_eq!(sorted(&["Malbork", "Łódź", "Lublin"], "pl"), ["Lublin", "Łódź", "Malbork"]);
+        assert_eq!(sorted(&["ósmy", "owca", "pies"], "pl"), ["owca", "ósmy", "pies"]);
+        assert_eq!(sorted(&["ściana", "sum", "tak"], "pl"), ["sum", "ściana", "tak"]);
+        assert_eq!(sorted(&["ęsi", "ezop", "fala"], "pl"), ["ezop", "ęsi", "fala"]);
+        assert_eq!(sorted(&["ńa", "nz", "oko"], "pl"), ["nz", "ńa", "oko"]);
+        assert_eq!(heading_letter("ósmy", Some("pl")).as_deref(), Some("Ó"));
+        assert_eq!(heading_letter("ńa", Some("pl")).as_deref(), Some("Ń"));
+        // Decomposed letters (`z` + combining dot above, as macOS file names write `ż`) sort like
+        // the composed ones.
+        assert_eq!(collate("z\u{307}aba", "żaba", Some("pl-PL")), Ordering::Equal);
+        assert_eq!(collate("z\u{307}aba", "zebra", Some("pl-PL")), Ordering::Greater);
+        assert_eq!(heading_letter("Z\u{307}aba", Some("pl")).as_deref(), Some("Ż"));
+        assert_eq!(collate("a\u{328}", "ą", Some("pl")), Ordering::Equal);
     }
 
     #[test]

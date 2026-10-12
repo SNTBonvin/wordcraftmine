@@ -410,6 +410,12 @@ pub fn doc_lang(doc: &wordcraft_doc::Document) -> Option<String> {
     doc.styles.resolve_char(None, &wordcraft_doc::CharProps::default()).lang
 }
 
+/// The language of text that names none: the document's default, else the editing language (a
+/// Polish interface writes Polish), else none (English). As AutoCorrect decides it.
+pub fn default_lang(s: &Session) -> Option<String> {
+    doc_lang(&s.doc).or_else(|| s.editing_lang.clone())
+}
+
 #[cfg(test)]
 mod iso_tests {
     use super::iso_from_unix_secs;

@@ -803,7 +803,7 @@ fn sort(s: &mut Session, v: &Value) -> CmdResult {
         return Err(CmdError::Failed("select paragraphs in one place to sort".into()));
     }
     let (i0, i1) = (a.path.last(), b.path.last());
-    let lang = s.doc.para(a.story, &a.path).and_then(|p| super::para_lang(&s.doc, p));
+    let lang = s.doc.para(a.story, &a.path).and_then(|p| super::para_lang(&s.doc, p)).or_else(|| super::default_lang(s));
     let bl = s.doc.container_mut(a.story, &a.path)?;
     let Some(slice) = bl.get_mut(i0..=i1) else { return Err(CmdError::Failed("bad range".into())) };
     if slice.iter().any(|b| !matches!(**b, Block::Para(_))) {

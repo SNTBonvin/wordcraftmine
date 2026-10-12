@@ -564,7 +564,7 @@ fn citation(s: &mut Session, v: &Value) -> CmdResult {
     let src = s.doc.sources.iter().find(|x| x.tag == tag).cloned().ok_or_else(|| CmdError::Params(format!("no source `{tag}`")))?;
     let pages = p::str(v, "pages").unwrap_or("").to_string();
     let st = style(&s.bib_style);
-    let n = number_of(&s.doc, &bib_order(&s.doc, st), &tag);
+    let n = number_of(&s.doc, &bib_order(&s.doc, st, super::default_lang(s)), &tag);
     let props = s.typing_props();
     let at = delete_selection(s)?;
     let instr = if pages.is_empty() { format!("CITATION {tag}") } else { format!("CITATION {tag} \\p {pages}") };
@@ -612,7 +612,7 @@ fn author_key(src: &Source) -> String {
 
 /// Indices into `doc.sources` in bibliography order: the cited sources (every source while
 /// nothing is cited), sorted or in order of first citation as the style asks.
-fn bib_order(doc: &Document, st: &CiteStyle) -> Vec<usize> {
+fn bib_order(doc: &Document, st: &CiteStyle, lang: Option<String>) -> Vec<usize> {
     let cited = cited_tags(doc);
     let mut idx: Vec<usize> = if cited.is_empty() {
         (0..doc.sources.len()).collect()
@@ -623,7 +623,6 @@ fn bib_order(doc: &Document, st: &CiteStyle) -> Vec<usize> {
         doc.sources.iter().enumerate().filter(|(_, x)| cited.contains(x.tag.as_str())).map(|(i, _)| i).collect()
     };
     // Sorted in the document's language (Polish authors `Łukasiewicz` before `Mazur`).
-    let lang = super::doc_lang(doc);
     let key = |i: &usize, by_title: bool| {
         sort_key(&doc.sources.get(*i).map(|x| if by_title { x.title.clone() } else { author_key(x) }).unwrap_or_default(), lang.as_deref())
     };
@@ -649,7 +648,7 @@ pub fn update_citations(s: &mut Session) -> Result<(), CmdError> {
 /// Refresh the results of the CITATION fields in the body.
 fn refresh_citations(s: &mut Session) -> Result<(), CmdError> {
     let st = style(&s.bib_style);
-    let order = bib_order(&s.doc, st);
+    let order = bib_order(&s.doc, st, super::default_lang(s));
     for path in s.doc.para_paths(StoryRef::Body) {
         let Some(p) = s.doc.para(StoryRef::Body, &path) else { continue };
         let updates: Vec<(usize, String)> = p
@@ -767,7 +766,7 @@ fn page_of(s: &mut Session, pos: &Pos) -> u32 {
 fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
     if kind.starts_with("BIBLIOGRAPHY") {
         let st = style(&s.bib_style);
-        return bib_order(&s.doc, st)
+        return bib_order(&s.doc, st, super::default_lang(s))
             .into_iter()
             .enumerate()
             .filter_map(|(k, i)| s.doc.sources.get(i).map(|x| (entry(x, st.name, k.saturating_add(1)), !st.numbered())))
@@ -828,7 +827,7 @@ fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
         return with_pages.into_iter().map(|(t, p)| (format!("{t}\t{p}"), false)).collect();
     }
     // Index / TOA: group by entry, sort, list pages.
-    let lang = super::doc_lang(&s.doc);
+    let lang = super::default_lang(s);
     let mut grouped: std::collections::BTreeMap<(SortKey, String), Vec<u32>> = Default::default();
     for (e, p) in with_pages {
         let pages = grouped.entry((sort_key(&e, lang.as_deref()), e)).or_default();
