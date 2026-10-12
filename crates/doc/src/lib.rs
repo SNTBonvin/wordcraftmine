@@ -432,6 +432,9 @@ pub struct Settings {
     /// Most consecutive lines that may end with a hyphen (`w:consecutiveHyphenLimit`); 0 = no limit.
     pub consecutive_hyphen_limit: u32,
     pub page_color: Option<Rgb>,
+    /// Picture or texture page background (Fill Effects), drawn over `page_color`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_fill: Option<PageFill>,
     pub watermark: Option<Watermark>,
     /// Theme fonts (major = headings, minor = body).
     pub major_font: String,
@@ -509,6 +512,23 @@ impl Default for Watermark {
     }
 }
 
+/// Picture page background: tiled texture or stretched picture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PageFill {
+    /// Key into [`Document::media`].
+    pub media: String,
+    pub tile: bool,
+    /// `o:title`, kept for round trips.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub title: String,
+}
+
+impl PageFill {
+    /// Tile scale (96 dpi).
+    pub const TILE_PT_PER_PX: f32 = 0.75;
+}
+
 /// Our default theme colours.
 pub const THEME_COLORS: [Rgb; 12] = [
     Rgb(0x00, 0x00, 0x00),
@@ -537,6 +557,7 @@ impl Default for Settings {
             hyphenate_caps: true,
             consecutive_hyphen_limit: 0,
             page_color: None,
+            page_fill: None,
             watermark: None,
             major_font: styles::HEADING_FONT.into(),
             minor_font: styles::BODY_FONT.into(),

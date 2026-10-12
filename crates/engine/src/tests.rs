@@ -3825,8 +3825,10 @@ fn colour_commands_take_any_custom_hex() {
     run(&mut s, "para.shading", json!({"color": "#C0FFEE"}));
     let shading = s.doc.para_at(&s.sel.focus).and_then(|p| p.props.shading);
     assert_eq!(shading, wordcraft_doc::Rgb::parse("C0FFEE"));
+    s.doc.settings.page_fill = Some(wordcraft_doc::PageFill::default());
     run(&mut s, "design.pageColor", json!({"color": "123ABC"}));
     assert_eq!(s.doc.settings.page_color, wordcraft_doc::Rgb::parse("123ABC"));
+    assert_eq!(s.doc.settings.page_fill, None, "a page colour replaces a texture (#999)");
 }
 
 /// A document whose content is another format than its extension says opens by what it holds,

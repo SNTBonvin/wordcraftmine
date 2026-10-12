@@ -189,9 +189,7 @@ pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String,
     let ns = xml::body_ns();
     let ns_refs: Vec<(&str, &str)> = ns.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     w.open("w:document", &ns_refs);
-    if let Some(c) = doc.settings.page_color {
-        w.empty("w:background", &[("w:color", &c.hex())]);
-    }
+    wr.page_background(&mut w, &mut rels);
     w.open("w:body", &[]);
     wr.blocks(&mut w, &doc.body, &mut rels, true, 0);
     let last = doc.last_section.clone();
@@ -537,6 +535,37 @@ fn sniff(bytes: &[u8]) -> &'static str {
 }
 
 impl Writer<'_> {
+    /// `w:background`: page colour and VML picture fill.
+    fn page_background(&mut self, w: &mut W, rels: &mut PartRels) {
+        let s = &self.doc.settings;
+        let fill = s.page_fill.as_ref().and_then(|f| Some((f, self.media_files.get(&f.media)?.clone())));
+        let color = s.page_color.map(|c| c.hex());
+        let attrs: Vec<(&str, &str)> = color.as_deref().map(|c| ("w:color", c)).into_iter().collect();
+        let Some((f, file)) = fill else {
+            if !attrs.is_empty() {
+                w.empty("w:background", &attrs);
+            }
+            return;
+        };
+        let rid = rels.add(rt::IMAGE, &format!("media/{file}"), false);
+        self.used_media.insert(f.media.clone());
+        w.open("w:background", &attrs);
+        let fillcolor = color.as_deref().map(|c| format!("#{c}"));
+        let mut v: Vec<(&str, &str)> = vec![("id", "_x0000_s1025"), ("o:bwmode", "white")];
+        if let Some(c) = fillcolor.as_deref() {
+            v.push(("fillcolor", c));
+        }
+        w.open("v:background", &v);
+        let mut a: Vec<(&str, &str)> = vec![("r:id", &rid)];
+        if !f.title.is_empty() {
+            a.push(("o:title", &f.title));
+        }
+        a.push(("type", if f.tile { "tile" } else { "frame" }));
+        w.empty("v:fill", &a);
+        w.close("v:background");
+        w.close("w:background");
+    }
+
     fn assign_media(&mut self) {
         let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (key, bytes) in &self.doc.media {
@@ -891,7 +920,7 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
     let ns_refs: Vec<(&str, &str)> = ns.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     w.open("w:settings", &ns_refs);
     w.empty("w:zoom", &[("w:percent", "100")]);
-    if s.page_color.is_some() {
+    if s.page_color.is_some() || s.page_fill.is_some() {
         w.empty("w:displayBackgroundShape", &[]);
     }
     if s.mirror_margins {

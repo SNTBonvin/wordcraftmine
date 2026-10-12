@@ -1956,3 +1956,37 @@ fn text_frames_read_and_round_trip() {
     assert_eq!(q[1].props.frame, p[1].props.frame);
     assert!(q.iter().any(|x| x.props.drop_cap == Some(2) && x.props.frame.is_none()));
 }
+
+#[test]
+fn page_texture_background_reads_and_round_trips() {
+    // #999
+    let doc = format!(
+        r##"<w:document {W_NS}><w:background w:color="FFFFCC"><v:background id="_x0000_s1025" o:bwmode="white" fillcolor="#ffc"><v:fill r:id="rId2" o:title="Parchment" type="tile"/></v:background></w:background><w:body><w:p/></w:body></w:document>"##
+    );
+    let r = rels(&[("rId2", "image", "media/image1.jpeg")]);
+    let types =
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="jpeg" ContentType="image/jpeg"/></Types>"#;
+    let texture = b"\xFF\xD8 texture stand-in";
+    let bytes = zip(&[
+        ("[Content_Types].xml", types.as_bytes()),
+        ("_rels/.rels", ROOT_RELS.as_bytes()),
+        ("word/document.xml", doc.as_bytes()),
+        ("word/_rels/document.xml.rels", r.as_bytes()),
+        ("word/media/image1.jpeg", texture),
+    ]);
+    let d = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(d.settings.page_color, Some(Rgb(0xFF, 0xFF, 0xCC)));
+    let fill = d.settings.page_fill.clone().unwrap();
+    assert!(fill.tile);
+    assert_eq!(fill.title, "Parchment");
+    assert_eq!(d.media.get(&fill.media).map(|b| b.as_slice()), Some(&texture[..]));
+
+    let files = unzip(&wordcraft_docx::write(&d).unwrap());
+    let xml = text(&files, "word/document.xml");
+    assert_eq!(attr_values(&xml, "v:fill", "type"), ["tile"]);
+    assert!(files.values().any(|b| b.as_slice() == texture), "texture kept in the package");
+    assert!(text(&files, "word/settings.xml").contains("w:displayBackgroundShape"));
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(back.settings.page_fill.map(|f| (f.tile, f.title)), Some((true, "Parchment".into())));
+    assert_eq!(back.settings.page_color, d.settings.page_color);
+}

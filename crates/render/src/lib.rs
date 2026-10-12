@@ -413,6 +413,9 @@ pub fn render_region(doc: &Document, page: &Page, w: u32, h: u32, view: Affine, 
     ctx.set_transform(Affine::IDENTITY);
     ctx.set_paint(color(opts.ink(doc.settings.page_color.unwrap_or(opts.paper)), 1.0));
     ctx.fill_rect(&kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64));
+    if let Some(f) = &doc.settings.page_fill {
+        draw_page_fill(&mut ctx, doc, page, f, view);
+    }
     let items = page_display(doc, page, &opts.display);
     let visible = view.inverse().transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64)).inflate(40.0, 40.0);
     if let Some(wm) = &doc.settings.watermark {
@@ -428,6 +431,24 @@ pub fn render_region(doc: &Document, page: &Page, w: u32, h: u32, view: Affine, 
         ctx.render(pm, &mut res);
     }
     Rendered { width: w16 as u32, height: h16 as u32, pixels }
+}
+
+/// Picture page background: tiled at 96 dpi or stretched.
+fn draw_page_fill(ctx: &mut RenderContext, doc: &Document, page: &Page, f: &wordcraft_doc::PageFill, view: Affine) {
+    let Some(pm) = pixmap_for(doc, &f.media) else { return };
+    let (pw, ph) = (pm.width().max(1) as f64, pm.height().max(1) as f64);
+    let r = kurbo::Rect::new(0.0, 0.0, page.w.clamp(1.0, 1e5) as f64, page.h.clamp(1.0, 1e5) as f64);
+    let k = wordcraft_doc::PageFill::TILE_PT_PER_PX as f64;
+    let (sx, sy) = if f.tile { (k, k) } else { (r.width() / pw, r.height() / ph) };
+    let extend = if f.tile { peniko::Extend::Repeat } else { peniko::Extend::Pad };
+    ctx.set_transform(view);
+    ctx.set_paint(vello_cpu::Image {
+        image: vello_cpu::ImageSource::Pixmap(pm),
+        sampler: peniko::ImageSampler::default().with_quality(peniko::ImageQuality::Medium).with_extend(extend),
+    });
+    ctx.set_paint_transform(Affine::scale_non_uniform(sx, sy));
+    ctx.fill_rect(&r);
+    ctx.reset_paint_transform();
 }
 
 /// One line of `text` in `face` at `size` points, black on white, in a `w`×`h` point raster at
@@ -1106,6 +1127,25 @@ mod tests {
         assert!(opts.display.dim_header);
         let img = render_page(&d, &l.pages[0], 1.0, &opts);
         assert!(!img.to_png().is_empty());
+    }
+
+    #[test]
+    fn page_texture_is_tiled_over_the_page() {
+        // #999
+        let mut d = Document::new();
+        let mut png = Vec::new();
+        image::RgbaImage::from_fn(8, 8, |x, _| if x < 4 { image::Rgba([200, 0, 0, 255]) } else { image::Rgba([0, 0, 200, 255]) })
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let media = d.add_media(png, "png");
+        d.settings.page_fill = Some(wordcraft_doc::PageFill { media, tile: true, title: String::new() });
+        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+        let img = render_page(&d, &l.pages[0], 1.0, &RenderOptions::default());
+        let px = |x: u32, y: u32| img.pixels.get(((y * img.width + x) * 4) as usize..((y * img.width + x) * 4 + 3) as usize).unwrap().to_vec();
+        // 6 pt tiles: red, then blue, repeating to the far corner.
+        assert!(px(1, 1)[0] > 150 && px(1, 1)[2] < 50, "{:?}", px(1, 1));
+        assert!(px(4, 1)[2] > 150 && px(4, 1)[0] < 50, "{:?}", px(4, 1));
+        assert!(px(601, 780)[0] > 150, "{:?}", px(601, 780));
     }
 
     #[test]

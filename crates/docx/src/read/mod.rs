@@ -22,7 +22,7 @@ use wordcraft_doc::para::OBJ;
 use wordcraft_doc::props::Rgb;
 use wordcraft_doc::section::NumFormat;
 use wordcraft_doc::styles::{Style, StyleKind, StyleSheet, TableStyleParts};
-use wordcraft_doc::{Block, Blocks, Comment, Document, InlineObject, Paragraph, PartKind, Revision, RevisionKind, para_block};
+use wordcraft_doc::{Block, Blocks, Comment, Document, InlineObject, PageFill, Paragraph, PartKind, Revision, RevisionKind, para_block};
 
 use crate::DocxError;
 use crate::package::{ContentTypes, EMBEDDED_PARTS, EmbeddedManifest, MAX_VBA_RELATED, Package, Rels, VBA_PROJECT_PART, VBA_RELATED, rel_is, rt};
@@ -225,8 +225,9 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         lenient("customXml bibliography", r.read_bibliography(path, &mut seen_sources));
     }
 
-    if let Some(bg) = root.child("w:background").and_then(|b| b.attr("w:color")).and_then(Rgb::parse) {
-        r.doc.settings.page_color = Some(bg);
+    if let Some(bg) = root.child("w:background") {
+        r.doc.settings.page_color = bg.attr("w:color").and_then(Rgb::parse);
+        r.doc.settings.page_fill = r.read_page_fill(bg, &rels);
     }
     if let Some(body) = root.child("w:body") {
         let mut sc = StoryCtx::default();
@@ -580,6 +581,19 @@ impl Reader<'_> {
         self.doc.revisions.push(Revision { kind, author, date, move_name });
         self.revs.insert(key, i);
         i
+    }
+
+    /// `w:background/v:background/v:fill`: tile/pattern repeat, frame stretches; gradients unsupported.
+    fn read_page_fill(&mut self, bg: &El, rels: &Rels) -> Option<PageFill> {
+        let fill = bg.child("v:background")?.child("v:fill")?;
+        let tile = match fill.attr("type").unwrap_or("frame") {
+            "tile" | "pattern" => true,
+            "frame" => false,
+            _ => return None,
+        };
+        let media = self.media_for(rels, fill.attr("r:id")?)?;
+        let title = fill.attr("o:title").unwrap_or_default().chars().take(256).collect();
+        Some(PageFill { media, tile, title })
     }
 
     /// Media key for an image relationship (loads the bytes once).

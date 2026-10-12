@@ -55,6 +55,8 @@ use wordcraft_metafile::{Picture, PlacedItem};
 const MAX_SIDE: f32 = 14_400.0;
 /// Largest picture side we embed (pixels).
 const MAX_IMAGE_SIDE: u32 = 30_000;
+/// Tile cap per page; tiny textures are scaled up.
+const MAX_PAGE_TILES: usize = 400;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum PdfError {
@@ -647,6 +649,9 @@ impl Exporter<'_> {
                 s.set_fill(None);
             });
         }
+        if let Some(f) = self.doc.settings.page_fill.clone() {
+            self.tagged(s, Role::Artifact(ArtifactType::Other), None, |me, s| me.page_fill(s, &f, w, h));
+        }
         if let Some(wm) = self.doc.settings.watermark.clone()
             && !wm.text.trim().is_empty()
         {
@@ -1021,6 +1026,37 @@ impl Exporter<'_> {
             }
         }
         s.set_stroke(None);
+    }
+
+    /// Picture page background: tiled at 96 dpi or stretched.
+    fn page_fill(&mut self, s: &mut Surface, f: &wordcraft_doc::PageFill, w: f32, h: f32) {
+        let Some(img) = self.image(&f.media) else { return };
+        let Some(clip) = rect_path(&Rect::new(0.0, 0.0, w, h)) else { return };
+        let (tw, th) = if f.tile {
+            let px = |v: u32| v.max(1) as f32 * wordcraft_doc::PageFill::TILE_PT_PER_PX;
+            let (mut tw, mut th) = (px(img.size().0), px(img.size().1));
+            while (w / tw).ceil() * (h / th).ceil() > MAX_PAGE_TILES as f32 {
+                tw *= 2.0;
+                th *= 2.0;
+            }
+            (tw, th)
+        } else {
+            (w, h)
+        };
+        let Some(size) = Size::from_wh(tw.max(0.01), th.max(0.01)) else { return };
+        s.push_clip_path(&clip, &FillRule::NonZero);
+        let mut y = 0.0;
+        while y < h {
+            let mut x = 0.0;
+            while x < w {
+                s.push_transform(&Transform::from_translate(x, y));
+                s.draw_image(img.clone(), size);
+                s.pop();
+                x += tw;
+            }
+            y += th;
+        }
+        s.pop();
     }
 
     fn picture(&mut self, s: &mut Surface, rect: &Rect, media: &str, crop: &[f32; 4], alpha: f32) {
