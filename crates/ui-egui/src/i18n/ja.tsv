@@ -226,7 +226,6 @@
 	Cancel	キャンセル
 	Capitalize Each Word	各単語の先頭を大文字にする
 	Captions	図表番号
-	Cell Alignment	セルの配置
 	Cell Margins	セルの余白
 	Cell Size	セルのサイズ
 	Cell\nMargins	セルの余白
@@ -470,6 +469,7 @@
 	Insert Above	上に行を挿入
 	Insert Below	下に行を挿入
 	Insert Caption	図表番号の挿入
+	Insert Caption…	図表番号の挿入…
 	Insert Citation	引用文献の挿入
 	Insert Endnote	文末脚注の挿入
 	Insert Footnote	脚注の挿入

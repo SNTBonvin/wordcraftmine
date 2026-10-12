@@ -287,7 +287,6 @@
 	Cancel	Откажи
 	Capitalize Each Word	Велико почетно слово сваке речи
 	Captions	Натписи
-	Cell Alignment	Поравнање ћелије
 	Cell Margins	Маргине ћелије
 	Cell Size	Величина ћелије
 	Cell\nMargins	Маргине\nћелије
@@ -522,6 +521,7 @@
 	Insert Above	Уметни изнад
 	Insert Below	Уметни испод
 	Insert Caption	Уметни натпис
+	Insert Caption…	Уметни натпис…
 	Insert Citation	Уметни цитат
 	Insert Endnote	Уметни ендноту
 	Insert Footnote	Уметни фусноту

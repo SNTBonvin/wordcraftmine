@@ -535,6 +535,7 @@
 	Insert Above	Vložit nad
 	Insert Below	Vložit pod
 	Insert Caption	Vložit titulek
+	Insert Caption…	Vložit titulek…
 	Insert Citation	Vložit citaci
 	Insert Endnote	Vložit vysvětlivku
 	Insert Footnote	Vložit poznámku pod čarou
@@ -1109,7 +1110,6 @@
 	Table of Contents	Obsah
 	Table of\nContents	Obsah
 	Table Properties	Vlastnosti tabulky
-	Cell Alignment	Zarovnání buňky
 	Table Properties…	Vlastnosti tabulky…
 	Table Row Height	Výška řádku tabulky
 	Table style	Styl tabulky

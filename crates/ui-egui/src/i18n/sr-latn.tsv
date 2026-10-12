@@ -283,7 +283,6 @@
 	Cancel	Otkaži
 	Capitalize Each Word	Veliko početno slovo svake reči
 	Captions	Natpisi
-	Cell Alignment	Poravnanje ćelije
 	Cell Margins	Margine ćelije
 	Cell Size	Veličina ćelije
 	Cell\nMargins	Margine\nćelije
@@ -518,6 +517,7 @@
 	Insert Above	Umetni iznad
 	Insert Below	Umetni ispod
 	Insert Caption	Umetni natpis
+	Insert Caption…	Umetni natpis…
 	Insert Citation	Umetni citat
 	Insert Endnote	Umetni endnotu
 	Insert Footnote	Umetni fusnotu

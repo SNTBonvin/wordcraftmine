@@ -2082,43 +2082,76 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         ui.menu_button(tl!("Wrap Text"), |ui| crate::ribbon::wrap_text_items(ui, app));
     }
     if app.session.sel.focus.path.cell().is_some() {
+        // The table's items follow what is selected, as in Word (2019, Windows).
+        let pick = table_pick(&app.session);
         ui.separator();
         ui.menu_button(tl!("Insert"), |ui| {
-            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
-            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
             item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
             item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
+            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
+            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
         });
-        ui.menu_button(tl!("Delete"), |ui| {
-            item(ui, app, "Delete Cells", "table.deleteCells", json!({}));
-            item(ui, app, "Delete Rows", "table.deleteRow", json!({}));
-            item(ui, app, "Delete Columns", "table.deleteColumn", json!({}));
-            item(ui, app, "Delete Table", "table.deleteTable", json!({}));
-        });
-        ui.menu_button(tl!("Select"), |ui| {
-            item(ui, app, "Select Cell", "table.selectCell", json!({}));
-            item(ui, app, "Select Column", "table.selectColumn", json!({}));
-            item(ui, app, "Select Row", "table.selectRow", json!({}));
-            item(ui, app, "Select Table", "table.selectTable", json!({}));
-        });
-        item(ui, app, "Merge Cells", "table.merge", json!({}));
-        item(ui, app, "Split Cells", "table.split", json!({}));
-        ui.separator();
-        item(ui, app, "Distribute Rows", "table.distributeRows", json!({}));
-        item(ui, app, "Distribute Columns", "table.distributeColumns", json!({}));
-        ui.menu_button(tl!("AutoFit"), |ui| {
-            item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
-            item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
-            item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
-        });
+        match pick {
+            TablePick::Cell | TablePick::Cells => item(ui, app, "Delete Cells", "table.deleteCells", json!({})),
+            TablePick::Rows => item(ui, app, "Delete Rows", "table.deleteRow", json!({})),
+            TablePick::Columns => item(ui, app, "Delete Columns", "table.deleteColumn", json!({})),
+            TablePick::Table => item(ui, app, "Delete Table", "table.deleteTable", json!({})),
+        }
+        if pick == TablePick::Cell {
+            item(ui, app, "Split Cells", "table.split", json!({}));
+        }
+        if matches!(pick, TablePick::Cells | TablePick::Rows | TablePick::Columns) {
+            item(ui, app, "Merge Cells", "table.merge", json!({}));
+        }
+        if matches!(pick, TablePick::Rows | TablePick::Columns | TablePick::Table) {
+            item(ui, app, "Distribute Rows", "table.distributeRows", json!({}));
+            item(ui, app, "Distribute Columns", "table.distributeColumns", json!({}));
+        }
+        if pick == TablePick::Table {
+            ui.menu_button(tl!("AutoFit"), |ui| {
+                item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
+                item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
+                item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
+            });
+        }
         item(ui, app, "Text Direction", "table.textDirection", json!({}));
-        ui.menu_button(tl!("Cell Alignment"), |ui| {
-            for (v, label) in crate::ribbon::CELL_ALIGN.into_iter().flatten() {
-                item(ui, app, label, "table.cellAlign", json!({"value": v}));
-            }
-        });
-        ui.separator();
+        if pick == TablePick::Table {
+            item(ui, app, "Insert Caption…", "references.caption", json!({}));
+        }
         item(ui, app, "Table Properties…", "table.properties", json!({}));
+    }
+}
+
+/// What of a table the selection is: Word's context menu offers different table items for each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TablePick {
+    /// The caret or text in one cell, or that one cell.
+    Cell,
+    /// Cells of more than one row or column, but not whole rows or columns.
+    Cells,
+    Rows,
+    Columns,
+    Table,
+}
+
+fn table_pick(s: &wordcraft_engine::Session) -> TablePick {
+    if let Some(r) = s.cell_range()
+        && let Some(t) = s.doc.table(r.story, &r.table)
+    {
+        let all_rows = r.rows == (0, t.rows.len().saturating_sub(1));
+        let all_cols = r.cols == (0, t.cols().saturating_sub(1));
+        return match (all_rows, all_cols) {
+            (true, true) => TablePick::Table,
+            (true, false) => TablePick::Columns,
+            (false, true) => TablePick::Rows,
+            _ if r.cells(t).len() > 1 => TablePick::Cells,
+            _ => TablePick::Cell,
+        };
+    }
+    // Text running from one cell into another of the same table.
+    match (s.sel.anchor.path.cell(), s.sel.focus.path.cell()) {
+        (Some((ta, ra, ca)), Some((tb, rb, cb))) if ta == tb && (ra, ca) != (rb, cb) => TablePick::Cells,
+        _ => TablePick::Cell,
     }
 }
 
@@ -2502,32 +2535,47 @@ mod tests {
         steps(h, 2);
     }
 
-    /// Right-clicking a table cell puts the caret there, and the menu has the table's commands:
-    /// Select › Select Column selects that column's cells.
+    /// Whether the open context menu has an entry holding each of `labels` (`true`) or none
+    /// (`false`).
+    fn assert_menu(h: &H, labels: &[&str], there: bool) {
+        for label in labels {
+            assert_eq!(menu_entry(h, label).is_some(), there, "{label} in the menu: {there}");
+        }
+    }
+
+    /// Right-clicking a table cell puts the caret there, and the table's items follow what is
+    /// selected, as in Word: with the caret in a cell, Delete Cells and Split Cells; with the
+    /// whole table, Delete Table, Distribute, AutoFit and Insert Caption… (never Select or Cell
+    /// Alignment).
     #[test]
-    fn the_context_menu_in_a_table_has_its_commands() {
+    fn the_context_menu_in_a_table_follows_the_selection() {
         let mut h = table_window();
         let b = cell(&mut h, 1, 2);
         let at = screen(&mut h, b.x + b.w / 2.0, b.y + b.h / 2.0);
         right_click(&mut h, at);
         assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((1, 2)), "the caret moved to the cell");
-        for label in
-            ["Insert", "Delete", "Merge Cells", "Split Cells", "Distribute Rows", "AutoFit", "Text Direction", "Cell Alignment", "Table Properties…"]
-        {
-            assert!(menu_entry(&h, label).is_some(), "the menu has {label}");
-        }
+        assert_menu(&h, &["Insert", "Delete Cells", "Split Cells", "Text Direction", "Table Properties…"], true);
+        assert_menu(&h, &["Merge Cells", "Distribute Rows", "Delete Table", "AutoFit", "Select", "Cell Alignment"], false);
         let depth = h.state().session.undo_depth();
-        pick(&mut h, &["Select", "Select Column"]);
-        assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (2, 2))));
-        assert_eq!(h.state().session.undo_depth(), depth, "selecting isn't an undo step");
+        pick(&mut h, &["Insert", "Insert Rows Below"]);
+        assert_eq!(h.state().session.doc.body.iter().find_map(|b| b.as_table()).map(|t| t.rows.len()), Some(3));
+        assert_eq!(h.state().session.undo_depth(), depth + 1);
+        h.state_mut().run("table.selectTable", json!({})).unwrap();
+        right_click(&mut h, at);
+        assert!(h.state().session.cell_range().is_some(), "a right-click on the selected table keeps it");
+        assert_menu(&h, &["Delete Table", "Distribute Rows", "Distribute Columns", "AutoFit", "Insert Caption…", "Table Properties…"], true);
+        assert_menu(&h, &["Delete Cells", "Split Cells", "Merge Cells"], false);
+        pick(&mut h, &["Delete Table"]);
+        assert!(h.state().session.doc.body.iter().all(|b| b.as_table().is_none()));
     }
 
-    /// With a column's cells selected, a right-click on one of them keeps them, so the menu's Cell
-    /// Alignment aligns just the column (one undo step); one on a cell beside them drops them,
-    /// though that cell lies between the selection's ends in the text.
+    /// With a column's cells selected, a right-click on one of them keeps them: the menu is a
+    /// column's (Delete Columns, Merge Cells, Distribute) and its Text Direction turns just the
+    /// column, in one undo step; one on a cell beside them drops them, though that cell lies
+    /// between the selection's ends in the text, and the menu is a cell's again.
     #[test]
     fn a_right_click_keeps_selected_cells_only_on_them() {
-        use wordcraft_doc::props::VAlign;
+        use wordcraft_doc::props::TextDirection;
         let mut h = table_window();
         h.state_mut().run("table.selectColumn", json!({})).unwrap();
         assert_eq!(h.state().session.cell_range().map(|r| (r.rows, r.cols)), Some(((0, 1), (0, 0))));
@@ -2535,17 +2583,24 @@ mod tests {
         let at = screen(&mut h, on.x + on.w / 2.0, on.y + on.h / 2.0);
         right_click(&mut h, at);
         assert_eq!(h.state().session.cell_range().map(|r| r.cols), Some((0, 0)), "still the column");
+        assert_menu(&h, &["Delete Columns", "Merge Cells", "Distribute Rows", "Distribute Columns", "Text Direction"], true);
+        assert_menu(&h, &["Delete Cells", "Split Cells", "AutoFit"], false);
         let depth = h.state().session.undo_depth();
-        pick(&mut h, &["Cell Alignment", "Align Bottom Right"]);
+        pick(&mut h, &["Text Direction"]);
         assert_eq!(h.state().session.undo_depth(), depth + 1);
         let t = h.state().session.doc.body.iter().find_map(|b| b.as_table()).unwrap();
-        let valign = |r: usize, c: usize| t.rows[r].cells[c].props.valign;
-        assert_eq!([valign(0, 0), valign(1, 0), valign(0, 1), valign(1, 2)], [VAlign::Bottom, VAlign::Bottom, VAlign::Top, VAlign::Top]);
+        let dir = |r: usize, c: usize| t.rows[r].cells[c].props.text_direction;
+        assert_eq!(
+            [dir(0, 0), dir(1, 0), dir(0, 1), dir(1, 2)],
+            [TextDirection::Down, TextDirection::Down, TextDirection::Horizontal, TextDirection::Horizontal]
+        );
         let beside = cell(&mut h, 0, 2);
         let at = screen(&mut h, beside.x + beside.w / 2.0, beside.y + beside.h / 2.0);
         right_click(&mut h, at);
         assert!(h.state().session.cell_range().is_none(), "the column is no longer selected");
         assert_eq!(h.state().session.sel.focus.path.cell().map(|(_, r, c)| (r, c)), Some((0, 2)));
+        assert_menu(&h, &["Split Cells"], true);
+        assert_menu(&h, &["Delete Columns", "Merge Cells"], false);
     }
 
     /// Issue #123: zoomed out, pages sit side by side in rows when the width allows; at 100% a

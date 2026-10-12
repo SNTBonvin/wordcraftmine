@@ -97,7 +97,6 @@
 	Capitalize Each Word	Iga sõna suure algustähega
 	Captions	Pealdised
 	Category	Kategooria
-	Cell Alignment	Lahtri joondus
 	Cell Margins	Lahtri veerised
 	Cell Size	Lahtri suurus
 	Cell\nMargins	Lahtri\nveerised
@@ -354,6 +353,7 @@
 	Insert Above	Lisa üles
 	Insert Below	Lisa alla
 	Insert Caption	Lisa pealdis
+	Insert Caption…	Lisa pealdis…
 	Insert Citation	Lisa viide
 	Insert Endnote	Lisa lõpumärkus
 	Insert Footnote	Lisa allmärkus

@@ -227,7 +227,6 @@
 	Cancel	取消
 	Capitalize Each Word	每個單字字首大寫
 	Captions	標號
-	Cell Alignment	儲存格對齊方式
 	Cell Margins	儲存格邊界
 	Cell Size	儲存格大小
 	Cell\nMargins	儲存格邊界
@@ -471,6 +470,7 @@
 	Insert Above	插入上方列
 	Insert Below	插入下方列
 	Insert Caption	插入標號
+	Insert Caption…	插入標號…
 	Insert Citation	插入引文
 	Insert Endnote	插入章節附註
 	Insert Footnote	插入註腳

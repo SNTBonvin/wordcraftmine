@@ -238,7 +238,6 @@
 	Cancel	取消
 	Capitalize Each Word	每个单词首字母大写
 	Captions	题注
-	Cell Alignment	单元格对齐方式
 	Cell Margins	单元格边距
 	Cell Size	单元格大小
 	Cell\nMargins	单元格边距
@@ -482,6 +481,7 @@
 	Insert Above	在上方插入
 	Insert Below	在下方插入
 	Insert Caption	插入题注
+	Insert Caption…	插入题注…
 	Insert Citation	插入引文
 	Insert Endnote	插入尾注
 	Insert Footnote	插入脚注

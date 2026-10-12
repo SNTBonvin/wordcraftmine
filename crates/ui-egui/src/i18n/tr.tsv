@@ -101,7 +101,6 @@
 	Capitalize Each Word	Her Sözcüğün İlk Harfini Büyüt
 	Captions	Resim Yazıları
 	Category	Kategori
-	Cell Alignment	Hücre Hizalama
 	Cell Margins	Hücre Kenar Boşlukları
 	Cell Size	Hücre Boyutu
 	Cell\nMargins	Hücre Kenar\nBoşlukları
@@ -347,6 +346,7 @@
 	Insert Above	Üste Ekle
 	Insert Below	Alta Ekle
 	Insert Caption	Resim Yazısı Ekle
+	Insert Caption…	Resim Yazısı Ekle…
 	Insert Citation	Atıf Ekle
 	Insert Endnote	Sonnot Ekle
 	Insert Footnote	Dipnot Ekle

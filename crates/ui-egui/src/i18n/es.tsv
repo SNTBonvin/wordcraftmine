@@ -213,7 +213,6 @@
 	Capitalize Each Word	Mayúscula inicial en cada palabra
 	Captions	Leyendas
 	Category	Categoría
-	Cell Alignment	Alineación de celda
 	Cell Margins	Márgenes de celda
 	Cell Size	Tamaño de celda
 	Cell\nMargins	Márgenes de\ncelda
@@ -476,6 +475,7 @@
 	Insert Above	Insertar encima
 	Insert Below	Insertar debajo
 	Insert Caption	Insertar leyenda
+	Insert Caption…	Insertar leyenda…
 	Insert Citation	Insertar cita
 	Insert Endnote	Insertar nota final
 	Insert Footnote	Insertar nota al pie

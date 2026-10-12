@@ -207,7 +207,6 @@
 	Cancel	Cancelar
 	Capitalize Each Word	Capitalizar cada palavra
 	Captions	Legendas
-	Cell Alignment	Alinhamento da célula
 	Cell Margins	Margens das células
 	Cell Size	Tamanho das células
 	Cell\nMargins	Margens\ndas células
@@ -471,6 +470,7 @@
 	Insert Above	Inserir acima
 	Insert Below	Inserir abaixo
 	Insert Caption	Inserir legenda
+	Insert Caption…	Inserir legenda…
 	Insert Citation	Inserir citação
 	Insert Endnote	Inserir nota de fim
 	Insert Footnote	Inserir nota de rodapé
