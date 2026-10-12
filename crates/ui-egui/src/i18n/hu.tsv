@@ -2451,6 +2451,10 @@
 	Reading Column Width	Olvasási oszlopszélesség
 	Reading Line Spacing	Olvasási sorköz
 	Reading Text Size	Olvasási szövegméret
+	Undo Actions	Több művelet visszavonása
+	Undo History	Visszavonási előzmények
+	Undo 1 Action	1 művelet visszavonása
+	Undo {n} Actions	{n} művelet visszavonása
 	Correct TWo INitial CApitals	KÉt KEzdő NAgybetű javítása
 	Correct accidental usage of cAPS LOCK key	A cAPS LOCK billentyű véletlen használatának javítása
 	Region:	Régió:
