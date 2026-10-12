@@ -40,3 +40,8 @@ sync_github_name = false
 
 [people.henno]
 sync_github_name = true
+
+[people.cyfung1031]
+real_name = "Chester Fung"
+display_name = "Chester Fung"
+sync_github_name = true
