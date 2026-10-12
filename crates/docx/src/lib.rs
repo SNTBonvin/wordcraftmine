@@ -7,22 +7,34 @@
 //! error or a best-effort document, never a panic.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod chart_spec;
 mod crypt;
 mod custom;
 mod package;
 mod read;
+mod smart_art;
 mod units;
 mod write;
 mod xml;
 
-pub use crypt::{DEFAULT_SPIN_COUNT, MAX_PASSWORD_CHARS, check_password, decrypt, encrypt, encrypt_with_spin_count, is_encrypted};
+pub use chart_spec::{chart_items, chart_xml};
+pub use crypt::{
+    DEFAULT_SPIN_COUNT, MAX_PASSWORD_CHARS, PasswordCheck, check_password, check_protection_password, decrypt, encrypt, encrypt_with_spin_count,
+    is_encrypted, protection_hash,
+};
 pub use read::read;
+pub use smart_art::smart_art_items;
 pub use write::{write, write_as};
 
 /// What [`DocxError::PasswordRequired`] says.
 pub const PASSWORD_REQUIRED: &str = "this document is protected with a password";
 /// What [`DocxError::WrongPassword`] says.
 pub const WRONG_PASSWORD: &str = "the password is incorrect";
+
+/// The `a:ext` URI under a Drawing Canvas's `wpc:extLst` that holds its turn and flips as an
+/// `a:xfrm` (`rot`, `flipH`, `flipV`). Neither the canvas schema nor `wp:anchor` carries a
+/// transform, so this rides in the extension list Word and other readers skip.
+pub(crate) const CANVAS_SPIN_EXT: &str = "urn:wordcraft:canvas-xfrm";
 
 /// Read a package that may be password-protected ([`is_encrypted`]): it is decrypted with
 /// `password` first. An encrypted package without a password gives

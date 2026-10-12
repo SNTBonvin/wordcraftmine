@@ -112,6 +112,20 @@ impl Exempt {
         names.extend(app.session.doc.styles.styles.iter().map(|s| s.name.clone()));
         // Fonts a document asks for, installed or not (Aptos is drawn with a substitute).
         names.extend([wordcraft_doc::styles::BODY_FONT, wordcraft_doc::styles::HEADING_FONT].map(str::to_string));
+        // The selected SmartArt graphic's items (the Text Pane): document content.
+        if let Some(g) = wordcraft_engine::cmd::smart_art::selected_smart_art(&app.session) {
+            names.extend(g.items.iter().map(|i| i.text.clone()));
+        }
+        // The accessibility checker's findings: like command messages, they answer scripts and
+        // MCP too, so they stay English for now.
+        for i in wordcraft_engine::cmd::accessibility::check(&app.session.doc) {
+            names.extend(["issue", "fix"].iter().filter_map(|k| i[*k].as_str()).map(str::to_string));
+        }
+        // The selected chart's data (Edit Data's grid): document content.
+        if let Some(c) = wordcraft_engine::cmd::chart::selected_chart(&app.session) {
+            names.extend(c.categories.iter().cloned());
+            names.extend(c.series.iter().map(|s| s.name.clone()));
+        }
         for m in crate::credits::MODELS {
             names.extend([m.company, m.model, m.version].map(str::to_string));
         }
@@ -142,6 +156,7 @@ impl Exempt {
             || plain.contains('┬') || plain.contains('\u{2061}') // equation input (UnicodeMath), drawn as math
             || matches!(plain, "WordCraft" | "WordCraft User" | "Discord" | "https://" | "auto" | "I. II. III." | "i. ii. iii.")
             || plain == "CONFIDENTIAL" // the watermark dialog's text: document content, kept as typed
+            || plain == "Figure 1" // the caption dialog's sample: the label goes into the document as is
     }
 }
 
@@ -172,6 +187,11 @@ fn untranslated_interface_text() {
         let drawn = frame(&ctx, &mut app);
         record(&app, &format!("File › {page}"), drawn);
     }
+    for pane in wordcraft_engine::cmd::options::PANES {
+        let _ = app.run("ui.backstage", json!({"value": true, "page": "options", "pane": pane}));
+        let drawn = frame(&ctx, &mut app);
+        record(&app, &format!("File › Options › {pane}"), drawn);
+    }
     let _ = app.run("ui.backstage", json!({"value": false}));
     let dialogs = [
         "font",
@@ -195,6 +215,12 @@ fn untranslated_interface_text() {
         "models",
         "insertMergeField",
         "findRecipient",
+        "caption",
+        "index",
+        "markEntry",
+        "toc",
+        "sourceManager",
+        "createSource",
     ];
     for name in dialogs {
         let _ = app.run("ui.dialog", json!({"name": name}));
@@ -221,6 +247,26 @@ fn untranslated_interface_text() {
         let drawn = frame(&ctx, &mut app);
         record(&app, &format!("tab {tab}"), drawn);
     }
+    let _ = app.run("insert.smartArt", json!({"layout": "hierarchy"}));
+    let _ = app.run("smartArt.textPane", json!({"value": true}));
+    let _ = app.run("ui.tab", json!({"tab": "SmartArt Design"}));
+    let drawn = frame(&ctx, &mut app);
+    record(&app, "tab SmartArt Design", drawn);
+    let _ = app.run("smartArt.textPane", json!({"value": false}));
+    let _ = app.run("ui.dialog", json!({"name": "insertSmartArt"}));
+    let drawn = frame(&ctx, &mut app);
+    record(&app, "dialog insertSmartArt", drawn);
+    app.dialog = None;
+    let _ = app.run("insert.chart", json!({"type": "column"}));
+    let _ = app.run("ui.tab", json!({"tab": "Chart Design"}));
+    let drawn = frame(&ctx, &mut app);
+    record(&app, "tab Chart Design", drawn);
+    for name in ["chartData", "changeChartType", "insertChart"] {
+        let _ = app.run("ui.dialog", json!({"name": name}));
+        let drawn = frame(&ctx, &mut app);
+        record(&app, &format!("dialog {name}"), drawn);
+        app.dialog = None;
+    }
     let _ = app.run("insert.equation", json!({}));
     let _ = app.run("ui.tab", json!({"tab": "Equation"}));
     let drawn = frame(&ctx, &mut app);
@@ -229,13 +275,15 @@ fn untranslated_interface_text() {
     // tab keeps one tab's commands from changing the next.
     // A fresh app per control, set up the same way, so no click changes what the next one hits
     // (Escape, for one, leaves an equation and takes the Equation tab with it).
-    let contextual = ["Table Design", "Table Layout", "Equation"];
+    let contextual = ["Table Design", "Table Layout", "Equation", "Chart Design", "SmartArt Design"];
     let open = |tab: &str| {
         let ctx = egui::Context::default();
         let mut app = fresh_app(&ctx);
         match tab {
             "Table Design" | "Table Layout" => drop(app.run("insert.table", json!({"rows": 2, "cols": 2}))),
             "Equation" => drop(app.run("insert.equation", json!({}))),
+            "SmartArt Design" => drop(app.run("insert.smartArt", json!({"layout": "process"}))),
+            "Chart Design" => drop(app.run("insert.chart", json!({"type": "column"}))),
             _ => {}
         }
         let _ = app.run("ui.tab", json!({"tab": tab}));
@@ -263,4 +311,26 @@ fn untranslated_interface_text() {
         report.push_str(&format!("{:?}  [{}]\n", pseudo::unmarked(text), states.join(", ")));
     }
     assert!(found.is_empty(), "{} interface texts skip translation (wrap them in tl!):\n{report}", found.len());
+    russian_has_every_string_the_interface_looked_up(pseudo::looked_up());
+}
+
+/// Russian covers everything the audit saw translated, plus the equation gallery's labels (shown
+/// in menus the audit doesn't open one by one). Numbered style names go through a template.
+fn russian_has_every_string_the_interface_looked_up(mut keys: std::collections::BTreeSet<String>) {
+    use wordcraft_engine::math_gallery::{BUILT_INS, STRUCTURES, SYMBOL_SETS};
+    keys.extend(BUILT_INS.iter().map(|(_, label, _)| label.to_string()));
+    keys.extend(SYMBOL_SETS.iter().map(|(name, _)| name.to_string()));
+    for g in STRUCTURES {
+        keys.insert(g.label.to_string());
+        for (section, templates) in g.sections {
+            keys.insert(section.to_string());
+            keys.extend(templates.iter().map(|t| t.label.to_string()));
+        }
+    }
+    let ru = super::Lang::from_code("ru").unwrap_or(super::Lang::EN);
+    let numbered = |s: &str| ["Heading ", "TOC "].iter().any(|p| s.strip_prefix(p).is_some_and(|n| n.chars().all(|c| c.is_ascii_digit())));
+    // Names that read the same in Russian.
+    let same = |s: &str| matches!(s, "LaTeX" | "LaTeX (*.tex)" | "Unicode" | "I. II. III." | "i. ii. iii.");
+    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(ru, s) && !numbered(s) && !same(s)).collect();
+    assert!(missing.is_empty(), "{} strings have no Russian entry:\n{missing:#?}", missing.len());
 }

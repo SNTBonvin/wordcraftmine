@@ -321,28 +321,6 @@ pub fn specs() -> Vec<CommandSpec> {
             update_generated(s)?;
             sel_result(s)
         }),
-        CommandSpec::new("references.markEntry", "Mark Entry", "References › Index", |s, v| {
-            let entry = match p::str(v, "entry") {
-                Some(e) => e.to_string(),
-                None => s.selected_text().trim().to_string(),
-            };
-            if entry.is_empty() {
-                return Err(CmdError::Params("select a word or give `entry`".into()));
-            }
-            let (_, b) = s.sel.ordered();
-            s.doc.insert_object(&b, InlineObject::Field { instr: format!("XE \"{}\"", entry.replace('"', "")), result: String::new(), locked: false, code: false }, &CharProps { hidden: Some(true), ..Default::default() })?;
-            Ok(json!({"entry": entry}))
-        })
-        .params(r#"{"entry"?: string}"#)
-        .key(super::non_mac("Alt+Shift+X")),
-        CommandSpec::new("references.index", "Insert Index", "References › Index", |s, _| {
-            generated_list(s, "INDEX", "Index")?;
-            sel_result(s)
-        }),
-        CommandSpec::new("references.updateIndex", "Update Index", "References › Index", |s, _| {
-            update_generated(s)?;
-            sel_result(s)
-        }),
         CommandSpec::new("references.markCitation", "Mark Citation", "References › Table of Authorities", |s, v| {
             let entry = p::str(v, "entry").map(str::to_string).unwrap_or_else(|| s.selected_text().trim().to_string());
             if entry.is_empty() {
@@ -360,16 +338,9 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         CommandSpec::new("insert.crossReference", "Cross-reference", "Insert › Links", cross_ref)
             .params(r#"{"to": "heading|bookmark|figure|table", "target": string (text / name / number), "show"?: "text|page|number|aboveBelow"} or {} to list targets"#),
-        CommandSpec::new("references.noteOptions", "Footnote and Endnote", "References › Footnotes", |s, v| {
-            if let Some(f) = p::str(v, "footnoteFormat") {
-                s.doc.settings.footnote_format = wordcraft_doc::section::NumFormat::from_ooxml(f);
-            }
-            if let Some(f) = p::str(v, "endnoteFormat") {
-                s.doc.settings.endnote_format = wordcraft_doc::section::NumFormat::from_ooxml(f);
-            }
-            Ok(json!({"footnoteFormat": s.doc.settings.footnote_format, "endnoteFormat": s.doc.settings.endnote_format}))
-        })
-        .params(r#"{"footnoteFormat"?: "decimal|lowerRoman|upperRoman|lowerLetter|upperLetter", "endnoteFormat"?: …}"#),
+        CommandSpec::new("references.noteOptions", "Footnote and Endnote", "References › Footnotes", super::references::note_options).params(
+            r#"{"kind"?: "footnote|endnote", "pos"?: "pageBottom|beneathText" (footnotes) | "sectEnd|docEnd" (endnotes), "numFmt"?: "decimal|lowerRoman|upperRoman|lowerLetter|upperLetter|…", "numStart"?: 1-32767, "numRestart"?: "continuous|eachSect|eachPage" (each page: footnotes only), "scope"?: "document|section", "footnoteFormat"?: …, "endnoteFormat"?: …} — no settings: the options in effect at the caret"#,
+        ),
         CommandSpec::new("references.researcher", "Researcher", "References › Research", |s, _| {
             s.status = "Researcher needs an online service; WordCraft keeps your documents offline.".into();
             Ok(json!({"available": false}))
@@ -556,8 +527,16 @@ fn sources(s: &mut Session, v: &Value) -> CmdResult {
                 .collect();
             src.tag = format!("{base}{}", src.year);
         }
-        s.doc.sources.retain(|x| x.tag != src.tag);
-        s.doc.sources.push(src);
+        // Edit Source keeps the source's place in the list and refreshes its citations.
+        match s.doc.sources.iter().position(|x| x.tag == src.tag) {
+            Some(i) => {
+                if let Some(x) = s.doc.sources.get_mut(i) {
+                    *x = src;
+                }
+                update_citations(s)?;
+            }
+            None => s.doc.sources.push(src),
+        }
         s.touch();
     }
     if let Some(t) = p::str(v, "remove") {
@@ -694,7 +673,7 @@ fn refresh_citations(s: &mut Session) -> Result<(), CmdError> {
 
 /// Generated lists (BIBLIOGRAPHY, INDEX, table of figures, TOA): a heading paragraph holding
 /// the field, then entry paragraphs marked with the "GeneratedEntry" style family.
-fn generated_list(s: &mut Session, instr: &str, title: &str) -> Result<(), CmdError> {
+pub(crate) fn generated_list(s: &mut Session, instr: &str, title: &str) -> Result<(), CmdError> {
     let at = delete_selection(s)?;
     if at.story != StoryRef::Body || at.path.depth() > 0 {
         return Err(CmdError::Failed("lists go in the main text".into()));
@@ -743,6 +722,11 @@ pub fn update_generated(s: &mut Session) -> Result<(), CmdError> {
             i += 1;
             continue;
         };
+        if kind.starts_with("INDEX") {
+            super::index::rebuild(s, i, None)?;
+            i += 1;
+            continue;
+        }
         // Remove old entries.
         while s.doc.body.get(i + 1).and_then(|b| b.as_para()).is_some_and(|p| p.props.style.as_deref() == Some(ENTRY_STYLE)) {
             s.doc.remove_block(StoryRef::Body, &Path::top(i + 1))?;
@@ -994,7 +978,26 @@ mod tests {
     fn bibliography_round_trip_docx() {
         let mut s = Session::new(wordcraft_doc::Document::new());
         s.run("text.insert", &json!({"text": "Studios matter "})).unwrap();
-        s.run("references.citation", &json!({"source": {"author": "Rivera, Alex; Chen, Mei", "title": "Shared Spaces", "year": "2021", "publisher": "Harbor Books", "city": "Portland"}})).unwrap();
+        s.run(
+            "references.citation",
+            &json!({
+                "source": {
+                    "author": "Rivera, Alex; Chen, Mei",
+                    "title": "Shared Spaces",
+                    "year": "2021",
+                    "publisher": "Harbor Books",
+                    "city": "Portland",
+                    "editor": "Johnson, Robert",
+                    "edition": "2nd",
+                    "issue": "4",
+                    "month": "10",
+                    "day": "15",
+                    "accessed": "2024-05-15",
+                    "doi": "10.1000/182"
+                }
+            }),
+        )
+        .unwrap();
         s.run("text.newParagraph", &json!({})).unwrap();
         s.run("references.bibliography", &json!({})).unwrap();
 
@@ -1004,6 +1007,13 @@ mod tests {
         assert_eq!(doc.sources.len(), 1, "round-tripped sources: {:?}", doc.sources);
         assert_eq!(doc.sources[0].author, "Rivera, Alex; Chen, Mei");
         assert_eq!(doc.sources[0].title, "Shared Spaces");
+        assert_eq!(doc.sources[0].editor, "Johnson, Robert");
+        assert_eq!(doc.sources[0].edition, "2nd");
+        assert_eq!(doc.sources[0].issue, "4");
+        assert_eq!(doc.sources[0].month, "10");
+        assert_eq!(doc.sources[0].day, "15");
+        assert_eq!(doc.sources[0].accessed, "2024-05-15");
+        assert_eq!(doc.sources[0].doi, "10.1000/182");
 
         // Round-tripped document in a new session works with citation styles.
         let mut s2 = Session::new(doc);
