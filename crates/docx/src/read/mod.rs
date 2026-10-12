@@ -8,6 +8,7 @@ mod freeform;
 mod math;
 mod props;
 mod sdt;
+mod shape_style;
 mod story;
 mod wordart;
 
@@ -35,6 +36,20 @@ const MAX_PARTS: usize = 50_000;
 /// Most graphic work (items plus path segments, see `story::graphic_work`) built for one file's
 /// charts and diagrams; later ones are left empty.
 const MAX_GRAPHIC_WORK: usize = 2_000_000;
+/// Bibliography sources kept from a file (Word's own source manager holds far fewer).
+const MAX_SOURCES: usize = 10_000;
+/// Custom XML parts looked at for bibliography sources.
+const MAX_BIBLIOGRAPHY_PARTS: usize = 64;
+/// Characters kept of a bibliography's citation style name.
+const MAX_STYLE_NAME: usize = 64;
+
+/// Bibliography sources already read: tags, and (title, author) of untagged ones.
+#[derive(Default)]
+struct BibSeen {
+    tags: HashSet<String>,
+    untagged: HashSet<(String, String)>,
+}
+
 /// Longest attached-template path we keep (bytes); a longer one is not a real path.
 const MAX_TEMPLATE_PATH: usize = 32 * 1024;
 
@@ -180,6 +195,31 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         let ex = part(rt::COMMENTS_EX);
         lenient("comments", r.read_comments(&p, ex.as_deref()));
     }
+    // Bibliography sources live in a custom XML data store (`b:Sources`), related from the
+    // package root or the main part; Word's own files sometimes leave the relationship out, so
+    // the conventional `customXml/itemN.xml` names are tried too. Each part is read at most once.
+    let mut bib_parts: Vec<String> = Vec::new();
+    for rel in root_rels.list.iter().chain(rels.list.iter()) {
+        if rel_is(&rel.kind, rt::CUSTOM_XML) && !rel.external && !bib_parts.contains(&rel.target) {
+            bib_parts.push(rel.target.clone());
+            if bib_parts.len() >= MAX_BIBLIOGRAPHY_PARTS {
+                break;
+            }
+        }
+    }
+    for i in 1..=16 {
+        let path = format!("customXml/item{i}.xml");
+        if bib_parts.len() < MAX_BIBLIOGRAPHY_PARTS && pkg.get(&path).is_some() && !bib_parts.contains(&path) {
+            bib_parts.push(path);
+        }
+    }
+    let mut seen_sources = BibSeen::default();
+    for path in &bib_parts {
+        if r.doc.sources.len() >= MAX_SOURCES {
+            break;
+        }
+        lenient("customXml bibliography", r.read_bibliography(path, &mut seen_sources));
+    }
 
     if let Some(bg) = root.child("w:background").and_then(|b| b.attr("w:color")).and_then(Rgb::parse) {
         r.doc.settings.page_color = Some(bg);
@@ -212,6 +252,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         r.doc.passthrough.insert(VBA_PROJECT_PART.into(), Arc::new(b.to_vec()));
         r.read_vba_related(&v);
     }
+    r.keep_custom_xml(&root_rels, &rels);
     if !r.embedded.parts.is_empty() {
         let manifest = r.embedded.to_bytes();
         r.doc.passthrough.insert(EMBEDDED_PARTS.into(), Arc::new(manifest));
@@ -344,8 +385,8 @@ fn keep_glued_ids(doc: &mut Document, glued: &HashSet<u32>) {
     });
 }
 
-/// Word starts a TOC field in the first entry; the engine keeps it at the end of the TOC heading
-/// (the paragraph holding the field marks where the TOC is). Move it there when one precedes it.
+/// Normalize only a complete TOC range that the engine's heading/entry representation can
+/// reproduce exactly. Other imported TOCs keep their explicit boundaries, independent of styles.
 fn toc_field_to_heading(body: &mut Blocks) {
     for i in 1..body.len() {
         let heading = body[i - 1].as_para().filter(|p| p.props.style.as_deref() == Some("TOCHeading"));
@@ -353,12 +394,23 @@ fn toc_field_to_heading(body: &mut Blocks) {
         if heading.is_none_or(|h| h.objects.iter().any(has_toc)) {
             continue;
         }
-        let Some((field, props)) = body[i].as_para().and_then(|p| match p.object_at(0) {
-            Some(f @ InlineObject::Field { result, .. }) if result.is_empty() && has_toc(f) => Some((f.clone(), p.props_of_char(0).clone())),
-            _ => None,
+        let Some((field, props, end)) = body[i].as_para().and_then(|p| {
+            let (field, end) = match p.object_at(0) {
+                Some(InlineObject::FieldStart { instr, locked }) if is_toc(instr) => {
+                    (InlineObject::Field { instr: instr.clone(), result: String::new(), locked: *locked, code: false }, Some(toc_range_end(body, i)?))
+                }
+                Some(f @ InlineObject::Field { result, .. }) if result.is_empty() && has_toc(f) => (f.clone(), None),
+                _ => return None,
+            };
+            Some((field, p.props_of_char(0).clone(), end))
         }) else {
             continue;
         };
+        // Delete the end first: the two markers may occupy the same paragraph.
+        if let Some(Block::Para(p)) = end.and_then(|end| body.get_mut(end)).map(Arc::make_mut) {
+            let off = p.len().saturating_sub(OBJ.len_utf8());
+            let _ = p.delete(off, p.len());
+        }
         if let Some(Block::Para(p)) = body.get_mut(i).map(Arc::make_mut) {
             let _ = p.delete(0, OBJ.len_utf8());
         }
@@ -370,7 +422,32 @@ fn toc_field_to_heading(body: &mut Blocks) {
 }
 
 fn is_toc(instr: &str) -> bool {
-    instr.trim_start().get(..3).is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
+    instr.split_whitespace().next().is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
+}
+
+/// The actual matching end must also be the end the styled writer would choose: at the end
+/// of the last contiguous TOC entry, with no section break or trailing content outside it.
+fn toc_range_end(body: &Blocks, start: usize) -> Option<usize> {
+    let entry =
+        |p: &wordcraft_doc::Paragraph| p.section.is_none() && p.props.style.as_deref().is_some_and(|s| s.starts_with("TOC") && s != "TOCHeading");
+    let mut depth = 0_usize;
+    for (i, b) in body.iter().enumerate().skip(start) {
+        let p = b.as_para().filter(|p| entry(p))?;
+        for (off, o) in p.object_offsets().into_iter().zip(&p.objects) {
+            match o {
+                InlineObject::FieldStart { .. } => depth = depth.checked_add(1)?,
+                InlineObject::FieldEnd => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        let following_entry = body.get(i + 1).and_then(|b| b.as_para()).is_some_and(entry);
+                        return (off.checked_add(OBJ.len_utf8()) == Some(p.len()) && !following_entry).then_some(i);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 /// Built-in style names Word stores in lower case, and how the UI shows them.
@@ -641,6 +718,7 @@ impl Reader<'_> {
             self.pc.alias.insert(id.to_string(), "Normal".into());
         }
         let mut sheet = StyleSheet::empty();
+        sheet.default_para_present = root.child("w:docDefaults").and_then(|dd| dd.child("w:pPrDefault")).is_some();
         if let Some(dd) = root.child("w:docDefaults") {
             if let Some(r) = dd.child("w:rPrDefault").and_then(|d| d.child("w:rPr")) {
                 sheet.default_chr = self.pc.rpr(r);
@@ -1062,6 +1140,130 @@ impl Reader<'_> {
             }
         }
         self.doc.comments = entries;
+        Ok(())
+    }
+
+    /// Sources from a `b:Sources` custom XML part (other custom XML is left alone); at most
+    /// [`MAX_SOURCES`] in all, and the document's citation style from `StyleName`.
+    fn read_bibliography(&mut self, path: &str, seen: &mut BibSeen) -> Result<(), DocxError> {
+        let Some(root) = self.xml(path)? else { return Ok(()) };
+        if root.local() != "Sources" {
+            return Ok(());
+        }
+        if self.doc.settings.bib_style.is_none()
+            && let Some(name) = root.attrs.iter().find(|(k, _)| k.rsplit(':').next() == Some("StyleName")).map(|(_, v)| v.trim())
+            && !name.is_empty()
+        {
+            self.doc.settings.bib_style = Some(name.chars().take(MAX_STYLE_NAME).collect());
+        }
+        let child_text = |el: &El, local: &str| el.els().find(|e| e.local() == local).map(|e| e.text()).unwrap_or_default();
+        let parse_persons = |parent: &El| -> String {
+            let mut names = Vec::new();
+            let person_els: Vec<&El> = {
+                let in_lists: Vec<&El> =
+                    parent.els().filter(|e| e.local() == "NameList").flat_map(|n| n.els().filter(|e| e.local() == "Person")).collect();
+                if in_lists.is_empty() { parent.els().filter(|e| e.local() == "Person").collect() } else { in_lists }
+            };
+            for name_el in person_els {
+                let last = child_text(name_el, "Last");
+                let first = child_text(name_el, "First");
+                let middle = child_text(name_el, "Middle");
+                let name = if !first.is_empty() && !middle.is_empty() {
+                    format!("{last}, {first} {middle}")
+                } else if !first.is_empty() {
+                    format!("{last}, {first}")
+                } else {
+                    last
+                };
+                if !name.is_empty() {
+                    names.push(name);
+                }
+            }
+            names.join("; ")
+        };
+
+        for src_el in root.els().filter(|e| e.local() == "Source") {
+            if self.doc.sources.len() >= MAX_SOURCES {
+                log::warn!("docx: more than {MAX_SOURCES} bibliography sources; the rest are dropped");
+                break;
+            }
+            let tag = child_text(src_el, "Tag");
+            let raw_kind = child_text(src_el, "SourceType");
+            let kind = crate::write::from_source_type(&raw_kind);
+            let (author, editor) = match src_el.els().find(|e| e.local() == "Author") {
+                Some(a) => {
+                    let auth =
+                        a.els().find(|e| e.local() == "Author").map(parse_persons).filter(|s| !s.is_empty()).unwrap_or_else(|| parse_persons(a));
+                    let ed = a.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default();
+                    (auth, ed)
+                }
+                None => (String::new(), String::new()),
+            };
+            let editor = if editor.is_empty() { src_el.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default() } else { editor };
+            let title = child_text(src_el, "Title");
+            let year = child_text(src_el, "Year");
+            let month = child_text(src_el, "Month");
+            let day = child_text(src_el, "Day");
+            let city = child_text(src_el, "City");
+            let publisher = child_text(src_el, "Publisher");
+            let journal = child_text(src_el, "JournalName");
+            let edition = child_text(src_el, "Edition");
+            let volume = child_text(src_el, "Volume");
+            let issue = child_text(src_el, "Issue");
+            let pages = child_text(src_el, "Pages");
+            let url = child_text(src_el, "URL");
+            let accessed = match child_text(src_el, "Accessed") {
+                a if !a.is_empty() => a,
+                _ => {
+                    let y = child_text(src_el, "YearAccessed");
+                    let m = child_text(src_el, "MonthAccessed");
+                    let d = child_text(src_el, "DayAccessed");
+                    if !y.is_empty() && !m.is_empty() && !d.is_empty() {
+                        format!("{y}-{m}-{d}")
+                    } else if !y.is_empty() && !m.is_empty() {
+                        format!("{y}-{m}")
+                    } else {
+                        y
+                    }
+                }
+            };
+            let doi = match child_text(src_el, "DOI") {
+                d if !d.is_empty() => d,
+                _ => child_text(src_el, "StandardNumber"),
+            };
+
+            // Keep sources with some content, once each (by tag, or title and author untagged).
+            if tag.is_empty() && title.is_empty() && author.is_empty() && editor.is_empty() {
+                continue;
+            }
+            let fresh = if tag.is_empty() {
+                seen.untagged.insert((title.clone(), if author.is_empty() { editor.clone() } else { author.clone() }))
+            } else {
+                seen.tags.insert(tag.clone())
+            };
+            if fresh {
+                self.doc.sources.push(wordcraft_doc::Source {
+                    tag,
+                    kind,
+                    author,
+                    title,
+                    year,
+                    city,
+                    publisher,
+                    journal,
+                    volume,
+                    pages,
+                    url,
+                    editor,
+                    edition,
+                    issue,
+                    month,
+                    day,
+                    accessed,
+                    doi,
+                });
+            }
+        }
         Ok(())
     }
 

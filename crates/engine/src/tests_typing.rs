@@ -489,6 +489,47 @@ fn undoing_bold_at_the_caret_turns_bold_typing_off_again() {
     assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props_of_char(0).bold, Some(true));
 }
 
+/// Myanmar (#604): typed in memory order (consonant, medial, then the prevowel ေ that is drawn
+/// before it), the caret steps over whole syllables and Backspace removes one sign at a time.
+#[test]
+fn myanmar_typing_steps_by_syllable_and_backspaces_by_sign() {
+    // ကြေး ("money"): က + ြ + ေ + း, then မြန်မာ.
+    let word = "\u{1000}\u{103C}\u{1031}\u{1038}";
+    let mut s = typed(word);
+    assert_eq!(paras(&s), vec![para(word, None)]);
+    // Backspace takes the visarga, then the vowel sign: the consonant and medial stay.
+    typ(&mut s, "\u{8}");
+    assert_eq!(paras(&s)[0].0, "\u{1000}\u{103C}\u{1031}");
+    typ(&mut s, "\u{8}\u{1031}\u{1038}");
+    assert_eq!(paras(&s)[0].0, word, "retyped");
+    // Left from the end skips the whole syllable (the visarga and aa signs aren't grapheme
+    // extenders, so a grapheme step would stop inside it).
+    let mut s = typed("\u{1019}\u{102C}\u{1005}\u{102C}"); // မာစာ
+    run(&mut s, "caret.left", json!({}));
+    assert_eq!(s.sel.focus.off, 6);
+    run(&mut s, "caret.left", json!({}));
+    assert_eq!(s.sel.focus.off, 0);
+    run(&mut s, "caret.right", json!({}));
+    assert_eq!(s.sel.focus.off, 6);
+    // Delete removes the whole syllable after the caret.
+    run(&mut s, "text.delete", json!({}));
+    assert_eq!(paras(&s)[0].0, "\u{1019}\u{102C}");
+}
+
+/// Devanagari and Khmer: Backspace removes the last character (a matra), not the conjunct.
+#[test]
+fn indic_and_khmer_backspace_removes_one_character() {
+    let mut s = typed("\u{0915}\u{094D}\u{0937}\u{093F}\u{8}"); // क्षि ⌫
+    assert_eq!(paras(&s)[0].0, "\u{0915}\u{094D}\u{0937}");
+    typ(&mut s, "\u{8}");
+    assert_eq!(paras(&s)[0].0, "\u{0915}\u{094D}");
+    let s = typed("\u{1781}\u{17D2}\u{1798}\u{17C2}\u{8}"); // ខ្មែ ⌫
+    assert_eq!(paras(&s)[0].0, "\u{1781}\u{17D2}\u{1798}");
+    // Latin keeps grapheme Backspace: e + combining acute goes as one.
+    let s = typed("ae\u{301}\u{8}");
+    assert_eq!(paras(&s)[0].0, "a");
+}
+
 /// Press a shortcut the way the keyboard does: run the command bound to it.
 fn press(s: &mut Session, combo: &str) -> Result<serde_json::Value, crate::CmdError> {
     let id = s.registry.by_shortcut(combo).map(|c| c.id).unwrap_or_else(|| panic!("nothing bound to {combo}"));
@@ -663,4 +704,40 @@ fn plain_text_paste_keeps_an_empty_paragraph_in_a_list() {
     run(&mut s, "para.bullets", json!({}));
     typ(&mut s, "A\n\nB");
     assert_eq!(paras(&s), vec![para("A", Some(0)), para("B", None)]);
+}
+
+/// #713: Arabic or Hebrew typed into an empty paragraph makes it right-to-left; a paragraph that
+/// already has letters, or whose style sets a direction, keeps its own.
+#[test]
+fn typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl() {
+    let bidi = |s: &Session, i: usize| s.doc.body.iter().filter_map(|b| b.as_para()).nth(i).and_then(|p| p.props.bidi);
+    // Empty paragraph: the first Arabic letter flips it, the rest keep it.
+    let s = typed("سلام");
+    assert_eq!(bidi(&s, 0), Some(true));
+    // Digits first, then Arabic: still no letters before, so it flips.
+    let s = typed("1. سلام");
+    assert_eq!(bidi(&s, 0), Some(true));
+    // Latin first: Arabic typed later doesn't flip the paragraph.
+    let s = typed("Hello سلام");
+    assert_eq!(bidi(&s, 0), None);
+    // A new paragraph after an RTL one starts its own detection.
+    let s = typed("سلام\nHello");
+    assert_eq!(bidi(&s, 1), Some(true), "Enter carries the paragraph's direction on, as in Word");
+    // A style that sets left-to-right wins.
+    let mut doc = Session::new(wordcraft_doc::Document::new());
+    if let Some(st) = doc.doc.styles.get_mut("Normal") {
+        st.para.bidi = Some(false);
+    }
+    typ(&mut doc, "سلام");
+    assert_eq!(bidi(&doc, 0), None);
+    // An opened paragraph without w:bidi lays out left-to-right whatever its text: the caret
+    // after the Arabic word sits near the left margin, not the right one.
+    let mut doc = typed("سلام");
+    let path = doc.sel.focus.path.clone();
+    if let Ok(p) = doc.doc.para_mut(StoryRef::Body, &path) {
+        p.props.bidi = None;
+        p.touch();
+    }
+    let x = doc.layout().caret(&doc.sel.focus).map(|c| c.x).unwrap_or(f32::MAX);
+    assert!(x < 300.0, "left-to-right paragraph: caret at {x}");
 }

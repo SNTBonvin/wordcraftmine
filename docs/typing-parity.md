@@ -1,6 +1,6 @@
 # Typing parity with Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (AutoFormat tables, arrow bullets, smileys inside words, undo after a border line, #546; previously minor: Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (right-to-left letters typed into an empty paragraph make it right-to-left, #713; previously minor: editing options: typing replaces selection, overtype, #485; previously minor: Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 What Word does when you type, observed black-box (same keystrokes typed into Word and
 WordCraft, results read back paragraph by paragraph) and pinned by tests in
@@ -97,10 +97,29 @@ Word.
 | Typing over a selection | replaces it (Word's default); with "Typing replaces selected text" off, the text goes in front of the selection, which stays | `typing_over_a_selection_follows_the_replace_selection_option` |
 | Overtype on, typing | each character replaces the one after the caret, never the paragraph mark or an object; Insert switches overtype only with the Insert-key option on (off by default, as in Word) | `overtype_replaces_the_characters_after_the_caret` |
 
+## Text direction
+
+- Typing Arabic, Hebrew or another right-to-left script as the first letters of a paragraph
+  whose direction nothing sets (not the paragraph, its style or the document defaults) makes it
+  a right-to-left paragraph, so the caret starts at the right margin. A paragraph that already
+  has letters keeps its direction, and so do opened documents: a paragraph without `w:bidi` stays
+  left-to-right whatever its text (`typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl`).
+  Word takes the direction from the keyboard language instead; not yet compared side by side.
+
 ## Layout
 
 - No line break right after a slash (`and/or`, URLs) unless the word can't fit a line
   (`layout::tests::no_line_break_right_after_a_slash`).
+
+## Complex scripts
+
+- Myanmar, Khmer and the Indic scripts are typed in memory order (consonant, medials, then
+  vowel signs such as ေ, which is drawn before its consonant); the caret steps over whole
+  syllables (Myanmar vowel signs and stacked consonants never split off), Backspace removes one
+  character (vowel sign, medial, stacked consonant), Delete the whole syllable — the platforms'
+  standard behaviour, not yet compared against Word (#604,
+  `myanmar_typing_steps_by_syllable_and_backspaces_by_sign`,
+  `indic_and_khmer_backspace_removes_one_character`).
 
 ## Known gaps
 
@@ -125,10 +144,13 @@ Word.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Text direction: right-to-left letters typed into an empty paragraph make it right-to-left; existing paragraphs keep theirs (#713) |
+| 2026-10-11 | trivial | Grammar proofing (not AutoCorrect) no longer suggests capitalising a sentence after `...` or `…` (`proof::tests::ellipses_do_not_start_sentences`) |
 | 2026-10-11 | minor | AutoFormat tables from `+---+`, arrow bullets, smileys inside words, undo after a border line (#546) |
 | 2026-10-11 | trivial | Outline view keys: expand/collapse, Show Level, moving and promoting with collapsed content (#493) |
 | 2026-10-11 | minor | Editing options: typing replaces selection, overtype and the Insert key (#485) |
 | 2026-10-11 | minor | Pasted paragraph breaks: tracked under Track Changes (#417), kept in a list by Keep Text Only (#422) |
+| 2026-10-11 | minor | Complex scripts: caret by syllable, Backspace by character (#604) |
 | 2026-10-11 | minor | Undo rows: a selection ends the typing group (#419); Undo of Bold at the caret restores unbolded typing (#424) |
 | 2026-10-11 | minor | Names of days capitalised; AutoCorrect Options (user entries, deleted built-ins, exceptions, every AutoCorrect/AutoFormat switch) change typing (#412) |
 | 2026-10-11 | minor | Editing keys: Move Paragraph Up/Down, Promote/Demote, Go Back (Shift+F5), Alt+X (#343) |
