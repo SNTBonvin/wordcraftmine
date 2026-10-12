@@ -125,6 +125,8 @@ pub struct CanvasState {
     pub shape_tool: Option<wordcraft_doc::para::ShapeKind>,
     /// Shape drag in progress.
     pub(crate) shape_drawing: Option<crate::shape_tool::ShapeDrawing>,
+    /// A press on a table's selection area or move handle, held (`table_mouse`).
+    pub(crate) table_drag: Option<crate::table_mouse::TableDrag>,
 }
 
 impl CanvasState {
@@ -191,6 +193,7 @@ impl Default for CanvasState {
             a11y: Default::default(),
             shape_tool: None,
             shape_drawing: None,
+            table_drag: None,
         }
     }
 }
@@ -987,31 +990,34 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
-        // Selection (a selected object shows its frame instead).
-        if !app.session.sel.is_collapsed() && crate::objects::selected(app).is_none() {
-            // A column selection highlights each row's piece.
+        // Selection (a selected object shows its frame instead): whole table cells shade the
+        // cells (an empty one too), a column selection each row's piece.
+        let selected: Vec<_> = if crate::objects::selected(app).is_some() {
+            Vec::new()
+        } else if let Some(range) = app.session.cell_range() {
+            wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &app.session.doc, range)
+        } else if !app.session.sel.is_collapsed() {
             let pieces: Vec<(Pos, Pos)> = match app.session.column_segments() {
                 Some(segs) => segs.to_vec(),
                 None => vec![app.session.sel.ordered()],
             };
-            let mut first: Option<Rect> = None;
-            for (a, b) in &pieces {
-                for (pi, r) in layout.selection_rects(&app.session.doc, a, b, app.session.page_hint) {
-                    if let Some(pr) = rects.get(pi) {
-                        let scale = layout.pages.get(pi).map_or(geo.scale, |page| page_screen_scale(*pr, page, geo.scale));
-                        let sr = Rect::from_min_size(pos2(pr.min.x + r.x * scale, pr.min.y + r.y * scale), vec2(r.w * scale, r.h * scale));
-                        painter.rect_filled(sr, 0.0, t.selection);
-                        // Track the topmost rect: the mini toolbar anchors on the selection's first line.
-                        if first.is_none_or(|f| sr.min.y < f.min.y) {
-                            first = Some(sr);
-                        }
-                    }
+            pieces.iter().flat_map(|(a, b)| layout.selection_rects(&app.session.doc, a, b, app.session.page_hint)).collect()
+        } else {
+            Vec::new()
+        };
+        let mut first: Option<Rect> = None;
+        for (pi, r) in selected {
+            if let Some(pr) = rects.get(pi) {
+                let scale = layout.pages.get(pi).map_or(geo.scale, |page| page_screen_scale(*pr, page, geo.scale));
+                let sr = Rect::from_min_size(pos2(pr.min.x + r.x * scale, pr.min.y + r.y * scale), vec2(r.w * scale, r.h * scale));
+                painter.rect_filled(sr, 0.0, t.selection);
+                // Track the topmost rect: the mini toolbar anchors on the selection's first line.
+                if first.is_none_or(|f| sr.min.y < f.min.y) {
+                    first = Some(sr);
                 }
             }
-            app.canvas.mini_anchor = first;
-        } else {
-            app.canvas.mini_anchor = None;
         }
+        app.canvas.mini_anchor = first;
         // Content controls: the frame of the one the caret is in (all of them in Design Mode).
         crate::content_controls::paint(app, &painter, &t, &layout, &rects, geo.scale);
         // Read Aloud: the sentence being spoken.
@@ -1121,6 +1127,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         crate::table_pen::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::table_resize::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::shape_tool::paint(app, &painter, &t, &layout, &rects, geo.scale);
+        crate::table_mouse::paint(app, &painter, &t, &layout, &rects, geo.scale);
         (resp, rects)
     });
     app.canvas.scroll_offset = out.state.offset;
@@ -1217,6 +1224,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         ui.ctx().set_cursor_icon(over_object.unwrap_or(egui::CursorIcon::Text));
     }
     crate::table_resize::cursor(app, ui, &resp, &layout, &rects, geo.scale);
+    crate::table_mouse::cursor(app, ui, &resp, &layout, &rects, geo.scale);
     crate::table_pen::cursor(app, ui, &resp);
     crate::shape_tool::cursor(app, ui, &resp);
     // While "Save changes?" is up, keys answer it rather than edit the document behind it.
@@ -1632,6 +1640,10 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     }
     // A press on a table border (or the table's resize handle) drags it instead of the caret.
     if crate::table_resize::pointer(app, ui, resp, rects, layout, scale) {
+        return;
+    }
+    // A press on a table's selection area, insert button or move handle.
+    if crate::table_mouse::pointer(app, ui, resp, rects, layout, scale) {
         return;
     }
     let Some(p) = pointer else { return };

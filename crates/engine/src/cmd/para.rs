@@ -79,6 +79,11 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("para.oneAndHalf", "1.5 Line Spacing", "Home › Paragraph › Line Spacing", |s, _| ls(s, LineSpacing::Multiple(1.5))).key("Mod+5"),
         CommandSpec::new("para.spacing", "Paragraph Spacing", "Layout › Paragraph", |s, v| {
             let (b, a) = (p::f32(v, "before"), p::f32(v, "after"));
+            let (b_auto, a_auto) = (p::bool(v, "beforeAuto"), p::bool(v, "afterAuto"));
+            // A number replaces automatic spacing, as typing one in Word's Paragraph dialog does.
+            let rp = cur(s);
+            let b_auto = b_auto.or((b.is_some() && rp.before_auto).then_some(false));
+            let a_auto = a_auto.or((a.is_some() && rp.after_auto).then_some(false));
             fmt(s, &|p| {
                 if let Some(x) = b {
                     p.space_before = Some(x.clamp(0.0, 1584.0));
@@ -86,17 +91,35 @@ pub fn specs() -> Vec<CommandSpec> {
                 if let Some(x) = a {
                     p.space_after = Some(x.clamp(0.0, 1584.0));
                 }
+                if let Some(on) = b_auto {
+                    p.space_before_auto = Some(on);
+                }
+                if let Some(on) = a_auto {
+                    p.space_after_auto = Some(on);
+                }
             })
         })
-        .params(r#"{"before"?: pt, "after"?: pt}"#),
+        .params(r#"{"before"?: pt, "after"?: pt, "beforeAuto"?: bool, "afterAuto"?: bool (automatic, HTML-style spacing: 14 pt)}"#),
         CommandSpec::new("para.addSpaceBefore", "Add Space Before Paragraph", "Home › Paragraph › Line Spacing", |s, _| {
-            let has = cur(s).space_before > 0.0;
-            fmt(s, &|p| p.space_before = Some(if has { 0.0 } else { 12.0 }))
+            let rp = cur(s);
+            let has = rp.space_before > 0.0;
+            fmt(s, &|p| {
+                p.space_before = Some(if has { 0.0 } else { 12.0 });
+                if rp.before_auto {
+                    p.space_before_auto = Some(false);
+                }
+            })
         })
         .key("Mod+0"),
         CommandSpec::new("para.removeSpaceAfter", "Remove Space After Paragraph", "Home › Paragraph › Line Spacing", |s, _| {
-            let has = cur(s).space_after > 0.0;
-            fmt(s, &|p| p.space_after = Some(if has { 0.0 } else { 8.0 }))
+            let rp = cur(s);
+            let has = rp.space_after > 0.0;
+            fmt(s, &|p| {
+                p.space_after = Some(if has { 0.0 } else { 8.0 });
+                if rp.after_auto {
+                    p.space_after_auto = Some(false);
+                }
+            })
         }),
         // Back to the paragraph style: direct indents, spacing, alignment… go; the style, list
         // membership and drop cap stay. ⌘Q quits on macOS, so Word for Mac uses ⌃Q.
@@ -231,8 +254,12 @@ fn cur(s: &Session) -> wordcraft_doc::resolve::ResolvedPara {
 }
 
 pub fn fmt(s: &mut Session, f: &dyn Fn(&mut ParaProps)) -> CmdResult {
-    let (a, b) = s.sel.ordered();
-    s.doc.format_paragraphs(&a, &b, f)?;
+    let story = s.sel.focus.story;
+    for path in super::selected_paths(s) {
+        let para = s.doc.para_mut(story, &path)?;
+        f(&mut para.props);
+        para.touch();
+    }
     sel_result(s)
 }
 
@@ -312,8 +339,8 @@ fn asian_typography(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 pub fn indent(s: &mut Session, _: &Value) -> CmdResult {
-    let (a, b) = s.sel.ordered();
-    let paths = s.doc.para_paths_in(&a, &b);
+    let a = s.sel.ordered().0;
+    let paths = super::selected_paths(s);
     let tab = s.doc.settings.default_tab.max(1.0);
     for path in paths {
         let (num, left) = {
@@ -334,8 +361,8 @@ pub fn indent(s: &mut Session, _: &Value) -> CmdResult {
 }
 
 pub fn outdent(s: &mut Session, _: &Value) -> CmdResult {
-    let (a, b) = s.sel.ordered();
-    let paths = s.doc.para_paths_in(&a, &b);
+    let a = s.sel.ordered().0;
+    let paths = super::selected_paths(s);
     let tab = s.doc.settings.default_tab.max(1.0);
     for path in paths {
         let (num, left) = {
@@ -397,7 +424,7 @@ fn apply_style(s: &mut Session, v: &Value) -> CmdResult {
         return super::format::apply(s, &|c| c.style = Some(id.clone()));
     }
     let (a, b) = s.sel.ordered();
-    s.doc.format_paragraphs(&a, &b, &|p| {
+    fmt(s, &|p| {
         p.style = Some(id.clone());
         // Applying a heading or Normal removes direct list numbering (except list styles).
         if (id.starts_with("Heading") || id == "Title" || id == "Normal") && p.numbering.is_some_and(|n| n.num != 0) {
@@ -434,10 +461,10 @@ fn apply_style(s: &mut Session, v: &Value) -> CmdResult {
 fn list(s: &mut Session, v: &Value, default: ListKind) -> CmdResult {
     let kind = p::str(v, "kind").and_then(ListKind::parse).unwrap_or(default);
     let off = p::bool(v, "off").unwrap_or(false);
-    let (a, b) = s.sel.ordered();
+    let a = s.sel.ordered().0;
     // Toggle: if every selected paragraph already has this kind of list, remove it.
     let current: Vec<Option<NumRef>> =
-        s.doc.para_paths_in(&a, &b).iter().map(|p| s.doc.para(a.story, p).and_then(|x| x.props.numbering).filter(|n| n.num != 0)).collect();
+        super::selected_paths(s).iter().map(|p| s.doc.para(a.story, p).and_then(|x| x.props.numbering).filter(|n| n.num != 0)).collect();
     let same_kind = |n: &NumRef| {
         s.doc.numbering.level(n.num, 0).is_some_and(|l| {
             let want = wordcraft_doc::numbering::levels_for(kind);
