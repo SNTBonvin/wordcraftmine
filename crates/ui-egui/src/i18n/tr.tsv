@@ -784,6 +784,11 @@ preview	Title	Örnek
 	Underline Words Only	Yalnızca Sözcüklerin Altını Çiz
 	Undo	Geri Al
 	Undo {action}	Geri Al: {action}
+	Undo Actions	Eylemleri Geri Al
+	Undo History	Geri Alma Geçmişi
+	Undo 1 Action	1 Eylemi Geri Al
+	Undo {n} Actions	{n} Eylemi Geri Al
+	Unformatted Text	Biçimlendirilmemiş Metin
 	Up	Yukarı
 	Update Field	Alanı Güncelle
 	Update Index	Dizini Güncelle

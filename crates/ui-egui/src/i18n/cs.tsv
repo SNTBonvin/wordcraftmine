@@ -2043,6 +2043,10 @@
 	Your system has animation effects turned off.	Efekty animace jsou v systému vypnuté.
 	Your system doesn't report an animation setting, so animation effects stay on.	Systém neuvádí žádné nastavení animací, proto efekty animace zůstávají zapnuté.
 	Do Not Check Spelling or Grammar	Nekontrolovat pravopis ani gramatiku
+	Undo Actions	Vrátit více akcí
+	Undo History	Historie vrácení
+	Undo 1 Action	Vrátit 1 akci
+	Undo {n} Actions	Vrátit akce: {n}
 	Couldn't make WordCraft the default: {error}	WordCraft se nepodařilo nastavit jako výchozí: {error}
 	In Default apps, choose WordCraft for the document types you want it to open.	Ve Výchozích aplikacích vyberte WordCraft pro typy dokumentů, které má otevírat.
 	Make WordCraft the default for Word documents…	Nastavit WordCraft jako výchozí pro dokumenty Word…

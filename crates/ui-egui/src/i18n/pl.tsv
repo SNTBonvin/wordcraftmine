@@ -2055,6 +2055,10 @@
 	{name} already exists. Choose Save again to replace it.	Plik {name} już istnieje. Wybierz ponownie Zapisz, aby go zastąpić.
 	{name} wasn't found.	Nie znaleziono: {name}.
 	“{text}” ({row}, {series}) isn't a number.	„{text}” ({row}, {series}) nie jest liczbą.
+	Undo Actions	Cofnij kilka akcji
+	Undo History	Historia cofania
+	Undo 1 Action	Cofnij 1 akcję
+	Undo {n} Actions	Cofnij akcje: {n}
 	Couldn't make WordCraft the default: {error}	Nie udało się ustawić WordCraft jako domyślnego: {error}
 	In Default apps, choose WordCraft for the document types you want it to open.	W Aplikacjach domyślnych wybierz WordCraft dla typów dokumentów, które ma otwierać.
 	Make WordCraft the default for Word documents…	Ustaw WordCraft jako domyślny dla dokumentów Word…
