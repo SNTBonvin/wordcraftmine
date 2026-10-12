@@ -701,7 +701,8 @@ fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w,
     // Keep a corner of it on the page.
     let x = x.max(12.0 - w).min(pg.w - 12.0);
     let y = y.max(12.0 - h).min(pg.h.min(MAX_OFFSET) - 12.0);
-    let (anchor, on_page) = match anchor_paragraph(&layout, page, y, story) {
+    // The paragraph under the middle of its top edge: in the column it mostly lands in.
+    let (anchor, on_page) = match anchor_paragraph(&layout, page, (x + w / 2.0, y), story) {
         Some(path) => (Pos { story, path, off: 0 }, false),
         None => (nearest_line(&layout, page, y, story).ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?, true),
     };
@@ -801,22 +802,44 @@ fn move_with_text(s: &mut Session, with_text: bool) -> CmdResult {
     Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
 }
 
-/// The top-level paragraph of `story` under `y` on `page`: the last one starting at or above
-/// it (else the first starting on the page). Body paragraphs come from the page's items;
-/// header/footer ones from its header and footer.
-pub(crate) fn anchor_paragraph(layout: &wordcraft_layout::DocLayout, page: usize, y: f32, story: StoryRef) -> Option<wordcraft_doc::Path> {
+/// The top-level paragraph of `story` under `(x, y)` on `page`: in the column under `x`, the
+/// last one starting at or above `y` (else the first starting in that column; else, with no
+/// paragraph starting in that column, the last starting at or above `y` anywhere on the page,
+/// else the first). Body paragraphs come from the page's items; header/footer ones from its
+/// header and footer. The column matters (#884): layout places a floating object when it lays
+/// out its anchor, so text laid out before that (an earlier column) can't wrap around it.
+pub(crate) fn anchor_paragraph(
+    layout: &wordcraft_layout::DocLayout,
+    page: usize,
+    (x, y): (f32, f32),
+    story: StoryRef,
+) -> Option<wordcraft_doc::Path> {
     let pg = layout.pages.get(page)?;
     let items: Box<dyn Iterator<Item = &wordcraft_layout::Placed> + '_> = match story {
         StoryRef::Body => Box::new(pg.items.iter()),
         StoryRef::Part(_) => Box::new(pg.header.iter().chain(pg.footer.iter())),
     };
-    let starts: Vec<(&wordcraft_doc::Path, f32)> = items
+    // Top-level text on the page: (path, column left, top, starts the paragraph).
+    let pieces: Vec<(&wordcraft_doc::Path, f32, f32, bool)> = items
         .filter_map(|it| match it {
-            wordcraft_layout::Placed::Lines { story: s, path, l0: 0, y: top, .. } if *s == story && path.depth() == 0 => Some((path, *top)),
+            wordcraft_layout::Placed::Lines { story: s, path, l0, x, y: top, .. } if *s == story && path.depth() == 0 => {
+                Some((path, *x, *top, *l0 == 0))
+            }
             _ => None,
         })
         .collect();
-    starts.iter().rev().find(|(_, top)| *top <= y + 0.5).or(starts.first()).map(|(p, _)| (*p).clone())
+    // The column under `x`: the rightmost text left edge at or left of it (else the leftmost).
+    let mut lefts: Vec<f32> = pieces.iter().map(|p| p.1).filter(|v| v.is_finite()).collect();
+    lefts.sort_by(f32::total_cmp);
+    lefts.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+    let col = lefts.iter().rev().find(|l| **l <= x + 0.5).or(lefts.first()).copied();
+    let starts: Vec<(&wordcraft_doc::Path, f32)> = pieces.iter().filter(|p| p.3).map(|p| (p.0, p.2)).collect();
+    let in_col: Vec<(&wordcraft_doc::Path, f32)> = match col {
+        Some(c) => pieces.iter().filter(|p| p.3 && (p.1 - c).abs() < 0.5).map(|p| (p.0, p.2)).collect(),
+        None => Vec::new(),
+    };
+    let pick = |v: &[(&wordcraft_doc::Path, f32)]| v.iter().rev().find(|(_, top)| *top <= y + 0.5).or(v.first()).map(|(p, _)| (*p).clone());
+    pick(&in_col).or_else(|| pick(&starts))
 }
 
 /// The start of the top-level line of `story` on `page` nearest to `y`.
@@ -1808,5 +1831,68 @@ mod tests {
         s.run("table.altText", &json!({"text": ""})).unwrap();
         let t = s.doc.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t.clone()) } else { None }).unwrap();
         assert_eq!((t.props.caption.as_deref(), t.props.description.as_deref()), (Some("Prices"), None));
+    }
+
+    /// The lines of `page` beside `r` vertically (top above its bottom, bottom below its top).
+    fn lines_beside(s: &mut Session, page: usize, r: wordcraft_geom::Rect) -> Vec<(f32, f32, f32)> {
+        let layout = s.layout();
+        wordcraft_layout::hit::page_lines(&layout.pages[page], StoryRef::Body)
+            .iter()
+            .filter(|l| l.top < r.bottom() - 0.5 && l.bottom > r.y + 0.5)
+            .map(|l| (l.top, l.left, l.right))
+            .collect()
+    }
+
+    /// #884: a Square-wrapped shape dragged across a two-column page: the text in whichever
+    /// column it lands in wraps around it there, and its old place closes up.
+    #[test]
+    fn dragged_square_shape_wraps_text_in_its_new_column() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("layout.columns", &json!({"count": 2})).unwrap();
+        for i in 0..40 {
+            if i > 0 {
+                s.run("text.newParagraph", &json!({})).unwrap();
+            }
+            s.run("text.insert", &json!({"text": format!("Paragraph {i} has words enough to run over two or three lines of a narrow column.")}))
+                .unwrap();
+        }
+        s.run("caret.docStart", &json!({})).unwrap();
+        s.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+        s.run("arrange.bounds", &json!({"width": 80, "height": 60})).unwrap();
+        let cols: Vec<(f32, f32)> = {
+            let layout = s.layout();
+            let mut v: Vec<(f32, f32)> =
+                wordcraft_layout::hit::page_lines(&layout.pages[0], StoryRef::Body).iter().map(|l| (l.left, l.right)).collect();
+            v.sort_by(|a, b| a.0.total_cmp(&b.0));
+            v.dedup_by(|a, b| (a.0 - b.0).abs() < 1.0);
+            v
+        };
+        assert_eq!(cols.len(), 2, "two columns: {cols:?}");
+        let mid = |c: (f32, f32)| (c.0 + c.1) / 2.0 - 40.0;
+        let wrapped = |s: &mut Session, r: wordcraft_geom::Rect| {
+            let beside = lines_beside(s, 0, r);
+            assert!(!beside.is_empty(), "text beside {r:?}");
+            for (top, left, right) in beside {
+                assert!(right <= r.x + 0.5 || left >= r.right() - 0.5, "line at {top} ({left}..{right}) runs into {r:?}");
+            }
+        };
+        let full = |s: &mut Session, r: wordcraft_geom::Rect, c: (f32, f32)| {
+            for (top, left, right) in lines_beside(s, 0, r) {
+                if left < c.1 && right > c.0 {
+                    assert!((left - c.0).abs() < 0.5 && (right - c.1).abs() < 0.5, "line at {top} ({left}..{right}) still kept clear in {c:?}");
+                }
+            }
+        };
+        // Into the second column, then back into the first, then again to the second, lower.
+        for (col, y, from) in [(1, 300.0, None), (0, 200.0, Some(1)), (1, 400.0, Some(0))] {
+            let old = object_area(&mut s).rect;
+            s.run("arrange.bounds", &json!({"page": 0, "x": mid(cols[col]), "y": y})).unwrap();
+            let o = object_area(&mut s);
+            assert_eq!((o.page, o.rect.x, o.rect.y), (0, mid(cols[col]), y), "dropped where asked");
+            wrapped(&mut s, o.rect);
+            if let Some(c) = from {
+                full(&mut s, old, cols[c]);
+            }
+        }
     }
 }
