@@ -12,9 +12,13 @@
 //!   spelling marks), read by the affix engine ([`affix`]), suggestions tuned for Polish
 //!   (diacritics, `ż`/`rz`, `u`/`ó`, missing spaces), and Polish grammar rules with Polish
 //!   messages.
+//! - **Portuguese** ([`ProofLang::Pt`], module [`pt`]): spelling against the Hunspell `pt_BR`
+//!   dictionary installed on the system (VERO and friends; not bundled), suggestions tuned for
+//!   Portuguese (missing accents, `seje`/`seja` confusions, missing spaces), conservative
+//!   grammar rules with Portuguese messages, and `hyph-utf8`'s Portuguese patterns.
 //! - **Other languages** ([`ProofLang::Other`]): no spelling or grammar marks, like Word without
 //!   the language's proofing tools.
-//! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns (English, Polish), heuristic.
+//! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns (English, Polish, Portuguese), heuristic.
 //!
 //! [`check_text`] checks a paragraph whose runs are in different languages.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -646,6 +650,12 @@ mod tests {
         assert_eq!(flagged("helo świat", &check_text("helo świat", &[(5..12, ProofLang::Pl)])), ["helo"]);
         // A language without tools: nothing flagged there.
         assert!(check_text("Bonjour mes amis", &[(0..16, ProofLang::Other)]).is_empty());
+        // Portuguese checks in their span only, with the Portuguese message.
+        pt::test_dict::install();
+        let t = "Ele disse que coraçao e frequencia existem.";
+        let v = check_text(t, &[(0..t.len(), ProofLang::Pt)]);
+        assert_eq!(flagged(t, &v), ["coraçao", "frequencia"], "{v:?}");
+        assert!(v.iter().all(|i| i.lang == ProofLang::Pt && i.message == "Possível erro de ortografia"), "{v:?}");
     }
 
     proptest::proptest! {
@@ -655,7 +665,7 @@ mod tests {
             let _ = check_grammar(&s);
             let _ = suggest(&s, 3);
             let _ = hyphen::hyphen_points(&s, &hyphen::Limits::default());
-            for lang in [ProofLang::En, ProofLang::Pl, ProofLang::Other] {
+            for lang in [ProofLang::En, ProofLang::Pl, ProofLang::Pt, ProofLang::Other] {
                 let _ = check_spelling_in(&s, lang);
                 let _ = check_grammar_in(&s, lang);
                 let _ = is_correct_in(&s, lang);
@@ -671,9 +681,14 @@ mod tests {
         }
 
         #[test]
-        fn mixed_spans_never_panic(s in "\\PC{0,60}", cuts in proptest::collection::vec((0usize..80, 0usize..80, 0u8..3), 0..6)) {
-            let langs = [ProofLang::En, ProofLang::Pl, ProofLang::Other];
-            let spans: Vec<(Range<usize>, ProofLang)> = cuts.iter().map(|&(a, b, l)| (a.min(b)..a.max(b), langs[l as usize % 3])).collect();
+        fn portuguese_suggestions_never_panic(s in "[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ'’ -]{0,14}") {
+            let _ = suggest_in(&s, 4, ProofLang::Pt);
+        }
+
+        #[test]
+        fn mixed_spans_never_panic(s in "\\PC{0,60}", cuts in proptest::collection::vec((0usize..80, 0usize..80, 0u8..4), 0..6)) {
+            let langs = [ProofLang::En, ProofLang::Pl, ProofLang::Pt, ProofLang::Other];
+            let spans: Vec<(Range<usize>, ProofLang)> = cuts.iter().map(|&(a, b, l)| (a.min(b)..a.max(b), langs[l as usize % 4])).collect();
             for i in check_text(&s, &spans) {
                 proptest::prop_assert!(i.start <= i.end && i.end <= s.len());
             }
