@@ -15,15 +15,14 @@ pub const SIZES: [f32; 17] = [8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("format.bold", "Bold", "Home › Font", |s, v| {
-            // Like Word's button, for complex-script (Persian, Arabic) text too: an unset `bold_cs`
-            // follows `bold`.
+            // The button formats both plain and complex-script text explicitly.
             toggle(
                 s,
                 v,
                 |r| r.bold,
                 |c, on| {
                     c.bold = Some(on);
-                    c.bold_cs = None;
+                    c.bold_cs = Some(on);
                 },
             )
         })
@@ -36,7 +35,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 |r| r.italic,
                 |c, on| {
                     c.italic = Some(on);
-                    c.italic_cs = None;
+                    c.italic_cs = Some(on);
                 },
             )
         })
@@ -95,7 +94,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("format.shadow", "Shadow", "Home › Font › Text Effects", |s, v| toggle(s, v, |r| r.shadow, |c, on| c.shadow = Some(on))),
         CommandSpec::new("format.emboss", "Emboss", "Home › Font › Font", |s, v| toggle(s, v, |r| r.emboss, |c, on| c.emboss = Some(on))),
         CommandSpec::new("format.engrave", "Engrave", "Home › Font › Font", |s, v| toggle(s, v, |r| r.engrave, |c, on| c.engrave = Some(on))),
-        CommandSpec::new("format.font", "Font", "Home › Font", font).key("Mod+Shift+F").params(r#"{"name": string}"#),
+        CommandSpec::new("format.font", "Font", "Home › Font", font).key("Mod+Shift+F").params(r#"{"name"?: string, "eastAsia"?: string}"#),
         CommandSpec::new("format.size", "Font Size", "Home › Font", size).key("Mod+Shift+P").params(r#"{"size": number}"#),
         CommandSpec::new("format.growFont", "Increase Font Size", "Home › Font", |s, _| step_size(s, 1)).key("Mod+Shift+. / Mod+Shift+>"),
         CommandSpec::new("format.shrinkFont", "Decrease Font Size", "Home › Font", |s, _| step_size(s, -1)).key("Mod+Shift+, / Mod+Shift+<"),
@@ -275,23 +274,37 @@ fn underline(s: &mut Session, v: &Value) -> CmdResult {
     apply(s, &|c| c.underline = Some(u))
 }
 
+/// `format.font`: `name` is the font (Latin text, and Persian/Arabic text too); `eastAsia` sets the
+/// East Asian text's font on its own, as the Font dialog's Asian text font box does (#505).
 fn font(s: &mut Session, v: &Value) -> CmdResult {
-    let name = p::req_str(v, "name")?.trim().to_string();
-    if name.is_empty() || name.len() > 128 {
-        return Err(CmdError::Params("bad font name".into()));
+    let arg = |k: &str| -> Result<Option<String>, CmdError> {
+        let Some(n) = v.get(k) else { return Ok(None) };
+        let n = n.as_str().map(str::trim).unwrap_or("");
+        if n.is_empty() || n.len() > 128 {
+            return Err(CmdError::Params(format!("bad font name `{k}`")));
+        }
+        Ok(Some(n.to_string()))
+    };
+    let (name, east_asia) = (arg("name")?, arg("eastAsia")?);
+    if name.is_none() && east_asia.is_none() {
+        return Err(CmdError::Params("`name` or `eastAsia` (string) is required".into()));
     }
     // The font applies to Persian/Arabic text in the selection too (its complex-script font). A
     // Chinese, Japanese or Korean font is the East Asian text's font as well (`w:eastAsia`), as in
     // Word; choosing a Latin font leaves that text's font as it was.
-    let east_asian = {
-        let r = wordcraft_fonts::word::resolve(&name, false, false);
-        !r.substituted && r.face.is_east_asian()
-    };
+    let ea = east_asia.or_else(|| {
+        name.clone().filter(|n| {
+            let r = wordcraft_fonts::word::resolve(n, false, false);
+            !r.substituted && r.face.is_east_asian()
+        })
+    });
     apply(s, &|c| {
-        c.font = Some(name.clone());
-        c.font_cs = Some(name.clone());
-        if east_asian {
-            c.font_ea = Some(name.clone());
+        if let Some(n) = &name {
+            c.font = Some(n.clone());
+            c.font_cs = Some(n.clone());
+        }
+        if let Some(n) = &ea {
+            c.font_ea = Some(n.clone());
         }
     })
 }
@@ -305,7 +318,7 @@ fn size(s: &mut Session, v: &Value) -> CmdResult {
     let sz = (sz * 2.0).round() / 2.0;
     apply(s, &|c| {
         c.size = Some(sz);
-        c.size_cs = None;
+        c.size_cs = Some(sz);
     })
 }
 
@@ -324,7 +337,7 @@ fn step_size(s: &mut Session, dir: i32) -> CmdResult {
     // Each run steps from its own size when the selection mixes sizes.
     apply(s, &|c| {
         c.size = Some(next);
-        c.size_cs = None;
+        c.size_cs = Some(next);
     })
 }
 
@@ -332,7 +345,7 @@ fn nudge_size(s: &mut Session, d: f32) -> CmdResult {
     let next = (current_size(s) + d).clamp(1.0, 1638.0);
     apply(s, &|c| {
         c.size = Some(next);
-        c.size_cs = None;
+        c.size_cs = Some(next);
     })
 }
 
@@ -554,7 +567,12 @@ fn char_style(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn set(s: &mut Session, v: &Value) -> CmdResult {
-    let props: CharProps = serde_json::from_value(v.get("props").cloned().unwrap_or(Value::Null)).map_err(|e| CmdError::Params(e.to_string()))?;
+    let mut props: CharProps = serde_json::from_value(v.get("props").cloned().unwrap_or(Value::Null)).map_err(|e| CmdError::Params(e.to_string()))?;
+    // The font dialog and callers supplying one value format both scripts. Explicit
+    // complex-script values still take precedence; importing a DOCX never uses this command.
+    props.size_cs = props.size_cs.or(props.size);
+    props.bold_cs = props.bold_cs.or(props.bold);
+    props.italic_cs = props.italic_cs.or(props.italic);
     apply(s, &|c| c.overlay(&props))
 }
 
@@ -571,6 +589,7 @@ pub fn state(s: &Session) -> Value {
     let style_name = s.doc.styles.get(&style).map(|st| st.name.clone()).unwrap_or(style.clone());
     json!({
         "font": same(&|r| json!(r.font)),
+        "fontEastAsia": same(&|r| json!(r.font_ea)),
         "size": same(&|r| json!(r.size)),
         "bold": all.iter().all(|r| r.bold),
         "italic": all.iter().all(|r| r.italic),
@@ -587,6 +606,9 @@ pub fn state(s: &Session) -> Value {
         "highlight": same(&|r| json!(r.highlight.map(|c| c.hex()))),
         "style": style,
         "styleName": style_name,
+        // The proofing language (a BCP 47 tag; null when mixed or unset) and "Do not check".
+        "lang": same(&|r| json!(r.lang)),
+        "noProof": all.iter().all(|r| r.no_proof),
     })
 }
 

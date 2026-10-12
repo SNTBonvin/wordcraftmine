@@ -63,6 +63,7 @@
 	Arrow	Flecha
 	Artistic Effects	Efectos artísticos
 	As you type	Mientras escribes
+	Asian text font:	Fuente de texto asiático:
 	Asian Typography	Tipografía asiática
 	Author	Autor
 	AutoCorrect Options	Opciones de autocorrección
@@ -105,6 +106,7 @@
 	Interface	Interfaz
 	Interface language	Idioma de la interfaz
 	Inside:	Interior:
+	Latin text font:	Fuente de texto latino:
 	Left border	Borde izquierdo
 	Legal style numbering	Numeración de estilo legal
 	Link level to style:	Vincular nivel con estilo:
@@ -161,6 +163,7 @@
 	Bold	Negrita
 	Bookmark	Marcador
 	Bookmark name:	Nombre del marcador:
+	Book Title	Título de libro
 	Border Painter	Pincel de bordes
 	Border\nPainter	Pincel de\nbordes
 	Borders	Bordes
@@ -209,6 +212,7 @@
 	Cancel	Cancelar
 	Capitalize Each Word	Mayúscula inicial en cada palabra
 	Captions	Leyendas
+	Category	Categoría
 	Cell Margins	Márgenes de celda
 	Cell Size	Tamaño de celda
 	Cell\nMargins	Márgenes de\ncelda
@@ -271,6 +275,7 @@
 	Compress Pictures	Comprimir imágenes
 	Compress punctuation at the start of a line	Comprimir la puntuación al inicio de la línea
 	Continuous	Continuo
+	Contributors	Colaboradores
 	Convert	Convertir
 	Convert Text to Table	Convertir texto en tabla
 	Convert Text to Table…	Convertir texto en tabla…
@@ -278,6 +283,7 @@
 	Copy	Copiar
 	Copy Formatting	Copiar formato
 	Corrections	Correcciones
+	Couldn't make WordCraft the default: {error}	No se pudo hacer de WordCraft la aplicación predeterminada: {error}
 	Count words in text boxes and notes	Contar las palabras de los cuadros de texto y las notas
 	Cover Page	Portada
 	Create	Crear
@@ -362,6 +368,9 @@
 	Editor	Editor
 	Effects	Efectos
 	Emboss	Relieve
+	Emphasis	Énfasis
+	Endnote Reference	Referencia de nota al final
+	Endnote Text	Texto de nota al final
 	Encrypt with Password	Cifrar con contraseña
 	English (United States)	Inglés (Estados Unidos)
 	Engrave	Grabado
@@ -376,6 +385,7 @@
 	Export a copy to share (PDF, Word document)	Exporta una copia para compartir (PDF, documento de Word)
 	Exported {path}	Exportado: {path}
 	Extend Selection	Ampliar selección
+	Extend Selection by Units	Ampliar selección por unidades
 	Field	Campo
 	File	Archivo
 	Find	Buscar
@@ -401,6 +411,8 @@
 	Fonts	Fuentes
 	Footer	Pie de página
 	Footnote and Endnote	Nota al pie y nota final
+	Footnote Reference	Referencia de nota al pie
+	Footnote Text	Texto de nota al pie
 	Footnotes	Notas al pie
 	Format	Formato
 	Format Page Numbers	Formato de números de página
@@ -439,6 +451,7 @@
 	Home	Inicio
 	Horizontal	Horizontal
 	Horizontal Line	Línea horizontal
+	Hyperlink	Hipervínculo
 	Hyphenation	Separación de palabras
 	Icons	Iconos
 	Ignore All	Omitir todo
@@ -446,6 +459,7 @@
 	Immersive	Inmersivo
 	Immersive Reader	Lector inmersivo
 	Immersive\nReader	Lector\ninmersivo
+	In Default apps, choose WordCraft for the document types you want it to open.	En Aplicaciones predeterminadas, elige WordCraft para los tipos de documento que quieras que abra.
 	Increase Font Size	Aumentar tamaño de fuente
 	Increase Indent	Aumentar sangría
 	Indent	Sangría
@@ -479,6 +493,9 @@
 	Insert\nCaption	Insertar\nleyenda
 	Insert\nCitation	Insertar\ncita
 	Insert\nFootnote	Insertar nota\nal pie
+	Intense Emphasis	Énfasis intenso
+	Intense Quote	Cita intensa
+	Intense Reference	Referencia intensa
 	Inside Borders	Bordes interiores
 	Inspect Document	Inspeccionar documento
 	Inspect Styles at Selection	Inspeccionar estilos de la selección
@@ -493,6 +510,7 @@
 	Keep with Next	Mantener con el siguiente
 	Keep with next	Mantener con el siguiente
 	Keeps the fonts and formatting of the copied text.	Conserva las fuentes y el formato del texto copiado.
+	Keywords	Palabras clave
 	Labels	Etiquetas
 	Landscape	Horizontal
 	Language	Idioma
@@ -528,6 +546,7 @@
 	MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.	MIT o Apache-2.0. Copyright (c) 2026 ArtCraft Team y los colaboradores de WordCraft.
 	Macros	Macros
 	Mailings	Correspondencia
+	Make WordCraft the default for Word documents…	Hacer de WordCraft la aplicación predeterminada para documentos de Word…
 	Manage Sources	Administrar fuentes
 	Many pages	Varias páginas
 	Margins	Márgenes
@@ -575,6 +594,7 @@
 	No Color	Sin color
 	No Markup	Sin marcas
 	No Paragraph Space	Sin espacio entre párrafos
+	No Spacing	Sin espaciado
 	No contributor data was built into this copy.	Esta copia no incluye datos de colaboradores.
 	No model credits were built into this copy.	Esta copia no incluye créditos de modelos.
 	No templates match your search.	Ninguna plantilla coincide con la búsqueda.
@@ -599,6 +619,8 @@
 	One Page	Una página
 	Open	Abrir
 	OpenDocument Text (*.odt)	Texto de OpenDocument (*.odt)
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	A partir de ahora, los archivos .docx, .doc, .rtf y .odt y las plantillas de Word se abren con WordCraft.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Abre Configuración › Aplicaciones predeterminadas, donde eliges WordCraft para .docx y los demás tipos de documento.
 	Optional Hyphen	Guion opcional
 	Copyright Sign	Signo de copyright
 	Ellipsis	Puntos suspensivos
@@ -683,6 +705,7 @@
 	Quick Access Toolbar	Barra de herramientas de acceso rápido
 	Quick Parts	Elementos rápidos
 	Quick Tables	Tablas rápidas
+	Quote	Cita
 	Read Aloud	Leer en voz alta
 	Read Mode	Modo lectura
 	Read\nAloud	Leer en\nvoz alta
@@ -805,6 +828,9 @@
 	Show only comments and formatting in balloons	Mostrar solo comentarios y formato en globos
 	Show revisions in balloons	Mostrar revisiones en globos
 	Show rulers	Mostrar reglas
+	Animation	Animación
+	Animate the caret (it glides and fades)	Animar el cursor (se desliza y se desvanece)
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Activado: el cursor se desliza hasta su nueva posición al escribir o usar las flechas, y su parpadeo se desvanece. Desactivado: salta y parpadea de golpe.
 	Show the community button in the title bar	Mostrar el botón de comunidad en la barra de título
 	Show/Hide ¶	Mostrar u ocultar ¶
 	Show\nComments	Mostrar\ncomentarios
@@ -842,6 +868,7 @@
 	Statistics	Estadísticas
 	Status Bar	Barra de estado
 	Strikethrough	Tachado
+	Strong	Fuerte
 	Studio cover	Portada de Studio
 	Studio handbook (sample)	Manual de Studio (ejemplo)
 	Style	Estilo
@@ -851,7 +878,11 @@
 	Style: {style}	Estilo: {style}
 	Styles	Estilos
 	Styles Pane	Panel de estilos
+	Subject	Asunto
 	Subscript	Subíndice
+	Subtitle	Subtítulo
+	Subtle Emphasis	Énfasis sutil
+	Subtle Reference	Referencia sutil
 	Superscript	Superíndice
 	Switch Modes	Cambiar de modo
 	Switch\nModes	Cambiar\nde modo
@@ -897,6 +928,9 @@
 	Thick	Gruesa
 	Three	Tres
 	Tight	Ajustado
+	TOC Heading	Título de tabla de contenido
+	TOC {n}	Tabla de contenido {n}
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Para abrir los documentos de Word con WordCraft de forma predeterminada: selecciona uno en el Finder, elige Archivo › Obtener información, selecciona WordCraft en «Abrir con» y haz clic en «Cambiar todo».
 	Top Border	Borde superior
 	Top Margin	Margen superior
 	Top of Page	Parte superior de la página
@@ -949,14 +983,15 @@
 	Wide	Ancho
 	Widow/Orphan Control	Control de líneas viudas y huérfanas
 	Widow/Orphan control	Control de líneas viudas y huérfanas
-	Wildcards (regex)	Comodines (expresión regular)
 	Window	Ventana
 	Word Count	Recuento de palabras
 	Word Left	Palabra a la izquierda
 	Word Right	Palabra a la derecha
 	Word document (*.docx)	Documento de Word (*.docx)
+	Word XML Document (*.xml)	Documento XML de Word (*.xml)
 	WordArt	WordArt
 	WordCraft	WordCraft
+	WordCraft is now the default app for Word documents.	WordCraft es ahora la aplicación predeterminada para los documentos de Word.
 	Words	Palabras
 	Words only	Solo palabras
 	Wrap Text	Ajustar texto
@@ -1238,6 +1273,7 @@
 	Index and Tables	Índices y tablas
 	Line between	Línea entre columnas
 	Links and References	Vínculos y referencias
+	List Paragraph	Párrafo de lista
 	Mail Merge	Combinar correspondencia
 	More Columns…	Más columnas…
 	More Symbols…	Más símbolos…
@@ -1359,6 +1395,7 @@
 	First	Primero
 	Last	Último
 	Model	Modelo
+	Models	Modelos
 	Version	Versión
 	% of all commits	% de todos los commits
 	Lines +/−	Líneas +/−
@@ -1410,8 +1447,12 @@
 	Selected Fields	Campos seleccionados
 	Edit Field…	Editar campo…
 	Formatted	Con formato
+	Deleted	Eliminado
 	Interface size:	Tamaño de la interfaz:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Agranda o reduce la cinta, los menús y los cuadros de diálogo, además del escalado de pantalla del sistema. El zoom del documento es aparte.
+	Resize Table by Dragging	Cambiar tamaño de tabla arrastrando
+	Print Markup	Imprimir marcas
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Comentarios junto a cada página y cambios marcados en PDF, impresiones e imágenes; una lista de comentarios al final de páginas web, Markdown y texto.
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. Restricciones de formato
@@ -1532,6 +1573,22 @@
 	New Group	Nuevo grupo
 	Rename…	Cambiar nombre…
 	Ribbon and Quick Access Toolbar:	Cinta de opciones y barra de acceso rápido:
+	Add Font…	Agregar fuente…
+	Added Fonts	Fuentes agregadas
+	Remove Added Font	Quitar fuente agregada
+	Recent Colors	Colores recientes
+	More Colors…	Más colores…
+	Standard	Estándar
+	Current	Actual
+	Colors:	Colores:
+	Color model:	Modelo de color:
+	Red:	Rojo:
+	Green:	Verde:
+	Blue:	Azul:
+	Hue:	Matiz:
+	Sat:	Sat.:
+	Lum:	Lum.:
+	Hex:	Hex.:
 	Accessibility Pane	Panel de accesibilidad
 	Alt Text Pane	Panel de texto alternativo
 	Alt\nText	Texto\nalternativo
@@ -1615,6 +1672,25 @@
 	Enlarge symbol	Agrandar símbolo
 	Enclosure	Contorno
 	Circle	Círculo
+	Numerals:	Números:
+	Numerals	Números
+	Arabic	Árabe
+	Hindi	Hindi
+	Context	Contexto
+	System	Sistema
+	Templates	Plantillas
+	Templates and Add-ins	Plantillas y complementos
+	Attach Template	Adjuntar plantilla
+	Detach Template	Quitar plantilla
+	Automatically Update Document Styles	Actualizar automáticamente los estilos del documento
+	Update Styles from Template	Actualizar estilos desde la plantilla
+	Organizer	Organizador
+	Copy Styles	Copiar estilos
+	Rename Style	Cambiar nombre del estilo
+	Document template:	Plantilla del documento:
+	Attach…	Adjuntar…
+	Automatically update document styles	Actualizar automáticamente los estilos del documento
+	Organizer…	Organizador…
 	Change Chart Type	Cambiar tipo de gráfico
 	Chart Design	Diseño de gráfico
 	Type	Tipo
@@ -1668,6 +1744,105 @@
 	Continuous numbering	Numeración continua
 	Apply	Aplicar
 	Convert Notes	Convertir notas
+	English (United Kingdom)	Inglés (Reino Unido)
+	Polish	Polaco
+	Do Not Check Spelling or Grammar	No revisar la ortografía ni la gramática
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	Documentos
+	Word document	Documento de Word
+	All files	Todos los archivos
+	Recipient lists	Listas de destinatarios
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	El cuadro de diálogo de archivos del sistema no está disponible, así que WordCraft muestra el suyo. Para usar el del sistema, instala un portal selector de archivos (como xdg-desktop-portal-gtk) o zenity.
+	Up one level	Subir un nivel
+	Home folder	Carpeta personal
+	{name} wasn't found.	No se encontró {name}.
+	{name} already exists. Choose Save again to replace it.	{name} ya existe. Elige Guardar otra vez para reemplazarlo.
+	This folder can't be read: {error}	No se puede leer esta carpeta: {error}
+	Showing the first {count} items.	Se muestran los primeros {count} elementos.
+	File name:	Nombre de archivo:
+	Browse in WordCraft…	Examinar en WordCraft…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Abre un archivo con el explorador propio de WordCraft cuando no aparece el cuadro de diálogo de archivos del sistema.
+	Hide White Space	Ocultar espacio en blanco
+	All pages	Todas las páginas
+	Current page	Página actual
+	Selected pages	Páginas seleccionadas
+	Custom range	Intervalo personalizado
+	All pages in the range	Todas las páginas del intervalo
+	Odd pages only	Solo páginas impares
+	Even pages only	Solo páginas pares
+	Copies	Copias
+	Collate copies	Intercalar copias
+	Pages like 1-3, 5	Páginas como 1-3, 5
+	{count} of {total} pages will print	Se imprimirán {count} de {total} páginas
+	Save these pages as PDF…	Guardar estas páginas como PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	La impresora, la impresión a doble cara y las páginas por hoja se eligen en ese cuadro de diálogo.
+	Previous Page	Página anterior
+	Print to PDF	Imprimir en PDF
+	Add Shape	Agregar forma
+	Change Colors	Cambiar colores
+	Change Layout	Cambiar diseño
+	Create Graphic	Crear gráfico
+	Edit Items	Editar elementos
+	Layouts	Diseños
+	Reset Graphic	Restablecer gráfico
+	SmartArt Design	Diseño de SmartArt
+	SmartArt Styles	Estilos de SmartArt
+	Text Pane	Panel de texto
+	List	Lista
+	Process	Proceso
+	Cycle	Ciclo
+	Hierarchy	Jerarquía
+	Relationship	Relación
+	Pyramid	Pirámide
+	Basic List	Lista básica
+	Basic Process	Proceso básico
+	Basic Cycle	Ciclo básico
+	Basic Pyramid	Pirámide básica
+	Basic Radial	Radial básico
+	Basic Matrix	Matriz básica
+	Basic Venn	Venn básico
+	Shows items of equal weight as blocks in rows.	Muestra elementos de igual peso como bloques en filas.
+	Shows steps in order, left to right, with arrows between them.	Muestra pasos en orden, de izquierda a derecha, con flechas entre ellos.
+	Shows steps that repeat, around a circle.	Muestra pasos que se repiten, alrededor de un círculo.
+	Shows a tree: each item below the item it belongs to.	Muestra un árbol: cada elemento debajo del elemento al que pertenece.
+	Shows parts that build on each other, largest at the bottom.	Muestra partes que se apoyan unas en otras, la mayor abajo.
+	Shows items around a central idea: the first item is the centre.	Muestra elementos alrededor de una idea central: el primer elemento es el centro.
+	Shows parts of a whole as quadrants.	Muestra las partes de un todo como cuadrantes.
+	Shows overlapping ideas as overlapping circles.	Muestra ideas que se superponen como círculos superpuestos.
+	Accent {n}	Énfasis {n}
+	Colorful	Multicolor
+	Insert SmartArt	Insertar SmartArt
+	One line per item. Enter adds an item.	Una línea por elemento. Intro agrega un elemento.
+	Add\nShape	Agregar\nforma
+	Change\nColors	Cambiar\ncolores
+	Reset\nGraphic	Restablecer\ngráfico
+	Promote to Heading 1	Promover a Título 1
+	Demote to Body Text	Degradar a texto independiente
+	Move Up	Subir
+	Move Down	Bajar
+	Collapse	Contraer
+	Expand or Collapse Heading	Expandir o contraer título
+	Select Heading and Content	Seleccionar título y contenido
+	Show Level	Mostrar nivel
+	Show Level 1	Mostrar nivel 1
+	Show Level 2	Mostrar nivel 2
+	Show Level 3	Mostrar nivel 3
+	Show Level 4	Mostrar nivel 4
+	Show Level 5	Mostrar nivel 5
+	Show Level 6	Mostrar nivel 6
+	Show Level 7	Mostrar nivel 7
+	Show Level 8	Mostrar nivel 8
+	Show Level 9	Mostrar nivel 9
+	Show All Levels	Mostrar todos los niveles
+	All Levels	Todos los niveles
+	Show First Line Only	Mostrar solo la primera línea
+	Show Text Formatting	Mostrar formato de texto
+	Close Outline View	Cerrar vista Esquema
+	Outline State	Estado del esquema
+	Outlining	Esquema
+	Outline Tools	Herramientas de esquema
+	Close Outline\nView	Cerrar vista\nEsquema
 	A, B, C, …	A, B, C, …
 	Above the item	Encima del elemento
 	Accessed on	Consultado el
@@ -1777,6 +1952,37 @@
 	Rewind	Rebobinar
 	Forward	Avanzar
 	Stroke {n} of {total}	Trazo {n} de {total}
+	Use wildcards	Usar caracteres comodín
+	Special	Especial
+	Match prefix	Coincidir prefijo
+	Match suffix	Coincidir sufijo
+	Ignore punctuation characters	Omitir signos de puntuación
+	Ignore white-space characters	Omitir espacios en blanco
+	Regular expressions	Expresiones regulares
+	Search Options	Opciones de búsqueda
+	Tab Character	Carácter de tabulación
+	Any Character	Cualquier carácter
+	Any Digit	Cualquier dígito
+	Any Letter	Cualquier letra
+	Caret Character	Acento circunflejo
+	Section Character	Símbolo de sección
+	Paragraph Character	Símbolo de párrafo
+	Graphic	Gráfico
+	Manual Line Break	Salto de línea manual
+	Manual Page Break	Salto de página manual
+	Section Break	Salto de sección
+	White Space	Espacio en blanco
+	Clipboard Contents	Contenido del portapapeles
+	Find What Text	Texto buscado
+	Find What Expression	Expresión buscada
+	Character in Range	Carácter del intervalo
+	Beginning of Word	Principio de palabra
+	End of Word	Final de palabra
+	Expression	Expresión
+	Not	No
+	Num Occurrences	Número de repeticiones
+	Previous 1 or More	Anterior 1 o más veces
+	0 or More Characters	0 o más caracteres
 	Move with Text	Mover con el texto
 	Fix Position on Page	Fijar posición en la página
 
@@ -1818,7 +2024,6 @@
 	Add line numbering	Agregar numeración de líneas
 	Add to Document	Agregar al documento
 	Address labels	Etiquetas de dirección
-	Arabic	Árabe
 	Auto	Auto
 	Automatically hyphenate document	Separar palabras automáticamente en el documento
 	Chinese (Simplified)	Chino (simplificado)
@@ -1831,7 +2036,6 @@
 	Detect language automatically	Detectar idioma automáticamente
 	Do not check spelling or grammar	No revisar la ortografía ni la gramática
 	Dutch	Neerlandés
-	English (United Kingdom)	Inglés (Reino Unido)
 	Envelope size:	Tamaño del sobre:
 	Estonian	Estonio
 	Finnish	Finés
@@ -1860,7 +2064,6 @@
 	Numbering:	Numeración:
 	Omit	Omitir
 	One label per recipient	Una etiqueta por destinatario
-	Polish	Polaco
 	Portuguese (Brazil)	Portugués (Brasil)
 	Portuguese (Portugal)	Portugués (Portugal)
 	Return address labels	Etiquetas de remitente
@@ -1878,3 +2081,11 @@
 	Turkish	Turco
 	Ukrainian	Ucraniano
 	{language} is now the document's default language.	{language} es ahora el idioma predeterminado del documento.
+	Visual effects	Efectos visuales
+	Animation effects:	Efectos de animación:
+	On	Activado
+	Off	Desactivado
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Desplazamiento y zoom suaves, y menús y botones que aparecen gradualmente. Con «Desactivado», cada cambio se muestra al instante.
+	Your system has animation effects turned on.	Tu sistema tiene activados los efectos de animación.
+	Your system has animation effects turned off.	Tu sistema tiene desactivados los efectos de animación.
+	Your system doesn't report an animation setting, so animation effects stay on.	Tu sistema no indica ningún ajuste de animación, así que los efectos de animación siguen activados.
