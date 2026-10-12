@@ -381,6 +381,7 @@
 	Export PDF	匯出 PDF
 	Exported {path}	已匯出 {path}
 	Extend Selection	擴大選取範圍
+	Extend Selection by Units	按單位擴大選取範圍
 	Field	功能變數
 	File	檔案
 	Find	尋找
@@ -786,6 +787,9 @@
 	Show only comments and formatting in balloons	僅在註解方塊中顯示註解和格式設定
 	Show revisions in balloons	在註解方塊中顯示修訂
 	Show rulers	顯示尺規
+	Animation	動畫
+	Animate the caret (it glides and fades)	為游標加上動畫（平滑移動並淡入淡出）
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	開啟：輸入或使用方向鍵時，游標會平滑移動到新位置，閃爍時淡入淡出。關閉：游標直接跳到新位置，閃爍時直接顯示和隱藏。
 	Show the community button in the title bar	在標題列中顯示社群按鈕
 	Show/Hide ¶	顯示/隱藏 ¶
 	Show\nComments	顯示註解
@@ -1399,9 +1403,8 @@
 	Formatted	已設定格式
 	Interface size:	介面大小：
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	在系統顯示縮放的基礎上放大或縮小功能區、功能表與對話方塊。文件縮放另行設定。
-	Animation	動畫
-	Animate the caret (it glides and fades)	為游標加上動畫（平滑移動並淡入淡出）
-	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	開啟：輸入或使用方向鍵時，游標會平滑移動到新位置，閃爍時淡入淡出。關閉：游標直接跳到新位置，閃爍時直接顯示和隱藏。
+	Print Markup	列印標記
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	在 PDF、列印和影像中於每頁旁顯示註解和修訂；在網頁、Markdown 和文字末尾附上註解清單。
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. 格式設定限制
@@ -1522,6 +1525,19 @@
 	New Group	新增群組
 	Rename…	重新命名…
 	Ribbon and Quick Access Toolbar:	功能區和快速存取工具列：
+	Recent Colors	最近使用的色彩
+	More Colors…	其他色彩…
+	Standard	標準
+	Current	目前
+	Colors:	色彩:
+	Color model:	色彩模式:
+	Red:	紅色:
+	Green:	綠色:
+	Blue:	藍色:
+	Hue:	色調:
+	Sat:	飽和度:
+	Lum:	亮度:
+	Hex:	十六進位:
 	Accessibility Pane	協助工具窗格
 	Alt Text Pane	替代文字窗格
 	Alt\nText	替代\n文字
@@ -1670,6 +1686,21 @@
 	Continuous numbering	連續編號
 	Apply	套用
 	Convert Notes	轉換附註
+	All pages	所有頁面
+	Current page	目前頁面
+	Selected pages	所選頁面
+	Custom range	自訂範圍
+	All pages in the range	範圍內的所有頁面
+	Odd pages only	僅奇數頁
+	Even pages only	僅偶數頁
+	Copies	份數
+	Collate copies	逐份列印
+	Pages like 1-3, 5	頁碼,如 1-3, 5
+	{count} of {total} pages will print	將列印 {total} 頁中的 {count} 頁
+	Save these pages as PDF…	將這些頁面另存為 PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	印表機、雙面列印和每張頁數在該對話方塊中選擇。
+	Previous Page	上一頁
+	Print to PDF	列印為 PDF
 	Add Shape	新增圖案
 	Change Colors	變更色彩
 	Change Layout	變更版面配置

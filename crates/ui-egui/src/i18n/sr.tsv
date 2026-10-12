@@ -432,6 +432,7 @@
 	Export PDF	Извези PDF
 	Exported {path}	Извезено: {path}
 	Extend Selection	Прошири избор
+	Extend Selection by Units	Прошири избор по јединицама
 	Field	Поље
 	File	Фајл
 	Find	Пронађи
@@ -839,6 +840,9 @@
 	Show or Hide Style	Прикажи или сакриј стил
 	Show revisions in balloons	Прикажи измене у облачићима
 	Show rulers	Прикажи лењире
+	Animation	Анимација
+	Animate the caret (it glides and fades)	Анимирај курсор (клизи и постепено се гаси)
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Укључено: курсор клизи на ново место док куцате или користите стрелице, а његово трептање се постепено гаси. Искључено: скаче и трепће нагло.
 	Show the community button in the title bar	Прикажи дугме заједнице у траци наслова
 	Show/Hide ¶	Прикажи/сакриј ¶
 	Show\nComments	Прикажи\nкоментаре
@@ -1412,9 +1416,8 @@
 	Formatted	Форматирано
 	Interface size:	Величина интерфејса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Повећава или смањује траку, меније и дијалоге, поврх скалирања екрана у систему. Зумирање документа је засебно.
-	Animation	Анимација
-	Animate the caret (it glides and fades)	Анимирај курсор (клизи и постепено се гаси)
-	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Укључено: курсор клизи на ново место док куцате или користите стрелице, а његово трептање се постепено гаси. Искључено: скаче и трепће нагло.
+	Print Markup	Штампај ознаке
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Коментари поред сваке странице и праћене измене у PDF-овима, отисцима и сликама; листа коментара на крају веб-страница, Markdown-а и текста.
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. Ограничења обликовања
@@ -1535,6 +1538,19 @@
 	New Group	Нова група
 	Rename…	Преименуј…
 	Ribbon and Quick Access Toolbar:	Трака и трака са алаткама за брзи приступ:
+	Recent Colors	Недавне боје
+	More Colors…	Још боја…
+	Standard	Стандардне
+	Current	Тренутна
+	Colors:	Боје:
+	Color model:	Модел боја:
+	Red:	Црвена:
+	Green:	Зелена:
+	Blue:	Плава:
+	Hue:	Нијанса:
+	Sat:	Засићеност:
+	Lum:	Осветљеност:
+	Hex:	Хекс:
 	Accessibility Pane	Окно приступачности
 	Alt Text Pane	Окно алтернативног текста
 	Alt\nText	Алтернативни\nтекст
@@ -1683,6 +1699,21 @@
 	Continuous numbering	Непрекидна нумерација
 	Apply	Примени
 	Convert Notes	Претвори напомене
+	All pages	Све странице
+	Current page	Тренутна страница
+	Selected pages	Изабране странице
+	Custom range	Прилагођени опсег
+	All pages in the range	Све странице у опсегу
+	Odd pages only	Само непарне странице
+	Even pages only	Само парне странице
+	Copies	Копије
+	Collate copies	Сложи копије
+	Pages like 1-3, 5	Странице попут 1-3, 5
+	{count} of {total} pages will print	Штампаће се {count} од {total} страница
+	Save these pages as PDF…	Сачувај ове странице као PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Штампач, обострана штампа и број страница по листу бирају се у том дијалогу.
+	Previous Page	Претходна страница
+	Print to PDF	Штампај у PDF
 	Add Shape	Додај облик
 	Change Colors	Промени боје
 	Change Layout	Промени распоред

@@ -19,6 +19,7 @@ pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
 pub mod chrome;
+pub mod colors;
 pub mod content_controls;
 pub mod control;
 pub mod credits;
@@ -50,6 +51,7 @@ pub mod options;
 pub mod panes;
 pub mod paste_picture;
 pub mod previews;
+pub mod print_page;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -108,10 +110,15 @@ pub struct UiState {
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
+    /// File › Print settings (#641); not saved.
+    #[serde(skip)]
+    pub print: print_page::PrintSettings,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
     /// Symbols inserted from the Symbol dialog, most recent first (#321).
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
+    /// Colours picked in the Colors dialog (More Colors…), most recent first (#606).
+    pub recent_colors: Vec<String>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
     /// Interface size in percent (#475): scales the whole interface on top of the system's
@@ -187,9 +194,11 @@ impl Default for UiState {
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
+            print: print_page::PrintSettings::default(),
             ribbon_collapsed: false,
             recent: Vec::new(),
             recent_symbols: Vec::new(),
+            recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
             interface_size: theme::InterfaceSize::default(),
             legacy_dark: None,
@@ -244,6 +253,8 @@ pub struct WordApp {
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
     pub dialog: Option<dialogs::Dialog>,
+    /// The Colors dialog (More Colors…), shown above any other dialog (#606).
+    pub colors: Option<colors::ColorsDialog>,
     /// The Restrict Editing pane (#412).
     pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
@@ -338,6 +349,7 @@ impl WordApp {
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
+            colors: None,
             restrict: Default::default(),
             status_msg: None,
             previews: previews::Previews::default(),
@@ -518,7 +530,8 @@ impl WordApp {
             // Word documents are encrypted with the document's password, if it has one.
             let password =
                 if matches!(id, "file.save" | "file.saveAs") { self.session.password.as_ref().map(wordcraft_engine::Password::as_str) } else { None };
-            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password)?;
+            let opts = wordcraft_engine::cmd::file::export_options(&self.session, &params);
+            let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password, &opts)?;
             if let Some(d) = &self.services.download
                 && let Err(e) = d(&name, &bytes)
             {
@@ -715,12 +728,25 @@ impl WordApp {
                 }
                 json!({"backstage": self.ui.backstage})
             }
+            "ui.dialog" if s("name") == Some("colors") => {
+                // The font colour's More Colors… (#606); `tab`: standard or custom.
+                let target = colors::Target::cmd("format.color").remember(colors::Remember::FontColor);
+                let current =
+                    self.session.run("format.state", &json!({})).ok().and_then(|st| st.get("color").and_then(Value::as_str).and_then(colors::parse));
+                let mut d = colors::ColorsDialog::new(current, target);
+                if s("tab") == Some("custom") {
+                    d.tab = colors::ColorsTab::Custom;
+                }
+                self.colors = Some(d);
+                json!({"dialog": "colors"})
+            }
             "ui.dialog" => {
                 self.dialog = dialogs::Dialog::open(s("name").unwrap_or(""), self);
                 json!({"dialog": self.dialog.as_ref().map(|d| d.name())})
             }
             "ui.closeDialog" => {
                 self.dialog = None;
+                self.colors = None;
                 json!({})
             }
             "ui.changePicture" => {
@@ -801,7 +827,7 @@ impl WordApp {
             // Send the document to the system print flow (web, desktop). `file.print` opens the Print
             // page; this is the button on it, and the one programmatic call that opens system UI
             // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system()),
+            "ui.print" => return Some(self.print_to_system(p)),
             "ui.discord" => {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
@@ -830,8 +856,10 @@ impl WordApp {
     }
 
     /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
+    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
+    /// `file.printPdf`); without any, every page prints once.
     /// An error when the host can't print (File › Print then only saves a PDF).
-    fn print_to_system(&mut self) -> Result<Value, String> {
+    fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
         if self.services.print.is_none() {
             return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
         }
@@ -841,13 +869,12 @@ impl WordApp {
         {
             log::warn!("updating fields before printing: {e}");
         }
-        let without_colour = (!self.ui.print_backgrounds && self.session.doc.settings.page_color.is_some()).then(|| {
-            let mut d = self.session.doc.clone();
-            d.settings.page_color = None;
-            d
-        });
-        let result = wordcraft_engine::io::save_bytes("document.pdf", without_colour.as_ref().unwrap_or(&self.session.doc))
-            .and_then(|bytes| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
+        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
+        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
+        if colour.is_some() {
+            self.session.doc.settings.page_color = colour;
+        }
+        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
         match result {
             Ok(len) => {
                 self.status(tl!("Opening print dialog…"));
@@ -1126,6 +1153,7 @@ impl WordApp {
         }
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
@@ -1939,6 +1967,23 @@ mod tests {
         let e = a.run("ui.print", json!({})).unwrap_err();
         assert!(e.contains("blocked by the browser"), "{e}");
         assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("blocked by the browser")), "the status bar says why");
+    }
+
+    /// The print settings reach the hook: bad ones print nothing, `copies` repeats the pages.
+    #[test]
+    fn ui_print_honours_the_print_settings() {
+        let mut a = typed();
+        let sizes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen = sizes.clone();
+        a.services.print = Some(Box::new(move |bytes| {
+            seen.borrow_mut().push(bytes.len());
+            Ok(())
+        }));
+        assert!(a.run("ui.print", json!({"pages": "7-9"})).is_err(), "page 7 doesn't exist");
+        assert!(a.run("ui.print", json!({"range": "nope"})).is_err());
+        assert!(sizes.borrow().is_empty(), "nothing was sent");
+        a.run("ui.print", json!({"range": "current", "copies": 3})).unwrap();
+        assert_eq!(sizes.borrow().len(), 1);
     }
 
     /// The Print page shows the Print button only when the host can print, and the button
