@@ -609,6 +609,27 @@ mod tests {
         assert!(UiState::from_json(b"[1, 2]").is_none() && UiState::from_json(b"not json").is_none());
     }
 
+    /// Settings saved before #838 kept the unit under `editing.units` (default inches): a unit
+    /// the user chose carries over to `measurementUnits`; inches, junk or a newer value don't.
+    #[test]
+    fn a_unit_chosen_before_regions_survives_the_rename() {
+        let editing = |json: &str| UiState::from_json(format!(r#"{{"editing": {json}}}"#).as_bytes()).unwrap().editing.units;
+        assert_eq!(editing(r#"{"units": "centimeters"}"#), Some(Unit::Centimeters));
+        assert_eq!(editing(r#"{"units": "picas", "overtype": true}"#), Some(Unit::Picas));
+        assert_eq!(editing(r#"{"units": "inches"}"#), None);
+        assert_eq!(editing(r#"{"units": "furlongs"}"#), None);
+        assert_eq!(editing(r#"{"units": 7}"#), None);
+        assert_eq!(editing(r#"{"units": "millimeters", "measurementUnits": "points"}"#), Some(Unit::Points));
+        assert_eq!(editing(r#"{"units": "millimeters", "measurementUnits": null}"#), None);
+        assert_eq!(editing("{}"), None);
+        let mut a = app();
+        a.apply_prefs(UiState::from_json(br#"{"editing": {"units": "millimeters"}}"#).unwrap());
+        assert_eq!(a.session.units(), Unit::Millimeters);
+        // Saved again, it's under the new key.
+        let saved = serde_json::to_value(a.prefs()).unwrap();
+        assert_eq!(saved["editing"]["measurementUnits"], "millimeters");
+    }
+
     /// `file.options` opens the page at a pane; the pane list switches panes, and their
     /// checkboxes change the settings (#485).
     #[test]

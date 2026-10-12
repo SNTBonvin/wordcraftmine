@@ -378,7 +378,7 @@ pub struct Prefs {
     pub overtype: bool,
     /// The unit rulers and dialogs show lengths in, when the user chose one (File › Options ›
     /// Advanced › Measurement units); `None` follows the region ([`Session::units`]). Saved under
-    /// a new key: values saved before #838 were the inch default, not a choice.
+    /// a new key; an older `units` value other than inches (the old default) carries over on load.
     #[serde(rename = "measurementUnits")]
     pub units: Option<wordcraft_geom::Unit>,
     /// Formatting marks shown even while Show/Hide ¶ is off.
