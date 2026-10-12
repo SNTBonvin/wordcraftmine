@@ -27,19 +27,36 @@ fn qat_button(ui: &mut Ui, app: &mut WordApp, icon: &str, tip: &str, id: &str, e
 const QAT_MENU: [&str; 10] =
     ["file.new", "file.open", "file.save", "file.print", "edit.undo", "edit.redo", "edit.repeat", "review.spelling", "view.readMode", "insert.table"];
 
+/// Match the toolbar's enabled state for keyboard activation too.
+pub(crate) fn qat_enabled(app: &WordApp, id: &str) -> bool {
+    match id {
+        "edit.undo" => app.session.can_undo(),
+        "edit.redo" => app.session.can_redo(),
+        "file.save" => true,
+        _ => crate::widgets::enabled(app, id),
+    }
+}
+
 /// The Quick Access Toolbar (#379): the user's commands (Save, Undo, Redo until customized), each
 /// with a right-click menu, then the menu button that customizes it (#376).
 fn quick_access(ui: &mut Ui, app: &mut WordApp) {
     let ids: Vec<String> = app.session.ribbon.qat().into_iter().map(str::to_string).collect();
-    for id in &ids {
+    for (index, id) in ids.iter().enumerate() {
         let id = id.as_str();
-        let (tip, enabled) = match id {
-            "edit.undo" => (crate::i18n::prefixed("Undo", app.session.undo_label().unwrap_or("")), app.session.can_undo()),
-            "edit.redo" => (tl!("Redo").to_string(), app.session.can_redo()),
-            "file.save" => (tl!("Save").to_string(), true),
-            _ => (app.session.registry.get(id).map(|s| tl!(s.label).to_string()).unwrap_or_default(), crate::widgets::enabled(app, id)),
+        let tip = match id {
+            "edit.undo" => crate::i18n::prefixed("Undo", app.session.undo_label().unwrap_or("")),
+            "edit.redo" => tl!("Redo").to_string(),
+            "file.save" => tl!("Save").to_string(),
+            _ => app.session.registry.get(id).map(|s| tl!(s.label).to_string()).unwrap_or_default(),
         };
+        let enabled = qat_enabled(app, id);
         let resp = qat_button(ui, app, crate::widgets::command_icon(id), &tip, id, enabled);
+        if app.ui.keytips == crate::keytips::Phase::Tabs && ui.is_rect_visible(resp.rect) {
+            let label = crate::keytips::qat_label(index, ids.len());
+            if label.starts_with(&app.ui.keytip_prefix) {
+                app.keytip_rects.push((resp.rect, label));
+            }
+        }
         crate::widgets::command_menu(&resp, app, id);
     }
     let t = Tokens::get(ui.ctx());
@@ -132,7 +149,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                 let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
                 let (fill, stroke, knob_fill) = match (&block, on) {
                     (Some(_), _) => (t.input.gamma_multiply(0.5), t.border.gamma_multiply(0.7), t.text_dim.gamma_multiply(0.45)),
-                    (None, true) => (t.accent, t.accent, egui::Color32::WHITE),
+                    (None, true) => (t.accent, t.accent, t.on_accent),
                     (None, false) => (t.input, t.border_strong, t.text_dim),
                 };
                 ui.painter().rect(r, 8.0, fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
@@ -161,30 +178,20 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     let (r, resp) = ui.allocate_exact_size(vec2(control_h, control_h), Sense::click());
                     ui.painter().circle_filled(r.center(), control_h / 2.0 - 1.0, t.accent);
                     let initials: String = app.session.user_initials().chars().take(2).collect();
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, initials, semibold(10.5), egui::Color32::WHITE);
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, initials, semibold(10.5), t.on_accent);
                     resp.on_hover_text(format!("{} — set your name in File › Options", app.session.author));
                     ui.add_space(8.0);
                     if app.ui.show_discord {
                         let (r, resp) = ui.allocate_exact_size(vec2(84.0, 22.0), Sense::click());
-                        ui.painter().rect_filled(
-                            r,
-                            11.0,
-                            if resp.hovered() { egui::Color32::from_rgb(0x47, 0x52, 0xC4) } else { egui::Color32::from_rgb(0x58, 0x65, 0xF2) },
-                        );
+                        ui.painter().rect_filled(r, 11.0, if resp.hovered() { t.accent_text } else { t.accent });
                         icons::paint(
                             ui.painter(),
                             Rect::from_center_size(pos2(r.min.x + 13.0, r.center().y), vec2(14.0, 14.0)),
                             "discord",
-                            egui::Color32::WHITE,
-                            egui::Color32::WHITE,
+                            t.on_accent,
+                            t.on_accent,
                         );
-                        ui.painter().text(
-                            pos2(r.min.x + 24.0, r.center().y),
-                            Align2::LEFT_CENTER,
-                            tl!("Discord"),
-                            medium(11.5),
-                            egui::Color32::WHITE,
-                        );
+                        ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, tl!("Discord"), medium(11.5), t.on_accent);
                         if resp.on_hover_text(tl!("Join the ArtCraft community on Discord")).clicked() {
                             let _ = app.run("ui.discord", json!({}));
                         }
@@ -291,7 +298,13 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                 if app.session.sel.focus.story != StoryRef::Body && !crate::canvas::in_text_box(app) {
                     st(ui, tl!("Editing header/footer"));
                 }
-                st(ui, tl!("English (United States)"));
+                // The language at the caret; a click sets the proofing language (Review › Language).
+                let lang = crate::ribbon::caret_language(app);
+                let resp = st(ui, &lang).on_hover_text(tl!("Language"));
+                egui::Popup::menu(&resp).show(|ui| {
+                    ui.set_min_width(200.0);
+                    crate::ribbon::language_menu(ui, app);
+                });
                 if app.session.doc.settings.track_changes {
                     st(ui, tl!("Track Changes: On"));
                 }

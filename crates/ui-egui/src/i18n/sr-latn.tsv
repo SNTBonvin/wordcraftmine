@@ -66,6 +66,7 @@
 	Artistic Effects	Umetnički efekti
 	As Recommended	Kao što je preporučeno
 	As you type	Tokom kucanja
+	Asian text font:	Font azijskog teksta:
 	Asian Typography	Azijska tipografija
 	Author	Autor
 	AutoCorrect Options	Opcije automatske ispravke
@@ -103,6 +104,7 @@
 	Color: {color}	Boja: {color}
 	Compress punctuation at the start of a line	Sažmi interpunkciju na početku reda
 	Confirm password:	Potvrdite lozinku:
+	Couldn't make WordCraft the default: {error}	WordCraft nije mogao da postane podrazumevana aplikacija: {error}
 	Custom dictionary	Prilagođeni rečnik
 	Dark page (white text on black)	Tamna stranica (beo tekst na crnom)
 	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	Prevucite pravougaonik da nacrtate tabelu ili liniju preko ćelija da ih podelite. Esc završava.
@@ -129,6 +131,7 @@
 	Interface	Interfejs
 	Interface language	Jezik interfejsa
 	Inside:	Unutra:
+	Latin text font:	Font latiničnog teksta:
 	Left border	Leva ivica
 	Left Margin	Leva margina
 	Legal style numbering	Pravno numerisanje
@@ -146,6 +149,10 @@
 	Number format	Format broja
 	Number style for this level:	Stil broja za ovaj nivo:
 	Outside border	Spoljna ivica
+	In Default apps, choose WordCraft for the document types you want it to open.	U podrazumevanim aplikacijama izaberite WordCraft za vrste dokumenata koje želite da otvara.
+	Make WordCraft the default for Word documents…	Postavi WordCraft kao podrazumevanu aplikaciju za Word dokumente…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	Od sada će se .docx, .doc, .rtf i .odt datoteke i Word šabloni otvarati u WordCraft-u.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Otvara Podešavanja › Podrazumevane aplikacije, gde birate WordCraft za .docx i druge vrste dokumenata.
 	Overtype	Prepisivanje
 	Overtype (typing replaces the characters after the caret)	Prepisivanje (otkucano zamenjuje znakove posle kursora)
 	Page display	Prikaz strane
@@ -365,6 +372,8 @@
 	Delete Style	Obriši stil
 	Delete Table	Obriši tabelu
 	Design	Dizajn
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Da bi se Word dokumenti podrazumevano otvarali u WordCraft-u: izaberite jedan u Finder-u, izaberite Datoteka › Prikaži informacije, pod „Otvori pomoću” izaberite WordCraft, pa kliknite „Promeni sve”.
+	WordCraft is now the default app for Word documents.	WordCraft je sada podrazumevana aplikacija za Word dokumente.
 	development build	razvojna verzija
 	Diagonal	Dijagonalno
 	Diamond	Dijamant
@@ -426,6 +435,7 @@
 	Export PDF	Izvezi PDF
 	Exported {path}	Izvezeno: {path}
 	Extend Selection	Proširi izbor
+	Extend Selection by Units	Proširi izbor po jedinicama
 	Field	Polje
 	File	Fajl
 	Find	Pronađi
@@ -833,6 +843,9 @@
 	Show or Hide Style	Prikaži ili sakrij stil
 	Show revisions in balloons	Prikaži izmene u oblačićima
 	Show rulers	Prikaži lenjire
+	Animation	Animacija
+	Animate the caret (it glides and fades)	Animiraj kursor (klizi i postepeno se gasi)
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Uključeno: kursor klizi na novo mesto dok kucate ili koristite strelice, a njegovo treptanje se postepeno gasi. Isključeno: skače i trepće naglo.
 	Show the community button in the title bar	Prikaži dugme zajednice u traci naslova
 	Show/Hide ¶	Prikaži/sakrij ¶
 	Show\nComments	Prikaži\nkomentare
@@ -985,10 +998,10 @@
 	Wide	Široko
 	Widow/Orphan Control	Kontrola usamljenih redova
 	Widow/Orphan control	Kontrola usamljenih redova
-	Wildcards (regex)	Džoker znaci (regex)
 	Window	Prozor
 	Word Count	Broj reči
 	Word document (*.docx)	Word dokument (*.docx)
+	Word XML Document (*.xml)	Word XML dokument (*.xml)
 	Word Left	Reč levo
 	Word Right	Reč desno
 	WordArt	WordArt
@@ -1404,8 +1417,12 @@
 	Selected Fields	Izabrana polja
 	Edit Field…	Uredi polje…
 	Formatted	Formatirano
+	Deleted	Izbrisano
 	Interface size:	Veličina interfejsa:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Povećava ili smanjuje traku, menije i dijaloge, povrh skaliranja ekrana u sistemu. Zumiranje dokumenta je zasebno.
+	Resize Table by Dragging	Promena veličine tabele prevlačenjem
+	Print Markup	Štampaj oznake
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Komentari pored svake stranice i praćene izmene u PDF-ovima, otiscima i slikama; lista komentara na kraju veb-stranica, Markdown-a i teksta.
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. Ograničenja oblikovanja
@@ -1526,6 +1543,22 @@
 	New Group	Nova grupa
 	Rename…	Preimenuj…
 	Ribbon and Quick Access Toolbar:	Traka i traka sa alatkama za brzi pristup:
+	Add Font…	Dodaj font…
+	Added Fonts	Dodati fontovi
+	Remove Added Font	Ukloni dodati font
+	Recent Colors	Nedavne boje
+	More Colors…	Još boja…
+	Standard	Standardne
+	Current	Trenutna
+	Colors:	Boje:
+	Color model:	Model boja:
+	Red:	Crvena:
+	Green:	Zelena:
+	Blue:	Plava:
+	Hue:	Nijansa:
+	Sat:	Zasićenost:
+	Lum:	Osvetljenost:
+	Hex:	Heks:
 	Accessibility Pane	Okno pristupačnosti
 	Alt Text Pane	Okno alternativnog teksta
 	Alt\nText	Alternativni\ntekst
@@ -1609,6 +1642,12 @@
 	Enlarge symbol	Uvećaj simbol
 	Enclosure	Okvir
 	Circle	Krug
+	Numerals:	Brojevi:
+	Numerals	Brojevi
+	Arabic	Arapski
+	Hindi	Hindi
+	Context	Kontekst
+	System	Sistem
 	Templates	Šabloni
 	Templates and Add-ins	Šabloni i dodaci
 	Attach Template	Priloži šablon
@@ -1662,6 +1701,7 @@
 	Middle	Sredina
 	Click the empty text box the text should continue in (Esc cancels)	Kliknite prazno polje za tekst u kom tekst treba da se nastavi (Esc otkazuje)
 	Not linked: click a text box	Nije povezano: kliknite polje za tekst
+	Show KeyTips (Alt or F10)	Prikaži savete za tastere (Alt ili F10)
 	Location	Lokacija
 	Endnotes	Endnote
 	Below text	Ispod teksta
@@ -1678,6 +1718,41 @@
 	Reading Column Width	Širina kolone za čitanje
 	Reading Line Spacing	Proređenost pri čitanju
 	Reading Text Size	Veličina teksta za čitanje
+	English (United Kingdom)	Engleski (Velika Britanija)
+	Polish	Poljski
+	Do Not Check Spelling or Grammar	Ne proveravaj pravopis i gramatiku
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	Dokumenti
+	Word document	Word dokument
+	All files	Sve datoteke
+	Recipient lists	Liste primalaca
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Sistemski dijalog za datoteke nije dostupan, pa WordCraft prikazuje svoj. Da biste dobili sistemski dijalog, instalirajte portal za izbor datoteka (na primer xdg-desktop-portal-gtk) ili zenity.
+	Up one level	Jedan nivo gore
+	Home folder	Lična fascikla
+	{name} wasn't found.	{name} nije pronađen.
+	{name} already exists. Choose Save again to replace it.	{name} već postoji. Izaberite Sačuvaj ponovo da biste zamenili datoteku.
+	This folder can't be read: {error}	Ova fascikla ne može da se pročita: {error}
+	Showing the first {count} items.	Prikazane su samo prve stavke: {count}.
+	File name:	Ime datoteke:
+	Browse in WordCraft…	Potraži u WordCraft-u…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Otvorite datoteku pomoću WordCraft-ovog pregledača kada se sistemski dijalog za datoteke ne pojavi.
+	Hide White Space	Sakrij prazan prostor
+	All pages	Sve stranice
+	Current page	Trenutna stranica
+	Selected pages	Izabrane stranice
+	Custom range	Prilagođeni opseg
+	All pages in the range	Sve stranice u opsegu
+	Odd pages only	Samo neparne stranice
+	Even pages only	Samo parne stranice
+	Copies	Kopije
+	Collate copies	Složi kopije
+	Pages like 1-3, 5	Stranice poput 1-3, 5
+	{count} of {total} pages will print	Štampaće se {count} od {total} stranica
+	Save these pages as PDF…	Sačuvaj ove stranice kao PDF…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	Štampač, obostrana štampa i broj stranica po listu biraju se u tom dijalogu.
+	Previous Page	Prethodna stranica
+	Print to PDF	Štampaj u PDF
 	Add Shape	Dodaj oblik
 	Change Colors	Promeni boje
 	Change Layout	Promeni raspored
@@ -1851,6 +1926,37 @@
 	Rewind	Na početak
 	Forward	Napred
 	Stroke {n} of {total}	Potez {n} od {total}
+	Use wildcards	Koristi džoker znake
+	Special	Posebno
+	Match prefix	Podudari prefiks
+	Match suffix	Podudari sufiks
+	Ignore punctuation characters	Zanemari znake interpunkcije
+	Ignore white-space characters	Zanemari beline
+	Regular expressions	Regularni izrazi
+	Search Options	Opcije pretrage
+	Tab Character	Znak tabulatora
+	Any Character	Bilo koji znak
+	Any Digit	Bilo koja cifra
+	Any Letter	Bilo koje slovo
+	Caret Character	Znak kapice
+	Section Character	Znak odeljka
+	Paragraph Character	Simbol pasusa
+	Graphic	Grafika
+	Manual Line Break	Ručni prekid reda
+	Manual Page Break	Ručni prekid strane
+	Section Break	Prekid odeljka
+	White Space	Belina
+	Clipboard Contents	Sadržaj ostave
+	Find What Text	Pronađeni tekst
+	Find What Expression	Pronađeni izraz
+	Character in Range	Znak u opsegu
+	Beginning of Word	Početak reči
+	End of Word	Kraj reči
+	Expression	Izraz
+	Not	Nije
+	Num Occurrences	Broj ponavljanja
+	Previous 1 or More	Prethodno 1 ili više puta
+	0 or More Characters	0 ili više znakova
 	Move with Text	Pomeraj sa tekstom
 	Fix Position on Page	Fiksiraj položaj na stranici
 
@@ -1892,7 +1998,6 @@
 	Add line numbering	Dodaj brojeve redova
 	Add to Document	Dodaj u dokument
 	Address labels	Adresne nalepnice
-	Arabic	Arapski
 	Auto	Automatski
 	Automatically hyphenate document	Automatski deli reči u dokumentu
 	Chinese (Simplified)	Kineski (pojednostavljeni)
@@ -1905,7 +2010,6 @@
 	Detect language automatically	Automatski prepoznaj jezik
 	Do not check spelling or grammar	Ne proveravaj pravopis ni gramatiku
 	Dutch	Holandski
-	English (United Kingdom)	Engleski (Ujedinjeno Kraljevstvo)
 	Envelope size:	Veličina koverte:
 	Estonian	Estonski
 	Finnish	Finski
@@ -1934,7 +2038,6 @@
 	Numbering:	Numerisanje:
 	Omit	Izostavi
 	One label per recipient	Jedna nalepnica po primaocu
-	Polish	Poljski
 	Portuguese (Brazil)	Portugalski (Brazil)
 	Portuguese (Portugal)	Portugalski (Portugalija)
 	Return address labels	Nalepnice sa adresom pošiljaoca
@@ -1952,3 +2055,11 @@
 	Turkish	Turski
 	Ukrainian	Ukrajinski
 	{language} is now the document's default language.	{language} je sada podrazumevani jezik dokumenta.
+	Visual effects	Vizuelni efekti
+	Animation effects:	Efekti animacije:
+	On	Uključeno
+	Off	Isključeno
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Glatko pomeranje i zumiranje, kao i postepeno pojavljivanje menija i dugmadi. Uz „Isključeno“ svaka promena se prikazuje odmah.
+	Your system has animation effects turned on.	U sistemu su efekti animacije uključeni.
+	Your system has animation effects turned off.	U sistemu su efekti animacije isključeni.
+	Your system doesn't report an animation setting, so animation effects stay on.	Sistem ne prijavljuje podešavanje animacije, pa efekti animacije ostaju uključeni.

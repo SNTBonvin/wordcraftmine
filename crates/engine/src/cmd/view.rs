@@ -1,7 +1,7 @@
 //! View tab and status bar: views, zoom, show/hide, panes.
 
 use serde_json::{Value, json};
-use wordcraft_layout::ViewMode;
+use wordcraft_layout::{NumeralMode, ViewMode};
 
 use super::sel_result;
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
@@ -35,6 +35,10 @@ pub fn specs() -> Vec<CommandSpec> {
             .pure(),
         CommandSpec::new("view.readLineSpacing", "Reading Line Spacing", "Reading › Layout", read_line_spacing)
             .params(r#"{"value": "document" | 1.0 | 1.25 | 1.5 | 2.0}"#)
+            .pure(),
+        // Print Layout: hide the white space (margins, headers, footers) between pages. Screen only.
+        CommandSpec::new("view.hideWhiteSpace", "Hide White Space", "View › Show", |s, v| toggle(s, v, |x| &mut x.hide_white_space))
+            .params(r#"{"value"?: bool}"#)
             .pure(),
         CommandSpec::new("view.focus", "Focus", "View › Immersive", |s, v| toggle(s, v, |x| &mut x.focus_mode)).pure(),
         CommandSpec::new("view.ruler", "Ruler", "View › Show", |s, v| toggle(s, v, |x| &mut x.ruler)).pure(),
@@ -88,6 +92,22 @@ pub fn specs() -> Vec<CommandSpec> {
         .pure(),
         CommandSpec::new("view.state", "View State", "View", |s, _| serde_json::to_value(&s.view).map_err(|e| CmdError::Failed(e.to_string())))
             .pure(),
+        // Word › File › Options › Advanced › Numeral: how digits look on screen (display
+        // only; the document text keeps the typed codepoints).
+        CommandSpec::new("view.numeral", "Numerals", "File › Options › Advanced", |s, v| match v.get("value") {
+            None => Ok(json!({"value": s.view.numeral})),
+            Some(Value::String(name)) => {
+                let Some(mode) = NumeralMode::parse(name) else {
+                    return Err(CmdError::Params("numeral mode: arabic|hindi|context|system".into()));
+                };
+                s.view.numeral = mode;
+                s.relayout();
+                Ok(json!({"value": s.view.numeral}))
+            }
+            Some(_) => Err(CmdError::Params("numeral mode: arabic|hindi|context|system".into())),
+        })
+        .params(r#"{"value"?: "arabic|hindi|context|system"}"#)
+        .pure(),
     ]
 }
 

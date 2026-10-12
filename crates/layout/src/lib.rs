@@ -8,6 +8,7 @@
 //! - [`hit`]: point ↔ position, caret geometry, line navigation, selection rectangles.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod balloons;
 mod contour;
 pub mod display;
 pub mod fields;
@@ -53,6 +54,88 @@ pub enum ViewMode {
     Outline,
 }
 
+/// How digits look on screen (Word › File › Options › Advanced › Numeral).
+///
+/// Display only: the document text keeps the typed codepoints, so find, spelling, copying and
+/// the saved file all see the original digits. Extended Arabic-Indic digits (U+06F0–U+06F9,
+/// Persian/Urdu ۰۱۲۳…) always show as typed; only ASCII and Arabic-Indic (U+0660–U+0669) digits
+/// are substituted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NumeralMode {
+    /// Western digits everywhere (`0123456789`); the default, today's behaviour.
+    #[default]
+    Arabic,
+    /// Eastern Arabic-Indic digits everywhere (`٠١٢٣٤٥٦٧٨٩`).
+    Hindi,
+    /// Hindi digits in and around right-to-left text, Western digits elsewhere (numbers take
+    /// an even bidi level, so the surrounding text decides).
+    Context,
+    /// Hindi digits when the system locale is an Arabic-script language, else Western digits.
+    /// Call [`NumeralMode::resolve`] before laying out.
+    System,
+}
+
+impl NumeralMode {
+    /// Short UI label (Word's option names).
+    pub fn label(self) -> &'static str {
+        match self {
+            NumeralMode::Arabic => "Arabic",
+            NumeralMode::Hindi => "Hindi",
+            NumeralMode::Context => "Context",
+            NumeralMode::System => "System",
+        }
+    }
+
+    /// Parse a command value (`"arabic" | "hindi" | "context" | "system"`, any case).
+    pub fn parse(s: &str) -> Option<NumeralMode> {
+        match s.to_lowercase().as_str() {
+            "arabic" => Some(NumeralMode::Arabic),
+            "hindi" => Some(NumeralMode::Hindi),
+            "context" => Some(NumeralMode::Context),
+            "system" => Some(NumeralMode::System),
+            _ => None,
+        }
+    }
+
+    /// Resolve `System` against the system locale (a BCP 47 or POSIX tag such as `ar-EG` or
+    /// `fa_IR.UTF-8`, found by the shell: layout never reads the environment). Hindi digits for
+    /// Arabic-script languages, else Western; unknown locale = Western. Other modes pass through.
+    pub fn resolve(self, system_locale: Option<&str>) -> NumeralMode {
+        if self != NumeralMode::System {
+            return self;
+        }
+        if system_locale.is_some_and(hindi_locale) { NumeralMode::Hindi } else { NumeralMode::Arabic }
+    }
+
+    /// The displayed form of `c` in a run shaped with direction `rtl`.
+    ///
+    /// One character maps to exactly one character, so shaped text stays codepoint-aligned
+    /// with the document text (only byte offsets shift). A `System` mode that was not
+    /// resolved falls back to Western digits.
+    pub fn map(self, c: char, rtl: bool) -> char {
+        let hindi = match self {
+            NumeralMode::Arabic => false,
+            NumeralMode::Hindi => true,
+            NumeralMode::Context => rtl,
+            NumeralMode::System => false,
+        };
+        if hindi {
+            if c.is_ascii_digit() { char::from_u32(0x660 + (c as u32 - '0' as u32)).unwrap_or(c) } else { c }
+        } else if ('\u{660}'..='\u{669}').contains(&c) {
+            (b'0' + (c as u32 - 0x660) as u8) as char
+        } else {
+            c
+        }
+    }
+}
+
+/// Does locale `tag` use Hindi digits (Arabic, Persian, Urdu, Pashto, Sindhi, Kurdish)?
+fn hindi_locale(tag: &str) -> bool {
+    let lang = tag.split(['_', '-', '.', '@']).next().unwrap_or_default().to_ascii_lowercase();
+    matches!(lang.as_str(), "ar" | "fa" | "ur" | "ps" | "sd" | "ku" | "ckb")
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct LayoutOptions {
     pub view: ViewMode,
@@ -65,8 +148,19 @@ pub struct LayoutOptions {
     pub show_hidden: bool,
     /// Final text ("No Markup"): tracked deletions take no space and draw nothing.
     pub hide_deleted: bool,
+    /// Show revisions in balloons: tracked deletions in the body take no space and draw nothing
+    /// (the editor shows them in balloons beside the page). Headers, footers, notes and text
+    /// boxes get no balloons, so their deletions stay inline.
+    pub deletions_in_balloons: bool,
     /// Check spelling as you type (squiggles).
     pub proofing: bool,
+    /// How digits look on screen (display only; the text is untouched). Callers resolve
+    /// `System` ([`NumeralMode::resolve`]); an unresolved `System` shows Western digits.
+    pub numeral: NumeralMode,
+    /// Print Markup (PDF, print, page images): widen each page by [`balloons::MARKUP_AREA`]
+    /// and show the comments there in balloons joined to their anchors, as Word prints them.
+    /// The editor draws its own interactive balloons and leaves this off.
+    pub comment_balloons: bool,
     /// Show field codes (`{ PAGE }`, shaded) instead of field results (View › Field Codes, Alt+F9).
     /// A field whose own `code` flag is set shows the other one.
     pub field_codes: bool,
@@ -87,6 +181,13 @@ pub struct ProofOptions {
 impl Default for ProofOptions {
     fn default() -> Self {
         ProofOptions { grammar: true, spelling: wordcraft_proof::Options::default() }
+    }
+}
+
+impl LayoutOptions {
+    /// Whether tracked deletions in `story` take no space and draw nothing.
+    pub fn hides_deleted(&self, story: StoryRef) -> bool {
+        self.hide_deleted || (self.deletions_in_balloons && story == StoryRef::Body)
     }
 }
 
@@ -158,9 +259,12 @@ pub enum Placed {
         spin: Spin,
         items: Vec<Placed>,
     },
-    /// A table cell's area (for hit testing and cell selection).
+    /// A table cell's area (for hit testing and cell selection). A vertically merged cell is
+    /// one `Cell` as tall as all its rows; its continuation rows get a `covered` `Cell` (their
+    /// own row's height) so the rows keep a box each, but it isn't a cell of its own on screen.
     Cell {
         rect: Rect,
+        covered: bool,
         table: Path,
         row: usize,
         cell: usize,
@@ -320,6 +424,9 @@ pub struct Page {
     pub footer_story: Option<u32>,
     /// Top-level body block index at the start of the page.
     pub first_block: usize,
+    /// Width of the markup area on the right of `w` that holds comment balloons (Print Markup,
+    /// [`LayoutOptions::comment_balloons`]); 0 without one. The document page is `w - markup` wide.
+    pub markup: f32,
 }
 
 /// The whole layout.
@@ -346,6 +453,7 @@ struct Key {
     eq: u32,
     read_spacing: Option<u32>,
     grid: (u32, u32, u32, bool),
+    hide_deleted: bool,
 }
 
 /// Memoised paragraph layouts.
@@ -391,7 +499,9 @@ fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
         s,
         opts.show_hidden,
         opts.hide_deleted,
+        opts.deletions_in_balloons,
         opts.proofing,
+        opts.numeral,
         opts.field_codes,
         opts.proof,
         wordcraft_proof::dictionary_generation(),
@@ -481,6 +591,9 @@ struct Ctx<'a> {
     chains: textbox::Chains,
     /// The current section's document grid (body text only: none for headers and footers).
     grid: para::Grid,
+    /// Whether tracked deletions are left out in the story being laid out
+    /// ([`LayoutOptions::hides_deleted`]): the body's, or the story of the [`layout_box`] at work.
+    hide_deleted: bool,
     /// Whether body text (or its notes) laid out so far shows a page total (`NUMPAGES`,
     /// `SECTIONPAGES`), which is only known once the whole body is paginated.
     uses_totals: bool,
@@ -529,6 +642,7 @@ impl Ctx<'_> {
             hide_deleted: false,
             table: None,
             proofing: None,
+            numeral: self.opts.numeral,
             exclusions: &[],
             eq_number: 0,
             read_line_spacing: None,
@@ -582,6 +696,7 @@ impl Ctx<'_> {
             eq: if eq_here > 0 { eq_number } else { 0 },
             read_spacing: if self.opts.view == ViewMode::Read { self.opts.read_line_spacing.map(f32::to_bits) } else { None },
             grid: self.grid.key(),
+            hide_deleted: self.hide_deleted,
         };
         self.cache.used.insert(key.clone());
         if let Some(pl) = self.cache.paras.get(&key) {
@@ -596,9 +711,10 @@ impl Ctx<'_> {
             fields: &self.fields,
             show_hidden: self.opts.show_hidden,
             field_codes: self.opts.field_codes,
-            hide_deleted: self.opts.hide_deleted,
+            hide_deleted: self.hide_deleted,
             table,
             proofing: self.opts.proofing.then_some(self.opts.proof),
+            numeral: self.opts.numeral,
             exclusions,
             eq_number,
             read_line_spacing: if self.opts.view == ViewMode::Read { self.opts.read_line_spacing } else { None },
@@ -740,6 +856,9 @@ fn layout_box(
     depth: usize,
     frame: Option<PageFrame>,
 ) -> BoxLayout {
+    // Deletions in balloons leave the body's text only: a header, note or text box keeps its own
+    // inline (restored for the story around this box when it's done).
+    let outer_hide = std::mem::replace(&mut ctx.hide_deleted, ctx.opts.hides_deleted(story));
     let mut items = Vec::new();
     // Pictures behind the text go first; `behind` counts them.
     let mut behind = 0;
@@ -768,7 +887,7 @@ fn layout_box(
                 // Floating objects anchored here: place them, then wrap the text around them.
                 // One left out of the layout (hidden, or deleted in the final text) takes no room.
                 let mut floats = HashMap::new();
-                let left_out = left_out_objects(ctx.doc, p, table.map(|t| &t.chr), ctx.opts.show_hidden, ctx.opts.hide_deleted);
+                let left_out = left_out_objects(ctx.doc, p, table.map(|t| &t.chr), ctx.opts.show_hidden, ctx.hide_deleted);
                 for (oi, o) in p.objects.iter().enumerate() {
                     let Some((w, h, float)) = floating(o) else { continue };
                     if left_out(oi) {
@@ -834,6 +953,7 @@ fn layout_box(
         }
     }
     let floats_bottom = float_tables.iter().map(|r| r.bottom()).fold(0.0, f32::max);
+    ctx.hide_deleted = outer_hide;
     BoxLayout { items, height: y.max(0.0), floats_bottom }
 }
 
@@ -1528,7 +1648,8 @@ fn layout_pass(
         cache.env = env;
     }
     cache.used.clear();
-    let notes = note_info(doc, opts.hide_deleted, note_pages);
+    // Note references are counted as the body shows them.
+    let notes = note_info(doc, opts.hides_deleted(StoryRef::Body), note_pages);
     let notes_hash = hash_of(&{
         let mut v: Vec<_> = notes.iter().map(|(a, b)| (*a, b.n, b.fmt)).collect();
         v.sort_by_key(|(a, ..)| *a);
@@ -1538,6 +1659,7 @@ fn layout_pass(
         doc,
         cache,
         opts,
+        hide_deleted: opts.hides_deleted(StoryRef::Body),
         counters: Counters::default(),
         fields: FieldCtx {
             page: 1,
@@ -1802,7 +1924,12 @@ fn layout_pass(
             }
         }
     }
-    Pass::Done(DocLayout { pages, index, ms: 0.0, text_boxes: ctx.boxes.total().saturating_sub(boxes_discarded) })
+    let mut lay = DocLayout { pages, index, ms: 0.0, text_boxes: 0 };
+    if opts.comment_balloons && !web {
+        balloons::add(&mut ctx, &mut lay);
+    }
+    lay.text_boxes = ctx.boxes.total().saturating_sub(boxes_discarded);
+    Pass::Done(lay)
 }
 
 /// Pagination state saved before a block, to lay the blocks from there out again (balancing
@@ -2053,7 +2180,11 @@ fn body_top_for(ctx: &mut Ctx, sect: &SectionProps, header: Option<u32>) -> f32 
 fn foot_top_for(ctx: &mut Ctx, sect: &SectionProps, footer: Option<u32>) -> f32 {
     let Some(part) = footer.and_then(|id| ctx.doc.parts.get(&id).map(|p| (id, p))) else { return f32::MAX };
     let (id, blocks) = (part.0, part.1.blocks.clone());
+    // A page total in the footer is filled in after pagination, like the header's: it doesn't
+    // make the body lay out again.
+    let track = std::mem::replace(&mut ctx.track_totals, false);
     let h = layout_box(ctx, StoryRef::Part(id), &blocks, &[], sect.text_width(), None, 0, None).height;
+    ctx.track_totals = track;
     sect.page_h - sect.footer - h
 }
 
@@ -2243,7 +2374,7 @@ fn anchor_floats(
         let frame = PageFrame { sect: pb.sect, origin: (0.0, 0.0) };
         // An object left out of the layout (hidden, or deleted in the final text) is not placed, so
         // it takes no room either.
-        let left_out = left_out_objects(ctx.doc, p, None, ctx.opts.show_hidden, ctx.opts.hide_deleted);
+        let left_out = left_out_objects(ctx.doc, p, None, ctx.opts.show_hidden, ctx.hide_deleted);
         for (oi, o) in p.objects.iter().enumerate() {
             let Some((w, h, float)) = floating(o) else { continue };
             if left_out(oi) {
@@ -2293,7 +2424,7 @@ fn place_objects(
     let (mut behind, mut front) = (Vec::new(), Vec::new());
     let Some(fl) = pl.lines.get(l0) else { return (behind, front) };
     // Objects left out of the layout (hidden, or deleted in the final text) aren't placed.
-    let left_out = left_out_objects(ctx.doc, p, at.table_chr, ctx.opts.show_hidden, ctx.opts.hide_deleted);
+    let left_out = left_out_objects(ctx.doc, p, at.table_chr, ctx.opts.show_hidden, ctx.hide_deleted);
     for li in l0..l1 {
         let Some(line) = pl.lines.get(li) else { continue };
         for k in line.c0..line.c1 {
@@ -2471,7 +2602,14 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
             if bottom > limit + 0.01 && l1 > l0 && !split {
                 break;
             }
-            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split {
+            // A line holding nothing but a page or column break stays at the bottom of the page
+            // even when it doesn't fit: it only ends the page, and moving it would leave a blank
+            // page behind it (Word does the same).
+            let only_break = matches!(l.end, LineEnd::PageBreak | LineEnd::ColumnBreak)
+                && p.text
+                    .get(l.start..l.stop)
+                    .is_some_and(|t| t.chars().all(|c| matches!(c, wordcraft_doc::para::PAGE_BREAK | wordcraft_doc::para::COLUMN_BREAK)));
+            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split && !only_break {
                 break;
             }
             new_notes.extend(line_notes);
@@ -2681,9 +2819,10 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32) -> f32 {
                 fields: &ctx.fields,
                 show_hidden: ctx.opts.show_hidden,
                 field_codes: ctx.opts.field_codes,
-                hide_deleted: ctx.opts.hide_deleted,
+                hide_deleted: ctx.opts.hides_deleted(StoryRef::Body),
                 table: None,
                 proofing: None,
+                numeral: ctx.opts.numeral,
                 exclusions: &[],
                 eq_number: ctx.eq_count,
                 read_line_spacing: if ctx.opts.view == ViewMode::Read { ctx.opts.read_line_spacing } else { None },
@@ -2814,7 +2953,16 @@ fn place_floating_table(pb: &mut PageBuilder, tl: &table::TableLayout, f: &Table
         };
         let x = float_table_x(pb, w, f, legacy);
         let r = clear_of_float_tables(Rect::new(x, align_in(v_area, f.y, h, f.v_align), w, h), f, legacy, h_area.0, &pb.float_tables);
-        if attempt == 0 && r.bottom() > pb.bottom + 0.01 && !pb.at_top() && f.v_rel == Anchor::Paragraph {
+        // Like Word, a table that doesn't fit below the text before it moves to the next page with
+        // its anchor: one placed relative to the paragraph when it would run off the page, one
+        // placed on the page or margin when it would also cover the text already on the page.
+        let moves = if f.v_rel == Anchor::Paragraph {
+            r.bottom() > pb.bottom + 0.01
+        } else {
+            let covers_text = r.y < pb.y - 0.01 && r.bottom() > pb.top + 0.01 && r.x < pb.col_x() + pb.col_w() && r.right() > pb.col_x();
+            covers_text && pb.y + h > pb.bottom + 0.01
+        };
+        if attempt == 0 && moves && !pb.at_top() {
             pb.advance(block, body_top);
             continue;
         }
@@ -2995,7 +3143,11 @@ mod tests;
 #[cfg(test)]
 mod tests_bidi;
 #[cfg(test)]
+mod tests_complex;
+#[cfg(test)]
 mod tests_grid;
+#[cfg(test)]
+mod tests_numeral;
 #[cfg(test)]
 mod tests_pages;
 #[cfg(test)]
