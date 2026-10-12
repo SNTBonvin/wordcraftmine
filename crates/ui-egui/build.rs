@@ -24,6 +24,135 @@ fn main() {
     if let Err(e) = std::fs::write(&out, generate(&json, &people)) {
         println!("cargo::warning=writing {}: {e}", out.display());
     }
+    let brand = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("brand_gen.rs");
+    if let Err(e) = std::fs::write(&brand, brand_source()) {
+        println!("cargo::warning=writing {}: {e}", brand.display());
+    }
+}
+
+/// A branded build (`WORDCRAFT_BRAND_DIR` = a folder with `brand.toml`): the product's name,
+/// accent colour, hidden tabs and buttons, relabelled items, an icon font with a WordCraft icon →
+/// glyph map, an extra ribbon tab of the product's own commands and licence texts,
+/// as static tables. Without it, WordCraft's own values. Only the local folder is read.
+fn brand_source() -> String {
+    println!("cargo::rerun-if-env-changed=WORDCRAFT_BRAND_DIR");
+    let default = "pub const BRANDED: bool = false;\npub const NAME: &str = \"WordCraft\";\npub const TAGLINE: &str = \"\";\npub const WEBSITE: &str = \"\";\npub const ACCENT: Option<([u8; 3], [u8; 3])> = None;\npub const HIDE_DISCORD: bool = false;\npub const HIDE_ARTCRAFT: bool = false;\npub const HIDE_SHARE: bool = false;\npub const HIDE_AUTOSAVE: bool = false;\npub const HIDE_TABS: &[&str] = &[];\npub const RELABEL: &[(&str, &str)] = &[];\npub const ICON_FONT: Option<&[u8]> = None;\npub const ICON_GLYPHS: &[(&str, char)] = &[];\npub const TAB: Option<(&str, &[(&str, &[(&str, &str, char)])])> = None;\npub const LICENCES: &[(&str, &str)] = &[];\n";
+    let Some(dir) = std::env::var_os("WORDCRAFT_BRAND_DIR").map(std::path::PathBuf::from) else { return default.into() };
+    match brand_from(&dir) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("cargo::warning=WORDCRAFT_BRAND_DIR={}: {e}; building unbranded", dir.display());
+            default.into()
+        }
+    }
+}
+
+fn brand_from(dir: &std::path::Path) -> Result<String, String> {
+    let read = |rel: &str| -> Result<String, String> {
+        let p = dir.join(rel);
+        println!("cargo::rerun-if-changed={}", p.display());
+        std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    let t: toml::Table = read("brand.toml")?.parse().map_err(|e| format!("brand.toml: {e}"))?;
+    let st = |v: Option<&toml::Value>| v.and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let lit = |s: &str| format!("{s:?}");
+    let rgb = |s: &str| -> Result<String, String> {
+        let h = s.trim_start_matches('#');
+        let b = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or(""), 16).map_err(|e| format!("colour {s}: {e}"));
+        Ok(format!("[{}, {}, {}]", b(0)?, b(2)?, b(4)?))
+    };
+    let mut o = String::from("pub const BRANDED: bool = true;\n");
+    let _ = writeln!(o, "pub const NAME: &str = {};", lit(&st(t.get("name"))));
+    let _ = writeln!(o, "pub const TAGLINE: &str = {};", lit(&st(t.get("tagline"))));
+    let _ = writeln!(o, "pub const WEBSITE: &str = {};", lit(&st(t.get("website"))));
+    let accent = t.get("accent").and_then(|a| a.as_table());
+    match accent {
+        Some(a) => {
+            let _ =
+                writeln!(o, "pub const ACCENT: Option<([u8; 3], [u8; 3])> = Some(({}, {}));", rgb(&st(a.get("light")))?, rgb(&st(a.get("dark")))?);
+        }
+        None => o.push_str("pub const ACCENT: Option<([u8; 3], [u8; 3])> = None;\n"),
+    }
+    let hide = t.get("hide").and_then(|h| h.as_table());
+    let flag = |k: &str| hide.and_then(|h| h.get(k)).and_then(|v| v.as_bool()).unwrap_or(false);
+    let _ = writeln!(o, "pub const HIDE_DISCORD: bool = {};", flag("discord"));
+    let _ = writeln!(o, "pub const HIDE_ARTCRAFT: bool = {};", flag("artcraft"));
+    let _ = writeln!(o, "pub const HIDE_SHARE: bool = {};", flag("share"));
+    let _ = writeln!(o, "pub const HIDE_AUTOSAVE: bool = {};", flag("autosave"));
+    let tabs: Vec<String> = hide
+        .and_then(|h| h.get("tabs"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str()).map(lit).collect())
+        .unwrap_or_default();
+    let _ = writeln!(o, "pub const HIDE_TABS: &[&str] = &[{}];", tabs.join(", "));
+    let relabel: Vec<String> = t
+        .get("relabel")
+        .and_then(|r| r.as_table())
+        .map(|r| r.iter().filter_map(|(k, v)| v.as_str().map(|v| format!("({}, {})", lit(k), lit(v)))).collect())
+        .unwrap_or_default();
+    let _ = writeln!(o, "pub const RELABEL: &[(&str, &str)] = &[{}];", relabel.join(", "));
+    // Icons: the font, its glyph map (name → code point) and WordCraft's icon names mapped onto it.
+    let icons = t.get("icons").and_then(|i| i.as_table());
+    let mut codes: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    if let Some(i) = icons {
+        let font = dir.join(st(i.get("font")));
+        println!("cargo::rerun-if-changed={}", font.display());
+        let font = font.canonicalize().map_err(|e| format!("icon font: {e}"))?;
+        let _ = writeln!(o, "pub const ICON_FONT: Option<&[u8]> = Some(include_bytes!({:?}));", font.display().to_string());
+        let glyphs: Value = serde_json::from_str(&read(&st(i.get("glyphs")))?).map_err(|e| format!("glyph map: {e}"))?;
+        if let Some(m) = glyphs.as_object() {
+            for (k, v) in m {
+                if let Some(c) = v.as_u64() {
+                    codes.insert(k.clone(), c as u32);
+                }
+            }
+        }
+        let mut rows = Vec::new();
+        for line in read(&st(i.get("map")))?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let mut it = line.split_whitespace();
+            if let (Some(name), Some(g)) = (it.next(), it.next())
+                && let Some(c) = codes.get(g).and_then(|c| char::from_u32(*c))
+            {
+                rows.push(format!("({}, {:?})", lit(name), c));
+            }
+        }
+        let _ = writeln!(o, "pub const ICON_GLYPHS: &[(&str, char)] = &[{}];", rows.join(", "));
+    } else {
+        o.push_str("pub const ICON_FONT: Option<&[u8]> = None;\npub const ICON_GLYPHS: &[(&str, char)] = &[];\n");
+    }
+    // The brand's ribbon tab: groups of (command id, label, icon glyph).
+    match t.get("tab").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_table()) {
+        Some(tab) => {
+            let mut groups = Vec::new();
+            for g in tab.get("group").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
+                let cmds: Vec<String> = g
+                    .get("commands")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|c| {
+                        let glyph = codes.get(&st(c.get("icon"))).and_then(|c| char::from_u32(*c)).unwrap_or('\u{0}');
+                        format!("({}, {}, {:?})", lit(&st(c.get("id"))), lit(&st(c.get("label"))), glyph)
+                    })
+                    .collect();
+                groups.push(format!("({}, &[{}] as &[(&str, &str, char)])", lit(&st(g.get("name"))), cmds.join(", ")));
+            }
+            let _ = writeln!(
+                o,
+                "pub const TAB: Option<(&str, &[(&str, &[(&str, &str, char)])])> = Some(({}, &[{}]));",
+                lit(&st(tab.get("name"))),
+                groups.join(", ")
+            );
+        }
+        None => o.push_str("pub const TAB: Option<(&str, &[(&str, &[(&str, &str, char)])])> = None;\n"),
+    }
+    let mut lic = Vec::new();
+    for l in t.get("licence").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
+        lic.push(format!("({}, {})", lit(&st(l.get("name"))), lit(&read(&st(l.get("file")))?)));
+    }
+    let _ = writeln!(o, "pub const LICENCES: &[(&str, &str)] = &[{}];", lic.join(", "));
+    Ok(o)
 }
 
 fn read<T>(path: &std::path::Path, fallback: &str, parse: impl Fn(&str) -> Result<T, String>) -> Option<T> {

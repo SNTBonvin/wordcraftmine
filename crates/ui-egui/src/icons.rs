@@ -73,6 +73,16 @@ impl Pen<'_> {
 
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
+    // A branded build's icon set: its glyph for this icon, drawn in the icon colour.
+    // Only once the icon font is loaded: drawing with an unbound family panics in epaint.
+    let family = egui::FontFamily::Name(crate::brand::ICON_FAMILY.into());
+    if let Some(g) = crate::brand::glyph(name)
+        && p.ctx().fonts(|f| f.definitions().families.contains_key(&family))
+    {
+        let size = r.height().min(r.width()) * 0.95;
+        p.text(r.center(), egui::Align2::CENTER_CENTER, g, egui::FontId::new(size, family), c);
+        return;
+    }
     let pen = Pen { p, r, c, a: accent, w: 1.25 };
     let a = accent;
     let red = Color32::from_rgb(0xD1, 0x3B, 0x3B);

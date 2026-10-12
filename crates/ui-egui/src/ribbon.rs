@@ -174,6 +174,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let user_tabs = app.session.ribbon.tabs().into_owned();
     let mut tabs: Vec<(String, bool)> = vec![("File".to_string(), false)];
     tabs.extend(user_tabs.iter().filter(|e| !e.hidden).map(|e| (e.name.clone(), e.custom)));
+    // A branded build hides some built-in tabs and adds its own before Help.
+    tabs.retain(|(n, _)| !crate::brand::tab_hidden(n));
+    if let Some((name, _)) = crate::brand::TAB {
+        let at = tabs.iter().position(|(n, _)| n == "Help").unwrap_or(tabs.len());
+        tabs.insert(at, (name.to_string(), true));
+    }
     for ct in contextual_tabs(&app.session) {
         if ct == "Outlining" {
             tabs.insert(1.min(tabs.len()), (ct.to_string(), false));
@@ -230,23 +236,25 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     if !app.has_document() {
                         ui.disable();
                     }
-                    // Share, Editing mode, Comments.
-                    let share = tl!("Share");
-                    let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
-                    let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
-                    ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
-                    icons::paint(
-                        ui.painter(),
-                        Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)),
-                        "share",
-                        t.on_accent,
-                        t.on_accent,
-                    );
-                    ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), t.on_accent);
-                    if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
-                        let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
+                    // Share, Editing mode, Comments. A branded build may leave Share out.
+                    if !crate::brand::HIDE_SHARE {
+                        let share = tl!("Share");
+                        let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
+                        let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
+                        ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
+                        icons::paint(
+                            ui.painter(),
+                            Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)),
+                            "share",
+                            t.on_accent,
+                            t.on_accent,
+                        );
+                        ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), t.on_accent);
+                        if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
+                            let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
+                        }
+                        ui.add_space(6.0);
                     }
-                    ui.add_space(6.0);
                     let track = app.session.doc.settings.track_changes;
                     let mode =
                         crate::widgets::icon_text_menu_button(ui, "pencil", if track { tl!("Reviewing") } else { tl!("Editing") }, regular(12.0));
@@ -288,6 +296,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let scroll = egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    if let Some((name, groups)) = crate::brand::TAB
+                        && name == app.ui.tab
+                    {
+                        let groups: Vec<wordcraft_engine::ribbon::CustomGroup> = groups
+                            .iter()
+                            .map(|(g, cmds)| wordcraft_engine::ribbon::CustomGroup {
+                                name: (*g).to_string(),
+                                commands: cmds.iter().map(|(id, _, _)| (*id).to_string()).collect(),
+                            })
+                            .collect();
+                        return custom_groups(app, ui, &groups);
+                    }
                     match entry {
                         // Every tab hidden: nothing to show.
                         Some(e) if e.hidden => return,
@@ -1760,7 +1780,9 @@ fn outlining(app: &mut WordApp, ui: &mut Ui) {
 fn help(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Help", None, app, |ui, app| {
         big(ui, app, "help", "Help", "ui.dialog", json!({"name": "about"}), false);
-        big(ui, app, "discord", "Community\nDiscord", "ui.discord", json!({}), false);
+        if !crate::brand::HIDE_DISCORD {
+            big(ui, app, "discord", "Community\nDiscord", "ui.discord", json!({}), false);
+        }
     });
     group(ui, "Agents", None, app, |ui, app| {
         big(ui, app, "macros", "Commands", "ui.dialog", json!({"name": "commands"}), false);

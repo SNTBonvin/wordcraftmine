@@ -1343,7 +1343,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::Icons { .. } => "Icons",
         Dialog::PasteSpecial { .. } => "Paste Special",
         Dialog::About { .. } => "About WordCraft",
-        Dialog::SaveChanges { .. } => "WordCraft",
+        Dialog::SaveChanges { .. } => crate::brand::NAME,
         Dialog::RecipientList { .. } => "Recipient List",
         Dialog::SelectTable { .. } => "Select Table",
         Dialog::InsertMergeField { .. } => "Insert Merge Field",
@@ -2312,7 +2312,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         Dialog::About { tab } => {
             ui.set_width(660.0);
             ui.horizontal(|ui| {
-                for (i, l) in ["About", "Contributors", "Models"].into_iter().enumerate() {
+                let tabs: &[&str] =
+                    if crate::brand::BRANDED { &["About", "Contributors", "Models", "Licenses"] } else { &["About", "Contributors", "Models"] };
+                for (i, l) in tabs.iter().copied().enumerate() {
                     let i = i as u8;
                     if ui.selectable_label(*tab == i, tl!(l)).clicked() {
                         *tab = i;
@@ -2323,6 +2325,35 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             match *tab {
                 1 => crate::credits::contributors_ui(ui),
                 2 => crate::credits::models_ui(ui),
+                3 => {
+                    // A branded build's notices: WordCraft's licence (kept by its MIT/Apache terms),
+                    // the bundled fonts and the brand's own third-party material.
+                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                        ui.label(egui::RichText::new("WordCraft").font(semibold(14.0)));
+                        ui.label(tl!("MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors."));
+                        ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new(tl!("Fonts")).font(semibold(14.0)));
+                        ui.label("Inter, Source Sans 3, Source Serif 4, JetBrains Mono, Carlito, Caladea: SIL Open Font License 1.1.");
+                        for (name, text) in crate::brand::LICENCES {
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new(*name).font(semibold(14.0)));
+                            ui.label(egui::RichText::new(*text).small());
+                        }
+                    });
+                }
+                _ if crate::brand::HIDE_ARTCRAFT => {
+                    ui.label(egui::RichText::new(crate::brand::NAME).font(semibold(22.0)));
+                    let build = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or(tl!("development build"));
+                    ui.label(crate::i18n::fmt(tl!("Version {version} ({build})"), &[("version", env!("CARGO_PKG_VERSION")), ("build", build)]));
+                    ui.label(crate::brand::TAGLINE);
+                    ui.add_space(6.0);
+                    if !crate::brand::WEBSITE.is_empty() {
+                        ui.hyperlink(crate::brand::WEBSITE);
+                    }
+                    ui.label(tl!("Built on WordCraft, a free, open-source word processor."));
+                    ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
+                }
                 _ => {
                     ui.label(egui::RichText::new(tl!("WordCraft")).font(semibold(22.0)));
                     let build = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or(tl!("development build"));

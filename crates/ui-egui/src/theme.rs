@@ -352,8 +352,18 @@ impl Tokens {
             orange: Color32::from_rgb(0xF0, 0xA0, 0x50),
         }
     }
+    /// The brand's accent over the built-in one ([`crate::brand::accent`]).
+    fn branded(mut self) -> Self {
+        if let Some((accent, ink, on)) = crate::brand::accent(self.dark) {
+            self.accent = accent;
+            self.accent_text = ink;
+            self.on_accent = on;
+        }
+        self
+    }
+
     pub fn get(ctx: &egui::Context) -> Tokens {
-        if ctx.global_style().visuals.dark_mode { Tokens::dark() } else { Tokens::light() }
+        if ctx.global_style().visuals.dark_mode { Tokens::dark().branded() } else { Tokens::light().branded() }
     }
 }
 
@@ -449,6 +459,11 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
         m.insert(0, "Mono".into());
     }
     fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
+    // A branded build's icon font, in a family of its own (never used for text).
+    if let Some(bytes) = crate::brand::ICON_FONT {
+        add(&mut fonts, crate::brand::ICON_FAMILY, bytes);
+        fonts.families.insert(FontFamily::Name(crate::brand::ICON_FAMILY.into()), vec![crate::brand::ICON_FAMILY.into()]);
+    }
     fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
@@ -599,8 +614,8 @@ fn tracked_job(text: &str, font: &FontId, tracking: f32, color: Color32) -> egui
 /// Setting a concrete theme for `System` would pin the native window too, and macOS then stops
 /// reporting appearance changes (#311).
 pub fn apply(ctx: &egui::Context, appearance: Appearance) {
-    ctx.set_visuals_of(egui::Theme::Light, visuals(&Tokens::light()));
-    ctx.set_visuals_of(egui::Theme::Dark, visuals(&Tokens::dark()));
+    ctx.set_visuals_of(egui::Theme::Light, visuals(&Tokens::light().branded()));
+    ctx.set_visuals_of(egui::Theme::Dark, visuals(&Tokens::dark().branded()));
     ctx.all_styles_mut(|s| {
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 3.0);

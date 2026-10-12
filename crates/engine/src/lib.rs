@@ -100,6 +100,7 @@ impl CommandSpec {
 }
 
 /// All commands by id.
+#[derive(Clone)]
 pub struct Registry {
     specs: Vec<CommandSpec>,
     by_id: HashMap<&'static str, usize>,
@@ -112,6 +113,16 @@ impl Registry {
             by_id.insert(s.id, i);
         }
         Registry { specs, by_id }
+    }
+    /// Add commands an application built on WordCraft provides (its own ribbon tab, say). An id
+    /// that is already registered keeps its command.
+    pub fn extend(&mut self, specs: impl IntoIterator<Item = CommandSpec>) {
+        for s in specs {
+            if !self.by_id.contains_key(s.id) {
+                self.by_id.insert(s.id, self.specs.len());
+                self.specs.push(s);
+            }
+        }
     }
     pub fn get(&self, id: &str) -> Option<&CommandSpec> {
         self.by_id.get(id).and_then(|i| self.specs.get(*i))
