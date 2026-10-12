@@ -703,4 +703,3 @@ fn bundled_interface_fonts_cover_german_letters() {
         }
     }
 }
-
