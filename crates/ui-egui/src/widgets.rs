@@ -225,14 +225,15 @@ pub fn split(
     bg(ui, r, &resp, checked, &t);
     bg(ui, ar, &aresp, false, &t);
     let ic = Rect::from_center_size(r.center(), vec2(16.0, 16.0));
-    icons::paint(ui.painter(), ic, icon, t.icon, t.accent);
-    if let Some(sw) = swatch {
-        ui.painter().rect_filled(Rect::from_min_max(pos2(r.min.x + 4.0, r.max.y - 5.0), pos2(r.max.x - 4.0, r.max.y - 2.0)), 0.0, sw);
-    }
-    icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), "dropdown", t.icon, t.accent);
+    // Colour commands (font colour, highlight, shading) draw their colour bar in the accent, so the
+    // swatch is the colour that will be applied.
+    let on = enabled(app, id);
+    let (c, a) = if on { (t.icon, swatch.unwrap_or(t.accent)) } else { (t.text_disabled, t.text_disabled) };
+    icons::paint(ui.painter(), ic, icon, c, a);
+    icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), "dropdown", c, c);
     let resp = tooltip(app, resp, tip, id);
     command_menu(&resp, app, id);
-    if resp.clicked() {
+    if resp.clicked() && on {
         run_from_ribbon(app, id, params);
     }
     egui::Popup::menu(&aresp).show(|ui| {
@@ -303,6 +304,13 @@ pub fn menu_button(
     });
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Groups drawn taller than [`CONTENT_H`] (title and height): their content runs into the
+    /// group label below, as View › Show did with four check boxes in one column.
+    pub(crate) static TALL_GROUPS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// A ribbon group: content, a centred label below and a divider on the right.
 pub fn group(ui: &mut Ui, title: &str, launcher: Option<&str>, app: &mut WordApp, add: impl FnOnce(&mut Ui, &mut WordApp)) {
     // The English title keys the launcher's id; the drawn title is translated.
@@ -316,10 +324,16 @@ pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&
     let start = ui.cursor().min;
     let inner = ui.vertical(|ui| {
         ui.set_min_width(label_w + if launcher.is_some() { 22.0 } else { 10.0 });
-        ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        let content = ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
             ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
             add(ui, app);
         });
+        #[cfg(test)]
+        if content.response.rect.height() > CONTENT_H + 0.5 {
+            TALL_GROUPS.with(|g| g.borrow_mut().push(format!("{id_title}: {:.1}", content.response.rect.height())));
+        }
+        #[cfg(not(test))]
+        let _ = content;
     });
     let r = inner.response.rect;
     let r = Rect::from_min_max(start, pos2(r.max.x, start.y + CONTENT_H + LABEL_H));
