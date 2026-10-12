@@ -20,6 +20,8 @@ pub struct Previews {
     /// Lowercase English family → its name in that language (simsun → 宋体), and back.
     local_names: HashMap<String, String>,
     english_names: HashMap<String, String>,
+    /// The Chinese, Japanese and Korean fonts of the font list (the Asian text font box).
+    east_asian: Option<Vec<String>>,
     styles_hash: (u64, u64),
     /// Previews rendered this frame (rendering is spread over frames).
     budget: std::cell::Cell<u32>,
@@ -45,8 +47,27 @@ impl Previews {
             self.local_names = names.iter().map(|(e, l)| (e.to_lowercase(), l.clone())).collect();
             self.english_names = names.into_iter().map(|(e, l)| (l, e)).collect();
             self.families = Some((lang, f));
+            self.east_asian = None;
         }
         self.families.as_ref().map(|(_, f)| f.clone()).unwrap_or_default()
+    }
+
+    /// The Font dialog's Asian text font list: the installed Chinese, Japanese and Korean fonts,
+    /// named as in [`Previews::families`].
+    pub fn east_asian_families(&mut self) -> Vec<String> {
+        self.families();
+        if self.east_asian.is_none() {
+            let mut f: Vec<String> = wordcraft_fonts::FontDb::global()
+                .east_asian_families()
+                .into_iter()
+                .filter(|f| !f.starts_with('.'))
+                .map(|f| self.local_names.get(&f.to_lowercase()).cloned().unwrap_or(f))
+                .collect();
+            f.sort_by_key(|a| a.to_lowercase());
+            f.dedup();
+            self.east_asian = Some(f);
+        }
+        self.east_asian.clone().unwrap_or_default()
     }
 
     /// The name the font box shows for the document's font `family`: its name in the interface
@@ -61,6 +82,17 @@ impl Previews {
     pub fn font_stored(&mut self, shown: &str) -> String {
         self.families();
         self.english_names.get(shown).cloned().unwrap_or_else(|| shown.to_string())
+    }
+
+    /// Fonts were added or removed: list the families again and redraw the entries of
+    /// `families` (an entry drawn before its font was added shows the fallback face).
+    pub fn fonts_changed(&mut self, ctx: &egui::Context, families: impl Iterator<Item = String>) {
+        self.families = None;
+        ctx.data_mut(|d| {
+            for f in families {
+                d.remove::<TextureHandle>(egui::Id::new(format!("font:{f}")));
+            }
+        });
     }
 
     /// A closure drawing a font-menu entry in its own face.
@@ -89,7 +121,7 @@ impl Previews {
                     return None;
                 }
                 let ppp = ui.ctx().pixels_per_point();
-                let img = snippet(
+                let mut img = snippet(
                     &Document::new(),
                     Paragraph::with_text(name, CharProps { font: Some(name.to_string()), size: Some(13.0), ..Default::default() }),
                     240.0,
@@ -97,6 +129,7 @@ impl Previews {
                     ppp,
                     2.0,
                 )?;
+                ink_mask(&mut img);
                 let h = ui.ctx().load_texture(&key, img, egui::TextureOptions::LINEAR);
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(&key), h.clone()));
                 Some(h)
@@ -108,7 +141,7 @@ impl Previews {
                         h.id(),
                         Rect::from_min_size(pos2(r.min.x + 6.0, r.center().y - sz.y / 2.0), sz),
                         Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
+                        t.text,
                     );
                 }
                 None => {
@@ -206,6 +239,19 @@ fn math_image(nodes: &wordcraft_doc::math::Arg, display: bool, pt: f32, w: f32, 
     let img = wordcraft_render::render_area(&d, page, 0.0, mid - h / 2.0, w, h, ppp, &opts);
     let px = img.to_straight();
     Some(egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &px))
+}
+
+/// Turn a snippet rendered black on white paper into an ink mask: white whose alpha is the ink's
+/// coverage, on a transparent background. Painted with the theme's text colour as the tint, a font
+/// menu entry then reads like the rest of the menu in light and dark mode instead of sitting on a
+/// white strip (#535).
+pub fn ink_mask(img: &mut egui::ColorImage) {
+    for p in &mut img.pixels {
+        let [r, g, b, a] = p.to_srgba_unmultiplied();
+        let lum = (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000;
+        let ink = 255u32.saturating_sub(lum.min(255)) * u32::from(a) / 255;
+        *p = egui::Color32::from_white_alpha(u8::try_from(ink).unwrap_or(u8::MAX));
+    }
 }
 
 /// Lay out `para` (with `base`'s styles) in a `w`×`h` pt box and rasterise it.
@@ -339,6 +385,17 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
         let galley = ui.painter().layout_job(job);
         let label_pos = pos2(r.center().x - galley.size().x / 2.0, r.max.y - 9.0 - galley.size().y / 2.0);
         ui.painter().with_clip_rect(r).galley(label_pos, galley, t.text);
+        // Right-click a tile: the same style actions as the Styles pane.
+        resp.context_menu(|ui| {
+            if ui.button(tl!("Update to Match Selection")).clicked() {
+                let _ = app.run("styles.updateToMatch", json!({"style": id}));
+                ui.close();
+            }
+            if ui.button(tl!("Modify…")).clicked() {
+                app.dialog = crate::dialogs::Dialog::modify_style(app, id);
+                ui.close();
+            }
+        });
         if resp.on_hover_text(name).clicked() {
             let _ = app.run("para.style", json!({"style": id}));
         }
@@ -364,12 +421,19 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
     }
 }
 
+/// Style sets shown in the Design tab's gallery, in order.
+const STYLE_SETS: [&str; 7] = ["default", "basic", "lines", "shaded", "casual", "centered", "minimalist"];
+/// Width of one gallery thumbnail, points.
+const STYLE_SET_W: f32 = 56.0;
+/// Width the whole gallery takes with the ribbon's 1 pt item spacing.
+pub const STYLE_SET_GALLERY_W: f32 = STYLE_SETS.len() as f32 * (STYLE_SET_W + 1.0) - 1.0;
+
 /// Design tab: style set tiles.
 pub fn style_set_gallery(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let ppp = ui.ctx().pixels_per_point();
-    for name in ["default", "basic", "lines", "shaded", "casual", "centered", "minimalist"] {
-        let (r, resp) = ui.allocate_exact_size(vec2(56.0, crate::widgets::CONTENT_H), Sense::click());
+    for name in STYLE_SETS {
+        let (r, resp) = ui.allocate_exact_size(vec2(STYLE_SET_W, crate::widgets::CONTENT_H), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, 3.0, t.hover);
         }
@@ -467,5 +531,49 @@ mod tests {
         });
         rx.recv_timeout(std::time::Duration::from_secs(30)).expect("font menu preview rendering hung or failed");
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn ink_mask_keeps_the_ink_and_drops_the_paper() {
+        let mut img = egui::ColorImage::new([3, 1], vec![egui::Color32::WHITE, egui::Color32::BLACK, egui::Color32::from_gray(128)]);
+        ink_mask(&mut img);
+        assert_eq!(img.pixels[0].a(), 0, "paper becomes transparent");
+        assert_eq!(img.pixels[1], egui::Color32::from_white_alpha(255), "full ink stays opaque");
+        assert_eq!(img.pixels[2].a(), 127, "antialiased ink keeps its coverage");
+    }
+
+    /// #535: font menu entries drew on a white strip in dark mode. They are now tinted with the
+    /// theme's text colour and draw no background of their own.
+    #[test]
+    fn font_menu_entries_take_the_theme_text_colour() {
+        for theme in [egui::Theme::Dark, egui::Theme::Light] {
+            let ctx = egui::Context::default();
+            crate::theme::apply(&ctx, crate::theme::Appearance::System);
+            ctx.set_theme(theme);
+            let preview = Previews::default().font_preview_fn();
+            let mut out = None;
+            for time in [1.0, 2.0] {
+                let input = egui::RawInput { time: Some(time), ..Default::default() };
+                let mut o = ctx.run_ui(input, |ui| {
+                    preview(ui, "Source Sans 3");
+                });
+                o.textures_delta.clear();
+                out = Some(o);
+            }
+            let want = if theme == egui::Theme::Dark { Tokens::dark().text } else { Tokens::light().text };
+            let shapes = out.map(|o| o.shapes).unwrap_or_default();
+            let mut images = 0;
+            for s in &shapes {
+                match &s.shape {
+                    egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+                        images += 1;
+                        assert!(m.vertices.iter().all(|v| v.color == want), "{theme:?}: the entry is not tinted with the text colour");
+                    }
+                    egui::Shape::Rect(r) => panic!("{theme:?}: an idle entry paints no background, got {:?}", r.fill),
+                    _ => {}
+                }
+            }
+            assert_eq!(images, 1, "{theme:?}: the entry draws its rendered name");
+        }
     }
 }
