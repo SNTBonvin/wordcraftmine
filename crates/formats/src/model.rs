@@ -548,7 +548,13 @@ fn finite_or(v: f32, d: f32) -> f32 {
 
 /// Build a document from a flow.
 pub fn to_doc(flow: &Flow) -> Document {
+    to_doc_in(flow, wordcraft_doc::SectionProps::default())
+}
+
+/// [`to_doc`] on a page of the source's own size and margins (`section`), which tables size to.
+pub fn to_doc_in(flow: &Flow, section: wordcraft_doc::SectionProps) -> Document {
     let mut doc = Document::new();
+    doc.last_section = section;
     doc.numbering = Default::default();
     let uses_code = uses_kind(&flow.blocks, Kind::Code, 0);
     if uses_code {

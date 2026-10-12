@@ -527,6 +527,62 @@ struct CellDef {
     hmerge: u8,
     shading: Option<Rgb>,
     right: i32,
+    /// A left or right border is drawn (`\clbrdrl`/`\clbrdrr` with a line style).
+    side_border: bool,
+}
+
+/// Page size and margins in twips (`\paperw`, `\margl`… and their `…sxn` section forms).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PageGeom {
+    w: Option<i32>,
+    h: Option<i32>,
+    left: Option<i32>,
+    right: Option<i32>,
+    top: Option<i32>,
+    bottom: Option<i32>,
+    header: Option<i32>,
+    footer: Option<i32>,
+    landscape: bool,
+}
+
+impl PageGeom {
+    /// The section properties these give, Word's defaults where the file names none.
+    fn section(&self) -> wordcraft_doc::SectionProps {
+        let mut s = wordcraft_doc::SectionProps::default();
+        // Twips to points, ignoring nonsense (zero, negative, or beyond Word's 22").
+        let pt = |v: Option<i32>, lo: f32, hi: f32| v.map(|t| t as f32 / 20.0).filter(|v| v.is_finite() && (lo..=hi).contains(v));
+        if let Some(w) = pt(self.w, 72.0, 1584.0) {
+            s.page_w = w;
+        }
+        if let Some(h) = pt(self.h, 72.0, 1584.0) {
+            s.page_h = h;
+        }
+        if self.landscape && s.page_w < s.page_h {
+            std::mem::swap(&mut s.page_w, &mut s.page_h);
+        }
+        s.landscape = s.page_w > s.page_h;
+        for (v, f) in [
+            (self.left, &mut s.margin_left),
+            (self.right, &mut s.margin_right),
+            (self.top, &mut s.margin_top),
+            (self.bottom, &mut s.margin_bottom),
+            (self.header, &mut s.header),
+            (self.footer, &mut s.footer),
+        ] {
+            if let Some(v) = pt(v, 0.0, 720.0) {
+                *f = v;
+            }
+        }
+        // Margins that leave no room for text fall back to Word's.
+        let d = wordcraft_doc::SectionProps::default();
+        if s.page_w - s.margin_left - s.margin_right < 72.0 {
+            (s.margin_left, s.margin_right) = (d.margin_left, d.margin_right);
+        }
+        if s.page_h - s.margin_top - s.margin_bottom < 72.0 {
+            (s.margin_top, s.margin_bottom) = (d.margin_top, d.margin_bottom);
+        }
+        s
+    }
 }
 
 #[derive(Default)]
@@ -544,6 +600,13 @@ struct Reader {
     ansicpg: u16,
     /// The default font (`\deff`), whose charset applies before any `\f`.
     deff: i32,
+    page: PageGeom,
+    /// The cell border side being described (`\clbrdrl` … `\clbrdrr`), until its line style.
+    cell_side: Option<char>,
+    /// Each table row's cell right edges (`\cellx`, twips), for the table's column grid.
+    table_rights: Vec<Vec<i32>>,
+    /// The table has a cell with a left or right border.
+    table_side_borders: bool,
     colors: Vec<Option<Rgb>>,
     color_cur: (u8, u8, u8, bool),
     styles: HashMap<i32, String>,
@@ -852,8 +915,18 @@ impl Reader {
         let mut cells = std::mem::take(&mut self.row);
         let defs = self.defs.clone();
         let mut out: Vec<Cell> = Vec::new();
+        let mut rights: Vec<i32> = Vec::new();
         for (i, mut c) in cells.drain(..).enumerate() {
             let d = defs.get(i).cloned().unwrap_or_default();
+            self.table_side_borders |= d.side_border;
+            // A merged-in cell widens the cell it joins.
+            if d.hmerge == 2
+                && let Some(last) = rights.last_mut()
+            {
+                *last = d.right;
+            } else {
+                rights.push(d.right);
+            }
             c.shading = d.shading;
             c.header = self.row_header;
             match d.vmerge {
@@ -870,7 +943,9 @@ impl Reader {
             out.push(c);
         }
         if !out.is_empty() && self.table.len() < wordcraft_doc::table::MAX_ROWS {
+            rights.truncate(out.len());
             self.table.push(out);
+            self.table_rights.push(rights);
         }
     }
 
@@ -883,8 +958,13 @@ impl Reader {
             self.end_row();
         }
         if !self.table.is_empty() {
-            let rows = std::mem::take(&mut self.table);
-            self.body.push(FBlock::Table(FTable { rows, widths: Vec::new(), borderless: false }));
+            let mut rows = std::mem::take(&mut self.table);
+            let rights = std::mem::take(&mut self.table_rights);
+            let widths = column_grid(&mut rows, &rights);
+            // Word draws only the borders a table names: one without side borders is laid out
+            // without the grid (rules between rows alone don't make it a ruled table).
+            let borderless = !std::mem::take(&mut self.table_side_borders);
+            self.body.push(FBlock::Table(FTable { rows, widths, borderless }));
         }
     }
 
@@ -1189,7 +1269,27 @@ impl Reader {
             "clmgf" => self.def_cur.hmerge = 1,
             "clmrg" => self.def_cur.hmerge = 2,
             "clcbpat" => self.def_cur.shading = self.colors.get(pv.max(0) as usize).copied().flatten(),
+            "clbrdrl" => self.cell_side = Some('l'),
+            "clbrdrr" => self.cell_side = Some('r'),
+            "clbrdrt" | "clbrdrb" => self.cell_side = Some('h'),
+            "brdrs" | "brdrth" | "brdrsh" | "brdrdb" | "brdrdot" | "brdrdash" | "brdrhair" | "brdrtriple" | "brdrthtnsg" | "brdrtnthsg"
+            | "brdrwavy"
+                if matches!(self.cell_side.take(), Some('l' | 'r')) =>
+            {
+                self.def_cur.side_border = true;
+            }
+            "brdrnone" | "brdrnil" | "brdrtbl" => self.cell_side = None,
+            "paperw" | "pgwsxn" => self.page.w = Some(pv),
+            "paperh" | "pghsxn" => self.page.h = Some(pv),
+            "margl" | "marglsxn" => self.page.left = Some(pv),
+            "margr" | "margrsxn" => self.page.right = Some(pv),
+            "margt" | "margtsxn" => self.page.top = Some(pv),
+            "margb" | "margbsxn" => self.page.bottom = Some(pv),
+            "headery" => self.page.header = Some(pv),
+            "footery" => self.page.footer = Some(pv),
+            "landscape" | "lndscpsxn" => self.page.landscape = on,
             "cellx" => {
+                self.cell_side = None;
                 let mut d = std::mem::take(&mut self.def_cur);
                 d.right = pv;
                 if self.defs.len() < 63 {
@@ -1241,6 +1341,10 @@ fn hyperlink(instr: &str) -> Option<String> {
 
 /// Parse RTF bytes into the flow model.
 pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
+    parse_with_page(bytes).map(|(f, _)| f)
+}
+
+fn parse_with_page(bytes: &[u8]) -> Result<(Flow, PageGeom), String> {
     let start = bytes.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(0);
     if !bytes.get(start..).is_some_and(|b| b.starts_with(b"{\\rtf")) {
         return Err("not an RTF document (it doesn't start with {\\rtf)".into());
@@ -1408,12 +1512,50 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
     if blocks.is_empty() {
         blocks.push(FBlock::Para(Para::default()));
     }
-    Ok(Flow { blocks, meta: r.meta })
+    Ok((Flow { blocks, meta: r.meta }, r.page))
+}
+
+/// The column grid of a table from its rows' cell right edges: every distinct edge starts a grid
+/// column, and each cell spans the grid columns between its left and right edges, as Word lays
+/// out RTF rows whose cells don't line up. Returns the widths in points, or none (equal columns)
+/// when the edges don't make a grid.
+fn column_grid(rows: &mut [Vec<Cell>], rights: &[Vec<i32>]) -> Vec<f32> {
+    let mut edges: Vec<i32> = rights.iter().flatten().copied().filter(|&x| x > 0).collect();
+    edges.sort_unstable();
+    edges.dedup();
+    let ok = rights.len() == rows.len()
+        && rows
+            .iter()
+            .zip(rights)
+            .all(|(r, x)| r.len() == x.len() && x.windows(2).all(|w| w.first() < w.get(1)) && x.first().is_some_and(|&v| v > 0))
+        && !edges.is_empty()
+        && edges.len() <= 63;
+    if !ok {
+        return Vec::new();
+    }
+    for (row, x) in rows.iter_mut().zip(rights) {
+        let mut left = 0;
+        for (c, &right) in row.iter_mut().zip(x) {
+            let span = edges.iter().filter(|&&e| e > left && e <= right).count().max(1);
+            c.colspan = span as u32;
+            left = right;
+        }
+    }
+    let mut prev = 0;
+    edges
+        .iter()
+        .map(|&e| {
+            let w = (e - prev) as f32 / 20.0;
+            prev = e;
+            w
+        })
+        .collect()
 }
 
 /// Parse RTF bytes into a document.
 pub fn import(bytes: &[u8]) -> Result<Document, String> {
-    Ok(model::to_doc(&parse(bytes)?))
+    let (flow, page) = parse_with_page(bytes)?;
+    Ok(model::to_doc_in(&flow, page.section()))
 }
 
 #[cfg(test)]
@@ -1455,6 +1597,51 @@ mod tests {
         assert!(p.inlines.iter().any(|i| matches!(i, Inline::Text(t, f) if t == "red" && f.color == Some(Rgb(255, 0, 0)))));
         let FBlock::Para(l) = &f.blocks[2] else { panic!() };
         assert!(matches!(&l.inlines[0], Inline::Text(_, f) if f.link.as_deref() == Some("http://a.b")));
+    }
+
+    #[test]
+    fn page_size_and_margins() {
+        let d = import(br"{\rtf1\ansi\paperw11906\paperh16838\margl1134\margr850\margt1134\margb1134 x\par}").unwrap();
+        let s = &d.last_section;
+        assert!((s.page_w - 595.3).abs() < 0.1 && (s.page_h - 841.9).abs() < 0.1, "{} x {}", s.page_w, s.page_h);
+        assert!((s.margin_left - 56.7).abs() < 0.1 && (s.margin_right - 42.5).abs() < 0.1);
+        assert!(!s.landscape);
+        let d = import(br"{\rtf1\ansi\paperw11906\paperh16838\landscape x\par}").unwrap();
+        assert!(d.last_section.landscape && d.last_section.page_w > d.last_section.page_h);
+        // Nonsense keeps Word's defaults.
+        let d = import(br"{\rtf1\ansi\paperw0\margl99999 x\par}").unwrap();
+        assert_eq!(d.last_section, wordcraft_doc::SectionProps::default());
+    }
+
+    #[test]
+    fn table_grid_from_cell_edges_and_borders() {
+        // Rows whose cells don't line up share one grid: edges 2000, 3000, 9000.
+        let rtf = br"{\rtf1\ansi
+\trowd\cellx2000\cellx9000 \pard\intbl a\cell b\cell\row
+\trowd\cellx3000\cellx9000 \pard\intbl c\cell d\cell\row
+\pard after\par}";
+        let f = parse(rtf).unwrap();
+        let FBlock::Table(t) = &f.blocks[0] else { panic!() };
+        assert_eq!(t.widths, [100.0, 50.0, 300.0]);
+        assert_eq!(t.rows[0].iter().map(|c| c.colspan).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(t.rows[1].iter().map(|c| c.colspan).collect::<Vec<_>>(), [2, 1]);
+        assert_eq!(t.cols(), 3);
+        // No side borders: laid out without the grid, even with a rule under a cell.
+        assert!(t.borderless);
+        let f = parse(br"{\rtf1\ansi\trowd\clbrdrb\brdrs\cellx2000\pard\intbl a\cell\row}").unwrap();
+        let FBlock::Table(t) = &f.blocks[0] else { panic!() };
+        assert!(t.borderless);
+        let f = parse(br"{\rtf1\ansi\trowd\clbrdrl\brdrs\brdrw10\clbrdrr\brdrs\cellx2000\pard\intbl a\cell\row}").unwrap();
+        let FBlock::Table(t) = &f.blocks[0] else { panic!() };
+        assert!(!t.borderless);
+        // A border side set to none isn't a border.
+        let f = parse(br"{\rtf1\ansi\trowd\clbrdrl\brdrnone\cellx2000\pard\intbl a\cell\row}").unwrap();
+        let FBlock::Table(t) = &f.blocks[0] else { panic!() };
+        assert!(t.borderless);
+        // The table sizes to the document's page, not Letter.
+        let d = import(br"{\rtf1\ansi\paperw11906\margl1134\margr1134\trowd\cellx4818\cellx9638\pard\intbl a\cell b\cell\row}").unwrap();
+        let t = d.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t) } else { None }).unwrap();
+        assert_eq!(t.grid, [240.9, 241.0]);
     }
 
     #[test]
