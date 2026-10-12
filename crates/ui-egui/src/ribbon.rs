@@ -333,7 +333,7 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
     let enabled = crate::widgets::enabled(app, id);
     let resp = ui.add_enabled(enabled, egui::Button::new(text).shortcut_text(sc).min_size(vec2(200.0, 0.0)));
     if resp.clicked() {
-        let _ = app.run(id, params);
+        crate::widgets::run_from_ribbon(app, id, params);
         ui.close();
     }
 }
@@ -386,7 +386,7 @@ fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str
     let enabled = crate::widgets::enabled(app, id);
     let resp = ui.add_enabled(enabled, egui::Button::new((mark, tl!(label))).selected(checked).min_size(vec2(200.0, 0.0)));
     if resp.clicked() {
-        let _ = app.run(id, params);
+        crate::widgets::run_from_ribbon(app, id, params);
         ui.close();
     }
 }
@@ -556,9 +556,10 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
         // The buttons show alignment as seen on the page (Align Right is a right-to-left paragraph's start).
         let align = rp.as_ref().map(|r| r.align.visual(r.bidi)).unwrap_or_default();
         let rtl = rp.as_ref().is_some_and(|r| r.bidi);
+        let lists = wordcraft_engine::cmd::para::list_buttons(&app.session.doc, rp.as_ref().and_then(|r| r.numbering));
         stack(ui, |ui| {
             crate::widgets::row(ui, |ui| {
-                split(ui, app, "bullets", "Bullets", "para.bullets", json!({}), false, None, |ui, app| {
+                split(ui, app, "bullets", "Bullets", "para.bullets", json!({}), lists.bullets, None, |ui, app| {
                     ui.label(egui::RichText::new(tl!("Bullet Library")).small().weak());
                     ui.horizontal(|ui| {
                         for c in ["•", "○", "▪", "◆", "➢", "✓", "–"] {
@@ -579,7 +580,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     });
                     mi(ui, app, "None", "para.bullets", json!({"off": true}));
                 });
-                split(ui, app, "numbering", "Numbering", "para.numbering", json!({}), false, None, |ui, app| {
+                split(ui, app, "numbering", "Numbering", "para.numbering", json!({}), lists.numbering, None, |ui, app| {
                     for (l, k) in [
                         ("1. 2. 3.", "numbered"),
                         ("1) 2) 3)", "numberedParen"),
@@ -594,7 +595,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "Restart at 1", "para.restartNumbering", json!({}));
                     mi(ui, app, "None", "para.numbering", json!({"off": true}));
                 });
-                split(ui, app, "multilevel", "Multilevel List", "para.multilevel", json!({}), false, None, |ui, app| {
+                split(ui, app, "multilevel", "Multilevel List", "para.multilevel", json!({}), lists.multilevel, None, |ui, app| {
                     mi(ui, app, "1. 1.1. 1.1.1.", "para.multilevel", json!({"kind": "legal"}));
                     mi(ui, app, "I. A. 1. a.", "para.multilevel", json!({"kind": "outline"}));
                     ui.separator();
