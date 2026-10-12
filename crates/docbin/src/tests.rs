@@ -1377,6 +1377,37 @@ fn union_grid_cells_span_covered_columns() {
     assert_eq!(last.text, "tail");
 }
 
+/// #880 fix round 2: `sprmTDxaGapHalf` is the table's cell side margin (half the gap
+/// between cells, applied inside each cell). The change-history rows carry 40 twips = 2pt
+/// — dropping it made layout fall back to Word's 108-twip default and wrap `SP-230144`
+/// mid-value. It maps 1:1 onto OOXML `w:tblCellMar` → `TableProps.cell_margins`
+/// `[top, left, bottom, right]`, first row wins like the other table-level props.
+#[test]
+fn table_cell_margins_from_gap_half() {
+    let def_table = t_def_table(&[0, 2880, 5760]);
+    let gap_bytes = 40i16.to_le_bytes(); // 40 twips = 2pt
+    let gap = (0x9602u16, gap_bytes.as_slice()); // sprmTDxaGapHalf
+    let text = "a\u{7}b\u{7}tail\r";
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let ttp = [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), def_table, grpprl(&[gap])].concat();
+    let spec = StructSpec {
+        text,
+        papx_entries: vec![
+            (0, 0, in_tbl),     // "a" cell paragraph
+            (2, 0, ttp),        // "b" cell paragraph, ends the row (TTP)
+            (4, 0, Vec::new()), // "tail" paragraph
+        ],
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 1);
+    assert_eq!(tbl.props.cell_margins, Some([0.0, 2.0, 0.0, 2.0]), "props: {:?}", tbl.props);
+    // The grid and cell widths are untouched by the margin.
+    assert_eq!(tbl.grid, vec![144.0f32, 144.0]);
+    assert_eq!(tbl.rows[0].cells[0].props.width, Some(144.0));
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 

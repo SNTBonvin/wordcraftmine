@@ -63,6 +63,8 @@ pub(crate) struct RowInfo {
     align: Option<Align>,
     indent: Option<f32>,
     borders: Option<Borders>,
+    /// Cell side margin (points) from `sprmTDxaGapHalf`; feeds `TableProps.cell_margins`.
+    gap: Option<f32>,
     /// Horizontal merges: (itcFirst, itcLim) cell-index ranges.
     merges: Vec<(u8, u8)>,
     /// Per-cell overrides keyed by (pre-merge) cell index.
@@ -114,7 +116,13 @@ pub(crate) fn decode(papx: &[u8]) -> RowInfo {
                 };
             }
             T_DXA_LEFT => dxa_left = s16(&prl),
-            T_DXA_GAP_HALF => gap_half = s16(&prl),
+            T_DXA_GAP_HALF => {
+                let v = s16(&prl);
+                gap_half = v;
+                // Half the inter-cell gap is the cell side margin ([MS-DOC] §2.6.3);
+                // same 1:1 mapping as OOXML `w:tblCellMar` (`w:left` = dxaGapHalf).
+                r.gap = v.map(|tw| (tw as f32 / 20.0).clamp(0.0, 1584.0));
+            }
             T_TABLE_BORDERS_80 => r.borders = table_borders(prl.operand),
             T_MERGE => {
                 if let [a, b, ..] = prl.operand
@@ -344,6 +352,9 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
         }
         if props.indent.is_none() {
             props.indent = info.indent;
+        }
+        if props.cell_margins.is_none() {
+            props.cell_margins = info.gap.map(|g| [0.0, g, 0.0, g]);
         }
         if info.cell_mark {
             if !p.para.text.is_empty() {
