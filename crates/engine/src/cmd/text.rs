@@ -1,7 +1,7 @@
 //! Typing and deleting.
 
 use serde_json::Value;
-use wordcraft_doc::para::{COLUMN_BREAK, NB_HYPHEN, NBSP, PAGE_BREAK, SOFT_HYPHEN};
+use wordcraft_doc::para::{COLUMN_BREAK, NB_HYPHEN, NBSP, OBJ, PAGE_BREAK, SOFT_HYPHEN};
 use wordcraft_doc::props::{Border, BorderStyle, NumRef};
 use wordcraft_doc::{Block, ListKind, Path, Pos, StoryRef, Table};
 
@@ -45,6 +45,9 @@ fn autoformat(s: &mut Session, text: &str) -> Option<String> {
         return None;
     }
     let c = text.chars().next()?;
+    if !s.prefs.autocorrect.enabled || !s.prefs.autocorrect.smart_quotes {
+        return None;
+    }
     let f = &s.sel.focus;
     let para = s.doc.para_at(f)?;
     let before = para.text.get(..f.off)?;
@@ -57,9 +60,35 @@ fn autoformat(s: &mut Session, text: &str) -> Option<String> {
     }
 }
 
+/// File › Options › Advanced before typed text goes in: with "Typing replaces selected text"
+/// off the text goes in front of the selection and leaves it; in overtype the text replaces as
+/// many characters after the caret as it has, up to the paragraph's end or an object (picture,
+/// field), which stay.
+fn typing_options(s: &mut Session, text: &str) {
+    if !s.sel.is_collapsed() {
+        if !s.prefs.typing_replaces_selection {
+            let (start, _) = s.sel.ordered();
+            s.sel = Selection::caret(start);
+        }
+        return;
+    }
+    if !s.prefs.overtype || text.contains(['\r', '\n', '\u{2029}', '\u{000B}']) {
+        return;
+    }
+    let f = s.sel.focus.clone();
+    let Some(rest) = s.doc.para_at(&f).and_then(|p| p.text.get(f.off..)) else { return };
+    let n = text.chars().count();
+    let len: usize = rest.chars().take(n).take_while(|c| *c != OBJ).map(char::len_utf8).sum();
+    if len > 0 {
+        // The caret (focus) stays where typing happens; the characters after it are selected.
+        s.sel = Selection { anchor: Pos { off: f.off + len, ..f.clone() }, focus: f };
+    }
+}
+
 fn insert(s: &mut Session, v: &Value) -> CmdResult {
     let text = p::req_str(v, "text")?;
     let raw = p::bool(v, "raw").unwrap_or(false);
+    typing_options(s, text);
     let t = if raw { None } else { autoformat(s, text) };
     type_text(s, t.as_deref().unwrap_or(text))?;
     let trigger = text.chars().count() == 1 && text.chars().all(|c| c == ' ' || ",.;:!?".contains(c));
@@ -70,11 +99,11 @@ fn insert(s: &mut Session, v: &Value) -> CmdResult {
     let f = s.sel.focus.clone();
     let typed = s.doc.para_at(&f).cloned().map(|p| (p, s.sel.clone()));
     // A list label ("a. ") becomes a list before AutoCorrect could capitalise it.
-    let listed = text == " " && list_autoformat(s)?;
+    let listed = text == " " && s.prefs.autocorrect.enabled && list_autoformat(s)?;
     if !listed {
         super::tools::autocorrect(s)?;
     }
-    if text == " " && !listed {
+    if text == " " && !listed && s.prefs.autocorrect.enabled && s.prefs.autocorrect.dashes {
         dash_autoformat(s)?;
     }
     if let Some((para, sel)) = typed
@@ -113,6 +142,10 @@ fn list_autoformat(s: &mut Session) -> Result<bool, CmdError> {
         "I. " => ListKind::Outline,
         _ => return Ok(false),
     };
+    let ac = &s.prefs.autocorrect;
+    if !(if kind.is_bullet() { ac.bullets } else { ac.numbering }) {
+        return Ok(false);
+    }
     // Bullets join an existing bullet list; typing "1. " always starts numbering again at 1,
     // as in Word.
     let found = if kind.is_bullet() { s.doc.numbering.find_kind(kind) } else { None };
@@ -177,7 +210,8 @@ fn border_line(s: &Session, at: &Pos) -> Option<Border> {
     let para = s.doc.para_at(at)?;
     let text = para.text.as_str();
     let c = text.chars().next()?;
-    if !s.autocorrect_on
+    if !s.prefs.autocorrect.enabled
+        || !s.prefs.autocorrect.border_lines
         || at.off != text.len()
         || text.len() < 3
         || !text.chars().all(|x| x == c)
@@ -203,7 +237,7 @@ fn border_line(s: &Session, at: &Pos) -> Option<Border> {
 fn table_line(s: &Session, at: &Pos) -> Option<Vec<usize>> {
     let para = s.doc.para_at(at)?;
     let text = para.text.as_str();
-    if !s.autocorrect_on
+    if !s.prefs.autocorrect.enabled
         || at.story != StoryRef::Body
         || at.path.0.len() != 1
         || at.off != text.len()
@@ -352,6 +386,11 @@ fn ins_char(s: &mut Session, c: char) -> CmdResult {
 }
 
 fn new_paragraph(s: &mut Session, _: &Value) -> CmdResult {
+    // Enter in a one-line plain text control (or a check box or list) does nothing, as in Word.
+    if super::controls::refuses_paragraph(s) {
+        return sel_result(s);
+    }
+    super::controls::prepare_edit(s)?;
     let mut at = delete_selection(s)?;
     let auto = border_line(s, &at).map(EnterAutoFormat::Border).or_else(|| table_line(s, &at).map(EnterAutoFormat::Table));
     if let Some(auto) = auto {
@@ -447,7 +486,13 @@ fn back_tab(s: &mut Session, _: &Value) -> CmdResult {
     super::para::outdent(s, &Value::Null)
 }
 
-fn backspace(s: &mut Session, _: &Value) -> CmdResult {
+fn backspace(s: &mut Session, v: &Value) -> CmdResult {
+    let r = backspace_inner(s, v)?;
+    super::controls::restore_placeholder(s)?;
+    Ok(r)
+}
+
+fn backspace_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
     if !s.sel.is_collapsed() {
@@ -516,7 +561,13 @@ fn backspace(s: &mut Session, _: &Value) -> CmdResult {
     sel_result(s)
 }
 
-fn delete(s: &mut Session, _: &Value) -> CmdResult {
+fn delete(s: &mut Session, v: &Value) -> CmdResult {
+    let r = delete_inner(s, v)?;
+    super::controls::restore_placeholder(s)?;
+    Ok(r)
+}
+
+fn delete_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
     if !s.sel.is_collapsed() {
@@ -575,6 +626,7 @@ fn delete_word_back(s: &mut Session, v: &Value) -> CmdResult {
     let a = Pos { off: para.word_start(f.off), ..f.clone() };
     s.sel = Selection { anchor: a, focus: f };
     delete_selection(s)?;
+    super::controls::restore_placeholder(s)?;
     sel_result(s)
 }
 
@@ -590,5 +642,6 @@ fn delete_word_fwd(s: &mut Session, v: &Value) -> CmdResult {
     let b = Pos { off: para.word_end(f.off), ..f.clone() };
     s.sel = Selection { anchor: f, focus: b };
     delete_selection(s)?;
+    super::controls::restore_placeholder(s)?;
     sel_result(s)
 }
