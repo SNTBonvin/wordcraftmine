@@ -3068,7 +3068,12 @@ fn command_matches(c: &wordcraft_engine::CommandSpec, query: &str) -> bool {
 /// The Find and Replace dialog's Go To tab (#712): a page (a number, or `+2` / `-1` from the
 /// current page; empty, Next and Previous step a page) or a bookmark. Returns true to close.
 fn goto_body(app: &mut WordApp, ui: &mut Ui, what: &mut GoToWhat, target: &mut String, message: &mut String) -> bool {
-    let bookmarks: Vec<String> = app.session.doc.bookmarks().into_iter().map(|(n, _)| n).filter(|n| !n.starts_with('_')).collect();
+    // The document's bookmarks, only while they are listed (finding them walks the document).
+    let bookmarks: Vec<String> = if *what == GoToWhat::Bookmark {
+        app.session.doc.bookmarks().into_iter().map(|(n, _)| n).filter(|n| !n.starts_with('_')).collect()
+    } else {
+        Vec::new()
+    };
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.label(tl!("Go to what:"));
