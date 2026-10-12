@@ -6,6 +6,10 @@
 //!   Portuguese text gets no spelling marks. Capitalized stems are names (`Brasília`); a sentence
 //!   may start with any word and headings may be in capitals. Hyphenated compounds are checked
 //!   part by part (`guarda-roupa`, `ex-marido`), and the user dictionary applies as in English.
+//! - **Two spellings** ([`Variant`]): European Portuguese (`pt-PT`) is checked against the
+//!   Hunspell `pt_PT` dictionary (`pt_PT.aff`/`pt_PT.dic`, found the same way), so `facto`,
+//!   `equipa` and `económico` are words there and `econômico` isn't. Without a `pt_PT`
+//!   dictionary European text falls back to the Brazilian one, as before the two were told apart.
 //! - **Suggestions** tuned for Portuguese ([`suggest`]): missing accents first (`coraçao` →
 //!   `coração`, `saude` → `saúde`), then the dictionary's `REP` confusions (`seje` → `seja`), a
 //!   missing space, one-letter typos, and a dictionary scan for anything further off.
@@ -22,53 +26,102 @@ use crate::affix::AffixDict;
 
 pub use suggest::suggest;
 
-/// The Portuguese dictionary: `None` until first use, then the installed one (or an empty one).
-static DICT: RwLock<Option<Arc<AffixDict>>> = RwLock::new(None);
+/// Which of the two Portuguese spellings a run of text follows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Variant {
+    /// Brazilian Portuguese, and Portuguese with no region: the Hunspell `pt_BR` dictionary.
+    Br,
+    /// European Portuguese: the Hunspell `pt_PT` dictionary.
+    Pt,
+}
 
-/// File names of a Portuguese Hunspell dictionary.
-const NAMES: &[&str] = &["pt_BR", "pt-BR", "pt"];
+impl Variant {
+    /// File names of this spelling's Hunspell dictionary.
+    fn names(self) -> &'static [&'static str] {
+        match self {
+            Variant::Br => &["pt_BR", "pt-BR", "pt"],
+            Variant::Pt => &["pt_PT", "pt-PT"],
+        }
+    }
+
+    /// The loaded dictionary: `None` until first use, then the installed one (or an empty one).
+    fn slot(self) -> &'static RwLock<Option<Arc<AffixDict>>> {
+        static BR: RwLock<Option<Arc<AffixDict>>> = RwLock::new(None);
+        static PT: RwLock<Option<Arc<AffixDict>>> = RwLock::new(None);
+        match self {
+            Variant::Br => &BR,
+            Variant::Pt => &PT,
+        }
+    }
+}
 
 /// The Portuguese dictionary: the installed Hunspell `pt_BR` (read on first use), one given with
 /// [`install_dictionary`], or an empty one when none is available (Portuguese spelling is off
 /// then; see [`has_dictionary`]).
 pub fn dictionary() -> Arc<AffixDict> {
-    if let Some(d) = DICT.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+    dictionary_for(Variant::Br)
+}
+
+/// [`dictionary`] for one spelling. European Portuguese without a `pt_PT` dictionary uses the
+/// Brazilian one.
+pub fn dictionary_for(variant: Variant) -> Arc<AffixDict> {
+    if let Some(d) = variant.slot().read().unwrap_or_else(|e| e.into_inner()).as_ref() {
         return d.clone();
     }
-    let loaded = Arc::new(load_installed());
-    let mut slot = DICT.write().unwrap_or_else(|e| e.into_inner());
+    let loaded = load_installed(variant);
+    let mut slot = variant.slot().write().unwrap_or_else(|e| e.into_inner());
     // Another thread (or an install) may have filled it meanwhile: that one wins.
     slot.get_or_insert(loaded).clone()
 }
 
-fn load_installed() -> AffixDict {
-    let Some((aff, dic)) = crate::hunspell::find(NAMES) else {
-        log::info!("Portuguese spelling: no Hunspell pt_BR dictionary installed");
-        return AffixDict::default();
+fn load_installed(variant: Variant) -> Arc<AffixDict> {
+    let Some((aff, dic)) = crate::hunspell::find(variant.names()) else {
+        return match variant {
+            Variant::Br => {
+                log::info!("Portuguese spelling: no Hunspell pt_BR dictionary installed");
+                Arc::new(AffixDict::default())
+            }
+            Variant::Pt => {
+                log::info!("European Portuguese spelling: no Hunspell pt_PT dictionary installed; using pt_BR");
+                dictionary_for(Variant::Br)
+            }
+        };
     };
-    crate::hunspell::load(&aff, &dic).unwrap_or_else(|e| {
+    Arc::new(crate::hunspell::load(&aff, &dic).unwrap_or_else(|e| {
         log::warn!("Portuguese spelling: {e}");
         AffixDict::default()
-    })
+    }))
 }
 
 /// Use this Portuguese dictionary from now on (Hunspell `.aff` and `.dic` text, decoded to
 /// UTF-8), for example one the user picked. On error the current dictionary stays.
 pub fn install_dictionary(aff: &str, dic: &str) -> Result<(), String> {
+    install_dictionary_for(Variant::Br, aff, dic)
+}
+
+/// [`install_dictionary`] for one spelling.
+pub fn install_dictionary_for(variant: Variant, aff: &str, dic: &str) -> Result<(), String> {
     let d = AffixDict::from_hunspell(aff, dic, &[])?;
-    *DICT.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d));
+    *variant.slot().write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d));
     Ok(())
 }
 
-/// Forget the loaded dictionary, so the next check looks for an installed one again (after
+/// Forget the loaded dictionaries, so the next check looks for installed ones again (after
 /// [`crate::hunspell::set_dictionary_dir`] or a dictionary was installed).
 pub fn reload_dictionary() {
-    *DICT.write().unwrap_or_else(|e| e.into_inner()) = None;
+    for variant in [Variant::Br, Variant::Pt] {
+        *variant.slot().write().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 /// Is a Portuguese dictionary available (spelling is checked)?
 pub fn has_dictionary() -> bool {
     !dictionary().is_empty()
+}
+
+/// [`has_dictionary`] for one spelling.
+pub fn has_dictionary_for(variant: Variant) -> bool {
+    !dictionary_for(variant).is_empty()
 }
 
 /// Is `c` a letter of the Latin script (the only one the Portuguese dictionary covers)?
@@ -81,6 +134,16 @@ fn is_latin_letter(c: char) -> bool {
 /// is every word when no Portuguese dictionary is installed.
 pub fn is_correct(word: &str) -> bool {
     is_correct_with(&dictionary(), word)
+}
+
+/// [`is_correct`] in one spelling (`facto` is a word in European Portuguese only).
+pub fn is_correct_for(variant: Variant, word: &str) -> bool {
+    is_correct_with(&dictionary_for(variant), word)
+}
+
+/// Spelling suggestions for a word misspelled in one spelling ([`suggest`] is the Brazilian one).
+pub fn suggest_for(variant: Variant, word: &str, max: usize) -> Vec<String> {
+    suggest::suggest_in(&dictionary_for(variant), word, max)
 }
 
 /// [`is_correct`] against a given dictionary (an empty one accepts everything).
@@ -182,6 +245,28 @@ mod tests {
         for w in ["coraçao", "saude", "trbalho", "excrever", "prsidente", "frequencia", "amnha", "cantaando"] {
             assert!(!is_correct(w), "{w}");
         }
+    }
+
+    #[test]
+    fn the_two_spellings_have_their_own_dictionaries() {
+        test_dict::install();
+        test_dict::install_european();
+        assert!(has_dictionary_for(Variant::Br) && has_dictionary_for(Variant::Pt));
+        for w in ["facto", "equipa", "autocarro", "económico", "Económico", "FACTO"] {
+            assert!(is_correct_for(Variant::Pt, w), "{w}");
+        }
+        for w in ["facto", "equipa", "autocarro", "económico"] {
+            assert!(!is_correct(w) && !is_correct_for(Variant::Br, w), "{w}");
+        }
+        for w in ["equipe", "ônibus", "econômico"] {
+            assert!(is_correct(w) && !is_correct_for(Variant::Pt, w), "{w}");
+        }
+        // Words both write the same way are in both.
+        assert!(is_correct("coração") && is_correct_for(Variant::Pt, "coração"));
+        assert_eq!(suggest_for(Variant::Pt, "economico", 3).first().map(String::as_str), Some("económico"));
+        assert_eq!(suggest_for(Variant::Br, "economico", 3).first().map(String::as_str), Some("econômico"));
+        assert_eq!(Variant::Pt.names().first(), Some(&"pt_PT"));
+        assert!(!Variant::Pt.names().contains(&"pt"), "a bare `pt` dictionary is the Brazilian fallback");
     }
 
     #[test]

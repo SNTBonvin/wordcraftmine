@@ -105,7 +105,7 @@ Weights and evidence per area: [docs/target-app-parity.md](docs/target-app-parit
 | Hindi | hi | none | 0% |
 | Arabic | ar | none (document shaping and bidi work; no mirrored UI) | 0% |
 | French | fr | partial (interface) | ~95% |
-| Portuguese | pt-br (pt-PT none) | partial | ~95% |
+| Portuguese | pt-br, pt-pt | partial | ~95% |
 | Indonesian | id | none | 0% |
 | Japanese | ja | partial | ~95% |
 | German | de | partial (#574) | ~95% |
@@ -188,6 +188,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Reading Mode: existing View ribbon button now opens a read-only, viewport-column layout with animated horizontal paging, transient display controls, heading navigation (Navigation pane) and resize anchoring; document layout and export unchanged |
 | 2026-10-11 | DOCX open/save keeps inherited complex-script size, bold and italic independent of Latin formatting; explicit values are retained, and font commands still format both scripts. Covered by synthetic round trips and a local GUI save/reopen check. |
 | 2026-10-11 | Czech (`cs`) interface catalog: 2,021 entries (the full zh-hans key set), Czech locale detection and persisted language choice |
+| 2026-10-12 | European Portuguese: a `pt-pt` interface catalog (2,061 entries in European vocabulary) with locale detection (`pt-PT`, `pt-AO`, `pt-MZ` …), and pt-PT proofing against the installed Hunspell `pt_PT` dictionary (read at runtime, not bundled), told apart from pt-BR by the run's region; Review › Language offers Português (Portugal) |
 | 2026-10-12 | Portuguese proofing: pt-BR spelling against the installed Hunspell `pt_BR` dictionary (VERO; read at runtime, not bundled) — the affix engine grew `FLAG UTF-8`, 128 flag bits, continuation classes and `FORBIDDENWORD` to read it — suggestions tuned for Portuguese (missing accents first), conservative grammar rules with Portuguese messages, TeX Portuguese hyphenation patterns (BSD 3-clause, attributed); Review › Language offers Português (Brasil); a pt-br interface writes new documents in pt-BR |
 | 2026-10-11 | Polish: interface (`pl`, the thirteenth language, every catalog key) and proofing — spelling against the installed Hunspell `pl_PL` dictionary (read at runtime, not bundled) through a new Hunspell-style affix engine, suggestions tuned for Polish, Polish grammar rules with Polish messages, TeX Polish hyphenation patterns (MIT option); proofing language per run (`w:lang`) for squiggles, F7, suggestions and hyphenation, languages without tools left unmarked; Review › Language menu and the status bar's language; a Polish interface writes new documents in Polish |
 | 2026-10-11 | German (`de`) interface (#574): 2,021 translated entries covering the full zh-hans key set, locale and saved-preference tests, bundled-font checks; no German proofing resources |

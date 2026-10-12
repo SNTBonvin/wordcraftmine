@@ -14,6 +14,8 @@
 //!   messages.
 //! - **Bulgarian** ([`ProofLang::Bg`], module [`bg`]): hyphenation by the Bulgarian syllable
 //!   rules; no spelling or grammar marks yet.
+//! - **European Portuguese** ([`ProofLang::PtPt`], module [`pt`]): spelling against the Hunspell
+//!   `pt_PT` dictionary installed on the system; grammar and hyphenation as for Portuguese below.
 //! - **Portuguese** ([`ProofLang::Pt`], module [`pt`]): spelling against the Hunspell `pt_BR`
 //!   dictionary installed on the system (VERO and friends; not bundled), suggestions tuned for
 //!   Portuguese (missing accents, `seje`/`seja` confusions, missing spaces), conservative
@@ -498,7 +500,7 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang, opts: &Option
     }
     let message = match lang {
         ProofLang::Pl => "Możliwy błąd pisowni",
-        ProofLang::Pt => "Possível erro de ortografia",
+        ProofLang::Pt | ProofLang::PtPt => "Possível erro de ortografia",
         _ => "Possible spelling mistake",
     };
     Some(Issue { start: a, end: b, kind: IssueKind::Spelling, message: message.into(), suggestions: Vec::new(), lang })
@@ -515,6 +517,7 @@ pub fn is_correct_in_with(word: &str, lang: ProofLang, opts: &Options) -> bool {
         ProofLang::En => is_correct_with(word, opts),
         ProofLang::Pl => accepted_by_options(word, opts) || pl::is_correct(word),
         ProofLang::Pt => accepted_by_options(word, opts) || pt::is_correct(word),
+        ProofLang::PtPt => accepted_by_options(word, opts) || pt::is_correct_for(pt::Variant::Pt, word),
         ProofLang::Bg | ProofLang::Other => true,
     }
 }
@@ -525,6 +528,7 @@ pub fn suggest_in(word: &str, max: usize, lang: ProofLang) -> Vec<String> {
         ProofLang::En => suggest(word, max),
         ProofLang::Pl => pl::suggest(word, max),
         ProofLang::Pt => pt::suggest(word, max),
+        ProofLang::PtPt => pt::suggest_for(pt::Variant::Pt, word, max),
         ProofLang::Bg | ProofLang::Other => Vec::new(),
     }
 }
@@ -537,6 +541,8 @@ pub fn check_grammar_in(text: &str, lang: ProofLang) -> Vec<Issue> {
         ProofLang::En => check_grammar(text),
         ProofLang::Pl => pl::grammar::check(text),
         ProofLang::Pt => pt::grammar::check(text),
+        // The rules are the same in both spellings; the issues say which one they are in.
+        ProofLang::PtPt => pt::grammar::check(text).into_iter().map(|i| Issue { lang: ProofLang::PtPt, ..i }).collect(),
         ProofLang::Bg | ProofLang::Other => Vec::new(),
     }
 }
@@ -1016,6 +1022,32 @@ mod tests {
         assert!(v.iter().all(|i| i.lang == ProofLang::Pt && i.message == "Possível erro de ortografia"), "{v:?}");
     }
 
+    /// European and Brazilian Portuguese are checked against their own dictionaries: `facto` and
+    /// `equipa` are words in Portugal, `equipe` and `ônibus` in Brazil.
+    #[test]
+    fn european_and_brazilian_portuguese_use_their_own_dictionaries() {
+        pt::test_dict::install();
+        pt::test_dict::install_european();
+        let t = "O facto é que a equipa tem um autocarro económico.";
+        let pt = check_text(t, &[(0..t.len(), ProofLang::PtPt)]);
+        assert!(pt.is_empty(), "{pt:?}");
+        let br = check_text(t, &[(0..t.len(), ProofLang::Pt)]);
+        assert_eq!(flagged(t, &br), ["facto", "equipa", "autocarro", "económico"], "{br:?}");
+        let t = "A equipe tem um ônibus econômico.";
+        let pt = check_text(t, &[(0..t.len(), ProofLang::PtPt)]);
+        assert_eq!(flagged(t, &pt), ["equipe", "ônibus", "econômico"], "{pt:?}");
+        assert!(pt.iter().all(|i| i.lang == ProofLang::PtPt && i.message == "Possível erro de ortografia"), "{pt:?}");
+        assert!(check_text(t, &[(0..t.len(), ProofLang::Pt)]).is_empty());
+        // Suggestions come from the same dictionary: the European accent, not the Brazilian one.
+        assert_eq!(suggest_in("economico", 3, ProofLang::PtPt).first().map(String::as_str), Some("económico"));
+        assert_eq!(suggest_in("economico", 3, ProofLang::Pt).first().map(String::as_str), Some("econômico"));
+        assert!(is_correct_for("facto", Some("pt-PT")) && is_correct_for("facto", Some("pt_AO")));
+        assert!(!is_correct_for("facto", Some("pt-BR")) && !is_correct_for("facto", Some("pt")));
+        // Grammar issues in a European run carry its language.
+        let g = check_grammar_in("O autocarro autocarro chegou.", ProofLang::PtPt);
+        assert!(!g.is_empty() && g.iter().all(|i| i.lang == ProofLang::PtPt), "{g:?}");
+    }
+
     proptest::proptest! {
         #[test]
         fn never_panics(s in "\\PC{0,80}") {
@@ -1025,7 +1057,7 @@ mod tests {
             let _ = has_dictionary(Some(&s));
             let _ = is_correct_for(&s, Some(&s));
             let _ = hyphen::hyphen_points(&s, &hyphen::Limits::default());
-            for lang in [ProofLang::En, ProofLang::Pl, ProofLang::Pt, ProofLang::Other] {
+            for lang in [ProofLang::En, ProofLang::Pl, ProofLang::Pt, ProofLang::PtPt, ProofLang::Other] {
                 let _ = check_spelling_in(&s, lang);
                 let _ = check_grammar_in(&s, lang);
                 let _ = is_correct_in(&s, lang);
@@ -1043,6 +1075,7 @@ mod tests {
         #[test]
         fn portuguese_suggestions_never_panic(s in "[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ'’ -]{0,14}") {
             let _ = suggest_in(&s, 4, ProofLang::Pt);
+            let _ = suggest_in(&s, 4, ProofLang::PtPt);
         }
 
         #[test]

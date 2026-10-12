@@ -296,8 +296,8 @@ fn brazilian_portuguese_locales_and_saved_preference_work_without_changing_the_d
     for tag in ["pt-BR", "pt_BR.UTF-8", "PT-BR", "pt-BR-latn", "pt_BR.UTF-8@euro"] {
         assert_eq!(lang_from_tag(tag), Some(pt), "{tag}");
     }
-    // European Portuguese and a bare `pt` have no catalog yet, so they follow the fallback.
-    assert_eq!(lang_from_tag("pt-PT"), None);
+    // European Portuguese has its own catalog; a bare `pt` names neither, so it follows the fallback.
+    assert_ne!(lang_from_tag("pt-PT"), Some(pt));
     assert_eq!(lang_from_tag("pt"), None);
     assert_eq!(first_supported([UNSUPPORTED, "pt-BR", "en-US"]), Some(pt));
     let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
@@ -310,6 +310,90 @@ fn brazilian_portuguese_locales_and_saved_preference_work_without_changing_the_d
     let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
     assert_eq!(Lang::from_pref(&restored.language), pt);
     assert_eq!(pt.name(), "Português (Brasil)");
+}
+
+#[test]
+fn european_portuguese_locales_and_saved_preference_work_without_changing_the_document() {
+    let pt = lang("pt-pt");
+    for tag in ["pt-PT", "pt_PT.UTF-8", "PT-pt", "pt-PT-x-private", "pt_PT.UTF-8@euro", "pt-AO", "pt_MZ.UTF-8", "pt-CV"] {
+        assert_eq!(lang_from_tag(tag), Some(pt), "{tag}");
+    }
+    assert_eq!(lang_from_tag("pt-BR"), Some(lang("pt-br")));
+    assert_eq!(lang_from_tag("pt"), None);
+    assert_eq!(first_supported([UNSUPPORTED, "pt-PT", "pt-BR", "en-US"]), Some(pt));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "PT-PT"})).unwrap();
+    assert_eq!(result["effective"], "pt-pt");
+    assert_eq!(app.ui.language, "pt-pt");
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), pt);
+    assert_eq!(pt.name(), "Português (Portugal)");
+    assert_eq!(pt.editing_lang(), Some("pt-PT"));
+}
+
+#[test]
+fn european_portuguese_covers_the_entire_interface_catalog_in_its_own_vocabulary() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    assert_eq!(keys(lang("pt-pt").0.source), keys(lang("pt-br").0.source));
+    let (entries, errors) = parse_entries(lang("pt-pt").0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+    let (pt, br) = (lang("pt-pt"), lang("pt-br"));
+    // The words Portugal and Brazil don't share.
+    for (en, european, brazilian) in [
+        ("File", "Ficheiro", "Arquivo"),
+        ("Save", "Guardar", "Salvar"),
+        ("Delete", "Eliminar", "Excluir"),
+        ("Font", "Tipo de letra", "Fonte"),
+        ("Password", "Palavra-passe", "Senha"),
+        ("Undo", "Anular", "Desfazer"),
+        ("Sections", "Secções", "Seções"),
+        ("User Name", "Nome de utilizador", "Nome de usuário"),
+        ("Synonyms", "Sinónimos", "Sinônimos"),
+        ("Track Changes", "Registar alterações", "Controlar alterações"),
+    ] {
+        assert_eq!((tr(pt, en), tr(br, en)), (european, brazilian), "{en}");
+    }
+    assert_eq!(tr(pt, "Home"), "Início");
+    assert_eq!(tr(pt, "Portuguese (Portugal)"), "Português (Portugal)");
+    assert_eq!(tr(pt, "unknown future label"), "unknown future label");
+    assert_eq!(fmt(tr(pt, "Exported {path}"), &[("path", "draft-{words}.docx")]), "Exportado draft-{words}.docx");
+    for count in [0, 1, 2, 21, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(pt, "{words} words"), &[("words", &words)]), format!("Palavras: {count}"));
+    }
+    // Brazilian wording that European Portuguese doesn't use must not slip back in.
+    let brazilian = ["você", "arquivo", "salvar", "excluir", "usuário", "senha", "seção", "aplicativo", "registro", "gerenciar"];
+    for e in &entries {
+        let lower = e.translation.to_lowercase();
+        for word in lower.split(|c: char| !c.is_alphabetic()) {
+            let hit = brazilian.iter().find(|b| word.starts_with(**b));
+            assert!(hit.is_none() && word != "caractere", "{:?} → {:?} has the Brazilian {word:?}", e.source, e.translation);
+        }
+    }
+}
+
+#[test]
+fn bundled_interface_fonts_cover_european_portuguese_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("pt-pt").0.source);
+    assert!(errors.is_empty());
+    let chars: std::collections::HashSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        .filter(|c| ('\u{00C0}'..='\u{017F}').contains(c))
+        .chain("ÀàÁáÂâÃãÇçÉéÊêÍíÓóÔôÕõÚú".chars())
+        .collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
 }
 
 #[test]
@@ -1004,7 +1088,7 @@ fn a_polish_interface_writes_new_documents_in_polish() {
 #[test]
 fn the_editing_languages_are_the_ones_wordcraft_can_proof() {
     let with: Vec<(&str, &str)> = Lang::all().filter_map(|l| l.editing_lang().map(|e| (l.code(), e))).collect();
-    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL")]);
+    assert_eq!(with, [("pt-br", "pt-BR"), ("pt-pt", "pt-PT"), ("pl", "pl-PL")]);
 }
 
 #[test]

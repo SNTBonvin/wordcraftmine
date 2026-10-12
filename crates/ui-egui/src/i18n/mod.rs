@@ -52,7 +52,7 @@ pub struct LangInfo {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 19] = [
+pub static LANGUAGES: [LangInfo; 20] = [
     LangInfo { code: "en", name: "English", source: "", prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` resolve here (see `candidates`).
     LangInfo {
@@ -78,14 +78,24 @@ pub static LANGUAGES: [LangInfo; 19] = [
     },
     // Spanish, neutral across Spain and Latin America; `es-ES`, `es-MX`, `es-419` … resolve here.
     LangInfo { code: "es", name: "Español", source: include_str!("es.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
-    // Brazilian Portuguese; `pt-BR` and `pt-BR-*` resolve here. Plain `pt` and `pt-PT` have no
-    // catalog yet (the European vocabulary differs), so they stay in English.
+    // Brazilian Portuguese; `pt-BR` and `pt-BR-*` resolve here. A plain `pt` names neither
+    // vocabulary, so it stays in English.
     LangInfo {
         code: "pt-br",
         name: "Português (Brasil)",
         source: include_str!("pt-br.tsv"),
         prefer_hans: false,
         editing_lang: Some("pt-BR"),
+        catalog: OnceLock::new(),
+    },
+    // European Portuguese (ficheiro, guardar, ecrã); `pt-PT`, and the regions that write like
+    // Portugal (`pt-AO`, `pt-MZ` …; see `candidates`), resolve here.
+    LangInfo {
+        code: "pt-pt",
+        name: "Português (Portugal)",
+        source: include_str!("pt-pt.tsv"),
+        prefer_hans: false,
+        editing_lang: Some("pt-PT"),
         catalog: OnceLock::new(),
     },
     // Serbian, Cyrillic script (the default per BCP 47 when no script is given); `sr`, `sr-RS`,
@@ -237,6 +247,10 @@ fn candidates(tag: &str) -> Vec<String> {
         // Chinese by region when no script is given.
         let script = if parts.iter().any(|p| matches!(*p, "tw" | "hk" | "mo")) { "zh-hant" } else { "zh-hans" };
         out.insert(out.len().saturating_sub(1), script.to_string());
+    }
+    if primary == "pt" && parts.iter().skip(1).any(|p| matches!(*p, "ao" | "mz" | "cv" | "gw" | "st" | "tl" | "mo" | "gq")) {
+        // Portuguese outside Portugal and Brazil follows the European vocabulary and spelling.
+        out.insert(out.len().saturating_sub(1), "pt-pt".to_string());
     }
     out
 }

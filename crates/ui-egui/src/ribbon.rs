@@ -410,8 +410,13 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
 }
 
 /// The proofing languages the Language menu offers: tag and English name (translated when drawn).
-pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 4] =
-    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("pt-BR", "Portuguese (Brazil)")];
+pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 5] = [
+    ("en-US", "English (United States)"),
+    ("en-GB", "English (United Kingdom)"),
+    ("pl-PL", "Polish"),
+    ("pt-BR", "Portuguese (Brazil)"),
+    ("pt-PT", "Portuguese (Portugal)"),
+];
 
 /// The English name of a proofing language tag, as the status bar shows it (no tag: WordCraft's
 /// default, US English; a tag without a name here: the tag).
@@ -423,6 +428,7 @@ pub(crate) fn language_name(tag: Option<&str>) -> String {
     match wordcraft_engine::proof::ProofLang::from_tag(Some(tag)) {
         wordcraft_engine::proof::ProofLang::Pl => "Polish".into(),
         wordcraft_engine::proof::ProofLang::Pt => "Portuguese (Brazil)".into(),
+        wordcraft_engine::proof::ProofLang::PtPt => "Portuguese (Portugal)".into(),
         wordcraft_engine::proof::ProofLang::En if tag.eq_ignore_ascii_case("en") => "English (United States)".into(),
         _ => tag.to_string(),
     }
@@ -2451,6 +2457,11 @@ mod tests {
         assert_eq!(language_name(Some("pt-BR")), "Portuguese (Brazil)");
         assert_eq!(language_name(Some("pt")), "Portuguese (Brazil)");
         assert_eq!(language_name(Some("PT-BR".to_string().as_str())), "Portuguese (Brazil)");
+        // European Portuguese is its own entry, and the regions that spell like it take its name.
+        assert!(PROOFING_LANGUAGES.iter().any(|(t, _)| *t == "pt-PT"));
+        assert_eq!(language_name(Some("pt-PT")), "Portuguese (Portugal)");
+        assert_eq!(language_name(Some("pt_pt")), "Portuguese (Portugal)");
+        assert_eq!(language_name(Some("pt-AO")), "Portuguese (Portugal)");
     }
 
     #[test]
