@@ -155,7 +155,7 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         wordcraft_proof::remove_word(w);
     }
     if !add.is_empty() || !remove.is_empty() {
-        s.persist_user_dictionary();
+        s.persist_user_dictionary(&remove);
     }
     if setting {
         // Marks, hidden text and proofing change what is laid out.

@@ -226,9 +226,10 @@ pub struct Session {
     pub pending: Option<CharProps>,
     pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
-    /// Where the custom dictionary is kept on disk, if the host wired one up
-    /// (the desktop app, CLI and MCP do; tests and the web build leave `None`
-    /// for memory-only words). Mutating commands save through it (#40).
+    /// Where the custom dictionary is kept on disk, if the host wired one up. Only the desktop
+    /// app does: headless sessions (MCP, `wordcraft-cli run`), tests and the web build leave
+    /// `None`, so an agent's words stay in memory and never change the person's dictionary.
+    /// Add to Dictionary and File › Options › Proofing save through it (#40).
     pub user_dict_path: Option<std::path::PathBuf>,
     pub clipboard: Option<Fragment>,
     /// A tracked cut the next paste can turn into a move (see `cmd::moves`).
@@ -405,17 +406,14 @@ impl Session {
     /// File name of the persisted custom dictionary inside the settings folder.
     pub const USER_DICT_FILE: &str = "custom-dictionary.txt";
 
-    /// Save the in-memory custom dictionary through [`Session::user_dict_path`], if the host
-    /// wired one up. A failed save keeps the words in memory and never fails the command (#40).
-    pub(crate) fn persist_user_dictionary(&self) {
-        if let Some(path) = self.user_dict_path.as_deref() {
-            // First run: the settings folder may not exist yet (prefs are saved on exit).
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Err(e) = wordcraft_proof::save_user_dictionary(path) {
-                log::warn!("custom dictionary: save failed: {e}");
-            }
+    /// Save the custom dictionary through [`Session::user_dict_path`], if the host wired one up,
+    /// with `removed` (words just taken out) left out of the merge with the file. A failed save
+    /// keeps the words in memory and never fails the command (#40).
+    pub(crate) fn persist_user_dictionary(&self, removed: &[String]) {
+        if let Some(path) = self.user_dict_path.as_deref()
+            && let Err(e) = wordcraft_proof::save_user_dictionary(path, removed)
+        {
+            log::warn!("custom dictionary: save failed: {e}");
         }
     }
 
