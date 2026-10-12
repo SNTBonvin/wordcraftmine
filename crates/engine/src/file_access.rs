@@ -437,7 +437,8 @@ mod tests {
     /// Every file a command reads or writes by path goes through `io` (`open_path_with`,
     /// `save_path_with`, `read_file`, `write_file`), which check the roots. Engine code that
     /// reaches for `std::fs` itself would bypass them, so none may: every file under `src/`
-    /// (commands, `print.rs`, `session.rs`…) except `io.rs` and this module, and the test files.
+    /// (commands, `print.rs`, `session.rs`…) except `io.rs` with its `io/` helpers (`safe_save`,
+    /// reached only after `io` checked the roots), this module, and the test files.
     #[test]
     fn commands_do_not_touch_the_file_system_themselves() {
         fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -458,7 +459,9 @@ mod tests {
         for path in files {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             // `io` and this module are the checked gateway; `tests*.rs` are test-only modules.
-            if path.parent() == Some(src.as_path()) && (name == "io.rs" || name == "file_access.rs" || name.starts_with("tests")) {
+            if path.parent() == Some(src.as_path()) && (name == "io.rs" || name == "file_access.rs" || name.starts_with("tests"))
+                || path.starts_with(src.join("io"))
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();
