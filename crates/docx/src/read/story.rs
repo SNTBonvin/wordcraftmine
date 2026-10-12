@@ -888,6 +888,7 @@ impl Reader<'_> {
         let (alt, meta) = nv_alt(c.child("wp:docPr"));
         let mut float = if anchored { anchor_float(c) } else { Float::default() };
         float.alt = meta;
+        float.hidden = c.child("wp:docPr").is_some_and(|p| on_off_attr(p, "hidden"));
         if let Some(e) = c.child("wp:effectExtent") {
             for (slot, n) in float.effect.iter_mut().zip(["l", "t", "r", "b"]) {
                 // Negative for a rotated object narrower than its frame; settled below.
@@ -1149,8 +1150,9 @@ impl Reader<'_> {
             let max = crate::units::MAX_LEN_PT;
             let fit = |v: f32, lo: f32| wordcraft_geom::finite(v).clamp(lo, max);
             let (w, h) = (fit(ew * sx, 0.0), fit(eh * sy, 0.0));
-            let (alt, meta) = nv_alt(if e.name == "pic:pic" { e.find("pic:cNvPr") } else { e.child("wps:cNvPr") });
-            let float = Float { alt: meta, ..Float::default() };
+            let nv = if e.name == "pic:pic" { e.find("pic:cNvPr") } else { e.child("wps:cNvPr") };
+            let (alt, meta) = nv_alt(nv);
+            let float = Float { alt: meta, hidden: nv.is_some_and(|p| on_off_attr(p, "hidden")), ..Float::default() };
             let obj = if e.name == "pic:pic" {
                 self.read_pic(e, rels, w, h, alt.clone(), float)
             } else {
@@ -1623,9 +1625,10 @@ fn vml_style<'a>(style: &'a str, key: &str) -> Option<&'a str> {
 /// `z-index`. Anything else stays inline.
 fn vml_float(shape: &El, style: &str) -> Float {
     let get = |k: &str| vml_style(style, k);
+    let hidden = get("visibility").is_some_and(|v| v.eq_ignore_ascii_case("hidden"));
     if !get("position").is_some_and(|p| p.eq_ignore_ascii_case("absolute")) {
         // Inline: only the turn (an OLE object turned in WordCraft is saved so, #319).
-        let mut f = Float::default();
+        let mut f = Float { hidden, ..Float::default() };
         f.set_spin(vml_spin(style));
         return f;
     }
@@ -1672,6 +1675,7 @@ fn vml_float(shape: &El, style: &str) -> Float {
         dist: dist("mso-wrap-distance-left").max(dist("mso-wrap-distance-right")),
         dist_top: dist("mso-wrap-distance-top"),
         dist_bottom: dist("mso-wrap-distance-bottom"),
+        hidden,
         ..Float::default()
     };
     f.set_spin(vml_spin(style));

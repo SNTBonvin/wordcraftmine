@@ -151,3 +151,47 @@ fn vml_text_boxes_keep_their_inset_fit_and_anchor() {
     let again: Vec<TextBody> = boxes(&back).iter().map(|id| back.parts[id].body).collect();
     assert_eq!(again, bodies);
 }
+
+#[test]
+fn hidden_drawings_stay_hidden() {
+    // VML `visibility:hidden` (floating or inline) and DrawingML `wp:docPr/@hidden` (also a group
+    // member's `wps:cNvPr/@hidden`) mark a drawing hidden; it is kept, and saved hidden.
+    let vml = r#"<w:p><w:r><w:pict><v:shape style="position:absolute;width:50pt;height:50pt;visibility:hidden"><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>"#;
+    let shown = r#"<w:p><w:r><w:pict><v:shape style="position:absolute;width:50pt;height:50pt;visibility:visible"><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>"#;
+    let inline_vml = r#"<w:p><w:r><w:pict><v:rect style="width:20pt;height:20pt;visibility:hidden"/></w:pict></w:r></w:p>"#;
+    let dml = r#"<w:p><w:r><w:drawing><wp:inline><wp:extent cx="635000" cy="635000"/><wp:docPr id="7" name="Box" hidden="1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#;
+    let member = |id: u32, hidden: &str| {
+        format!(
+            r#"<wps:wsp><wps:cNvPr id="{id}" name="M{id}"{hidden}/><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="635000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"/></wps:spPr><wps:bodyPr/></wps:wsp>"#
+        )
+    };
+    let group = format!(
+        r#"<w:p><w:r><w:drawing><wp:inline><wp:extent cx="1270000" cy="635000"/><wp:docPr id="8" name="Group"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/><a:chOff x="0" y="0"/><a:chExt cx="1270000" cy="635000"/></a:xfrm></wpg:grpSpPr>{}{}</wpg:wgp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
+        member(9, r#" hidden="1""#),
+        member(10, "")
+    );
+    let doc = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><w:body>{vml}{shown}{inline_vml}{dml}{group}</w:body></w:document>"#
+    );
+    let rels = br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    // Each drawing's flag, a group's members' after it.
+    let hidden = |d: &Document| {
+        let mut out = Vec::new();
+        d.objects_in_reading_order(&mut |o| {
+            out.extend(o.frame().map(|(_, _, f)| f.hidden));
+            if let InlineObject::Group { children, .. } = o {
+                out.extend(children.iter().filter_map(|c| c.obj.frame()).map(|(_, _, f)| f.hidden));
+            }
+        });
+        out
+    };
+    let want = [true, false, true, true, false, true, false];
+    let d = wordcraft_docx::read(&zip(&[("_rels/.rels", rels), ("word/document.xml", doc.as_bytes())])).unwrap();
+    assert_eq!(hidden(&d), want);
+    let saved = wordcraft_docx::write(&d).unwrap();
+    let xml = document_xml(&saved);
+    let marked =
+        |tag: &str| xml.split(&format!("<{tag} ")).skip(1).filter(|a| a.split('>').next().is_some_and(|a| a.contains(r#"hidden="1""#))).count();
+    assert_eq!((marked("wp:docPr"), marked("wps:cNvPr")), (3, 1), "{xml}");
+    assert_eq!(hidden(&wordcraft_docx::read(&saved).unwrap()), want);
+}
