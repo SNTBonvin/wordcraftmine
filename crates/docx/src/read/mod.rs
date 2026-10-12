@@ -1123,12 +1123,9 @@ impl Reader<'_> {
         let parse_persons = |parent: &El| -> String {
             let mut names = Vec::new();
             let person_els: Vec<&El> = {
-                let in_lists: Vec<&El> = parent.els().filter(|e| e.local() == "NameList").flat_map(|n| n.els().filter(|e| e.local() == "Person")).collect();
-                if in_lists.is_empty() {
-                    parent.els().filter(|e| e.local() == "Person").collect()
-                } else {
-                    in_lists
-                }
+                let in_lists: Vec<&El> =
+                    parent.els().filter(|e| e.local() == "NameList").flat_map(|n| n.els().filter(|e| e.local() == "Person")).collect();
+                if in_lists.is_empty() { parent.els().filter(|e| e.local() == "Person").collect() } else { in_lists }
             };
             for name_el in person_els {
                 let last = child_text(name_el, "Last");
@@ -1158,22 +1155,14 @@ impl Reader<'_> {
             let kind = crate::write::from_source_type(&raw_kind);
             let (author, editor) = match src_el.els().find(|e| e.local() == "Author") {
                 Some(a) => {
-                    let auth = a
-                        .els()
-                        .find(|e| e.local() == "Author")
-                        .map(parse_persons)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or_else(|| parse_persons(a));
+                    let auth =
+                        a.els().find(|e| e.local() == "Author").map(parse_persons).filter(|s| !s.is_empty()).unwrap_or_else(|| parse_persons(a));
                     let ed = a.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default();
                     (auth, ed)
                 }
                 None => (String::new(), String::new()),
             };
-            let editor = if editor.is_empty() {
-                src_el.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default()
-            } else {
-                editor
-            };
+            let editor = if editor.is_empty() { src_el.els().find(|e| e.local() == "Editor").map(parse_persons).unwrap_or_default() } else { editor };
             let title = child_text(src_el, "Title");
             let year = child_text(src_el, "Year");
             let month = child_text(src_el, "Month");
