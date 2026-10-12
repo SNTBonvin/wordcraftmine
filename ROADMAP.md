@@ -131,6 +131,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
+| 2026-10-11 | Font fallback indexes which characters each installed font maps, reading each font file once (#605): text in a script no installed font covers no longer re-reads every system font per distinct character (200 such characters: 13 s → 0.2 s) |
 | 2026-10-11 | Find and Replace special characters (`^p`, `^t`, `^#`, `^&` …) and Use wildcards (ranges, counts, word anchors, groups with `\1` in Replace); `^p` finds and splits paragraphs; Special ▾ menu and search options in the dialog (#543) |
 | 2026-10-11 | Typing parity (#546): `+---+` Enter makes a table, `> ` `-> ` `=> ` arrow bullets, smileys inside words (`ok:)`), Undo right after a border line brings the characters back |
 | 2026-10-11 | Windows: DirectX 12 shaders compile with FXC, built into Windows, so the app no longer quits at launch with "Parent device is lost" when no matching `dxcompiler.dll` + `dxil.dll` pair is around (#603) |
@@ -148,6 +149,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Line Numbers, Hyphenation (zone, CAPS, consecutive limit, Manual), Language, Envelopes and Labels dialogs (#407); hyphenation options kept in DOCX; 30 modal dialogs |
 | 2026-10-11 | Accessibility (#386): Alt Text pane for every object and table, Mark as decorative, alt text round-trips in DOCX, deeper checker with fix actions |
 | 2026-10-11 | References dialogs (#402): Caption (labels, chapter numbering), Index and Mark Entry, Custom Table of Contents, Source Manager and Create/Edit Source, with TOC/INDEX/XE/SEQ switches honoured on update |
+| 2026-10-11 | Font dialog: separate Asian text font and Latin text font (#505); `format.font {"eastAsia"}`; East Asian fonts found by the font scan (OS/2 code pages) |
 | 2026-10-11 | Document grid (#391): Page Setup › Document Grid sets lines per page and characters per line (`w:docGrid` round trip); lines snap to the line pitch, East Asian characters to the character pitch; View › Gridlines shows it |
 | 2026-10-11 | Move tracking (#400): `w:moveFrom`/`w:moveTo` and their named ranges kept in DOCX, a tracked cut and paste of a paragraph or sentence records a move, accept/reject at either end resolves both, green double strikethrough/underline and "Moved from/to" balloons |
 | 2026-10-11 | Footnote and Endnote dialog from the References › Footnotes launcher: options per section or document (below text, end of section, number format, start at, restart each section or page), custom marks, convert footnotes ↔ endnotes; kept in DOCX (#385) |
