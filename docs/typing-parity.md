@@ -100,6 +100,15 @@ Applied when a word is finished by a space, punctuation **or Enter** (`enter_fin
   numbered lists, border lines; user entries are added, replaced or deleted (built-in ones too),
   and "don't capitalize after" exceptions extend the abbreviation list. A replacement of several
   words takes a sentence capital on its first (`autocorrect_options_change_what_typing_does`).
+- The built-in replacement list is English: its words (`teh`, `i`, `dont`…) are replaced only
+  in English text (the run's `w:lang`, then its style, then the document default; text with no
+  language at all is in the editing language, so with a Polish interface a `.docx` without
+  `w:lang` is Polish). English is decided as proofing decides it (`ProofLang`: `en`, `eng`).
+  Polish `Ala i kot` keeps its `i` ("and"); symbols (`(c)`, `->`, `1/2`) and the user's own
+  entries apply in every language (#835; `autocorrect_replacement_list_follows_the_texts_language`).
+  Croatian, Bosnian and Serbian `i` is kept only when the text is tagged with that language: those
+  interfaces don't set an editing language yet. Per-language lists for other languages aren't
+  there yet (#735).
 
 ¹ From Word's documented AutoFormat and AutoCorrect options; not yet keystroke-compared with
 Word.
@@ -162,7 +171,9 @@ Word.
 | 2026-10-12 | trivial | Track Changes: Accept All after a tracked delete from a paragraph end keeps the next paragraph; Reject All after typing into an empty paragraph keeps it (#864) |
 | 2026-10-12 | minor | AutoCorrect: Correct TWo INitial CApitals, accidental cAPS LOCK, capitalize first letter of table cells (#544) |
 | 2026-10-11 | minor | Text direction: right-to-left letters typed into an empty paragraph make it right-to-left; existing paragraphs keep theirs (#713) |
+| 2026-10-12 | trivial | AutoCorrect: untagged text follows the editing language; English decided as proofing does (#835 review) |
 | 2026-10-11 | trivial | Grammar proofing (not AutoCorrect) no longer suggests capitalising a sentence after `...` or `…` (`proof::tests::ellipses_do_not_start_sentences`) |
+| 2026-10-12 | minor | AutoCorrect: the English replacement list applies only to English (or untagged) text; Polish `i` stays (#835) |
 | 2026-10-11 | minor | AutoFormat tables from `+---+`, arrow bullets, smileys inside words, undo after a border line (#546) |
 | 2026-10-11 | trivial | Outline view keys: expand/collapse, Show Level, moving and promoting with collapsed content (#493) |
 | 2026-10-11 | minor | Editing options: typing replaces selection, overtype and the Insert key (#485) |

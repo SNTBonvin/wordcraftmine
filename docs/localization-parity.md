@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Portuguese proofing: pt-BR spelling, suggestions, grammar and hyphenation from the installed VERO dictionary and TeX patterns; a pt-br interface now writes pt-BR documents; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -20,8 +20,8 @@ native-speaker review (human).
 ## What WordCraft ships (measured)
 
 - **19 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,021–2,419 entries
-  each; Polish has every key of every other catalog except the style names and equation gallery labels only Russian, Italian, Hungarian, Turkish and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,057–2,454 entries
+  each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
   `pl`, `pl-PL` and `pl_PL.UTF-8` system locales pick Polish automatically.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
@@ -96,6 +96,54 @@ the others plus 51 strings that are wrapped in `tl!` but were in no catalog yet 
 properties, the File › Home greeting, list levels, Equation tab gallery and tooltips). Ribbon tabs,
 groups and command names use the names Italian Word users know (feature names, as `AGENTS.md`
 allows); all other text is written from the meaning of the English. No Italian proofing yet.
+## Sorting and numbers in the text's language
+
+Sorts follow the alphabet of the text's language (`w:lang`, else the document default):
+Table › Sort, Home › Sort, the index and its letter headings, the bibliography and the Table of
+Authorities. Letters with diacritics sort with their base letter (`é` with `e`) unless the
+language makes them letters of their own: Polish `ą ć ę ł ń ó ś ź ż`, Czech/Slovak `č ch ř š ž`
+(and Slovak `ä ô`), Hungarian `cs dz dzs gy ly ny sz ty zs ö ü`, Swedish/Finnish `å ä ö` and
+Danish/Norwegian `æ ø å` after `z`, Spanish `ñ`, Turkish, Croatian/Bosnian/Serbian Latin,
+Romanian, Estonian, Latvian, Lithuanian, Slovenian and Icelandic (`crates/doc/src/collate.rs`,
+a hand-written per-language alphabet table; full CLDR collation is not used). Table sort and
+table formulas read numbers with the language's decimal and group separators (`1 250,50` in
+Polish, `1.250,50` in German, `1,250.50` in English) and write formula results with its decimal
+separator (`crates/doc/src/locale_number.rs`). Interface lists (styles, fonts) still sort by code
+point.
+
+## Region conventions (#838)
+
+As in Word, a new blank document takes its paper from the system **region**, not the interface
+language: US Letter in the territories CLDR lists for it (US, Canada, Mexico, the Philippines,
+Chile, Colombia, Venezuela and a few Central American ones), A4 everywhere else. Lengths are shown
+in inches in the US (and Liberia, Myanmar) and centimetres elsewhere, written with the region's
+decimal separator (`2,54 cm` in Poland, Germany, France…); fields take either separator and any
+unit (`1 in` in a centimetre field). An explicit File › Options › Advanced › Measurement units
+choice still wins; its Automatic entry follows the region again.
+
+Where the region comes from:
+- **File › Options › Advanced › Region** (saved; agents: `file.options {"region": "pl-PL"}`, `auto`
+  returns to the system's);
+- else `WORDCRAFT_REGION` or `LC_ALL`;
+- else, on Unix, each convention from its own locale: numbers from `LC_NUMERIC` (else `LANG`),
+  paper from `LC_PAPER`, measurement from `LC_MEASUREMENT`;
+- else the platform's preferred locale: the macOS preferred locale (`en-PL`), the browser's
+  language on the web, and on Windows the home location (Settings › Time & language › Region)
+  with the display language. Word follows Windows' regional format instead, so an en-US format
+  set by someone living in Germany gives A4 and a decimal comma here; reading the regional format
+  needs Win32 calls that are `unsafe` in Rust, which WordCraft forbids.
+
+Runs without preferences (`WORDCRAFT_NO_PREFS`) stay `en-US` unless `WORDCRAFT_REGION` is set, so
+agents and screenshots give the same result on every machine. The decimal separator belongs to
+the language's own number format (CLDR): a decimal-comma language uses a comma everywhere except
+where CLDR says otherwise (`de-CH`), and English, whose `en-XX` locales follow the territory, uses a
+comma in decimal-comma territories (`en-DE`, `en-PL`). Other decimal-point languages keep the point
+in any territory (`ja-PL` is `2.54 cm`), as CLDR's fallback to the language gives.
+
+Templates (Letter, Resume, Report) keep their own size. Not yet: Word's "Default paper size"
+preference of its own, and Word's locale-specific Normal margins (2,5 cm in some regions;
+WordCraft keeps 2,54 cm).
+
 ## Shared work (not in the per-language hours)
 
 | Item | Hours | Notes |
@@ -111,11 +159,14 @@ allows); all other text is written from the meaning of the English. No Italian p
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
+| 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
+| 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |
 | 2026-10-11 | minor | Czech (`cs`) interface catalog added |
 | 2026-10-12 | minor | Portuguese proofing: pt-BR spelling from the installed VERO dictionary (the affix engine grew `FLAG UTF-8`, 128 flag bits, continuation classes and `FORBIDDENWORD`), accent-first suggestions, conservative grammar with Portuguese messages, TeX Portuguese hyphenation patterns (BSD 3-clause); Review › Language offers Português (Brasil); a pt-br interface writes pt-BR documents; dimension ~27% → ~28% |
 | 2026-10-11 | minor | Polish interface (13 languages) and Polish proofing: SJP.PL spelling with suggestions, Polish grammar rules, TeX Polish hyphenation; proofing language per run; dimension ~25% → ~27% |
 | 2026-10-11 | minor | German interface catalog (#574): 2,021 entries covering the full zh-hans key set; locale, saved-preference and bundled-font tests; no German proofing |
 | 2026-10-11 | minor | Italian interface catalog (#594), locale selection, saved preference and font coverage checks; count labels put the noun first so they read right at 1 |
+| 2026-10-12 | minor | Language-aware sorting (tables, paragraphs, index, bibliography, Table of Authorities) and table numbers/formulas in the text's language (#836, #837) |
 | 2026-10-11 | minor | Font dialog sets the Asian text font (`w:eastAsia`) and the Latin text font separately; the Asian list holds the installed Chinese, Japanese and Korean fonts by their interface-language names (#505) |
 | 2026-10-11 | minor | French interface catalog (2,033 entries, @pechnikov2026-star), `fr-*` system locales, saved preference and font coverage checks; no French proofing |
 | 2026-10-11 | minor | Font list shows installed fonts by their names in the interface language (宋体 for SimSun in Chinese, Japanese and Korean names likewise) and finds them by either name; a Chinese, Japanese or Korean font is stored as `w:eastAsia` too (#505) |
