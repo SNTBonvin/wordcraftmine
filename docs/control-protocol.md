@@ -25,6 +25,11 @@ next to the executable, or to `WordCraft.app`, when a `portable.txt` sits there)
 the Flatpak instance id inside Flatpak, and `local-<port>` otherwise. On Unix the file has mode
 0600.
 
+In portable mode the key file sits in `WordCraftData` with the rest of the settings, so on a
+shared folder or a USB stick other local users who can read that folder can read the key while the
+window runs with `--control`. Keep a portable install in a folder only you can read if you use the
+control port.
+
 ```sh
 cat ~/.config/wordcraft/control-key.local-7981   # Linux, outside Flatpak, port 7981
 ```
