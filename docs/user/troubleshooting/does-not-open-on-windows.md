@@ -5,7 +5,7 @@ order: 20
 verified: 0.5.0
 ---
 
-Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulkan` in PowerShell. This avoids two known graphics-driver problems.
+Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulkan` in PowerShell. This avoids two known graphics-driver problems: a missing shader compiler file (`dxcompiler.dll`) on DirectX 12, and an AMD driver crash in OpenGL. On Intel graphics, use `gl` instead.
 
 ## Symptoms
 
@@ -29,7 +29,7 @@ If this works, use the same steps each time you start WordCraft. On AMD graphics
 
 ## Why this happens
 
-WordCraft 0.5.0 compiles its DirectX 12 shaders with DXC but does not ship `dxcompiler.dll` and `dxil.dll`, so on some PCs the graphics device is lost before the first frame and the log ends with `Parent device is lost` ([issue 603](https://github.com/storytold/wordcraft/issues/603)). A fix that uses FXC, the compiler built into Windows, is merged after 0.5.0 and not in a release yet. The default leaves OpenGL out because creating it can crash AMD's `atio6axx.dll` before the window appears.
+WordCraft 0.5.0 compiles its DirectX 12 shaders with DXC but does not ship `dxcompiler.dll` and `dxil.dll`, so on some PCs the graphics device is lost before the first frame and the log ends with `Parent device is lost` ([issue 603](https://github.com/storytold/wordcraft/issues/603)). A fix that uses FXC, the compiler built into Windows, was merged after 0.5.0 and is not in a release yet. The default leaves OpenGL out because creating it can crash AMD's `atio6axx.dll` before the window appears.
 
 ## Slow on an older PC
 

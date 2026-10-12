@@ -62,7 +62,7 @@ Typing, Enter, Backspace, Tab, lists, AutoCorrect and AutoFormat follow Word's o
 - Parallel agents: separate `CARGO_TARGET_DIR` per agent; edit only the crates you own; delete your target dir when done (disk).
 
 ## User docs
-User docs live in `docs/user/` and are published at https://getartcraft.com/docs/wordcraft. If a change alters something a user sees or does (UI labels, install, file formats, errors), update the matching page in `docs/user/` in the same PR, or add one. Rules: `docs/user/AGENTS.md`.
+User docs live in `docs/user/` and are published at https://getartcraft.com/docs/wordcraft. If a change alters something a user sees or does (UI labels, install, file formats, errors), update the matching page in `docs/user/` in the same PR, or add one. Rules: `docs/user/AGENTS.md`. Pages describe the latest release. For a change that is not released yet, write that it was added after <version> and is not in a release yet, or update the page when the release ships.
 
 ## Roadmap
 Progress docs follow [`craftrules/standards/progress-docs.md`](https://github.com/storytold/craftrules/blob/main/standards/progress-docs.md): `ROADMAP.md` (stage, headline numbers, progress log), `docs/target-app-parity.md` (the assessment), `docs/gaps.md` (ranked work list), `docs/roadmap.md` (milestones, Current focus), `docs/architecture.md`, and the parity checklists `docs/file-format-parity.md`, `docs/layout-parity.md`, `docs/typing-parity.md`, `docs/ui-parity.md`, `docs/hardware-parity.md`, `docs/localization-parity.md`. When work lands, update the gap, the parity doc and the progress log, and bump each touched doc's status line and revision history.
