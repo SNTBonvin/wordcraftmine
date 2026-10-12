@@ -5056,7 +5056,9 @@ name = "wordcraft-docbin"
 version = "0.5.0"
 dependencies = [
  "cfb",
+ "image",
  "log",
+ "miniz_oxide 0.8.9",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",
@@ -5247,6 +5249,7 @@ dependencies = [
  "wordcraft-layout",
  "wordcraft-render",
  "wordcraft-zotero",
+ "zbus",
  "zip",
 ]
 

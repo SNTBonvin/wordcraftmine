@@ -5,6 +5,13 @@
 //! the menus, ribbon, shortcuts, control channel and MCP all reach the same behaviour.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+/// What the operating system says about light and dark. macOS and Windows answer through winit;
+/// winit reports nothing on Linux, where the desktop portal does ([`desktop_theme`]). `None` means
+/// nobody answered, not a preference.
+fn system_theme(ctx: &egui::Context, desktop_dark: Option<bool>) -> Option<egui::Theme> {
+    ctx.system_theme().or_else(|| desktop_dark.map(|dark| if dark { egui::Theme::Dark } else { egui::Theme::Light }))
+}
+
 /// An English UI string in the current interface language ([`i18n::t`]).
 #[macro_export]
 macro_rules! tl {
@@ -23,6 +30,7 @@ pub mod colors;
 pub mod content_controls;
 pub mod control;
 pub mod credits;
+pub mod desktop_theme;
 pub mod dialogs;
 pub mod dialogs_chart;
 pub mod dialogs_controls;
@@ -117,6 +125,21 @@ pub struct Services {
     pub store_font: Option<Box<dyn Fn(&str, &[u8])>>,
     /// Web: forget a stored font (its stored file name) once the user removes it.
     pub forget_font: Option<Box<dyn Fn(&str)>>,
+    /// Desktop: File › Options › General › Make WordCraft the default for Word documents (#295),
+    /// only from that button (never a programmatic command). Windows opens the Settings app's
+    /// Default apps page (apps can't set defaults themselves); Linux and BSD set it with
+    /// `xdg-mime`. `None` (web, macOS) hides the button; macOS shows how to do it in Finder
+    /// instead. An error means nothing changed.
+    pub make_default_app: Option<Box<dyn Fn() -> Result<DefaultApp, String>>>,
+}
+
+/// What [`Services::make_default_app`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefaultApp {
+    /// The system's default-apps settings opened; the user picks WordCraft there (Windows).
+    SettingsOpened,
+    /// WordCraft is now the default app for Word documents (Linux, BSD).
+    MadeDefault,
 }
 
 /// Files delivered asynchronously.
@@ -311,8 +334,14 @@ pub struct WordApp {
     /// File ▸ Options: load the installed CJK fallback font if no embedded face covers it.
     pub(crate) want_system_cjk: bool,
     fonts_frames: u32,
-    /// The interface theme setting last installed in egui ([`theme::apply`]).
+    /// The effective interface theme last installed in egui ([`theme::apply`]).
     applied_theme: Option<theme::Appearance>,
+    /// The desktop's light/dark choice, watched while the app runs (Linux has no winit answer).
+    desktop_theme: desktop_theme::DesktopTheme,
+    /// The last answer [`desktop_theme`] gave, so a frame that asks costs nothing.
+    desktop_dark: Option<bool>,
+    /// The interface language whose editing language the session last got ([`i18n::Lang::editing_lang`]).
+    applied_editing: Option<i18n::Lang>,
     /// What the system last said about its animation effects ([`Services::animations_enabled`]).
     system_animations: Option<bool>,
     /// Whether egui's own animations were last switched on or off ([`theme::apply_animations`]).
@@ -399,6 +428,10 @@ impl WordApp {
             want_system_cjk: false,
             fonts_frames: 0,
             applied_theme: None,
+            // Inert until the app binary calls `watch_desktop_theme`.
+            desktop_theme: desktop_theme::DesktopTheme::default(),
+            desktop_dark: None,
+            applied_editing: None,
             system_animations: None,
             applied_animations: None,
             frame_ms: 0.0,
@@ -763,7 +796,9 @@ impl WordApp {
             self.ui.recent.truncate(MAX_RECENT);
         }
         if !self.session.status.is_empty() {
+            // Engine messages are English; the catalog translates the ones it knows.
             let s = std::mem::take(&mut self.session.status);
+            let s = tl!(&s).to_string();
             self.status(s);
         }
     }
@@ -798,9 +833,17 @@ impl WordApp {
         }
     }
 
+    /// Follow the desktop's light/dark choice while the app runs (Linux, where winit reports no
+    /// system theme; see [`desktop_theme`]). The desktop app calls this once at start-up; unit
+    /// tests and `ui_shot` don't, so what they draw doesn't depend on the host's desktop theme.
+    pub fn watch_desktop_theme(&mut self, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        self.desktop_theme = desktop_theme::DesktopTheme::start(move || ctx.request_repaint());
+    }
+
     /// Whether the interface theme setting currently resolves to dark (`System` asks the OS).
     pub fn ui_is_dark(&self) -> bool {
-        self.ui.theme.is_dark(self.ctx.as_ref().and_then(egui::Context::system_theme))
+        self.ui.theme.is_dark(self.ctx.as_ref().and_then(|ctx| system_theme(ctx, self.desktop_dark)))
     }
 
     /// Whether animation effects are on: the Animation effects setting, where `System` follows
@@ -963,6 +1006,16 @@ impl WordApp {
             // page; this is the button on it, and the one programmatic call that opens system UI
             // here, like `ui.openFileDialog` — only when the host can print.
             "ui.print" => return Some(self.print_to_system(p)),
+            // File › Options › General › Make WordCraft the default… changes the user's system
+            // default apps (Linux) or opens system settings (Windows), so only a click on that
+            // button does it ([`WordApp::make_default_app`]); scripts, the control channel and
+            // MCP get an error.
+            "ui.makeDefaultApp" => {
+                return Some(Err(
+                    "making WordCraft the default app needs a click in File › Options › General; scripts and agents can't change system defaults"
+                        .into(),
+                ));
+            }
             "ui.discord" => {
                 self.canvas.open_url = Some("https://discord.gg/artcraft".into());
                 json!({})
@@ -1018,6 +1071,32 @@ impl WordApp {
             Err(e) => {
                 log::error!("print failed: {e}");
                 let msg = i18n::fmt(tl!("Print failed: {error}"), &[("error", &e)]);
+                self.status(msg.clone());
+                Err(msg)
+            }
+        }
+    }
+
+    /// File › Options › General › Make WordCraft the default…: hand over to the host's
+    /// [`Services::make_default_app`] and say in the status bar what happened. An error when the
+    /// host has no hook (web, macOS). Only the button calls this: it is deliberately not a
+    /// command, so nothing programmatic (control channel, MCP, macros) can change system defaults.
+    pub(crate) fn make_default_app(&mut self) -> Result<Value, String> {
+        let Some(hook) = self.services.make_default_app.as_ref() else {
+            return Err("WordCraft can't change the default apps here; use your system's settings".into());
+        };
+        match hook() {
+            Ok(DefaultApp::SettingsOpened) => {
+                self.status(tl!("In Default apps, choose WordCraft for the document types you want it to open."));
+                Ok(json!({"settingsOpened": true}))
+            }
+            Ok(DefaultApp::MadeDefault) => {
+                self.status(tl!("WordCraft is now the default app for Word documents."));
+                Ok(json!({"default": true}))
+            }
+            Err(e) => {
+                log::warn!("make default app: {e}");
+                let msg = i18n::fmt(tl!("Couldn't make WordCraft the default: {error}"), &[("error", &e)]);
                 self.status(msg.clone());
                 Err(msg)
             }
@@ -1117,6 +1196,12 @@ impl WordApp {
     pub fn logic(&mut self, ctx: &egui::Context) {
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
+        // New documents are written in the interface's language when WordCraft can proof it
+        // (a Polish interface: Polish spelling, grammar and hyphenation from the first word).
+        if self.applied_editing != Some(lang) {
+            self.session.set_editing_language(lang.editing_lang());
+            self.applied_editing = Some(lang);
+        }
         options::sync(self);
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
         // An installed CJK font is read only once CJK text is shown (#241): never for an English
@@ -1131,12 +1216,24 @@ impl WordApp {
             ctx.options_mut(|o| o.zoom_with_keyboard = false);
             self.styled = true;
         }
+        if let Some(answer) = self.desktop_theme.take_change() {
+            self.desktop_dark = Some(answer);
+        }
         // Both palettes are installed and egui picks one: with `System` it follows an OS appearance
-        // change live (it reports it and repaints, #311). The interface follows the Interface theme
+        // change live (winit reports it and repaints, #311). Where winit is silent (Linux) the
+        // desktop portal's answer fills in instead. The interface follows the Interface theme
         // setting alone; Dark page only changes how pages are drawn (#312).
-        if self.applied_theme != Some(self.ui.theme) {
-            theme::apply(ctx, self.ui.theme);
-            self.applied_theme = Some(self.ui.theme);
+        let effective = match self.ui.theme {
+            theme::Appearance::System if ctx.system_theme().is_none() => match self.desktop_dark {
+                Some(true) => theme::Appearance::Dark,
+                Some(false) => theme::Appearance::Light,
+                None => theme::Appearance::System,
+            },
+            other => other,
+        };
+        if self.applied_theme != Some(effective) {
+            theme::apply(ctx, effective);
+            self.applied_theme = Some(effective);
         }
         // Interface size (#475): egui's zoom factor multiplies the display scale the system reports
         // (native pixels per point), so it adds to it rather than replacing it. Keyboard zoom is
@@ -2345,6 +2442,50 @@ mod tests {
         assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("blocked by the browser")), "the status bar says why");
     }
 
+    /// Make WordCraft the default… (#295) goes through the host's hook and reports the outcome in
+    /// the status bar; without a hook (web, macOS) it's an error and nothing runs.
+    #[test]
+    fn make_default_app_needs_the_hosts_hook_and_reports_the_outcome() {
+        let mut a = app();
+        assert!(a.make_default_app().is_err(), "no hook: an error");
+
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let seen = calls.clone();
+        a.services.make_default_app = Some(Box::new(move || {
+            seen.set(seen.get() + 1);
+            Ok(DefaultApp::MadeDefault)
+        }));
+        assert_eq!(a.make_default_app().unwrap()["default"], true);
+        assert_eq!(calls.get(), 1);
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("now the default")), "{:?}", a.status_msg);
+
+        a.services.make_default_app = Some(Box::new(|| Ok(DefaultApp::SettingsOpened)));
+        assert_eq!(a.make_default_app().unwrap()["settingsOpened"], true);
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Default apps")), "{:?}", a.status_msg);
+
+        a.services.make_default_app = Some(Box::new(|| Err("xdg-mime isn't installed".into())));
+        let e = a.make_default_app().unwrap_err();
+        assert!(e.contains("xdg-mime isn't installed"), "{e}");
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("xdg-mime isn't installed")), "the status bar says why");
+        assert!(!a.session.dirty, "the document is untouched");
+    }
+
+    /// Changing the system's default apps needs the user's click: `ui.makeDefaultApp` through
+    /// `run` (what the control channel, MCP and macros use) is refused and never reaches the hook.
+    #[test]
+    fn programmatic_calls_cannot_change_the_default_apps() {
+        let mut a = app();
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let seen = calls.clone();
+        a.services.make_default_app = Some(Box::new(move || {
+            seen.set(seen.get() + 1);
+            Ok(DefaultApp::MadeDefault)
+        }));
+        let e = a.run("ui.makeDefaultApp", json!({})).unwrap_err();
+        assert!(e.contains("click"), "{e}");
+        assert_eq!(calls.get(), 0, "the hook never ran");
+    }
+
     /// The print settings reach the hook: bad ones print nothing, `copies` repeats the pages.
     #[test]
     fn ui_print_honours_the_print_settings() {
@@ -2398,6 +2539,42 @@ mod tests {
                 h.step();
                 h.step();
                 assert_eq!(printed.get(), 1, "the button printed");
+            }
+        }
+    }
+
+    /// File › Options shows Make WordCraft the default… only when the host can do it (#295), and
+    /// the button runs the host's hook.
+    #[test]
+    fn the_default_app_button_shows_only_with_the_hosts_hook() {
+        use egui_kittest::kittest::Queryable;
+        const LABEL: &str = "Make WordCraft the default for Word documents…";
+        for hook in [false, true] {
+            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+            let mut a = app();
+            if hook {
+                let seen = calls.clone();
+                a.services.make_default_app = Some(Box::new(move || {
+                    seen.set(seen.get() + 1);
+                    Ok(DefaultApp::MadeDefault)
+                }));
+            }
+            a.run("ui.backstage", json!({"value": true, "page": "options"})).unwrap();
+            let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+                |ui, app: &mut WordApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                a,
+            );
+            h.run_steps(4);
+            assert!(h.query_by_label("Show the community button in the title bar").is_some(), "hook {hook}: the Options page rendered");
+            assert_eq!(h.query_by_label(LABEL).is_some(), hook, "hook {hook}: the button");
+            if hook {
+                h.get_by_label(LABEL).click();
+                h.run_steps(2);
+                assert_eq!(calls.get(), 1, "the button ran the hook");
             }
         }
     }
