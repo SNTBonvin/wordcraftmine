@@ -71,7 +71,7 @@ use crate::event::{
 use crate::event_loop::{ActiveEventLoop as RootAEL, ControlFlow, DeviceEvents, EventLoopClosed};
 use crate::keyboard::ModifiersState;
 use crate::platform::pump_events::PumpStatus;
-use crate::platform_impl::platform::dark_mode::try_theme;
+use crate::platform_impl::platform::dark_mode::{try_theme, WIN10_BUILD_VERSION};
 use crate::platform_impl::platform::dpi::{become_dpi_aware, dpi_to_scale_factor};
 use crate::platform_impl::platform::drop_handler::FileDropHandler;
 use crate::platform_impl::platform::icon::WinCursor;
@@ -2306,7 +2306,10 @@ unsafe fn public_window_callback_inner(
             }
 
             let new_outer_rect: RECT;
-            {
+            // Windows 11's suggested rectangle avoids the old-monitor nudge during a cross-monitor drag.
+            if !WIN10_BUILD_VERSION.is_some_and(|build| build < 22000) {
+                new_outer_rect = suggested_rect;
+            } else {
                 let suggested_ul =
                     (suggested_rect.left + margin_left, suggested_rect.top + margin_top);
 
