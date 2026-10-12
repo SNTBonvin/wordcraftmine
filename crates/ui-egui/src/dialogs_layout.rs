@@ -535,7 +535,7 @@ fn envelopes_ui(app: &mut WordApp, ui: &mut Ui, f: &mut EnvelopeForm) -> bool {
 }
 
 /// `DL  110 × 220 mm` / `#10  4.13 × 9.5 in`: metric sizes in millimetres, the others in inches.
-fn envelope_label(name: &str, w: f32, h: f32) -> String {
+pub(crate) fn envelope_label(name: &str, w: f32, h: f32) -> String {
     let short = name.strip_prefix("Envelope ").unwrap_or(name);
     if short.starts_with('#') || short == "Monarch" {
         let i = |pt: f32| ((pt / 72.0) * 100.0).round() / 100.0;

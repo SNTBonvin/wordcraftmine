@@ -41,9 +41,11 @@ enum Phase {
     Result,
 }
 
+/// A buffered piece of a field's result. Objects are boxed: an inline object is much larger than
+/// a string.
 enum Item {
     Text(String),
-    Obj(InlineObject),
+    Obj(Box<InlineObject>),
 }
 
 struct FieldState {
@@ -787,7 +789,7 @@ impl Reader<'_> {
             for (it, p) in f.buf {
                 match it {
                     Item::Text(t) => self.emit_text(sc, pb, &t, &p),
-                    Item::Obj(o) => self.emit_obj(sc, pb, o, &p),
+                    Item::Obj(o) => self.emit_obj(sc, pb, *o, &p),
                 }
             }
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
@@ -828,7 +830,7 @@ impl Reader<'_> {
             for (it, p) in f.buf.drain(..) {
                 match it {
                     Item::Text(t) => pb.push_text(&t, &p),
-                    Item::Obj(o) => pb.push_obj(o, &p),
+                    Item::Obj(o) => pb.push_obj(*o, &p),
                 }
             }
         }
@@ -849,7 +851,7 @@ impl Reader<'_> {
         match sink(sc) {
             Some(f) => {
                 if f.phase == Phase::Result && f.buf.len() < 100_000 {
-                    f.buf.push((Item::Obj(o), props.clone()));
+                    f.buf.push((Item::Obj(Box::new(o)), props.clone()));
                 }
             }
             _ => pb.push_obj(o, props),
@@ -1293,10 +1295,12 @@ impl Reader<'_> {
             let mut tcs = Vec::new();
             collect(tr, "w:tc", &mut tcs, &mut Vec::new(), 0);
             for (tc, cell_controls) in tcs.into_iter().take(MAX_COLS) {
-                let (mut props, hcont) =
-                    tc.child("w:tcPr").map(tcpr).unwrap_or_else(|| (wordcraft_doc::props::CellProps { span: 1, ..Default::default() }, false));
+                let (mut props, hcont) = tc
+                    .child("w:tcPr")
+                    .map(|p| tcpr(&self.pc, p))
+                    .unwrap_or_else(|| (wordcraft_doc::props::CellProps { span: 1, ..Default::default() }, false));
                 if let Some(ch) = tc.child("w:tcPr").and_then(|p| p.child("w:tcPrChange")) {
-                    let old = ch.child("w:tcPr").map(|o| tcpr(o).0).unwrap_or_default();
+                    let old = ch.child("w:tcPr").map(|o| tcpr(&self.pc, o).0).unwrap_or_default();
                     props.fmt_change = PropChange::boxed(self.revision(RevisionKind::Format, ch), old);
                 }
                 if hcont && let Some(prev) = row.cells.last_mut() {

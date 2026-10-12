@@ -1,6 +1,6 @@
 # Turkish interface
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (Turkish interface expanded to full catalog parity, 2,253 entries) · **Target:** WordCraft 0.5.0
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (Turkish interface catalog completed, 2,324 entries, #774; previously minor: Turkish interface catalog and regression checks) · **Target:** WordCraft 0.5.0
 
 Choose **File › Options › Interface language › Türkçe**, or follow a Turkish system display language
 (`tr-TR`, `tr-CY`, `tr_TR.UTF-8`). The catalog code is `tr`; `ui.language` with `{"value":"tr"}`
@@ -8,8 +8,8 @@ selects it explicitly, and `WORDCRAFT_LANGUAGE=tr-TR` does the same for a headle
 launch while the preference is `auto`. The choice is saved with the other interface settings.
 Document text, command ids, CLI/MCP/control responses and file paths do not change.
 
-`crates/ui-egui/src/i18n/tr.tsv` has all 2,253 entries of the full Russian catalog, with 100%
-key parity. It covers all ribbon commands, dialogs, built-in style names, equation and math gallery
+`crates/ui-egui/src/i18n/tr.tsv` has all 2,324 entries of the Russian catalog (the same
+keys). It covers all ribbon commands, dialogs, built-in style names, equation and math gallery
 structures, watermark presets, paper sizes, and rendered preview tiles. It is written from the
 meaning of the English labels; no proprietary translation resources were consulted. The catalog
 format has no plural forms, and Turkish doesn't need them here: a noun after a number stays
@@ -61,5 +61,5 @@ proofing. A native-speaker skim of the catalog is welcome.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-12 | minor | Turkish catalog expanded to full parity (2,253 entries), covering all math structures, built-in styles, presets and preview tiles |
+| 2026-10-11 | minor | Turkish catalog completed (2,324 entries, #774), covering all math structures, built-in styles, presets and preview tiles |
 | 2026-10-11 | minor | Turkish catalog (1,307 entries), terminology, scope and regression checks |

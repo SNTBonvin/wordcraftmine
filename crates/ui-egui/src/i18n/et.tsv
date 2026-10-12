@@ -50,6 +50,7 @@
 	Arrow	Nool
 	Artistic Effects	Kunstilised efektid
 	As you type	Kirjutamise ajal
+	Asian text font:	Aasia teksti font:
 	Author	Autor
 	AutoCorrect Options	Automaatparanduse valikud
 	AutoFit	Automaatne sobitus
@@ -383,6 +384,7 @@
 	Lasso	Lasso
 	Last Column	Viimane veerg
 	Last commit	Viimane commit
+	Latin text font:	Ladina teksti font:
 	Layout	Paigutus
 	Layout Summary	Paigutuse kokkuvõte
 	Left	Vasak
@@ -833,12 +835,12 @@
 	Wide	Lai
 	Widow/Orphan Control	Üksikridade vältimine
 	Widow/Orphan control	Üksikridade vältimine
-	Wildcards (regex)	Metamärgid (regulaaravaldis)
 	Window	Aken
 	Word Count	Sõnade arv
 	Word Left	Sõna vasakule
 	Word Right	Sõna paremale
 	Word document (*.docx)	Wordi dokument (*.docx)
+	Word XML Document (*.xml)	Wordi XML-dokument (*.xml)
 	WordArt	WordArt
 	WordCraft	WordCraft
 	Words	Sõnad
@@ -1816,6 +1818,37 @@
 	Rewind	Keri algusesse
 	Forward	Edasi
 	Stroke {n} of {total}	Joon {n}/{total}
+	Use wildcards	Kasuta metamärke
+	Special	Erimärgid
+	Match prefix	Sobita eesliide
+	Match suffix	Sobita järelliide
+	Ignore punctuation characters	Eira kirjavahemärke
+	Ignore white-space characters	Eira tühikumärke
+	Regular expressions	Regulaaravaldised
+	Search Options	Otsingusuvandid
+	Tab Character	Tabeldusmärk
+	Any Character	Suvaline märk
+	Any Digit	Suvaline number
+	Any Letter	Suvaline täht
+	Caret Character	Katusmärk
+	Section Character	Paragrahvi märk
+	Paragraph Character	Lõigu sümbol
+	Graphic	Pilt
+	Manual Line Break	Käsitsi reapiir
+	Manual Page Break	Käsitsi lehepiir
+	Section Break	Jaotisepiir
+	White Space	Tühimärk
+	Clipboard Contents	Lõikelaua sisu
+	Find What Text	Otsitav tekst
+	Find What Expression	Otsitav avaldis
+	Character in Range	Märk vahemikus
+	Beginning of Word	Sõna algus
+	End of Word	Sõna lõpp
+	Expression	Avaldis
+	Not	Mitte
+	Num Occurrences	Korduste arv
+	Previous 1 or More	Eelmine 1 või rohkem korda
+	0 or More Characters	0 või rohkem märki
 	Move with Text	Liigu tekstiga
 	Fix Position on Page	Fikseeri asukoht lehel
 

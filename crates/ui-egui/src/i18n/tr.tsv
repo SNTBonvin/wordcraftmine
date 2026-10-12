@@ -1,18 +1,16 @@
-# WordCraft — Turkish interface strings. Tab-separated: [context\t]english\ttranslation.
-# Russian (ru) interface catalog. Columns, separated by a TAB:
+# Turkish (tr) interface catalog. Columns, separated by a TAB:
 #   context <TAB> English source <TAB> translation
 #   context    usually empty. `preview` words sample text inside rendered previews (the Design
 #              tab's style-set tiles), which must fit a small tile; it falls back to the plain entry.
-#   source     the English text exactly as in the code (tl!(...), ribbon labels, command labels)
-#   escapes    \n  \t  \\  inside a column. `{name}` placeholders must appear in both columns, and a
-#              trailing "…" in one needs one in the other.
-#   Lines starting with # and blank lines are ignored. A missing entry shows in English.
+#   source     exact English lookup key (tl!(...), ribbon and command labels)
+#   escapes    \n  \t  \\ inside a column. Keep all `{name}` placeholders and trailing ….
+#   Lines starting with # and blank lines are ignored. Missing entries show in English.
 #
-# Clean room: every entry was written from the plain meaning of the English label in ordinary
-# computing vocabulary. No Microsoft Word (or other product) localisation, string table or
-# translated UI was consulted or copied; add entries the same way.
-# Product, format and technology names (WordCraft, PDF, Markdown, MCP …) stay in Latin letters.
-# Counts use count-neutral wording (`Слов: 21`), so no plural forms are needed.
+# Clean room: written from the meaning of the English labels in ordinary Turkish computing
+# vocabulary. No Microsoft Word or other proprietary product's translated UI or string table
+# was consulted or copied. Product/format names (WordCraft, PDF, Markdown, MCP ...) stay intact.
+# Commands use imperatives; labels use natural Turkish. After a count the noun stays singular
+# (1 sözcük, 2 sözcük). This catalog format has no plural contexts or separate one/other forms.
 
 	(no suggestions)	(öneri yok)
 	1.5 Line Spacing	1,5 Satır Aralığı
@@ -805,7 +803,6 @@ preview	Title	Örnek
 	Wide	Geniş
 	Widow/Orphan Control	Tek Kalan Satır Denetimi
 	Widow/Orphan control	Tek kalan satır denetimi
-	Wildcards (regex)	Joker karakterler (regex)
 	Window	Pencere
 	Word Count	Sözcük Sayısı
 	Word document (*.docx)	Word belgesi (*.docx)
@@ -2114,6 +2111,40 @@ preview	Title	Örnek
 	Apply	Uygula
 	Convert Notes	Notları Dönüştür
 
+# Word XML Document (#548).
+	Word XML Document (*.xml)	Word XML Belgesi (*.xml)
+# Find and Replace special characters and wildcards (#543).
+	Use wildcards	Joker karakter kullan
+	Special	Özel
+	Match prefix	Ön eke uy
+	Match suffix	Son eke uy
+	Ignore punctuation characters	Noktalama karakterlerini yoksay
+	Ignore white-space characters	Boşluk karakterlerini yoksay
+	Regular expressions	Düzenli ifadeler
+	Search Options	Arama Seçenekleri
+	Tab Character	Sekme Karakteri
+	Any Character	Herhangi Bir Karakter
+	Any Digit	Herhangi Bir Rakam
+	Any Letter	Herhangi Bir Harf
+	Caret Character	Şapka Karakteri
+	Section Character	Bölüm Karakteri
+	Paragraph Character	Paragraf Karakteri
+	Graphic	Grafik
+	Manual Line Break	El ile Satır Sonu
+	Manual Page Break	El ile Sayfa Sonu
+	Section Break	Bölüm Sonu
+	White Space	Boşluk
+	Clipboard Contents	Pano İçeriği
+	Find What Text	Aranan Metin
+	Find What Expression	Aranan İfade
+	Character in Range	Aralıktaki Karakter
+	Beginning of Word	Sözcük Başı
+	End of Word	Sözcük Sonu
+	Expression	İfade
+	Not	Değil
+	Num Occurrences	Tekrar Sayısı
+	Previous 1 or More	Öncekinin 1 veya Daha Fazlası
+	0 or More Characters	0 veya Daha Fazla Karakter
 # Insert SmartArt (#497).
 	Add Shape	Şekil Ekle
 	Change Colors	Renkleri Değiştir
@@ -2329,3 +2360,6 @@ preview	Title	Örnek
 	Typing replaces selected text	Yazmak seçili metnin yerine geçer
 	Update fields before printing	Yazdırmadan önce alanları güncelle
 	Use the Insert key to switch overtype on and off	Üzerine yazmayı açıp kapatmak için Insert tuşunu kullan
+# Asian and Latin text fonts (#505).
+	Asian text font:	Asya metni yazı tipi:
+	Latin text font:	Latin metni yazı tipi:

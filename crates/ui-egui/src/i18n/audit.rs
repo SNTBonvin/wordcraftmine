@@ -126,6 +126,13 @@ impl Exempt {
             names.extend(c.categories.iter().cloned());
             names.extend(c.series.iter().map(|s| s.name.clone()));
         }
+        // Envelope sizes (`#10   4.13 × 9.5 in`, `DL   110 × 220 mm`): a size code, numbers and a
+        // unit symbol, which read the same in every language.
+        names.extend(
+            wordcraft_engine::cmd::mailings::ENVELOPE_SIZES
+                .iter()
+                .map(|(n, w, h)| crate::dialogs_layout::envelope_label(n, *w, *h).trim().to_string()),
+        );
         for m in crate::credits::MODELS {
             names.extend([m.company, m.model, m.version].map(str::to_string));
         }
@@ -157,7 +164,6 @@ impl Exempt {
             || matches!(plain, "WordCraft" | "WordCraft User" | "Discord" | "https://" | "auto" | "I. II. III." | "i. ii. iii.")
             || plain == "CONFIDENTIAL" // the watermark dialog's text: document content, kept as typed
             || plain == "Figure 1" // the caption dialog's sample: the label goes into the document as is
-            || plain.ends_with(" in") || plain.ends_with(" mm") // envelope and paper dimension units
     }
 }
 
@@ -187,6 +193,11 @@ fn untranslated_interface_text() {
         let _ = app.run("ui.backstage", json!({"value": true, "page": page}));
         let drawn = frame(&ctx, &mut app);
         record(&app, &format!("File › {page}"), drawn);
+    }
+    for pane in wordcraft_engine::cmd::options::PANES {
+        let _ = app.run("ui.backstage", json!({"value": true, "page": "options", "pane": pane}));
+        let drawn = frame(&ctx, &mut app);
+        record(&app, &format!("File › Options › {pane}"), drawn);
     }
     let _ = app.run("ui.backstage", json!({"value": false}));
     let dialogs = [
