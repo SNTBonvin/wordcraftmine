@@ -110,6 +110,8 @@ pub struct Para {
     pub page_break: bool,
     pub inlines: Vec<Inline>,
     pub spacing: Spacing,
+    /// Borders the source puts on the paragraph itself (RTF `\brdrb`…).
+    pub borders: Option<wordcraft_doc::props::Borders>,
 }
 
 impl Para {
@@ -185,11 +187,13 @@ pub struct Cell {
     pub covered: bool,
     pub header: bool,
     pub shading: Option<Rgb>,
+    /// The cell's own borders (RTF `\clbrdr…`), drawn whatever the table's style.
+    pub borders: Option<wordcraft_doc::props::Borders>,
 }
 
 impl Default for Cell {
     fn default() -> Self {
-        Cell { blocks: Vec::new(), colspan: 1, rowspan: 1, covered: false, header: false, shading: None }
+        Cell { blocks: Vec::new(), colspan: 1, rowspan: 1, covered: false, header: false, shading: None, borders: None }
     }
 }
 
@@ -379,6 +383,8 @@ impl Builder<'_> {
         out.props.style = style;
         if p.kind == Kind::Rule {
             out.props.borders = Some(rule_borders());
+        } else if p.borders.is_some() {
+            out.props.borders = p.borders;
         }
         if let (Some(li), Some(num)) = (p.list, list_num) {
             if out.props.style.is_none() {
@@ -549,7 +555,7 @@ impl Builder<'_> {
                     VMerge::None
                 };
                 row.cells.push(wordcraft_doc::Cell {
-                    props: CellProps { width: Some(w), span: span as u32, vmerge, shading: c.shading, ..Default::default() },
+                    props: CellProps { width: Some(w), span: span as u32, vmerge, shading: c.shading, borders: c.borders, ..Default::default() },
                     blocks,
                     controls: Default::default(),
                 });
@@ -718,6 +724,7 @@ pub fn flow_paras(doc: &Document, p: &Paragraph) -> Vec<Para> {
         page_break: p.props.page_break_before.unwrap_or(false),
         inlines: Vec::new(),
         spacing: Spacing::default(),
+        borders: None,
     };
     let in_code = kind == Kind::Code;
     let mut k = 0usize;
@@ -730,7 +737,15 @@ pub fn flow_paras(doc: &Document, p: &Paragraph) -> Vec<Para> {
             if c == PAGE_BREAK {
                 if !hidden {
                     out.push_text(&std::mem::take(&mut buf), &f);
-                    let next = Para { kind, list: None, align: p.props.align, page_break: true, inlines: Vec::new(), spacing: Spacing::default() };
+                    let next = Para {
+                        kind,
+                        list: None,
+                        align: p.props.align,
+                        page_break: true,
+                        inlines: Vec::new(),
+                        spacing: Spacing::default(),
+                        borders: None,
+                    };
                     let prev = std::mem::replace(&mut out, next);
                     if prev.inlines.is_empty() {
                         out.page_break |= prev.page_break;
@@ -840,6 +855,7 @@ fn flow_table(doc: &Document, t: &Table, depth: usize) -> FTable {
                 covered: c.props.vmerge == VMerge::Continue,
                 header,
                 shading: c.props.shading,
+                borders: c.props.borders,
             });
         }
         rows.push(cells);

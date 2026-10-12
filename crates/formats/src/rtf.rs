@@ -511,7 +511,6 @@ struct Output {
     row_header: bool,
     rule_pending: bool,
     table_rights: Vec<Vec<i32>>,
-    table_side_borders: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -533,6 +532,10 @@ struct St {
     cp: Option<u16>,
     /// Space before/after (`\sb`, `\sa`), line spacing (`\sl`, `\slmult`) and indents
     /// (`\li`, `\ri`, `\fi`), twips.
+    /// The paragraph's borders (`\brdrt`, `\brdrb`, `\brdrl`, `\brdrr`) and the side being
+    /// described.
+    borders: wordcraft_doc::props::Borders,
+    border_side: Option<char>,
     sb: Option<i32>,
     sa: Option<i32>,
     sl: i32,
@@ -558,6 +561,8 @@ impl Default for St {
             pagebb: false,
             field: None,
             cp: None,
+            borders: Default::default(),
+            border_side: None,
             sb: None,
             sa: None,
             sl: 0,
@@ -575,8 +580,9 @@ struct CellDef {
     hmerge: u8,
     shading: Option<Rgb>,
     right: i32,
-    /// A left or right border is drawn (`\clbrdrl`/`\clbrdrr` with a line style).
-    side_border: bool,
+    /// The borders the cell names (`\clbrdrt` … `\clbrdrr`, each with its line style, `\brdrw`
+    /// width and `\brdrcf` colour).
+    borders: wordcraft_doc::props::Borders,
 }
 
 /// Page size and margins in twips (`\paperw`, `\margl`… and their `…sxn` section forms).
@@ -656,12 +662,11 @@ struct Reader {
     hf_parts: Vec<(HeaderFooter, Vec<FBlock>)>,
     /// `\titlepg`: the first page has its own header and footer.
     title_page: bool,
-    /// The cell border side being described (`\clbrdrl` … `\clbrdrr`), until its line style.
+    /// The cell border side being described (`\clbrdrt`, `l`, `b`, `r`): its line style, width
+    /// and colour follow.
     cell_side: Option<char>,
     /// Each table row's cell right edges (`\cellx`, twips), for the table's column grid.
     table_rights: Vec<Vec<i32>>,
-    /// The table has a cell with a left or right border.
-    table_side_borders: bool,
     colors: Vec<Option<Rgb>>,
     color_cur: (u8, u8, u8, bool),
     styles: HashMap<i32, String>,
@@ -724,8 +729,22 @@ impl Reader {
         std::mem::swap(&mut o.row_header, &mut self.row_header);
         std::mem::swap(&mut o.rule_pending, &mut self.rule_pending);
         std::mem::swap(&mut o.table_rights, &mut self.table_rights);
-        std::mem::swap(&mut o.table_side_borders, &mut self.table_side_borders);
         o
+    }
+
+    /// The border of the cell side being described, else of the paragraph side.
+    fn cell_border_slot(&mut self) -> Option<&mut Option<wordcraft_doc::props::Border>> {
+        let (b, side) = match self.cell_side {
+            Some(c) => (&mut self.def_cur.borders, c),
+            None => (&mut self.st.borders, self.st.border_side?),
+        };
+        match side {
+            't' => Some(&mut b.top),
+            'l' => Some(&mut b.left),
+            'b' => Some(&mut b.bottom),
+            'r' => Some(&mut b.right),
+            _ => None,
+        }
     }
 
     /// A header or footer group starts: read it into an output of its own.
@@ -962,6 +981,7 @@ impl Reader {
         p.align = self.st.align;
         p.page_break = self.st.pagebb;
         p.spacing = self.spacing();
+        p.borders = self.st.borders.any_visible().then_some(self.st.borders);
         if let Some(ls) = self.st.ls {
             let list = self.overrides.get(&ls).and_then(|id| self.lists.get(id));
             let lv = self.st.ilvl.min(8);
@@ -1043,7 +1063,6 @@ impl Reader {
         let mut rights: Vec<i32> = Vec::new();
         for (i, mut c) in cells.drain(..).enumerate() {
             let d = defs.get(i).cloned().unwrap_or_default();
-            self.table_side_borders |= d.side_border;
             // A merged-in cell widens the cell it joins.
             if d.hmerge == 2
                 && let Some(last) = rights.last_mut()
@@ -1053,6 +1072,7 @@ impl Reader {
                 rights.push(d.right);
             }
             c.shading = d.shading;
+            c.borders = d.borders.any_visible().then_some(d.borders);
             c.header = self.row_header;
             match d.vmerge {
                 1 => c.rowspan = 2,
@@ -1086,10 +1106,8 @@ impl Reader {
             let mut rows = std::mem::take(&mut self.table);
             let rights = std::mem::take(&mut self.table_rights);
             let widths = column_grid(&mut rows, &rights);
-            // Word draws only the borders a table names: one without side borders is laid out
-            // without the grid (rules between rows alone don't make it a ruled table).
-            let borderless = !std::mem::take(&mut self.table_side_borders);
-            self.body.push(FBlock::Table(FTable { rows, widths, borderless }));
+            // Word draws only the borders the cells name: no grid style, each cell its own.
+            self.body.push(FBlock::Table(FTable { rows, widths, borderless: true }));
         }
     }
 
@@ -1394,7 +1412,12 @@ impl Reader {
             "intbl" => self.st.intbl = true,
             "ls" => self.st.ls = Some(pv),
             "ilvl" => self.st.ilvl = pv.clamp(0, 8) as u8,
-            "brdrb" => self.rule_pending = true,
+            "brdrb" | "brdrt" | "brdrl" | "brdrr" if self.cell_side.is_none() => {
+                if w == "brdrb" {
+                    self.rule_pending = true;
+                }
+                self.st.border_side = w.chars().last();
+            }
             "trowd" => {
                 self.defs.clear();
                 self.def_cur = CellDef::default();
@@ -1413,16 +1436,44 @@ impl Reader {
             "li" | "lin" => self.st.li = Some(pv),
             "ri" | "rin" => self.st.ri = Some(pv),
             "fi" => self.st.fi = Some(pv),
+            "clbrdrt" => self.cell_side = Some('t'),
             "clbrdrl" => self.cell_side = Some('l'),
+            "clbrdrb" => self.cell_side = Some('b'),
             "clbrdrr" => self.cell_side = Some('r'),
-            "clbrdrt" | "clbrdrb" => self.cell_side = Some('h'),
-            "brdrs" | "brdrth" | "brdrsh" | "brdrdb" | "brdrdot" | "brdrdash" | "brdrhair" | "brdrtriple" | "brdrthtnsg" | "brdrtnthsg"
-            | "brdrwavy"
-                if matches!(self.cell_side.take(), Some('l' | 'r')) =>
+            "brdrs" | "brdrth" | "brdrsh" | "brdrdb" | "brdrdot" | "brdrdash" | "brdrdashsm" | "brdrdashd" | "brdrdashdd" | "brdrhair"
+            | "brdrtriple" | "brdrthtnsg" | "brdrtnthsg" | "brdrthtnmg" | "brdrtnthmg" | "brdrwavy" | "brdrwavydb" | "brdrnone" | "brdrnil"
+            | "brdrtbl"
+                if self.cell_side.is_some() || self.st.border_side.is_some() =>
             {
-                self.def_cur.side_border = true;
+                use wordcraft_doc::props::{Border, BorderStyle};
+                let style = match w {
+                    "brdrnone" | "brdrnil" | "brdrtbl" => BorderStyle::None,
+                    "brdrth" => BorderStyle::Thick,
+                    "brdrdb" | "brdrthtnsg" | "brdrtnthsg" | "brdrthtnmg" | "brdrtnthmg" | "brdrwavydb" => BorderStyle::Double,
+                    "brdrdot" => BorderStyle::Dotted,
+                    "brdrdash" | "brdrdashsm" => BorderStyle::Dashed,
+                    "brdrdashd" | "brdrdashdd" => BorderStyle::DotDash,
+                    "brdrtriple" => BorderStyle::Triple,
+                    "brdrwavy" => BorderStyle::Wave,
+                    _ => BorderStyle::Single,
+                };
+                let b = (style != BorderStyle::None).then_some(Border { style, ..Border::single(0.5) });
+                if let Some(slot) = self.cell_border_slot() {
+                    *slot = b;
+                }
             }
-            "brdrnone" | "brdrnil" | "brdrtbl" => self.cell_side = None,
+            "brdrw" if self.cell_side.is_some() || self.st.border_side.is_some() => {
+                let width = (pv as f32 / 20.0).clamp(0.25, 6.0);
+                if let Some(Some(b)) = self.cell_border_slot() {
+                    b.width = width;
+                }
+            }
+            "brdrcf" if self.cell_side.is_some() || self.st.border_side.is_some() => {
+                let color = self.colors.get(pv.max(0) as usize).copied().flatten();
+                if let Some(Some(b)) = self.cell_border_slot() {
+                    b.color = color;
+                }
+            }
             "titlepg" => self.title_page = on,
             "paperw" | "pgwsxn" => self.page.w = Some(pv),
             "paperh" | "pghsxn" => self.page.h = Some(pv),
@@ -1784,6 +1835,34 @@ mod tests {
     }
 
     #[test]
+    fn paragraph_borders() {
+        // A heading with a grey rule under it, as hh.ru résumés write their section titles.
+        let rtf = br"{\rtf1\ansi{\colortbl;\red0\green0\blue0;\red216\green216\blue216;}
+\pard\brdrb\brdrs\brdrw10\brdrcf2 Section\par
+\pard Body\par
+\pard\brdrt\brdrdb\brdrl\brdrs\brdrr\brdrs Boxed\par
+\pard\brdrb\brdrs\par}";
+        let f = parse(rtf).unwrap();
+        let paras: Vec<&Para> = f.blocks.iter().filter_map(|b| if let FBlock::Para(p) = b { Some(p) } else { None }).collect();
+        let b = paras[0].borders.unwrap();
+        let bottom = b.bottom.unwrap();
+        assert_eq!((bottom.width, bottom.color), (0.5, Some(Rgb(216, 216, 216))));
+        assert!(b.top.is_none());
+        assert_eq!(paras[0].kind, Kind::Normal);
+        // \pard resets them.
+        assert!(paras[1].borders.is_none());
+        let b = paras[2].borders.unwrap();
+        assert_eq!(b.top.map(|x| x.style), Some(wordcraft_doc::props::BorderStyle::Double));
+        assert!(b.left.is_some() && b.right.is_some() && b.bottom.is_none());
+        // An empty paragraph with only a bottom border is still a rule.
+        assert_eq!(paras[3].kind, Kind::Rule);
+        // The document's paragraph carries them.
+        let d = import(rtf).unwrap();
+        let first = d.body.iter().find_map(|b| if let wordcraft_doc::Block::Para(p) = &**b { Some(p) } else { None }).unwrap();
+        assert!(first.props.borders.and_then(|b| b.bottom).is_some());
+    }
+
+    #[test]
     fn headers_and_footers() {
         let rtf = br"{\rtf1\ansi\titlepg
 {\header \pard\qr Running head\par}
@@ -1884,18 +1963,37 @@ mod tests {
         assert_eq!(t.rows[0].iter().map(|c| c.colspan).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(t.rows[1].iter().map(|c| c.colspan).collect::<Vec<_>>(), [2, 1]);
         assert_eq!(t.cols(), 3);
-        // No side borders: laid out without the grid, even with a rule under a cell.
+        // RTF tables have no grid style: each cell draws the borders it names, nothing else.
         assert!(t.borderless);
-        let f = parse(br"{\rtf1\ansi\trowd\clbrdrb\brdrs\cellx2000\pard\intbl a\cell\row}").unwrap();
+        assert!(t.rows.iter().flatten().all(|c| c.borders.is_none()));
+        // A rule under a cell (a letterhead's line): the bottom side only, its width and colour.
+        let f =
+            parse(br"{\rtf1\ansi{\colortbl;\red174\green174\blue174;}\trowd\clbrdrb\brdrs\brdrw15\brdrcf1\cellx2000\pard\intbl a\cell\row}").unwrap();
         let FBlock::Table(t) = &f.blocks[0] else { panic!() };
-        assert!(t.borderless);
-        let f = parse(br"{\rtf1\ansi\trowd\clbrdrl\brdrs\brdrw10\clbrdrr\brdrs\cellx2000\pard\intbl a\cell\row}").unwrap();
+        let b = t.rows[0][0].borders.unwrap();
+        assert!(b.top.is_none() && b.left.is_none() && b.right.is_none());
+        let bottom = b.bottom.unwrap();
+        assert_eq!((bottom.style, bottom.width, bottom.color), (wordcraft_doc::props::BorderStyle::Single, 0.75, Some(Rgb(174, 174, 174))));
+        // Every side, in different styles, per cell.
+        let f = parse(br"{\rtf1\ansi\trowd\clbrdrt\brdrdb\clbrdrl\brdrs\brdrw10\clbrdrb\brdrdot\clbrdrr\brdrth\cellx2000\cellx4000\pard\intbl a\cell b\cell\row}").unwrap();
         let FBlock::Table(t) = &f.blocks[0] else { panic!() };
-        assert!(!t.borderless);
+        let b = t.rows[0][0].borders.unwrap();
+        use wordcraft_doc::props::BorderStyle as S;
+        assert_eq!(
+            [b.top.map(|x| x.style), b.left.map(|x| x.style), b.bottom.map(|x| x.style), b.right.map(|x| x.style)],
+            [Some(S::Double), Some(S::Single), Some(S::Dotted), Some(S::Thick)]
+        );
+        assert_eq!(b.left.map(|x| x.width), Some(0.5));
+        assert!(t.rows[0][1].borders.is_none(), "the second cell names no borders");
         // A border side set to none isn't a border.
         let f = parse(br"{\rtf1\ansi\trowd\clbrdrl\brdrnone\cellx2000\pard\intbl a\cell\row}").unwrap();
         let FBlock::Table(t) = &f.blocks[0] else { panic!() };
-        assert!(t.borderless);
+        assert!(t.rows[0][0].borders.is_none());
+        // The document's cells carry them.
+        let d = import(br"{\rtf1\ansi\trowd\clbrdrb\brdrs\cellx2000\pard\intbl a\cell\row}").unwrap();
+        let t = d.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t) } else { None }).unwrap();
+        assert!(t.props.style.is_none());
+        assert!(t.rows[0].cells[0].props.borders.and_then(|b| b.bottom).is_some());
         // The table sizes to the document's page, not Letter.
         let d = import(br"{\rtf1\ansi\paperw11906\margl1134\margr1134\trowd\cellx4818\cellx9638\pard\intbl a\cell b\cell\row}").unwrap();
         let t = d.body.iter().find_map(|b| if let wordcraft_doc::Block::Table(t) = &**b { Some(t) } else { None }).unwrap();
