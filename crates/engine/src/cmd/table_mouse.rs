@@ -418,8 +418,9 @@ fn fit_column(s: &mut Session, v: &Value) -> CmdResult {
         wordcraft_layout::measure_table_columns(&s.doc, t).get(g).copied().ok_or_else(|| CmdError::Failed("there's no such column".into()))?;
     let current = target.widths().get(g).copied().unwrap_or(0.0);
     // As in Word, the columns right of it keep their widths and move with the border, so the
-    // table narrows or widens: up to the right margin, never below the column's narrowest content.
-    let room = current + l.pages.get(page).map_or(0.0, |pg| (pg.body.right() - target.right()).max(0.0));
+    // table narrows or widens: up to the right margin (a nested table's cell's), never below the
+    // column's narrowest content.
+    let room = current + (room_right(&l, &s.doc, page, &target) - target.right()).max(0.0);
     let want = widest.min(room.max(narrowest));
     if let Some(w) = target.plan(want - current, 0.0, true).widths {
         let t = s.doc.table_mut(target.story, &target.table)?;
@@ -427,6 +428,22 @@ fn fit_column(s: &mut Session, v: &Value) -> CmdResult {
         table_resize::touch(s, &target)?;
     }
     sel_result(s)
+}
+
+/// Where the room right of table `target` ends on page `page` (page x): the right margin, or
+/// for a table nested in a cell the right edge of that cell's text.
+fn room_right(l: &DocLayout, doc: &Document, page: usize, target: &ResizeTarget) -> f32 {
+    let margin = l.pages.get(page).map_or(target.right(), |pg| pg.body.right());
+    let Some((outer, row, cell)) = target.table.cell() else { return margin };
+    let Some(t) = doc.table(target.story, &outer) else { return margin };
+    let boxes = table_resize::cell_boxes(l, page);
+    let Some(b) = boxes.iter().find(|b| b.story == target.story && b.table == outer && b.row == row && b.cell == cell) else {
+        return margin;
+    };
+    // A right-to-left table has its cells' start (left) margin on their right.
+    let m = wordcraft_layout::cell_margins(doc, t, row, cell);
+    let inset = if t.props.bidi_visual { m[1] } else { m[3] };
+    (b.rect.right() - inset).min(margin)
 }
 
 #[cfg(test)]
@@ -734,6 +751,44 @@ mod tests {
         s.run("table.fitColumn", &json!({"page": 0, "x": c1.right(), "y": mid_y(c1)})).unwrap();
         let c2 = cell_rect(&mut s, 0, 2);
         assert!((c2.w - fit[2].1).abs() < 0.5 && c2.w < c.w, "{c:?} → {c2:?}");
+    }
+
+    /// A nested table's column fits within the cell around the table: the table widens only to
+    /// the right edge of that cell's text, not to the page's right margin, and the table around
+    /// it keeps its columns.
+    #[test]
+    fn a_nested_tables_column_fits_within_its_cell() {
+        let mut s = table_session(1, 2);
+        s.sel = Selection::caret(cell_pos(&s, 0, 0));
+        s.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
+        let (inner, _, _) = s.sel.focus.path.cell().unwrap();
+        let rect = |s: &mut Session, table: &Path, cell: usize| {
+            s.layout().pages[0]
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    Placed::Cell { rect, table: t, row: 0, cell: c, .. } if t == table && *c == cell => Some(*rect),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        // Its empty columns narrow first, leaving room right of it in its cell.
+        for col in [1, 0] {
+            let r = rect(&mut s, &inner, col);
+            s.run("table.fitColumn", &json!({"page": 0, "x": r.right(), "y": mid_y(r)})).unwrap();
+        }
+        s.run("text.insert", &json!({"text": "word ".repeat(40)})).unwrap();
+        let outer = table_path(&s);
+        let host = rect(&mut s, &outer, 0);
+        let (a, b) = (rect(&mut s, &inner, 0), rect(&mut s, &inner, 1));
+        assert!(b.right() < host.right() - 40.0, "{b:?} in {host:?}");
+        s.run("table.fitColumn", &json!({"page": 0, "x": a.right(), "y": mid_y(a)})).unwrap();
+        let (a1, b1) = (rect(&mut s, &inner, 0), rect(&mut s, &inner, 1));
+        let text_right = host.right() - wordcraft_layout::cell_margins(&s.doc, &first_table(&s), 0, 0)[3];
+        assert!(a1.w > a.w + 40.0 && (b1.w - b.w).abs() < 0.5, "{a:?} {b:?} → {a1:?} {b1:?}");
+        assert!((b1.right() - text_right).abs() < 0.5, "the table fills its cell's text: {b1:?}, {text_right}");
+        let host1 = rect(&mut s, &outer, 0);
+        assert_eq!((host1.x, host1.w), (host.x, host.w), "the table around it keeps its columns");
     }
 
     /// Pasting formatting onto a selected column leaves its text (it used to clear it).
