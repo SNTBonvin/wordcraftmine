@@ -3253,3 +3253,247 @@ fn note_options_per_section_and_convert_notes() {
     assert_eq!(s.doc.parts[&b].kind, PartKind::Footnote);
     assert!(s.run("references.convertNotes", &json!({"to": "sideways"})).is_err());
 }
+
+/// The first SmartArt (or other graphic) in the body, selected.
+fn select_graphic(s: &mut Session) {
+    let (path, off) = (0..s.doc.body.len() as u32)
+        .find_map(|b| {
+            let p = s.doc.para(StoryRef::Body, &wordcraft_doc::Path(vec![b]))?;
+            let off = p.object_offsets().into_iter().find(|o| matches!(p.object_at(*o), Some(wordcraft_doc::InlineObject::Graphic { .. })))?;
+            Some((wordcraft_doc::Path(vec![b]), off))
+        })
+        .expect("a graphic");
+    let at = Pos { story: StoryRef::Body, path, off };
+    let end = Pos { off: off + wordcraft_doc::para::OBJ.len_utf8(), ..at.clone() };
+    s.sel = crate::Selection { anchor: at, focus: end };
+}
+
+/// #497: Insert › SmartArt saves as diagram parts (data, layout, style, colours, drawing) and
+/// reopens as the same editable graphic; an edited data part stays read-only.
+#[test]
+fn smart_art_round_trips_through_docx() {
+    use std::io::Read;
+    let mut s = s();
+    let r = run(
+        &mut s,
+        "insert.smartArt",
+        json!({"layout": "hierarchy", "items": ["Root", "\tLeft", {"text": "Right", "level": 1}], "colors": "colorful"}),
+    );
+    assert_eq!(r["smartArt"]["layout"], "hierarchy");
+    let spec = cmd::smart_art::selected_smart_art(&s).expect("selected after insert");
+    let bytes = crate::io::save_bytes("sa.docx", &s.doc).unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    for part in ["data1", "layout1", "quickStyle1", "colors1", "drawing1"] {
+        assert!(zip.by_name(&format!("word/diagrams/{part}.xml")).is_ok(), "{part} written");
+    }
+    let mut ct = String::new();
+    zip.by_name("[Content_Types].xml").unwrap().read_to_string(&mut ct).unwrap();
+    assert!(ct.contains("diagramDrawing+xml") && ct.contains("diagramData+xml"), "{ct}");
+    let mut s2 = Session::new(crate::io::open_bytes("sa.docx", &bytes).unwrap());
+    select_graphic(&mut s2);
+    assert_eq!(cmd::smart_art::selected_smart_art(&s2).as_deref(), Some(&*spec), "reopens editable");
+    run(&mut s2, "smartArt.layout", json!({"layout": "venn"}));
+    // Saved again, and once more after reopening: still the same graphic.
+    let again = crate::io::save_bytes("sa.docx", &s2.doc).unwrap();
+    let mut s3 = Session::new(crate::io::open_bytes("sa.docx", &again).unwrap());
+    select_graphic(&mut s3);
+    assert_eq!(cmd::smart_art::selected_smart_art(&s3).map(|g| g.layout), Some(wordcraft_doc::smart_art::SmartArtLayout::Venn));
+    // A data part another program rewrote: shown, not editable.
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&again)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i).unwrap();
+        let name = f.name().to_string();
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf).unwrap();
+        if name.ends_with("data1.xml") {
+            buf = String::from_utf8(buf).unwrap().replace("<dgm:bg/>", "<dgm:bg><a:noFill/></dgm:bg>").into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        std::io::Write::write_all(&mut out, &buf).unwrap();
+    }
+    let foreign = out.finish().unwrap().into_inner();
+    let mut s4 = Session::new(crate::io::open_bytes("sa.docx", &foreign).unwrap());
+    select_graphic(&mut s4);
+    assert!(cmd::smart_art::selected_smart_art(&s4).is_none());
+    assert!(s4.run("smartArt.layout", &json!({"layout": "cycle"})).is_err());
+}
+
+/// #497: item, layout and colour edits are one undo step each; promote and demote move an item
+/// with the items under it.
+#[test]
+fn smart_art_edits_undo_one_step_each() {
+    let mut s = s();
+    run(&mut s, "insert.smartArt", json!({"layout": "process"}));
+    let items = |s: &Session| cmd::smart_art::selected_smart_art(s).unwrap().items.iter().map(|i| (i.text.clone(), i.level)).collect::<Vec<_>>();
+    let before = items(&s);
+    run(&mut s, "smartArt.items", json!({"items": ["One", "Two", "\tTwo a"]}));
+    assert_eq!(items(&s), [("One".to_string(), 0), ("Two".to_string(), 0), ("Two a".to_string(), 1)]);
+    run(&mut s, "smartArt.demote", json!({"index": 1}));
+    assert_eq!(items(&s)[1..], [("Two".to_string(), 1), ("Two a".to_string(), 2)]);
+    run(&mut s, "smartArt.promote", json!({"index": 1}));
+    run(&mut s, "smartArt.addShape", json!({"after": 0, "text": "New"}));
+    assert_eq!(items(&s)[1], ("New".to_string(), 0));
+    run(&mut s, "smartArt.colors", json!({"variant": "accent4"}));
+    run(&mut s, "smartArt.layout", json!({"layout": "pyramid"}));
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(cmd::smart_art::selected_smart_art(&s).unwrap().layout, wordcraft_doc::smart_art::SmartArtLayout::Process);
+    for _ in 0..5 {
+        run(&mut s, "edit.undo", json!({}));
+    }
+    assert_eq!(items(&s), before);
+    assert!(s.run("smartArt.promote", &json!({"index": 0})).is_err(), "already at the top");
+    run(&mut s, "picture.size", json!({"width": 200, "height": 120, "lockAspect": false}));
+}
+
+/// #497: hostile SmartArt params are capped or refused, never a panic.
+#[test]
+fn smart_art_hostile_params_are_capped() {
+    use wordcraft_doc::smart_art::{MAX_ITEMS, MAX_LEVEL, MAX_TEXT};
+    let mut s = s();
+    let many: Vec<serde_json::Value> = (0..MAX_ITEMS * 3).map(|i| json!({"text": "x".repeat(10_000), "level": i * 1000})).collect();
+    run(&mut s, "insert.smartArt", json!({"layout": "hierarchy", "items": many, "width": 1e30, "height": -5}));
+    let g = cmd::smart_art::selected_smart_art(&s).unwrap();
+    assert_eq!(g.items.len(), MAX_ITEMS);
+    assert!(g.items.iter().all(|i| i.text.chars().count() <= MAX_TEXT && i.level <= MAX_LEVEL));
+    for bad in [json!({"items": []}), json!({"items": "x"}), json!({"items": [5]}), json!({"layout": "spiral"}), json!({"layout": 3})] {
+        assert!(s.run("insert.smartArt", &bad).is_err(), "{bad}");
+    }
+    let junk = [json!(null), json!({}), json!({"index": -1, "after": 1e300, "items": [{"level": "deep"}], "variant": [], "layout": {}})];
+    for id in [
+        "smartArt.items",
+        "smartArt.addShape",
+        "smartArt.promote",
+        "smartArt.demote",
+        "smartArt.layout",
+        "smartArt.colors",
+        "smartArt.reset",
+        "smartArt.textPane",
+    ] {
+        for j in &junk {
+            let _ = s.run(id, j);
+        }
+    }
+    for _ in 0..MAX_ITEMS {
+        let _ = s.run("smartArt.addShape", &json!({}));
+    }
+    assert_eq!(cmd::smart_art::selected_smart_art(&s).unwrap().items.len(), MAX_ITEMS);
+    let _ = s.layout();
+}
+
+/// Outline view of: Heading 1 "One", body "a", Heading 2 "Two", body "b", Heading 1 "Three", body "c".
+fn outline_doc() -> Session {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "One\na\nTwo\nb\nThree\nc"}));
+    for (i, style) in [(0, "Heading1"), (2, "Heading2"), (4, "Heading1")] {
+        s.sel = crate::Selection::caret(Pos::body(i, 0));
+        run(&mut s, "para.style", json!({"style": style}));
+    }
+    run(&mut s, "view.outline", json!({}));
+    s
+}
+
+fn outline_shown(s: &mut Session) -> Vec<u64> {
+    let st = run(s, "outline.state", json!({}));
+    st["shown"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect()
+}
+
+/// The body blocks the outline layout draws.
+fn laid_out_blocks(s: &mut Session) -> Vec<u32> {
+    let l = s.layout();
+    let mut v: Vec<u32> = l.pages[0]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            wordcraft_layout::Placed::Lines { story: StoryRef::Body, path, .. } => path.0.first().copied(),
+            _ => None,
+        })
+        .collect();
+    v.dedup();
+    v
+}
+
+#[test]
+fn outline_level_changes_are_undoable() {
+    let mut s = outline_doc();
+    let level = |s: &mut Session, i: usize| run(s, "outline.state", json!({}))["levels"][i].as_u64().unwrap();
+    s.sel = crate::Selection::caret(Pos::body(1, 0));
+    run(&mut s, "outline.level", json!({"level": 3}));
+    assert_eq!(level(&mut s, 1), 3);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(level(&mut s, 1), 10, "body text again");
+    s.sel = crate::Selection::caret(Pos::body(2, 0));
+    run(&mut s, "outline.promoteToHeading1", json!({}));
+    assert_eq!(level(&mut s, 2), 1);
+    run(&mut s, "outline.demoteToBody", json!({}));
+    assert_eq!(level(&mut s, 2), 10);
+    assert!(s.run("outline.level", &json!({"level": 12})).is_err());
+    assert!(s.run("outline.level", &json!({})).is_err());
+    // Every outline command survives junk parameters in Outline view.
+    for spec in cmd::registry().all().iter().filter(|c| c.id.starts_with("outline.")) {
+        for j in [json!(null), json!({"block": 99999, "level": "x", "value": 5}), json!({"block": -1, "level": 0})] {
+            let mut s = outline_doc();
+            let _ = s.run(spec.id, &j);
+            let _ = s.layout();
+        }
+    }
+}
+
+#[test]
+fn outline_show_level_filters_paragraphs() {
+    let mut s = outline_doc();
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    run(&mut s, "outline.showLevel", json!({"level": 1}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 4]);
+    run(&mut s, "outline.showLevel2", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 2, 4]);
+    run(&mut s, "outline.showAll", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    // Word's keys, and only in Outline view.
+    let reg = cmd::registry();
+    assert_eq!(reg.by_shortcut("Alt+Shift+1").map(|c| c.id), Some("outline.showLevel1"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+A").map(|c| c.id), Some("outline.showAll"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+=").map(|c| c.id), Some("outline.expand"));
+    assert_eq!(reg.by_shortcut("Alt+Shift+-").map(|c| c.id), Some("outline.collapse"));
+    run(&mut s, "outline.close", json!({}));
+    assert!(s.run("outline.showLevel1", &json!({})).is_err());
+}
+
+#[test]
+fn outline_collapse_hides_descendants_and_expand_restores() {
+    let mut s = outline_doc();
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    // The deepest open level closes first, then the heading itself.
+    run(&mut s, "outline.collapse", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 4, 5]);
+    run(&mut s, "outline.collapse", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    assert_eq!(laid_out_blocks(&mut s), vec![0, 4, 5]);
+    // A caret moving into the collapsed text goes on to the next shown paragraph.
+    run(&mut s, "caret.end", json!({}));
+    run(&mut s, "caret.right", json!({}));
+    assert_eq!(s.sel.focus, Pos::body(4, 0));
+    // Moving "Three" and "c" up passes "One" with everything collapsed under it, in one undo step.
+    s.sel = crate::Selection { anchor: Pos::body(4, 0), focus: Pos::body(5, 1) };
+    run(&mut s, "outline.moveUp", json!({}));
+    assert_eq!(text(&s), "Three\nc\nOne\na\nTwo\nb");
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2], "the collapsed heading moved and stays collapsed");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(text(&s), "One\na\nTwo\nb\nThree\nc");
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    // Expand opens one level at a time; double-clicking the symbol (toggle) opens it all.
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "outline.expand", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 4, 5]);
+    run(&mut s, "outline.expand", json!({}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    run(&mut s, "outline.toggle", json!({"block": 0}));
+    assert_eq!(outline_shown(&mut s), vec![0, 4, 5]);
+    run(&mut s, "outline.toggle", json!({"block": 0}));
+    assert_eq!(outline_shown(&mut s), vec![0, 1, 2, 3, 4, 5]);
+    // Clicking a symbol selects the heading with what is under it.
+    run(&mut s, "outline.selectSubtree", json!({"block": 0}));
+    assert_eq!(s.selected_text(), "One\na\nTwo\nb");
+}

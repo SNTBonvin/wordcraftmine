@@ -14,9 +14,11 @@ pub mod fields;
 pub mod hit;
 pub mod kinsoku;
 pub mod math;
+pub mod outline;
 pub mod para;
 mod table;
 mod textbox;
+mod vertical;
 pub mod wordart;
 
 use std::collections::{HashMap, HashSet};
@@ -43,8 +45,10 @@ pub enum ViewMode {
     Print,
     /// One page as wide as the window, no page breaks.
     Web,
-    /// Draft/Outline: like web, page breaks shown as rules.
+    /// Draft: like web, page breaks shown as rules.
     Draft,
+    /// Outline: like draft, the body as an outline of its headings ([`outline`]).
+    Outline,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,6 +64,8 @@ pub struct LayoutOptions {
     /// Show field codes (`{ PAGE }`, shaded) instead of field results (View › Field Codes, Alt+F9).
     /// A field whose own `code` flag is set shows the other one.
     pub field_codes: bool,
+    /// Outline view: what's collapsed and shown (used when `view` is [`ViewMode::Outline`]).
+    pub outline: Option<outline::OutlineView>,
     /// What the spelling check skips, and whether grammar is marked too (File › Options › Proofing).
     pub proof: ProofOptions,
 }
@@ -372,6 +378,8 @@ fn hash_of<T: Hash>(t: &T) -> u64 {
 
 fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
     let s = serde_json::to_string(&(&doc.styles, &doc.numbering, doc.settings.default_tab, &doc.settings.footnote_format)).unwrap_or_default();
+    // Outline view lays paragraphs out changed (no indents; plain without text formatting).
+    let outline = (opts.view == ViewMode::Outline).then(|| opts.outline.as_ref().is_some_and(|o| o.plain));
     hash_of(&(
         s,
         opts.show_hidden,
@@ -381,6 +389,7 @@ fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
         opts.proof,
         wordcraft_proof::dictionary_generation(),
         hyphenation_key(doc),
+        outline,
     ))
 }
 
@@ -1541,6 +1550,7 @@ fn layout_pass(
     };
     let sections = doc.sections();
     let web = opts.view != ViewMode::Print;
+    let outline = (opts.view == ViewMode::Outline).then(|| OutlinePass::new(doc, opts.outline.clone().unwrap_or_default()));
     let default_sect = SectionProps::default();
     let mut web_sect;
     let first_sect = match sections.first() {
@@ -1604,8 +1614,24 @@ fn layout_pass(
     // Text boxes laid out in balancing attempts that were thrown away.
     let mut boxes_discarded = 0usize;
     let mut block = 0usize;
+    // Vertical sections are laid out on their pages turned on their side (see `vertical`).
+    let turned: Vec<Option<SectionProps>> = sections
+        .iter()
+        .map(|(_, s)| {
+            (!web && s.text_direction.is_turned()).then(|| {
+                let top = body_top_for(&mut ctx, s, s.headers.default);
+                vertical::unturned_sect(s, top)
+            })
+        })
+        .collect();
+    let mut prev_turn = TextDirection::Horizontal;
     for (si, (end, sect)) in sections.iter().enumerate() {
-        let sect: &SectionProps = if web { sect_ref } else { sect };
+        let turn = if web { TextDirection::Horizontal } else { sect.text_direction };
+        let sect: &SectionProps = match turned.get(si) {
+            Some(Some(t)) => t,
+            _ if web => sect_ref,
+            _ => sect,
+        };
         pb.sect = sect;
         pb.sect_idx = si;
         ctx.grid = para::Grid::default();
@@ -1618,10 +1644,10 @@ fn layout_pass(
         ctx.fields.section_pages = totals.section(si);
         // Headers and footers left out are linked to the previous section's, and take its room.
         let (heads, feet) = (linked(&sections, si, |s| s.headers), linked(&sections, si, |s| s.footers));
-        let body_top = if web { sect.margin_top } else { body_top_for(&mut ctx, sect, heads.default) };
-        let first_top = if web || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, heads.first) };
-        let foot_top = if web { f32::MAX } else { foot_top_for(&mut ctx, sect, feet.default) };
-        let first_foot = if web || !sect.title_page { foot_top } else { foot_top_for(&mut ctx, sect, feet.first) };
+        let body_top = if web || turn.is_turned() { sect.margin_top } else { body_top_for(&mut ctx, sect, heads.default) };
+        let first_top = if web || turn.is_turned() || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, heads.first) };
+        let foot_top = if web || turn.is_turned() { f32::MAX } else { foot_top_for(&mut ctx, sect, feet.default) };
+        let first_foot = if web || turn.is_turned() || !sect.title_page { foot_top } else { foot_top_for(&mut ctx, sect, feet.first) };
         ctx.grid = para::Grid::of(doc, sect);
         let restart = sect.page_num_start;
         if sect.line_numbers.as_ref().is_some_and(|l| l.restart == wordcraft_doc::section::LineNumberRestart::Section) {
@@ -1630,7 +1656,8 @@ fn layout_pass(
         let start = if si == 0 { SectionStart::NextPage } else { sect.start };
         if web && si > 0 {
             // one long page
-        } else if pb.pages.is_empty() || start != SectionStart::Continuous {
+        } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
+            // A page holds text running one way: a section turning the other way starts a page.
             if let Some(n) = restart {
                 pb.number = n.saturating_sub(1);
             }
@@ -1651,6 +1678,7 @@ fn layout_pass(
             pb.y = pb.top;
             pb.max_y = pb.top;
         }
+        prev_turn = turn;
         pb.foot_top = foot_top;
         let last = (*end).min(doc.body.len().saturating_sub(1));
         // Newspaper columns are balanced on the section's last page when the next section starts
@@ -1665,9 +1693,11 @@ fn layout_pass(
         while block <= last {
             let Some(b) = doc.body.get(block) else { break };
             let before = balance.then(|| (pb.pages.len(), Snap::take(&mut pb, &ctx)));
-            match &**b {
-                Block::Para(p) => place_para(&mut ctx, &mut pb, p, block, body_top),
-                Block::Table(t) => place_table(&mut ctx, &mut pb, t, block, body_top),
+            match (&**b, &outline) {
+                (Block::Para(p), Some(o)) => place_outline_para(&mut ctx, &mut pb, p, block, o),
+                (Block::Table(_), Some(o)) if o.hidden.get(block).copied().unwrap_or(false) => {}
+                (Block::Para(p), None) => place_para(&mut ctx, &mut pb, p, block, body_top),
+                (Block::Table(t), _) => place_table(&mut ctx, &mut pb, t, block, body_top),
             }
             if let Some((pages, snap)) = before
                 && pb.pages.len() != pages
@@ -1710,6 +1740,13 @@ fn layout_pass(
     }
     pb.carry.clear();
     let mut pages = pb.pages;
+    for p in &mut pages {
+        if let Some((_, s)) = sections.get(p.section)
+            && !web
+        {
+            vertical::turn_page(p, s.text_direction, s);
+        }
+    }
     if web && let Some(p) = pages.first_mut() {
         let bottom = p
             .items
@@ -2546,6 +2583,62 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after));
 }
 
+/// The outline of the body for an Outline view pass.
+struct OutlinePass {
+    view: outline::OutlineView,
+    levels: Vec<u8>,
+    hidden: Vec<bool>,
+}
+
+impl OutlinePass {
+    fn new(doc: &Document, view: outline::OutlineView) -> Self {
+        let levels = outline::levels(doc);
+        let hidden = outline::hidden(&levels, &view);
+        OutlinePass { view, levels, hidden }
+    }
+}
+
+/// A body paragraph in Outline view (one long sheet: no page or column breaks, no floats
+/// wrapping): indented by its level behind its symbol; hidden when collapsed or deeper than Show
+/// Level; body text cut to its first line with Show First Line Only.
+fn place_outline_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, o: &OutlinePass) {
+    // List numbers count the hidden paragraphs too.
+    let label = ctx.next_label(p);
+    if o.hidden.get(block).copied().unwrap_or(false) {
+        return;
+    }
+    let level = o.levels.get(block).copied().unwrap_or(outline::BODY);
+    let indent = outline::indent(&o.levels, block);
+    let x = pb.col_x() + indent + outline::SYMBOL_W;
+    let width = (pb.col_w() - indent - outline::SYMBOL_W).max(72.0);
+    let q = outline::outline_para(ctx.doc, p, o.view.plain);
+    ctx.fields.page = pb.number;
+    let pl = ctx.para_labelled(&q, width, None, &[], label);
+    pb.y += pl.rp.space_before.max(0.0);
+    let n = pl.lines.len();
+    let l1 = if o.view.first_line_only && level >= outline::BODY { n.min(1) } else { n };
+    let y = pb.y + pl.lines.first().map(|f| f.top.max(0.0)).unwrap_or(0.0);
+    let mut items = Vec::new();
+    push_para(&mut items, StoryRef::Body, &[block as u32], &pl, 0, l1, x, y, width);
+    let at = ObjFrame { page: Some(PageFrame { sect: pb.sect, origin: (0.0, 0.0) }), col: (x, width), para_y: y, table_chr: None };
+    let (behind, front) = place_objects(ctx, StoryRef::Body, &[block as u32], &q, &pl, (0, l1), (x, y), &at, &HashMap::new(), 0);
+    items.extend(front);
+    let children = level < outline::BODY && outline::has_children(&o.levels, block);
+    // Collapsed, or with something under it hidden by Show Level: the wavy line says so.
+    let collapsed = children && o.hidden.get(block + 1).copied().unwrap_or(false);
+    items.extend(outline::symbol_items(&pl, x, y, level, children, collapsed));
+    if let Some(pg) = pb.page() {
+        for (i, it) in behind.into_iter().enumerate() {
+            pg.items.insert(i.min(pg.items.len()), it);
+        }
+        pg.items.extend(items);
+    }
+    if let (Some(f), Some(l)) = (pl.lines.first(), l1.checked_sub(1).and_then(|k| pl.lines.get(k))) {
+        pb.y = y + (l.top + l.height - f.top);
+    }
+    pb.y += pl.rp.space_after.max(0.0);
+}
+
 /// How far a paragraph with mirrored indents (`w:mirrorIndents`) moves right on page `number`:
 /// its left and right indents are the inside and outside ones, which swap sides on even pages.
 fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: bool) -> f32 {
@@ -2887,3 +2980,5 @@ mod tests_grid;
 mod tests_pages;
 #[cfg(test)]
 mod tests_textbox;
+#[cfg(test)]
+mod tests_vertical;
