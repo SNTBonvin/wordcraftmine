@@ -278,6 +278,10 @@ to the AUR itself. Install one of them:
 
 For example `yay -S wordcraft-bin` or `paru -S wordcraft-bin`.
 
+On Linux and FreeBSD, WordCraft's own title bar carries minimize, maximize and close, as in Word,
+and the window manager draws no second title bar above it. Set `WORDCRAFT_SYSTEM_TITLEBAR=1` to
+keep the window manager's title bar instead.
+
 ### FreeBSD
 
 | Build | File |
