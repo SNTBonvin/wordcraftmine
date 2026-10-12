@@ -424,7 +424,7 @@ fn chinese_counting_list_labels_and_their_font_runs() {
             l.text = "%1、".into();
         }
     }
-    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 0), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
+    d.format_paragraphs(&Pos::body(0, 0), &Pos::body(2, 3), &|p| p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 })).unwrap();
     let labels = |d: &Document| -> Vec<(String, Vec<(String, bool)>)> {
         let l = lay(d);
         l.pages[0]
