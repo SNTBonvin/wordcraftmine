@@ -614,7 +614,7 @@ fn borders(s: &mut Session, v: &Value) -> CmdResult {
     })
 }
 
-fn cell_text(c: &wordcraft_doc::Cell) -> String {
+pub(crate) fn cell_text(c: &wordcraft_doc::Cell) -> String {
     c.blocks.iter().filter_map(|b| b.as_para().map(|p| p.plain_text())).collect::<Vec<_>>().join("\n")
 }
 
@@ -659,42 +659,52 @@ fn to_text(s: &mut Session, v: &Value) -> CmdResult {
     sel_result(s)
 }
 
-/// `=SUM(ABOVE)`, `=SUM(LEFT)`, `=AVERAGE(ABOVE)`, `=COUNT(...)`, `=MAX`, `=MIN`, `=PRODUCT`.
+/// Table Layout › Data › Formula: inserts a formula field at the caret, evaluated now and again
+/// by Update Field. What a formula can use is described in [`super::table_formula`]. A formula
+/// that doesn't evaluate (an unknown function, a syntax error) is an error and inserts nothing.
 fn formula(s: &mut Session, v: &Value) -> CmdResult {
     let (tp, r, c) = cell(s)?;
-    let f = p::str(v, "formula").unwrap_or("=SUM(ABOVE)").to_ascii_uppercase();
-    let t = s.doc.table(s.sel.focus.story, &tp).cloned().ok_or_else(|| CmdError::Failed("no table".into()))?;
-    let nums: Vec<f64> = if f.contains("LEFT") {
-        t.rows
-            .get(r)
-            .map(|row| row.cells.iter().take(c).filter_map(|x| cell_text(x).trim().replace([',', '$'], "").parse().ok()).collect())
-            .unwrap_or_default()
-    } else {
-        t.rows.iter().take(r).filter_map(|row| row.cells.get(c)).filter_map(|x| cell_text(x).trim().replace([',', '$'], "").parse().ok()).collect()
-    };
-    let val = if f.starts_with("=AVERAGE") {
-        if nums.is_empty() { 0.0 } else { nums.iter().sum::<f64>() / nums.len() as f64 }
-    } else if f.starts_with("=COUNT") {
-        nums.len() as f64
-    } else if f.starts_with("=MAX") {
-        nums.iter().copied().fold(f64::MIN, f64::max)
-    } else if f.starts_with("=MIN") {
-        nums.iter().copied().fold(f64::MAX, f64::min)
-    } else if f.starts_with("=PRODUCT") {
-        nums.iter().product()
-    } else {
-        nums.iter().sum()
-    };
-    let text = if val.fract() == 0.0 && val.abs() < 1e15 { format!("{}", val as i64) } else { format!("{val:.2}") };
+    let raw = p::str(v, "formula").unwrap_or("=SUM(ABOVE)");
+    let t = s.doc.table(s.sel.focus.story, &tp).ok_or_else(|| CmdError::Failed("no table".into()))?;
+    let instr = auto_formula_instr(t, r, c, raw);
+    let text = super::table_formula::evaluate_field(t, r, c, &instr)?;
     let props = s.typing_props();
     let at = s.sel.focus.clone();
     let end = s.doc.insert_object(
         &at,
-        wordcraft_doc::InlineObject::Field { instr: f.clone(), result: text.clone(), locked: false, code: false },
+        wordcraft_doc::InlineObject::Field { instr: instr.clone(), result: text.clone(), locked: false, code: false },
         &props,
     )?;
     s.sel = Selection::caret(end);
-    Ok(json!({"result": text}))
+    Ok(json!({"result": text, "formula": instr}))
+}
+
+/// A formula as a field stores it: upper case, with one leading `=`. A `\#` numeric picture is
+/// kept as typed.
+pub(crate) fn formula_instr(raw: &str) -> String {
+    let body = raw.trim();
+    let body = body.strip_prefix('=').unwrap_or(body);
+    match super::table_formula::split_switch(body) {
+        (formula, Some(switch)) => format!("={} {switch}", formula.trim().to_ascii_uppercase()),
+        (formula, None) => format!("={}", formula.trim().to_ascii_uppercase()),
+    }
+}
+
+/// A bare function name (`=SUM`, no parentheses) takes its direction from the cell: ABOVE when a
+/// cell above holds a number, else LEFT.
+fn auto_formula_instr(t: &Table, r: usize, c: usize, raw: &str) -> String {
+    let instr = formula_instr(raw);
+    let body = instr.strip_prefix('=').unwrap_or(&instr);
+    if !body.contains('(') && matches!(body, "SUM" | "AVERAGE" | "COUNT" | "MAX" | "MIN" | "PRODUCT") {
+        let g = t.grid_col(r, c);
+        let has_above = (0..r)
+            .rev()
+            .any(|row| t.cell_at_grid(row, g).and_then(|ci| t.rows.get(row)?.cells.get(ci)).and_then(super::table_formula::cell_number).is_some());
+        let dir = if has_above { "ABOVE" } else { "LEFT" };
+        format!("={body}({dir})")
+    } else {
+        instr
+    }
 }
 
 fn select_cells(s: &mut Session, tp: &Path, which: Option<(usize, Option<usize>)>) -> CmdResult {

@@ -132,6 +132,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 ## Progress log
 
 | Date | What landed |
+| 2026-10-12 | Table formulas: cell references and ranges (`=B2+B3`, `=SUM(B2:C3)`), arithmetic and comparisons, IF, AND, OR, NOT, TRUE, FALSE, DEFINED and the `\#` number format; ABOVE and LEFT sum the run of numbers next to the cell as Word does; an unknown function or a syntax error is an error instead of a sum; Update Field (F9) recalculates formula fields |
 | 2026-10-11 | Hide White Space (#645): `view.hideWhiteSpace` (View › Show checkbox, or double-click the gap between pages) collapses margins, headers and footers between pages to a thin line in Print Layout; screen only, page count unchanged |
 | 2026-10-11 | Fonts: Palatino Linotype and Book Antiqua fall back to Palatino (macOS) or TeX Gyre Pagella / P052 / URW Palladio (Linux) before generic serif (#670) |
 |---|---|
