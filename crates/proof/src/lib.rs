@@ -29,7 +29,25 @@ pub mod pl;
 
 use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
+
+/// What the spelling check skips (File › Options › Proofing). Word's defaults: all on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Options {
+    /// Words in capitals (`NASA`, `WORDCRAFT`) are taken as correct.
+    pub ignore_uppercase: bool,
+    /// Words containing digits (`B2B`, `mp3`) are taken as correct.
+    pub ignore_numbers: bool,
+    /// Web and email addresses and file paths (`https://…`, `a@b.org`, `www.…`) are skipped.
+    pub ignore_internet: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options { ignore_uppercase: true, ignore_numbers: true, ignore_internet: true }
+    }
+}
 
 pub use lang::ProofLang;
 
@@ -58,9 +76,28 @@ fn user_words() -> &'static RwLock<HashSet<String>> {
     U.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
+/// Bumped whenever the user dictionary changes, so cached proofing results can be dropped.
+static DICTIONARY_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Add a word to the user dictionary ("Add to Dictionary"). It applies to every language.
 pub fn add_word(w: &str) {
-    user_words().write().unwrap_or_else(|e| e.into_inner()).insert(w.to_lowercase());
+    if user_words().write().unwrap_or_else(|e| e.into_inner()).insert(w.to_lowercase()) {
+        DICTIONARY_GENERATION.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Take a word out of the user dictionary (File › Options › Proofing). Returns whether it was there.
+pub fn remove_word(w: &str) -> bool {
+    let removed = user_words().write().unwrap_or_else(|e| e.into_inner()).remove(&w.to_lowercase());
+    if removed {
+        DICTIONARY_GENERATION.fetch_add(1, Ordering::Relaxed);
+    }
+    removed
+}
+
+/// A number that changes whenever a word is added to or removed from the user dictionary.
+pub fn dictionary_generation() -> u64 {
+    DICTIONARY_GENERATION.load(Ordering::Relaxed)
 }
 
 /// Is `lower` (a lower-case word) in the user dictionary?
@@ -152,12 +189,25 @@ fn known_core(w: &str) -> bool {
 /// Is `word` spelled correctly? Numbers, single letters, ALL-CAPS acronyms, URLs and words with
 /// digits are accepted.
 pub fn is_correct(word: &str) -> bool {
+    is_correct_with(word, &Options::default())
+}
+
+/// The words every language's check accepts under `opts`: single letters, words without
+/// letters, words with digits (Ignore words that contain numbers) and words in capitals
+/// (Ignore words in UPPERCASE).
+fn accepted_by_options(word: &str, opts: &Options) -> bool {
+    let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'').trim_matches('\'');
+    w.chars().count() <= 1
+        || !w.chars().any(char::is_alphabetic)
+        || (opts.ignore_numbers && w.chars().any(|c| c.is_ascii_digit()))
+        || (opts.ignore_uppercase && w.chars().all(|c| !c.is_lowercase()))
+}
+
+/// [`is_correct`] with the File › Options › Proofing choices.
+pub fn is_correct_with(word: &str, opts: &Options) -> bool {
     let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'');
     let w = w.trim_matches('\'');
-    if w.chars().count() <= 1 || w.chars().any(|c| c.is_ascii_digit()) || !w.chars().any(char::is_alphabetic) {
-        return true;
-    }
-    if w.chars().all(|c| !c.is_lowercase()) && w.chars().count() <= 6 {
+    if accepted_by_options(w, opts) {
         return true;
     }
     if !w.is_ascii() && !w.chars().any(|c| c.is_ascii_alphabetic()) {
@@ -280,7 +330,12 @@ pub fn words(text: &str) -> Vec<(usize, usize)> {
 
 /// Spelling issues in a paragraph of English text (no suggestions; ask [`suggest`] on demand).
 pub fn check_spelling(text: &str) -> Vec<Issue> {
-    check_spelling_in(text, ProofLang::En)
+    check_spelling_with(text, &Options::default())
+}
+
+/// [`check_spelling`] with the File › Options › Proofing choices.
+pub fn check_spelling_with(text: &str, opts: &Options) -> Vec<Issue> {
+    words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, ProofLang::En, opts)).collect()
 }
 
 /// Spelling issues in a paragraph of text in `lang` (none for a language without a dictionary;
@@ -289,17 +344,18 @@ pub fn check_spelling_in(text: &str, lang: ProofLang) -> Vec<Issue> {
     if !lang.is_proofed() {
         return Vec::new();
     }
-    words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, lang)).collect()
+    words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, lang, &Options::default())).collect()
 }
 
 /// The spelling issue of the word at `a..b` of `text`, if it is misspelled in `lang`. Words in
-/// web and e-mail addresses are skipped.
-fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang) -> Option<Issue> {
+/// web and e-mail addresses are skipped (unless `opts` says otherwise).
+fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang, opts: &Options) -> Option<Issue> {
     let w = text.get(a..b)?;
     let ts = text.get(..a).and_then(|t| t.rfind(char::is_whitespace)).map(|i| i + 1).unwrap_or(0);
     let te = text.get(b..).and_then(|t| t.find(char::is_whitespace)).map(|i| b + i).unwrap_or(text.len());
     let token = text.get(ts..te).unwrap_or("");
-    if token.contains("://") || token.contains('@') || token.starts_with("www.") || is_correct_in(w, lang) {
+    let internet = token.contains("://") || token.contains('@') || token.starts_with("www.");
+    if (opts.ignore_internet && internet) || is_correct_in_with(w, lang, opts) {
         return None;
     }
     let message = match lang {
@@ -311,9 +367,14 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang) -> Option<Iss
 
 /// Is `word` spelled correctly in `lang`? Always true in a language without a dictionary.
 pub fn is_correct_in(word: &str, lang: ProofLang) -> bool {
+    is_correct_in_with(word, lang, &Options::default())
+}
+
+/// [`is_correct_in`] with the File › Options › Proofing choices.
+pub fn is_correct_in_with(word: &str, lang: ProofLang, opts: &Options) -> bool {
     match lang {
-        ProofLang::En => is_correct(word),
-        ProofLang::Pl => pl::is_correct(word),
+        ProofLang::En => is_correct_with(word, opts),
+        ProofLang::Pl => accepted_by_options(word, opts) || pl::is_correct(word),
         ProofLang::Other => true,
     }
 }
@@ -344,6 +405,12 @@ pub fn check_grammar_in(text: &str, lang: ProofLang) -> Vec<Issue> {
 /// inside that language's spans: an English quotation in a Polish paragraph gets English
 /// spelling and is never told a Polish rule.
 pub fn check_text(text: &str, spans: &[(Range<usize>, ProofLang)]) -> Vec<Issue> {
+    check_text_with(text, spans, &Options::default(), true)
+}
+
+/// [`check_text`] with the File › Options › Proofing choices: what spelling skips, and whether
+/// grammar is checked at all.
+pub fn check_text_with(text: &str, spans: &[(Range<usize>, ProofLang)], opts: &Options, grammar: bool) -> Vec<Issue> {
     // Sorted, empty ones dropped, neighbours of one language merged.
     let mut sorted: Vec<&(Range<usize>, ProofLang)> = spans.iter().filter(|(r, _)| r.start < r.end).collect();
     sorted.sort_by_key(|s| s.0.start);
@@ -358,7 +425,11 @@ pub fn check_text(text: &str, spans: &[(Range<usize>, ProofLang)]) -> Vec<Issue>
         let k = merged.partition_point(|(r, _)| r.end <= i);
         merged.get(k).filter(|(r, _)| r.start <= i).map_or(ProofLang::En, |s| s.1)
     };
-    let mut v: Vec<Issue> = words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, lang_at(a))).collect();
+    let mut v: Vec<Issue> = words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, lang_at(a), opts)).collect();
+    if !grammar {
+        v.sort_by_key(|i| (i.start, i.end));
+        return v;
+    }
     let mut langs: Vec<ProofLang> = merged.iter().map(|s| s.1).collect();
     let mut covered = 0;
     for (r, _) in &merged {
@@ -589,6 +660,18 @@ mod tests {
         assert!(!is_correct("zxqwordcrafty"));
         add_word("zxqwordcrafty");
         assert!(is_correct("zxqwordcrafty"));
+    }
+
+    /// File › Options › Proofing (#485): each "Ignore" choice turned off makes those words count.
+    #[test]
+    fn ignore_options_decide_what_is_checked() {
+        let t = "SENTENSE helo2 www.exampel.org";
+        let bad = |o: Options| check_spelling_with(t, &o).iter().map(|i| t[i.start..i.end].to_string()).collect::<Vec<_>>();
+        assert!(bad(Options::default()).is_empty(), "Word's defaults skip all three");
+        let all = Options { ignore_uppercase: false, ignore_numbers: false, ignore_internet: false };
+        assert_eq!(bad(all), ["SENTENSE", "helo2", "www", "exampel"]);
+        assert_eq!(bad(Options { ignore_uppercase: false, ..Options::default() }), ["SENTENSE"]);
+        assert!(is_correct_with("NASA", &all), "capitals that are a word stay correct");
     }
 
     #[test]
