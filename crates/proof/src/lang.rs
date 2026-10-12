@@ -13,6 +13,10 @@ pub enum ProofLang {
     /// Polish (`pl`, `pl-PL`): the installed Hunspell dictionary (when there is one), the Polish grammar rules and the Polish
     /// hyphenation patterns.
     Pl,
+    /// Bulgarian (`bg`, `bg-BG`): hyphenation by the Bulgarian syllable rules ([`crate::bg`]).
+    /// There is no Bulgarian dictionary or grammar yet, so, as for [`ProofLang::Other`], no
+    /// spelling or grammar marks.
+    Bg,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without
     /// the language's proofing tools: no spelling or grammar marks, so its words are never
     /// flagged as English misspellings. Hyphenation keeps using the English patterns, as before
@@ -33,23 +37,26 @@ impl ProofLang {
             ProofLang::En
         } else if primary.eq_ignore_ascii_case("pl") || primary.eq_ignore_ascii_case("pol") {
             ProofLang::Pl
+        } else if primary.eq_ignore_ascii_case("bg") || primary.eq_ignore_ascii_case("bul") {
+            ProofLang::Bg
         } else {
             ProofLang::Other
         }
     }
 
-    /// The primary language subtag (`en`, `pl`); empty for [`ProofLang::Other`].
+    /// The primary language subtag (`en`, `pl`, `bg`); empty for [`ProofLang::Other`].
     pub fn code(self) -> &'static str {
         match self {
             ProofLang::En => "en",
             ProofLang::Pl => "pl",
+            ProofLang::Bg => "bg",
             ProofLang::Other => "",
         }
     }
 
     /// Does WordCraft check spelling and grammar in this language?
     pub fn is_proofed(self) -> bool {
-        self != ProofLang::Other
+        matches!(self, ProofLang::En | ProofLang::Pl)
     }
 }
 
@@ -119,13 +126,19 @@ mod tests {
         for t in ["en", "en-US", "en-GB", "EN_au", "en-Latn-US"] {
             assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::En, "{t}");
         }
-        for t in ["fr-FR", "de", "x-none", "ja-JP", "plx", "e", "-"] {
+        for t in ["bg", "bg-BG", "BG_bg", "bg_BG.UTF-8", "bul"] {
+            assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::Bg, "{t}");
+        }
+        for t in ["fr-FR", "de", "x-none", "ja-JP", "plx", "bgx", "e", "-"] {
             assert_eq!(ProofLang::from_tag(Some(t)), ProofLang::Other, "{t}");
         }
         assert_eq!(ProofLang::from_tag(None), ProofLang::En);
         assert_eq!(ProofLang::from_tag(Some("")), ProofLang::En);
         assert_eq!(ProofLang::from_tag(Some("  ")), ProofLang::En);
         assert!(ProofLang::Pl.is_proofed() && !ProofLang::Other.is_proofed());
+        // Bulgarian has hyphenation only: no spelling or grammar marks.
+        assert!(!ProofLang::Bg.is_proofed());
+        assert_eq!(ProofLang::Bg.code(), "bg");
         assert_eq!(ProofLang::Pl.code(), "pl");
     }
 }
