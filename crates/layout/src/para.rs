@@ -316,7 +316,8 @@ pub struct ParaEnv<'a> {
     pub hide_deleted: bool,
     /// The table style's formatting for text in this paragraph's cell (`None` outside tables).
     pub table: Option<&'a CellText>,
-    pub proofing: bool,
+    /// Check spelling (and grammar, as the options say) for squiggles; `None` = no squiggles.
+    pub proofing: Option<crate::ProofOptions>,
     /// Areas text must flow around (floating objects), relative to the paragraph: x from the
     /// column's left edge, y from the top of the first line.
     pub exclusions: &'a [Exclusion],
@@ -493,6 +494,12 @@ pub fn visual_order(levels: &[u8]) -> Vec<usize> {
     order
 }
 
+/// Text Word sets in the East Asian font: CJK ideographs, kana, bopomofo, CJK punctuation and
+/// fullwidth forms, and Hangul.
+fn east_asian(c: char) -> bool {
+    crate::kinsoku::is_east_asian(c) || matches!(u32::from(c), 0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF)
+}
+
 impl<'a> Builder<'a> {
     /// Style index for a resolved char in `face` (caps-scaled `size` override for small caps).
     fn style(&mut self, rc: &Arc<ResolvedChar>, face_override: Option<FaceRef>, small: bool) -> u16 {
@@ -562,6 +569,15 @@ impl<'a> Builder<'a> {
         let rc_cs: Option<Arc<ResolvedChar>> = text.chars().any(|c| rc.uses_complex(c)).then(|| Arc::new(rc.complex()));
         let primary = wordcraft_fonts::word::resolve(&rc.font, rc.bold, rc.italic).face;
         let primary_cs = rc_cs.as_ref().map(|r| wordcraft_fonts::word::resolve(&r.font, r.bold, r.italic).face);
+        // Chinese, Japanese and Korean characters use the run's East Asian font (`w:eastAsia`) when
+        // it is installed and has them.
+        let primary_ea = rc
+            .font_ea
+            .as_ref()
+            .filter(|f| !f.eq_ignore_ascii_case(&rc.font) && text.chars().any(east_asian))
+            .map(|f| wordcraft_fonts::word::resolve(f, rc.bold, rc.italic))
+            .filter(|r| !r.substituted)
+            .map(|r| r.face);
         let use_levels = para_text && !self.levels.is_empty();
         // Split by font coverage (fallback faces), small caps case, script formatting and direction.
         let mut seg_start = 0;
@@ -576,6 +592,7 @@ impl<'a> Builder<'a> {
             let prim = if complex { primary_cs.unwrap_or(primary) } else { primary };
             let face = match cur {
                 Some(k) if mark => k.face,
+                _ if !complex && east_asian(c) && primary_ea.is_some_and(|f| f.covers(c)) => primary_ea,
                 _ if prim.covers(c) || c.is_whitespace() || c.is_control() || c == SOFT_HYPHEN => None,
                 // Stay in the fallback face the word started in while it covers the letters.
                 Some(SegKey { face: Some(f), .. }) if f.covers(c) => Some(f),
@@ -1242,7 +1259,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         text_len: p.text.len(),
         has_page_fields,
         notes,
-        issues: if env.proofing { proof_issues(p) } else { Vec::new() },
+        issues: env.proofing.map(|o| proof_issues(p, &o)).unwrap_or_default(),
         drop_cap,
         hyph_after: Vec::new(),
         bidi_levels: b.levels,
@@ -2209,7 +2226,7 @@ impl ParaLayout {
 }
 
 /// Spelling and grammar issues in a paragraph (skipping "do not check" and hidden runs).
-fn proof_issues(p: &Paragraph) -> Vec<(usize, usize, bool)> {
+fn proof_issues(p: &Paragraph, opts: &crate::ProofOptions) -> Vec<(usize, usize, bool)> {
     if p.text.trim().is_empty() || p.text.len() > 100_000 {
         return Vec::new();
     }
@@ -2217,9 +2234,14 @@ fn proof_issues(p: &Paragraph) -> Vec<(usize, usize, bool)> {
     let skip = |a: usize, b: usize| {
         p.run_ranges().any(|(r, c)| r.start < b && a < r.end && (c.no_proof == Some(true) || c.hidden == Some(true) || c.link.is_some()))
     };
-    let mut v: Vec<(usize, usize, bool)> =
-        wordcraft_proof::check_spelling(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, false)).collect();
-    v.extend(wordcraft_proof::check_grammar(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, true)));
+    let mut v: Vec<(usize, usize, bool)> = wordcraft_proof::check_spelling_with(&text, &opts.spelling)
+        .into_iter()
+        .filter(|i| !skip(i.start, i.end))
+        .map(|i| (i.start, i.end, false))
+        .collect();
+    if opts.grammar {
+        v.extend(wordcraft_proof::check_grammar(&text).into_iter().filter(|i| !skip(i.start, i.end)).map(|i| (i.start, i.end, true)));
+    }
     v
 }
 
