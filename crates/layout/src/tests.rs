@@ -2156,6 +2156,38 @@ fn at_least_rows_add_cell_margins_and_border_bands() {
     assert!((tops[0] - (72.0 + 0.5 + 5.0)).abs() < 0.01, "first cell text at {}", tops[0]);
 }
 
+/// `cell_margins` is what the layout uses: a cell's own margins, else the table's, else Word's;
+/// each cell's text starts its left margin inside the cell.
+#[test]
+fn cell_margins_are_where_cell_text_starts() {
+    let mut d = Document::from_text("");
+    let mut t = Table::new(1, 2, 300.0);
+    t.props.cell_margins = Some([0.0, 9.0, 0.0, 3.0]);
+    t.rows[0].cells[1].props.margins = Some([0.0, 20.0, 0.0, 4.0]);
+    for (c, text) in t.rows[0].cells.iter_mut().zip(["one", "two"]) {
+        c.blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, Default::default()))];
+    }
+    assert_eq!(cell_margins(&d, &t, 0, 0), [0.0, 9.0, 0.0, 3.0]);
+    assert_eq!(cell_margins(&d, &t, 0, 1), [0.0, 20.0, 0.0, 4.0]);
+    assert_eq!(cell_margins(&d, &t, 5, 9), [0.0, 9.0, 0.0, 3.0], "no such cell: the table's");
+    assert_eq!(cell_margins(&d, &Table::new(1, 1, 100.0), 0, 0), [0.0, 5.4, 0.0, 5.4], "Word's");
+    d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t.clone()))];
+    let l = lay(&d);
+    let items = &l.pages[0].items;
+    for c in 0..2 {
+        let boxed = items.iter().find_map(|it| match it {
+            Placed::Cell { rect, cell, .. } if *cell == c => Some(*rect),
+            _ => None,
+        });
+        let text_x = items.iter().find_map(|it| match it {
+            Placed::Lines { path, x, .. } if path.0.get(2) == Some(&(c as u32)) => Some(*x),
+            _ => None,
+        });
+        let (boxed, text_x) = (boxed.unwrap(), text_x.unwrap());
+        assert!((text_x - boxed.x - cell_margins(&d, &t, 0, c)[1]).abs() < 0.01, "cell {c}: text at {text_x}, cell at {}", boxed.x);
+    }
+}
+
 /// Line count and, per line, how far the text (trailing spaces excluded) reaches.
 fn justified_lines(text: &str, compat_mode: u32, align: Align) -> (usize, Vec<f32>) {
     let mut d = Document::from_text(text);
@@ -4665,4 +4697,82 @@ fn automatic_paragraph_spacing_drops_at_cell_edges() {
     assert!((a0 - p0).abs() < 0.05, "no automatic space at the top of the cell");
     assert!((a1 - a0 - (p1 - p0) - 14.0).abs() < 0.05, "14 pt between the cell's paragraphs");
     assert!((a_below - a1 - (p_below - p1)).abs() < 0.05, "none after the cell's last paragraph");
+}
+
+/// Automatic spacing inside a list, measured in Word for Windows (`plan/word` R17, 16 cases): none
+/// between two list items, of one list or two, at any level, whichever item asks for it; the first
+/// item keeps its automatic space before and the last its space after, a paragraph with its list
+/// switched off in between keeps both, and measured spacing stays. NIH's bulleted IND reports
+/// (each item automatic before and after) were 14 pt apart instead of touching.
+#[test]
+fn automatic_spacing_drops_between_list_items() {
+    use wordcraft_doc::props::NumRef;
+    let auto = ParaProps {
+        space_before: Some(5.0),
+        space_after: Some(5.0),
+        space_before_auto: Some(true),
+        space_after_auto: Some(true),
+        ..Default::default()
+    };
+    let plain = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+    let tops = |items: [ParaProps; 3], in_cell: bool| {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        let other = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        let fix = |p: ParaProps| ParaProps {
+            numbering: p.numbering.map(|n| NumRef {
+                num: match n.num {
+                    0 => 0,
+                    1 => num,
+                    _ => other,
+                },
+                ..n
+            }),
+            ..p
+        };
+        let paras: Vec<_> = std::iter::once(plain.clone())
+            .chain(items.map(fix))
+            .chain(std::iter::once(plain.clone()))
+            .enumerate()
+            .map(|(i, p)| {
+                let mut para = wordcraft_doc::Paragraph::with_text(&format!("P{i}"), Default::default());
+                para.props = p;
+                wordcraft_doc::para_block(para)
+            })
+            .collect();
+        if in_cell {
+            let mut t = Table::new(1, 1, 300.0);
+            t.rows[0].cells[0].blocks = paras;
+            d.body = vec![wordcraft_doc::Block::Table(t).into()];
+        } else {
+            d.body = paras;
+        }
+        let at = |i: u32| if in_cell { Pos { story: StoryRef::Body, path: Path(vec![0, 0, 0, i]), off: 0 } } else { Pos::body(i as usize, 0) };
+        let l = lay(&d);
+        [0, 1, 2, 3, 4].map(|i| l.caret(&at(i)).unwrap().top)
+    };
+    let item = |num: u32, level: u8, p: &ParaProps| ParaProps { numbering: Some(NumRef { num, level }), ..p.clone() };
+    for in_cell in [false, true] {
+        let base = tops([plain.clone(), plain.clone(), plain.clone()], in_cell);
+        let line = base[1] - base[0];
+        let gaps = |t: [f32; 5]| [1, 2, 3, 4].map(|i| ((t[i] - t[i - 1] - line) * 10.0).round() / 10.0);
+        let one = item(1, 0, &auto);
+        let cases = [
+            ("one list", [one.clone(), one.clone(), one.clone()], [14.0, 0.0, 0.0, 14.0]),
+            ("two lists", [one.clone(), item(2, 0, &auto), item(2, 0, &auto)], [14.0, 0.0, 0.0, 14.0]),
+            ("two levels", [one.clone(), item(1, 1, &auto), one.clone()], [14.0, 0.0, 0.0, 14.0]),
+            ("a plain item between", [one.clone(), item(1, 0, &plain), one.clone()], [14.0, 0.0, 0.0, 14.0]),
+            ("list off between", [one.clone(), item(0, 0, &auto), one.clone()], [14.0, 14.0, 14.0, 14.0]),
+            ("no list", [auto.clone(), auto.clone(), auto.clone()], [14.0, 14.0, 14.0, 14.0]),
+        ];
+        for (what, items, want) in cases {
+            assert_eq!(gaps(tops(items, in_cell)), want, "{what} (in a cell: {in_cell})");
+        }
+        let fourteen = ParaProps { space_before: Some(14.0), ..plain.clone() };
+        assert_eq!(
+            gaps(tops([item(1, 0, &fourteen), item(1, 0, &fourteen), item(1, 0, &fourteen)], in_cell)),
+            [14.0, 14.0, 14.0, 0.0],
+            "measured spacing stays"
+        );
+    }
 }
