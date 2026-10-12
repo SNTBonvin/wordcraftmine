@@ -126,13 +126,6 @@ impl Exempt {
             names.extend(c.categories.iter().cloned());
             names.extend(c.series.iter().map(|s| s.name.clone()));
         }
-        // Envelope sizes (`#10   4.13 × 9.5 in`, `DL   110 × 220 mm`): a size code, numbers and a
-        // unit symbol, which read the same in every language.
-        names.extend(
-            wordcraft_engine::cmd::mailings::ENVELOPE_SIZES
-                .iter()
-                .map(|(n, w, h)| crate::dialogs_layout::envelope_label(n, *w, *h).trim().to_string()),
-        );
         for m in crate::credits::MODELS {
             names.extend([m.company, m.model, m.version].map(str::to_string));
         }
@@ -318,22 +311,13 @@ fn untranslated_interface_text() {
         report.push_str(&format!("{:?}  [{}]\n", pseudo::unmarked(text), states.join(", ")));
     }
     assert!(found.is_empty(), "{} interface texts skip translation (wrap them in tl!):\n{report}", found.len());
-    russian_has_every_string_the_interface_looked_up(pseudo::looked_up());
-    turkish_has_every_string_the_interface_looked_up(pseudo::looked_up());
+    complete_catalogs_have_every_string_the_interface_looked_up(pseudo::looked_up());
 }
 
-/// Russian covers everything the audit saw translated, plus the equation gallery's labels (shown
-/// in menus the audit doesn't open one by one). Numbered style names go through a template.
-fn russian_has_every_string_the_interface_looked_up(keys: std::collections::BTreeSet<String>) {
-    check_catalog_has_audit_strings("ru", keys);
-}
-
-/// Turkish also covers everything the audit saw translated, with full catalog parity.
-fn turkish_has_every_string_the_interface_looked_up(keys: std::collections::BTreeSet<String>) {
-    check_catalog_has_audit_strings("tr", keys);
-}
-
-fn check_catalog_has_audit_strings(lang_code: &str, mut keys: std::collections::BTreeSet<String>) {
+/// Russian, Hungarian and Turkish cover everything the audit saw translated, plus the equation
+/// gallery's labels (shown in menus the audit doesn't open one by one). Numbered style names go
+/// through a template.
+fn complete_catalogs_have_every_string_the_interface_looked_up(mut keys: std::collections::BTreeSet<String>) {
     use wordcraft_engine::math_gallery::{BUILT_INS, STRUCTURES, SYMBOL_SETS};
     keys.extend(BUILT_INS.iter().map(|(_, label, _)| label.to_string()));
     keys.extend(SYMBOL_SETS.iter().map(|(name, _)| name.to_string()));
@@ -344,8 +328,8 @@ fn check_catalog_has_audit_strings(lang_code: &str, mut keys: std::collections::
             keys.extend(templates.iter().map(|t| t.label.to_string()));
         }
     }
-    let lang = super::Lang::from_code(lang_code).unwrap_or(super::Lang::EN);
     let numbered = |s: &str| ["Heading ", "TOC "].iter().any(|p| s.strip_prefix(p).is_some_and(|n| n.chars().all(|c| c.is_ascii_digit())));
+    // Names that read the same in these languages (citation style names included).
     let same = |s: &str| {
         matches!(
             s,
@@ -368,6 +352,13 @@ fn check_catalog_has_audit_strings(lang_code: &str, mut keys: std::collections::
                 | "Turabian"
         )
     };
-    let missing: Vec<String> = keys.into_iter().filter(|s| english_words(s) && !super::has(lang, s) && !numbered(s) && !same(s)).collect();
-    assert!(missing.is_empty(), "{} strings have no {lang_code} entry:\n{missing:#?}", missing.len());
+    let mut report = String::new();
+    for code in ["ru", "hu", "tr"] {
+        let lang = super::Lang::from_code(code).unwrap_or(super::Lang::EN);
+        let missing: Vec<&String> = keys.iter().filter(|s| english_words(s) && !super::has(lang, s) && !numbered(s) && !same(s)).collect();
+        if !missing.is_empty() {
+            report.push_str(&format!("{} strings have no {code} entry:\n{missing:#?}\n", missing.len()));
+        }
+    }
+    assert!(report.is_empty(), "{report}");
 }
