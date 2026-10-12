@@ -24,13 +24,8 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("view.printLayout", "Print Layout", "View › Views", |s, _| mode(s, ViewMode::Print, false)).key("Mod+Alt+P").pure(),
         CommandSpec::new("view.webLayout", "Web Layout", "View › Views", |s, _| mode(s, ViewMode::Web, false)).pure(),
         CommandSpec::new("view.draft", "Draft", "View › Views", |s, _| mode(s, ViewMode::Draft, false)).key("Mod+Alt+N").pure(),
-        CommandSpec::new("view.outline", "Outline", "View › Views", |s, _| {
-            mode(s, ViewMode::Draft, false)?;
-            s.view.nav_pane = true;
-            sel_result(s)
-        })
-        .key("Mod+Alt+O")
-        .pure(),
+        // The body as an outline of its headings, with the Outlining tab (`outline.*`).
+        CommandSpec::new("view.outline", "Outline", "View › Views", |s, _| mode(s, ViewMode::Outline, false)).key("Mod+Alt+O").pure(),
         CommandSpec::new("view.readMode", "Read Mode", "View › Views", |s, _| mode(s, ViewMode::Print, true)).pure(),
         // Print Layout: hide the white space (margins, headers, footers) between pages. Screen only.
         CommandSpec::new("view.hideWhiteSpace", "Hide White Space", "View › Show", |s, v| toggle(s, v, |x| &mut x.hide_white_space))
