@@ -898,7 +898,7 @@ fn cell_at(p: &[u32], i: usize) -> Option<(Path, usize, usize)> {
 }
 
 /// Where row `r` of table `tp` starts and ends: its first cell's start and its last cell's end.
-fn row_ends(doc: &Document, story: StoryRef, tp: &Path, r: usize) -> Option<(Pos, Pos)> {
+pub(crate) fn row_ends(doc: &Document, story: StoryRef, tp: &Path, r: usize) -> Option<(Pos, Pos)> {
     let mut row = tp.0.clone();
     row.push(u32::try_from(r).ok()?);
     let mut paths = doc.para_paths(story).into_iter().filter(|q| q.0.starts_with(&row));
