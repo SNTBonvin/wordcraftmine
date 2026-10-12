@@ -2060,3 +2060,32 @@
 	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Otwiera Ustawienia › Aplikacje domyślne, gdzie wybierasz WordCraft dla .docx i innych typów dokumentów.
 	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Aby otwierać dokumenty Word domyślnie w WordCraft: zaznacz jeden w Finderze, wybierz Plik › Pokaż info, wybierz WordCraft w „Otwórz za pomocą”, a następnie kliknij „Zmień wszystkie”.
 	WordCraft is now the default app for Word documents.	WordCraft jest teraz domyślną aplikacją dla dokumentów Word.
+	Numerals:	Cyfry:
+	Numerals	Cyfry
+	Hindi	Hindi
+	Context	Kontekstowe
+	System	Systemowe
+	Book Title	Tytuł książki
+	Category	Kategoria
+	Contributors	Współtwórcy
+	Emphasis	Wyróżnienie
+	Endnote Reference	Odwołanie przypisu końcowego
+	Endnote Text	Tekst przypisu końcowego
+	Footnote Reference	Odwołanie przypisu dolnego
+	Footnote Text	Tekst przypisu dolnego
+	Hyperlink	Hiperłącze
+	Intense Emphasis	Wyróżnienie intensywne
+	Intense Quote	Cytat intensywny
+	Intense Reference	Odwołanie intensywne
+	Keywords	Słowa kluczowe
+	No Spacing	Bez odstępów
+	Quote	Cytat
+	Strong	Pogrubienie
+	Subject	Temat
+	Subtitle	Podtytuł
+	Subtle Emphasis	Wyróżnienie delikatne
+	Subtle Reference	Odwołanie delikatne
+	TOC Heading	Nagłówek spisu treści
+	TOC {n}	Spis treści {n}
+	List Paragraph	Akapit z listą
+	Models	Modele
