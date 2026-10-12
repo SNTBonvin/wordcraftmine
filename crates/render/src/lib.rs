@@ -14,7 +14,7 @@ use wordcraft_fonts::FontDb;
 use wordcraft_layout::Page;
 use wordcraft_layout::display::{DisplayOptions, Draw, Stroke, page_display};
 use wordcraft_layout::wordart::ArtPaint;
-use wordcraft_metafile::{Item, Picture, PlacedItem, Seg};
+use wordcraft_metafile::{Item, Picture, PlacedItem, Seg, TextHAlign, TextVAlign};
 
 pub mod icon_lib;
 
@@ -297,8 +297,8 @@ fn draw_vector(ctx: &mut RenderContext, v: &Vector, r: &kurbo::Rect, crop: &[f32
                 ctx.fill_rect(&rect);
                 ctx.reset_paint_transform();
             }
-            PlacedItem::Text { pos, text, font, size, color } => {
-                draw_vector_text(ctx, view, pos, &text, &font, size, color);
+            PlacedItem::Text { pos, text, font, size, color, align_h, align_v, rotation } => {
+                draw_vector_text(ctx, view, pos, &text, &font, size, color, align_h, align_v, rotation);
             }
         }
     }
@@ -310,9 +310,23 @@ fn draw_vector(ctx: &mut RenderContext, v: &Vector, r: &kurbo::Rect, crop: &[f32
 }
 
 /// One metafile text run, drawn as filled glyph outlines (the watermark's drawing path): the face
-/// substitutes by facename through the Word font stack, the colour is the run's, and the baseline
-/// sits one ascent below the reference point, as GM_COMPATIBLE text does.
-fn draw_vector_text(ctx: &mut RenderContext, view: Affine, pos: (f64, f64), text: &str, font: &str, size: f64, color: [u8; 4]) {
+/// substitutes by facename through the Word font stack and the colour is the run's. The run anchors
+/// at `pos` per the EMF SetTextAlign modes — vertical: the baseline at the ascent (TA_TOP), at the
+/// point itself (TA_BASELINE) or one descent above it (TA_BOTTOM); horizontal: starting, centred on
+/// or ending at the point (TA_LEFT/CENTER/RIGHT) — and turns `rotation` degrees about it, so an
+/// escapement or world-transform rotation reads bottom-to-top at 90.
+fn draw_vector_text(
+    ctx: &mut RenderContext,
+    view: Affine,
+    pos: (f64, f64),
+    text: &str,
+    font: &str,
+    size: f64,
+    color: [u8; 4],
+    align_h: TextHAlign,
+    align_v: TextVAlign,
+    rotation: f64,
+) {
     if text.is_empty() || !size.is_finite() || size <= 0.0 {
         return;
     }
@@ -320,13 +334,26 @@ fn draw_vector_text(ctx: &mut RenderContext, view: Affine, pos: (f64, f64), text
     let glyphs = wordcraft_fonts::shape(&face, text, &[], |c| c);
     let upem = face.upem.max(1.0);
     let k = size / upem;
-    let base = pos.1 + face.ascent * k;
+    let run_w = glyphs.iter().map(|g| g.x_advance as f64 * k).sum::<f64>();
+    let x0 = match align_h {
+        TextHAlign::Left => 0.0,
+        TextHAlign::Center => -run_w / 2.0,
+        TextHAlign::Right => -run_w,
+    };
+    let dy = match align_v {
+        TextVAlign::Top => face.ascent * k,
+        TextVAlign::Baseline => 0.0,
+        TextVAlign::Bottom => -face.descent * k,
+    };
+    // The run's local frame: origin at the anchor, x along the baseline. The escapement convention
+    // turns the baseline counterclockwise on screen, which is kurbo's rotate by the negative angle.
+    let place = Affine::translate(pos) * Affine::rotate(-rotation.to_radians()) * Affine::translate((x0, dy));
     ctx.set_paint(rgba_color(color));
     let db = FontDb::global();
     let mut x = 0.0;
     for g in &glyphs {
         let outline = db.outline(&face, g.gid);
-        ctx.set_transform(view * Affine::translate((pos.0 + x, base)) * Affine::scale(k));
+        ctx.set_transform(view * place * Affine::translate((x, 0.0)) * Affine::scale(k));
         ctx.fill_path(&outline);
         x += g.x_advance as f64 * k;
     }
@@ -1161,8 +1188,9 @@ mod tests {
     }
 
     /// A 25 mm square EMF (device units 0.04 per 0.01 mm, so 100 device units) with a blue "KDF"
-    /// label: SetTextColor, a 20-unit Arial font, then ExtTextOutW at (10, 25).
-    fn blue_label_emf() -> Vec<u8> {
+    /// label: SetTextColor, a 20-unit Arial font, then ExtTextOutW at `at`. `align` is the
+    /// SetTextAlign mode and `escapement` the font's lfEscapement (tenths of a degree).
+    fn blue_label_emf_with(align: u32, escapement: i32, at: (i32, i32)) -> Vec<u8> {
         let mut h = vec![0u8; 88];
         h[0..4].copy_from_slice(&1u32.to_le_bytes());
         h[4..8].copy_from_slice(&88u32.to_le_bytes());
@@ -1170,20 +1198,34 @@ mod tests {
         h[24..40].copy_from_slice(&le32(&[0, 0, 2500, 2500]));
         h[40..44].copy_from_slice(&0x464D_4520u32.to_le_bytes());
         h[72..88].copy_from_slice(&le32(&[1000, 1000, 250, 250]));
-        let mut font = le32(&[1, -20]);
-        font.extend(vec![0u8; 24]);
+        let mut font = le32(&[1, -20, 0, escapement]);
+        font.extend(vec![0u8; 16]);
         font.extend("Arial".chars().flat_map(|c| (c as u16).to_le_bytes()));
         font.extend([0u8, 0]);
         // ExtTextOutW: the payload starts at record offset 8, so EMRTEXT fields sit 8 lower than
         // the record offsets in MS-EMF (reference 28, nChars 36, offString 40, string at 68).
         let mut text = vec![0u8; 68];
-        text[28..36].copy_from_slice(&le32(&[10, 25]));
+        text[28..36].copy_from_slice(&le32(&[at.0, at.1]));
         text[36..40].copy_from_slice(&3u32.to_le_bytes());
         text[40..44].copy_from_slice(&76u32.to_le_bytes());
         let mut string: Vec<u8> = "KDF".chars().flat_map(|c| (c as u16).to_le_bytes()).collect();
         string.extend([0u8, 0]);
         let eof = emf_rec(14, &[0; 12]);
-        [h, emf_rec(24, &le32(&[0x00FF_0000])), emf_rec(82, &font), emf_rec(37, &le32(&[1])), emf_rec(84, &[text, string].concat()), eof].concat()
+        [
+            h,
+            emf_rec(24, &le32(&[0x00FF_0000])),
+            emf_rec(22, &le32(&[align as i32])),
+            emf_rec(82, &font),
+            emf_rec(37, &le32(&[1])),
+            emf_rec(84, &[text, string].concat()),
+            eof,
+        ]
+        .concat()
+    }
+
+    /// The label of [`blue_label_emf_with`]: blue "KDF" at (10, 25), GDI's default anchoring.
+    fn blue_label_emf() -> Vec<u8> {
+        blue_label_emf_with(0, 0, (10, 25))
     }
 
     #[test]
@@ -1227,6 +1269,67 @@ mod tests {
         assert_eq!(below, 0, "no label below the text band");
         let corner = in_band(0.875, 0.1);
         assert!(corner[..3].iter().all(|c| *c > 200), "empty corner stays paper, not the grey box: {corner:?}");
+    }
+
+    /// The blue label of a picture, rendered at scale 1, with a probe for pixels at a fraction of
+    /// the picture's rect on the page.
+    fn label_pixels(bytes: Vec<u8>) -> impl Fn(f32, f32) -> [u8; 4] {
+        let mut d = Document::new();
+        let media = d.add_media(bytes, "emf");
+        let mut p = wordcraft_doc::Paragraph::new();
+        let obj = wordcraft_doc::para::InlineObject::Image {
+            media,
+            w: 70.0,
+            h: 70.0,
+            alt: String::new(),
+            float: Default::default(),
+            crop: [0.0; 4],
+            ole: None,
+        };
+        p.insert_object(0, obj, &Default::default()).unwrap();
+        d.body = vec![wordcraft_doc::para_block(p)];
+        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+        let opts = RenderOptions::default();
+        let rect = page_display(&d, &l.pages[0], &opts.display)
+            .iter()
+            .find_map(|i| match i {
+                Draw::Image { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .expect("a picture on the page");
+        let img = render_page(&d, &l.pages[0], 1.0, &opts);
+        move |fx: f32, fy: f32| img.pixel((rect.x + rect.w * fx) as u32, (rect.y + rect.h * fy) as u32)
+    }
+
+    #[test]
+    fn metafile_text_baseline_anchor_is_honoured() {
+        // SetTextAlign(TA_BASELINE): the reference point (10, 25) is the baseline, so the label
+        // sits above 25% of the frame ("KDF" has no descenders) instead of one ascent below it.
+        let at = label_pixels(blue_label_emf_with(24, 0, (10, 25)));
+        let blue = |p: [u8; 4]| p[2] > 150 && p[0] < 100 && p[1] < 100;
+        let hits =
+            (12..45).flat_map(|fx| (5..24).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(at(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert!(hits > 30, "{hits} blue pixels above the anchor line, where TA_BASELINE puts them");
+        let below =
+            (5..95).flat_map(|fx| (27..50).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(at(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert_eq!(below, 0, "no label below the anchor line");
+    }
+
+    #[test]
+    fn metafile_text_rotation_is_honoured() {
+        // lfEscapement 900 at anchor (70, 70) with TA_BASELINE: the run reads bottom-to-top, so the
+        // ink is in the band left of and above the anchor — not the horizontal band below it.
+        let at = label_pixels(blue_label_emf_with(24, 900, (70, 70)));
+        let blue = |p: [u8; 4]| p[2] > 150 && p[0] < 100 && p[1] < 100;
+        let turned =
+            (50..72).flat_map(|fx| (30..70).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(at(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert!(turned > 30, "{turned} blue pixels in the turned band (left of and above the anchor)");
+        let beside =
+            (78..98).flat_map(|fx| (30..70).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(at(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert_eq!(beside, 0, "no label right of the anchor");
+        let flat =
+            (40..98).flat_map(|fx| (75..98).map(move |fy| (fx, fy))).filter(|(fx, fy)| blue(at(*fx as f32 / 100.0, *fy as f32 / 100.0))).count();
+        assert_eq!(flat, 0, "no label below the anchor, where the unrotated run would be");
     }
 
     #[test]

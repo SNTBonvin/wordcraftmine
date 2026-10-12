@@ -60,11 +60,13 @@ pub enum Item {
     },
     /// A bitmap stretched into `rect` = `[x, y, w, h]` (picture units), RGBA8 rows top-down.
     Bitmap { rect: [f32; 4], width: u32, height: u32, rgba: Vec<u8> },
-    /// A text run (EMR_EXTTEXTOUTA/W) at the reference point, the top of the character cell in
-    /// GM_COMPATIBLE, in picture coordinates. `h` is the character height in picture units and
-    /// `font` the facename (empty: the caller's default). The baseline comes from the substituted
-    /// face when drawing, so the label sits where GDI put it.
-    Text { at: (f32, f32), text: String, font: String, h: f32, color: [u8; 4] },
+    /// A text run (EMR_EXTTEXTOUTA/W) at the reference point `at` in picture coordinates, anchored
+    /// there per `align_h`/`align_v` (SetTextAlign). `h` is the character height in picture units
+    /// and `font` the facename (empty: the caller's default). The baseline comes from the substituted
+    /// face when drawing, so the label sits where GDI put it. `rotation` is the run's turn about the
+    /// anchor in degrees, from the font's lfEscapement and the world transform's rotation (90 turns
+    /// the run to read bottom-to-top).
+    Text { at: (f32, f32), text: String, font: String, h: f32, color: [u8; 4], align_h: TextHAlign, align_v: TextVAlign, rotation: f32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +75,25 @@ pub enum Seg {
     Line(f32, f32),
     Cubic(f32, f32, f32, f32, f32, f32),
     Close,
+}
+
+/// How a text run is anchored at its reference point horizontally: SetTextAlign's TA_LEFT,
+/// TA_CENTER and TA_RIGHT ([MS-EMF] §2.1.11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextHAlign {
+    Left,
+    Center,
+    Right,
+}
+
+/// How a text run is anchored at its reference point vertically: SetTextAlign's TA_TOP,
+/// TA_BOTTOM and TA_BASELINE. TA_BASELINE puts the reference point on the baseline, which is
+/// where GDI draws from unless told otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextVAlign {
+    Top,
+    Baseline,
+    Bottom,
 }
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
@@ -142,11 +163,12 @@ fn build(raw: Vec<Raw>, frame: Option<Frame>) -> Picture {
             let rect = [f(x)?, f(y)?, f(r[2] * sx)?, f(r[3] * sy)?];
             Some(Item::Bitmap { rect, width: img.w as u32, height: img.h as u32, rgba: img.px })
         }
-        Raw::Text { at, text, font, h, color } => {
+        Raw::Text { at, text, font, h, color, align_h, align_v, rotation } => {
             // No label is taller than the picture's diagonal: anything taller is a mapping artefact.
             let h = f((h * stroke_scale).min(diag))?;
             let (x, y) = tf(at);
-            Some(Item::Text { at: (f(x)?, f(y)?), text, font, h, color })
+            let rotation = f(rotation)?;
+            Some(Item::Text { at: (f(x)?, f(y)?), text, font, h, color, align_h, align_v, rotation })
         }
     });
     let items = items.collect();
@@ -212,10 +234,18 @@ fn bbox(raw: &[Raw]) -> Option<[f64; 4]> {
                 grow((rect[0], rect[1]));
                 grow((rect[0] + rect[2], rect[1] + rect[3]));
             }
-            // The run's rough extent: the reference point down to the baseline.
-            Raw::Text { at, h, .. } => {
+            // The run's rough extent: the anchor modes' vertical span, turned by the rotation.
+            Raw::Text { at, h, align_v, rotation, .. } => {
+                let (y0, y1) = match align_v {
+                    TextVAlign::Top => (0.0, *h),
+                    TextVAlign::Baseline => (-0.8 * *h, 0.2 * *h),
+                    TextVAlign::Bottom => (-*h, 0.0),
+                };
+                let (sin, cos) = rotation.to_radians().sin_cos();
                 grow(*at);
-                grow((at.0, at.1 + h));
+                for y in [y0, y1] {
+                    grow((at.0 + y * sin, at.1 + y * cos));
+                }
             }
         }
     }

@@ -528,14 +528,21 @@ fn utf16le(s: &str) -> Vec<u8> {
     s.chars().flat_map(|c| (c as u16).to_le_bytes().to_vec()).collect()
 }
 
-/// An EMR_EXTCREATEFONTINDIRECTW payload: ihFont 1, then LogFontW (height at 0, facename at 28).
-fn font_payload(height: i32, face: &str) -> Vec<u8> {
+/// An EMR_EXTCREATEFONTINDIRECTW payload: ihFont 1, then LogFontW (height at 0, facename at 28),
+/// with lfEscapement (LogFontW offset 8, tenths of a degree) set.
+fn font_payload_esc(height: i32, face: &str, escapement: i32) -> Vec<u8> {
     let mut v = h32(1);
     v.extend(e32(height));
-    v.extend(vec![0u8; 24]);
+    v.extend(e32(0)); // lfWidth
+    v.extend(e32(escapement));
+    v.extend(vec![0u8; 16]);
     v.extend(utf16le(face));
     v.extend([0u8, 0]);
     v
+}
+
+fn font_payload(height: i32, face: &str) -> Vec<u8> {
+    font_payload_esc(height, face, 0)
 }
 
 /// EMR_EXTTEXTOUTA/W at reference point `at` with the string bytes at the spec's offset 76.
@@ -551,7 +558,7 @@ fn emf_exttextoutw_becomes_text_item() {
     // SetTextColor blue, a 120-unit Arial font selected, then ExtTextOutW "KDF" at (100, 200).
     let recs = [erec(24, &h32(0x00FF_0000)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1)), textout_rec(84, (100, 200), &utf16le("KDF"))];
     let p = parse(&emf(&recs, [0, 0, 1000, 1000], [0; 4])).unwrap();
-    let Item::Text { at, text, font, h, color } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    let Item::Text { at, text, font, h, color, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
     assert_eq!(*at, (100.0, 200.0));
     assert_eq!(text, "KDF");
     assert_eq!(font, "Arial");
@@ -578,6 +585,115 @@ fn emf_exttextouta_decodes_ansi() {
 }
 
 #[test]
+fn emf_settextalign_baseline_anchor() {
+    // SetTextAlign(TA_BASELINE = 24): the reference point is the baseline, not the top of the cell.
+    // SaveDC snapshots the alignment, so a SetTextAlign inside the bracket does not survive RestoreDC.
+    let state = [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1))];
+    let recs = [
+        state.concat(),
+        erec(22, &h32(24)),
+        textout_rec(84, (10, 10), &utf16le("a")),
+        erec(33, &[]),
+        erec(22, &h32(0)),
+        textout_rec(84, (20, 10), &utf16le("b")),
+        erec(34, &e32(-1)),
+        textout_rec(84, (30, 10), &utf16le("c")),
+    ];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let modes: Vec<(&str, crate::TextHAlign, crate::TextVAlign)> = p
+        .items
+        .iter()
+        .map(|i| match i {
+            Item::Text { text, align_h, align_v, .. } => (text.as_str(), *align_h, *align_v),
+            _ => panic!("expected text, got {i:?}"),
+        })
+        .collect();
+    assert_eq!(
+        modes,
+        [
+            ("a", crate::TextHAlign::Left, crate::TextVAlign::Baseline),
+            ("b", crate::TextHAlign::Left, crate::TextVAlign::Top),
+            ("c", crate::TextHAlign::Left, crate::TextVAlign::Baseline)
+        ]
+    );
+}
+
+#[test]
+fn emf_settextalign_center_right() {
+    // TA_CENTER (6) and TA_RIGHT (2) move the run against its reference point; combined with the
+    // vertical bits (0x1E = TA_BASELINE | TA_CENTER) both modes carry into the placed items.
+    let state = [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1))];
+    let recs = [
+        state.concat(),
+        erec(22, &h32(6)),
+        textout_rec(84, (10, 10), &utf16le("a")),
+        erec(22, &h32(0x1E)),
+        textout_rec(84, (20, 10), &utf16le("b")),
+        erec(22, &h32(2)),
+        textout_rec(84, (30, 10), &utf16le("c")),
+    ];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let placed = p.place(kurbo::Rect::new(0.0, 0.0, 100.0, 100.0), [0.0; 4]);
+    let modes: Vec<(&str, crate::TextHAlign, crate::TextVAlign)> = placed
+        .iter()
+        .map(|i| match i {
+            crate::PlacedItem::Text { text, align_h, align_v, .. } => (text.as_str(), *align_h, *align_v),
+            _ => panic!("expected placed text"),
+        })
+        .collect();
+    assert_eq!(
+        modes,
+        [
+            ("a", crate::TextHAlign::Center, crate::TextVAlign::Top),
+            ("b", crate::TextHAlign::Center, crate::TextVAlign::Baseline),
+            ("c", crate::TextHAlign::Right, crate::TextVAlign::Top)
+        ]
+    );
+}
+
+#[test]
+fn emf_escapement_rotates_text() {
+    // lfEscapement 900 (90° in tenths of a degree) turns the run; placing scales the picture but
+    // not the angle. The same 90° arrives through the world transform (MODIFYWORLDTRANSFORM mode 2
+    // with a rotation matrix), which is how the repro's rotated labels carry it, composed with the
+    // escapement.
+    let font = font_payload_esc(-120, "Arial", 900);
+    let recs = [erec(24, &h32(0)), erec(82, &font), erec(37, &h32(1)), textout_rec(84, (10, 10), &utf16le("KDF"))];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let Item::Text { rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert!(close(*rotation, 90.0), "rotation {rotation}");
+    let placed = p.place(kurbo::Rect::new(0.0, 0.0, 200.0, 50.0), [0.0; 4]);
+    let crate::PlacedItem::Text { rotation, .. } = &placed[0] else { panic!("expected placed text") };
+    assert_eq!(*rotation, 90.0);
+
+    // World-transform rotation: MWT_LEFTMULTIPLY (2) of a 90° turn, reference point (0, 0) maps to
+    // the transform's translation.
+    let mut mw = Vec::new();
+    for v in [0.0f32, -1.0, 1.0, 0.0, 50.0, 50.0] {
+        mw.extend(v.to_le_bytes());
+    }
+    mw.extend(h32(2));
+    let recs =
+        [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1)), erec(36, &mw), textout_rec(84, (0, 0), &utf16le("KDF"))];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let Item::Text { at, rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert_eq!(*at, (50.0, 50.0));
+    assert!(close(*rotation, 90.0), "world rotation {rotation}");
+
+    // Both together add up: escapement 270 (reads top-to-bottom) plus a 90° world turn is upright.
+    let recs = [
+        erec(24, &h32(0)),
+        erec(82, &font_payload_esc(-120, "Arial", 2700)),
+        erec(37, &h32(1)),
+        erec(36, &mw),
+        textout_rec(84, (0, 0), &utf16le("KDF")),
+    ];
+    let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+    let Item::Text { rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert!(close(*rotation, 0.0), "composed rotation {rotation}");
+}
+
+#[test]
 fn hostile_exttextout() {
     let state = [erec(24, &h32(0)), erec(82, &font_payload(-120, "Arial")), erec(37, &h32(1))];
     // offString far past the record end, and nChars = 0: both are dropped.
@@ -590,8 +706,30 @@ fn hostile_exttextout() {
     let p = parse(&emf(&[pen, erec(37, &h32(0)), textout_rec(84, (10, 10), &utf16le("K"))], [0, 0, 100, 100], [0; 4])).unwrap();
     let Item::Text { font, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
     assert_eq!(font, "");
-    // Random mutations of a text-bearing file: dropped or defaulted, never a panic.
-    let good = emf(&[state.concat(), textout_rec(84, (50, 50), &utf16le("KDF"))], [0, 0, 100, 100], [0; 4]);
+    // SetTextAlign with junk words and wild escapements: normalised or defaulted, never a panic.
+    // 0xFFFF..FF has every mode bit set (center + baseline); a full turn of escapement is 0.
+    let junk = [erec(22, &h32(u32::MAX)), erec(22, &h32(7)), erec(22, &h32(0x1E))];
+    let wild = erec(82, &font_payload_esc(-120, "Arial", 3600));
+    let p =
+        parse(&emf(&[state.concat(), junk.concat(), wild, erec(37, &h32(1)), textout_rec(84, (10, 10), &utf16le("KDF"))], [0, 0, 100, 100], [0; 4]))
+            .unwrap();
+    let Item::Text { align_h, align_v, rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+    assert_eq!((*align_h, *align_v), (crate::TextHAlign::Center, crate::TextVAlign::Baseline));
+    assert!(close(*rotation, 0.0), "a full turn is no turn, got {rotation}");
+    for esc in [-900, i32::MIN, i32::MAX] {
+        let recs =
+            [erec(24, &h32(0)), erec(82, &font_payload_esc(-120, "Arial", esc)), erec(37, &h32(1)), textout_rec(84, (10, 10), &utf16le("KDF"))];
+        let p = parse(&emf(&recs, [0, 0, 100, 100], [0; 4])).unwrap();
+        let Item::Text { rotation, .. } = &p.items[0] else { panic!("expected text, got {:?}", p.items) };
+        assert!(rotation.is_finite() && (0.0..360.0).contains(rotation), "escapement {esc} became {rotation}");
+    }
+    // Random mutations of a text-bearing file (alignment and escapement included): dropped or
+    // defaulted, never a panic.
+    let good = emf(
+        &[state.concat(), erec(22, &h32(0x1E)), erec(82, &font_payload_esc(-120, "Arial", 900)), textout_rec(84, (50, 50), &utf16le("KDF"))],
+        [0, 0, 100, 100],
+        [0; 4],
+    );
     let mut rng = Lcg(0x0123_4567_89AB_CDEF);
     for _ in 0..2000 {
         let mut buf = good.clone();
@@ -605,11 +743,20 @@ fn hostile_exttextout() {
 
 #[test]
 fn place_maps_text_and_drops_far_or_empty_items() {
-    let text = |at: (f32, f32), t: &str| Item::Text { at, text: t.to_string(), font: String::new(), h: 10.0, color: [0, 0, 0, 255] };
+    let text = |at: (f32, f32), t: &str| Item::Text {
+        at,
+        text: t.to_string(),
+        font: String::new(),
+        h: 10.0,
+        color: [0, 0, 0, 255],
+        align_h: crate::TextHAlign::Left,
+        align_v: crate::TextVAlign::Top,
+        rotation: 0.0,
+    };
     let pic = crate::Picture { width: 100.0, height: 50.0, items: vec![text((2e6, 0.0), "x"), text((0.0, 0.0), ""), text((10.0, 5.0), "K")] };
     let placed = pic.place(kurbo::Rect::new(0.0, 0.0, 200.0, 100.0), [0.0; 4]);
     assert_eq!(placed.len(), 1);
-    let crate::PlacedItem::Text { pos, text, font, size, color } = &placed[0] else { panic!("expected text") };
+    let crate::PlacedItem::Text { pos, text, font, size, color, .. } = &placed[0] else { panic!("expected text") };
     assert_eq!(pos, &(20.0, 10.0));
     assert_eq!((text.as_str(), font.as_str()), ("K", ""));
     assert_eq!((*size, *color), (20.0, [0, 0, 0, 255]));
@@ -1019,7 +1166,16 @@ fn take_pixels_returns_only_drawable_bitmaps() {
     assert_eq!(wide.take_pixels(), None);
     let mut path = Item::Path { segs: Vec::new(), fill: None, stroke: None, even_odd: false };
     assert_eq!(path.take_pixels(), None);
-    let mut text = Item::Text { at: (0.0, 0.0), text: "K".to_string(), font: String::new(), h: 10.0, color: [0, 0, 0, 255] };
+    let mut text = Item::Text {
+        at: (0.0, 0.0),
+        text: "K".to_string(),
+        font: String::new(),
+        h: 10.0,
+        color: [0, 0, 0, 255],
+        align_h: crate::TextHAlign::Left,
+        align_v: crate::TextVAlign::Top,
+        rotation: 0.0,
+    };
     assert_eq!(text.take_pixels(), None);
     let pic = |width: f32, height: f32| crate::Picture { width, height, items: Vec::new() };
     assert!(pic(1.0, 2.0).has_size());

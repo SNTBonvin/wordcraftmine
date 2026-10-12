@@ -4,7 +4,7 @@
 
 use crate::dib::Rgba;
 use crate::geom::{Op, P};
-use crate::{MAX_BYTES, MAX_ITEMS, MAX_OBJECTS, MAX_PATH_OPS, MAX_STACK};
+use crate::{MAX_BYTES, MAX_ITEMS, MAX_OBJECTS, MAX_PATH_OPS, MAX_STACK, TextHAlign, TextVAlign};
 
 pub(crate) const MM_TEXT: u32 = 1;
 const MM_ISOTROPIC: u32 = 7;
@@ -54,18 +54,22 @@ pub(crate) struct Brush {
     pub color: [u8; 4],
 }
 
-/// A logical font for text records: the facename (empty for GDI's default) and the character height
-/// in logical units. Metafiles carry no font metrics, so the renderers substitute the face by name.
+/// A logical font for text records: the facename (empty for GDI's default), the character height
+/// in logical units, and the escapement (lfEscapement in degrees, 0..360) that turns the run
+/// against its baseline. Metafiles carry no font metrics, so the renderers substitute the face by
+/// name.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Font {
     pub name: String,
     pub height: f64,
+    /// lfEscapement in degrees, normalised to 0..360: 90 reads bottom-to-top.
+    pub escapement: f64,
 }
 
 impl Default for Font {
     fn default() -> Self {
-        // GDI's default font: no facename, a 12-unit body.
-        Font { name: String::new(), height: 12.0 }
+        // GDI's default font: no facename, a 12-unit body, upright.
+        Font { name: String::new(), height: 12.0, escapement: 0.0 }
     }
 }
 
@@ -159,6 +163,15 @@ impl Mapping {
         matches!(self.mode, MM_ISOTROPIC | MM_ANISOTROPIC)
     }
 
+    /// The world transform's rotation in degrees, in the escapement's convention (positive turns a
+    /// run's baseline counterclockwise on screen, so the run reads bottom-to-top at 90). Only the
+    /// rotation is kept: the run is never sheared, and its height already scales by the transform's
+    /// mean factor. A degenerate transform has no rotation.
+    pub fn world_rotation(&self) -> f64 {
+        let w = self.world;
+        (-w[1]).atan2(w[0]).to_degrees()
+    }
+
     pub fn window_ext(&self) -> P {
         self.we
     }
@@ -192,14 +205,35 @@ pub(crate) enum Raw {
         rect: [f64; 4],
         img: Rgba,
     },
-    /// A text run: the reference point and character height in device units, the facename and colour.
+    /// A text run: the reference point and character height in device units, the facename, the
+    /// colour, the anchor modes and the rotation in degrees (90 reads bottom-to-top).
     Text {
         at: P,
         text: String,
         font: String,
         h: f64,
         color: [u8; 4],
+        align_h: TextHAlign,
+        align_v: TextVAlign,
+        rotation: f64,
     },
+}
+
+/// The anchor modes of a SetTextAlign value ([MS-EMF] §2.1.11): the horizontal bits (mask 6) hold
+/// TA_CENTER (6) and TA_RIGHT (2), the vertical bits (mask 24) TA_BASELINE (24) and TA_BOTTOM (8).
+/// Junk values fall back to the GDI defaults, left and top.
+pub(crate) fn text_anchors(mode: u32) -> (TextHAlign, TextVAlign) {
+    let align_h = match mode & 0x06 {
+        0x06 => TextHAlign::Center,
+        0x02 => TextHAlign::Right,
+        _ => TextHAlign::Left,
+    };
+    let align_v = match mode & 0x18 {
+        0x18 => TextVAlign::Baseline,
+        0x08 => TextVAlign::Bottom,
+        _ => TextVAlign::Top,
+    };
+    (align_h, align_v)
 }
 
 #[derive(Clone)]
@@ -209,6 +243,7 @@ struct Saved {
     brush: Brush,
     font: Font,
     text_color: [u8; 4],
+    text_align: u32,
     even_odd: bool,
     nop: bool,
 }
@@ -229,6 +264,8 @@ pub(crate) struct Canvas {
     font: Font,
     /// The colour text records draw in (SETTEXTCOLOR); opaque black by default.
     text_color: [u8; 4],
+    /// The text alignment (SETTEXTALIGN); 0 is GDI's default, TA_LEFT|TA_TOP|TA_NOUPDATECP.
+    text_align: u32,
     even_odd: bool,
     /// The mix mode is R2_NOP: shapes draw nothing.
     nop: bool,
@@ -252,6 +289,7 @@ impl Canvas {
             brush: Brush { style: BS_SOLID, color: [255, 255, 255, 255] },
             font: Font::default(),
             text_color: [0, 0, 0, 255],
+            text_align: 0,
             even_odd: true,
             nop: false,
             pos: (0.0, 0.0),
@@ -338,9 +376,16 @@ impl Canvas {
         self.text_color = color;
     }
 
+    /// EMR_SETTEXTALIGN: how text records anchor at their reference point.
+    pub fn set_text_align(&mut self, mode: u32) {
+        self.text_align = mode;
+    }
+
     /// Draws a text run at the logical reference point with the selected font and the text colour.
     /// The point maps through the DC transform; the height scales by its mean factor, as pen widths
-    /// do. Per-character positions, rotation and clipping are out of scope.
+    /// do. The run anchors per the current text alignment and turns by the font's escapement plus
+    /// the world transform's rotation (only the rotation is kept; the run is never sheared).
+    /// Per-character positions and clipping are out of scope.
     pub fn text(&mut self, at: P, text: String) {
         if text.is_empty() || self.nop {
             return;
@@ -349,7 +394,9 @@ impl Canvas {
         let h = self.font.height * self.map.scale();
         let font = self.font.name.clone();
         let color = self.text_color;
-        self.push(Raw::Text { at, text, font, h, color });
+        let (align_h, align_v) = text_anchors(self.text_align);
+        let rotation = (self.font.escapement + self.map.world_rotation()).rem_euclid(360.0);
+        self.push(Raw::Text { at, text, font, h, color, align_h, align_v, rotation });
     }
 
     /// EMF SETWORLDTRANSFORM (`mode` 4) and MODIFYWORLDTRANSFORM (1 identity, 2 left, 3 right, 4 set).
@@ -374,6 +421,7 @@ impl Canvas {
                 brush: self.brush,
                 font: self.font.clone(),
                 text_color: self.text_color,
+                text_align: self.text_align,
                 even_odd: self.even_odd,
                 nop: self.nop,
             });
@@ -393,6 +441,7 @@ impl Canvas {
         self.brush = s.brush;
         self.font = s.font;
         self.text_color = s.text_color;
+        self.text_align = s.text_align;
         self.even_odd = s.even_odd;
         self.nop = s.nop;
     }

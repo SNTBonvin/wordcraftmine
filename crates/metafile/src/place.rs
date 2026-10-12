@@ -3,7 +3,7 @@
 
 use kurbo::{Affine, BezPath, Rect, Shape};
 
-use crate::{Item, Picture, Seg};
+use crate::{Item, Picture, Seg, TextHAlign, TextVAlign};
 
 /// Largest bitmap side the renderers draw: within the PDF image limit and the rasteriser's 16-bit sides.
 pub const MAX_BITMAP_SIDE: u32 = 30_000;
@@ -19,9 +19,10 @@ pub enum PlacedItem {
     Path { path: BezPath, fill: Option<[u8; 4]>, stroke: Option<([u8; 4], f64)>, even_odd: bool },
     /// `Picture::items[index]`, a bitmap, stretched into `rect`.
     Bitmap { index: usize, rect: Rect },
-    /// A text run at `pos`, the top of the character cell, drawn in `size`-point characters of the
-    /// substituted `font` (empty: the renderer's default) in `color`.
-    Text { pos: (f64, f64), text: String, font: String, size: f64, color: [u8; 4] },
+    /// A text run at `pos` (in target units), anchored per `align_h`/`align_v` and drawn in
+    /// `size`-point characters of the substituted `font` (empty: the renderer's default) in `color`,
+    /// turned `rotation` degrees about the anchor (90 reads bottom-to-top).
+    Text { pos: (f64, f64), text: String, font: String, size: f64, color: [u8; 4], align_h: TextHAlign, align_v: TextVAlign, rotation: f64 },
 }
 
 impl Picture {
@@ -66,11 +67,27 @@ impl Picture {
                         out.push(PlacedItem::Bitmap { index, rect });
                     }
                 }
-                Item::Text { at, text, font, h, color } => {
+                Item::Text { at, text, font, h, color, align_h, align_v, rotation } => {
                     let p = tf * kurbo::Point::new(f64::from(at.0), f64::from(at.1));
                     let size = f64::from(*h) * k;
-                    if !text.is_empty() && size.is_finite() && size > 0.0 && [p.x, p.y].iter().all(|v| v.is_finite() && v.abs() < MAX_COORD) {
-                        out.push(PlacedItem::Text { pos: (p.x, p.y), text: text.clone(), font: font.clone(), size, color: *color });
+                    // The rotation is an angle, so the fit's scale leaves it alone.
+                    let rotation = f64::from(*rotation);
+                    if !text.is_empty()
+                        && size.is_finite()
+                        && size > 0.0
+                        && rotation.is_finite()
+                        && [p.x, p.y].iter().all(|v| v.is_finite() && v.abs() < MAX_COORD)
+                    {
+                        out.push(PlacedItem::Text {
+                            pos: (p.x, p.y),
+                            text: text.clone(),
+                            font: font.clone(),
+                            size,
+                            color: *color,
+                            align_h: *align_h,
+                            align_v: *align_v,
+                            rotation,
+                        });
                     }
                 }
             }

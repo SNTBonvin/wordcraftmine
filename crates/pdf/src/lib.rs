@@ -49,7 +49,7 @@ use wordcraft_geom::Rect;
 use wordcraft_layout::display::{DisplayOptions, Draw, Stroke as LineStyle, page_display};
 use wordcraft_layout::wordart::ArtPaint;
 use wordcraft_layout::{DocLayout, LayoutCache, LayoutOptions, Page, Placed, layout};
-use wordcraft_metafile::{Picture, PlacedItem};
+use wordcraft_metafile::{Picture, PlacedItem, TextHAlign, TextVAlign};
 
 /// Largest page side we write (200", the PDF limit).
 const MAX_SIDE: f32 = 14_400.0;
@@ -1425,8 +1425,8 @@ impl Exporter<'_> {
                     s.draw_image(img.clone(), size);
                     s.pop();
                 }
-                PlacedItem::Text { pos, text, font, size, color } => {
-                    self.vector_text(s, pos, &text, &font, size, color);
+                PlacedItem::Text { pos, text, font, size, color, align_h, align_v, rotation } => {
+                    self.vector_text(s, pos, &text, &font, size, color, align_h, align_v, rotation);
                 }
             }
         }
@@ -1439,9 +1439,23 @@ impl Exporter<'_> {
     }
 
     /// One metafile text run, drawn the way the watermark is: the facename substitutes through the Word
-    /// font stack, glyphs come out as embedded text (or outlines when krilla cannot subset the face),
-    /// and the baseline sits one ascent below the reference point, as GM_COMPATIBLE text does.
-    fn vector_text(&mut self, s: &mut Surface, pos: (f64, f64), text: &str, font: &str, size: f64, color: [u8; 4]) {
+    /// font stack, glyphs come out as embedded text (or outlines when krilla cannot subset the face).
+    /// The run anchors at `pos` per the EMF SetTextAlign modes — vertical: the baseline at the ascent
+    /// (TA_TOP), at the point itself (TA_BASELINE) or one descent above it (TA_BOTTOM); horizontal:
+    /// starting, centred on or ending at the point (TA_LEFT/CENTER/RIGHT) — and turns `rotation`
+    /// degrees about it, so an escapement or world-transform rotation reads bottom-to-top at 90.
+    fn vector_text(
+        &mut self,
+        s: &mut Surface,
+        pos: (f64, f64),
+        text: &str,
+        font: &str,
+        size: f64,
+        color: [u8; 4],
+        align_h: TextHAlign,
+        align_v: TextVAlign,
+        rotation: f64,
+    ) {
         if text.is_empty() || !size.is_finite() || size <= 0.0 {
             return;
         }
@@ -1451,7 +1465,24 @@ impl Exporter<'_> {
         let upem = face.upem.max(1.0) as f32;
         let size = size as f32;
         let k = size / upem;
-        let baseline = pos.1 as f32 + face.ascent as f32 * k;
+        let run_w = shaped.iter().map(|g| g.x_advance as f32 * k).sum::<f32>();
+        let x0 = match align_h {
+            TextHAlign::Left => 0.0,
+            TextHAlign::Center => -run_w / 2.0,
+            TextHAlign::Right => -run_w,
+        };
+        let dy = match align_v {
+            TextVAlign::Top => face.ascent as f32 * k,
+            TextVAlign::Baseline => 0.0,
+            TextVAlign::Bottom => -(face.descent as f32) * k,
+        };
+        // The run's local frame: origin at the anchor, x along the baseline; the offsets turn with
+        // the run about the anchor, then the anchor translates. The escapement convention turns the
+        // baseline counterclockwise on screen, which in tiny-skia's y-down matrices is rotate by
+        // -angle: x' = cos·x + sin·y, y' = -sin·x + cos·y.
+        let (ax, ay) = (pos.0 as f32, pos.1 as f32);
+        let (sin, cos) = (rotation.to_radians() as f32).sin_cos();
+        let place = Transform::from_row(cos, -sin, sin, cos, ax + cos * x0 + sin * dy, ay - sin * x0 + cos * dy);
         let glyphs: Vec<KrillaGlyph> = shaped
             .iter()
             .enumerate()
@@ -1469,7 +1500,7 @@ impl Exporter<'_> {
                 )
             })
             .collect();
-        s.push_transform(&Transform::from_translate(pos.0 as f32, baseline));
+        s.push_transform(&place);
         s.set_stroke(None);
         let (paint, opacity) = paint_of(color);
         s.set_fill(Some(Fill { paint: paint.into(), opacity, rule: FillRule::NonZero }));

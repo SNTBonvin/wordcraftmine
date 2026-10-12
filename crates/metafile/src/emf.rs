@@ -89,6 +89,7 @@ fn record(cv: &mut Canvas, typ: u32, r: Bytes) {
         17 => r.u32(8).map(|m| cv.set_map_mode(m)),
         19 => r.u32(8).map(|m| cv.set_polyfill(m)),
         20 => r.u32(8).map(|m| cv.set_rop2(m)),
+        22 => r.u32(8).map(|m| cv.set_text_align(m)),
         24 => r.u32(8).map(|c| cv.set_text_color(colorref(c))),
         33 => {
             cv.save_dc();
@@ -253,17 +254,20 @@ fn create_brush(cv: &mut Canvas, r: Bytes) -> Option<()> {
     Some(())
 }
 
-/// EMR_EXTCREATEFONTINDIRECTW: handle, then LogFontW. Only the character height and the facename
-/// matter here (no rotation or per-character positioning). A negative `lfHeight` is the character
-/// height, a positive one the cell height; the difference is the font's internal leading, which a
-/// metafile does not carry, so the value is used as-is with a floor of 1.
+/// EMR_EXTCREATEFONTINDIRECTW: handle, then LogFontW. Only the character height, the escapement
+/// and the facename matter here (no per-character positioning). A negative `lfHeight` is the
+/// character height, a positive one the cell height; the difference is the font's internal leading,
+/// which a metafile does not carry, so the value is used as-is with a floor of 1. `lfEscapement`
+/// (LogFontW + 8, tenths of a degree) turns the run; it is normalised to 0..360, so junk (a full
+/// turn, a negative angle) stays a finite degree value.
 fn create_font(cv: &mut Canvas, r: Bytes) -> Option<()> {
     let slot = r.u32(8)? as usize;
     let lf_height = r.i32(12)?;
     // A zero height means GDI's default, like no font selected at all.
     let height = if lf_height == 0 { Font::default().height } else { f64::from(lf_height.unsigned_abs()).max(1.0) };
+    let escapement = r.i32(20).map_or(0.0, |e| f64::from(e) / 10.0).rem_euclid(360.0);
     let name = r.tail(12 + 28).map(|t| utf16_z(t.0)).unwrap_or_default();
-    cv.add_object(Some(slot), Obj::Font(Font { name, height }));
+    cv.add_object(Some(slot), Obj::Font(Font { name, height, escapement }));
     Some(())
 }
 

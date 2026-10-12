@@ -778,23 +778,7 @@ fn metafile_fill_items_carry_no_stroke_state() {
 fn metafile_text_labels_are_drawn() {
     // SetTextColor blue, a 20-unit Arial font, then ExtTextOutW "KDF" at (10, 25): the glyphs are
     // filled blue in the content stream (as embedded text or outlines).
-    let le32 = |vals: &[i32]| -> Vec<u8> { vals.iter().flat_map(|v| v.to_le_bytes()).collect() };
-    let mut text = vec![0u8; 68];
-    text[28..36].copy_from_slice(&[10i32, 25].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
-    text[36..40].copy_from_slice(&3u32.to_le_bytes());
-    text[40..44].copy_from_slice(&76u32.to_le_bytes());
-    let mut string: Vec<u8> = "KDF".chars().flat_map(|c| (c as u16).to_le_bytes()).collect();
-    string.extend([0u8, 0]);
-    let mut font = le32(&[1, -20, 0, 0, 0, 0, 0]);
-    font.extend("Arial".chars().flat_map(|c| (c as u16).to_le_bytes()));
-    font.extend([0u8, 0]);
-    let rec = |typ: u32, payload: &[u8]| {
-        let mut v = typ.to_le_bytes().to_vec();
-        v.extend(((8 + payload.len()) as u32).to_le_bytes());
-        v.extend(payload);
-        v
-    };
-    let recs = [rec(24, &le32(&[0x00FF_0000u32 as i32])), rec(82, &font), rec(37, &le32(&[1])), rec(84, &[text, string].concat()), rec(14, &[0; 12])];
+    let recs = label_emf_records(0, 0, (10, 25));
     let mut d = Document::new();
     let media = d.add_media(emf_file(&recs), "emf");
     let mut p = Paragraph::with_text("Figure: ", CharProps::default());
@@ -810,6 +794,120 @@ fn metafile_text_labels_are_drawn() {
     let raw = String::from_utf8_lossy(&bytes);
     assert!(raw.contains("0 0 1 rg"), "the label text is filled blue");
     assert!(!raw.contains("0.8156"), "the grey placeholder box is not drawn");
+}
+
+/// The records of the label EMF: SetTextColor blue, SetTextAlign `align`, a 20-unit Arial font with
+/// `escapement` (tenths of a degree), then ExtTextOutW "KDF" at `at`.
+fn label_emf_records(align: u32, escapement: i32, at: (i32, i32)) -> Vec<Vec<u8>> {
+    let le32 = |vals: &[i32]| -> Vec<u8> { vals.iter().flat_map(|v| v.to_le_bytes()).collect() };
+    let mut text = vec![0u8; 68];
+    text[28..36].copy_from_slice(&le32(&[at.0, at.1]));
+    text[36..40].copy_from_slice(&3u32.to_le_bytes());
+    text[40..44].copy_from_slice(&76u32.to_le_bytes());
+    let mut string: Vec<u8> = "KDF".chars().flat_map(|c| (c as u16).to_le_bytes()).collect();
+    string.extend([0u8, 0]);
+    let mut font = le32(&[1, -20, 0, escapement]);
+    font.extend(vec![0u8; 16]);
+    font.extend("Arial".chars().flat_map(|c| (c as u16).to_le_bytes()));
+    font.extend([0u8, 0]);
+    let rec = |typ: u32, payload: &[u8]| {
+        let mut v = typ.to_le_bytes().to_vec();
+        v.extend(((8 + payload.len()) as u32).to_le_bytes());
+        v.extend(payload);
+        v
+    };
+    vec![
+        rec(24, &le32(&[0x00FF_0000u32 as i32])),
+        rec(22, &le32(&[align as i32])),
+        rec(82, &font),
+        rec(37, &le32(&[1])),
+        rec(84, &[text, string].concat()),
+        rec(14, &[0; 12]),
+    ]
+}
+
+/// A one-paragraph document with the label EMF as its only picture.
+fn label_doc(records: &[Vec<u8>]) -> Document {
+    let mut d = Document::new();
+    let media = d.add_media(emf_file(records), "emf");
+    let mut p = Paragraph::with_text("Figure: ", CharProps::default());
+    let n = p.len();
+    p.insert_object(
+        n,
+        InlineObject::Image { media, w: 70.0, h: 70.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None },
+        &CharProps::default(),
+    )
+    .unwrap();
+    d.body = vec![para_block(p)];
+    d
+}
+
+/// Every 6-number `cm` matrix of an exported (uncompressed) content stream, in order.
+fn cms(raw: &str) -> Vec<[f32; 6]> {
+    let toks: Vec<&str> = raw.split_whitespace().collect();
+    let mut out = Vec::new();
+    for (i, t) in toks.iter().enumerate() {
+        if *t == "cm" && i >= 6 {
+            let m: Vec<f32> = toks[i - 6..i].iter().filter_map(|v| v.parse().ok()).collect();
+            if m.len() == 6 {
+                out.push([m[0], m[1], m[2], m[3], m[4], m[5]]);
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn metafile_text_baseline_anchor_is_honoured() {
+    // The label at (10, 25) exported once with TA_TOP and once with TA_BASELINE: every content
+    // matrix that moves moves by exactly the substituted face's ascent at the label's size (20
+    // device units of a 100-unit 70 pt frame are 14 pt). The stream's coordinates are y-up, so
+    // TA_TOP's baseline sits one ascent *above* the TA_BASELINE anchor there.
+    let opts = |d: &Document| export(d, &PdfOptions { compress: false, tagged: false, ..Default::default() }).unwrap();
+    let top = cms(&String::from_utf8_lossy(&opts(&label_doc(&label_emf_records(0, 0, (10, 25))))));
+    let base = cms(&String::from_utf8_lossy(&opts(&label_doc(&label_emf_records(24, 0, (10, 25))))));
+    assert_eq!(top.len(), base.len(), "the same matrix count either way");
+    let face = wordcraft_fonts::word::resolve("Arial", false, false).face;
+    let ascent = (face.ascent / face.upem * 14.0) as f32;
+    let deltas: Vec<f32> = top
+        .iter()
+        .zip(&base)
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| {
+            assert_eq!(a[..4], b[..4], "only the translation moves, not the linear part");
+            a[5] - b[5]
+        })
+        .collect();
+    assert!(!deltas.is_empty(), "the label's matrix must feel the anchor mode: {top:?}");
+    assert!(
+        deltas.iter().all(|d| (d + ascent).abs() < 0.15),
+        "every moved matrix sits one ascent ({ascent}) away, TA_TOP above the anchor: {deltas:?}"
+    );
+}
+
+#[test]
+fn metafile_text_rotation_is_honoured() {
+    // The label exported with lfEscapement 900 at TA_BASELINE: the run's matrix turns so its
+    // baseline points up the page — in the stream's y-up coordinates (krilla folds the page flip
+    // in) the linear part is (0, 1, 1, 0) — while the translation stays at the anchor, which a
+    // turn about the anchor does not move.
+    let opts = |d: &Document| export(d, &PdfOptions { compress: false, tagged: false, ..Default::default() }).unwrap();
+    let plain = cms(&String::from_utf8_lossy(&opts(&label_doc(&label_emf_records(24, 0, (10, 25))))));
+    let turned = cms(&String::from_utf8_lossy(&opts(&label_doc(&label_emf_records(24, 900, (10, 25))))));
+    assert_eq!(plain.len(), turned.len(), "the same matrix count either way");
+    let mut checked = 0;
+    for (a, b) in plain.iter().zip(&turned) {
+        if a[..4] != b[..4] {
+            assert!(
+                b[0].abs() < 1e-3 && (b[1] - 1.0).abs() < 1e-3 && (b[2] - 1.0).abs() < 1e-3 && b[3].abs() < 1e-3,
+                "a baseline pointing up the page, (0, 1, 1, 0): {b:?}"
+            );
+            assert_eq!(a[4], b[4], "the anchor's x does not move");
+            assert_eq!(a[5], b[5], "the anchor's y does not move");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "the label's matrix must carry the turn: {plain:?}");
 }
 
 #[test]
