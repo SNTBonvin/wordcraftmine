@@ -410,8 +410,13 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
 }
 
 /// The proofing languages the Language menu offers: tag and English name (translated when drawn).
-pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 4] =
-    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("pt-BR", "Portuguese (Brazil)")];
+pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 5] = [
+    ("en-US", "English (United States)"),
+    ("en-GB", "English (United Kingdom)"),
+    ("pl-PL", "Polish"),
+    ("pt-BR", "Portuguese (Brazil)"),
+    ("cs-CZ", "Czech"),
+];
 
 /// The English name of a proofing language tag, as the status bar shows it (no tag: WordCraft's
 /// default, US English; a tag without a name here: the tag).
@@ -421,6 +426,7 @@ pub(crate) fn language_name(tag: Option<&str>) -> String {
         return (*name).to_string();
     }
     match wordcraft_engine::proof::ProofLang::from_tag(Some(tag)) {
+        wordcraft_engine::proof::ProofLang::Cs => "Czech".into(),
         wordcraft_engine::proof::ProofLang::Pl => "Polish".into(),
         wordcraft_engine::proof::ProofLang::Pt => "Portuguese (Brazil)".into(),
         wordcraft_engine::proof::ProofLang::En if tag.eq_ignore_ascii_case("en") => "English (United States)".into(),
@@ -445,7 +451,8 @@ pub(crate) fn language_menu(ui: &mut Ui, app: &mut WordApp) {
     for (tag, name) in PROOFING_LANGUAGES {
         let on = current.eq_ignore_ascii_case(tag)
             || (tag == "pl-PL" && current.eq_ignore_ascii_case("pl"))
-            || (tag == "pt-BR" && current.eq_ignore_ascii_case("pt"));
+            || (tag == "pt-BR" && current.eq_ignore_ascii_case("pt"))
+            || (tag == "cs-CZ" && wordcraft_engine::proof::ProofLang::from_tag(Some(&current)) == wordcraft_engine::proof::ProofLang::Cs);
         mi_check(ui, app, name, on, "review.language", json!({"lang": tag}));
     }
     ui.separator();
@@ -2442,6 +2449,14 @@ mod tests {
         a.run("insert.table", json!({"rows": 2, "cols": 2})).unwrap();
         for id in ["table.selectTable", "table.deleteTable", "table.autofit"] {
             assert!(menu_enabled(&a, id), "{id} is on inside a table");
+        }
+    }
+
+    #[test]
+    fn czech_has_a_name_in_the_language_menu() {
+        assert!(PROOFING_LANGUAGES.contains(&("cs-CZ", "Czech")));
+        for tag in ["cs", "cs-CZ", "CS-cz", "ces", "CZE"] {
+            assert_eq!(language_name(Some(tag)), "Czech", "{tag}");
         }
     }
 
