@@ -14,6 +14,7 @@ mod animations;
 mod apple_events;
 mod clipboard;
 mod control_server;
+mod default_apps;
 mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
@@ -177,13 +178,14 @@ fn save_prefs(app: &WordApp) {
 
 /// Native file dialogs, shown without blocking the window (`file_dialogs`, #94), File › Print
 /// through the system's PDF viewer (`print`, #15), the system clipboard's text, formatted copies,
-/// pictures and format names (`clipboard`, #45, #584, #687, #833), and the system's animation
-/// setting (`animations`).
+/// pictures and format names (`clipboard`, #45, #584, #687, #833), the system's animation setting
+/// (`animations`), and making WordCraft the default app for Word documents (`default_apps`, #295).
 fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     Services {
         file_dialog: Some(file_dialog),
         print: Some(print::hook()),
         clipboard_picture: Some(Box::new(clipboard::picture)),
+        make_default_app: default_apps::hook(),
         animations_enabled: Some(animations::hook(ctx)),
         clipboard_text: Some(Box::new(clipboard::text)),
         clipboard_html: Some(Box::new(clipboard::html)),
@@ -279,6 +281,7 @@ fn main() -> eframe::Result {
             let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
             let mut app = WordApp::new(Session::new(doc), services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
+            app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;
             app.integrated_titlebar = cfg!(target_os = "macos");
             let mut key_file = None;
