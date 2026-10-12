@@ -18,7 +18,7 @@ fn cells(app: &WordApp, layout: &DocLayout, page: usize) -> Vec<(usize, usize, w
     pg.items
         .iter()
         .filter_map(|it| match it {
-            Placed::Cell { rect, table, row, cell, story: st } if *table == tp && *st == story => Some((*row, *cell, *rect)),
+            Placed::Cell { rect, table, row, cell, story: st, .. } if *table == tp && *st == story => Some((*row, *cell, *rect)),
             _ => None,
         })
         .collect()
@@ -82,11 +82,13 @@ pub(crate) fn columns(app: &mut WordApp, ui: &Ui, layout: &DocLayout, page: usiz
 /// The vertical ruler's markers (`bar`; the page's top at screen y `y0`, `scale` pixels per
 /// point): one on the bottom of each of the caret's table's rows on the page.
 pub(crate) fn rows(app: &mut WordApp, ui: &Ui, layout: &DocLayout, page: usize, bar: Rect, y0: f32, scale: f32) {
-    // Each row's bottom, and its leftmost cell (a press in the middle of it grabs the bottom).
+    // Each row's bottom, and the cell it's taken from (a press in the middle of it grabs the
+    // bottom): its shortest box, as a vertically merged cell's box spans all its rows (#640), and
+    // of those the leftmost.
     let mut rows: Vec<(usize, wordcraft_geom::Rect)> = Vec::new();
     for (r, _, b) in cells(app, layout, page) {
         match rows.iter_mut().find(|(row, _)| *row == r) {
-            Some((_, first)) if b.x < first.x => *first = b,
+            Some((_, first)) if b.bottom() < first.bottom() - 0.01 || (b.bottom() <= first.bottom() + 0.01 && b.x < first.x) => *first = b,
             Some(_) => {}
             None => rows.push((r, b)),
         }

@@ -23,22 +23,24 @@ pub(crate) struct ResizeDrag {
     from: (f32, f32),
     to: (f32, f32),
     target: ResizeTarget,
-    /// Started on a ruler marker: a column border changes only the column on its left, as Word's
-    /// ruler moves the columns right of it along.
+    /// Started on a ruler marker, where Shift works the other way round, as on Word's ruler:
+    /// without it a column border changes only the column on its left (the columns right of it
+    /// move along), with it the neighbour makes up the difference.
     ruler: bool,
 }
 
 impl ResizeDrag {
-    /// What the drag so far makes of the table (`left_only`: only the column left of a column
-    /// border changes).
-    fn plan(&self, left_only: bool) -> Plan {
-        self.target.plan(self.to.0 - self.from.0, self.to.1 - self.from.1, left_only || self.ruler)
+    /// What the drag so far makes of the table, with Shift held (`shift`) or not: on the page
+    /// Shift changes only the column left of a column border, on a ruler marker it's the other way
+    /// round.
+    fn plan(&self, shift: bool) -> Plan {
+        self.target.plan(self.to.0 - self.from.0, self.to.1 - self.from.1, shift != self.ruler)
     }
 
     /// Where the dragged column border (page x) or row bottom (page y) is now; `None` for the
     /// handle.
-    fn line_now(&self, left_only: bool) -> Option<f32> {
-        let plan = self.plan(left_only);
+    fn line_now(&self, shift: bool) -> Option<f32> {
+        let plan = self.plan(shift);
         match self.target.edge {
             Edge::Column(i) => Some(planned_line(&self.target, &plan, i)),
             Edge::Row(r) => planned_bottom(&self.target, &plan, r),
@@ -121,7 +123,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
         if (d.to.0 - d.from.0).abs() < 0.5 && (d.to.1 - d.from.1).abs() < 0.5 {
             return true;
         }
-        let shift = d.ruler || ui.input(|i| i.modifiers.shift);
+        // The command's "shift": only the column left of a column border changes.
+        let shift = ui.input(|i| i.modifiers.shift) != d.ruler;
         let sc = page_scale(rects, layout, scale, d.page).unwrap_or(1.0);
         let params = json!({
             "page": d.page, "x": d.from.0, "y": d.from.1, "toX": d.to.0, "toY": d.to.1,
@@ -389,6 +392,24 @@ mod tests {
         assert!((a1.w - (a.w + 30.0)).abs() < 1.0, "{a:?} → {a1:?}");
         assert!((b1.w - b.w).abs() < 0.5 && (c1.w - c.w).abs() < 0.5, "the columns right of it keep their widths");
         assert!((c1.right() - (c.right() + 30.0)).abs() < 1.0, "and move along, so the table is wider");
+    }
+
+    /// With Shift a column marker on the ruler works the other way round, as on Word's ruler: the
+    /// neighbour on the right makes up the difference, so the table keeps its width.
+    #[test]
+    fn a_shift_drag_on_the_ruler_trades_width_with_the_neighbour() {
+        let mut h = table_window();
+        let (a, b, c) = (cell(&mut h, 0, 0), cell(&mut h, 0, 1), cell(&mut h, 0, 2));
+        let near = screen(&mut h, a.right(), a.y);
+        let start = ruler_marker(&h, "Table Column Width", near).center();
+        let end = start + egui::vec2(screen(&mut h, a.right() + 30.0, a.y).x - near.x, 0.0);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        drag(&mut h, start, end);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        let (a1, b1, c1) = (cell(&mut h, 0, 0), cell(&mut h, 0, 1), cell(&mut h, 0, 2));
+        assert!((a1.w - (a.w + 30.0)).abs() < 1.0, "{a:?} → {a1:?}");
+        assert!((b1.w - (b.w - 30.0)).abs() < 1.0, "{b:?} → {b1:?}");
+        assert!((c1.w - c.w).abs() < 0.5 && (c1.right() - c.right()).abs() < 1.0, "the table keeps its width");
     }
 
     /// #49: a row marker on the vertical ruler drags that row's bottom border: the row gets taller,
