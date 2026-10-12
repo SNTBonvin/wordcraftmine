@@ -64,6 +64,13 @@ pub fn chinese_fonts() -> impl Iterator<Item = &'static CraftFont> {
     CRAFT_FONTS.iter().filter(|f| f.scripts.contains(&"Hans"))
 }
 
+/// The craft-fonts faces documents ask for by name: the metric-compatible substitutes for
+/// Calibri and Cambria (Carlito, Caladea), see `build.rs`. Empty without craft-fonts, or with a
+/// checkout that has no `fonts/latin-manifest.txt`.
+pub fn document_substitute_fonts() -> impl Iterator<Item = &'static CraftFont> {
+    CRAFT_FONTS.iter().filter(|f| matches!(f.family, "Carlito" | "Caladea"))
+}
+
 /// The CJK interface faces, Regular styles only (the UI fakes no bold): the Japanese UI face and
 /// the Chinese face, Chinese first when `prefer_hans` (a Chinese interface), Japanese first
 /// otherwise. Mixing the two within a line would mix glyph styles, so the first face should
@@ -382,6 +389,26 @@ mod tests {
         let jp: Vec<char> = "日本語".chars().collect();
         let f2 = db.fallback_for_east_asian(&jp, latin.id(), false, false).expect("a CJK face");
         assert!(f2.family.contains("Mincho"), "{f2:?}");
+    }
+
+    #[test]
+    fn craft_fonts_document_substitutes_load_in_every_style() {
+        if document_substitute_fonts().next().is_none() {
+            eprintln!("skipped: built without craft-fonts' fonts/latin-manifest.txt (CRAFT_FONTS_DIR)");
+            return;
+        }
+        // Calibri and Cambria documents resolve to these by name, so each style must load as itself
+        // without system fonts.
+        let db = FontDb::with_font_dirs(Vec::new());
+        db.set_system_fallback(false);
+        for family in ["Carlito", "Caladea"] {
+            assert!(db.is_loaded(family), "{family}");
+            for (style, bold, italic) in [("Regular", false, false), ("Bold", true, false), ("Italic", false, true), ("Bold Italic", true, true)] {
+                let face = db.face(family, style);
+                assert_eq!(face.family, family);
+                assert_eq!((face.weight >= 600.0, face.italic), (bold, italic), "{family} {style}");
+            }
+        }
     }
 
     #[test]
