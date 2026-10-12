@@ -212,7 +212,17 @@ pub fn specs() -> Vec<CommandSpec> {
 
 /// Resolved paragraph props at the caret.
 fn cur(s: &Session) -> wordcraft_doc::resolve::ResolvedPara {
-    let props = s.doc.para_at(&s.sel.focus).map(|p| p.props.clone()).unwrap_or_default();
+    // A selection ending at the next paragraph's start doesn't format that paragraph (#418), so
+    // its state comes from the last paragraph it does cover.
+    let (a, b) = s.sel.ordered();
+    let mut at = s.sel.focus.clone();
+    if let Some(last) = s.doc.para_paths_in(&a, &b).pop()
+        && last != at.path
+        && at == b
+    {
+        at = Pos { path: last, off: 0, ..at };
+    }
+    let props = s.doc.para_at(&at).map(|p| p.props.clone()).unwrap_or_default();
     s.doc.styles.resolve_para(&props)
 }
 
@@ -299,7 +309,7 @@ fn asian_typography(s: &mut Session, v: &Value) -> CmdResult {
 
 pub fn indent(s: &mut Session, _: &Value) -> CmdResult {
     let (a, b) = s.sel.ordered();
-    let paths = s.doc.paths_between(&a, &b);
+    let paths = s.doc.para_paths_in(&a, &b);
     let tab = s.doc.settings.default_tab.max(1.0);
     for path in paths {
         let (num, left) = {
@@ -318,7 +328,7 @@ pub fn indent(s: &mut Session, _: &Value) -> CmdResult {
 
 pub fn outdent(s: &mut Session, _: &Value) -> CmdResult {
     let (a, b) = s.sel.ordered();
-    let paths = s.doc.paths_between(&a, &b);
+    let paths = s.doc.para_paths_in(&a, &b);
     let tab = s.doc.settings.default_tab.max(1.0);
     for path in paths {
         let (num, left) = {
@@ -394,12 +404,14 @@ fn apply_style(s: &mut Session, v: &Value) -> CmdResult {
             para.format(0, len, &|c| {
                 c.font = None;
                 c.font_cs = None;
+                c.font_ea = None;
                 c.size = None;
                 c.size_cs = None;
                 c.color = None;
             })?;
             para.mark.font = None;
             para.mark.font_cs = None;
+            para.mark.font_ea = None;
             para.mark.size = None;
             para.mark.size_cs = None;
             para.mark.color = None;
@@ -415,7 +427,7 @@ fn list(s: &mut Session, v: &Value, default: ListKind) -> CmdResult {
     let (a, b) = s.sel.ordered();
     // Toggle: if every selected paragraph already has this kind of list, remove it.
     let current: Vec<Option<NumRef>> =
-        s.doc.paths_between(&a, &b).iter().map(|p| s.doc.para(a.story, p).and_then(|x| x.props.numbering).filter(|n| n.num != 0)).collect();
+        s.doc.para_paths_in(&a, &b).iter().map(|p| s.doc.para(a.story, p).and_then(|x| x.props.numbering).filter(|n| n.num != 0)).collect();
     let same_kind = |n: &NumRef| {
         s.doc.numbering.level(n.num, 0).is_some_and(|l| {
             let want = wordcraft_doc::numbering::levels_for(kind);
@@ -578,6 +590,10 @@ pub fn border_sides(v: &Value, space_tb: f32, space_lr: f32) -> Result<Borders, 
 /// selected paragraph includes its mark). Refused at the top or bottom of the container, next to
 /// a table, across a section break and for a selection across table cells.
 fn move_paras(s: &mut Session, up: bool) -> CmdResult {
+    // Outline view: what's collapsed moves with its heading, past whole shown paragraphs.
+    if let Some(r) = super::outline::move_shown(s, up) {
+        return r;
+    }
     let (a, b) = s.sel.ordered();
     if a.story != b.story || a.path.parent() != b.path.parent() {
         return Err(CmdError::Failed("select paragraphs in one place (not across table cells) to move them".into()));
@@ -641,6 +657,17 @@ fn heading_level(s: &Session, props: &ParaProps) -> Option<u8> {
     s.doc.styles.resolve_para(props).outline_level.filter(|l| *l < 9).map(|l| l + 1)
 }
 
+/// Give paragraph `path` Heading `level` (1–9), or make it body text (`None`: the default
+/// paragraph style); its own outline level goes, so the style's counts.
+pub(crate) fn set_heading(s: &mut Session, story: wordcraft_doc::StoryRef, path: &wordcraft_doc::Path, level: Option<u8>) -> Result<(), CmdError> {
+    let style = level.map(|n| ensure_heading_style(s, n.clamp(1, 9)));
+    let para = s.doc.para_mut(story, path)?;
+    para.props.style = style;
+    para.props.outline_level = None;
+    para.touch();
+    Ok(())
+}
+
 /// Make sure the built-in `Heading{n}` style (and its linked character style) is in the
 /// document, for files that didn't bring it.
 fn ensure_heading_style(s: &mut Session, n: u8) -> String {
@@ -664,6 +691,8 @@ fn ensure_heading_style(s: &mut Session, n: u8) -> String {
 /// promoted becomes a heading at the level of the heading before it (Heading 1 when there is
 /// none) and can't be demoted further; a list item changes list level like Shift+Tab / Tab.
 fn outline_step(s: &mut Session, promote: bool) -> CmdResult {
+    // Outline view: the headings hidden under a collapsed heading move a level with it.
+    let carried = super::outline::hidden_subheadings(s);
     let (a, b) = s.sel.ordered();
     let paths = s.doc.paths_between(&a, &b);
     // The heading before the selection, for promoted body text.
@@ -705,6 +734,12 @@ fn outline_step(s: &mut Session, promote: bool) -> CmdResult {
     }
     if !changed {
         return Err(CmdError::Failed(if promote { "nothing to promote".into() } else { "nothing to demote".into() }));
+    }
+    for (j, h) in carried {
+        let n = if promote { h.saturating_sub(1).max(1) } else { (h + 1).min(9) };
+        if n != h {
+            set_heading(s, wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(j), Some(n))?;
+        }
     }
     sel_result(s)
 }
