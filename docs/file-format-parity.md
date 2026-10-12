@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** trivial (font table and embedded fonts kept on save, #770; previously trivial: native save temporary-file ownership and failure protection; previously trivial: Print Markup: comments in PDF/print/copies, #589; previously trivial: SmartArt written from WordCraft's model, #497; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -70,7 +70,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Native Word ink (`w14:contentPart`, InkML) | 🟡 | 🟡 | Drawing-level ink kept opaque with its InkML part, relationship and content type; run-level `mc:AlternateContent` keeps the native branch and VML picture fallback. Shows the preview or a missing-picture box. Repeated saves, copies, resize, rotation and namespace aliases tested with original fixtures. No native stroke rendering, eraser, conversion or replay; direct run-level content parts and ink nested in groups/canvases remain unsupported |
 | 3D models | ❌ | ❌ | Dropped on read, not preserved on save |
 | Equations (OMML `m:oMath`) | ✅ | ✅ | #191; manual breaks (`m:brk`) and the settings' `m:mathPr` wrapping options (#326) |
-| Themes, font table, settings, compatibility mode | ✅ | ✅ | Embedded fonts (`w:embedRegular`) not read; attached template (`w:attachedTemplate` and its external relationship) and `w:linkStyles` round-trip (#377). The template path comes from the file, so opening never reads it: styles update from it only on an explicit Update Styles |
+| Themes, font table, settings, compatibility mode | ✅ | ✅ | Embedded fonts (`w:embedRegular`) not used for rendering, but the font table, its relationships and the embedded font parts are written back unchanged (#770); attached template (`w:attachedTemplate` and its external relationship) and `w:linkStyles` round-trip (#377). The template path comes from the file, so opening never reads it: styles update from it only on an explicit Update Styles |
 | Custom XML parts, document properties, bibliography sources | 🟡 | 🟡 | Custom XML stores reached from the package/main document preserve opaque data, properties and relationships; binding evaluation remains absent. Custom properties round-trip; bibliography model I/O remains separate (#532 open) |
 | Section text direction (`w:textDirection` in `w:sectPr`, §17.6.20) | ✅ | ✅ | `tbRl`, `btLr` (and `tbRlV`/`tbLrV`, read as `tbRl`); `lrTbV` and unknown values read as horizontal (#491) |
 | Ruby (`w:ruby`: `w:rubyPr`, `w:rt`, `w:rubyBase`) | ✅ | ✅ | #288; base and ruby text with their run formatting, alignment, sizes, raise, language |
@@ -166,6 +166,7 @@ raise readiness estimates. No Word-derived files are fixtures.
 | 2026-10-12 | trivial | ODT page size, orientation and margins read back from `styles.xml` on open, so they survive a save and reopen (#810) |
 | 2026-10-11 | trivial | Independent complex-script size, bold and italic inherit correctly through defaults and styles; explicit equal values survive; six synthetic multi-generation round-trip tests, including tracked formatting, added |
 | 2026-10-11 | minor | Opening files from the system: file associations and the default-app button (#295) |
+| 2026-10-12 | trivial | DOCX: a table of contents' entry links (Hyperlink-styled runs in hyperlinks inside a TOC field) import without the Hyperlink style, as Word draws them; measured in Word for Windows |
 | 2026-10-11 | trivial | `.doc`: inline and floating pictures (BLIP store, PNG/JPEG/DIB/TIFF/EMF/WMF), basic shapes, groups and text boxes read from OfficeArt drawings (#551); fidelity ~55% → ~60% |
 | 2026-10-11 | trivial | Word XML Document (Flat OPC) read and written, Word 2003 XML read (#548) |
 | 2026-10-11 | trivial | #534: DOCX indents in characters read and written; `.doc` first-line indents (`sprmPDxaLeft1`, its two-byte operand, and `sprmPDxaLeft1_80`), indents in characters (`sprmPDxc*`) and exact/at-least line spacing (LSPD) read correctly |
@@ -189,6 +190,7 @@ raise readiness estimates. No Word-derived files are fixtures.
 | 2026-10-10 | trivial | Right-to-left tables (`w:bidiVisual`) read and written (#362) |
 | 2026-10-10 | trivial | Drawing canvas (`wpc:wpc`) read and written (#344); group shapes row brought up to date (#267) |
 | 2026-10-11 | trivial | Spreadsheets (.xlsx/.xlsm/.ods) read as mail-merge recipient lists (#334) |
+| 2026-10-12 | trivial | Font table (`word/fontTable.xml`), its relationships and embedded fonts (`word/fonts/*`) written back unchanged (#770) |
 | 2026-10-12 | minor | Preserve opaque custom XML stores and related properties; bindings and control support remain separate |
 | 2026-10-11 | trivial | Native saves protect existing temporary-name entries and originals on pre-replacement failure; synthetic macOS evidence, explicit durability/platform limits; readiness unchanged |
 | 2026-10-11 | minor | Preserve imported TOC ranges independently of paragraph styles, with explicit evaluation limits |
