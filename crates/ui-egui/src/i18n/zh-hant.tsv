@@ -2060,3 +2060,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	系統未提供動畫設定，因此動畫效果保持開啟。
 	Region:	地區：
 	Automatic ({region})	自動（{region}）
+	Text of the nearest paragraph with a given style (running headers)	具有指定樣式的最近段落文字（書眉）
+	Style name:	樣式名稱：
+	Search from bottom of page to top	從頁面底部往頂端搜尋
+	Insert paragraph number	插入段落編號
+	Insert paragraph number in relative context	以相對內容插入段落編號
+	Insert paragraph number in full context	以完整內容插入段落編號
+	Suppress all non-delimiter characters	隱藏分隔字元以外的所有字元
+	Insert position (above or below)	插入位置（上方或下方）

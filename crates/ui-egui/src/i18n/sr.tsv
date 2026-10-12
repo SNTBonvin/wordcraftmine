@@ -2073,3 +2073,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Систем не пријављује подешавање анимације, па ефекти анимације остају укључени.
 	Region:	Регион:
 	Automatic ({region})	Аутоматски ({region})
+	Text of the nearest paragraph with a given style (running headers)	Текст најближег пасуса са задатим стилом (текућа заглавља)
+	Style name:	Назив стила:
+	Search from bottom of page to top	Претражи од дна странице ка врху
+	Insert paragraph number	Уметни број пасуса
+	Insert paragraph number in relative context	Уметни број пасуса у релативном контексту
+	Insert paragraph number in full context	Уметни број пасуса у пуном контексту
+	Suppress all non-delimiter characters	Изостави све знакове осим граничника
+	Insert position (above or below)	Уметни положај (изнад или испод)

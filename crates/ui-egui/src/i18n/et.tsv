@@ -2093,3 +2093,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Süsteem ei teata animatsiooniseadet, seega jäävad animatsiooniefektid sisse.
 	Region:	Piirkond:
 	Automatic ({region})	Automaatne ({region})
+	Text of the nearest paragraph with a given style (running headers)	Antud stiiliga lähima lõigu tekst (jooksvad päised)
+	Style name:	Stiili nimi:
+	Search from bottom of page to top	Otsi lehe lõpust alguse poole
+	Insert paragraph number	Lisa lõigu number
+	Insert paragraph number in relative context	Lisa lõigu number suhtelises kontekstis
+	Insert paragraph number in full context	Lisa lõigu number täielikus kontekstis
+	Suppress all non-delimiter characters	Jäta välja kõik märgid peale eraldajate
+	Insert position (above or below)	Lisa asukoht (ülal või all)

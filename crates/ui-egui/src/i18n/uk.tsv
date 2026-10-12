@@ -2071,3 +2071,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не повідомляє про налаштування анімації, тому ефекти анімації залишаються ввімкненими.
 	Region:	Регіон:
 	Automatic ({region})	Автоматично ({region})
+	Text of the nearest paragraph with a given style (running headers)	Текст найближчого абзацу із заданим стилем (живі колонтитули)
+	Style name:	Назва стилю:
+	Search from bottom of page to top	Шукати від кінця сторінки до початку
+	Insert paragraph number	Вставляти номер абзацу
+	Insert paragraph number in relative context	Вставляти номер абзацу у відносному контексті
+	Insert paragraph number in full context	Вставляти номер абзацу в повному контексті
+	Suppress all non-delimiter characters	Приховувати всі символи, крім роздільників
+	Insert position (above or below)	Вставляти положення (вище чи нижче)

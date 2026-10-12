@@ -2450,3 +2450,11 @@ preview	Title	Örnek
 	Your system doesn't report an animation setting, so animation effects stay on.	Sisteminiz bir animasyon ayarı bildirmiyor, bu nedenle animasyon efektleri açık kalır.
 	Region:	Bölge:
 	Automatic ({region})	Otomatik ({region})
+	Text of the nearest paragraph with a given style (running headers)	Belirli bir stile sahip en yakın paragrafın metni (değişken üstbilgiler)
+	Style name:	Stil adı:
+	Search from bottom of page to top	Sayfanın altından üstüne doğru ara
+	Insert paragraph number	Paragraf numarası ekle
+	Insert paragraph number in relative context	Paragraf numarasını göreli bağlamda ekle
+	Insert paragraph number in full context	Paragraf numarasını tam bağlamda ekle
+	Suppress all non-delimiter characters	Ayırıcı olmayan tüm karakterleri gizle
+	Insert position (above or below)	Konum ekle (yukarıda veya aşağıda)

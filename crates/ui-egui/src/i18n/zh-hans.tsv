@@ -2071,3 +2071,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	系统未提供动画设置，因此动画效果保持打开。
 	Region:	区域：
 	Automatic ({region})	自动（{region}）
+	Text of the nearest paragraph with a given style (running headers)	具有指定样式的最近段落的文本（书眉）
+	Style name:	样式名称：
+	Search from bottom of page to top	从页面底部向顶部搜索
+	Insert paragraph number	插入段落编号
+	Insert paragraph number in relative context	以相对上下文插入段落编号
+	Insert paragraph number in full context	以完整上下文插入段落编号
+	Suppress all non-delimiter characters	隐藏分隔符以外的所有字符
+	Insert position (above or below)	插入位置（上方或下方）

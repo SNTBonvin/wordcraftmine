@@ -2451,3 +2451,11 @@ preview	Title	Пример
 	Your system doesn't report an animation setting, so animation effects stay on.	Система не сообщает о настройке анимации, поэтому эффекты анимации остаются включёнными.
 	Region:	Регион:
 	Automatic ({region})	Автоматически ({region})
+	Text of the nearest paragraph with a given style (running headers)	Текст ближайшего абзаца с заданным стилем (живые колонтитулы)
+	Style name:	Имя стиля:
+	Search from bottom of page to top	Искать от конца страницы к началу
+	Insert paragraph number	Вставлять номер абзаца
+	Insert paragraph number in relative context	Вставлять номер абзаца в относительном контексте
+	Insert paragraph number in full context	Вставлять номер абзаца в полном контексте
+	Suppress all non-delimiter characters	Скрывать все символы, кроме разделителей
+	Insert position (above or below)	Вставлять положение (выше или ниже)

@@ -2059,3 +2059,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。
 	Region:	地域:
 	Automatic ({region})	自動 ({region})
+	Text of the nearest paragraph with a given style (running headers)	指定したスタイルを持つ最も近い段落の文字列 (柱)
+	Style name:	スタイル名:
+	Search from bottom of page to top	ページの下から上へ検索する
+	Insert paragraph number	段落番号を挿入する
+	Insert paragraph number in relative context	段落番号を相対的な形式で挿入する
+	Insert paragraph number in full context	段落番号を完全な形式で挿入する
+	Suppress all non-delimiter characters	区切り文字以外の文字をすべて非表示にする
+	Insert position (above or below)	位置 (上または下) を挿入する

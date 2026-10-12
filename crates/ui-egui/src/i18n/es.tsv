@@ -2099,3 +2099,11 @@
 	Your system doesn't report an animation setting, so animation effects stay on.	Tu sistema no indica ningún ajuste de animación, así que los efectos de animación siguen activados.
 	Region:	Región:
 	Automatic ({region})	Automático ({region})
+	Text of the nearest paragraph with a given style (running headers)	Texto del párrafo más cercano con un estilo dado (encabezados variables)
+	Style name:	Nombre del estilo:
+	Search from bottom of page to top	Buscar desde el final de la página hacia el principio
+	Insert paragraph number	Insertar número de párrafo
+	Insert paragraph number in relative context	Insertar número de párrafo en contexto relativo
+	Insert paragraph number in full context	Insertar número de párrafo en contexto completo
+	Suppress all non-delimiter characters	Suprimir todos los caracteres que no sean delimitadores
+	Insert position (above or below)	Insertar posición (encima o debajo)
