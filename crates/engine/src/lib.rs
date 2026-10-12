@@ -12,6 +12,7 @@ pub mod io;
 mod io_ext;
 pub mod keymap;
 pub mod math_gallery;
+pub mod print;
 pub mod ribbon;
 pub mod sample;
 mod session;
@@ -27,6 +28,7 @@ pub use ribbon::RibbonLayout;
 pub use session::{ColumnBlock, EditSnapshot, FindState, MathEdit, Prefs, Selection, Session, ViewState, set_system_locale};
 pub use wordcraft_doc as doc;
 pub use wordcraft_layout as layout;
+pub use wordcraft_proof as proof;
 pub use wordcraft_render as render;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
@@ -163,4 +165,8 @@ mod tests;
 #[cfg(test)]
 mod tests_bidi;
 #[cfg(test)]
+mod tests_fonts;
+#[cfg(test)]
 mod tests_typing;
+#[cfg(test)]
+mod tests_wordart;
