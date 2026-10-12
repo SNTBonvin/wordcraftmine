@@ -2032,6 +2032,41 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.block(4.5, 4.0, 9.5, 5.75, 0.5, a);
             pen.glyph_a(8.0, 13.0, 4.75, c, c);
         }
+        // Outlining tab: rows of an outline, and what the command does to the current one.
+        "outlinePromote" | "outlineDemote" => {
+            pen.rows(7.5, 14.5, &[3.0, 8.0, 13.0]);
+            if name == "outlinePromote" {
+                pen.arrow(5.25, 8.0, 1.5, 8.0, a);
+            } else {
+                pen.arrow(1.5, 8.0, 5.25, 8.0, a);
+            }
+        }
+        "outlineTop" | "outlineBody" => {
+            pen.rows(8.5, 14.5, &[3.0, 8.0, 13.0]);
+            let (deg, x0) = if name == "outlineTop" { (180.0, 1.5) } else { (0.0, 3.5) };
+            pen.head(x0, 8.0, deg, a);
+            pen.head(x0 + 3.0, 8.0, deg, a);
+        }
+        "outlineUp" | "outlineDown" => {
+            pen.rows(1.5, 8.5, &[3.0, 8.0, 13.0]);
+            if name == "outlineUp" {
+                pen.arrow(12.5, 14.0, 12.5, 2.0, a);
+            } else {
+                pen.arrow(12.5, 2.0, 12.5, 14.0, a);
+            }
+        }
+        "outlineExpand" | "outlineCollapse" => {
+            pen.disc(8.0, 8.0, 6.5);
+            if name == "outlineExpand" {
+                pen.plus(8.0, 8.0, a);
+            } else {
+                pen.acc(&[(6.0, 8.0), (10.0, 8.0)]);
+            }
+        }
+        "closeOutline" => {
+            pen.page_h(2.5, 1.0, 14.0);
+            pen.cross(8.25, 10.0, 2.0, red);
+        }
         "addins" => {
             pen.panel(1.5, 1.5, 6.5, 6.5, 1.0);
             pen.panel(9.5, 1.5, 14.5, 6.5, 1.0);
@@ -2389,6 +2424,15 @@ pub const NAMES: &[&str] = &[
     "ccRepeat",
     "designMode",
     "documentTemplate",
+    "outlinePromote",
+    "outlineDemote",
+    "outlineTop",
+    "outlineBody",
+    "outlineUp",
+    "outlineDown",
+    "outlineExpand",
+    "outlineCollapse",
+    "closeOutline",
 ];
 
 /// Names that are deliberately the same drawing as another (aliases of one command or one idea).
