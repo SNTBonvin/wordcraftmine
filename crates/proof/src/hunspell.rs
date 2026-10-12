@@ -27,8 +27,9 @@ pub fn set_dictionary_dir(dir: Option<PathBuf>) {
 }
 
 /// The LibreOffice extension directories a Hunspell dictionary name may live in: LibreOffice's
-/// IDs are per dictionary — Polish is `dict-pl`, Brazilian Portuguese `dict-pt-BR` — so both
-/// the primary-language folder and the dashed full name are tried.
+/// IDs are per dictionary — Polish is `dict-pl`, Brazilian Portuguese `dict-pt-BR`, European
+/// Portuguese `dict-pt-PT` — so both the primary-language folder and the dashed full name are
+/// tried.
 fn lo_ext_dirs(name: &str) -> Vec<String> {
     let primary = name.split(['-', '_']).next().unwrap_or(name);
     let dashed = name.replace('_', "-");
@@ -126,8 +127,14 @@ fn decode_latin2(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| if b < 0xa0 { char::from(b) } else { high.get(usize::from(b - 0xa0)).copied().unwrap_or('\u{fffd}') }).collect()
 }
 
+fn decode_latin1(bytes: &[u8]) -> String {
+    // ISO 8859-1 is the first 256 code points of Unicode.
+    bytes.iter().map(|&b| char::from(b)).collect()
+}
+
 /// Decode an `.aff`/`.dic` pair to UTF-8 from the encoding the `.aff`'s `SET` line names
-/// (UTF-8 when there is none; ISO 8859-2 is the other one Polish dictionaries use).
+/// (UTF-8 when there is none; ISO 8859-2 is the other one Polish dictionaries use, ISO 8859-1
+/// the one older Portuguese dictionaries use).
 pub fn decode(aff: &[u8], dic: &[u8]) -> Result<(String, String), String> {
     let head = String::from_utf8_lossy(aff.get(..aff.len().min(8192)).unwrap_or_default()).to_string();
     let set = head.lines().find_map(|l| l.trim_start_matches('\u{feff}').strip_prefix("SET ")).map(str::trim).unwrap_or("UTF-8").to_ascii_uppercase();
@@ -137,6 +144,7 @@ pub fn decode(aff: &[u8], dic: &[u8]) -> Result<(String, String), String> {
             Ok((text(aff, ".aff")?, text(dic, ".dic")?))
         }
         "ISO8859-2" | "ISO-8859-2" => Ok((decode_latin2(aff), decode_latin2(dic))),
+        "ISO8859-1" | "ISO-8859-1" => Ok((decode_latin1(aff), decode_latin1(dic))),
         other => Err(format!("unsupported encoding {other}")),
     }
 }
@@ -153,6 +161,8 @@ mod tests {
         assert_eq!(d, "2\nżółw\n");
         let (_, d) = decode("SET UTF-8\n".as_bytes(), "żółw".as_bytes()).unwrap();
         assert_eq!(d, "żółw");
+        let (_, d) = decode(b"SET ISO8859-1\n", b"1\nfacto\ncora\xe7\xe3o\n").unwrap();
+        assert_eq!(d, "1\nfacto\ncoração\n");
         assert!(decode(b"SET KOI8-R\n", b"").is_err());
         assert!(decode(b"SET UTF-8\n", b"\xff\xfe").is_err());
     }
@@ -163,6 +173,7 @@ mod tests {
         // `dict-pt-BR`, so both the primary-language folder and the dashed full name are tried.
         assert_eq!(super::lo_ext_dirs("pl_PL"), ["dict-pl", "dict-pl-PL"]);
         assert_eq!(super::lo_ext_dirs("pt_BR"), ["dict-pt", "dict-pt-BR"]);
+        assert_eq!(super::lo_ext_dirs("pt_PT"), ["dict-pt", "dict-pt-PT"]);
         assert_eq!(super::lo_ext_dirs("de-DE"), ["dict-de", "dict-de-DE"]);
         let dirs = search_dirs(Some(&super::lo_ext_dirs("pt_BR")));
         assert!(dirs.iter().any(|d| d.ends_with("dict-pt-BR")), "{dirs:?}");
