@@ -435,15 +435,30 @@ mod tests {
     }
 
     /// Every file a command reads or writes by path goes through `io` (`open_path_with`,
-    /// `save_path_with`, `read_file`, `write_file`), which check the roots. A command module that
-    /// reaches for `std::fs` itself would bypass them, so none may.
+    /// `save_path_with`, `read_file`, `write_file`), which check the roots. Engine code that
+    /// reaches for `std::fs` itself would bypass them, so none may: every file under `src/`
+    /// (commands, `print.rs`, `session.rs`…) except `io.rs` and this module, and the test files.
     #[test]
     fn commands_do_not_touch_the_file_system_themselves() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd");
+        fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    walk(&path, files);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    files.push(path);
+                }
+            }
+        }
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = vec![];
+        walk(&src, &mut files);
+        assert!(files.iter().any(|f| f.ends_with("print.rs")) && files.iter().any(|f| f.ends_with("cmd/file.rs")), "{files:?}");
         let mut offenders = vec![];
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_none_or(|e| e != "rs") {
+        for path in files {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // `io` and this module are the checked gateway; `tests*.rs` are test-only modules.
+            if path.parent() == Some(src.as_path()) && (name == "io.rs" || name == "file_access.rs" || name.starts_with("tests")) {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();
@@ -451,7 +466,8 @@ mod tests {
             let code = text.split("#[cfg(test)]").next().unwrap_or("");
             for (n, line) in code.lines().enumerate() {
                 let line = line.trim_start();
-                if !line.starts_with("//") && (line.contains("std::fs") || line.contains("File::open") || line.contains("File::create")) {
+                let touches = ["std::fs", "File::open", "File::create", "OpenOptions"].iter().any(|w| line.contains(w));
+                if !line.starts_with("//") && touches {
                     offenders.push(format!("{}:{}: {line}", path.display(), n + 1));
                 }
             }

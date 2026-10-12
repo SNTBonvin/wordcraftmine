@@ -137,6 +137,10 @@ fn saves_and_exports_go_only_into_the_write_root() {
     assert!(base.join("out/page.png").is_file());
     let (error, text) = run(&mut server, "file.exportPdf", json!({"path": s(&base.join("out/two"))}));
     assert!(!error, "{text}");
+    // Printing to a PDF (#641) writes a file too.
+    let (error, text) = run(&mut server, "file.printPdf", json!({"path": s(&base.join("out/printed"))}));
+    assert!(!error, "{text}");
+    assert!(base.join("out/printed.pdf").is_file());
 
     refused(&mut server, "save_document", json!({"path": s(&base.join("in/doc.docx"))}), "outside the write root");
     refused(&mut server, "save_document", json!({"path": s(&base.join("outside/doc.html"))}), "outside the write root");
@@ -152,6 +156,8 @@ fn saves_and_exports_go_only_into_the_write_root() {
     for (command, params) in [
         ("file.saveAs", json!({"path": s(&base.join("outside/x.docx"))})),
         ("file.exportPdf", json!({"path": s(&base.join("outside/x.pdf"))})),
+        ("file.printPdf", json!({"path": s(&base.join("outside/printed.pdf"))})),
+        ("file.printPdf", json!({"path": format!("{}{sep}..{sep}outside{sep}up", s(&base.join("out")))})),
         ("file.exportPng", json!({"path": s(&base.join("outside/x.png"))})),
         ("file.saveTemplate", json!({"path": s(&base.join("outside/x.dotx"))})),
         ("mailings.finish", json!({"path": s(&base.join("outside/merged.docx"))})),
