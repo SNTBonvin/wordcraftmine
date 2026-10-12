@@ -4506,7 +4506,7 @@ fn text_after_a_column_break_takes_the_new_column_s_width() {
 /// ends with a page break keeps its mark with the break (nothing of it goes to the new page) and the
 /// next paragraph gets no space before there; a paragraph that starts with a page break starts on
 /// the new page with its space before; a page break before keeps the space before in compatibility
-/// modes up to 14 and drops it in mode 15.
+/// modes up to 14 (less the previous paragraph's space after) and drops it in mode 15.
 #[test]
 fn space_before_at_the_top_of_a_page_like_word() {
     let para = |text: &str, before: f32, pbb: bool| {
@@ -4542,6 +4542,15 @@ fn space_before_at_the_top_of_a_page_like_word() {
     let (_, kept) = probe_top(vec![para("first", 0.0, false), para("PROBE", 24.0, true)], 14);
     let (_, dropped) = probe_top(vec![para("first", 0.0, false), para("PROBE", 24.0, true)], 15);
     assert!((kept - plain_top - 24.0).abs() < 0.05 && (dropped - plain_top).abs() < 0.05, "{kept} {dropped} {plain_top}");
+    // After a page break before (mode 14) the previous paragraph's space after comes off: 24 - 10.
+    let mut first = wordcraft_doc::Paragraph::with_text("first", Default::default());
+    first.props = ParaProps { space_before: Some(0.0), space_after: Some(10.0), ..Default::default() };
+    let (_, top) = probe_top(vec![wordcraft_doc::para_block(first.clone()), para("PROBE", 24.0, true)], 14);
+    assert!((top - plain_top - 14.0).abs() < 0.05, "{top} vs {}", plain_top + 14.0);
+    // More after than before: nothing left.
+    first.props.space_after = Some(30.0);
+    let (_, top) = probe_top(vec![wordcraft_doc::para_block(first), para("PROBE", 24.0, true)], 14);
+    assert!((top - plain_top).abs() < 0.05, "{top} vs {plain_top}");
     // The caret can still reach the end of a paragraph whose mark stayed with its page break.
     let mut d = Document::new();
     d.body = vec![para(&format!("first{brk}"), 0.0, false), para("next", 0.0, false)];

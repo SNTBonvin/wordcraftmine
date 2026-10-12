@@ -2638,12 +2638,20 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     }
     // Contextual spacing: no space between paragraphs of the same style when either asks for it.
     let mut before = pl.rp.space_before;
+    let prev_para = pb.prev.clone();
     // At the top of a page, measured in Word for Windows: no space before after a paragraph that
     // ended with a page break, nor (from Word 2013's layout, compatibility mode 15) for a page
     // break before; a section break or, in older modes, a page break before keeps it.
     let after_break_mark = std::mem::take(&mut pb.after_break_mark);
     if pb.at_top() && (after_break_mark || (broke_before && ctx.doc.settings.compat_mode >= 15)) {
         before = 0.0;
+    } else if pb.at_top()
+        && let Some((_, _, after)) = &prev_para
+    {
+        // After a page break before or a section break the space between the paragraphs is
+        // still counted as one: the previous paragraph's space after (left on its page) comes
+        // off the space before here (Word: 24 pt before after 10 pt after leaves 14 pt).
+        before = (before - after.max(0.0)).max(0.0);
     }
     if let Some((style, ctxl, after)) = pb.prev.take()
         && style == pl.rp.style
