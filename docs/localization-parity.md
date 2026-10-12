@@ -19,7 +19,7 @@ other ~18 languages Word ships, plus native-speaker review (human).
 ## What WordCraft ships (measured)
 
 - **13 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru` and Italian `it` (#594). Catalogs have 1,997–2,359 entries
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru` and Italian `it` (#594). Catalogs have 2,021–2,399 entries
   each. A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each

@@ -2066,3 +2066,356 @@
 	Turkish	Turco
 	Ukrainian	Ucraino
 	{language} is now the document's default language.	{language} è ora la lingua predefinita del documento.
+
+# Equation gallery, built-in styles, paper sizes, animation settings and the file browser added on main
+	1×2 Empty Matrix	Matrice vuota 1×2
+	1×3 Empty Matrix	Matrice vuota 1×3
+	2×1 Empty Matrix	Matrice vuota 2×1
+	2×2 Determinant	Determinante 2×2
+	2×2 Empty Matrix	Matrice vuota 2×2
+	2×2 Identity Matrix	Matrice identità 2×2
+	2×2 Identity Matrix (sparse)	Matrice identità 2×2 (sparsa)
+	2×2 Matrix in Brackets	Matrice 2×2 tra parentesi quadre
+	2×2 Matrix in Double Bars	Matrice 2×2 tra doppie barre
+	2×2 Matrix in Parentheses	Matrice 2×2 tra parentesi tonde
+	2×3 Empty Matrix	Matrice vuota 2×3
+	3×1 Empty Matrix	Matrice vuota 3×1
+	3×2 Empty Matrix	Matrice vuota 3×2
+	3×3 Empty Matrix	Matrice vuota 3×3
+	3×3 Identity Matrix	Matrice identità 3×3
+	3×3 Identity Matrix (sparse)	Matrice identità 3×3 (sparsa)
+	A xor B	A xor B
+	ASAP	QUANTO PRIMA
+	AaBbCcDd	AaBbCcDd
+	Absolute value cases	Casi del valore assoluto
+	Accents	Accenti
+	Acute	Accento acuto
+	All - Linear	Tutto - Lineare
+	All - Professional	Tutto - Professionale
+	All files	Tutti i file
+	Angle Brackets	Parentesi angolari
+	Angle Brackets with Separator	Parentesi angolari con separatore
+	Angle Brackets with Two Separators	Parentesi angolari con due separatori
+	Animate the caret (it glides and fades)	Anima il cursore (scorre e sfuma)
+	Animation	Animazione
+	Animation effects:	Effetti di animazione:
+	Annotation Reference	Rimando commento
+	Annotation Subject	Oggetto commento
+	Annotation Text	Testo commento
+	B4 (JIS)   10.12" × 14.33"	B4 (JIS)   10,12" × 14,33"
+	B5 (JIS)   7.17" × 10.12"	B5 (JIS)   7,17" × 10,12"
+	Baseline Dots	Puntini sulla linea di base
+	Basic Math	Matematica di base
+	Binomial Coefficient	Coefficiente binomiale
+	Binomial Coefficient (angle)	Coefficiente binomiale (angolare)
+	Binomial Coefficient with Angle Brackets	Coefficiente binomiale con parentesi angolari
+	Body text in a short paragraph to show spacing.	Testo del corpo in un breve paragrafo per mostrare la spaziatura.
+	Book Title	Titolo del libro
+	Boxed Formula	Formula riquadrata
+	Boxed Formula (example)	Formula riquadrata (esempio)
+	Boxed Formulas	Formule riquadrate
+	Braces	Parentesi graffe
+	Braces with Separator	Parentesi graffe con separatore
+	Brackets	Parentesi quadre
+	Brackets with Separators	Parentesi con separatori
+	Breve	Breve
+	Browse in WordCraft…	Sfoglia in WordCraft…
+	CONFIDENTIAL	RISERVATO
+	Cases (Three Conditions)	Casi (tre condizioni)
+	Cases (Two Conditions)	Casi (due condizioni)
+	Cases and Stacks	Casi e pile
+	Ceiling	Parte intera superiore
+	Centered as Group	Centrato come gruppo
+	Change in y over change in x	Variazione di y su variazione di x
+	Check	Pipa
+	Circled Dot	Punto cerchiato
+	Circled Plus	Più cerchiato
+	Circled Times	Per cerchiato
+	Colon Equal	Due punti uguale
+	Common Accent Objects	Oggetti accento comuni
+	Common Brackets	Parentesi comuni
+	Common Fractions	Frazioni comuni
+	Common Functions	Funzioni comuni
+	Common Large Operators	Operatori grandi comuni
+	Common Operator Structures	Strutture di operatori comuni
+	Common Operators	Operatori comuni
+	Common Radicals	Radicali comuni
+	Common Subscripts and Superscripts	Pedici e apici comuni
+	Contour Integral	Integrale di contorno
+	Contour Integral with Limits	Integrale di contorno con limiti
+	Contour Integral with Stacked Limits	Integrale di contorno con limiti sovrapposti
+	Contour Integrals	Integrali di contorno
+	Coproduct	Coprodotto
+	Coproduct with Limits	Coprodotto con limiti
+	Coproduct with Lower Limit	Coprodotto con limite inferiore
+	Coproduct with Subscript-Superscript Limits	Coprodotto con limiti a pedice e apice
+	Cosecant Function	Funzione cosecante
+	Cosine 2x	Coseno di 2x
+	Cosine Function	Funzione coseno
+	Cotangent Function	Funzione cotangente
+	Cube Root	Radice cubica
+	Current - Linear	Corrente - Lineare
+	Current - Professional	Corrente - Professionale
+	DO NOT COPY	NON COPIARE
+	DRAFT	BOZZA
+	Default Paragraph Font	Carattere predefinito del paragrafo
+	Delta Equal To	Delta uguale a
+	Delta over arrow	Delta sopra la freccia
+	Diagonal Dots	Puntini diagonali
+	Differential	Differenziale
+	Differential theta	Differenziale di theta
+	Differential x	Differenziale di x
+	Differential y	Differenziale di y
+	Differentials	Differenziali
+	Documents	Documenti
+	Dot	Punto
+	Dots	Puntini
+	Double Bar	Doppia barra
+	Double Dot	Due punti sopra
+	Double Integral	Integrale doppio
+	Double Integral with Limits	Integrale doppio con limiti
+	Double Integral with Stacked Limits	Integrale doppio con limiti sovrapposti
+	Double Left Arrow with Text Above	Doppia freccia a sinistra con testo sopra
+	Double Left Arrow with Text Below	Doppia freccia a sinistra con testo sotto
+	Double Left Right Arrow with Text Above	Doppia freccia sinistra-destra con testo sopra
+	Double Left Right Arrow with Text Below	Doppia freccia sinistra-destra con testo sotto
+	Double Right Arrow with Text Above	Doppia freccia a destra con testo sopra
+	Double Right Arrow with Text Below	Doppia freccia a destra con testo sotto
+	Double Square Brackets	Doppie parentesi quadre
+	Double Vertical Bars	Doppie barre verticali
+	Double summation	Sommatoria doppia
+	Emphasis	Enfasi
+	Empty Matrices	Matrici vuote
+	Endnote Reference	Rimando nota di chiusura
+	Endnote Text	Testo nota di chiusura
+	Envelope #10   4.12" × 9.50"	Busta n. 10   4,12" × 9,50"
+	Envelope Address	Indirizzo busta
+	Envelope DL   4.33" × 8.66"	Busta DL   4,33" × 8,66"
+	Envelope Return	Mittente busta
+	Equal Equal	Uguale uguale
+	Equal by Definition	Uguale per definizione
+	Executive   7.25" × 10.50"	Executive   7,25" × 10,50"
+	Exponential	Esponenziale
+	File name:	Nome file:
+	Floor	Parte intera inferiore
+	Footnote Reference	Rimando nota a piè di pagina
+	Footnote Text	Testo nota a piè di pagina
+	Functions	Funzioni
+	Geometry	Geometria
+	Grave	Accento grave
+	Greek Letters	Lettere greche
+	Grid Table 1 Light	Tabella griglia 1 chiara
+	Grid Table 4 – Blue	Tabella griglia 4 – Blu
+	Grid Table 4 – Green	Tabella griglia 4 – Verde
+	Grid Table 4 – Orange	Tabella griglia 4 – Arancione
+	Grid Table 4 – Purple	Tabella griglia 4 – Viola
+	Grouping Character Above	Carattere di raggruppamento sopra
+	Grouping Character Below	Carattere di raggruppamento sotto
+	Hat	Cappello
+	Home folder	Cartella home
+	Hyperbolic Cosecant Function	Funzione cosecante iperbolica
+	Hyperbolic Cosine Function	Funzione coseno iperbolico
+	Hyperbolic Cotangent Function	Funzione cotangente iperbolica
+	Hyperbolic Functions	Funzioni iperboliche
+	Hyperbolic Secant Function	Funzione secante iperbolica
+	Hyperbolic Sine Function	Funzione seno iperbolico
+	Hyperbolic Tangent Function	Funzione tangente iperbolica
+	Hyperlink	Collegamento ipertestuale
+	Hypotenuse	Ipotenusa
+	Identity Matrices	Matrici identità
+	Index Heading	Intestazione indice
+	Index {n}	Indice {n}
+	Integral with Limits	Integrale con limiti
+	Integral with Stacked Limits	Integrale con limiti sovrapposti
+	Integrals	Integrali
+	Intense Emphasis	Enfasi intensa
+	Intense Quote	Citazione intensa
+	Intense Reference	Riferimento intenso
+	Intersection	Intersezione
+	Intersection with Limits	Intersezione con limiti
+	Intersection with Lower Limit	Intersezione con limite inferiore
+	Intersection with Subscript-Superscript Limits	Intersezione con limiti a pedice e apice
+	Inverse Cosecant Function	Funzione cosecante inversa
+	Inverse Cosine Function	Funzione coseno inverso
+	Inverse Cotangent Function	Funzione cotangente inversa
+	Inverse Functions	Funzioni inverse
+	Inverse Hyperbolic Cosecant Function	Funzione cosecante iperbolica inversa
+	Inverse Hyperbolic Cosine Function	Funzione coseno iperbolico inverso
+	Inverse Hyperbolic Cotangent Function	Funzione cotangente iperbolica inversa
+	Inverse Hyperbolic Functions	Funzioni iperboliche inverse
+	Inverse Hyperbolic Secant Function	Funzione secante iperbolica inversa
+	Inverse Hyperbolic Sine Function	Funzione seno iperbolico inverso
+	Inverse Hyperbolic Tangent Function	Funzione tangente iperbolica inversa
+	Inverse Secant Function	Funzione secante inversa
+	Inverse Sine Function	Funzione seno inverso
+	Inverse Tangent Function	Funzione tangente inversa
+	Left Arrow with Text Above	Freccia a sinistra con testo sopra
+	Left Arrow with Text Below	Freccia a sinistra con testo sotto
+	Left Bracket Twice	Parentesi quadra sinistra due volte
+	Left Right Arrow Above	Freccia sinistra-destra sopra
+	Left Right Arrow with Text Above	Freccia sinistra-destra con testo sopra
+	Left Right Arrow with Text Below	Freccia sinistra-destra con testo sotto
+	Left Subscript-Superscript	Pedice e apice a sinistra
+	Leftwards Arrow Above	Freccia verso sinistra sopra
+	Leftwards Harpoon Above	Arpione verso sinistra sopra
+	Legal   8.50" × 14.00"	Legale   8,50" × 14,00"
+	Letter   8.50" × 11.00"	Lettera   8,50" × 11,00"
+	Letter-Like Symbols	Simboli simili a lettere
+	Limit	Limite
+	Limit Example	Esempio di limite
+	Line Number	Numero di riga
+	Linear Fraction	Frazione lineare
+	List Paragraph	Paragrafo elenco
+	List Table 3 – Blue	Tabella elenco 3 – Blu
+	List Table 3 – Green	Tabella elenco 3 – Verde
+	List Table 3 – Orange	Tabella elenco 3 – Arancione
+	List Table 3 – Purple	Tabella elenco 3 – Viola
+	Logarithm	Logaritmo
+	Logarithm with Base	Logaritmo con base
+	Logical AND	AND logico
+	Logical AND with Limits	AND logico con limiti
+	Logical OR	OR logico
+	Logical OR with Limits	OR logico con limiti
+	Matrices with Brackets	Matrici tra parentesi
+	Maximum	Massimo
+	Maximum Example	Esempio di massimo
+	Measured By	Misurato da
+	Midline Dots	Puntini centrati
+	Minimum	Minimo
+	Minus Equal	Meno uguale
+	Natural Logarithm	Logaritmo naturale
+	Negated Relations	Relazioni negate
+	No Spacing	Nessuna spaziatura
+	Normal	Normale
+	Normal Indent	Rientro normale
+	Normal Table	Tabella normale
+	Off	Disattivato
+	On	Attivato
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	Attivato: il cursore scorre nella nuova posizione quando scrivi o usi i tasti freccia, e il lampeggio sfuma. Disattivato: salta e lampeggia acceso e spento.
+	One half	Un mezzo
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	Apri un file con il browser di WordCraft quando la finestra di dialogo dei file del sistema non compare.
+	Operator Structures	Strutture di operatori
+	Operators	Operatori
+	Other Large Operators	Altri operatori grandi
+	Outward Brackets	Parentesi rivolte all'esterno
+	Overbar	Barra sopra
+	Overbars and Underbars	Barre sopra e sotto
+	Overbrace	Graffa sopra
+	Parentheses	Parentesi tonde
+	Parentheses with Separator	Parentesi tonde con separatore
+	Partial Differential	Differenziale parziale
+	Pi Over 2	Pi su 2
+	Plain Table 1	Tabella semplice 1
+	Plus Equal	Più uguale
+	Product	Produttoria
+	Product of A	Produttoria di A
+	Product with Limits	Produttoria con limiti
+	Product with Lower Limit	Produttoria con limite inferiore
+	Product with Subscript-Superscript Limits	Produttoria con limiti a pedice e apice
+	Products and Coproducts	Produttorie e coprodotti
+	Quadratic Root	Radice dell'equazione di secondo grado
+	Quote	Citazione
+	Radical with Degree	Radicale con indice
+	Radicals	Radicali
+	Recipient lists	Elenchi destinatari
+	Resize Table by Dragging	Ridimensiona la tabella trascinando
+	Right Arrow with Text Above	Freccia a destra con testo sopra
+	Right Arrow with Text Below	Freccia a destra con testo sotto
+	Right Bracket Twice	Parentesi quadra destra due volte
+	Rightwards Arrow Above	Freccia verso destra sopra
+	Rightwards Harpoon Above	Arpione verso destra sopra
+	SAMPLE	ESEMPIO
+	Scripts	Indici
+	Secant Function	Funzione secante
+	Showing the first {count} items.	Sono mostrati i primi {count} elementi.
+	Sine Function	Funzione seno
+	Sine theta	Seno di theta
+	Single Brackets	Parentesi singole
+	Single Left Angle	Parentesi angolare sinistra singola
+	Single Left Bar	Barra sinistra singola
+	Single Left Brace	Parentesi graffa sinistra singola
+	Single Left Bracket	Parentesi quadra sinistra singola
+	Single Left Parenthesis	Parentesi tonda sinistra singola
+	Single Right Brace	Parentesi graffa destra singola
+	Single Right Bracket	Parentesi quadra destra singola
+	Single Right Parenthesis	Parentesi tonda destra singola
+	Skewed Fraction	Frazione obliqua
+	Small change	Piccola variazione
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	Scorrimento e zoom fluidi, e menu e pulsanti che compaiono in dissolvenza. Disattivato mostra ogni modifica subito.
+	Sparse Matrices	Matrici sparse
+	Square Root	Radice quadrata
+	Square Root with Degree	Radice con indice
+	Square Union	Unione quadrata
+	Stack Object	Oggetto pila
+	Stack Object (Three)	Oggetto pila (tre)
+	Stacked Fraction	Frazione in colonna
+	Stacked, no bar	In colonna, senza linea
+	Statement   5.50" × 8.50"	Statement   5,50" × 8,50"
+	Strong	Forte
+	Subscript-Superscript	Pedice-apice
+	Subscripts and Superscripts	Pedici e apici
+	Subtitle	Sottotitolo
+	Subtle Emphasis	Enfasi delicata
+	Subtle Reference	Riferimento delicato
+	Summation	Sommatoria
+	Summation from 0 to n	Sommatoria da 0 a n
+	Summation over binomials	Sommatoria di binomiali
+	Summation with Limits	Sommatoria con limiti
+	Summation with Lower Limit	Sommatoria con limite inferiore
+	Summation with Subscript Limit	Sommatoria con limite a pedice
+	Summation with Subscript-Superscript Limits	Sommatoria con limiti a pedice e apice
+	Summations	Sommatorie
+	Surface Integral	Integrale di superficie
+	Surface Integral with Limits	Integrale di superficie con limiti
+	Surface Integral with Stacked Limits	Integrale di superficie con limiti sovrapposti
+	TOA Heading	Titolo indice delle fonti
+	TOC Heading	Titolo sommario
+	TOC {n}	Sommario {n}
+	Table Grid	Griglia tabella
+	Table of Figures	Indice delle figure
+	Tabloid   11.00" × 17.00"	Tabloid   11,00" × 17,00"
+	Tangent Function	Funzione tangente
+	Tangent formula	Formula della tangente
+	Text over Colon Equal	Testo sopra due punti uguale
+	Text over Equal	Testo sopra uguale
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	La finestra di dialogo dei file del sistema non è disponibile, quindi WordCraft mostra la sua. Per avere quella del sistema, installa un portale di selezione dei file (come xdg-desktop-portal-gtk) o zenity.
+	This folder can't be read: {error}	Impossibile leggere questa cartella: {error}
+	Tilde	Tilde
+	Trigonometric Functions	Funzioni trigonometriche
+	Triple Dot	Tre punti sopra
+	Triple Integral	Integrale triplo
+	Triple Integral with Limits	Integrale triplo con limiti
+	Triple Integral with Stacked Limits	Integrale triplo con limiti sovrapposti
+	URGENT	URGENTE
+	Underbar	Barra sotto
+	Underbrace	Graffa sotto
+	Union	Unione
+	Union of intersections	Unione di intersezioni
+	Union with Limits	Unione con limiti
+	Union with Lower Limit	Unione con limite inferiore
+	Union with Plus	Unione con più
+	Union with Subscript-Superscript Limits	Unione con limiti a pedice e apice
+	Unions and Intersections	Unioni e intersezioni
+	Up Diagonal Dots	Puntini diagonali ascendenti
+	Up one level	Livello superiore
+	Vector A	Vettore A
+	Vector AB	Vettore AB
+	Vertical Bars	Barre verticali
+	Vertical Dots	Puntini verticali
+	Visual effects	Effetti visivi
+	Volume Integral	Integrale di volume
+	Volume Integral with Limits	Integrale di volume con limiti
+	Volume Integral with Stacked Limits	Integrale di volume con limiti sovrapposti
+	Word document	Documento Word
+	Yields	Produce
+	Your system doesn't report an animation setting, so animation effects stay on.	Il sistema non indica un'impostazione per le animazioni, quindi gli effetti di animazione restano attivi.
+	Your system has animation effects turned off.	Nel sistema gli effetti di animazione sono disattivati.
+	Your system has animation effects turned on.	Nel sistema gli effetti di animazione sono attivati.
+	n×n Identity Matrix	Matrice identità n×n
+	n×n Matrix	Matrice n×n
+	tOGGLE cASE	iNVERTI mAIUSCOLE
+	x bar	x segnato
+	{name} already exists. Choose Save again to replace it.	{name} esiste già. Scegli di nuovo Salva per sostituirlo.
+	{name} wasn't found.	{name} non è stato trovato.
+	✓ None	✓ Nessuno
+preview	Title	Esempio
