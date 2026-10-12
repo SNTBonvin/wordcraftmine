@@ -3831,13 +3831,46 @@ fn drag_after_multi_click_extends_by_units() {
     let before = text(&s);
     for v in [
         json!({}),
-        json!({"unit": "line", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
+        json!({"unit": "page", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
         json!({"unit": "word", "start": Pos::body(99, 999), "end": Pos::body(0, 0), "pos": Pos::body(77, usize::MAX)}),
         json!({"unit": "word", "start": {"block": 0, "off": 9_999}, "end": {"block": 0, "off": 1}, "pos": {"block": 5}}),
     ] {
         let _ = s.run("select.dragUnit", &v);
     }
     assert_eq!(text(&s), before);
+}
+
+/// #856: a click in the selection bar selects the whole line (its trailing space; the
+/// paragraph mark on the last line); dragging extends by lines; triple-click takes the document.
+#[test]
+fn selection_bar_selects_and_drags_by_lines() {
+    let mut s = s();
+    let long = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+    run(&mut s, "text.insert", json!({"text": format!("{}\rShort one.\rLast.", long.trim_end())}));
+    let l = s.layout();
+    let c = l.caret(&Pos::body(0, 0)).unwrap();
+    let line2 = l.selection_bar_at(c.page, 20.0, c.top + c.height * 1.5).unwrap();
+    assert!(line2.off > 0);
+    run(&mut s, "select.line", json!({"pos": line2.clone()}));
+    let (a, b) = s.sel.ordered();
+    assert_eq!(a, line2);
+    assert_eq!(b.path, wordcraft_doc::Path::top(0));
+    assert!(b.off > a.off && b.off < long.trim_end().len());
+    assert_eq!(s.doc.para_at(&b).unwrap().text.as_bytes()[b.off - 1], b' ', "the trailing space is in");
+    // The last line of a paragraph takes its mark.
+    run(&mut s, "select.line", json!({"pos": Pos::body(1, 3)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(1, 0), Pos::body(2, 0)));
+    // Drag from the "Short one." line down to "Last." and back up into the first paragraph.
+    let (a, b) = s.sel.ordered();
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": Pos::body(2, 0)}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(1, 0), Pos::body(2, 5)));
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": line2.clone()}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(2, 0), line2));
+    run(&mut s, "select.dragUnit", json!({"unit": "document", "start": a.clone(), "end": b.clone(), "pos": Pos::body(0, 0)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(0, 0), Pos::body(2, 5)));
+    // Junk positions never panic.
+    let _ = s.run("select.line", &json!({"pos": {"block": 99, "off": usize::MAX}}));
+    let _ = s.run("select.line", &json!({"pos": 5}));
 }
 
 /// Home › Font › Enclose Characters (#297): the selection becomes an `EQ \o\ac` field, saved the
@@ -4799,4 +4832,55 @@ fn find_replace_and_go_to_open_like_word() {
     run(&mut s, "edit.goto", json!({"pageBy": -99}));
     assert_eq!(page(&mut s), 1, "before the start: the first page");
     assert!(s.run("edit.goto", &json!({"pageBy": i64::MIN})).is_ok(), "hostile numbers never panic");
+}
+
+/// #802: Insert › Picture takes Windows Metafiles (and EMF) at their own frame size, stored under
+/// their own extension so a save writes them as WMF/EMF parts.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn insert_picture_takes_a_windows_metafile() {
+    use wordcraft_doc::para::InlineObject;
+    // One WMF record: size in words, function, parameters.
+    let rec = |func: u16, params: &[i16]| {
+        let mut v = ((3 + params.len()) as u32).to_le_bytes().to_vec();
+        v.extend(func.to_le_bytes());
+        params.iter().for_each(|p| v.extend(p.to_le_bytes()));
+        v
+    };
+    // A placeable WMF, 1440 × 720 units at 1440 per inch (72 × 36 points), drawing a rectangle.
+    let body = [rec(0x041B, &[720, 1440, 0, 0]), rec(0, &[])].concat();
+    let mut wmf = 0x9AC6_CDD7u32.to_le_bytes().to_vec();
+    for v in [0i16, 0, 0, 1440, 720] {
+        wmf.extend(v.to_le_bytes());
+    }
+    wmf.extend(1440u16.to_le_bytes());
+    wmf.extend([0u8; 6]);
+    let words = ((wmf.len() + 18 + body.len()) / 2) as u32;
+    for v in [1u16, 9, 0x300] {
+        wmf.extend(v.to_le_bytes());
+    }
+    wmf.extend(words.to_le_bytes());
+    wmf.extend(0u16.to_le_bytes());
+    wmf.extend(5u32.to_le_bytes());
+    wmf.extend(0u16.to_le_bytes());
+    wmf.extend(body);
+    let dir = scratch_dir("insert-wmf");
+    let path = dir.join("logo.wmf");
+    std::fs::write(&path, &wmf).unwrap();
+
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    let r = run(&mut s, "insert.picture", json!({"path": path.to_string_lossy()}));
+    assert_eq!((r["width"].as_f64(), r["height"].as_f64()), (Some(72.0), Some(36.0)), "{r}");
+    let key = r["media"].as_str().unwrap().to_string();
+    assert!(key.ends_with(".wmf"), "{key}");
+    assert_eq!(s.doc.media.get(&key).map(|b| b.len()), Some(wmf.len()));
+    let mut placed = false;
+    s.doc.objects_in_reading_order(&mut |o| placed |= matches!(o, InlineObject::Image { media, .. } if *media == key));
+    assert!(placed, "the picture is in the text");
+
+    // Neither a picture nor a metafile: the same error as before, naming the formats.
+    std::fs::write(&path, b"not a picture").unwrap();
+    let err = s.run("insert.picture", &json!({"path": path.to_string_lossy()})).unwrap_err();
+    assert!(err.to_string().contains("WMF, EMF"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
