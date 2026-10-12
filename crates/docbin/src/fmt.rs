@@ -1,7 +1,7 @@
 //! Sprms → model properties, and style-chain resolution.
 
 use wordcraft_doc::Rgb;
-use wordcraft_doc::props::{Align, CharProps, Highlight, LineSpacing, ParaProps, TextColor, Underline, VertAlign};
+use wordcraft_doc::props::{Align, CharProps, Highlight, LineSpacing, ParaProps, TabAlign, TabLeader, TabStop, TextColor, Underline, VertAlign};
 use wordcraft_doc::styles::{Style, StyleKind, StyleSheet};
 
 use crate::sprm::{self, Prl, Toggle};
@@ -42,6 +42,11 @@ const P_KEEP: u16 = 0x2405; // keep lines together
 const P_KEEP_FOLLOW: u16 = 0x2406; // keep with next
 const P_PAGE_BREAK_BEFORE: u16 = 0x2407;
 const P_OUTLVL: u16 = 0x2640;
+/// `sprmPChgTabsPapx`: custom tab stops of a PAPX or style ([MS-DOC] §2.6.2, PChgTabsPapxOperand).
+const P_CHG_TABS_PAPX: u16 = 0xC60D;
+/// `sprmPChgTabs`: the piece-table form, whose deletes also carry a rgdxaClose i16
+/// ([MS-DOC] §2.6.2, PChgTabsOperand).
+const P_CHG_TABS: u16 = 0xC615;
 
 /// Word's 16-colour `Ico` palette ([MS-DOC] §2.9.135), 0 = automatic.
 const ICO: [Rgb; 17] = [
@@ -272,7 +277,87 @@ pub(crate) fn apply_para(p: &mut ParaProps, prl: &Prl) {
                 p.outline_level = Some(l.min(8));
             }
         }
+        P_CHG_TABS_PAPX | P_CHG_TABS => apply_tabs(p, prl.op, prl.operand),
         _ => {}
+    }
+}
+
+/// Most tab stops one list keeps: deletes (as Clear stops) plus added stops, twice over.
+const MAX_TABS: usize = 128;
+/// Positions live inside ±22", Word's own limit for tab stops.
+const MAX_TAB_POS: f32 = 1584.0;
+/// Two stops within half a point are the same stop, as the doc model merges them.
+const TAB_SAME: f32 = 0.5;
+
+/// Apply a tab-change sprm to `p.tabs`. Deleted positions drop stops already in the list
+/// and become `TabAlign::Clear` stops, the model's mechanism for removing inherited
+/// (style) stops at the same position; added stops replace same-position entries. Junk is
+/// dropped, positions clamped, the list bounded — a hostile operand only loses tabs.
+fn apply_tabs(p: &mut ParaProps, op: u16, operand: &[u8]) {
+    let (dels, adds) = tab_changes(op, operand);
+    let mut list = p.tabs.take().unwrap_or_default();
+    let pt = |tw: i16| (f32::from(tw) / 20.0).clamp(-MAX_TAB_POS, MAX_TAB_POS);
+    for d in dels {
+        let pos = pt(d);
+        list.retain(|t| (t.pos - pos).abs() >= TAB_SAME);
+        list.push(TabStop { pos, align: TabAlign::Clear, leader: TabLeader::None });
+    }
+    for (tw, tbd) in adds {
+        let pos = pt(tw);
+        list.retain(|t| (t.pos - pos).abs() >= TAB_SAME);
+        list.push(TabStop { pos, align: tab_align(tbd), leader: tab_leader(tbd) });
+    }
+    if !list.is_empty() {
+        list.truncate(MAX_TABS);
+        p.tabs = Some(list);
+    }
+}
+
+/// Decode a tab-change operand: positions of stops to delete and (position, descriptor)
+/// pairs of stops to add. Layout per [MS-DOC]: `cb`, a count then that many i16 positions
+/// (the PChgTabs form adds an i16 close tolerance per delete), then a count and that many
+/// (i16 position, u8 descriptor) pairs. `cb` itself only shaped the Prl in `sprm::iter`;
+/// here the counts are read against the bytes that really exist, capped at the spec's 64.
+fn tab_changes(op: u16, operand: &[u8]) -> (Vec<i16>, Vec<(i16, u8)>) {
+    // The i16s at `at`, as many as wholly fit, at most `max`.
+    let i16s = |body: &[u8], at: usize, max: usize| -> (Vec<i16>, usize) {
+        let n = max.min(body.len().saturating_sub(at) / 2);
+        let v = (0..n).filter_map(|i| body.get(at + 2 * i..at + 2 * i + 2).map(|b| i16::from_le_bytes([b[0], b[1]]))).collect();
+        (v, at + 2 * n)
+    };
+    let body = operand.get(1..).unwrap_or(&[]); // past cb
+    let (dels, mut at) = i16s(body, 1, usize::from(body.first().copied().unwrap_or(0).min(64)));
+    if op == P_CHG_TABS {
+        // rgdxaClose: one i16 per delete, skipped (Word's ±25-twip window is covered by
+        // the doc model's own same-position merge).
+        let n = dels.len();
+        at += 2 * n;
+    }
+    let n_add = usize::from(body.get(at).copied().unwrap_or(0).min(64));
+    let (poss, at) = i16s(body, at + 1, n_add);
+    let tbds: Vec<u8> = (0..n_add).filter_map(|i| body.get(at + i).copied()).collect();
+    (dels, poss.into_iter().zip(tbds).collect())
+}
+
+/// TBD alignment, bits 0-2 ([MS-DOC] TabJC); unknown and list codes read as left.
+fn tab_align(tbd: u8) -> TabAlign {
+    match tbd & 0x07 {
+        1 => TabAlign::Center,
+        2 => TabAlign::Right,
+        3 => TabAlign::Decimal,
+        4 => TabAlign::Bar,
+        _ => TabAlign::Left,
+    }
+}
+
+/// TBD leader, bits 3-5 ([MS-DOC] TabLC); heavy renders as underscore, like the docx reader.
+fn tab_leader(tbd: u8) -> TabLeader {
+    match (tbd >> 3) & 0x07 {
+        1 => TabLeader::Dot,
+        2 => TabLeader::Hyphen,
+        3 | 4 => TabLeader::Underscore,
+        5 => TabLeader::MiddleDot,
+        _ => TabLeader::None,
     }
 }
 

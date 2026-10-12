@@ -192,7 +192,13 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
                 0 | 1 | 4 => PartKind::Header,
                 _ => PartKind::Footer,
             };
-            let blocks = table::assemble(walk(&ctx, a, b, &[], &mut pics));
+            // A header/footer story's framed paragraphs float within it like the body's
+            // (the repro's one-line header is three left/centre/right framed paragraphs).
+            // The owning section alone is passed, so a frame's default width uses its own
+            // section's column, not the last one's.
+            let sect = sects.get(si..si + 1).unwrap_or(&sects[..]);
+            let paras = frame::extract(walk(&ctx, a, b, &[], &mut pics), sect, &sheet, &mut doc);
+            let blocks = table::assemble(paras);
             if !blocks.is_empty() {
                 let id = doc.add_part(kind, blocks);
                 hf_ids.push((si, k, id));

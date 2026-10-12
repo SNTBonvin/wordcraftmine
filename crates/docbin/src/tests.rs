@@ -2522,9 +2522,241 @@ fn framed_junk_values_lenient() {
     assert!(hw >= 12.0, "height estimated, not zero: {hw}");
     let (fh, wh, hh, _) = anchor_shape(&doc, 4);
     assert!((hh - 47.2).abs() < 0.01, "height-only 800 tw + insets: {hh}");
-    assert!((wh - 482.4).abs() < 0.01, "default box = the column (468) + insets: {wh}");
+    assert!((wh - 482.4).abs() < 0.01, "a left-offset frame keeps the column (468) + insets: {wh}");
     assert_eq!(fh.v_rel, Anchor::Margin, "PPc pcVert 3 falls back to the margin");
     let (fl, _, _, _) = anchor_shape(&doc, 5);
     assert_eq!(fl.v_align, Some(FloatAlign::Center), "PDyaAbs 0xFFF8 = center");
     assert_eq!(fl.v_rel, Anchor::Margin, "PPc 0x40: top page margin anchor");
+}
+
+/// #880. The repro's page header is three framed paragraphs — left, centre and right on one
+/// line, the classic pre-tab header layout — carried by the header subdocument. Frames were
+/// only extracted from the body, so the three stacked as ordinary lines.
+#[test]
+fn header_frame_paragraphs_float() {
+    let frame = |x: Option<i16>| {
+        let mut prls = vec![(0x261B, vec![0x60])]; // column/margin anchors, paragraph-anchored
+        if let Some(x) = x {
+            prls.push((0x8418, x.to_le_bytes().to_vec()));
+        }
+        prls.push((0x8419, 7i16.to_le_bytes().to_vec()));
+        prls.push((0x442B, 284u16.to_le_bytes().to_vec()));
+        grpprl(&prls.iter().map(|(op, o)| (*op, o.as_slice())).collect::<Vec<_>>())
+    };
+    let spec = StructSpec {
+        text: "body\r",
+        header_stories: vec!["One\rTwo\rThree\r\r"],
+        // Paragraphs start at CPs 5/9/13 (main text is 5 chars); the PAPX key is the CP
+        // the paragraph starts at (queried with its mark's FC).
+        papx_entries: vec![(0, 0, Vec::new()), (5, 0, frame(Some(-8))), (9, 0, frame(Some(-4))), (13, 0, frame(None))],
+        ..structured_spec("body\r", 5)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let id = doc.last_section.headers.default.expect("header part");
+    let part = doc.parts.get(&id).expect("part");
+    let paras: Vec<_> = part.blocks.iter().filter_map(|b| b.as_para()).collect();
+    assert_eq!(paras.len(), 3, "three anchors: {:?}", paras.iter().map(|p| p.text.clone()).collect::<Vec<_>>());
+    let text_of = |p: &wordcraft_doc::Paragraph| -> String {
+        p.objects
+            .iter()
+            .find_map(|o| match o {
+                InlineObject::Shape { story, .. } => doc
+                    .parts
+                    .get(&story.unwrap_or(0))
+                    .map(|part| part.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect::<Vec<_>>().join("\u{1}")),
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+    let aligns: Vec<Option<FloatAlign>> = paras
+        .iter()
+        .map(|p| {
+            p.objects
+                .iter()
+                .find_map(|o| match o {
+                    InlineObject::Shape { float, .. } => Some(float.h_align),
+                    _ => None,
+                })
+                .flatten()
+        })
+        .collect();
+    assert_eq!(aligns, [Some(FloatAlign::End), Some(FloatAlign::Center), None], "right, centre, left");
+    assert_eq!(text_of(paras[0]), "One");
+    assert_eq!(text_of(paras[1]), "Two");
+    assert_eq!(text_of(paras[2]), "Three\u{1}");
+    for (i, p) in paras.iter().enumerate() {
+        let InlineObject::Shape { float, w, h, .. } = p.objects.first().expect("shape") else { panic!() };
+        assert_eq!(float.v_rel, Anchor::Paragraph);
+        assert!((h - 21.4).abs() < 0.01, "284 tw + insets: {h}");
+        // The aligned frames' boxes hug their content (so the three share one line); the
+        // left-offset one keeps the column.
+        if i < 2 {
+            assert!(*w > 12.0 && *w < 80.0, "content-width box: {w}");
+        } else {
+            assert!(*w > 400.0, "left-offset frame keeps the column: {w}");
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------
+// Tab stops: sprmPChgTabsPapx (0xC60D) and sprmPChgTabs (0xC615) — TOC dot leaders and
+// tabbed header lines (#880).
+
+use wordcraft_doc::props::{TabAlign, TabLeader, TabStop};
+
+/// A PChgTabsPapxOperand: cb, the deleted positions, then (position, descriptor) adds.
+fn tabs_papx(dels: &[i16], adds: &[(i16, u8)]) -> Vec<u8> {
+    let mut v = vec![dels.len() as u8];
+    v.extend(dels.iter().flat_map(|d| d.to_le_bytes()));
+    v.push(adds.len() as u8);
+    v.extend(adds.iter().flat_map(|(p, _)| p.to_le_bytes()));
+    v.extend(adds.iter().map(|(_, t)| *t));
+    let mut out = vec![v.len() as u8];
+    out.extend(v);
+    out
+}
+
+/// A PChgTabsOperand (sprmPChgTabs): like [`tabs_papx`] with a rgdxaClose i16 per delete.
+fn tabs_close(dels: &[i16], adds: &[(i16, u8)]) -> Vec<u8> {
+    let mut v = vec![dels.len() as u8];
+    v.extend(dels.iter().flat_map(|d| d.to_le_bytes()));
+    v.extend(dels.iter().flat_map(|_| 25i16.to_le_bytes()));
+    v.push(adds.len() as u8);
+    v.extend(adds.iter().flat_map(|(p, _)| p.to_le_bytes()));
+    v.extend(adds.iter().map(|(_, t)| *t));
+    let mut out = vec![v.len() as u8];
+    out.extend(v);
+    out
+}
+
+/// One paragraph with `grpprl` as its whole PAPX, body style Normal.
+fn one_para_doc(papx: Vec<u8>) -> wordcraft_doc::Document {
+    let text = "Entry\t12\r";
+    let spec = StructSpec { papx_entries: vec![(0, 0, papx)], ..structured_spec(text, 9) };
+    read(&struct_doc(&spec)).expect("opens")
+}
+
+#[test]
+fn tab_stops_decode_from_papx() {
+    // The repro's own "toc 1" operand: one right tab at 9639 twips (17 cm, the column
+    // width) with a dot leader — TBD 0x0A is jc 2 (right), tlc 1 (dot).
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x05, 0x00, 0x01, 0xA7, 0x25, 0x0A])]));
+    assert_eq!(para0(&doc).props.tabs, Some(vec![TabStop { pos: 481.95, align: TabAlign::Right, leader: TabLeader::Dot }]));
+}
+
+#[test]
+fn tabs_from_style_chain() {
+    // "toc 2" is based on "toc 1", which carries the tab; a plain "toc 2" paragraph
+    // inherits it through the chain.
+    let toc1 = grpprl(&[(0xC60D, &[0x05, 0x00, 0x01, 0xA7, 0x25, 0x0A])]);
+    let text = "5.9\tCore network security\t35\r";
+    let spec = StructSpec {
+        styles: vec![(1, 0x0FFF, "toc 1", toc1, Vec::new()), (1, 1, "toc 2", Vec::new(), Vec::new())],
+        papx_entries: vec![(0, 2, Vec::new())],
+        ..structured_spec(text, 29)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let p = para0(&doc);
+    assert_eq!(p.props.style.as_deref(), Some("Toc 2"));
+    assert_eq!(p.props.tabs, None, "the stops live on the style, not the paragraph");
+    assert_eq!(doc.styles.resolve_para(&p.props).tabs, vec![TabStop { pos: 481.95, align: TabAlign::Right, leader: TabLeader::Dot }]);
+}
+
+#[test]
+fn tab_delete_removes_stop() {
+    // The style sets a left stop at 2840 twips; the paragraph deletes it (a Clear stop)
+    // and adds a right stop at 5000. Effective tabs: the style's other stop plus the add.
+    let style = grpprl(&[(0xC60D, &tabs_papx(&[], &[(2840, 0x00), (9639, 0x0A)]))]);
+    let text = "x\ty\r";
+    let spec = StructSpec {
+        styles: vec![(1, 0x0FFF, "Base", style, Vec::new())],
+        papx_entries: vec![(0, 1, grpprl(&[(0xC60D, &tabs_papx(&[2840], &[(5000, 0x02)]))]))],
+        ..structured_spec(text, 4)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let p = para0(&doc);
+    // Direct formatting: the delete as a Clear stop, the add as-is.
+    assert_eq!(
+        p.props.tabs,
+        Some(vec![
+            TabStop { pos: 142.0, align: TabAlign::Clear, leader: TabLeader::None },
+            TabStop { pos: 250.0, align: TabAlign::Right, leader: TabLeader::None }
+        ])
+    );
+    let resolved = doc.styles.resolve_para(&p.props).tabs;
+    assert_eq!(
+        resolved,
+        vec![
+            TabStop { pos: 250.0, align: TabAlign::Right, leader: TabLeader::None },
+            TabStop { pos: 481.95, align: TabAlign::Right, leader: TabLeader::Dot }
+        ]
+    );
+}
+
+#[test]
+fn tabbed_header_line() {
+    // A header paragraph with centre and right tabs decodes both, in its own story.
+    let spec = StructSpec {
+        text: "body\r",
+        header_stories: vec!["Head\t18\t3GPP\r\r"],
+        // The header paragraph starts at CP 5 (main text is 5 chars); the PAPX key is that CP.
+        papx_entries: vec![(0, 0, Vec::new()), (5, 0, grpprl(&[(0xC60D, &tabs_papx(&[], &[(4820, 0x01), (9639, 0x02)]))]))],
+        ..structured_spec("body\r", 5)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let id = doc.last_section.headers.default.expect("header part");
+    let part = doc.parts.get(&id).expect("part");
+    let p = part.blocks.iter().find_map(|b| b.as_para()).expect("header para");
+    assert!(p.text.contains('\t'), "{}", p.text);
+    assert_eq!(
+        p.props.tabs,
+        Some(vec![
+            TabStop { pos: 241.0, align: TabAlign::Center, leader: TabLeader::None },
+            TabStop { pos: 481.95, align: TabAlign::Right, leader: TabLeader::None }
+        ])
+    );
+}
+
+#[test]
+fn tab_chg_tabs_sprm_and_iter_stays_aligned() {
+    // sprmPChgTabs (piece-table form): deletes carry a rgdxaClose i16 each. Its operand
+    // length must come from the one-byte cb, or the grpprl's later sprms are lost.
+    let doc = one_para_doc(grpprl(&[(0xC615, &tabs_close(&[1420], &[(2500, 0x0A)])), (0x2461, &[0x01])]));
+    let p = para0(&doc);
+    assert_eq!(
+        p.props.tabs,
+        Some(vec![
+            TabStop { pos: 71.0, align: TabAlign::Clear, leader: TabLeader::None },
+            TabStop { pos: 125.0, align: TabAlign::Right, leader: TabLeader::Dot }
+        ])
+    );
+    assert_eq!(p.props.align, Some(wordcraft_doc::props::Align::Center), "the sprm after it still applies");
+}
+
+#[test]
+fn tabs_lenient_under_hostile_operands() {
+    // A zero cb, a cb claiming far more than the grpprl holds (the Prl is dropped whole),
+    // counts that lie about the payload, junk descriptor bits and extreme positions:
+    // no panic, lenient decodes, everything clamped.
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x00])]));
+    assert_eq!(para0(&doc).props.tabs, None);
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0xFF, 0x00, 0x01, 0xA7, 0x25, 0x0A])]));
+    assert_eq!(para0(&doc).props.tabs, None, "cb beyond the grpprl drops the sprm");
+    // cDel claims 50 deletes; only two i16s are really there.
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x05, 0x32, 0x01, 0x18, 0x0B, 0x9A])]));
+    assert_eq!(
+        para0(&doc).props.tabs,
+        Some(vec![
+            TabStop { pos: 307.25, align: TabAlign::Clear, leader: TabLeader::None },
+            TabStop { pos: -1305.05, align: TabAlign::Clear, leader: TabLeader::None }
+        ])
+    );
+    // Junk descriptor: unknown jc and tlc codes fall back to left with no leader.
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x05, 0x00, 0x01, 0x0F, 0x27, 0xFF])]));
+    assert_eq!(para0(&doc).props.tabs, Some(vec![TabStop { pos: 499.95, align: TabAlign::Left, leader: TabLeader::None }]));
+    // Extreme positions clamp to ±22".
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x05, 0x00, 0x01, 0xFF, 0x7F, 0x00])]));
+    assert_eq!(para0(&doc).props.tabs, Some(vec![TabStop { pos: 1584.0, align: TabAlign::Left, leader: TabLeader::None }]));
+    let doc = one_para_doc(grpprl(&[(0xC60D, &[0x05, 0x00, 0x01, 0x00, 0x80, 0x00])]));
+    assert_eq!(para0(&doc).props.tabs, Some(vec![TabStop { pos: -1584.0, align: TabAlign::Left, leader: TabLeader::None }]));
 }

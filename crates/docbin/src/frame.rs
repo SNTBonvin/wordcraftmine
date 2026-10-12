@@ -267,7 +267,6 @@ fn flush_group(
                 o,
                 InlineObject::BookmarkStart { .. }
                     | InlineObject::BookmarkEnd { .. }
-                    | InlineObject::Field { .. }
                     | InlineObject::FieldStart { .. }
                     | InlineObject::FieldEnd
                     | InlineObject::NoteRef { .. }
@@ -275,7 +274,7 @@ fn flush_group(
                     | InlineObject::CommentEnd { .. }
                     | InlineObject::PermStart { .. }
                     | InlineObject::PermEnd { .. }
-            )
+            ) || matches!(o, InlineObject::Field { result, .. } if result.is_empty())
         })
         .cloned()
         .collect();
@@ -283,11 +282,18 @@ fn flush_group(
     let blocks = table::assemble(std::mem::take(group));
     let story = doc.add_part(PartKind::TextBox, blocks);
     let (float, w, h) = f.geometry();
-    // Default box: the section's column wide, and tall enough for the story. The box insets
-    // the layout gives a text-box story are added on so the frame's own geometry — the size
-    // its text lays out in — survives inside the box.
+    // Default box: the story's own estimated width when the file leaves the frame's width
+    // automatic ([MS-DOC] sprmPDxaWidth: content-fit) — but only for a frame aligned
+    // centre/right/etc., whose text position depends on the box hugging its content (the
+    // repro's one-line header). A left-offset frame's text starts at the box's left edge
+    // whatever its width, so those keep the whole column and cannot newly wrap. The box
+    // insets the layout gives a text-box story are added on so the frame's own geometry —
+    // the size its text lays out in — survives inside the box.
     let column = column_width(sects, end_cp);
-    let w = w.map(|v| v + 2.0 * BOX_INSET_X).unwrap_or(column + 2.0 * BOX_INSET_X);
+    let w = w.map(|v| v + 2.0 * BOX_INSET_X).unwrap_or_else(|| {
+        let auto = if float.h_align.is_some() { estimate_width(&doc.parts[&story].blocks, column, sheet) } else { column };
+        auto + 2.0 * BOX_INSET_X
+    });
     let h = h.map(|v| v + 2.0 * BOX_INSET_Y).unwrap_or_else(|| estimate_height(&doc.parts[&story].blocks, w, sheet) + 2.0 * BOX_INSET_Y);
     let obj = InlineObject::Shape {
         kind: ShapeKind::TextBox,
@@ -303,8 +309,9 @@ fn flush_group(
         extra: Default::default(),
     };
     // The anchor keeps the group's first paragraph's invisible inline objects (bookmarks,
-    // fields, note references); anything that shows — pictures, shapes — stays in the story,
-    // where copying it onto the anchor would duplicate it.
+    // note references, a field whose cached result is empty, like a TOC range anchor);
+    // anything that shows — pictures, shapes, a field rendering its result text — stays in
+    // the story, where copying it onto the anchor would duplicate it.
     let mut objects: Vec<InlineObject> = first_objects;
     let n = objects.len() + 1;
     objects.push(obj);
@@ -331,6 +338,40 @@ fn flush_group(
 fn column_width(sects: &[Section], end_cp: u32) -> f32 {
     let props = sects.iter().find(|s| s.end_cp >= end_cp).or_else(|| sects.last()).map(|s| &s.props).cloned().unwrap_or_default();
     (props.page_w - props.margin_left - props.margin_right).clamp(72.0, MAX_PT)
+}
+
+/// A rough width the story's text needs (points): the widest paragraph's estimated extent —
+/// runs at half the font size per byte, a field's cached result counting as text — clamped
+/// to the column. The estimate is trusted only when clearly narrower than the column: it
+/// can miss a real line by a few percent, and a box narrower than its text wraps it, while
+/// a too-wide box only leaves space.
+fn estimate_width(blocks: &wordcraft_doc::Blocks, max_w: f32, sheet: &StyleSheet) -> f32 {
+    use wordcraft_doc::Block;
+    let mut w = 12.0f32;
+    for b in blocks.iter().take(MAX_EST_PARAS) {
+        match &**b {
+            Block::Para(p) => {
+                let style_size = p.props.style.as_deref().and_then(|id| sheet.get(id)).and_then(|s| s.chr.size);
+                let size_of = |r: &Run| r.props.size.or(style_size).unwrap_or(10.0).max(1.0);
+                let mut est: f32 = p.runs.iter().map(|r| r.len as f32 * size_of(r) * 0.5).sum();
+                // A field renders its cached result in place of the anchor glyph.
+                let field_chars: usize = p
+                    .objects
+                    .iter()
+                    .filter_map(|o| match o {
+                        InlineObject::Field { result, .. } => Some(result.chars().count()),
+                        _ => None,
+                    })
+                    .sum();
+                let size = p.runs.iter().map(size_of).fold(0.0f32, f32::max).max(10.0);
+                est += field_chars as f32 * size * 0.5;
+                w = w.max(est.min(max_w));
+            }
+            // A table's own autofit decides its width; give it the whole column.
+            Block::Table(_) => return max_w,
+        }
+    }
+    if w < 0.6 * max_w { w } else { max_w }
 }
 
 /// A generous estimate of the height the story needs in a box `w` wide (points), for frames
