@@ -455,7 +455,7 @@ fn cjk_catalogs_are_covered_by_the_embedded_interface_faces() {
             assert!(missing.is_empty(), "{code}: no glyph in {font:?} for {missing}");
         }
         // So the interface reads no installed CJK font for these languages.
-        assert_eq!(wordcraft_fonts::ui_uncovered_cjk(&[l.0.source, &names], &wordcraft_fonts::ui_cjk_fonts(l.prefers_hans())), []);
+        assert_eq!(wordcraft_fonts::ui_uncovered_cjk(&[l.0.source, &names], &wordcraft_fonts::ui_cjk_fonts(l.prefers_hans())), Vec::<char>::new());
     }
 }
 
@@ -566,6 +566,40 @@ fn built_in_style_names_are_translated_for_display_and_user_styles_are_not() {
     assert_eq!(name("Heading7"), "Heading 7");
     // The document itself never changes.
     assert_eq!(sheet.get("Normal").unwrap().name, "Normal");
+}
+
+#[test]
+fn spanish_built_in_style_names_are_translated() {
+    set_current(lang("es"));
+    for (source, expected) in [
+        ("Book Title", "Título de libro"),
+        ("Caption", "Leyenda"),
+        ("Emphasis", "Énfasis"),
+        ("Endnote Reference", "Referencia de nota al final"),
+        ("Endnote Text", "Texto de nota al final"),
+        ("Footnote Reference", "Referencia de nota al pie"),
+        ("Footnote Text", "Texto de nota al pie"),
+        ("Hyperlink", "Hipervínculo"),
+        ("Intense Emphasis", "Énfasis intenso"),
+        ("Intense Quote", "Cita intensa"),
+        ("Intense Reference", "Referencia intensa"),
+        ("List Paragraph", "Párrafo de lista"),
+        ("Quote", "Cita"),
+        ("Strong", "Fuerte"),
+        ("Subtitle", "Subtítulo"),
+        ("Subtle Emphasis", "Énfasis sutil"),
+        ("Subtle Reference", "Referencia sutil"),
+        ("TOC Heading", "Título de tabla de contenido"),
+    ] {
+        assert_eq!(builtin_style_name(source), expected, "{source}");
+    }
+    for level in 4..=9 {
+        assert_eq!(builtin_style_name(&format!("Heading {level}")), format!("Título {level}"));
+    }
+    for level in 1..=9 {
+        assert_eq!(builtin_style_name(&format!("TOC {level}")), format!("Tabla de contenido {level}"));
+    }
+    set_current(Lang::EN);
 }
 
 #[test]

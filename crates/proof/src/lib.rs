@@ -186,6 +186,19 @@ fn known_core(w: &str) -> bool {
     false
 }
 
+/// Is there a proofing dictionary for this BCP 47 language tag? `None` (and empty tags) mean the
+/// document default, which is en-US. Runs in a language without one are skipped (#100) instead
+/// of flagging every word against another language's dictionary; see [`ProofLang::from_tag`].
+pub fn has_dictionary(lang: Option<&str>) -> bool {
+    ProofLang::from_tag(lang) != ProofLang::Other
+}
+
+/// Is `word` spelled correctly in the run's proofing language? A language without a dictionary
+/// can't be checked, so every word counts as correct (no red underlines for it).
+pub fn is_correct_for(word: &str, lang: Option<&str>) -> bool {
+    is_correct_in(word, ProofLang::from_tag(lang))
+}
+
 /// Is `word` spelled correctly? Numbers, single letters, ALL-CAPS acronyms, URLs and words with
 /// digits are accepted.
 pub fn is_correct(word: &str) -> bool {
@@ -539,8 +552,12 @@ pub fn check_grammar(text: &str) -> Vec<Issue> {
             });
         }
         let tail = text.get(*b..).unwrap_or("");
-        let next_non_space = tail.trim_start_matches(['"', '”', ')', '\'']).chars().next();
-        after_end = matches!(next_non_space, Some('.' | '!' | '?')) && tail.trim_start_matches(['.', '!', '?', '"', '”', ')']).starts_with(' ');
+        let punctuation = tail.trim_start_matches(['"', '”', ')', '\'']);
+        // Two or more dots are an ellipsis, not a full stop ending a sentence.
+        // A Unicode ellipsis (U+2026) does not match sentence-ending punctuation either.
+        after_end = matches!(punctuation.chars().next(), Some('.' | '!' | '?'))
+            && !punctuation.starts_with("..")
+            && punctuation.trim_start_matches(['.', '!', '?', '"', '”', ')']).starts_with(' ');
     }
     v.sort_by_key(|i| i.start);
     v
@@ -656,10 +673,61 @@ mod tests {
     }
 
     #[test]
+    fn ellipses_do_not_start_sentences() {
+        for text in [
+            "I saw... a figure right outside.",
+            "I saw… a figure right outside.",
+            "I saw.... a figure right outside.",
+            "I saw... \"a figure\" right outside.",
+            "I saw… “a figure” right outside.",
+        ] {
+            let capitals: Vec<_> =
+                check_grammar(text).into_iter().filter(|issue| issue.message == "Capitalize the first word of a sentence").collect();
+            assert!(capitals.is_empty(), "{text}: {capitals:?}");
+        }
+
+        for text in ["I saw. a figure.", "I saw! a figure.", "I saw? a figure.", "I saw.\" a figure."] {
+            let capitals: Vec<_> =
+                check_grammar(text).into_iter().filter(|issue| issue.message == "Capitalize the first word of a sentence").collect();
+            assert_eq!(capitals.len(), 1, "{text}: {capitals:?}");
+            assert_eq!(capitals[0].suggestions, ["A"], "{text}");
+        }
+    }
+
+    #[test]
     fn user_dictionary_works() {
         assert!(!is_correct("zxqwordcrafty"));
         add_word("zxqwordcrafty");
         assert!(is_correct("zxqwordcrafty"));
+    }
+
+    /// #100: runs are proofed when their language has a dictionary (the default language too)
+    /// and skipped otherwise.
+    #[test]
+    fn dictionary_lang_tags() {
+        for l in [None, Some(""), Some("  "), Some("en"), Some("en-US"), Some("en-GB"), Some("EN-us"), Some("en_US")] {
+            assert!(has_dictionary(l), "{l:?}");
+        }
+        for l in [Some("lt-LT"), Some("fr-FR"), Some("de"), Some("uk"), Some("es"), Some("-US"), Some("e")] {
+            assert!(!has_dictionary(l), "{l:?}");
+        }
+        // The gate follows the dictionaries, not English: every proofed language is proofed.
+        for d in ProofLang::PROOFED.map(ProofLang::code) {
+            assert!(has_dictionary(Some(d)), "{d}");
+            assert!(has_dictionary(Some(&format!("{}-XX", d.to_ascii_uppercase()))), "{d}");
+        }
+    }
+
+    /// #100: runs in a language without a dictionary are never flagged; English still is.
+    #[test]
+    fn non_english_words_are_not_flagged() {
+        for w in ["ąžuolas", "élève", "über", "labas", "bonjour"] {
+            assert!(is_correct_for(w, Some("lt-LT")), "{w}");
+            assert!(is_correct_for(w, Some("fr-FR")), "{w}");
+        }
+        assert!(!is_correct_for("helo", Some("en-US")), "English typos still flagged");
+        assert!(!is_correct_for("helo", None), "default language still proofed");
+        assert!(is_correct_for("hello", Some("en-US")));
     }
 
     /// File › Options › Proofing (#485): each "Ignore" choice turned off makes those words count.
@@ -731,6 +799,8 @@ mod tests {
             let _ = check_spelling(&s);
             let _ = check_grammar(&s);
             let _ = suggest(&s, 3);
+            let _ = has_dictionary(Some(&s));
+            let _ = is_correct_for(&s, Some(&s));
             let _ = hyphen::hyphen_points(&s, &hyphen::Limits::default());
             for lang in [ProofLang::En, ProofLang::Pl, ProofLang::Other] {
                 let _ = check_spelling_in(&s, lang);
