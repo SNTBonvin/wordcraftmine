@@ -48,12 +48,15 @@
 	Arrange\nAll	整列
 	Arrow	矢印
 	Artistic Effects	アート効果
+	As you type	入力中
+	Asian text font:	アジア文字のフォント:
 	Asian Typography	アジア文字の組版
 	Author	作成者
 	AutoCorrect Options	オートコレクトのオプション
 	AutoFit	自動調整
 	AutoFit Contents	文字列の幅に合わせる
 	AutoFit Window	ウィンドウ幅に合わせる
+	AutoSave writes your changes to the file a moment after you stop typing.	自動保存は、入力を止めて少したつと変更をファイルに書き込みます。
 	Automatic	自動
 	Automatic ({language})	自動（{language}）
 	Automatic follows your system's language. Menus and commands change; your documents don't.	「自動」はシステムの言語に従います。メニューとコマンドの表示が変わり、文書の内容は変わりません。
@@ -64,13 +67,18 @@
 	AutoSave failed: {error}. Save the document to turn AutoSave back on.	自動保存できませんでした: {error}。文書を保存し直すと、自動保存が再開します。
 	Balloons	吹き出し
 	Bottom Margin	下余白
+	Centimeters	センチメートル
+	Check spelling as you type	入力中にスペル チェックを行う
 	Click a border between two cells to merge them. Esc stops.	2 つのセルの間の境界線をクリックすると結合します。Esc で終了します。
 	Bullet	行頭文字
 	By author	校閲者別
 	Changed lines:	変更された行:
 	Click level to modify:	変更するレベルをクリック:
+	Click to switch back to inserting	クリックすると挿入モードに戻ります
 	Color only	色のみ
 	Compress punctuation at the start of a line	行頭の約物を詰める
+	Couldn't make WordCraft the default: {error}	WordCraft を既定のアプリにできませんでした: {error}
+	Custom dictionary	ユーザー辞書
 	Dark page (white text on black)	ダーク ページ (黒地に白い文字)
 	Drag a rectangle to draw a table, or a line across cells to split them. Esc stops.	四角形をドラッグして表を描くか、セルを横切る線を引いて分割します。Esc で終了します。
 	Draw Table	表を描画
@@ -81,27 +89,59 @@
 	Enter formatting for number:	番号の書式:
 	Follow number with:	番号に続く文字:
 	Formatting	書式
+	Formatting marks	編集記号
+	Hidden text	隠し文字
+	Ignore web and file addresses	Web アドレスとファイル パスを無視する
+	Ignore words in capitals	すべて大文字の単語を無視する
+	Ignore words with numbers	数字を含む単語を無視する
+	Inches	インチ
 	Formatting exceptions	書式の例外
 	Include level number from:	含めるレベルの番号:
+	Initials:	イニシャル:
 	Ink	インク
 	Insertions and Deletions	挿入と削除
 	Insertions:	挿入された箇所:
+	Interface	インターフェイス
+	Interface language	表示言語
 	Inside:	内側:
+	Latin text font:	ラテン文字のフォント:
 	Left border	左罫線
+	In Default apps, choose WordCraft for the document types you want it to open.	既定のアプリで、WordCraft で開きたい文書の種類ごとに WordCraft を選んでください。
 	Left Margin	左余白
 	Indents and Spacing	インデントと間隔
 	Legal style numbering	正規形式で番号付け
 	Line breaking	行の分割
 	Link level to style:	レベルに対応付けるスタイル:
 	List Definition	リストの定義
+	Mark grammar errors as you type	入力中に文法の誤りに印を付ける
+	Measurement units:	単位:
+	Millimeters	ミリメートル
 	Mirror indents	左右対称のインデント
 	More templates →	その他のテンプレート →
+	New comments and tracked changes are recorded under this name and these initials.	新しいコメントと変更履歴は、この名前とイニシャルで記録されます。
+	New word	新しい単語
 	No templates match your search.	検索に一致するテンプレートはありません。
+	No words yet. Add to Dictionary on a misspelled word puts it here.	まだ単語はありません。スペルミスの単語で [辞書に追加] を選ぶと、ここに追加されます。
 	Nothing	なし
 	Number alignment:	番号の配置:
 	Number format	番号書式
 	Number style for this level:	このレベルの番号の種類:
 	Outside border	外側の罫線
+	Make WordCraft the default for Word documents…	WordCraft を Word 文書の既定のアプリにする…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	今後、.docx、.doc、.rtf、.odt ファイルと Word テンプレートを WordCraft で開きます。
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	設定 › 既定のアプリ を開きます。そこで .docx などの文書の種類ごとに WordCraft を選びます。
+	Overtype	上書き
+	Overtype (typing replaces the characters after the caret)	上書き (入力した文字がカーソルの後ろの文字を置き換えます)
+	Page display	ページの表示
+	Paragraph marks	段落記号
+	Personalize	個人設定
+	Picas	パイカ
+	Points	ポイント
+	Print the page color	ページの色を印刷する
+	Printing	印刷
+	Proofing language	文章校正の言語
+	Recent documents to show:	表示する最近使ったドキュメントの数:
+	Remove	削除
 	Outside:	外側:
 	Reopen	再度開く
 	Restart list after:	リストを振り直すレベル:
@@ -112,9 +152,9 @@
 	Distribute spacing	間隔を均等に配置
 	Offset (pt):	オフセット (pt):
 	Phonetic Guide	ルビ
-	Remove	削除
 	Right (vertical)	右 (縦書き)
 	Ruby text:	ルビ文字:
+	Save documents	ドキュメントの保存
 	Search for templates	テンプレートを検索
 	Show all revisions inline	すべての変更履歴を本文中に表示
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	表示 › モードの切り替えと同様に、文書の色を反転して表示します。保存、印刷、PDF は変わりません。
@@ -142,6 +182,11 @@
 	Border Painter	罫線の書式設定
 	Border\nPainter	罫線の書式設定
 	Borders	罫線
+	Show the mini toolbar when text is selected	テキストを選択したときにミニ ツール バーを表示する
+	Spaces	スペース
+	Spelling	スペル チェック
+	Spelling and grammar are checked in English (United States).	スペルと文法は英語 (米国) でチェックされます。
+	Tab characters	タブ
 	Tab stop position:	タブ位置:
 	Default tab stops:	既定のタブ間隔:
 	Tab stops to be cleared:	削除するタブ:
@@ -152,6 +197,10 @@
 	Set	設定
 	Page Border	ページ罫線の設定
 	Apply to:	適用先:
+	These marks show even when Show/Hide ¶ is off.	これらの記号は、[編集記号の表示/非表示 ¶] がオフでも表示されます。
+	Typing replaces selected text	入力時に選択文字列を置き換える
+	Update fields before printing	印刷前にフィールドを更新する
+	Use the Insert key to switch overtype on and off	Insert キーで上書きのオンとオフを切り替える
 	Whole document	文書全体
 	This section	このセクション
 	Fill	塗りつぶし
@@ -275,6 +324,8 @@
 	Delete Style	スタイルの削除
 	Delete Table	表の削除
 	Design	デザイン
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Word 文書を既定で WordCraft で開くには: Finder で文書を選び、ファイル › 情報を見る を選んで、「このアプリケーションで開く」で WordCraft を選び、「すべてを変更」をクリックします。
+	WordCraft is now the default app for Word documents.	WordCraft が Word 文書の既定のアプリになりました。
 	development build	開発ビルド
 	Diagonal	対角線
 	Diamond	ひし形
@@ -336,6 +387,7 @@
 	Export PDF	PDF にエクスポート
 	Exported {path}	{path} にエクスポートしました
 	Extend Selection	選択範囲の拡張
+	Extend Selection by Units	単位ごとに選択範囲を拡張
 	Field	フィールド
 	File	ファイル
 	Find	検索
@@ -741,6 +793,9 @@
 	Show only comments and formatting in balloons	コメントと書式のみを吹き出しに表示
 	Show revisions in balloons	変更履歴を吹き出しに表示
 	Show rulers	ルーラーを表示する
+	Animation	アニメーション
+	Animate the caret (it glides and fades)	カーソルをアニメーション表示する（滑らかに移動してフェードする）
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	オン: 入力や矢印キーの操作でカーソルが新しい位置へ滑らかに移動し、点滅もフェードします。オフ: カーソルは瞬時に移動し、点滅は表示と非表示が切り替わるだけです。
 	Show the community button in the title bar	タイトル バーにコミュニティ ボタンを表示する
 	Show/Hide ¶	編集記号の表示/非表示 ¶
 	Show\nComments	コメントの表示
@@ -883,10 +938,10 @@
 	Wide	広い
 	Widow/Orphan Control	改ページ時 1 行残して段落を区切らない
 	Widow/Orphan control	改ページ時 1 行残して段落を区切らない
-	Wildcards (regex)	ワイルドカード（正規表現）
 	Window	ウィンドウ
 	Word Count	文字カウント
 	Word document (*.docx)	Word 文書 (*.docx)
+	Word XML Document (*.xml)	Word XML ドキュメント (*.xml)
 	Word Left	前の単語へ
 	Word Right	次の単語へ
 	WordArt	ワードアート
@@ -1352,8 +1407,12 @@
 	Selected Fields	選択したフィールド
 	Edit Field…	フィールドの編集…
 	Formatted	書式変更
+	Deleted	削除
 	Interface size:	表示サイズ:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	リボン、メニュー、ダイアログを、システムの表示倍率に加えて拡大または縮小します。文書のズームは別に設定します。
+	Resize Table by Dragging	ドラッグで表のサイズを変更
+	Print Markup	変更履歴とコメントを印刷
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	PDF、印刷、画像では各ページの横にコメントと変更履歴を表示し、Web ページ、Markdown、テキストでは末尾にコメント一覧を付けます。
 
 # Compare / Combine, AutoCorrect Options and Restrict Editing (#412)
 	1. Formatting restrictions	1. 書式の制限
@@ -1474,6 +1533,22 @@
 	New Group	新しいグループ
 	Rename…	名前の変更…
 	Ribbon and Quick Access Toolbar:	リボンとクイック アクセス ツール バー:
+	Add Font…	フォントの追加…
+	Added Fonts	追加したフォント
+	Remove Added Font	追加したフォントの削除
+	Recent Colors	最近使用した色
+	More Colors…	その他の色…
+	Standard	標準
+	Current	現在
+	Colors:	色:
+	Color model:	カラー モデル:
+	Red:	赤:
+	Green:	緑:
+	Blue:	青:
+	Hue:	色合い:
+	Sat:	鮮やかさ:
+	Lum:	明るさ:
+	Hex:	16 進数:
 	Accessibility Pane	アクセシビリティ ウィンドウ
 	Alt Text Pane	代替テキスト ウィンドウ
 	Alt\nText	代替\nテキスト
@@ -1557,6 +1632,25 @@
 	Enlarge symbol	記号を拡大
 	Enclosure	囲い
 	Circle	円
+	Numerals:	数字:
+	Numerals	数字
+	Arabic	アラビア
+	Hindi	ヒンディー
+	Context	コンテキスト
+	System	システム
+	Templates	テンプレート
+	Templates and Add-ins	テンプレートとアドイン
+	Attach Template	テンプレートの添付
+	Detach Template	テンプレートの解除
+	Automatically Update Document Styles	文書のスタイルを自動的に更新
+	Update Styles from Template	テンプレートからスタイルを更新
+	Organizer	オーガナイザー
+	Copy Styles	スタイルのコピー
+	Rename Style	スタイル名の変更
+	Document template:	文書テンプレート:
+	Attach…	添付…
+	Automatically update document styles	文書のスタイルを自動的に更新する
+	Organizer…	オーガナイザー…
 	Change Chart Type	グラフの種類の変更
 	Chart Design	グラフのデザイン
 	Type	種類
@@ -1609,6 +1703,105 @@
 	Continuous numbering	通し番号
 	Apply	適用
 	Convert Notes	注の変換
+	English (United Kingdom)	英語（英国）
+	Polish	ポーランド語
+	Do Not Check Spelling or Grammar	スペル チェックと文章校正を行わない
+
+# Built-in file browser when the system file dialog is unavailable (#576)
+	Documents	ドキュメント
+	Word document	Word 文書
+	All files	すべてのファイル
+	Recipient lists	宛先リスト
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	システムのファイル ダイアログを利用できないため、WordCraft 独自のダイアログを表示しています。システムのダイアログを使うには、ファイル選択ポータル (xdg-desktop-portal-gtk など) または zenity をインストールしてください。
+	Up one level	1 つ上のフォルダー
+	Home folder	ホーム フォルダー
+	{name} wasn't found.	{name} が見つかりません。
+	{name} already exists. Choose Save again to replace it.	{name} は既に存在します。置き換えるには、もう一度 [保存] を選んでください。
+	This folder can't be read: {error}	このフォルダーを読み取れません: {error}
+	Showing the first {count} items.	最初の {count} 項目を表示しています。
+	File name:	ファイル名:
+	Browse in WordCraft…	WordCraft で参照…
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	システムのファイル ダイアログが表示されないときに、WordCraft 独自のブラウザーでファイルを開きます。
+	Hide White Space	余白を非表示
+	All pages	すべてのページ
+	Current page	現在のページ
+	Selected pages	選択したページ
+	Custom range	ページ範囲を指定
+	All pages in the range	範囲内のすべてのページ
+	Odd pages only	奇数ページのみ
+	Even pages only	偶数ページのみ
+	Copies	部数
+	Collate copies	部単位で印刷
+	Pages like 1-3, 5	ページ指定(例: 1-3, 5)
+	{count} of {total} pages will print	{total} ページ中 {count} ページを印刷します
+	Save these pages as PDF…	このページを PDF として保存…
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	プリンター、両面印刷、1 枚あたりのページ数は、そのダイアログで選択します。
+	Previous Page	前のページ
+	Print to PDF	PDF に印刷
+	Add Shape	図形の追加
+	Change Colors	色の変更
+	Change Layout	レイアウトの変更
+	Create Graphic	グラフィックの作成
+	Edit Items	項目の編集
+	Layouts	レイアウト
+	Reset Graphic	グラフィックのリセット
+	SmartArt Design	SmartArt のデザイン
+	SmartArt Styles	SmartArt のスタイル
+	Text Pane	テキスト ウィンドウ
+	List	リスト
+	Process	手順
+	Cycle	循環
+	Hierarchy	階層構造
+	Relationship	関係
+	Pyramid	ピラミッド
+	Basic List	基本リスト
+	Basic Process	基本ステップ
+	Basic Cycle	基本循環
+	Basic Pyramid	基本ピラミッド
+	Basic Radial	基本放射
+	Basic Matrix	基本マトリックス
+	Basic Venn	基本ベン図
+	Shows items of equal weight as blocks in rows.	同じ重みの項目をブロックとして行に並べて表示します。
+	Shows steps in order, left to right, with arrows between them.	手順を左から右へ順に、矢印でつないで表示します。
+	Shows steps that repeat, around a circle.	繰り返す手順を円の周りに表示します。
+	Shows a tree: each item below the item it belongs to.	ツリーを表示します。各項目は所属する項目の下に置かれます。
+	Shows parts that build on each other, largest at the bottom.	積み重なる部分を表示します。最も大きいものが一番下です。
+	Shows items around a central idea: the first item is the centre.	中心となる考えの周りに項目を表示します。最初の項目が中心です。
+	Shows parts of a whole as quadrants.	全体の各部分を四分割で表示します。
+	Shows overlapping ideas as overlapping circles.	重なり合う考えを重なる円で表示します。
+	Accent {n}	アクセント {n}
+	Colorful	カラフル
+	Insert SmartArt	SmartArt の挿入
+	One line per item. Enter adds an item.	1 行に 1 項目。Enter キーで項目を追加します。
+	Add\nShape	図形の\n追加
+	Change\nColors	色の\n変更
+	Reset\nGraphic	グラフィックの\nリセット
+	Promote to Heading 1	見出し 1 に設定
+	Demote to Body Text	本文に設定
+	Move Up	上へ移動
+	Move Down	下へ移動
+	Collapse	折りたたみ
+	Expand or Collapse Heading	見出しの展開/折りたたみ
+	Select Heading and Content	見出しと内容を選択
+	Show Level	レベルの表示
+	Show Level 1	レベル 1 を表示
+	Show Level 2	レベル 2 を表示
+	Show Level 3	レベル 3 を表示
+	Show Level 4	レベル 4 を表示
+	Show Level 5	レベル 5 を表示
+	Show Level 6	レベル 6 を表示
+	Show Level 7	レベル 7 を表示
+	Show Level 8	レベル 8 を表示
+	Show Level 9	レベル 9 を表示
+	Show All Levels	すべてのレベルを表示
+	All Levels	すべてのレベル
+	Show First Line Only	1 行目のみ表示
+	Show Text Formatting	文字列の書式を表示
+	Close Outline View	アウトライン表示を閉じる
+	Outline State	アウトラインの状態
+	Outlining	アウトライン
+	Outline Tools	アウトライン ツール
+	Close Outline\nView	アウトライン表示\nを閉じる
 	A, B, C, …	A, B, C, …
 	Above the item	項目の上
 	Accessed on	アクセス日
@@ -1718,6 +1911,37 @@
 	Rewind	巻き戻し
 	Forward	早送り
 	Stroke {n} of {total}	ストローク {n}/{total}
+	Use wildcards	ワイルドカードを使う
+	Special	特殊文字
+	Match prefix	語頭が一致する
+	Match suffix	語尾が一致する
+	Ignore punctuation characters	句読点を無視する
+	Ignore white-space characters	空白文字を無視する
+	Regular expressions	正規表現
+	Search Options	検索オプション
+	Tab Character	タブ文字
+	Any Character	任意の 1 文字
+	Any Digit	任意の数字
+	Any Letter	任意の英字
+	Caret Character	キャレット記号
+	Section Character	セクション記号
+	Paragraph Character	段落記号文字
+	Graphic	図
+	Manual Line Break	手動の改行
+	Manual Page Break	手動の改ページ
+	Section Break	セクション区切り
+	White Space	空白
+	Clipboard Contents	クリップボードの内容
+	Find What Text	検索した文字列
+	Find What Expression	検索した式
+	Character in Range	範囲内の文字
+	Beginning of Word	単語の先頭
+	End of Word	単語の末尾
+	Expression	式
+	Not	否定
+	Num Occurrences	繰り返し回数
+	Previous 1 or More	直前の 1 回以上の繰り返し
+	0 or More Characters	0 文字以上の文字列
 	Move with Text	文字列と一緒に移動する
 	Fix Position on Page	ページ上で位置を固定する
 
@@ -1759,7 +1983,6 @@
 	Add line numbering	行番号を追加する
 	Add to Document	文書に追加
 	Address labels	宛名ラベル
-	Arabic	アラビア語
 	Auto	自動
 	Automatically hyphenate document	文書を自動的にハイフネーションする
 	Chinese (Simplified)	中国語（簡体字）
@@ -1772,7 +1995,6 @@
 	Detect language automatically	言語を自動的に検出する
 	Do not check spelling or grammar	スペルチェックと文章校正を行わない
 	Dutch	オランダ語
-	English (United Kingdom)	英語（英国）
 	Envelope size:	封筒サイズ:
 	Estonian	エストニア語
 	Finnish	フィンランド語
@@ -1801,7 +2023,6 @@
 	Numbering:	番号の付け方:
 	Omit	省略
 	One label per recipient	宛先ごとに 1 枚のラベル
-	Polish	ポーランド語
 	Portuguese (Brazil)	ポルトガル語（ブラジル）
 	Portuguese (Portugal)	ポルトガル語（ポルトガル）
 	Return address labels	差出人ラベル
@@ -1819,3 +2040,11 @@
 	Turkish	トルコ語
 	Ukrainian	ウクライナ語
 	{language} is now the document's default language.	{language} がこの文書の既定の言語になりました。
+	Visual effects	視覚効果
+	Animation effects:	アニメーション効果:
+	On	オン
+	Off	オフ
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	スクロールやズームのなめらかな動きと、メニューやボタンのフェード表示です。「オフ」にすると、すべての変化がすぐに表示されます。
+	Your system has animation effects turned on.	システムのアニメーション効果はオンです。
+	Your system has animation effects turned off.	システムのアニメーション効果はオフです。
+	Your system doesn't report an animation setting, so animation effects stay on.	システムからアニメーションの設定を取得できないため、アニメーション効果はオンのままです。

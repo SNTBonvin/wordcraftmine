@@ -26,9 +26,7 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
     if let Some(s) = &c.style {
         w.val("w:rStyle", s);
     }
-    // The complex-script font is written only when set: without it, Persian/Arabic text keeps
-    // the style's. Complex-script bold, italic and size default to the plain ones (they come in
-    // pairs, see `CharProps::overlay`), so text formatted here looks the same in Word.
+    // Emit only explicit properties so absent values keep inheriting from the style chain.
     let mut fonts: Vec<(&str, &str)> = Vec::new();
     if let Some(f) = &c.font {
         fonts.extend([("w:ascii", f.as_str()), ("w:hAnsi", f.as_str())]);
@@ -43,9 +41,9 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
         w.empty("w:rFonts", &fonts);
     }
     toggle(w, "w:b", c.bold);
-    toggle(w, "w:bCs", c.bold_cs.or(c.bold));
+    toggle(w, "w:bCs", c.bold_cs);
     toggle(w, "w:i", c.italic);
-    toggle(w, "w:iCs", c.italic_cs.or(c.italic));
+    toggle(w, "w:iCs", c.italic_cs);
     toggle(w, "w:caps", c.caps);
     toggle(w, "w:smallCaps", c.small_caps);
     toggle(w, "w:strike", c.strike);
@@ -77,7 +75,7 @@ pub fn rpr_inner(w: &mut W, c: &CharProps) {
     if let Some(s) = c.size {
         w.val("w:sz", &half(s));
     }
-    if let Some(s) = c.size_cs.or(c.size) {
+    if let Some(s) = c.size_cs {
         w.val("w:szCs", &half(s));
     }
     if let Some(h) = c.highlight {
@@ -289,16 +287,29 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
         }
         w.empty("w:spacing", &a);
     }
-    if p.indent_left.is_some() || p.indent_right.is_some() || p.indent_first.is_some() {
+    let chars = [p.indent_left_chars, p.indent_right_chars, p.indent_first_chars];
+    if p.indent_left.is_some() || p.indent_right.is_some() || p.indent_first.is_some() || chars.iter().any(Option::is_some) {
         let l = p.indent_left.map(twips);
         let r = p.indent_right.map(twips);
         let f = p.indent_first.map(|v| (v < 0.0, twips(v.abs())));
+        // Character units in hundredths of a character.
+        let hundredths = |v: f32| ((v.clamp(-1584.0, 1584.0) * 100.0).round() as i64).to_string();
+        let [lc, rc, fc] = chars.map(|c| c.map(|v| (v < 0.0, hundredths(v.abs()), hundredths(v))));
         let mut a: Vec<(&str, &str)> = Vec::new();
+        if let Some((_, _, v)) = &lc {
+            a.push(("w:leftChars", v));
+        }
         if let Some(l) = &l {
             a.push(("w:left", l));
         }
+        if let Some((_, _, v)) = &rc {
+            a.push(("w:rightChars", v));
+        }
         if let Some(r) = &r {
             a.push(("w:right", r));
+        }
+        if let Some((hang, v, _)) = &fc {
+            a.push((if *hang { "w:hangingChars" } else { "w:firstLineChars" }, v));
         }
         if let Some((hang, v)) = &f {
             a.push((if *hang { "w:hanging" } else { "w:firstLine" }, v));

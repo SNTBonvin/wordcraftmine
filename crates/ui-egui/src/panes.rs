@@ -1,5 +1,6 @@
 //! Side panes: Navigation (headings, pages, search results), Clipboard, Styles, Style Inspector,
-//! Accessibility and Alt Text (see `a11y_pane`), Restrict Editing ([`crate::dialogs_review`]), Comments.
+//! Accessibility and Alt Text (see `a11y_pane`), Restrict Editing ([`crate::dialogs_review`]), Comments,
+//! and the SmartArt Text Pane.
 
 use egui::{Stroke, Ui, vec2};
 use serde_json::{Value, json};
@@ -10,6 +11,20 @@ use crate::theme::{Tokens, regular, semibold};
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    // SmartArt Design › Text Pane, while a SmartArt graphic WordCraft can edit is selected.
+    if app.session.view.smart_art_pane && wordcraft_engine::cmd::smart_art::selected_smart_art(&app.session).is_some() {
+        egui::Panel::left("smart_art_pane")
+            .default_size(250.0)
+            .resizable(true)
+            .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| {
+                if header(ui, "Text Pane") {
+                    let _ = app.run("smartArt.textPane", json!({"value": false}));
+                    return;
+                }
+                crate::dialogs_smart_art::text_pane(app, ui);
+            });
+    }
     if app.session.view.nav_pane {
         egui::Panel::left("nav_pane")
             .default_size(260.0)
@@ -137,7 +152,9 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
                 let mut job = egui::text::LayoutJob::default();
                 let fmt = |c| egui::TextFormat { font_id: regular(12.0), color: c, ..Default::default() };
                 job.append(pre, 0.0, fmt(ui.visuals().text_color()));
-                job.append(hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: egui::Color32::from_rgb(0xFF, 0xF1, 0x76), color: egui::Color32::BLACK, ..Default::default() });
+                // The match is marked the way Find marks it on the page, per theme (#656).
+                let mark = Tokens::get(ui.ctx()).find_highlight;
+                job.append(hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: mark, color: ui.visuals().text_color(), ..Default::default() });
                 job.append(post, 0.0, fmt(ui.visuals().text_color()));
                 job.wrap.max_width = ui.available_width();
                 if ui.add(egui::Button::new(job).frame(false)).clicked() {
