@@ -70,3 +70,6 @@ display_name = "manucarcor"
 sync_github_name = false
 
 [people.odedigo]
+
+[people.Losminek]
+sync_github_name = true
