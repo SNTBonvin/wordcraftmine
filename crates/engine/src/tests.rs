@@ -5006,3 +5006,44 @@ fn insert_picture_takes_a_windows_metafile() {
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn rename_document_preserves_saved_contents_and_rejects_collisions() {
+    let dir = std::env::temp_dir().join(format!("wordcraft-rename-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let original = dir.join("original.docm");
+    let renamed = dir.join("Notes.docm");
+    let existing = dir.join("existing.docm");
+    std::fs::write(&original, b"original bytes").unwrap();
+    std::fs::write(&existing, b"keep these bytes").unwrap();
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    s.path = Some(original.clone());
+    s.dirty = true;
+    assert!(s.run("file.rename", &json!({"name": "existing"})).is_err());
+    assert_eq!(s.path.as_ref(), Some(&original));
+    assert_eq!(std::fs::read(&existing).unwrap(), b"keep these bytes");
+    let roots = crate::file_access::AutomationRoots::new(Some(&dir), None).unwrap();
+    assert!(crate::file_access::confine(roots.as_ref(), || s.run("file.rename", &json!({"name": "Notes"}))).is_err());
+    assert!(original.exists());
+    assert!(!renamed.exists());
+    s.run("file.rename", &json!({"name": " Notes "})).unwrap();
+    assert_eq!(s.path.as_ref(), Some(&renamed));
+    assert!(s.dirty);
+    assert!(!original.exists());
+    assert_eq!(std::fs::read(&renamed).unwrap(), b"original bytes");
+    s.run("file.rename", &json!({"name": "Notes"})).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn rename_unsaved_document_validates_the_name() {
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    for name in ["", "  ", "../report", "a/b", "a\\b", "a\nb", "name."] {
+        assert!(s.run("file.rename", &json!({"name": name})).is_err(), "{name:?}");
+        assert!(s.doc.core.title.is_empty());
+    }
+    s.run("file.rename", &json!({"name": "Résumé notes"})).unwrap();
+    assert_eq!(s.doc.core.title, "Résumé notes");
+    assert!(s.path.is_none());
+    assert!(s.dirty);
+}

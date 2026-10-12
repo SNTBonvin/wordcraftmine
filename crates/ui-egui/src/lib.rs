@@ -1701,6 +1701,7 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     let has = |k: &str| params.get(k).is_some_and(|v| !v.is_null());
     let rule = params.get("rule").and_then(Value::as_str).map(str::to_ascii_uppercase);
     match id {
+        "file.rename" if !has("name") => Some("renameDocument"),
         "mailings.rules" if !has("field") => match rule.as_deref() {
             None | Some("IF") => Some("ruleIf"),
             Some("SKIPIF") => Some("ruleSkipIf"),
@@ -1883,6 +1884,53 @@ mod tests {
 
     fn app() -> WordApp {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
+    }
+
+    #[test]
+    fn title_and_account_buttons_work() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        h.run_steps(6);
+        h.get_by_label("Document1 — Not saved").click();
+        h.run_steps(2);
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("renameDocument"));
+        h.event(egui::Event::Key {
+            key: egui::Key::A,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers { command: true, ..Default::default() },
+        });
+        h.event(egui::Event::Text("Project notes".into()));
+        h.run_steps(2);
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Rename").click();
+        h.run_steps(2);
+        assert!(h.state().dialog.is_none());
+        assert_eq!(h.state().title_stem(), "Project notes");
+        // A long name remains clickable, and Escape leaves it unchanged.
+        let long_name = "Notes ".repeat(25);
+        h.state_mut().run("file.rename", json!({"name": long_name})).unwrap();
+        h.run_steps(2);
+        h.get_by_label(&format!("{} — Edited", long_name.trim())).click();
+        h.run_steps(2);
+        assert!(h.state().dialog.is_some());
+        h.event(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        h.run_steps(2);
+        assert!(h.state().dialog.is_none());
+        assert_eq!(h.state().title_stem(), long_name.trim());
+        h.get_by_label("Account").click();
+        h.run_steps(2);
+        assert!(h.state().ui.backstage);
+        assert_eq!(h.state().ui.backstage_page, "options");
+        assert_eq!(h.state().ui.options_pane, "general");
+        assert!(h.query_by_label("User name:").is_some());
     }
 
     /// File › Options › Advanced › Animation: the caret's animation is a UI command, kept between

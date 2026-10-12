@@ -2080,3 +2080,9 @@
 	Automatic ({region})	Automaticky ({region})
 	Search	Hledat
 	Title Bar	Záhlaví okna
+
+# Document naming and account controls.
+	Rename Document	Přejmenovat dokument
+	Document name	Název dokumentu
+	Rename	Přejmenovat
+	Account	Účet

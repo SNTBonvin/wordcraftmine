@@ -403,6 +403,21 @@ pub fn read_file_capped(path: &str, max: u64, what: &str) -> Result<Vec<u8>, Str
     std::fs::read(path).map_err(|e| format!("{path}: {e}"))
 }
 
+/// Rename without replacing another file, respecting both automation access roots.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn rename_file(source: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
+    crate::file_access::check_read(&source.to_string_lossy())?;
+    crate::file_access::check_write(&source.to_string_lossy())?;
+    crate::file_access::check_write(&destination.to_string_lossy())?;
+    // Creating a sibling hard link refuses collisions atomically and keeps the original bytes.
+    std::fs::hard_link(source, destination).map_err(|e| format!("Could not rename document: {e}"))?;
+    if let Err(e) = std::fs::remove_file(source) {
+        let _ = std::fs::remove_file(destination);
+        return Err(format!("Could not rename document: {e}"));
+    }
+    Ok(())
+}
+
 /// Write `bytes` to the file at `path`, inside the automation write root when there is one.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {

@@ -140,6 +140,11 @@ fn special_menu(ui: &mut Ui, extra: &FindExtra) -> Option<&'static str> {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "dialog", rename_all = "camelCase")]
 pub enum Dialog {
+    RenameDocument {
+        name: String,
+        message: String,
+        focus: bool,
+    },
     Font {
         /// The font (Latin text) and the Asian text font, as the font lists name them, and their
         /// values when the dialog opened: OK changes only the ones changed (#505).
@@ -868,6 +873,7 @@ pub(crate) fn color_field(ui: &mut Ui, theme: &[wordcraft_doc::Rgb], value: &mut
 impl Dialog {
     pub fn name(&self) -> &'static str {
         match self {
+            Dialog::RenameDocument { .. } => "renameDocument",
             Dialog::Font { .. } => "font",
             Dialog::Paragraph { .. } => "paragraph",
             Dialog::Tabs { .. } => "tabs",
@@ -1133,6 +1139,7 @@ impl Dialog {
                 }
             }
             "pasteSpecial" => Dialog::paste_special(app, &json!({})),
+            "renameDocument" => Dialog::RenameDocument { name: app.title_stem(), message: String::new(), focus: true },
             "about" => Dialog::About { tab: 0 },
             "contributors" => Dialog::About { tab: 1 },
             "models" => Dialog::About { tab: 2 },
@@ -1319,6 +1326,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
     let mut open = true;
     let mut close = false;
     let title = match &d {
+        Dialog::RenameDocument { .. } => "Rename Document",
         Dialog::Font { .. } => "Font",
         Dialog::Paragraph { .. } => "Paragraph",
         Dialog::Tabs { .. } => "Tabs",
@@ -1471,6 +1479,29 @@ fn apply_font(app: &mut WordApp, d: &Dialog) {
 /// Returns true to close.
 fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     match d {
+        Dialog::RenameDocument { name, message, focus } => {
+            ui.label(tl!("Document name"));
+            let r = ui.add(egui::TextEdit::singleline(name).desired_width(320.0).char_limit(200));
+            if *focus {
+                r.request_focus();
+                *focus = false;
+            }
+            if !message.is_empty() {
+                ui.colored_label(ui.visuals().error_fg_color, message.as_str());
+            }
+            let (ok, cancel) = buttons(ui, tl!("Rename"));
+            if cancel {
+                return true;
+            }
+            if ok {
+                match app.run("file.rename", json!({"name": name})) {
+                    Ok(_) => return true,
+                    Err(e) => *message = e,
+                }
+            }
+            false
+        }
+
         Dialog::Font { font, font_ea, asian, size, bold, italic, underline, strike, sup, sub, small_caps, caps, hidden, color, spacing, .. } => {
             // Build the sample text format for the preview pane below.
             let preview_size = size.trim().parse::<f32>().unwrap_or(12.0).clamp(6.0, 72.0);
