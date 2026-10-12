@@ -1209,6 +1209,115 @@ fn hostile_huge_papx() {
     assert!(doc.body.iter().all(|b| b.as_table().is_none()), "no row detected");
 }
 
+/// #880: [MS-DOC] defines cell edges PER ROW (each row-end mark carries its own
+/// `sprmTDefTable`), so a two-column banner above nine-edge data rows must not fix the
+/// whole table's shape. The grid is the union of every row's edges, and each row's cells
+/// take their widths from that row's own edges. The row-end PAPXs are huge (their
+/// TDefTables don't fit one FKP page), pointing at real grpprls in the Data stream.
+#[test]
+fn per_row_edges_form_union_grid() {
+    let banner_edges: [i16; 3] = [0, 5000, 10423];
+    let data_edges: [i16; 9] = [0, 800, 1600, 2694, 3261, 3686, 4111, 8931, 9639];
+    let mut data_stream = Vec::new();
+    let huge_at = |data_stream: &mut Vec<u8>, real: Vec<u8>| -> Vec<u8> {
+        let fc = data_stream.len() as u32;
+        data_stream.extend_from_slice(&(real.len() as u16).to_le_bytes());
+        data_stream.extend_from_slice(&real);
+        grpprl(&[(0x6646, &fc.to_le_bytes())])
+    };
+    let ttp_row = |edges: &[i16]| [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(edges)].concat();
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let text = "a\u{7}b\u{7}c\u{7}d\u{7}e\u{7}f\u{7}g\u{7}h\u{7}i\u{7}j\u{7}k\u{7}l\u{7}m\u{7}n\u{7}o\u{7}p\u{7}q\u{7}r\u{7}tail\r";
+    let spec = StructSpec {
+        text,
+        // Banner (a-b), then two 8-cell data rows (c-j, k-r), then a tail paragraph.
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),
+            (2, 0, huge_at(&mut data_stream, ttp_row(&banner_edges))),
+            (4, 0, in_tbl.clone()),
+            (18, 0, huge_at(&mut data_stream, ttp_row(&data_edges))),
+            (20, 0, in_tbl),
+            (34, 0, huge_at(&mut data_stream, ttp_row(&data_edges))),
+            (36, 0, Vec::new()),
+        ],
+        data_stream,
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 3);
+    assert_eq!(tbl.rows[0].cells.len(), 2);
+    assert_eq!(tbl.rows[1].cells.len(), 8);
+    // The grid is the widths of the sorted, de-duplicated union of both rows' edges.
+    let pts = |es: &[i16]| -> Vec<f32> { es.iter().map(|&t| t as f32 / 20.0).collect() };
+    let widths_of = |es: &[f32]| -> Vec<f32> { es.windows(2).map(|w| w[1] - w[0]).collect() };
+    let mut union = pts(&banner_edges);
+    union.extend(pts(&data_edges));
+    union.sort_by(f32::total_cmp);
+    union.dedup();
+    assert_eq!(tbl.grid.len(), 10);
+    assert_eq!(tbl.grid, widths_of(&union));
+    // Both data rows carry their own edges' widths (800, 800, 1094, … twips), not the
+    // banner's.
+    let want = widths_of(&pts(&data_edges)).into_iter().map(Some).collect::<Vec<_>>();
+    for r in &tbl.rows[1..] {
+        assert_eq!(r.cells.iter().map(|c| c.props.width).collect::<Vec<_>>(), want);
+    }
+    // The banner cells too: 5000 and 5423 twips.
+    let bpts = pts(&banner_edges);
+    assert_eq!(tbl.rows[0].cells[0].props.width, Some(bpts[1] - bpts[0]));
+    assert_eq!(tbl.rows[0].cells[1].props.width, Some(bpts[2] - bpts[1]));
+    let last = doc.body.last().and_then(|b| b.as_para()).expect("tail para");
+    assert_eq!(last.text, "tail");
+}
+
+/// #880 hardening: `sprmTDefTable` edges are hostile file data — unsorted, negative, at
+/// the i16 extremes, and more per row than the model's 63-column cap. Nothing may panic,
+/// every width stays non-negative, and the unioned grid stays within the cap.
+#[test]
+fn hostile_edges() {
+    let row1_edges: Vec<i16> = vec![5000, 0, -200, 32767];
+    let row2_edges: Vec<i16> = (0..70).map(|i| i * 100).collect(); // 70 edges: past the cap
+    let mut data_stream = Vec::new();
+    let huge_at = |data_stream: &mut Vec<u8>, real: Vec<u8>| -> Vec<u8> {
+        let fc = data_stream.len() as u32;
+        data_stream.extend_from_slice(&(real.len() as u16).to_le_bytes());
+        data_stream.extend_from_slice(&real);
+        grpprl(&[(0x6646, &fc.to_le_bytes())])
+    };
+    let ttp_row = |edges: &[i16]| [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), t_def_table(edges)].concat();
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let text = "a\u{7}b\u{7}c\u{7}d\u{7}e\u{7}f\u{7}tail\r";
+    let spec = StructSpec {
+        text,
+        // Row 1 (a-c) with the hostile edges; row 2 (d-f) wider than the column cap.
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),
+            (4, 0, huge_at(&mut data_stream, ttp_row(&row1_edges))),
+            (6, 0, in_tbl),
+            (10, 0, huge_at(&mut data_stream, ttp_row(&row2_edges))),
+            (12, 0, Vec::new()),
+        ],
+        data_stream,
+        ..structured_spec(text, text.chars().count() as u32)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 2);
+    assert_eq!(tbl.rows[0].cells.len(), 3);
+    assert_eq!(tbl.rows[1].cells.len(), 3);
+    assert!(tbl.grid.len() <= 63, "grid columns: {}", tbl.grid.len());
+    assert!(tbl.grid.iter().all(|w| *w >= 0.0 && w.is_finite()), "grid: {:?}", tbl.grid);
+    for r in &tbl.rows {
+        assert!(r.cells.iter().all(|c| c.props.width.is_none_or(|w| w >= 0.0 && w.is_finite())));
+    }
+    assert!(tbl.total_width().is_finite());
+    // Row 2's own edges still size its first cell (100 twips = 5pt).
+    assert_eq!(tbl.rows[1].cells[0].props.width, Some(100.0f32 / 20.0));
+    let last = doc.body.last().and_then(|b| b.as_para()).expect("tail para");
+    assert_eq!(last.text, "tail");
+}
+
 // ---------------------------------------------------------------------------------------------
 // D3: lists (PlfLst + PlfLfo) and the combined document.
 
