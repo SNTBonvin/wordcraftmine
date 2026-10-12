@@ -408,8 +408,15 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     if let Some(m) = fonts.families.get_mut(&FontFamily::Monospace) {
         m.insert(0, "Mono".into());
     }
-    fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
-    fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
+    // Named weights need the same symbol/emoji fallbacks as regular text. In particular,
+    // keep the replacement-square face before the CJK faces: egui's has_glyph currently
+    // compares the resolved face to the replacement face, even for supported characters.
+    let defaults = FontDefinitions::default().families.remove(&FontFamily::Proportional).unwrap_or_default();
+    for (family, primary) in [("medium", "InterMedium"), ("semibold", "InterSemiBold")] {
+        let mut chain = vec![primary.into(), "Inter".into(), "SourceSans".into()];
+        chain.extend(defaults.iter().cloned());
+        fonts.families.insert(FontFamily::Name(family.into()), chain);
+    }
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {

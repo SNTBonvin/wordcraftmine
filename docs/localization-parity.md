@@ -1,6 +1,6 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Korean interface catalog added; previously minor: font list shows fonts by their names in the interface language, #505; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Korean first-key/space guards, Enter handling and UI font-weight fallbacks; previously minor: Korean interface catalog added; previously minor: font list shows fonts by their names in the interface language, #505; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
@@ -49,7 +49,7 @@ shared items below.
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
 | Japanese | ja | ~930; 98% / ~95% | most | CJK ✅, IME ✅; no vertical text, ruby or document grid | no | partial | 3–5 |
 | German | de | 0 (PR #203 open) | ❌ | Latin ✅ | no | none | 1–2 |
-| Korean | ko | 2,386 entries; all existing catalog keys | existing catalogs covered; uncatalogued literals still English | Hangul fonts checked; macOS IME verification pending (separate from UI translation) | no | partial | 1–3 |
+| Korean | ko | 2,386 entries; all existing catalog keys | existing catalogs covered; uncatalogued literals still English | Hangul UI font coverage checked; IME focus/completion and Backspace tested with synthetic events; native macOS first-key retest passed | no | partial | 1–3 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
 Other shipped languages: **7** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
@@ -65,7 +65,7 @@ proofing is not included; terminology and checks: [`localization-tr.md`](localiz
 Korean follows `ko-KR`, `ko_KR.UTF-8` and other Korean system locales, and can be selected
 in Options or with `ui.language` and `{"value":"ko"}`. The catalog translates menus, commands,
 dialogs, tooltips and built-in style names while preserving document contents and command IDs.
-Korean spelling/grammar and changes to IME handling are outside this translation. Terminology,
+Korean spelling/grammar remains outside this translation. IME fixes are tracked separately in [typing-parity.md](typing-parity.md#input-method-composition). Terminology,
 font requirements and validation: [`localization-ko.md`](localization-ko.md).
 
 ## Shared work (not in the per-language hours)
@@ -82,6 +82,7 @@ font requirements and validation: [`localization-ko.md`](localization-ko.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Symbol/emoji fallbacks retained for medium/semibold UI fonts; avoids false Hangul coverage failures from egui replacement-face checks; IME focus/completion and Backspace regressions tested synthetically; native first-key retest passed |
 | 2026-10-12 | minor | Korean interface catalog (2,386 entries), locale and preference tests, Hangul font coverage and native font fallback candidates |
 | 2026-10-11 | minor | Font dialog sets the Asian text font (`w:eastAsia`) and the Latin text font separately; the Asian list holds the installed Chinese, Japanese and Korean fonts by their interface-language names (#505) |
 | 2026-10-11 | minor | Font list shows installed fonts by their names in the interface language (宋体 for SimSun in Chinese, Japanese and Korean names likewise) and finds them by either name; a Chinese, Japanese or Korean font is stored as `w:eastAsia` too (#505) |

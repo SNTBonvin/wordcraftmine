@@ -66,3 +66,18 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `crates/ui-egui/src/i18n/pt-br.tsv` | @edurbs with ZCode | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Brazilian Portuguese interface catalog; spelling checked with the external pt_BR Hunspell dictionary, not bundled |
 | `crates/ui-egui/src/i18n/ru.tsv` | Dmitrii Khlapov with Claude | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Russian interface catalog; reviewed by a native speaker |
 | `crates/ui-egui/src/i18n/tr.tsv` | @PbyLoyth with Codex and Claude Code | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Turkish interface catalog |
+
+## Vendored winit assets
+
+These upstream examples/documentation assets are retained in the Apache-2.0 dependency source; they are not WordCraft interface assets.
+
+| File | Author | Source | Licence |
+|---|---|---|---|
+| `vendor/winit/docs/res/keyboard_left_shift_key.svg` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/docs/res/keyboard_left_shift_key.svg) | Apache-2.0 |
+| `vendor/winit/docs/res/keyboard_numpad_1_key.svg` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/docs/res/keyboard_numpad_1_key.svg) | Apache-2.0 |
+| `vendor/winit/docs/res/keyboard_right_shift_key.svg` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/docs/res/keyboard_right_shift_key.svg) | Apache-2.0 |
+| `vendor/winit/docs/res/keyboard_standard_1_key.svg` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/docs/res/keyboard_standard_1_key.svg) | Apache-2.0 |
+| `vendor/winit/examples/data/cross.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/cross.png) | Apache-2.0 |
+| `vendor/winit/examples/data/cross2.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/cross2.png) | Apache-2.0 |
+| `vendor/winit/examples/data/gradient.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/gradient.png) | Apache-2.0 |
+| `vendor/winit/examples/data/icon.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/icon.png) | Apache-2.0 |

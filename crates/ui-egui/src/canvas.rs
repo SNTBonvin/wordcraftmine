@@ -52,6 +52,8 @@ pub struct CanvasState {
     pub focused: bool,
     pub render_ms: f64,
     pub ime_preedit: String,
+    /// A caret move finishes the composition and resets the native marked text in this frame.
+    pub(crate) ime_interrupt_frame: Option<u64>,
     /// Document faces added to the interface fonts to draw the input method's composition (#565).
     pub(crate) ime_faces: Vec<std::sync::Arc<wordcraft_fonts::FontFace>>,
     pub want_focus: bool,
@@ -133,6 +135,7 @@ impl Default for CanvasState {
             focused: false,
             render_ms: 0.0,
             ime_preedit: String::new(),
+            ime_interrupt_frame: None,
             ime_faces: Vec::new(),
             want_focus: true,
             context_issue: None,
@@ -569,6 +572,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         origin = ui.min_rect().min - viewport.min.to_vec2();
         let content = Rect::from_min_size(ui.min_rect().min, geo.size);
         let resp = ui.allocate_rect(content, Sense::click_and_drag());
+        // Enable native composition in the very frame that takes focus, before publishing
+        // IMEOutput. Waiting until after painting lets the first Hangul key arrive as Text.
+        if resp.clicked() || resp.drag_started() || app.canvas.want_focus {
+            resp.request_focus();
+            app.canvas.want_focus = false;
+        }
         if let Some(tr) = scroll_target {
             ui.scroll_to_rect(Rect::from_min_size(ui.min_rect().min + tr.min.to_vec2(), tr.size()), None);
         }
@@ -766,7 +775,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
         }
         // Caret.
-        let focused = resp.has_focus() || app.canvas.focused;
+        let focused = resp.has_focus();
+        // Widget ownership outlives native-window activation. Keep IME enabled while this
+        // window is inactive, otherwise its first key can arrive before the focus repaint
+        // and bypass AppKit's composition entirely.
+        let owns_keyboard = ui.memory(|m| m.has_focus(resp.id));
+        let interrupt_ime = app.canvas.ime_interrupt_frame == Some(ui.ctx().cumulative_frame_nr());
         // Editing an equation: shade it and draw the caret inside it.
         let mut math_caret = false;
         if let Some(m) = app.session.math.clone()
@@ -793,13 +807,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
                 if focused {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(530 - (since as u64 % 530)));
+                }
+                if owns_keyboard {
                     let cr = Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1));
                     ui.ctx().output_mut(|o| {
                         o.ime = Some(egui::output::IMEOutput {
                             rect: cr,
                             cursor_rect: cr,
                             purpose: Default::default(),
-                            should_interrupt_composition: false,
+                            should_interrupt_composition: interrupt_ime,
                         });
                     });
                 }
@@ -813,13 +829,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let x = pr.min.x + c.x * scale;
             let y0 = pr.min.y + c.top * scale;
             let y1 = y0 + c.height * scale;
+            let preedit_width = if app.canvas.ime_preedit.is_empty() {
+                0.0
+            } else {
+                painter.layout_no_wrap(app.canvas.ime_preedit.clone(), regular(c.height * scale * 0.8), caret_color).size().x
+            };
             let since = crate::now_ms() - app.canvas.caret_visible_since;
             let on = ((since / 530.0) as u64).is_multiple_of(2);
             let bar = if c.width > 0.0 {
                 // Turned text (a table cell's text direction): the caret lies across the page.
                 [pos2(x, y0.round() + 0.5), pos2(x + c.width * scale, y0.round() + 0.5)]
             } else {
-                [pos2(x.round() + 0.5, y0), pos2(x.round() + 0.5, y1)]
+                [pos2((x + preedit_width).round() + 0.5, y0), pos2((x + preedit_width).round() + 0.5, y1)]
             };
             // The caret glides and fades like Word's (`caret_glide`).
             let shown = app.session.sel.is_collapsed() && focused;
@@ -831,11 +852,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(530 - (since as u64 % 530)));
             }
             // IME candidate window placement.
-            let cr = Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1));
-            if focused {
+            let cr = Rect::from_min_max(pos2(x + preedit_width, y0), pos2(x + preedit_width + 1.0, y1));
+            if owns_keyboard {
                 ui.ctx().output_mut(|o| {
-                    o.ime =
-                        Some(egui::output::IMEOutput { rect: cr, cursor_rect: cr, purpose: Default::default(), should_interrupt_composition: false });
+                    o.ime = Some(egui::output::IMEOutput {
+                        rect: cr,
+                        cursor_rect: cr,
+                        purpose: Default::default(),
+                        should_interrupt_composition: interrupt_ime,
+                    });
                 });
             }
             if !app.canvas.ime_preedit.is_empty() {
@@ -874,10 +899,6 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         deselect_balloon(app, ui.ctx());
     }
     // Focus: the canvas takes keyboard focus on click and keeps Tab/arrows.
-    if resp.clicked() || resp.drag_started() || app.canvas.want_focus {
-        resp.request_focus();
-        app.canvas.want_focus = false;
-    }
     if resp.has_focus() {
         ui.memory_mut(|m| {
             m.set_focus_lock_filter(resp.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true })

@@ -1,12 +1,32 @@
 # Typing parity with Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; previously trivial: outline keys in Outline view, #493) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-12 · **Change:** minor (Korean native first-key/space guards, forwarded Enter/Backspace, focus and composition editing; previously trivial: complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; previously trivial: outline keys in Outline view, #493) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 What Word does when you type, observed black-box (same keystrokes typed into Word and
 WordCraft, results read back paragraph by paragraph) and pinned by tests in
 `crates/engine/src/tests_typing.rs`. When typing behaviour changes, change it here and in the
 tests together. Line breaking and pagination are in [`layout-parity.md`](layout-parity.md); the
 overall picture is in [`target-app-parity.md`](target-app-parity.md).
+
+## Input method composition
+
+The native input method owns pending text. For Korean two-set input, `가나다` can be
+committed while `라` remains a visible composition; Backspace updates `라` to `ㄹ`, then
+clears it, without deleting `다`. A following Backspace edits the committed document.
+The UI enables IME in the same frame that the canvas takes focus. Pointer presses and
+window focus loss finish pending text at the old caret before navigation or ribbon actions;
+keys forwarded after a preedit update do not also edit the document. A native commit in
+that pointer batch is inserted once. Space completes pending text and inserts one space;
+Enter after a commit and trailing empty preedit still splits the paragraph once.
+Punctuation completes the pending syllable and inserts the delimiter once, whether
+it arrives inside the native commit or as a separate text event.
+Preedit-only Backspace edits the composition, while Backspace forwarded after a
+commit edits the document. These paths are covered by synthetic egui events in
+`keys::tests` and `canvas_enables_ime_in_the_frame_that_takes_focus`; committed syllables
+and Backspace/Undo are pinned by `committed_korean_syllables_insert_and_backspace_without_splitting_jamo`.
+Native macOS two-set retesting confirmed `동해물과` now starts with `ㄷ → 도 → 동`;
+the first raw-jamo path is retried once inside winit. See [Korean IME reproduction and validation](korean-ime.md).
+This is local WordCraft evidence, not a new observed Word parity claim.
 
 ## Lists
 
@@ -135,6 +155,7 @@ Word.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Scoped winit first-Apple-Korean-key retry verified with native typing; Korean IME enables on focus acquisition; pending syllables finish at the old caret on pointer/focus changes; duplicate composition editing keys suppressed; synthetic UI and engine regression tests |
 | 2026-10-11 | minor | AutoFormat tables from `+---+`, arrow bullets, smileys inside words, undo after a border line (#546) |
 | 2026-10-11 | trivial | Outline view keys: expand/collapse, Show Level, moving and promoting with collapsed content (#493) |
 | 2026-10-11 | minor | Editing options: typing replaces selection, overtype and the Insert key (#485) |
