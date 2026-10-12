@@ -33,8 +33,13 @@ pub(crate) enum AfterPick {
     SaveAs(AfterSave),
     /// Save a copy there in this format (`pdf`, `docx`, `png`…).
     Export { ext: String },
-    /// Load the picked CSV/TSV/text file as the mail-merge recipients (#240).
+    /// Load the picked CSV/TSV/text file or spreadsheet as the mail-merge recipients (#240, #334).
     Recipients,
+    /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
+    /// Organizer (#377).
+    ForDialog,
+    /// Put the picked document into the Compare dialog (original or revised, #412).
+    ComparePath { revised: bool },
 }
 
 /// What to do once Save As has written the document.
@@ -123,9 +128,20 @@ impl WordApp {
                 };
                 self.insert_or_change_picture(json!({"path": path}))
             }
+            AfterPick::ForDialog => {
+                let picked = picked.filter(|p| !p.is_empty());
+                let r = json!({"picked": picked});
+                self.dialog_pick = picked;
+                Ok(r)
+            }
             AfterPick::Recipients => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 self.load_recipients(json!({"path": path}))
+            }
+            AfterPick::ComparePath { revised } => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                crate::dialogs_review::set_compare_path(self, revised, path);
+                Ok(json!({"picked": true}))
             }
             AfterPick::Export { ext } => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
@@ -336,6 +352,49 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         answer(&shown, None);
         assert_eq!(a.poll_file_dialog().unwrap().unwrap(), json!({"cancelled": true}));
+        assert_eq!(a.session.merge.rows.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A workbook with several sheets (#334) shows Select Table; its answer loads that sheet.
+    #[test]
+    fn a_workbook_with_several_sheets_asks_which_one() {
+        use std::io::Write;
+        let dir = scratch("workbook");
+        let book = dir.join("people.ods");
+        let table = |name: &str, cells: &[&str]| {
+            let cells: String = cells
+                .iter()
+                .map(|c| {
+                    format!(
+                        r#"<table:table-row><table:table-cell office:value-type="string"><text:p>{c}</text:p></table:table-cell></table:table-row>"#
+                    )
+                })
+                .collect();
+            format!(r#"<table:table table:name="{name}">{cells}</table:table>"#)
+        };
+        let content = format!(
+            r#"<office:document-content xmlns:office="o" xmlns:table="t" xmlns:text="x"><office:body><office:spreadsheet>{}{}</office:spreadsheet></office:body></office:document-content>"#,
+            table("Notes", &["n"]),
+            table("Guests", &["Name", "Ada", "Alan"])
+        );
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, body) in [("mimetype", "application/vnd.oasis.opendocument.spreadsheet"), ("content.xml", content.as_str())] {
+            z.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(body.as_bytes()).unwrap();
+        }
+        std::fs::write(&book, z.finish().unwrap().into_inner()).unwrap();
+        let (mut a, shown) = async_app();
+        a.run("ui.openRecipientList", json!({})).unwrap();
+        answer(&shown, Some(&book.to_string_lossy()));
+        a.poll_file_dialog().unwrap().unwrap();
+        let Some(crate::dialogs::Dialog::SelectTable { sheets, params, headers: true, .. }) = &a.dialog else { panic!("Select Table expected") };
+        assert_eq!(sheets, &["Notes", "Guests"]);
+        assert!(a.session.merge.headers.is_empty(), "nothing loads before a sheet is chosen");
+        let mut p = params.clone();
+        p["sheet"] = json!(2);
+        a.load_recipients(p).unwrap();
+        assert_eq!(a.session.merge.headers, vec!["Name"]);
         assert_eq!(a.session.merge.rows.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }

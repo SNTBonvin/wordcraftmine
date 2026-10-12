@@ -349,9 +349,41 @@ fn chinese_interface_fonts_load_and_cover_simplified_hanzi() {
     ctx.set_fonts(crate::theme::font_definitions(true, true));
     ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
     let covered = ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), "删除页选"));
-    let embedded = !wordcraft_fonts::ui_needs_system_cjk(true, &wordcraft_fonts::ui_cjk_fonts(true));
-    if embedded || wordcraft_fonts::system_cjk_ui_font(true).is_some() {
+    let (catalogs, _) = Lang::cjk_font_text(true);
+    let embedded = !wordcraft_fonts::ui_needs_system_cjk(&catalogs, &wordcraft_fonts::ui_cjk_fonts(true));
+    if embedded || wordcraft_fonts::system_cjk_ui_font(true, &['页']).is_some() {
         assert!(covered, "a Chinese face is available but the interface lacks simplified hanzi");
+    }
+}
+
+#[test]
+fn cjk_catalogs_are_covered_by_the_embedded_interface_faces() {
+    // #486: every CJK character of the Chinese and Japanese catalogs and of the language names
+    // has a glyph in the interface font chain built from the embedded faces alone, in every
+    // interface weight; `?` and boxes showed where the Japanese face was the only CJK one. Needs
+    // a craft-fonts build (CRAFT_FONTS_DIR); without one there is nothing embedded to check, and
+    // the interface reads an installed CJK font instead.
+    if wordcraft_fonts::ui_cjk_fonts(false).is_empty() {
+        eprintln!("skipped: built without craft-fonts (CRAFT_FONTS_DIR)");
+        return;
+    }
+    let names: String = Lang::all().map(Lang::name).collect();
+    for code in ["zh-hans", "zh-hant", "ja"] {
+        let l = lang(code);
+        let ctx = egui::Context::default();
+        ctx.set_fonts(crate::theme::font_definitions(l.prefers_hans(), false));
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+        let (entries, errors) = parse_entries(l.0.source);
+        assert!(errors.is_empty(), "{code}: {errors:?}");
+        let chars: std::collections::BTreeSet<char> =
+            entries.iter().flat_map(|e| e.translation.chars()).chain(names.chars()).filter(|c| wordcraft_fonts::is_cjk(*c)).collect();
+        assert!(chars.len() > 300, "{code}: {} CJK characters", chars.len());
+        for font in [crate::theme::regular(14.0), crate::theme::medium(14.0), crate::theme::semibold(14.0)] {
+            let missing: String = ctx.fonts_mut(|f| chars.iter().filter(|c| !f.has_glyph(&font, **c)).collect());
+            assert!(missing.is_empty(), "{code}: no glyph in {font:?} for {missing}");
+        }
+        // So the interface reads no installed CJK font for these languages.
+        assert_eq!(wordcraft_fonts::ui_uncovered_cjk(&[l.0.source, &names], &wordcraft_fonts::ui_cjk_fonts(l.prefers_hans())), []);
     }
 }
 
@@ -360,6 +392,125 @@ fn only_cjk_languages_ask_for_an_installed_cjk_font() {
     // #241 follow-up: an English interface must not read a large system CJK font on startup.
     let cjk: Vec<&str> = Lang::all().filter(|l| l.uses_cjk()).map(Lang::code).collect();
     assert_eq!(cjk, ["zh-hans", "zh-hant", "ja"]);
+}
+
+#[test]
+fn russian_locales_and_saved_preference_work_without_changing_the_document() {
+    let ru = lang("ru");
+    for tag in ["ru", "ru-RU", "ru_RU.UTF-8", "RU-ru", "ru_UA.UTF-8", "ru-Cyrl-RU"] {
+        assert_eq!(lang_from_tag(tag), Some(ru), "{tag}");
+    }
+    assert_eq!(first_supported(["fr-FR", "ru-RU", "en-US"]), Some(ru));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "RU"})).unwrap();
+    assert_eq!(result["effective"], "ru");
+    assert_eq!(app.ui.language, "ru");
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), ru);
+    assert_eq!(ru.name(), "Русский");
+}
+
+#[test]
+fn russian_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // Everything the other catalogs translate, plus the preview samples below.
+    assert!(keys(lang("ru").0.source).is_superset(&keys(lang("zh-hans").0.source)));
+    assert!(parse_entries(lang("ru").0.source).1.is_empty());
+    let ru = lang("ru");
+    // Style gallery and Design tab previews show Cyrillic sample text.
+    assert_eq!(tr(ru, "AaBbCcDd"), "АаБбВвГг");
+    assert_eq!(tr(ru, "Title"), "Заголовок");
+    assert_eq!(tr(ru, "Heading 1"), "Заголовок 1");
+    assert!(tr(ru, "Body text in a short paragraph to show spacing.").starts_with("Основной текст"));
+    assert_eq!(tr(ru, "Home"), "Главная");
+    assert_eq!(tr(ru, "Font"), "Шрифт");
+    assert_eq!(tr(ru, "Review"), "Рецензирование");
+    assert_eq!(tr(ru, "Save"), "Сохранить");
+    assert_eq!(tr(ru, "unknown future label"), "unknown future label");
+    // The search hint's example must find the command it names.
+    assert_eq!(tr(ru, "Insert Table"), "Вставить таблицу");
+    assert!(tr(ru, "Type a command, e.g. \"insert table\"").contains("вставить таблицу"));
+    // Count-neutral wording is grammatical for every count: `Слов: 21`, `Слов: 1 из 21`.
+    for count in [0, 1, 2, 5, 21, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(ru, "{words} words"), &[("words", &words)]), format!("Слов: {count}"));
+        assert_eq!(fmt(tr(ru, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("Слов: 1 из {count}"));
+    }
+}
+
+#[test]
+fn bundled_interface_fonts_cover_russian_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("ru").0.source);
+    assert!(errors.is_empty());
+    let chars: std::collections::HashSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        // Cyrillic letters plus the Russian quotes and dash; symbols such as ¶, ⌘ or 📂 come from
+        // the English sources and render as they already do.
+        .filter(|c| ('\u{0400}'..='\u{04FF}').contains(c) || matches!(c, '«' | '»' | '—'))
+        .chain("АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя".chars())
+        .collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+}
+
+#[test]
+fn built_in_style_names_are_translated_for_display_and_user_styles_are_not() {
+    let sheet = wordcraft_doc::StyleSheet::builtin();
+    let name = |id: &str| style_name(sheet.get(id).unwrap());
+    set_current(lang("ru"));
+    assert_eq!(name("Normal"), "Обычный");
+    assert_eq!(name("Title"), "Заголовок");
+    assert_eq!(name("Heading1"), "Заголовок 1");
+    // Numbered families beyond the catalog's explicit entries go through one template.
+    assert_eq!(name("Heading7"), "Заголовок 7");
+    assert_eq!(name("TOC9"), "Оглавление 9");
+    // A style the author made keeps its name, even when it matches a built-in one.
+    let mine = wordcraft_doc::Style { name: "Normal".into(), builtin: false, ..Default::default() };
+    assert_eq!(style_name(&mine), "Normal");
+    // A built-in name without a translation stays English.
+    assert_eq!(builtin_style_name("Some Future Style"), "Some Future Style");
+    assert_eq!(builtin_style_name("Heading x"), "Heading x");
+    // Every built-in paragraph and character style shows in Russian. Table styles (`Grid Table 4 –
+    // Blue`) appear only as tooltips under Table Design and stay English for now.
+    let untranslated: Vec<&str> = sheet
+        .styles
+        .iter()
+        .filter(|s| s.kind != wordcraft_doc::StyleKind::Table && style_name(s) == s.name && s.name.chars().any(char::is_alphabetic))
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(untranslated.is_empty(), "built-in styles without a Russian name: {untranslated:?}");
+    set_current(Lang::EN);
+    assert_eq!(name("Heading7"), "Heading 7");
+    // The document itself never changes.
+    assert_eq!(sheet.get("Normal").unwrap().name, "Normal");
+}
+
+#[test]
+fn context_entries_override_only_their_context_and_unknown_contexts_are_rejected() {
+    let (c, errors) = Catalog::parse("\tTitle\tЗаголовок\npreview\tTitle\tТитул\n\tFont\tШрифт\nnope\tFont\tX\n");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].contains("unknown context"));
+    assert_eq!(c.plain("Title"), Some("Заголовок"));
+    assert_eq!(c.in_context("preview", "Title"), Some("Титул"));
+    // Without a context entry, a context lookup uses the plain one.
+    assert_eq!(c.in_context("preview", "Font"), Some("Шрифт"));
+    assert_eq!(c.in_context("preview", "Missing"), None);
+    let ru = lang("ru");
+    assert_eq!(tr(ru, "Title"), "Заголовок");
+    assert_eq!(trc(ru, "preview", "Title"), "Пример");
+    assert_eq!(trc(Lang::EN, "preview", "Title"), "Title");
+    assert_eq!(trc(lang("ja"), "preview", "Unknown"), "Unknown");
 }
 
 #[test]
@@ -411,4 +562,87 @@ fn bundled_interface_fonts_cover_estonian_letters() {
             assert_ne!(face.glyph_for(ch), 0, "{family} {style} lacks {ch}");
         }
     }
+}
+
+#[test]
+fn turkish_locales_and_saved_preference_work_without_changing_the_document() {
+    let tr = lang("tr");
+    for tag in ["tr", "tr-TR", "TR_tr.UTF-8", "tr-CY", "tr-Latn-TR", "tr_TR.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(tr), "{tag}");
+    }
+    assert_eq!(first_supported(["fr-FR", "tr-TR", "en-US"]), Some(tr));
+    assert_eq!(normalize_pref("TR"), Some("tr"));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "TR"})).unwrap();
+    assert_eq!(result["effective"], "tr");
+    assert_eq!(app.ui.language, "tr");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "tr" && l["name"] == "Türkçe"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), tr);
+    assert!(app.run("ui.language", serde_json::json!({"value": "tr-unknown"})).is_err());
+    assert_eq!(app.ui.language, "tr", "invalid preferences must keep the saved language");
+    app.run("ui.language", serde_json::json!({"value": "auto"})).unwrap();
+    assert_eq!(app.ui.language, AUTO);
+    assert_eq!(tr.name(), "Türkçe");
+}
+
+#[test]
+fn turkish_covers_the_entire_existing_interface_catalog_and_preserves_templates() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // Spanish carries every key the interface looks up; Chinese lacks only a few newer labels.
+    assert_eq!(keys(lang("tr").0.source), keys(lang("es").0.source));
+    assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("tr").0.source)));
+    let tr = lang("tr");
+    for (source, expected) in [
+        ("Home", "Giriş"),
+        ("Font", "Yazı Tipi"),
+        ("Review", "İncele"),
+        ("Italic", "İtalik"),
+        ("Table of Contents", "İçindekiler Tablosu"),
+        ("Track Changes", "Değişiklikleri İzle"),
+        ("Save", "Kaydet"),
+        ("UPPERCASE", "BÜYÜK HARF"),
+        ("lowercase", "küçük harf"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(super::tr(tr, source), expected);
+    }
+    assert_eq!(fmt(super::tr(tr, "Exported {path}"), &[("path", "taslak-{words}.docx")]), "Dışa aktarıldı: taslak-{words}.docx");
+    assert_eq!(fmt(super::tr(tr, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "Sayfa 3 / 9");
+    // The Font dialog uppercases its preview sample for All Caps, so the sample has no lowercase i.
+    assert_eq!(super::tr(tr, "AaBbYyZz").to_uppercase(), "AABBYYZZ ĞĞİIŞŞ");
+    // Turkish count nouns remain singular for both one and other, including zero and large counts.
+    for count in [0, 1, 2, 5, 11, 21, 100, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(super::tr(tr, "{words} words"), &[("words", &words)]), format!("{count} sözcük"));
+        assert_eq!(fmt(super::tr(tr, "{selected} of {words} words"), &[("selected", "1"), ("words", &words)]), format!("{count} sözcükten 1 seçili"));
+    }
+    set_current(tr);
+    assert_eq!(location("Home › Font"), "Giriş › Yazı Tipi");
+    assert_eq!(prefixed("Undo", "Italic"), "Geri Al: İtalik");
+    set_current(Lang::EN);
+    assert_eq!(super::tr(Lang::EN, "Italic"), "Italic");
+}
+
+#[test]
+fn bundled_interface_fonts_cover_turkish_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("tr").0.source);
+    assert!(errors.is_empty());
+    let extra = "ÇçĞğİıÖöŞşÜü";
+    let chars: std::collections::HashSet<char> =
+        entries.iter().flat_map(|e| e.translation.chars()).filter(|c| extra.contains(*c)).chain(extra.chars()).collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("tr").uses_cjk());
 }
