@@ -26,9 +26,17 @@ const EDGE_SPEED_MIN: f32 = 45.0;
 const EDGE_SPEED_MAX: f32 = 720.0;
 /// Longest frame time trusted for auto-scroll (a stall shouldn't jump the page).
 const EDGE_MAX_DT: f32 = 0.1;
+/// Page textures are kept for pages within this many viewport heights of the view; farther ones
+/// are rendered again when they come back.
+const TEXTURE_KEEP_SCREENS: f32 = 3.0;
 
 pub struct CanvasState {
     textures: HashMap<usize, (u64, TextureHandle)>,
+    /// Page content fingerprints of the current layout, for the texture cache (#811).
+    pub(crate) page_keys: PageKeys,
+    /// Whether the document has tracked formatting changes, moves and deletions, by document
+    /// revision: finding out walks every paragraph, too slow for every frame (#811).
+    markup_facts: std::cell::Cell<Option<((u64, u64), [bool; 3])>>,
     pub scroll_to_caret: bool,
     /// A heading navigation click aligns its page against the navigation pane, not just visible.
     pub(crate) nav_to_caret: bool,
@@ -134,12 +142,20 @@ impl CanvasState {
     pub(crate) fn page_texture(&self, page: usize) -> Option<&TextureHandle> {
         self.textures.get(&page).map(|(_, t)| t)
     }
+
+    /// How many pages have a cached rendering.
+    #[cfg(test)]
+    pub(crate) fn texture_count(&self) -> usize {
+        self.textures.len()
+    }
 }
 
 impl Default for CanvasState {
     fn default() -> Self {
         CanvasState {
             textures: HashMap::new(),
+            page_keys: PageKeys::default(),
+            markup_facts: std::cell::Cell::new(None),
             scroll_to_caret: true,
             nav_to_caret: false,
             read_wheel_accum: 0.0,
@@ -294,11 +310,23 @@ pub fn markup_width(app: &WordApp) -> f32 {
     // Word shows comments either in balloons (contextual) or in the Comments pane (list); Track
     // Changes Options can put every revision inline (`Session::balloons_shown`).
     let s = &app.session;
+    if !s.balloons_shown() {
+        return 0.0;
+    }
     let m = &s.prefs.markup;
     let comments = m.comments && !s.doc.comments.is_empty();
-    let formats = m.formatting && wordcraft_engine::cmd::review::has_format_changes(&s.doc);
-    let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&s.doc);
-    let deletions = s.revisions_in_balloons() && wordcraft_engine::cmd::review::has_deletions(&s.doc);
+    let [has_formats, has_moves, has_deletions] = match app.canvas.markup_facts.get() {
+        Some((rev, facts)) if rev == (s.document_id(), s.rev()) => facts,
+        _ => {
+            use wordcraft_engine::cmd::{moves, review};
+            let facts = [review::has_format_changes(&s.doc), moves::has_moves(&s.doc), review::has_deletions(&s.doc)];
+            app.canvas.markup_facts.set(Some(((s.document_id(), s.rev()), facts)));
+            facts
+        }
+    };
+    let formats = m.formatting && has_formats;
+    let moves = m.insertions_deletions && has_moves;
+    let deletions = s.revisions_in_balloons() && has_deletions;
     if s.balloons_shown() && (comments || formats || moves || deletions) { 216.0 } else { 0.0 }
 }
 
@@ -522,15 +550,24 @@ pub fn sync_fit_zoom(app: &mut WordApp, scale: f32) {
     v.zoom = (scale / PX_PER_PT).clamp(0.1, 5.0);
 }
 
-/// Fingerprint of a page's content for the texture cache.
-fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
+/// Fingerprint of everything outside the layout that changes how pages render: the view's
+/// marks and markup, dark mode, the page colour and watermark, header/body dimming, the media.
+/// Taken once per frame.
+fn view_key(app: &WordApp, dim_body: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    scale_px.to_bits().hash(&mut h);
     let v = &app.session.view;
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
+    app.session.doc.media.len().hash(&mut h);
+    h.finish()
+}
+
+/// Fingerprint of a page's laid-out content. A layout never changes once made, so this is
+/// taken once per page and layout ([`PageKeys`]), not every frame.
+fn page_content_key(page: &Page) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
     for list in [&page.items, &page.header, &page.footer] {
         list.len().hash(&mut h);
@@ -555,7 +592,44 @@ fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
             }
         }
     }
-    app.session.doc.media.len().hash(&mut h);
+    h.finish()
+}
+
+/// The content fingerprints of one layout's pages, taken when a page is first needed (#811).
+/// Hashing every item of every page each frame cost tens of milliseconds a frame in a long
+/// table (thousands of cell borders per page), idle or scrolling.
+#[derive(Default)]
+pub(crate) struct PageKeys {
+    /// The layout these are for; held so its address can't be reused by another one.
+    layout: Option<std::sync::Arc<DocLayout>>,
+    keys: Vec<Option<u64>>,
+    /// Pages fingerprinted since the layout last changed.
+    pub(crate) hashed: usize,
+}
+
+impl PageKeys {
+    fn content(&mut self, layout: &std::sync::Arc<DocLayout>, i: usize) -> u64 {
+        if !self.layout.as_ref().is_some_and(|l| std::sync::Arc::ptr_eq(l, layout)) {
+            self.layout = Some(layout.clone());
+            self.keys = vec![None; layout.pages.len()];
+            self.hashed = 0;
+        }
+        if let Some(Some(k)) = self.keys.get(i) {
+            return *k;
+        }
+        let k = layout.pages.get(i).map_or(0, page_content_key);
+        if let Some(slot) = self.keys.get_mut(i) {
+            *slot = Some(k);
+            self.hashed += 1;
+        }
+        k
+    }
+}
+
+/// The texture cache key of page `i`: its content, the view, and the raster scale.
+fn page_key(app: &mut WordApp, layout: &std::sync::Arc<DocLayout>, i: usize, view: u64, scale_px: f32) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (view, scale_px.to_bits(), app.canvas.page_keys.content(layout, i)).hash(&mut h);
     h.finish()
 }
 
@@ -837,22 +911,19 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let t0 = crate::now_ms();
         let mut rects = Vec::with_capacity(geo.rects.len());
         let content_origin = ui.min_rect().min;
+        let view = view_key(app, dim_body);
         for (i, pr) in geo.rects.iter().enumerate() {
             let sr = pr.translate(content_origin.to_vec2());
             let Some(page) = layout.pages.get(i) else { continue };
             let (band_top, band_bot) = geo.bands.get(i).copied().unwrap_or((0.0, sr.height()));
             let scale_px = (geo.scale * ppp).min(max_tex / page.w.max(1.0)).min(max_tex / page.h.clamp(1.0, 1e6)).max(0.05);
-            // Most reading documents have many columns; skip expensive page hashing for offscreen
-            // pages. We still emit their rectangles for hit testing and the control channel.
-            if !sr.intersects(ui.clip_rect().expand(200.0)) {
-                rects.push(sr);
-                continue;
-            }
-            let key = page_key(app, page, scale_px, dim_body);
-            let mut fresh = app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             // Hide White Space shows only a band of the page; everything below paints into it.
             let band_of = |r: Rect| Rect::from_min_max(pos2(r.min.x - 4.0, r.min.y + band_top), pos2(r.max.x + 4.0, r.min.y + band_bot));
             let visible = band_of(sr).intersects(ui.clip_rect().expand(200.0));
+            // Only pages on screen or with a texture need their key (#811).
+            let cached = app.canvas.textures.contains_key(&i);
+            let key = if visible || cached { page_key(app, &layout, i, view, scale_px) } else { 0 };
+            let mut fresh = cached && app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             // Render before placing the page: a page re-rendered in this frame (a zoom step, an
             // edit) then sits on the pixel grid in this frame too, rather than a frame later.
             if visible && !fresh && (rendered < 2 || !app.canvas.textures.contains_key(&i) && rendered < 4) {
@@ -975,9 +1046,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         if rendered > 0 {
             app.canvas.render_ms = crate::now_ms() - t0;
         }
-        // Drop textures of pages that no longer exist.
+        // Drop textures of pages that no longer exist, and of pages scrolled well out of view
+        // (#811): scrolling through a long document kept every page it had shown in memory.
         let n = layout.pages.len();
-        app.canvas.textures.retain(|k, _| *k < n);
+        let clip = ui.clip_rect();
+        let near = clip.expand2(vec2(clip.width(), clip.height() * TEXTURE_KEEP_SCREENS));
+        app.canvas.textures.retain(|k, _| *k < n && geo.rects.get(*k).is_some_and(|r| r.translate(content_origin.to_vec2()).intersects(near)));
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
@@ -1251,8 +1325,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if let Some(c) = crate::ink::cursor(app).filter(|_| resp.hovered() || app.canvas.ink.is_some()) {
         ui.ctx().set_cursor_icon(c);
     } else if resp.hovered() || app.canvas.obj_drag.is_some() {
-        let over_object = ui.input(|i| i.pointer.latest_pos()).and_then(|p| crate::objects::cursor(app, &layout, &rects, geo.scale, p));
-        ui.ctx().set_cursor_icon(over_object.unwrap_or(egui::CursorIcon::Text));
+        let latest = ui.input(|i| i.pointer.latest_pos());
+        let over_object = latest.and_then(|p| crate::objects::cursor(app, &layout, &rects, geo.scale, p));
+        // The selection bar: Word shows a right-pointing arrow there; egui has none, so the
+        // plain arrow stands in (#856).
+        let in_bar = app.session.sel.focus.story == StoryRef::Body
+            && (app.canvas.unit_drag.as_ref().is_some_and(|d| d.unit == "line")
+                || latest.and_then(|p| page_at(&rects, &layout, geo.scale, p)).is_some_and(|(pg, x, y)| layout.selection_bar_at(pg, x, y).is_some()));
+        let fallback = if in_bar { egui::CursorIcon::Default } else { egui::CursorIcon::Text };
+        ui.ctx().set_cursor_icon(over_object.unwrap_or(fallback));
     }
     crate::table_resize::cursor(app, ui, &resp, &layout, &rects, geo.scale);
     crate::table_mouse::cursor(app, ui, &resp, &layout, &rects, geo.scale);
@@ -1794,6 +1875,42 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         if app.session.math.is_some() {
             let _ = app.run("equation.exit", json!({}));
         }
+        // The selection bar (the left margin beside body text, #856): a click selects the line,
+        // a double-click the paragraph, a triple-click or Ctrl/⌘+click the document; Shift+click
+        // extends by lines; dragging grows the selection by the clicked unit.
+        if story == StoryRef::Body
+            && !mods.alt
+            && let Some(line) = layout.selection_bar_at(page, x, y)
+        {
+            app.canvas.column_drag = None;
+            app.session.page_hint = page;
+            let lj = serde_json::to_value(&line).unwrap_or_default();
+            let (unit, start, end) = if mods.shift {
+                let anchor = app.session.sel.anchor.clone();
+                let aj = serde_json::to_value(&anchor).unwrap_or_default();
+                let _ = app.run("select.dragUnit", json!({"unit": "line", "start": aj, "end": aj, "pos": lj}));
+                ("line", anchor.clone(), anchor)
+            } else {
+                let unit = match clicks {
+                    _ if mods.command => "document",
+                    3.. => "document",
+                    2 => "paragraph",
+                    _ => "line",
+                };
+                let _ = app.run("caret.set", json!({"pos": lj}));
+                let id = match unit {
+                    "document" => "select.all",
+                    "paragraph" => "select.paragraph",
+                    _ => "select.line",
+                };
+                let _ = app.run(id, json!({}));
+                let (start, end) = app.session.sel.ordered();
+                (unit, start, end)
+            };
+            app.canvas.unit_drag = Some(UnitDrag { unit, clicks, start, end, last: line });
+            app.canvas.dragging = true;
+            return;
+        }
         let Some(pos) = layout.hit(page, x, y, story) else { return };
         // Ctrl/⌘+click follows a hyperlink.
         if mods.command
@@ -1852,7 +1969,13 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         && ui.input(|i| i.pointer.primary_down())
         && let Some(d) = app.canvas.unit_drag.as_mut()
     {
-        if let Some(pos) = layout.hit(page, x, y, story)
+        // Lines grow line by line wherever the pointer is across; the whole document can't grow.
+        let target = match d.unit {
+            "line" => layout.body_line_at(page, y),
+            "document" => None,
+            _ => layout.hit(page, x, y, story),
+        };
+        if let Some(pos) = target
             && pos != d.last
         {
             d.last = pos.clone();
@@ -2701,6 +2824,104 @@ mod tests {
         multi_drag(&mut h, at, at, 2);
         let (s, e) = h.state().session.sel.ordered();
         assert_eq!((s, e), (Pos::body(0, 0), Pos::body(0, 6)));
+    }
+
+    /// #856: the left margin beside body text is Word's selection bar. A click selects the line,
+    /// a double-click the paragraph, a triple-click (or Ctrl/⌘+click) the document; dragging
+    /// selects whole lines and Shift+click extends by lines.
+    #[test]
+    fn selection_bar_clicks_select_lines() {
+        use egui::{Event, Modifiers, PointerButton};
+        let long = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": format!("{}\rSecond para\rThird para", long.trim_end())})).unwrap();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        // A point in the left margin beside the line `li` lines below the one holding `pos`.
+        let margin = |h: &mut egui_kittest::Harness<'_, WordApp>, pos: Pos, li: f32| {
+            let c = h.state_mut().session.layout().caret(&pos).expect("caret");
+            page_to_screen(h.state_mut(), c.page, 30.0, c.top + c.height * (li + 0.5)).expect("on screen")
+        };
+        let line_start = |h: &mut egui_kittest::Harness<'_, WordApp>, at: Pos2| {
+            let (rects, scale) = (h.state().canvas.page_rects.clone(), h.state().canvas.scale);
+            let layout = h.state_mut().session.layout();
+            let (pg, x, y) = page_at(&rects, &layout, scale, at).expect("page");
+            layout.selection_bar_at(pg, x, y).expect("in the selection bar")
+        };
+        let span = |h: &mut egui_kittest::Harness<'_, WordApp>, pos: &Pos| h.state_mut().session.layout().line_span(pos, 0).expect("line");
+        let button =
+            |at: Pos2, pressed: bool| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        let clicks_drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: Pos2, to: Pos2, clicks: usize| {
+            h.event(Event::PointerMoved(from));
+            for i in 0..clicks {
+                h.event(button(from, true));
+                h.step();
+                if i + 1 < clicks {
+                    h.event(button(from, false));
+                    h.step();
+                }
+            }
+            for k in 1..=4 {
+                h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 4.0)));
+                h.step();
+            }
+            h.event(button(to, false));
+            for _ in 0..3 {
+                h.step();
+            }
+        };
+        let pause = |h: &mut egui_kittest::Harness<'_, WordApp>| {
+            for _ in 0..40 {
+                h.step();
+            }
+        };
+        // Click beside the second line: that whole line is selected, not a caret at its start.
+        let at = margin(&mut h, Pos::body(0, 0), 1.0);
+        let l2 = line_start(&mut h, at);
+        assert!(l2.off > 0 && l2.path == wordcraft_doc::Path::top(0));
+        clicks_drag(&mut h, at, at, 1);
+        let (_, l2_end, _) = span(&mut h, &l2);
+        assert_eq!(h.state().session.sel.ordered(), (l2.clone(), l2_end.clone()), "the line");
+        // Double-click: the paragraph, mark included.
+        pause(&mut h);
+        clicks_drag(&mut h, at, at, 2);
+        assert_eq!(h.state().session.sel.ordered(), (Pos::body(0, 0), Pos::body(1, 0)), "the paragraph");
+        // Triple-click: the whole document.
+        pause(&mut h);
+        clicks_drag(&mut h, at, at, 3);
+        assert_eq!(h.state().session.sel.ordered(), (Pos::body(0, 0), Pos::body(2, 10)), "everything");
+        // Drag from beside the first line down past the third: three whole lines.
+        pause(&mut h);
+        let (from, to) = (margin(&mut h, Pos::body(0, 0), 0.0), margin(&mut h, Pos::body(0, 0), 2.0));
+        let l3 = line_start(&mut h, to);
+        clicks_drag(&mut h, from, to, 1);
+        let (_, l3_end, _) = span(&mut h, &l3);
+        let sel = h.state().session.sel.clone();
+        assert_eq!((sel.anchor, sel.focus), (Pos::body(0, 0), l3_end), "three lines");
+        // Shift+click beside "Second para" extends by lines, to that paragraph's mark.
+        pause(&mut h);
+        let second = margin(&mut h, Pos::body(1, 0), 0.0);
+        h.event(Event::ModifiersChanged(Modifiers::SHIFT));
+        h.step();
+        clicks_drag(&mut h, second, second, 1);
+        h.event(Event::ModifiersChanged(Modifiers::default()));
+        h.step();
+        let sel = h.state().session.sel.clone();
+        assert_eq!((sel.anchor, sel.focus), (Pos::body(0, 0), Pos::body(2, 0)), "extended by lines");
+        // Hovering the bar shows the arrow, not the I-beam.
+        h.event(Event::PointerMoved(at));
+        h.step();
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default);
     }
 
     /// #167: a comment balloon edits in place like Word's: click it, type, leave it, and the

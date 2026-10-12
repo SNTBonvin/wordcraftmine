@@ -3815,13 +3815,46 @@ fn drag_after_multi_click_extends_by_units() {
     let before = text(&s);
     for v in [
         json!({}),
-        json!({"unit": "line", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
+        json!({"unit": "page", "start": Pos::body(0, 0), "end": Pos::body(0, 1), "pos": Pos::body(0, 1)}),
         json!({"unit": "word", "start": Pos::body(99, 999), "end": Pos::body(0, 0), "pos": Pos::body(77, usize::MAX)}),
         json!({"unit": "word", "start": {"block": 0, "off": 9_999}, "end": {"block": 0, "off": 1}, "pos": {"block": 5}}),
     ] {
         let _ = s.run("select.dragUnit", &v);
     }
     assert_eq!(text(&s), before);
+}
+
+/// #856: a click in the selection bar selects the whole line (its trailing space; the
+/// paragraph mark on the last line); dragging extends by lines; triple-click takes the document.
+#[test]
+fn selection_bar_selects_and_drags_by_lines() {
+    let mut s = s();
+    let long = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+    run(&mut s, "text.insert", json!({"text": format!("{}\rShort one.\rLast.", long.trim_end())}));
+    let l = s.layout();
+    let c = l.caret(&Pos::body(0, 0)).unwrap();
+    let line2 = l.selection_bar_at(c.page, 20.0, c.top + c.height * 1.5).unwrap();
+    assert!(line2.off > 0);
+    run(&mut s, "select.line", json!({"pos": line2.clone()}));
+    let (a, b) = s.sel.ordered();
+    assert_eq!(a, line2);
+    assert_eq!(b.path, wordcraft_doc::Path::top(0));
+    assert!(b.off > a.off && b.off < long.trim_end().len());
+    assert_eq!(s.doc.para_at(&b).unwrap().text.as_bytes()[b.off - 1], b' ', "the trailing space is in");
+    // The last line of a paragraph takes its mark.
+    run(&mut s, "select.line", json!({"pos": Pos::body(1, 3)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(1, 0), Pos::body(2, 0)));
+    // Drag from the "Short one." line down to "Last." and back up into the first paragraph.
+    let (a, b) = s.sel.ordered();
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": Pos::body(2, 0)}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(1, 0), Pos::body(2, 5)));
+    run(&mut s, "select.dragUnit", json!({"unit": "line", "start": a.clone(), "end": b.clone(), "pos": line2.clone()}));
+    assert_eq!((s.sel.anchor.clone(), s.sel.focus.clone()), (Pos::body(2, 0), line2));
+    run(&mut s, "select.dragUnit", json!({"unit": "document", "start": a.clone(), "end": b.clone(), "pos": Pos::body(0, 0)}));
+    assert_eq!(s.sel.ordered(), (Pos::body(0, 0), Pos::body(2, 5)));
+    // Junk positions never panic.
+    let _ = s.run("select.line", &json!({"pos": {"block": 99, "off": usize::MAX}}));
+    let _ = s.run("select.line", &json!({"pos": 5}));
 }
 
 /// Home › Font › Enclose Characters (#297): the selection becomes an `EQ \o\ac` field, saved the
@@ -4735,4 +4768,52 @@ fn spacing_commands_handle_automatic_spacing() {
     run(&mut s, "para.addSpaceBefore", json!({}));
     assert_eq!((rp(&s).space_before, rp(&s).before_auto), (0.0, false), "Ctrl+0 removes the automatic space");
     assert!(s.run("para.spacing", &json!({"beforeAuto": "yes"})).is_ok(), "junk is ignored, never a panic");
+}
+
+/// #712, as in Word: Ctrl+F (`edit.find` with no text) opens the Navigation pane and asks the UI
+/// to put the keyboard in its search box, not the dialog; Ctrl+H (`edit.replace` with nothing to
+/// replace) opens Find and Replace on its Replace tab instead of failing; Go To moves by pages from
+/// the caret's page (`pageBy`).
+#[test]
+fn find_replace_and_go_to_open_like_word() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "cat dog cat"}));
+    run(&mut s, "edit.find", json!({}));
+    assert!(s.view.nav_pane);
+    assert_eq!(s.ui_requests.last(), Some(&json!({"focus": "navSearch"})));
+    assert!(!s.ui_requests.iter().any(|r| r.get("open").is_some()), "no dialog: {:?}", s.ui_requests);
+    s.dirty = false;
+    run(&mut s, "edit.findReplace", json!({}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "replace"})));
+    assert!(!s.dirty, "opening the dialog changes nothing");
+    assert!(s.run("edit.findReplace", &json!({"tab": "nope"})).is_err());
+    let reg = s.registry.clone();
+    assert_eq!(s.keymap.resolve(&reg, "Mod+H").map(|c| c.id), Some("edit.findReplace"));
+    run(&mut s, "edit.goto", json!({}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "goto"})));
+    // Replace with a "with" and the last search still replaces, as before.
+    run(&mut s, "edit.find", json!({"text": "dog"}));
+    run(&mut s, "edit.replace", json!({"with": "cow"}));
+    assert_eq!(text(&s), "cat cow cat");
+
+    // Five pages; Go To +2 / -1 from where the caret is, clamped to the document.
+    let mut s = super::tests::s();
+    for i in 0..5 {
+        if i > 0 {
+            run(&mut s, "insert.pageBreak", json!({}));
+        }
+        run(&mut s, "text.insert", json!({"text": format!("Page {}", i + 1)}));
+    }
+    let page = |s: &mut Session| s.layout().caret_on(&s.sel.focus, s.page_hint).unwrap().page + 1;
+    run(&mut s, "edit.goto", json!({"page": 1}));
+    assert_eq!(page(&mut s), 1);
+    run(&mut s, "edit.goto", json!({"pageBy": 2}));
+    assert_eq!(page(&mut s), 3);
+    run(&mut s, "edit.goto", json!({"pageBy": -1}));
+    assert_eq!(page(&mut s), 2);
+    run(&mut s, "edit.goto", json!({"pageBy": 99}));
+    assert_eq!(page(&mut s), 5, "past the end: the last page");
+    run(&mut s, "edit.goto", json!({"pageBy": -99}));
+    assert_eq!(page(&mut s), 1, "before the start: the first page");
+    assert!(s.run("edit.goto", &json!({"pageBy": i64::MIN})).is_ok(), "hostile numbers never panic");
 }
