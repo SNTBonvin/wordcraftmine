@@ -653,7 +653,9 @@ impl<'a> Builder<'a> {
             let k = st.size / st.face.upem.max(1.0) as f32;
             let hscale = rc.scale / 100.0;
             // Group glyphs by cluster byte offset; graphemes may span several shaper clusters.
-            let bounds: Vec<usize> = unicode_segmentation::UnicodeSegmentation::grapheme_indices(sub, true).map(|(i, _)| i).collect();
+            // Complex-script syllables the graphemes split (Myanmar vowel signs, stacked
+            // consonants) stay one cluster: the caret never stops inside them.
+            let bounds: Vec<usize> = wordcraft_doc::cluster::cluster_starts(sub);
             let mut gi = 0usize;
             for (bi, &gs) in bounds.iter().enumerate() {
                 let ge = bounds.get(bi + 1).copied().unwrap_or(sub.len());
@@ -1220,6 +1222,12 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             found.push(i);
         }
     }
+    // Myanmar has no spaces between words: it wraps between syllables.
+    if text.chars().any(|c| matches!(u32::from(c), 0x1000..=0x109F | 0xA9E0..=0xA9FF | 0xAA60..=0xAA7F)) {
+        found.extend(wordcraft_doc::cluster::myanmar_breaks(&text));
+        found.sort_unstable();
+        found.dedup();
+    }
     // Asian typography: kinsoku and breaking Latin words anywhere.
     crate::kinsoku::apply(&text, &mut found, rp.kinsoku, rp.word_wrap);
     let opps: std::collections::HashSet<usize> = found.into_iter().filter_map(to_para).collect();
@@ -1703,7 +1711,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             let up = asc.max(obj_asc);
             top + ((height - up - desc) / 2.0).max(0.0) + up
         } else {
-            top + height - desc
+            top + baseline_offset(rp.line_spacing, asc, height, desc).max(obj_asc.min(height - desc))
         };
 
         // Alignment / justification (trailing spaces hang).
@@ -1832,7 +1840,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                 lines.push(Line {
                     top,
                     height: h,
-                    baseline: top + h - desc,
+                    baseline: top + if grid.is_some() { h - desc } else { baseline_offset(rp.line_spacing, asc, h, desc) },
                     c0: n,
                     c1: n,
                     xs: vec![x0],
@@ -1949,6 +1957,18 @@ fn reorder_line(pl: &ParaLayout, line: &mut Line, width: f32) {
 /// Narrowest span text flows into beside a floating object, points. Word puts an empty
 /// paragraph beside a floating table in a 21.3pt gap but not in an 18.6pt one.
 const MIN_SPAN: f32 = 20.0;
+
+/// How far below a line's top its baseline sits. Multiple spacing at or above single keeps the
+/// text at the top of the line and puts the extra leading below the baseline; below single it
+/// shrinks the whole box, ascent included (Word's output for docxide-pdf's fixtures: 1.15-spaced
+/// Times New Roman 12pt sits one ascent below the line top, not 1.8pt lower). Exact and at-least
+/// spacing keep the descent below the baseline and the rest above it.
+fn baseline_offset(spacing: LineSpacing, asc: f32, height: f32, desc: f32) -> f32 {
+    match spacing {
+        LineSpacing::Multiple(m) => asc * m.min(1.0),
+        LineSpacing::AtLeast(_) | LineSpacing::Exactly(_) => height - desc,
+    }
+}
 
 /// The spans of a row at `top` (about `h` tall) between `lo` and `hi` that text can use around
 /// the exclusions, left to right (Square wrapping uses both sides of an object). `Err(y)`: none

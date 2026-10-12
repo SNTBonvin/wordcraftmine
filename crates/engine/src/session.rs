@@ -95,6 +95,11 @@ pub struct ViewState {
     /// Show field codes instead of their results (`view.fieldCodes`, Alt+F9).
     #[serde(default)]
     pub field_codes: bool,
+    /// Print Layout › Hide White Space: pages run together, the top and bottom margins (with
+    /// headers and footers) between pages collapse to a thin line. On screen only; the layout
+    /// and page count are unchanged.
+    #[serde(default)]
+    pub hide_white_space: bool,
     /// Outline view: collapsed headings, Show Level, first lines, text formatting.
     #[serde(default)]
     pub outline: crate::cmd::outline::OutlineState,
@@ -136,6 +141,7 @@ impl Default for ViewState {
             hide_ink: false,
             draw: Default::default(),
             field_codes: false,
+            hide_white_space: false,
             outline: Default::default(),
             design_mode: false,
         }
@@ -262,7 +268,9 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    layout: Option<(u64, f32, ViewMode, Arc<DocLayout>, bool, Option<wordcraft_layout::outline::OutlineView>)>,
+    /// (revision, web width, view, layout, proofing, outline, (deletions left out, body
+    /// deletions in balloons)).
+    layout: Option<(u64, f32, ViewMode, Arc<DocLayout>, bool, Option<wordcraft_layout::outline::OutlineView>, (bool, bool))>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -335,6 +343,10 @@ pub struct Prefs {
     /// Track Changes Options: what markup shows and how revisions are drawn (per user, as in
     /// Word).
     pub markup: wordcraft_layout::display::MarkupOptions,
+    /// File › Print / Export: Print Markup. PDFs, prints and page images show comments in
+    /// balloons beside each page and tracked changes as marked up; HTML, Markdown and text
+    /// copies end with the comments (`file.printMarkup`).
+    pub print_markup: bool,
     /// Language › Detect language automatically (per user, as in Word).
     pub detect_language: bool,
     /// Typing over a selection replaces it; off, the typed text goes in front of it.
@@ -363,6 +375,7 @@ impl Default for Prefs {
         Prefs {
             count_notes: true,
             markup: Default::default(),
+            print_markup: false,
             typing_replaces_selection: true,
             insert_key_overtype: false,
             overtype: false,
@@ -512,6 +525,27 @@ impl Session {
         self.find.highlights.as_ref().map(|(_, v)| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Whether the markup area beside the page can show balloons: markup shown in Print Layout
+    /// (not Read Mode or pages side by side), comments not listed in the Comments pane instead,
+    /// and Track Changes Options not set to show every revision inline.
+    pub fn balloons_shown(&self) -> bool {
+        let v = &self.view;
+        v.show_markup
+            && !v.comments_pane
+            && !v.read_mode
+            && !v.multi_page
+            && v.mode == ViewMode::Print
+            && self.prefs.markup.balloons != wordcraft_layout::display::BalloonMode::Inline
+    }
+
+    /// Show revisions in balloons, with the balloons on screen: tracked deletions in the body leave
+    /// the text for balloons in the markup area. Where no balloons can be shown they stay inline,
+    /// as in Word; so do deletions in headers, footers, notes and text boxes, which get no balloons.
+    pub fn revisions_in_balloons(&self) -> bool {
+        let m = &self.prefs.markup;
+        self.balloons_shown() && m.balloons == wordcraft_layout::display::BalloonMode::Revisions && m.insertions_deletions
+    }
+
     /// Initials for new comments: the ones set in File › Options, else the user name's.
     pub fn user_initials(&self) -> String {
         let set = self.initials.trim();
@@ -521,12 +555,17 @@ impl Session {
     /// The current layout (recomputed when the document or view changed).
     pub fn layout(&mut self) -> Arc<DocLayout> {
         let ww = self.view.web_width;
+        // Deletions in balloons depend on the view (the Comments pane, Read Mode, side by side), so
+        // a view change that moves them in or out of the text lays it out again.
+        let hide_deleted = !self.view.show_markup || self.prefs.markup.hides_deletions();
+        let deleted = (hide_deleted, self.revisions_in_balloons());
         let outline = (self.view.mode == ViewMode::Outline).then(|| self.view.outline.view());
-        if let Some((r, w, m, l, pf, o)) = &self.layout
+        if let Some((r, w, m, l, pf, o, hd)) = &self.layout
             && *r == self.rev
             && (*w == ww || self.view.mode == ViewMode::Print)
             && *m == self.view.mode
             && *pf == self.view.proofing
+            && *hd == deleted
             && *o == outline
         {
             return l.clone();
@@ -535,19 +574,27 @@ impl Session {
             view: self.view.mode,
             web_width: ww,
             show_hidden: self.view.marks || self.prefs.marks.hidden,
-            hide_deleted: !self.view.show_markup || self.prefs.markup.hides_deletions(),
+            hide_deleted,
+            deletions_in_balloons: deleted.1,
             proofing: self.view.proofing,
+            comment_balloons: false,
             field_codes: self.view.field_codes,
             outline: outline.clone(),
             proof: wordcraft_layout::ProofOptions { grammar: self.prefs.mark_grammar, spelling: self.prefs.spelling() },
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing, outline));
+        self.layout = Some((self.rev, ww, self.view.mode, l.clone(), self.view.proofing, outline, deleted));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.
     pub fn export_layout(&self) -> Arc<DocLayout> {
-        let opts = LayoutOptions { view: ViewMode::Print, ..Default::default() };
+        self.export_layout_with(false)
+    }
+
+    /// [`Session::export_layout`]; with `markup` (Print Markup) each page also has the markup
+    /// area with the comments in balloons.
+    pub fn export_layout_with(&self, markup: bool) -> Arc<DocLayout> {
+        let opts = LayoutOptions { view: ViewMode::Print, comment_balloons: markup && self.prefs.markup.comments, ..Default::default() };
         Arc::new(wordcraft_layout::layout(&self.doc, &mut LayoutCache::new(), &opts))
     }
 
