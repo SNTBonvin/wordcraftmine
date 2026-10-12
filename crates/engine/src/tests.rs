@@ -5032,6 +5032,15 @@ fn rename_document_preserves_saved_contents_and_rejects_collisions() {
     assert!(!original.exists());
     assert_eq!(std::fs::read(&renamed).unwrap(), b"original bytes");
     s.run("file.rename", &json!({"name": "Notes"})).unwrap();
+    s.run("file.rename", &json!({"name": "notes"})).unwrap();
+    let lower = dir.join("notes.docm");
+    assert_eq!(s.path.as_ref(), Some(&lower));
+    let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert!(names.contains(&"notes.docm".into()) && !names.contains(&"Notes.docm".into()), "{names:?}");
+    assert_eq!(std::fs::read(&lower).unwrap(), b"original bytes");
+    assert!(s.run("file.rename", &json!({"name": "existing"})).is_err());
+    assert_eq!(s.path.as_ref(), Some(&lower));
+    assert_eq!(std::fs::read(&existing).unwrap(), b"keep these bytes");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
