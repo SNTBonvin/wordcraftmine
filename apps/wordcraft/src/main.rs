@@ -17,6 +17,7 @@ mod file_dialogs;
 mod graphics;
 mod logging;
 mod print;
+mod x11_scale;
 
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{
@@ -191,6 +192,9 @@ fn main() -> eframe::Result {
             None => logger.no_file(),
         }
     }
+    // X11: prefer the desktop's DPI (Xft.dpi, then the server screen) over the
+    // panel's physical density before winit reads it; explicit user override wins.
+    x11_scale::apply();
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("WordCraft")
