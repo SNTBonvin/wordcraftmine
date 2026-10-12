@@ -2434,3 +2434,20 @@
 	Use "an" before a vowel sound	Magánhangzóval kezdődő szó előtt „an” áll
 	Use "a" before a consonant sound	Mássalhangzóval kezdődő szó előtt „a” áll
 	The spelling and grammar check is complete.	A helyesírás- és nyelvhelyesség-ellenőrzés befejeződött.
+	Couldn't make WordCraft the default: {error}	Nem sikerült a WordCraftot alapértelmezetté tenni: {error}
+	In Default apps, choose WordCraft for the document types you want it to open.	Az Alapértelmezett alkalmazások között válassza a WordCraftot azokhoz a dokumentumtípusokhoz, amelyeket meg kell nyitnia.
+	Make WordCraft the default for Word documents…	A WordCraft legyen az alapértelmezett a Word-dokumentumokhoz…
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	Mostantól a .docx, .doc, .rtf és .odt fájlok, valamint a Word-sablonok a WordCrafttal nyílnak meg.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	Megnyitja a Beállítások › Alapértelmezett alkalmazások lapot, ahol a WordCraftot választhatja a .docx és a többi dokumentumtípus számára.
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	Ha a Word-dokumentumokat alapértelmezés szerint a WordCrafttal szeretné megnyitni: jelöljön ki egyet a Finderben, válassza a Fájl › Információ parancsot, a „Megnyitás ezzel” alatt válassza a WordCraftot, majd kattintson az „Összes módosítása” gombra.
+	WordCraft is now the default app for Word documents.	Mostantól a WordCraft az alapértelmezett alkalmazás a Word-dokumentumokhoz.
+	Numerals:	Számjegyek:
+	Numerals	Számjegyek
+	Hindi	Hindi
+	Context	Környezetfüggő
+	System	Rendszer
+	Show KeyTips (Alt or F10)	Billentyűtippek megjelenítése (Alt vagy F10)
+	Reading	Olvasás
+	Reading Column Width	Olvasási oszlopszélesség
+	Reading Line Spacing	Olvasási sorköz
+	Reading Text Size	Olvasási szövegméret
