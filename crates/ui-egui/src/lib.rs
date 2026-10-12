@@ -372,6 +372,8 @@ pub struct WordApp {
     pub(crate) synthetic: Vec<egui::Event>,
     /// Badge rects recorded during layout for the current keytip phase (cleared by `logic`, painted by `show`).
     pub(crate) keytip_rects: Vec<(egui::Rect, String)>,
+    /// The Navigation pane's search box takes the keyboard on its next frame (Ctrl+F, #712).
+    pub(crate) nav_search_focus: bool,
     styled: bool,
     /// The CJK face order the installed UI fonts use (Chinese first, or Japanese first).
     fonts_hans: bool,
@@ -473,6 +475,7 @@ impl WordApp {
             pending_shots: Vec::new(),
             synthetic: Vec::new(),
             keytip_rects: Vec::new(),
+            nav_search_focus: false,
             styled: false,
             fonts_hans: false,
             fonts_system_cjk: false,
@@ -868,6 +871,10 @@ impl WordApp {
 
     /// Requests commands make of the UI (open a dialog…).
     fn handle_request(&mut self, req: &Value) {
+        // Ctrl+F: type straight into the Navigation pane's search box (#712).
+        if req.get("focus").and_then(Value::as_str) == Some("navSearch") {
+            self.nav_search_focus = true;
+        }
         if let Some(what) = req.get("open").and_then(Value::as_str) {
             match what {
                 "openFile" => self.open_dialog(),
@@ -1790,6 +1797,9 @@ pub fn now_ms() -> f64 {
 }
 
 #[cfg(test)]
+mod tests_perf;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
@@ -2020,7 +2030,9 @@ mod tests {
         assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
-    /// Issue #772: Ctrl/⌘+F left focus on the document, so typing didn't go into Find what.
+    /// Issue #772: the Find and Replace dialog left focus on the document, so typing didn't go into
+    /// Find what. (Ctrl/⌘+F now searches in the Navigation pane, as in Word (#712), so this opens
+    /// the dialog with Ctrl/⌘+H.)
     #[test]
     fn find_shortcut_focuses_find_what() {
         let ctx = egui::Context::default();
@@ -2037,7 +2049,7 @@ mod tests {
         for _ in 0..3 {
             frame(&mut a, Vec::new());
         }
-        let key = egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let key = egui::Event::Key { key: egui::Key::H, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
         frame(&mut a, vec![key]);
         for _ in 0..2 {
             frame(&mut a, Vec::new());
@@ -2823,6 +2835,59 @@ mod tests {
             assert_eq!(prompt(a), None, "{focus:?}: answered");
             assert_eq!(a.quit_requested, quits, "{focus:?}: quit");
             assert_eq!(std::fs::read(&path).unwrap() != before, saves, "{focus:?}: file written");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// #861: the save prompt answers from the keyboard alone. Save has focus when it opens, and
+    /// Left/Right move the focus between Save, Don't Save and Cancel (stopping at the ends).
+    #[test]
+    fn arrow_keys_choose_the_save_prompt_answer() {
+        use egui_kittest::kittest::Queryable;
+        for (arrows, focused, quits, saves) in [
+            (vec![egui::Key::ArrowLeft], "Save", true, true),
+            (vec![egui::Key::ArrowRight], "Don't Save", true, false),
+            (vec![egui::Key::ArrowRight, egui::Key::ArrowRight, egui::Key::ArrowRight], "Cancel", false, false),
+            (vec![egui::Key::ArrowRight, egui::Key::ArrowRight, egui::Key::ArrowLeft], "Don't Save", true, false),
+        ] {
+            let dir = scratch(&format!("arrows-{}-{}", arrows.len(), focused.len()));
+            let path = docx_on_disk(&dir, "Draft");
+            let before = std::fs::read(&path).unwrap();
+            let mut a = app();
+            a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+            a.run("text.insert", json!({"text": "Revised "})).unwrap();
+            a.run("file.close", json!({})).unwrap();
+            assert_eq!(prompt(&a), Some("saveChanges"));
+            let mut fonts = false;
+            let mut h = egui_kittest::Harness::builder().build_ui_state(
+                move |ui, app: &mut WordApp| {
+                    let ctx = ui.ctx().clone();
+                    if fonts {
+                        dialogs::show(app, &ctx);
+                    } else {
+                        theme::install_fonts_for(&ctx, false);
+                        fonts = true;
+                    }
+                },
+                a,
+            );
+            for _ in 0..3 {
+                h.step();
+            }
+            assert!(h.get_by_label("Save").is_focused(), "Save has focus when the prompt opens");
+            for key in &arrows {
+                h.key_press(*key);
+                h.step();
+            }
+            assert!(h.get_by_label(focused).is_focused(), "{arrows:?}: {focused} has focus");
+            h.key_press(egui::Key::Enter);
+            for _ in 0..3 {
+                h.step();
+            }
+            let a = h.state();
+            assert_eq!(prompt(a), None, "{arrows:?}: answered");
+            assert_eq!(a.quit_requested, quits, "{arrows:?}: quit");
+            assert_eq!(std::fs::read(&path).unwrap() != before, saves, "{arrows:?}: file written");
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
@@ -4178,5 +4243,64 @@ mod tests {
         h.step();
         assert!(h.state().canvas.context_menu_open);
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns fire");
+    }
+
+    /// #712: Find, Replace and Go To open as in Word. Ctrl+F puts the keyboard in the Navigation
+    /// pane's search box (with the selected text in it), not a dialog; Ctrl+H and Ctrl+G / F5 open
+    /// the one Find and Replace dialog on its Replace and Go To tabs.
+    #[test]
+    fn find_replace_and_go_to_keys_like_word() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        h.event(egui::Event::Text("Kilns fire clay. Kilns cool.".into()));
+        h.step();
+        let nav_query = |h: &egui_kittest::Harness<WordApp>| h.ctx.data(|d| d.get_temp::<String>(egui::Id::new("nav_query"))).unwrap_or_default();
+        // Ctrl+F: the pane, and typing goes into its search box.
+        h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert!(h.state().session.view.nav_pane, "the Navigation pane opened");
+        assert!(h.state().dialog.is_none(), "no dialog: {:?}", h.state().dialog.as_ref().map(|d| d.name()));
+        h.event(key(egui::Key::C, egui::Modifiers::NONE));
+        h.event(egui::Event::Text("cool".into()));
+        h.step();
+        h.step();
+        assert_eq!(nav_query(&h), "cool", "typed into the pane's search box");
+        assert_eq!(h.state().session.find.results.len(), 1);
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns fire clay. Kilns cool.");
+        // With text selected, Ctrl+F searches for it.
+        h.state_mut().run("select.text", json!({"text": "Kilns"})).unwrap();
+        h.state_mut().canvas.want_focus = true;
+        h.step();
+        h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert_eq!(nav_query(&h), "Kilns");
+        assert_eq!(h.state().session.find.results.len(), 2);
+        // Ctrl+H: the Replace tab; Go To: the Go To tab of the same dialog.
+        h.state_mut().canvas.want_focus = true;
+        h.event(key(egui::Key::Escape, egui::Modifiers::NONE));
+        h.step();
+        h.step();
+        h.event(key(egui::Key::H, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("replace"));
+        h.state_mut().run("edit.goto", json!({})).unwrap();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("goto"));
+        h.state_mut().run("edit.advancedFind", json!({})).unwrap();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"));
     }
 }
