@@ -37,9 +37,9 @@ pub struct TabsForm {
     pub cleared: Vec<f32>,
     pub clear_all: bool,
     pub selected: Option<usize>,
-    /// A stop's position being edited in the list (double-click): its index and the typed text.
+    /// The row whose position was last edited in place: it wins a merge in [`TabsForm::normalize`].
     #[serde(skip)]
-    pub editing: Option<(usize, String)>,
+    last_edit: Option<usize>,
 }
 
 impl TabsForm {
@@ -62,7 +62,7 @@ impl TabsForm {
             cleared: Vec::new(),
             clear_all: false,
             selected: first.map(|_| 0),
-            editing: None,
+            last_edit: None,
         })
     }
 
@@ -95,28 +95,69 @@ impl TabsForm {
             return;
         }
         self.selected = None;
-        self.editing = None;
         self.pos = p / k;
         self.align = TabAlign::default();
         self.leader = TabLeader::default();
     }
 
-    /// Move stop `i` to `pos` (points), keeping its alignment and leader: the engine's ±1584
-    /// bound applies, and a stop already at the target is replaced. The fields follow the moved
-    /// stop, and `params` becomes a clear of the old position and a set of the new one.
-    pub fn move_stop(&mut self, i: usize, pos: f32) {
-        if !pos.is_finite() || pos.abs() > 1584.0 || i >= self.stops.len() {
+    /// The list edits a stop's position in place: clamp to the engine's ±1584 bound and keep
+    /// the fields on the row. The list stays in row order while the field is being edited;
+    /// [`TabsForm::normalize`] restores position order when the edit ends.
+    pub fn set_pos(&mut self, i: usize, pos: f32) {
+        if !pos.is_finite() {
             return;
         }
-        let t = self.stops.remove(i);
-        self.stops.retain(|x| (x.pos - pos).abs() >= SAME_POS);
-        self.cleared.retain(|c| (c - pos).abs() >= SAME_POS);
-        self.stops.push(TabStop { pos, ..t });
-        self.stops.sort_by(|a, b| a.pos.total_cmp(&b.pos));
-        self.selected = self.stops.iter().position(|x| (x.pos - pos).abs() < SAME_POS);
-        self.pos = pos / unit().pt_per_unit();
-        self.align = t.align;
-        self.leader = t.leader;
+        if let Some(t) = self.stops.get_mut(i) {
+            t.pos = pos.clamp(-1584.0, 1584.0);
+            let t = *t;
+            self.cleared.retain(|c| (c - t.pos).abs() >= SAME_POS);
+            if self.selected == Some(i) {
+                self.pos = t.pos / unit().pt_per_unit();
+            }
+            self.last_edit = Some(i);
+        }
+    }
+
+    /// The list edits a stop's alignment in place; the fields follow when it is the selected row.
+    pub fn set_align(&mut self, i: usize, align: TabAlign) {
+        if let Some(t) = self.stops.get_mut(i) {
+            t.align = align;
+            if self.selected == Some(i) {
+                self.align = align;
+            }
+        }
+    }
+
+    /// The list edits a stop's leader in place; the fields follow when it is the selected row.
+    pub fn set_leader(&mut self, i: usize, leader: TabLeader) {
+        if let Some(t) = self.stops.get_mut(i) {
+            t.leader = leader;
+            if self.selected == Some(i) {
+                self.leader = leader;
+            }
+        }
+    }
+
+    /// Restore position order after in-place edits, merging stops moved onto one another
+    /// (the edited row wins), and keep the selection on its stop.
+    pub fn normalize(&mut self) {
+        let followed = self.selected.and_then(|i| self.stops.get(i)).copied();
+        let edited = self.last_edit.take();
+        let mut merged: Vec<(usize, TabStop)> = Vec::with_capacity(self.stops.len());
+        for (j, t) in self.stops.iter().enumerate() {
+            match merged.iter().position(|(_, x)| (x.pos - t.pos).abs() < SAME_POS) {
+                // The edited stop holds its ground; the row that drifted onto it goes.
+                Some(k) if edited == Some(merged[k].0) => {}
+                Some(k) => {
+                    merged.remove(k);
+                    merged.push((j, *t));
+                }
+                None => merged.push((j, *t)),
+            }
+        }
+        merged.sort_by(|a, b| a.1.pos.total_cmp(&b.1.pos));
+        self.stops = merged.into_iter().map(|(_, t)| t).collect();
+        self.selected = followed.and_then(|t| self.stops.iter().position(|x| (x.pos - t.pos).abs() < SAME_POS));
     }
 
     /// Stage what the dialog shows when OK is pressed without Set: the fields describe a stop,
@@ -146,15 +187,11 @@ impl TabsForm {
         }
         let t = self.stops.remove(i);
         self.cleared.push(t.pos);
+        self.last_edit = None;
         self.selected = match self.selected {
             Some(s) if s == i => None,
             Some(s) if s > i => Some(s - 1),
             s => s,
-        };
-        self.editing = match self.editing.take() {
-            Some((e, _)) if e == i => None,
-            Some((e, b)) if e > i => Some((e - 1, b)),
-            e => e,
         };
     }
 
@@ -214,30 +251,75 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
             egui::Frame::new().stroke(Stroke::new(1.0, Tokens::get(ui.ctx()).input_border)).inner_margin(4.0).show(ui, |ui| {
                 // A fixed width: the scroll area fills it (rows and scrollbar at its edge)
                 // without growing the dialog.
-                ui.set_width(150.0);
+                ui.set_width(278.0);
                 ui.set_min_height(96.0);
-                let mut commit = None;
                 let mut remove = None;
-                // Fill the frame, so rows span its width and the scrollbar sits at its edge.
+                let mut row_active = false;
+                // The stops as an inline-editable table: position, alignment, clear. Fill the
+                // frame, so rows span its width and the scrollbar sits at its edge.
                 egui::ScrollArea::vertical().max_height(96.0).auto_shrink([false, true]).show(ui, |ui| {
                     for i in 0..f.stops.len() {
                         let Some(t) = f.stops.get(i).copied() else { continue };
-                        let edit_id = ui.id().with(("tab_pos_edit", i));
-                        ui.horizontal(|ui| {
-                            if let Some((_, buf)) = f.editing.as_mut().filter(|(ei, _)| *ei == i) {
-                                let w = ui.available_width() - 4.0;
-                                let r = ui.add(egui::TextEdit::singleline(&mut *buf).id(edit_id).desired_width(w));
-                                if r.lost_focus() {
-                                    // Enter (or clicking away) commits; Escape puts the old text back.
-                                    let kept = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
-                                    commit = Some((i, (!kept).then(|| wordcraft_geom::parse_measure(buf, u)).flatten()));
+                        ui.push_id(i, |ui| {
+                            let row = ui.horizontal(|ui| {
+                                // Position, edited in place: the interface unit by default, any
+                                // unit spelled out, either decimal separator (`.measure`).
+                                let mut pv = t.pos / k;
+                                let r = ui.add_sized(
+                                    vec2(58.0, 18.0),
+                                    egui::DragValue::new(&mut pv).speed(0.05).range(-1584.0 / k..=1584.0 / k).measure(u).max_decimals(2),
+                                );
+                                if r.changed() {
+                                    f.set_pos(i, pv * k);
                                 }
-                            } else {
-                                let r = ui.selectable_label(f.selected == Some(i), u.format_with(t.pos, crate::options::decimal()));
-                                if r.double_clicked() {
-                                    f.editing = Some((i, u.number(t.pos, crate::options::decimal())));
-                                    ui.ctx().memory_mut(|m| m.request_focus(edit_id));
-                                } else if r.clicked() {
+                                if r.has_focus() || r.dragged() {
+                                    row_active = true;
+                                    if f.selected != Some(i) {
+                                        pick = Some(i);
+                                    }
+                                }
+                                // Alignment, picked in place.
+                                let mut a = t.align;
+                                egui::ComboBox::from_id_salt("tab_align").width(86.0).selected_text(tl!(crate::ruler_tabs::kind_label(a))).show_ui(
+                                    ui,
+                                    |ui| {
+                                        for (v, l) in [
+                                            (TabAlign::Left, "Left"),
+                                            (TabAlign::Center, "Center"),
+                                            (TabAlign::Right, "Right"),
+                                            (TabAlign::Decimal, "Decimal"),
+                                            (TabAlign::Bar, "Bar"),
+                                        ] {
+                                            ui.selectable_value(&mut a, v, tl!(l));
+                                        }
+                                    },
+                                );
+                                if a != t.align {
+                                    f.set_align(i, a);
+                                    pick = Some(i);
+                                }
+                                // Leader, picked in place; the closed box shows just the fill.
+                                let mut l = t.leader;
+                                let shown = match l {
+                                    TabLeader::None => tl!("None").to_string(),
+                                    TabLeader::Dot => "……".into(),
+                                    TabLeader::Hyphen => "------".into(),
+                                    TabLeader::Underscore => "______".into(),
+                                    TabLeader::MiddleDot => "······".into(),
+                                };
+                                egui::ComboBox::from_id_salt("tab_leader").width(64.0).selected_text(shown).show_ui(ui, |ui| {
+                                    for (v, label) in [
+                                        (TabLeader::None, "None"),
+                                        (TabLeader::Dot, "1 ……"),
+                                        (TabLeader::Hyphen, "2 ------"),
+                                        (TabLeader::Underscore, "3 ______"),
+                                        (TabLeader::MiddleDot, "4 ······"),
+                                    ] {
+                                        ui.selectable_value(&mut l, v, tl!(label));
+                                    }
+                                });
+                                if l != t.leader {
+                                    f.set_leader(i, l);
                                     pick = Some(i);
                                 }
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -246,24 +328,24 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                                         remove = Some(i);
                                     }
                                 });
+                            });
+                            if f.selected == Some(i) {
+                                let tok = Tokens::get(ui.ctx());
+                                ui.painter().rect_stroke(row.response.rect.expand(1.0), 2.0, Stroke::new(1.0, tok.accent), egui::StrokeKind::Outside);
                             }
                         });
                     }
                 });
-                if let Some((i, pos)) = commit {
-                    f.editing = None;
-                    if let Some(pos) = pos {
-                        f.move_stop(i, pos);
-                    }
-                } else if let Some(i) = remove {
+                if let Some(i) = remove {
                     f.remove_stop(i);
-                } else if f.editing.is_none()
-                    && let Some(i) = f.selected
-                    && ui.memory(|m| m.focused().is_none())
-                    && ui.input(|inp| inp.key_pressed(egui::Key::Delete))
-                {
+                } else if f.selected.is_some() && ui.memory(|m| m.focused().is_none()) && ui.input(|inp| inp.key_pressed(egui::Key::Delete)) {
                     // Delete clears the selected stop when nothing is being typed.
-                    f.remove_stop(i);
+                    if let Some(i) = f.selected {
+                        f.remove_stop(i);
+                    }
+                } else if !row_active {
+                    // Rows go back into position order once no position field is being edited.
+                    f.normalize();
                 }
             });
             if let Some(i) = pick
@@ -907,31 +989,46 @@ mod tests {
         assert_eq!(f.params(), Some(json!({"clear": [72.0]})), "Clear wins over the field it emptied");
     }
 
-    /// Double-clicking a stop in the list edits its position in place: the commit moves the
-    /// stop (one clear + one set), keeping its alignment and leader, and junk changes nothing.
+    /// The list is an inline-edit table: changing a row's position or alignment stages the
+    /// change (clear + set), rows resort once editing ends, and collisions merge.
     #[test]
-    fn tabs_list_edit_moves_the_stop() {
+    fn tabs_list_edits_stage_moves_and_alignment() {
         let mut app = app_with("a\tb");
         let k = unit().pt_per_unit();
         let _ = app.run("para.tabs", json!({"set": [{"pos": 72.0, "align": "right", "leader": "dot"}, {"pos": 144.0}]}));
         let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
-        f.move_stop(0, 108.0);
+        f.set_pos(0, 108.0);
+        f.normalize();
         assert_eq!(f.params(), Some(json!({"set": [{"pos": 108.0, "align": "right", "leader": "dot"}], "clear": [72.0]})));
-        assert_eq!(f.selected, Some(0), "the fields follow the moved stop");
-        assert_eq!((f.pos * k, f.align, f.leader), (108.0, TabAlign::Right, TabLeader::Dot));
+        assert_eq!(f.selected, Some(0), "the selection follows its stop");
+        assert_eq!(f.pos * k, 108.0, "the fields follow the selected row");
 
-        // Moving onto another stop replaces it; junk positions and indexes change nothing.
-        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
-        f.move_stop(0, 144.0);
+        // Moving a row onto another merges them, and junk input changes nothing.
+        f.set_pos(0, 144.0);
+        f.normalize();
         assert_eq!(f.stops.len(), 1);
         assert_eq!(f.params(), Some(json!({"set": [{"pos": 144.0, "align": "right", "leader": "dot"}], "clear": [72.0]})));
-        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
-        for (i, pos) in [(0, f32::NAN), (0, 2000.0), (5, 72.0)] {
-            f.move_stop(i, pos);
-            assert!(f.params().is_none(), "junk move {i} -> {pos} changed nothing");
-        }
+        f.set_pos(0, f32::NAN);
+        f.set_pos(7, 72.0);
+        f.set_pos(0, 99999.0);
+        f.normalize();
+        assert_eq!(f.stops[0].pos, 1584.0, "positions clamp to the engine bound");
 
-        // What the list editor parses: the interface unit by default, any unit spelled out.
+        // Alignment picked on a row stages a set for just that stop.
+        let mut f = TabsForm::read(&app).unwrap_or_else(|| panic!("form"));
+        f.set_align(1, TabAlign::Decimal);
+        assert_eq!(f.params(), Some(json!({"set": [{"pos": 144.0, "align": "decimal", "leader": "none"}]})));
+        assert_eq!(f.align, TabAlign::Right, "an unselected row leaves the fields alone");
+        f.set_align(0, TabAlign::Center);
+        assert_eq!(f.align, TabAlign::Center, "the selected row syncs the fields");
+        f.set_leader(1, TabLeader::Underscore);
+        assert_eq!(f.stops[1].leader, TabLeader::Underscore);
+        assert_eq!(f.leader, TabLeader::Dot, "an unselected row leaves the leader field alone");
+        f.set_leader(0, TabLeader::MiddleDot);
+        assert_eq!(f.leader, TabLeader::MiddleDot, "the selected row syncs the leader field");
+        f.set_leader(9, TabLeader::Dot);
+
+        // What the position field parses: the interface unit by default, any unit spelled out.
         assert_eq!(wordcraft_geom::parse_measure("1.5", wordcraft_geom::Unit::Inches), Some(108.0));
         assert_eq!(wordcraft_geom::parse_measure("2,54 cm", wordcraft_geom::Unit::Inches), Some(72.0));
     }
