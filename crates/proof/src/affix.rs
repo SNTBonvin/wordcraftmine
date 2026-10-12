@@ -260,7 +260,13 @@ fn parse_aff(aff: &str) -> Result<Rules, String> {
         match dir {
             "SET" | "LANG" | "NAME" | "VERSION" | "HOME" | "WORDCHARS" | "KEY" | "MAXNGRAMSUGS" | "MAXDIFF" | "ONLYMAXDIFF" | "NOSPLITSUGS"
             | "SUGSWITHDOTS" | "NOSUGGEST" | "WARN" | "FORBIDWARN" | "MAXCPDSUGS" => {}
-            "FLAG" => return Err(format!("line {}: FLAG {} is not supported (one-character flags only)", n + 1, at(1))),
+            "FLAG" => {
+                // Per-character flag modes (`FLAG UTF-8`, as VERO's pt_BR dictionary uses) work
+                // with the one-character parsing here; only the multi-character encodings differ.
+                if !matches!(at(1), "UTF-8" | "DEFAULT" | "utf-8" | "default" | "UTF8" | "") {
+                    return Err(format!("line {}: FLAG {} is not supported (one-character flags only)", n + 1, at(1)));
+                }
+            }
             "TRY" => r.try_chars = at(1).to_string(),
             "MAP" => {
                 if !map_header && at(1).parse::<usize>().is_ok() {
@@ -818,10 +824,22 @@ mod tests {
     }
 
     #[test]
+    fn flag_utf8_and_default_modes_are_accepted() {
+        // `FLAG UTF-8` (VERO pt_BR) and `FLAG DEFAULT` are per-character flag modes: the same
+        // mode the reader already assumes. Only `long` and `num` stay unsupported.
+        for mode in ["UTF-8", "DEFAULT"] {
+            let aff = format!("SET UTF-8\nFLAG {mode}\nSFX a Y 1\nSFX a   0   y   [^y]\n");
+            let d = AffixDict::from_hunspell(&aff, "1\nkot/a\n", &[]).unwrap();
+            assert!(d.contains("kot") && d.contains("koty"), "{mode}");
+        }
+        assert!(AffixDict::from_hunspell("FLAG UTF-8\n", "0\n", &[]).is_ok(), "FLAG alone is harmless");
+    }
+
+    #[test]
     fn unsupported_and_broken_input_is_an_error() {
         assert!(AffixDict::from_hunspell("FLAG long\n", DIC, &[]).is_err());
+        assert!(AffixDict::from_hunspell("FLAG num\n", DIC, &[]).is_err());
         assert!(AffixDict::from_hunspell("COMPOUNDFLAG X\n", DIC, &[]).is_err());
-        assert!(AffixDict::from_hunspell("SFX a Y 1\nSFX a 0 y/b .\n", DIC, &[]).is_err());
         assert!(AffixDict::from_hunspell("SFX a Y 1\nSFX a 0 y [ab\n", DIC, &[]).is_err());
         assert!(AffixDict::from_bytes(b"not deflate").is_err());
         let ok = dict().to_bytes();
