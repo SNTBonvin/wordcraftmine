@@ -115,6 +115,12 @@ const MAC_LIGHTS_LEFT: f32 = 10.0;
 /// from the top of the window.
 pub const MAC_CONTENT_LEFT: f32 = MAC_LIGHTS_LEFT + 2.0 * MAC_LIGHT_PITCH + MAC_LIGHT + (MAC_TITLE_BAR - MAC_LIGHT) / 2.0;
 
+/// The title bar's drag area: window chrome, so the resize zones don't yield to it
+/// ([`crate::titlebar`]).
+pub fn title_drag_id() -> egui::Id {
+    egui::Id::new("title_drag")
+}
+
 pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     // macOS: shorter, so the system's traffic lights are centred in it; the tallest controls
@@ -128,7 +134,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             let full = ui.max_rect();
             // Drag the window by the title bar (integrated title bar on macOS).
-            let drag = ui.interact(full, ui.id().with("title_drag"), Sense::click_and_drag());
+            let drag = ui.interact(full, title_drag_id(), Sense::click_and_drag());
             if drag.drag_started() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }

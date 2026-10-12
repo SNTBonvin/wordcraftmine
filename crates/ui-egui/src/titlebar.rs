@@ -17,6 +17,11 @@ pub const WIDTH: f32 = 3.0 * BUTTON_WIDTH;
 /// border (PhotoCraft #1581).
 const EDGE: f32 = 8.0;
 const CORNER: f32 = 12.0;
+/// Over a control (Close, a scroll bar, a status-bar item) only this outer strip resizes, and the
+/// rest of the zone is the control's (#945 review).
+const GRIP: f32 = 3.0;
+/// A widget narrower than this on its shorter side is a control, not a background (the canvas).
+const CONTROL: f32 = 64.0;
 /// Close's hover fill and glyph, as on Windows' own caption buttons, in every theme.
 const CLOSE_HOVER: Color32 = Color32::from_rgb(196, 43, 28);
 const CLOSE_HOVER_TEXT: Color32 = Color32::WHITE;
@@ -108,9 +113,8 @@ fn paint_glyph(ui: &Ui, c: Caption, maximized: bool, at: egui::Pos2, s: Stroke) 
 
 /// The edge and corner zones of a window with content rect `w`: (zone, direction, cursor). Corners
 /// come last so they win where they overlap the edges.
-fn zones(w: Rect) -> [(Rect, ResizeDirection, CursorIcon); 8] {
+fn zones(w: Rect, e: f32, c: f32) -> [(Rect, ResizeDirection, CursorIcon); 8] {
     use ResizeDirection::*;
-    let (e, c) = (EDGE, CORNER);
     [
         (Rect::from_min_max(w.left_top(), pos2(w.right(), w.top() + e)), North, CursorIcon::ResizeNorth),
         (Rect::from_min_max(pos2(w.left(), w.bottom() - e), w.right_bottom()), South, CursorIcon::ResizeSouth),
@@ -123,8 +127,25 @@ fn zones(w: Rect) -> [(Rect, ResizeDirection, CursorIcon); 8] {
     ]
 }
 
+/// Whether the pointer was over a control last frame: an enabled clickable or draggable widget
+/// smaller than [`CONTROL`], other than the zones and the title bar's drag area (window chrome).
+fn over_control(ctx: &egui::Context, zones: LayerId) -> bool {
+    let Some(p) = ctx.pointer_latest_pos() else { return false };
+    let title_drag = crate::chrome::title_drag_id();
+    ctx.viewport(|v| {
+        v.prev_pass.widgets.layers().filter(|(l, _)| **l != zones).flat_map(|(_, ws)| ws.iter()).any(|w| {
+            w.enabled
+                && (w.sense.senses_click() || w.sense.senses_drag())
+                && w.id != title_drag
+                && w.interact_rect.contains(p)
+                && w.interact_rect.size().min_elem() < CONTROL
+        })
+    })
+}
+
 /// Invisible resize zones along the window's edges, above everything else; a press in one starts
-/// an OS resize in that direction. None while the window is maximized or full screen.
+/// an OS resize in that direction. Over a control they shrink to the outer [`GRIP`]. None while
+/// the window is maximized or full screen.
 // ponytail: no hand-off release/cursor re-send after the OS resize (PhotoCraft #1581 needs them on
 // KDE Wayland only); port them with the Linux title bar (#282).
 pub fn resize_zones(ui: &mut Ui) {
@@ -135,7 +156,8 @@ pub fn resize_zones(ui: &mut Ui) {
     let w = ctx.content_rect();
     let layer = LayerId::new(Order::Foreground, Id::new("titlebar-resize"));
     let zui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(w));
-    for (i, (r, dir, cursor)) in zones(w).into_iter().enumerate() {
+    let (e, c) = if over_control(&ctx, layer) { (GRIP, GRIP) } else { (EDGE, CORNER) };
+    for (i, (r, dir, cursor)) in zones(w, e, c).into_iter().enumerate() {
         let resp = zui.interact(r, Id::new(("titlebar-resize", i)), Sense::drag()).on_hover_cursor(cursor);
         if resp.drag_started_by(PointerButton::Primary) {
             ctx.send_viewport_cmd(ViewportCommand::BeginResize(dir));
@@ -149,7 +171,7 @@ mod tests {
     use crate::WordApp;
     use egui::{Event, Pos2, RawInput, ViewportId};
 
-    /// A headless window `width` pt wide showing the title bar and the resize zones.
+    /// A headless window `width` pt wide showing the title bar, the status bar and the resize zones.
     struct Win {
         ctx: egui::Context,
         app: WordApp,
@@ -183,6 +205,7 @@ mod tests {
             let app = &mut self.app;
             let mut out = self.ctx.run_ui(input, |ui| {
                 crate::chrome::title_bar(app, ui);
+                crate::chrome::status_bar(app, ui);
                 resize_zones(ui);
             });
             out.textures_delta.clear();
@@ -208,6 +231,11 @@ mod tests {
 
         /// The bar's clickable widgets other than its drag area and the caption buttons.
         fn bar_widgets(&self) -> Vec<Rect> {
+            self.bar_widgets_at(|r| r.top() < 30.0)
+        }
+
+        /// Clickable widgets (not the caption buttons or the zones) whose rect passes `keep`.
+        fn bar_widgets_at(&self, keep: impl Fn(Rect) -> bool) -> Vec<Rect> {
             let skip = CAPTIONS.map(caption_id);
             self.ctx.viewport(|v| {
                 v.prev_pass
@@ -215,7 +243,7 @@ mod tests {
                     .layers()
                     .filter(|(l, _)| l.order != Order::Foreground)
                     .flat_map(|(_, ws)| ws.iter())
-                    .filter(|w| w.sense.senses_click() && !w.sense.senses_drag() && w.rect.top() < 30.0 && !skip.contains(&w.id))
+                    .filter(|w| w.sense.senses_click() && !w.sense.senses_drag() && keep(w.rect) && !skip.contains(&w.id))
                     .map(|w| w.rect)
                     .collect()
             })
@@ -306,5 +334,26 @@ mod tests {
         let cmds = w.gesture(&[pos2(1.0, 300.0), pos2(8.0, 300.0)]);
         assert!(!cmds.iter().any(|c| matches!(c, ViewportCommand::BeginResize(_))), "{cmds:?}");
         assert!(w.click(pos2(999.5, 0.5)).contains(&ViewportCommand::Close));
+    }
+
+    /// #945 review: a zone lying on a control took its clicks (Close's top, the status bar).
+    /// Over a control only the outer strip resizes; the rest is the control's.
+    #[test]
+    fn controls_at_the_edge_keep_their_clicks_and_the_outer_strip_still_resizes() {
+        let mut w = Win::new(1100.0);
+        w.frame(vec![]);
+        let close = w.caption(Caption::Close);
+        let top_of_close = pos2(close.center().x, 5.0);
+        assert!(w.click(top_of_close).contains(&ViewportCommand::Close), "Close's top half of the old zone is Close");
+        let cmds = w.gesture(&[pos2(close.center().x, 1.0), pos2(close.center().x, -5.0)]);
+        assert!(cmds.contains(&ViewportCommand::BeginResize(ResizeDirection::North)), "{cmds:?}");
+        // The status bar's page count (opens Go To) sits a few points above the bottom edge.
+        let page = w.bar_widgets_at(|r| r.bottom() > 590.0).into_iter().next().expect("a status bar control");
+        let near_edge = pos2(page.center().x, 600.0 - 5.0);
+        assert!(page.contains(near_edge), "{page:?}");
+        let cmds = w.gesture(&[near_edge, near_edge + vec2(0.0, 6.0)]);
+        assert!(!cmds.iter().any(|c| matches!(c, ViewportCommand::BeginResize(_))), "{cmds:?}");
+        let cmds = w.gesture(&[pos2(page.center().x, 599.0), pos2(page.center().x, 605.0)]);
+        assert!(cmds.contains(&ViewportCommand::BeginResize(ResizeDirection::South)), "{cmds:?}");
     }
 }
