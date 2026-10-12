@@ -1402,6 +1402,7 @@
 	Choose the sheet that holds the recipients.	Valige leht, millel on adressaadid.
 	First row of data contains column headers	Andmete esimene rida sisaldab veerupäiseid
 	Formatted	Vormindatud
+	Deleted	Kustutatud
 	Interface size:	Kasutajaliidese suurus:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Muudab menüülindi, menüüd ja dialoogid suuremaks või väiksemaks, lisaks süsteemi ekraani skaleerimisele. Dokumendi suum on eraldi.
 	Print Markup	Prindi märgistus
@@ -1526,6 +1527,9 @@
 	Ribbon	Lint
 	Ribbon and Quick Access Toolbar:	Lint ja kiirpääsuriba:
 	Ribbon tabs	Lindi vahekaardid
+	Add Font…	Lisa font…
+	Added Fonts	Lisatud fondid
+	Remove Added Font	Eemalda lisatud font
 	Recent Colors	Viimati kasutatud värvid
 	More Colors…	Rohkem värve…
 	Standard	Standard
@@ -1662,6 +1666,7 @@
 	Continuous numbering	Pidev nummerdus
 	Apply	Rakenda
 	Convert Notes	Teisenda märkused
+	Hide White Space	Peida tühi ala lehtede vahel
 	All pages	Kõik leheküljed
 	Current page	Praegune lehekülg
 	Selected pages	Valitud leheküljed

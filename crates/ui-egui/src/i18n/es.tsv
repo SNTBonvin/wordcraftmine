@@ -1416,6 +1416,7 @@
 	Selected Fields	Campos seleccionados
 	Edit Field…	Editar campo…
 	Formatted	Con formato
+	Deleted	Eliminado
 	Interface size:	Tamaño de la interfaz:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Agranda o reduce la cinta, los menús y los cuadros de diálogo, además del escalado de pantalla del sistema. El zoom del documento es aparte.
 	Print Markup	Imprimir marcas
@@ -1540,6 +1541,9 @@
 	New Group	Nuevo grupo
 	Rename…	Cambiar nombre…
 	Ribbon and Quick Access Toolbar:	Cinta de opciones y barra de acceso rápido:
+	Add Font…	Agregar fuente…
+	Added Fonts	Fuentes agregadas
+	Remove Added Font	Quitar fuente agregada
 	Recent Colors	Colores recientes
 	More Colors…	Más colores…
 	Standard	Estándar
@@ -1701,6 +1705,7 @@
 	Continuous numbering	Numeración continua
 	Apply	Aplicar
 	Convert Notes	Convertir notas
+	Hide White Space	Ocultar espacio en blanco
 	All pages	Todas las páginas
 	Current page	Página actual
 	Selected pages	Páginas seleccionadas

@@ -16,7 +16,7 @@ use crate::WordApp;
 /// A file dialog the app asks the host to show ([`Services::file_dialog`](crate::Services::file_dialog)).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileDialogRequest {
-    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`), as for
+    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`, `font`), as for
     /// `pick_open`.
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
@@ -37,6 +37,8 @@ pub(crate) enum AfterPick {
     PrintPdf { settings: Value },
     /// Load the picked CSV/TSV/text file or spreadsheet as the mail-merge recipients (#240, #334).
     Recipients,
+    /// Add the picked font file (#582).
+    Font,
     /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
     /// Organizer (#377).
     ForDialog,
@@ -129,6 +131,10 @@ impl WordApp {
                     return Ok(json!({"cancelled": true}));
                 };
                 self.insert_or_change_picture(json!({"path": path}))
+            }
+            AfterPick::Font => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                self.run("font.add", json!({"path": path}))
             }
             AfterPick::ForDialog => {
                 let picked = picked.filter(|p| !p.is_empty());
@@ -226,6 +232,15 @@ impl WordApp {
         }
         let _ = self.ask_file(FileDialogRequest::Open { purpose: "picture".into() }, AfterPick::Picture);
     }
+
+    /// Pick a font file to add (Add Font…; web: it arrives through the inbox).
+    pub(crate) fn pick_font(&mut self) {
+        if let Some(f) = &self.services.open_async {
+            f("font");
+            return;
+        }
+        let _ = self.ask_file(FileDialogRequest::Open { purpose: "font".into() }, AfterPick::Font);
+    }
 }
 
 #[cfg(test)]
@@ -303,6 +318,35 @@ mod tests {
         assert!(!a.file_dialog_open());
         assert!(!a.session.dirty);
         assert!(saved_text(&path).contains(UNSAVED));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #689: Save As honours the filename typed in the dialog, not just the folder: a document
+    /// opened as `a/one.docx` and saved as `b/two.docx` is written there and takes that path.
+    #[test]
+    fn save_as_with_a_new_filename_saves_under_it() {
+        let dir = scratch("rename");
+        let opened = dir.join("one.docx");
+        let picked = dir.join("sub").join("two.docx");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("original"))
+            .run("file.save", &json!({"path": opened.to_string_lossy()}))
+            .unwrap();
+        let (mut a, shown) = async_app();
+        a.run("file.open", json!({"path": opened.to_string_lossy()})).unwrap();
+        assert_eq!(a.session.path.as_deref(), Some(opened.as_path()));
+        a.save_as_dialog();
+        answer(&shown, Some(&picked.to_string_lossy()));
+        let r = a.poll_file_dialog().unwrap().unwrap();
+        assert_eq!(r, json!({"saved": true}), "the save-as succeeded");
+        assert_eq!(a.session.path.as_deref(), Some(picked.as_path()), "the picked filename is the document's path");
+        assert!(picked.is_file(), "the file is written under the picked name");
+        assert!(saved_text(&picked).contains("original"));
+        // F12 (file.saveAs without a path) lands in the same dialog, suggesting the new name.
+        let r = a.run("file.saveAs", json!({})).unwrap();
+        assert_eq!(r, json!({"saved": false}));
+        assert!(a.file_dialog_open(), "F12's saveAs request opens the dialog");
+        assert_eq!(shown.borrow()[0].0, FileDialogRequest::Save { name: "two.docx".into() });
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (More Colors… and the Colors dialog, #606; previously trivial: Find and Replace special characters and wildcards, #543; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (every measurement follows the Options unit, #755; previously trivial: Find and Replace special characters and wildcards, #543; previously trivial: Customize Ribbon and the Quick Access Toolbar, #379; previously: major, first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -40,6 +40,8 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | trivial | Every measurement now follows File › Options › Advanced › Measurement units: the Line Numbers "From text" distance and the Hyphenation zone were still fixed in inches (#755) |
+| 2026-10-11 | trivial | Track Changes Options › Show revisions in balloons works: tracked deletions in the body leave the text for "Deleted: …" balloons in the markup area, joined to where they were; inline again where no balloons show (Comments pane, Read Mode, side by side, Web Layout), and always inline in headers, footers, notes and text boxes |
 | 2026-10-11 | trivial | Mini toolbar in two rows like Word's (font, size, grow, shrink; B I U S, highlight, font colour, four alignments) with every button inside the bar; font and size lists drop from the box's left edge; dropdown arrows a readable size; font list entries take the theme's text colour in dark mode (#535) |
 | 2026-10-11 | trivial | Find and Replace: Special ▾ menu (^p, ^t, ^?, ^#, ^$, ^w, ^&, ^c … ; a shorter wildcard list), Use wildcards (`?` `*` `[a-z]` `[!x]` `{n,m}` `@` `<` `>` `( )`, `\1` in Replace with), Match prefix/suffix, Ignore punctuation and white space; `^p` matches and splits paragraphs, Replace All is one undo step (#543) |
 | 2026-10-11 | trivial | Update Style to Match Selection takes how the selection looks (its paragraph and character styles as well as direct formatting) and applies the style to it; Home › Styles gallery tiles get a right-click menu with Update to Match Selection and Modify… (#555) |
@@ -55,13 +57,17 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Line Numbers, Hyphenation (with Manual Hyphenation), Language, Envelopes and Labels dialogs (#407); the three duplicated modal-dialog rows merged into one |
 | 2026-10-11 | trivial | Accessibility pane (errors/warnings/tips, jump-to, fixes) and Alt Text pane, opened from Picture/Shape Format › Accessibility and right-click › View Alt Text… (#386) |
 | 2026-10-11 | trivial | References dialogs: Caption (New/Delete Label, Numbering with chapter numbers), Index and Mark Index Entry (Mark All), Custom Table of Contents (Options, TOC styles via Modify Style), Source Manager and Create/Edit Source; modal dialog count 34 (#402) |
+| 2026-10-11 | trivial | Dark theme: Share, the avatar initials, the AutoSave knob and keytips use dark `on_accent` text on the light accent (6.2:1, 8.4:1 on hover; white was 2.9:1) (#655) |
+| 2026-10-11 | trivial | Text field and combo outlines reach 3:1 against their fill and surroundings in both themes (light #8A8A8A, dark #7A7A7A); a test pins the ratios (#657) |
 | 2026-10-11 | trivial | Font dialog: Asian text font and Latin text font boxes, each with its own list and type-to-find, shown for a Chinese/Japanese interface or East Asian text in the selection; OK sets only the fonts changed; `format.font {"eastAsia"}` (#505) |
+| 2026-10-11 | trivial | References › Table of Authorities: Insert Table of Authorities is labelled and joined by Update Table (`references.updateAuthorities`), as in the Index group (#661) |
 | 2026-10-11 | trivial | Customize Ribbon (custom tabs and groups, hidden and reordered tabs) and a customizable Quick Access Toolbar with a working … menu (#379, #376) |
 | 2026-10-11 | trivial | Customize Keyboard dialog (Tools › Customize Keyboard, File › Options › Keyboard shortcuts): custom keys override built-ins and persist (#368) |
 | 2026-10-11 | minor | Keyboard shortcuts 101 → 125 commands (#330): Reset Paragraph/Character Formatting, symbols, DATE/TIME/PAGE fields, view switches, Word Count, mail merge, F4 Repeat now reachable |
 | 2026-10-11 | trivial | Collapsed duplicate rows left by parallel merges |
 | 2026-10-11 | trivial | Dialogs keep their top edge in place when switching tabs (Paragraph, Font, Borders and Shading…): only the bottom edge moves (#507) |
 | 2026-10-11 | trivial | Interface size setting in File › Options › General (80–200 %), kept between runs and applied on top of the system's display scale; `ui.interfaceSize` for agents (#475) |
+| 2026-10-11 | trivial | Font list ends with Add Font… (TTF, OTF, TTC, WOFF, WOFF2; also by dropping the file); added fonts are listed at once and kept between runs (#582) |
 | 2026-10-11 | trivial | Font box (ribbon and mini toolbar): typing lists the matching fonts (prefix first, then any part of the name); Up/Down, Enter or a click picks one, Escape cancels (#359) |
 | 2026-10-11 | trivial | Templates and Add-ins (template path, Attach…, automatically update document styles) and Organizer (copy styles from another file, delete, rename) dialogs (#377); styles update from the template only when the user asks (OK with the box ticked, or Update Styles), never on open; the three Modal dialogs rows merged into one |
 | 2026-10-11 | trivial | Field codes (#339): View › Field Codes (Alt+F9), Toggle Field Codes (Shift+F9), a field-code popup (double-click, right-click › Edit Field…; Ctrl+F9 opens the Field dialog), unlink/lock/unlock and next/previous field keys; field items in the context menu |

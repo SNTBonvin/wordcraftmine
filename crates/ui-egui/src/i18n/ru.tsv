@@ -1709,6 +1709,7 @@ preview	Title	Пример
 	Centered as Group	По центру как группа
 	✓ None	✓ Нет
 	Formatted	Отформатировано
+	Deleted	Удалено
 	Interface size:	Размер интерфейса:
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	Увеличивает или уменьшает ленту, меню и диалоговые окна поверх системного масштабирования экрана. Масштаб документа настраивается отдельно.
 	Copyright Sign	Знак авторского права
@@ -1793,6 +1794,9 @@ preview	Title	Пример
 	Left Only	Только слева
 	Right Only	Только справа
 	Largest Only	Только по большей стороне
+	Add Font…	Добавить шрифт…
+	Added Fonts	Добавленные шрифты
+	Remove Added Font	Удалить добавленный шрифт
 	Print Markup	Печатать исправления и примечания
 	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Примечания рядом с каждой страницей и отслеживаемые изменения в PDF, при печати и в изображениях; список примечаний в конце веб-страниц, Markdown и текста.
 	Recent Colors	Последние цвета
@@ -2130,6 +2134,7 @@ preview	Title	Пример
 	Continuous numbering	Сквозная нумерация
 	Apply	Применить
 	Convert Notes	Преобразовать сноски
+	Hide White Space	Скрыть пустое место между страницами
 	All pages	Все страницы
 	Current page	Текущая страница
 	Selected pages	Выбранные страницы

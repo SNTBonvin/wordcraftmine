@@ -1401,6 +1401,7 @@
 	Selected Fields	選取的功能變數
 	Edit Field…	編輯功能變數…
 	Formatted	已設定格式
+	Deleted	已刪除
 	Interface size:	介面大小：
 	Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate.	在系統顯示縮放的基礎上放大或縮小功能區、功能表與對話方塊。文件縮放另行設定。
 	Print Markup	列印標記
@@ -1525,6 +1526,9 @@
 	New Group	新增群組
 	Rename…	重新命名…
 	Ribbon and Quick Access Toolbar:	功能區和快速存取工具列：
+	Add Font…	新增字型…
+	Added Fonts	已新增的字型
+	Remove Added Font	移除已新增的字型
 	Recent Colors	最近使用的色彩
 	More Colors…	其他色彩…
 	Standard	標準
@@ -1686,6 +1690,7 @@
 	Continuous numbering	連續編號
 	Apply	套用
 	Convert Notes	轉換附註
+	Hide White Space	隱藏空白
 	All pages	所有頁面
 	Current page	目前頁面
 	Selected pages	所選頁面
