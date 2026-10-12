@@ -3,6 +3,7 @@
 //! of authorities, footnote options.
 
 use serde_json::{Value, json};
+use wordcraft_doc::collate::{SortKey, heading_letter, sort_key};
 use wordcraft_doc::para::InlineObject;
 use wordcraft_doc::props::{CharProps, TabAlign, TabLeader, TabStop};
 use wordcraft_doc::{Block, Document, Paragraph, Path, Pos, Source, StoryRef};
@@ -621,8 +622,11 @@ fn bib_order(doc: &Document, st: &CiteStyle) -> Vec<usize> {
         let cited: std::collections::HashSet<&str> = cited.iter().map(String::as_str).collect();
         doc.sources.iter().enumerate().filter(|(_, x)| cited.contains(x.tag.as_str())).map(|(i, _)| i).collect()
     };
-    let key =
-        |i: &usize, by_title: bool| doc.sources.get(*i).map(|x| if by_title { x.title.to_lowercase() } else { author_key(x) }).unwrap_or_default();
+    // Sorted in the document's language (Polish authors `Łukasiewicz` before `Mazur`).
+    let lang = super::doc_lang(doc);
+    let key = |i: &usize, by_title: bool| {
+        sort_key(&doc.sources.get(*i).map(|x| if by_title { x.title.clone() } else { author_key(x) }).unwrap_or_default(), lang.as_deref())
+    };
     match st.order {
         Order::Author => idx.sort_by_cached_key(|i| key(i, false)),
         Order::Title => idx.sort_by_cached_key(|i| key(i, true)),
@@ -824,21 +828,22 @@ fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
         return with_pages.into_iter().map(|(t, p)| (format!("{t}\t{p}"), false)).collect();
     }
     // Index / TOA: group by entry, sort, list pages.
-    let mut grouped: std::collections::BTreeMap<String, Vec<u32>> = Default::default();
+    let lang = super::doc_lang(&s.doc);
+    let mut grouped: std::collections::BTreeMap<(SortKey, String), Vec<u32>> = Default::default();
     for (e, p) in with_pages {
-        let pages = grouped.entry(e).or_default();
+        let pages = grouped.entry((sort_key(&e, lang.as_deref()), e)).or_default();
         if !pages.contains(&p) {
             pages.push(p);
         }
     }
     let mut out = Vec::new();
     let mut letter = None;
-    for (e, pages) in grouped {
-        let first = e.chars().next().map(|c| c.to_ascii_uppercase());
+    for ((_, e), pages) in grouped {
+        let first = heading_letter(&e, lang.as_deref());
         if kind.starts_with("INDEX") && first != letter {
-            letter = first;
+            letter = first.clone();
             if let Some(l) = first {
-                out.push((l.to_string(), false));
+                out.push((l, false));
             }
         }
         let list = pages.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ");

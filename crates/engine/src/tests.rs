@@ -4093,3 +4093,93 @@ fn format_font_sets_the_asian_and_latin_fonts_separately() {
     assert_eq!(fonts(&s), before);
     assert!(s.run("format.font", &json!({})).is_err() && s.run("format.font", &json!({"eastAsia": " "})).is_err());
 }
+
+/// A one-column table (no header row) holding `cells`, in a document whose default language
+/// is `lang`; the caret ends in the last cell.
+fn column_table(lang: &str, cells: &[&str]) -> Session {
+    let mut s = s();
+    run(&mut s, "review.language", json!({"lang": lang, "default": true}));
+    run(&mut s, "insert.table", json!({"rows": cells.len(), "cols": 1}));
+    for (k, c) in cells.iter().enumerate() {
+        if k > 0 {
+            run(&mut s, "text.tab", json!({}));
+        }
+        if !c.is_empty() {
+            run(&mut s, "text.insert", json!({"text": c}));
+        }
+    }
+    s
+}
+
+fn column_texts(s: &Session) -> Vec<String> {
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    t.rows.iter().map(|r| r.cells[0].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect::<String>()).collect()
+}
+
+/// #836: table sort reads numbers in the text's language: `1,5` is one and a half in Polish.
+#[test]
+fn table_sort_reads_decimal_comma_in_polish() {
+    let mut s = column_table("pl-PL", &["12", "1,5", "2"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["1,5", "2", "12"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false, "descending": true}));
+    assert_eq!(column_texts(&s), ["12", "2", "1,5"]);
+    // English keeps the comma as a thousands separator.
+    let mut s = column_table("en-US", &["1,250", "12.5", "2"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["2", "12.5", "1,250"]);
+}
+
+/// #836: table formulas read each cell in its language and write the result with its decimal
+/// separator.
+#[test]
+fn table_formula_reads_and_writes_decimal_comma_in_polish() {
+    let mut s = column_table("pl-PL", &["3,50", "2,25", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "5,75");
+    let mut s = column_table("pl-PL", &["1 250,00", "100", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1350");
+    let mut s = column_table("pl-PL", &["1\u{a0}250,50 zł", "100", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1350,50");
+    let mut s = column_table("en-US", &["$1,250.50", "3.25", ""]);
+    assert_eq!(run(&mut s, "table.formula", json!({"formula": "=SUM(ABOVE)"}))["result"], "1253.75");
+}
+
+/// #837: text sorts follow the language's alphabet: Polish `ł` after `l`, `ć` after `c`.
+#[test]
+fn table_and_paragraph_sort_use_polish_alphabet() {
+    let mut s = column_table("pl-PL", &["Zakopane", "Łódź", "Kraków"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["Kraków", "Łódź", "Zakopane"]);
+    let mut s = Session::new(wordcraft_doc::Document::from_text("zebra\nćma\ndom"));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "para.sort", json!({}));
+    assert_eq!(text(&s), "ćma\ndom\nzebra");
+    // Swedish puts å ä ö after z; German sorts ä with a.
+    let mut s = column_table("sv-SE", &["ödla", "zebra", "åka", "apa"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["apa", "zebra", "åka", "ödla"]);
+    let mut s = column_table("de-DE", &["Zug", "Äpfel", "Bach"]);
+    run(&mut s, "table.sort", json!({"column": 0, "header": false}));
+    assert_eq!(column_texts(&s), ["Äpfel", "Bach", "Zug"]);
+}
+
+/// #837: index entries and letter headings follow the language: `Łódź` files under its own
+/// `Ł` heading between `K` and `Z` in Polish.
+#[test]
+fn index_sorts_polish_entries_and_headings() {
+    let mut s = Session::new(wordcraft_doc::Document::from_text("Zakopane.\nŁódź.\nKraków."));
+    run(&mut s, "review.language", json!({"lang": "pl-PL", "default": true}));
+    for w in ["Zakopane", "Łódź", "Kraków"] {
+        run(&mut s, "select.text", json!({"text": w}));
+        run(&mut s, "references.markEntry", json!({}));
+    }
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "references.index", json!({}));
+    let lines: Vec<String> =
+        s.doc.body.iter().filter_map(|b| b.as_para()).filter(|p| p.props.style.as_deref() == Some("ListEntry")).map(|p| p.plain_text()).collect();
+    let order: Vec<&str> = lines.iter().map(|l| l.split([',', '\t']).next().unwrap_or("")).collect();
+    let pos = |w: &str| order.iter().position(|x| *x == w).unwrap_or(usize::MAX);
+    assert!(pos("Kraków") < pos("Łódź") && pos("Łódź") < pos("Zakopane"), "{lines:?}");
+}
