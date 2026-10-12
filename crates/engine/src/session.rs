@@ -180,6 +180,12 @@ pub struct ViewState {
     /// Developer › Design Mode: every content control shows its frame and title.
     #[serde(default)]
     pub design_mode: bool,
+    /// View › Window › View Side by Side: compare documents side by side.
+    #[serde(default)]
+    pub side_by_side: bool,
+    /// View › Window › Synchronous Scrolling: synchronize scrolling between side-by-side documents.
+    #[serde(default)]
+    pub sync_scroll: bool,
 }
 
 fn on() -> bool {
@@ -237,6 +243,8 @@ impl Default for ViewState {
             hide_white_space: false,
             outline: Default::default(),
             design_mode: false,
+            side_by_side: false,
+            sync_scroll: false,
         }
     }
 }

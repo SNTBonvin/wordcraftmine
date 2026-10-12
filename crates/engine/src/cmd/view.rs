@@ -90,6 +90,38 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .key("Mod+Alt+S")
         .pure(),
+        // Entry points only: the UI has no multi-document windows yet (gap #27).
+        CommandSpec::new("view.arrangeAll", "Arrange All", "View › Window", |s, _| {
+            s.ui_requests.push(json!({"arrange": "all"}));
+            sel_result(s)
+        })
+        .pure(),
+        CommandSpec::new("view.sideBySide", "View Side by Side", "View › Window", |s, v| {
+            let r = toggle(s, v, |x| &mut x.side_by_side);
+            s.ui_requests.push(json!({"view": "sideBySide", "active": s.view.side_by_side}));
+            r
+        })
+        .params(r#"{"value"?: bool}"#)
+        .pure(),
+        CommandSpec::new("view.syncScroll", "Synchronous Scrolling", "View › Window", |s, v| {
+            let r = toggle(s, v, |x| &mut x.sync_scroll);
+            s.ui_requests.push(json!({"syncScroll": s.view.sync_scroll}));
+            r
+        })
+        .params(r#"{"value"?: bool}"#)
+        .pure(),
+        CommandSpec::new("view.switchWindows", "Switch Windows", "View › Window", |s, v| {
+            if let Some(target) = v.get("window") {
+                s.ui_requests.push(json!({"switchWindow": target}));
+                Ok(json!({"window": target}))
+            } else {
+                s.ui_requests.push(json!({"open": "switchWindows"}));
+                sel_result(s)
+            }
+        })
+        .params(r#"{"window"?: string | integer}"#)
+        .key("Ctrl+F6")
+        .pure(),
         CommandSpec::new("view.state", "View State", "View", |s, _| serde_json::to_value(&s.view).map_err(|e| CmdError::Failed(e.to_string())))
             .pure(),
         // Word › File › Options › Advanced › Numeral: how digits look on screen (display

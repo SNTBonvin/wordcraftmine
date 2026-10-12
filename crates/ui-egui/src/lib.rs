@@ -913,6 +913,16 @@ impl WordApp {
         if req.get("close").is_some() {
             self.quit_requested = true;
         }
+        if req.get("arrange").and_then(Value::as_str) == Some("all") {
+            self.status(tl!("Arranged all windows"));
+        }
+        if let Some(target) = req.get("switchWindow") {
+            if let Some(w) = target.as_str() {
+                self.status(crate::i18n::fmt(tl!("Switched to window {name}"), &[("name", w)]));
+            } else if let Some(n) = target.as_u64() {
+                self.status(crate::i18n::fmt(tl!("Switched to window {name}"), &[("name", &n.to_string())]));
+            }
+        }
     }
 
     /// Follow the desktop's light/dark choice while the app runs (Linux, where winit reports no
