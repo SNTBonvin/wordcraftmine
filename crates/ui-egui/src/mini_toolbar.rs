@@ -128,14 +128,23 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
         return;
     }
     let Some(bar) = anchor_rect(selection.min.y, selection.min.x, viewport) else { return };
+    // The bar belongs to the page: as the selection scrolls under the ribbon (or past the status
+    // bar) it slides under it with the text, and goes once none of it shows.
+    let shown = bar.intersect(viewport);
+    if !shown.is_positive() {
+        return;
+    }
     let t = Tokens::get(ctx);
     // The bar sits on the Middle layer: above the document (Background), below every popup and
     // menu (Foreground: the ribbon's drop-downs, the context menu, its own lists) and tooltip, so
     // it never covers one. It is pinned to the selection, not movable, and egui stops a click at
-    // the topmost layer, so a click on the bar never reaches the document underneath.
-    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Middle).interactable(true).fixed_pos(bar.min);
-    _area.show(ctx, |ui| {
-        ui.set_clip_rect(bar);
+    // the topmost layer, so a click on the bar never reaches the document underneath. Clipped to
+    // the document area (`constrain_to` without `constrain`, which would push it inside), the part
+    // past its edge takes no clicks either, so the ribbon and the rulers under it keep them.
+    let area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Middle).interactable(true);
+    let area = area.constrain_to(viewport).constrain(false).fixed_pos(bar.min);
+    area.show(ctx, |ui| {
+        ui.set_clip_rect(shown);
         let painter = ui.painter();
         painter.rect_filled(bar.translate(Vec2::new(0.0, 2.0)), CornerRadius::same(6), t.page_shadow);
         painter.rect_filled(bar, CornerRadius::same(6), t.menu);
@@ -469,6 +478,55 @@ mod tests {
         click_at(&mut h, item);
         assert_eq!(format_state(&mut h).get("size").and_then(Value::as_f64), Some(28.0), "the ribbon's size list applied 28 pt");
         assert!(!visible(h.state()) && bar_layer(&h).is_none(), "the bar stays away after a pick from the ribbon's list");
+    }
+
+    /// Scrolled until the selection went under the ribbon, the bar went with it and drew over the
+    /// ribbon and the ruler. It stays in the document area: the part past its edge neither shows
+    /// nor takes the pointer.
+    #[test]
+    fn the_bar_scrolls_under_the_ribbon_not_over_it() {
+        let mut h = bar_over("The quick");
+        let page = h.state().canvas.canvas_rect.expect("the document is shown");
+        // Scroll the selection's line to 45 points above the document area: the bar, below the
+        // line now, has its first row past the edge, over the ruler, and its second showing.
+        let target = page.min.y - 45.0;
+        let line = h.state().canvas.mini_anchor.expect("the selection is on screen");
+        h.event(egui::Event::PointerMoved(page.center()));
+        h.step();
+        let delta = egui::vec2(0.0, target - line.min.y);
+        h.event(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase: egui::TouchPhase::Start, modifiers: Default::default() });
+        h.step();
+        h.state_mut().canvas.wheel = Default::default();
+        steps(&mut h);
+        let line = h.state().canvas.mini_anchor.expect("the selection is still laid out");
+        assert!((line.min.y - target).abs() < 1.0, "the line scrolled to {}, not {target}", line.min.y);
+        let [bar, _] = h.ctx.data(|d| d.get_temp::<[Rect; 2]>(shown_id())).expect("the bar still shows in part");
+        assert!(bar.min.y < page.min.y && bar.max.y > page.min.y, "the bar {bar:?} should straddle the document's top {}", page.min.y);
+
+        let drawn: Vec<Rect> =
+            h.output().shapes.iter().filter(|s| matches!(&s.shape, egui::epaint::Shape::Rect(r) if r.rect == bar)).map(|s| s.clip_rect).collect();
+        assert!(!drawn.is_empty(), "the bar's background is painted");
+        for clip in drawn {
+            assert!(page.expand(0.5).contains_rect(clip), "the bar paints outside the document area {page:?}, over the ribbon: {clip:?}");
+        }
+
+        // The ruler's left-indent marker sits under the hidden part, at the line's start and the
+        // ruler's foot (`canvas::rulers`); dragging it still moves the indent.
+        let marker = pos2(line.min.x, page.min.y - 6.0);
+        assert!(bar.contains(marker), "the bar {bar:?} should cover the left-indent marker {marker:?}");
+        h.event(egui::Event::PointerMoved(marker));
+        h.event(egui::Event::PointerButton { pos: marker, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        for dx in [6.0, 18.0, 36.0] {
+            h.event(egui::Event::PointerMoved(marker + egui::vec2(dx, 0.0)));
+            h.step();
+        }
+        let end = marker + egui::vec2(36.0, 0.0);
+        h.event(egui::Event::PointerButton { pos: end, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        steps(&mut h);
+        let s = &h.state().session;
+        let indent = s.doc.para_at(&s.sel.focus).map(|p| s.doc.styles.resolve_para(&p.props).indent_left).unwrap_or_default();
+        assert!(indent > 0.0, "dragging the ruler's left-indent marker under the bar's hidden part left the indent at {indent}");
     }
 
     /// Picking from one of the bar's own lists (popups below it) keeps the bar up.
