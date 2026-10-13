@@ -280,6 +280,35 @@ fn txt_round_trip() {
     assert_eq!(import("txt", &[0x63, 0x61, 0x66, 0xE9, 0x80]).unwrap().unwrap().plain_text(Default::default()), "café€");
 }
 
+/// #1264: a modified Normal style (font, size, spacing) round-trips through RTF.
+#[test]
+fn rtf_round_trips_the_normal_style() {
+    use crate::{export, import};
+    let mut d = Document::from_text("Hello");
+    d.styles.get_mut("Normal").unwrap().chr.font = Some("Courier New".into());
+    d.styles.get_mut("Normal").unwrap().chr.size = Some(10.0);
+    d.styles.get_mut("Normal").unwrap().para.space_after = Some(0.0);
+    let bytes = export("rtf", &d).unwrap().unwrap();
+    let rtf = String::from_utf8_lossy(&bytes);
+    assert!(rtf.contains("Courier New"), "{rtf}");
+    let back = import("rtf", &bytes).unwrap().unwrap();
+    let normal = back.styles.get("Normal").unwrap();
+    assert_eq!(normal.chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(normal.chr.size, Some(10.0));
+    assert_eq!(normal.para.space_after, Some(0.0));
+    // The default font channel agrees too (monospaced defaults are kept).
+    assert_eq!(back.styles.default_chr.font.as_deref(), Some("Courier New"));
+}
+
+/// #1264: a monospaced `\\deff` is a default like any other on import.
+#[test]
+fn rtf_import_keeps_a_monospaced_default_font() {
+    use crate::import;
+    let d = import("rtf", br"{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern Courier New;}} Hello\par}").unwrap().unwrap();
+    assert_eq!(d.styles.default_chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(d.plain_text(wordcraft_doc::StoryRef::Body).trim(), "Hello");
+}
+
 #[test]
 fn txt_export_writes_symbol_font_text_as_unicode() {
     let mut d = Document::from_text("Done J\u{F0FC}");

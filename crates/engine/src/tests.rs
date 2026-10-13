@@ -2329,6 +2329,22 @@ fn html_pictures_load_relative_to_the_file() {
     assert!(!text.contains("Logo") && text.contains('T') && text.contains("Web"), "{text:?}");
 }
 
+/// `design.setDefault` persists the Normal style for new documents (#1264).
+#[test]
+fn set_default_persists_normal_for_new_documents() {
+    let mut s = s();
+    run(&mut s, "styles.modify", json!({"style": "Normal", "chr": {"font": "Courier New"}, "para": {"spaceAfter": 0}}));
+    run(&mut s, "design.setDefault", json!({}));
+    let d = s.blank_document();
+    let n = d.styles.get("Normal").unwrap();
+    assert_eq!(n.chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(n.para.space_after, Some(0.0));
+    // The prefs survive a ui.json round trip.
+    let v = serde_json::to_value(&s.prefs).unwrap();
+    let back: crate::Prefs = serde_json::from_value(v).unwrap();
+    assert_eq!(back.normal_chr.font.as_deref(), Some("Courier New"));
+}
+
 /// View and zoom survive a save/reopen round trip (#995): the file remembers them, and
 /// opening applies them.
 #[cfg(not(target_arch = "wasm32"))]
