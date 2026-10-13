@@ -117,8 +117,32 @@ pub fn specs() -> Vec<CommandSpec> {
         })),
         t(CommandSpec::new("table.columnWidth", "Table Column Width", "Table Layout › Cell Size", |s, v| {
             let w = p::req_f32(v, "width")?.clamp(6.0, 1584.0);
-            let (_, r, c) = cell(s)?;
-            with_table(s, |t| set_column_width(t, r, c, w))
+            // Resolve the selected grid columns under an immutable borrow first (#1242).
+            let cols: std::collections::BTreeSet<usize> = {
+                let (tp, _, cc) = cell(s)?;
+                let t = s.doc.table(s.sel.focus.story, &tp)
+                    .ok_or_else(|| CmdError::Disabled("the cursor isn't in a table".into()))?;
+                let mut cols = std::collections::BTreeSet::new();
+                for (r, c) in selected_cells(s) {
+                    let g = t.grid_col(r, c);
+                    let span = t.rows.get(r).and_then(|row| row.cells.get(c)).map(|x| x.span()).unwrap_or(1);
+                    cols.extend(g..g.saturating_add(span).min(t.grid.len()));
+                }
+                if cols.is_empty() {
+                    cols.insert(t.grid_col(0, cc).min(t.grid.len().saturating_sub(1)));
+                }
+                cols
+            };
+            with_table(s, |t| {
+                for g in cols.iter().copied() {
+                    if let Some(gw) = t.grid.get_mut(g) {
+                        *gw = w;
+                    }
+                }
+                t.props.width = None;
+                t.props.width_pct = None;
+                sync_cell_widths(t);
+            })
         })
         .params(r#"{"width": pt} (the caret cell's column; the table's preferred width is cleared so the column gets exactly this)"#)),
         t(CommandSpec::new("table.rowHeight", "Table Row Height", "Table Layout › Cell Size", |s, v| {
@@ -128,13 +152,26 @@ pub fn specs() -> Vec<CommandSpec> {
                 Some("exact") => HeightRule::Exact,
                 Some(x) => return Err(CmdError::Params(format!("unknown height rule `{x}`"))),
             };
-            let (_, r, _) = cell(s)?;
-            with_table(s, |t| {
-                if let Some(row) = t.rows.get_mut(r) {
-                    row.props.height = Some(h);
-                    row.props.height_rule = rule;
-                }
-            })
+            let cells = selected_cells(s);
+            let rows: std::collections::BTreeSet<usize> = cells.into_iter().map(|x| x.0).collect();
+            if rows.is_empty() {
+                let (_, r, _) = cell(s)?;
+                with_table(s, |t| {
+                    if let Some(row) = t.rows.get_mut(r) {
+                        row.props.height = Some(h);
+                        row.props.height_rule = rule;
+                    }
+                })
+            } else {
+                with_table(s, |t| {
+                    for r in rows.iter().copied() {
+                        if let Some(row) = t.rows.get_mut(r) {
+                            row.props.height = Some(h);
+                            row.props.height_rule = rule;
+                        }
+                    }
+                })
+            }
         })
         .params(r#"{"height": pt, "rule"?: "atLeast|exact"}"#)),
         t(CommandSpec::new("table.repeatHeader", "Repeat Header Rows", "Table Layout › Data", |s, v| {

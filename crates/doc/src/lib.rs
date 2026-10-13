@@ -805,6 +805,19 @@ impl Document {
         self.story_text(s, false)
     }
 
+    /// [`Self::plain_text`] with every tracked change accepted (insertions kept, deletions
+    /// dropped): the text as it reads with changes shown as final (#866).
+    pub fn final_text(&self, s: StoryRef) -> String {
+        let mut out = String::new();
+        if let Some(bl) = self.story(s) {
+            final_text_of(bl, &mut out, 0);
+        }
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
+    }
+
     /// [`Self::plain_text`] as it reads on screen: symbol-font characters (Wingdings…) as their
     /// Unicode equivalents ([`Paragraph::shown_text`]).
     pub fn shown_text(&self, s: StoryRef) -> String {
@@ -1311,6 +1324,33 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize, shown: bool) {
                     for c in &row.cells {
                         let mut s = String::new();
                         text_of(&c.blocks, &mut s, depth + 1, shown);
+                        cells.push(s.trim_end_matches('\n').replace('\n', " "));
+                    }
+                    out.push_str(&cells.join("\t"));
+                    out.push('\n');
+                }
+            }
+        }
+    }
+}
+
+/// [`text_of`] with every tracked change accepted (insertions kept, deletions dropped).
+fn final_text_of(bl: &Blocks, out: &mut String, depth: usize) {
+    if depth > 16 {
+        return;
+    }
+    for b in bl {
+        match &**b {
+            Block::Para(p) => {
+                out.push_str(&p.final_text());
+                out.push('\n');
+            }
+            Block::Table(t) => {
+                for row in &t.rows {
+                    let mut cells = Vec::new();
+                    for c in &row.cells {
+                        let mut s = String::new();
+                        final_text_of(&c.blocks, &mut s, depth + 1);
                         cells.push(s.trim_end_matches('\n').replace('\n', " "));
                     }
                     out.push_str(&cells.join("\t"));

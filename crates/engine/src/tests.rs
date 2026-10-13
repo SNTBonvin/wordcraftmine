@@ -1151,6 +1151,37 @@ fn cell_size_boxes_set_row_height_and_column_width() {
     assert_eq!(s.doc.body.iter().find_map(|b| b.as_table()).unwrap(), &t0);
 }
 
+/// #866: `document.text` (MCP `get_text`, `wordcraft-cli text`) reads with every change
+/// accepted: insertions kept, tracked deletions dropped.
+#[test]
+fn document_text_shows_tracked_changes_as_final() {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Signed by Alice Smith, Partner."}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "select.text", json!({"text": "Alice Smith, Partner"}));
+    run(&mut s, "text.insert", json!({"text": "Bob Jones, Director"}));
+    let t = run(&mut s, "document.text", json!({}))["text"].clone();
+    assert_eq!(t, "Signed by Bob Jones, Director.");
+}
+
+/// Whole-table selection (#1242): Height/Width apply to every selected row/column, not just the
+/// caret's.
+#[test]
+fn cell_size_boxes_apply_to_the_whole_selection() {
+    use wordcraft_doc::props::HeightRule;
+    let mut s = s();
+    run(&mut s, "insert.table", json!({"rows": 2, "cols": 3}));
+    run(&mut s, "table.autofit", json!({"mode": "window"}));
+    run(&mut s, "table.selectTable", json!({}));
+    run(&mut s, "table.columnWidth", json!({"width": 90.0}));
+    run(&mut s, "table.rowHeight", json!({"height": 25.0, "rule": "exact"}));
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert!(t.grid.iter().all(|w| *w == 90.0), "{:?}", t.grid);
+    for (r, row) in t.rows.iter().enumerate() {
+        assert_eq!((r, row.props.height, row.props.height_rule), (r, Some(25.0), HeightRule::Exact));
+    }
+}
+
 /// Table Properties (#44): table, row, column and cell settings land as one undo step, and
 /// without settings the command reports the current ones (the dialog's source).
 #[test]
