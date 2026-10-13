@@ -180,6 +180,32 @@ pub struct ViewState {
     /// Developer › Design Mode: every content control shows its frame and title.
     #[serde(default)]
     pub design_mode: bool,
+    /// View › Window › Split: one window in two stacked panes of the same document
+    /// (screen only; the document and page count are unchanged).
+    #[serde(default)]
+    pub split: bool,
+    /// Split divider position as a fraction of the canvas (0.1–0.9).
+    #[serde(default = "default_split_ratio")]
+    pub split_ratio: f32,
+    /// View › Window › View Side by Side: two panes of the same document next to
+    /// each other (screen only, in-window tiling: no second OS window).
+    #[serde(default)]
+    pub side_by_side: bool,
+    /// View › Window › Synchronous Scrolling: the side panes scroll together.
+    /// Only meaningful with Side by Side (Word greys it out otherwise).
+    #[serde(default)]
+    pub sync_scroll: bool,
+    /// View › Window › Arrange All: how open windows/panes are tiled
+    /// (`""`, `"vertical"` or `"horizontal"`). Screen only.
+    #[serde(default)]
+    pub arrange: String,
+    /// View › Window › New Window: extra views of this document (1–16).
+    /// Single-document tiling: the panes show the same `doc`.
+    #[serde(default = "default_window_count")]
+    pub window_count: usize,
+    /// View › Window › Switch Windows: which window is active (0-based).
+    #[serde(default)]
+    pub active_window: usize,
 }
 
 fn on() -> bool {
@@ -196,6 +222,14 @@ fn default_read_height() -> f32 {
 
 fn default_read_zoom() -> f32 {
     1.0
+}
+
+fn default_split_ratio() -> f32 {
+    0.5
+}
+
+fn default_window_count() -> usize {
+    1
 }
 
 impl Default for ViewState {
@@ -237,6 +271,13 @@ impl Default for ViewState {
             hide_white_space: false,
             outline: Default::default(),
             design_mode: false,
+            split: false,
+            split_ratio: default_split_ratio(),
+            side_by_side: false,
+            sync_scroll: false,
+            arrange: String::new(),
+            window_count: default_window_count(),
+            active_window: 0,
         }
     }
 }

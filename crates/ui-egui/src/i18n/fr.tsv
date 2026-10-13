@@ -55,6 +55,7 @@
 	Apply Character Style	Appliquer le style de caractère
 	Apply Style	Appliquer le style
 	Arrange	Organiser
+	Arrange All	Arrange All
 	Arrange\nAll	Organiser\ntout
 	Arrow	Flèche
 	Artistic Effects	Effets artistiques
@@ -768,6 +769,8 @@
 	Show/Hide ¶	Afficher/Masquer ¶
 	Show\nComments	Afficher\nles commentaires
 	Shrink Font 1 Point	Réduire la police d’1 point
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Côte à côte
 	Side\nto Side	Côte\nà côte
 	Signature Line	Ligne de signature
@@ -814,8 +817,12 @@
 	Superscript	Exposant
 	Switch Modes	Changer de mode
 	Switch\nModes	Changer\nde mode
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Symbole
 	Symbols	Symboles
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Synonymes
 	Tab	Tabulation
 	Tab character	Caractère de tabulation
@@ -895,6 +902,7 @@
 	Vertical Alignment	Alignement vertical
 	View	Affichage
 	View Gridlines	Afficher les quadrillages
+	View Side by Side	View Side by Side
 	View State	État de l’affichage
 	Views	Affichages
 	Voice	Voix

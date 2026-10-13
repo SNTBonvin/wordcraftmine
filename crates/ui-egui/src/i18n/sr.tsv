@@ -65,6 +65,7 @@
 	Apply Style	Примени стил
 	Apply Styles	Изабери и примени стилове
 	Arrange	Ређање
+	Arrange All	Arrange All
 	Arrange\nAll	Распореди\nсве
 	Arrow	Стрелица
 	Artistic Effects	Уметнички ефекти
@@ -857,6 +858,8 @@
 	Show/Hide ¶	Прикажи/сакриј ¶
 	Show\nComments	Прикажи\nкоментаре
 	Shrink Font 1 Point	Смањи фонт за 1 тачку
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Једно поред другог
 	Side\nto Side	Једно\nпоред другог
 	Signature Line	Ред за потпис
@@ -906,8 +909,12 @@
 	Superscript	Индекс горе
 	Switch Modes	Промени режим
 	Switch\nModes	Промени\nрежим
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Симбол
 	Symbols	Симболи
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Синоними
 	Tab	Tab
 	Tab character	Знак табулатора
@@ -996,6 +1003,7 @@
 	Vertical Alignment	Усправно поравнање
 	View	Приказ
 	View Gridlines	Прикажи линије мреже
+	View Side by Side	View Side by Side
 	View State	Стање приказа
 	Views	Прикази
 	Voice	Глас

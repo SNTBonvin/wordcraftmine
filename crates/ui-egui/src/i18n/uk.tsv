@@ -57,6 +57,7 @@
 	Apply Character Style	Застосувати стиль символів
 	Apply Style	Застосувати стиль
 	Arrange	Упорядкувати
+	Arrange All	Arrange All
 	Arrange\nAll	Упорядкувати\nвсі
 	Arrow	Стрілка
 	Artistic Effects	Художні ефекти
@@ -829,6 +830,8 @@
 	Show/Hide ¶	Показати/приховати ¶
 	Show\nComments	Показати\nкоментарі
 	Shrink Font 1 Point	Зменшити шрифт на 1 пункт
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Поруч
 	Side\nto Side	Поруч
 	Signature Line	Рядок підпису
@@ -875,8 +878,12 @@
 	Superscript	Верхній індекс
 	Switch Modes	Перемкнути режими
 	Switch\nModes	Перемкнути\nрежими
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Символ
 	Symbols	Символи
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Синоніми
 	Tab	Табуляція
 	Tab character	Символ табуляції
@@ -961,6 +968,7 @@
 	Vertical Alignment	Вертикальне вирівнювання
 	View	Вигляд
 	View Gridlines	Показати лінії сітки
+	View Side by Side	View Side by Side
 	View State	Стан вигляду
 	Views	Вигляди
 	Voice	Голос

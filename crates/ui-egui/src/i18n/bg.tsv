@@ -62,6 +62,7 @@
 	Apply Character Style	Прилагане на знаков стил
 	Apply Style	Прилагане на стил
 	Arrange	Подреждане
+	Arrange All	Arrange All
 	Arrange\nAll	Подреждане\nна всички
 	Arrow	Стрелка
 	Artistic Effects	Художествени ефекти
@@ -766,6 +767,8 @@
 	Show/Hide ¶	Показване/скриване на ¶
 	Show\nComments	Показване на\nкоментарите
 	Shrink Font 1 Point	Намаляване на шрифта с 1 пункт
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Една до друга
 	Side\nto Side	Една\nдо друга
 	Signature Line	Ред за подпис
@@ -812,8 +815,12 @@
 	Superscript	Горен индекс
 	Switch Modes	Смяна на режима
 	Switch\nModes	Смяна на\nрежима
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Символ
 	Symbols	Символи
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Синоними
 	Tab	Tab
 	Tab character	Знак за табулация
@@ -893,6 +900,7 @@
 	Vertical Alignment	Вертикално подравняване
 	View	Изглед
 	View Gridlines	Показване на линиите на мрежата
+	View Side by Side	View Side by Side
 	View State	Състояние на изгледа
 	Views	Изгледи
 	Voice	Глас

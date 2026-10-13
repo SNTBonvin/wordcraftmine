@@ -52,6 +52,7 @@
 	Apply Character Style	Применить стиль знаков
 	Apply Style	Применить стиль
 	Arrange	Упорядочить
+	Arrange All	Arrange All
 	Arrange\nAll	Упорядочить\nвсе
 	Arrow	Стрелка
 	Artistic Effects	Художественные эффекты
@@ -670,6 +671,8 @@
 	Show/Hide ¶	Показать/скрыть ¶
 	Show\nComments	Показать\nкомментарии
 	Shrink Font 1 Point	Уменьшить шрифт на 1 пт
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Рядом
 	Side\nto Side	Рядом
 	Signature Line	Строка подписи
@@ -717,8 +720,12 @@
 	Superscript	Надстрочный
 	Switch Modes	Сменить режим
 	Switch\nModes	Сменить\nрежим
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Символ
 	Symbols	Символы
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Синонимы
 	Tab	Tab
 	Table	Таблица
@@ -803,6 +810,7 @@ preview	Title	Пример
 	Vertical Alignment	Вертикальное выравнивание
 	View	Вид
 	View Gridlines	Показать сетку
+	View Side by Side	View Side by Side
 	View State	Состояние вида
 	Views	Режимы просмотра
 	Voice	Голос

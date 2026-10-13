@@ -46,6 +46,7 @@
 	Apply Character Style	Rakenda märgistiil
 	Apply Style	Rakenda stiil
 	Arrange	Paiguta
+	Arrange All	Arrange All
 	Arrange\nAll	Paiguta\nkõik
 	Arrow	Nool
 	Artistic Effects	Kunstilised efektid
@@ -719,6 +720,8 @@
 	Show/Hide ¶	Kuva/peida ¶
 	Show\nComments	Kuva\nkommentaarid
 	Shrink Font 1 Point	Vähenda fonti 1 punkti võrra
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Kõrvuti
 	Side\nto Side	Kõr-\nvuti
 	Signature Line	Allkirjarida
@@ -770,8 +773,12 @@
 	Superscript	Ülaindeks
 	Switch Modes	Vaheta režiimi
 	Switch\nModes	Vaheta\nrežiimi
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Sümbol
 	Symbols	Sümbolid
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Sünonüümid
 	Tab	Tabeldus
 	Tab characters	Tabeldusmärgid
@@ -858,6 +865,7 @@
 	Vertical Alignment	Püstjoondus
 	View	Vaade
 	View Gridlines	Kuva ruudujooned
+	View Side by Side	View Side by Side
 	View State	Vaate olek
 	Views	Vaated
 	Voice	Hääl

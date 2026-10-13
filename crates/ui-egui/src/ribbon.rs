@@ -1672,6 +1672,9 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "newWindow", "New\nWindow", "view.newWindow", json!({}), false);
         big(ui, app, "arrangeAll", "Arrange\nAll", "view.arrangeAll", json!({}), false);
         big(ui, app, "split", "Split", "view.split", json!({}), false);
+        big(ui, app, "sideBySide", "Side by\nSide", "view.sideBySide", json!({}), false);
+        big(ui, app, "syncScroll", "Sync\nScrolling", "view.syncScroll", json!({}), false);
+        big(ui, app, "switchWindows", "Switch\nWindows", "view.switchWindows", json!({}), false);
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);
