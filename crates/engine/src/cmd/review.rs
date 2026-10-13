@@ -72,7 +72,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             wordcraft_proof::add_word(w.trim());
             s.persist_user_dictionary(&[]);
-            s.relayout();
+            // Layout doesn't depend on the dictionary: the editor rechecks in the background.
             Ok(json!({"added": w}))
         })
         .params(r#"{"word"?: string}"#)
@@ -88,20 +88,39 @@ pub fn specs() -> Vec<CommandSpec> {
             if !w.trim().is_empty() {
                 wordcraft_proof::ignore_word(w.trim());
             }
-            s.relayout();
             Ok(json!({"ignored": w}))
         })
         .pure(),
         CommandSpec::new("review.applySuggestion", "Change", "Review › Proofing", |s, v| {
             let text = p::req_str(v, "text")?.to_string();
-            let at = s.sel.focus.clone();
-            if let Some((a, b, _)) = issue_at(s, &at) {
-                s.sel = Selection { anchor: a, focus: b };
+            match (v.get("start"), v.get("end")) {
+                // The issue as the caller found it (the editor's background check): replaced only
+                // while that text is still there, without checking the paragraph again.
+                (Some(start), Some(end)) => {
+                    let bad = |what: &str| CmdError::Params(format!("invalid `{what}` position"));
+                    let a = super::parse_pos(start).ok_or_else(|| bad("start"))?;
+                    let b = super::parse_pos(end).ok_or_else(|| bad("end"))?;
+                    let expected = p::req_str(v, "expected")?;
+                    let found = (a.story == b.story && a.path == b.path && a.off < b.off)
+                        .then(|| s.doc.para_at(&a).and_then(|para| para.text.get(a.off..b.off)))
+                        .flatten();
+                    if found != Some(expected) {
+                        return Err(CmdError::Params("the text at that position has changed".into()));
+                    }
+                    s.sel = Selection { anchor: a, focus: b };
+                }
+                (None, None) => {
+                    let at = s.sel.focus.clone();
+                    if let Some((a, b, _)) = issue_at(s, &at) {
+                        s.sel = Selection { anchor: a, focus: b };
+                    }
+                }
+                _ => return Err(CmdError::Params("`start` and `end` go together".into())),
             }
             super::type_text(s, &text)?;
             sel_result(s)
         })
-        .params(r#"{"text": string}"#),
+        .params(r#"{"text": string, "start"?: Pos, "end"?: Pos, "expected"?: string} (start/end/expected: the issue's range and text; refused if the text there changed)"#),
         CommandSpec::new("review.proofing", "Check Spelling as You Type", "File › Options › Proofing", |s, v| {
             s.view.proofing = p::bool(v, "value").unwrap_or(!s.view.proofing);
             Ok(json!({"value": s.view.proofing}))
@@ -971,6 +990,41 @@ mod tests {
     use wordcraft_layout::display::{DisplayOptions, Draw, page_display};
 
     use crate::Session;
+
+    /// A cached context-menu correction names its range and the text it expects there: it
+    /// replaces that text without checking the paragraph again, and refuses changed text.
+    #[test]
+    fn change_with_a_range_replaces_only_the_expected_text() {
+        let original = "The zxqcorrectionword is here.";
+        let mut s = Session::new(Document::from_text(original));
+        let start = s.doc.start_of(wordcraft_doc::StoryRef::Body);
+        let a = wordcraft_doc::Pos { off: 4, ..start.clone() };
+        let b = wordcraft_doc::Pos { off: 21, ..start };
+        assert!(s.run("review.applySuggestion", &json!({"text": "correct", "start": a, "end": b, "expected": "something else"})).is_err());
+        assert!(s.run("review.applySuggestion", &json!({"text": "correct", "start": a})).is_err(), "start without end");
+        assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), original);
+        s.run("review.applySuggestion", &json!({"text": "correct", "start": a, "end": b, "expected": "zxqcorrectionword"})).unwrap();
+        assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), "The correct is here.");
+    }
+
+    /// Add to Dictionary and Ignore All change what is marked, never the layout: no relayout,
+    /// no new revision, the document stays unchanged.
+    #[test]
+    fn dictionary_actions_keep_the_layout() {
+        let added = "zxqkeeplayoutadded";
+        let ignored = "zxqkeeplayoutignored";
+        let mut s = Session::new(Document::from_text(&format!("The {added} and {ignored} words.")));
+        let layout = s.layout();
+        let rev = s.rev();
+        s.run("review.addToDictionary", &json!({"word": added})).unwrap();
+        s.run("review.ignoreAll", &json!({"word": ignored})).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&layout, &s.layout()));
+        assert_eq!(s.rev(), rev);
+        assert!(!s.dirty);
+        let issues = s.run("review.issues", &json!({})).unwrap();
+        assert!(!issues.as_array().unwrap().iter().any(|i| i["text"] == added || i["text"] == ignored));
+        wordcraft_proof::remove_word(added);
+    }
 
     /// What the first page draws with the session's Track Changes Options.
     fn draws(s: &mut Session) -> (Vec<Draw>, f32) {

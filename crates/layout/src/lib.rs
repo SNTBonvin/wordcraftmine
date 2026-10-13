@@ -17,6 +17,7 @@ pub mod kinsoku;
 pub mod math;
 pub mod outline;
 pub mod para;
+pub mod proofing;
 mod table;
 mod textbox;
 mod vertical;
@@ -152,8 +153,6 @@ pub struct LayoutOptions {
     /// (the editor shows them in balloons beside the page). Headers, footers, notes and text
     /// boxes get no balloons, so their deletions stay inline.
     pub deletions_in_balloons: bool,
-    /// Check spelling as you type (squiggles).
-    pub proofing: bool,
     /// How digits look on screen (display only; the text is untouched). Callers resolve
     /// `System` ([`NumeralMode::resolve`]); an unresolved `System` shows Western digits.
     pub numeral: NumeralMode,
@@ -166,11 +165,9 @@ pub struct LayoutOptions {
     pub field_codes: bool,
     /// Outline view: what's collapsed and shown (used when `view` is [`ViewMode::Outline`]).
     pub outline: Option<outline::OutlineView>,
-    /// What the spelling check skips, and whether grammar is marked too (File › Options › Proofing).
-    pub proof: ProofOptions,
 }
 
-/// File › Options › Proofing choices that change the squiggles.
+/// File › Options › Proofing choices that change the squiggles ([`proofing::check_document`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProofOptions {
     /// Mark grammar errors as you type.
@@ -496,19 +493,7 @@ fn env_hash(doc: &Document, opts: &LayoutOptions) -> u64 {
     let s = serde_json::to_string(&(&doc.styles, &doc.numbering, doc.settings.default_tab, &doc.settings.footnote_format)).unwrap_or_default();
     // Outline view lays paragraphs out changed (no indents; plain without text formatting).
     let outline = (opts.view == ViewMode::Outline).then(|| opts.outline.as_ref().is_some_and(|o| o.plain));
-    hash_of(&(
-        s,
-        opts.show_hidden,
-        opts.hide_deleted,
-        opts.deletions_in_balloons,
-        opts.proofing,
-        opts.numeral,
-        opts.field_codes,
-        opts.proof,
-        wordcraft_proof::dictionary_generation(),
-        hyphenation_key(doc),
-        outline,
-    ))
+    hash_of(&(s, opts.show_hidden, opts.hide_deleted, opts.deletions_in_balloons, opts.numeral, opts.field_codes, hyphenation_key(doc), outline))
 }
 
 /// The hyphenation settings, hashable (the zone as its bits).
@@ -645,7 +630,6 @@ impl Ctx<'_> {
             field_codes: false,
             hide_deleted: false,
             table: None,
-            proofing: None,
             numeral: self.opts.numeral,
             exclusions: &[],
             eq_number: 0,
@@ -719,7 +703,6 @@ impl Ctx<'_> {
             field_codes: self.opts.field_codes,
             hide_deleted: self.hide_deleted,
             table,
-            proofing: self.opts.proofing.then_some(self.opts.proof),
             numeral: self.opts.numeral,
             exclusions,
             eq_number,
@@ -3073,7 +3056,6 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32
                 field_codes: ctx.opts.field_codes,
                 hide_deleted: ctx.opts.hides_deleted(StoryRef::Body),
                 table: None,
-                proofing: None,
                 numeral: ctx.opts.numeral,
                 exclusions: &[],
                 eq_number: ctx.eq_count,

@@ -64,6 +64,7 @@ pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
 pub mod printing;
+mod proofing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -343,6 +344,8 @@ fn migrate_units(v: &mut Value) {
 /// The application.
 pub struct WordApp {
     pub session: Session,
+    /// Check Spelling as You Type: marks found off the UI thread, drawn over the pages.
+    pub(crate) proofing: proofing::Proofing,
     pub ui: UiState,
     pub services: Services,
     pub printing: printing::State,
@@ -464,6 +467,7 @@ impl WordApp {
         }
         WordApp {
             session,
+            proofing: proofing::Proofing::default(),
             ui: UiState::default(),
             services,
             printing: Default::default(),
@@ -1362,6 +1366,8 @@ impl WordApp {
         }
         self.poll_printing(ctx);
         self.drain_control(ctx);
+        self.proofing.poll(&self.session, ctx);
+        self.proofing.fill_suggestions(&mut self.canvas.context_issue);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();

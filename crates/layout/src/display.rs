@@ -390,6 +390,74 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
     out
 }
 
+/// One proofing mark on a page: a straight run of a spelling (wavy) or grammar (double) line from
+/// `a` to `b`, in page points, under the text of `story` (a header or footer's marks dim with it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProofMark {
+    pub a: (f32, f32),
+    pub b: (f32, f32),
+    pub grammar: bool,
+    pub story: StoryRef,
+    /// In the page's header or footer area (dimmed while the body is edited, and the other way).
+    pub header_footer: bool,
+}
+
+/// Where a page's proofing marks go: under each issue `issues` gives for a paragraph's byte
+/// ranges ((start, end, is grammar), in that paragraph's current text), along the laid-out lines
+/// the way [`page_display`] draws the text — turned table cells included. Marks are not part of
+/// [`page_display`]: the editor draws them over the page so that checking spelling never changes
+/// the page itself. Warped text boxes and turned Drawing Canvases get none (their text is bent
+/// or turned as a whole).
+pub fn proof_marks(doc: &Document, page: &Page, issues: &dyn Fn(StoryRef, &Path) -> Vec<(usize, usize, bool)>) -> Vec<ProofMark> {
+    let mut out = Vec::new();
+    for (items, header_footer) in [(&page.header, true), (&page.footer, true), (&page.items, false)] {
+        let warped: Vec<u32> = warped_boxes(doc, items).into_iter().map(|(id, ..)| id).collect();
+        proof_marks_in(items, &warped, header_footer, issues, &mut out);
+    }
+    out
+}
+
+fn proof_marks_in(
+    items: &[Placed],
+    warped: &[u32],
+    header_footer: bool,
+    issues: &dyn Fn(StoryRef, &Path) -> Vec<(usize, usize, bool)>,
+    out: &mut Vec<ProofMark>,
+) {
+    for it in items {
+        match it {
+            Placed::Clip { spin, items, .. } if spin.is_identity() => proof_marks_in(items, warped, header_footer, issues, out),
+            Placed::Lines { story: StoryRef::Part(id), .. } if warped.contains(id) => {}
+            Placed::Lines { story, path, para, l0, l1, x, y, turn } => {
+                let found = issues(*story, path);
+                if found.is_empty() {
+                    continue;
+                }
+                let Some(first) = para.lines.get(*l0) else { continue };
+                for li in *l0..*l1 {
+                    let Some(line) = para.lines.get(li) else { continue };
+                    // As `lines` draws them: the baseline, then the squiggle just under it.
+                    let v = line.baseline - first.top + 2.5;
+                    for &(a, b, grammar) in &found {
+                        if b <= line.start || a >= line.stop {
+                            continue;
+                        }
+                        for (x0, x1) in para.x_spans(li, a.max(line.start), b.min(line.stop)) {
+                            if x1 - x0 < 1.0 {
+                                continue;
+                            }
+                            let a = crate::turn_point(*turn, *x, *y, x0, v);
+                            let b = crate::turn_point(*turn, *x, *y, x1, v);
+                            out.push(ProofMark { a, b, grammar, story: *story, header_footer });
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The text boxes among `items` whose text is warped (Text Effects › Transform, drawn bent): their
 /// story, frame and warp. Empty, without a walk of the document, when none is.
 fn warped_boxes(doc: &Document, items: &[Placed]) -> Vec<(u32, Rect, wordcraft_doc::wordart::TextWarp)> {
@@ -893,29 +961,6 @@ fn lines(
                     let stroke = if double { Stroke::Double } else { Stroke::Solid };
                     out.push(Draw::Line { x0, y0: sy, x1, y1: sy, width: thick, color, stroke, alpha });
                 }
-            }
-        }
-        // Proofing squiggles.
-        for (a, b, grammar) in &pl.issues {
-            if *b <= line.start || *a >= line.stop {
-                continue;
-            }
-            for (x0, x1) in pl.x_spans(li, (*a).max(line.start), (*b).min(line.stop)) {
-                if x1 - x0 < 1.0 {
-                    continue;
-                }
-                let y = base + 2.5;
-                let color = if *grammar { Rgb(0x2B, 0x57, 0xC0) } else { Rgb(0xE0, 0x24, 0x24) };
-                out.push(Draw::Line {
-                    x0: x + x0,
-                    y0: y,
-                    x1: x + x1,
-                    y1: y,
-                    width: 0.8,
-                    color,
-                    stroke: if *grammar { Stroke::Double } else { Stroke::Wave },
-                    alpha,
-                });
             }
         }
         // Tab leaders.
