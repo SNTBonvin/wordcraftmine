@@ -19,6 +19,7 @@ font can't match Word's metrics.
 | Feature | State | Evidence / gap | Hours |
 |---|---|---|---|
 | Line breaking (UAX #14 with Word's exceptions: no break after `/`) | ✅ | `layout::tests::no_line_break_right_after_a_slash` | — |
+| Ligatures: none in Latin text unless asked for, like Word's default | 🟡 | `layout::tests::latin_text_forms_no_ligatures_by_default`; the per-run setting (`w14:ligatures`) isn't read yet, so text that asks for ligatures gets none | 1–2 |
 | Justification, Word 2013+ space shrinking (compat mode 15) | ✅ | #109 | — |
 | Complex scripts (Myanmar, Khmer, Indic): shaped per script run with OpenType fallback fonts, one cluster per syllable, Myanmar wraps between syllables | 🟡 | `layout::tests_complex` (#604). Khmer, Thai and Lao still wrap only at spaces (need a dictionary) | 4–8 |
 | Kashida justification (Arabic) | ❌ | no kashida in `crates/layout` | 3–5 |
@@ -80,6 +81,7 @@ font can't match Word's metrics.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | trivial | Fixed-layout tables take a column's width from its cells' preferred widths when they agree (measured in Word for Windows; the grid of files written by other tools is often equal shares) |
+| 2026-10-12 | trivial | Latin text forms no standard ligatures by default, as in Word (measured in Word for Windows: each Calibri tt or ti pulled the rest of its line about 0.4 pt left) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |

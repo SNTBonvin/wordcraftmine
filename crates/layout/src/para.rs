@@ -783,7 +783,8 @@ impl<'a> Builder<'a> {
         if let Some(p) = cur {
             segs.push((seg_start, text.len(), p));
         }
-        let no_kern = [wordcraft_fonts::feature_value(b"kern", 0)];
+        let no_kern = wordcraft_fonts::feature_value(b"kern", 0);
+        let no_liga = wordcraft_fonts::feature_value(b"liga", 0);
         for (a, b, key) in segs {
             let Some(sub) = text.get(a..b) else { continue };
             let rc = match (&rc_cs, key.complex) {
@@ -823,7 +824,16 @@ impl<'a> Builder<'a> {
                 }
             };
             // The shaper kerns by default; Word kerns only when Kerning for fonts covers the size.
-            let features: &[wordcraft_fonts::Feature] = if rc.kerned() { &[] } else { &no_kern };
+            // It forms standard ligatures by default too; Word forms none (Ligatures: None) in
+            // Latin text, so "tt" and "ti" keep their two advances. Complex scripts keep theirs.
+            let mut features: Vec<wordcraft_fonts::Feature> = Vec::with_capacity(2);
+            if !rc.kerned() {
+                features.push(no_kern);
+            }
+            if !key.complex {
+                features.push(no_liga);
+            }
+            let features = features.as_slice();
             let shaped = if use_levels {
                 wordcraft_fonts::shape_run(&st.face, shape_text, features, map, key.rtl)
             } else {

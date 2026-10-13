@@ -4791,6 +4791,27 @@ fn kerning_follows_kerning_for_fonts_like_word() {
     assert!(d.styles.resolve_char(None, &Default::default()).kern == 0.0, "no Kerning for fonts: not kerned");
 }
 
+/// Word forms no ligatures unless the text asks for them (Font ▸ Advanced ▸ Ligatures is None by
+/// default), so letters a font would join keep an advance each: "ffi" is as wide as "f", "f" and
+/// "i" apart. WordCraft joined them, and each "tt" or "ti" in Calibri pulled the rest of its line
+/// about 0.4 pt left of Word's (measured in Word for Windows at 8–36 pt).
+#[test]
+fn latin_text_forms_no_ligatures_by_default() {
+    use wordcraft_doc::props::CharProps;
+    let width = |text: &str| {
+        let mut d = Document::new();
+        // A bundled face with standard ligatures (fi, fl, ffi), unkerned.
+        let chr = CharProps { font: Some(wordcraft_fonts::DEFAULT_FAMILY.into()), size: Some(24.0), kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        let l = lay(&d);
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    for (joined, parts) in [("ffi", ["f", "f", "i"]), ("fi", ["f", "i", ""]), ("fl", ["f", "l", ""])] {
+        let apart: f32 = parts.iter().map(|p| width(p)).sum();
+        assert!((width(joined) - apart).abs() < 0.01, "{joined}: {} vs {apart}", width(joined));
+    }
+}
+
 /// Word's automatic (HTML-style) paragraph spacing, measured in Word for Windows: 14 pt at any
 /// size; none before the first paragraph of the document or a cell, none after the last one of a
 /// cell; next to another paragraph's space the larger of the two counts.
