@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 
-use egui::{RichText, Ui, vec2};
+use egui::{Color32, FontId, RichText, Ui, vec2};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -116,7 +116,10 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
                     ui.painter().rect_filled(r, 4.0, t.hover);
                 }
                 let font = if active { semibold(14.0) } else { crate::theme::regular(14.0) };
-                ui.painter().text(egui::pos2(r.min.x + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, font, t.text);
+                // Long translations (Russian «Специальные возможности») are ellipsized to the
+                // row instead of crossing the divider (#1266).
+                let shown = fit_label(ui.ctx(), label, font.clone(), t.text, r.width() - 12.0 - 8.0);
+                ui.painter().text(egui::pos2(r.min.x + 12.0, r.center().y), egui::Align2::LEFT_CENTER, shown, font, t.text);
                 if resp.clicked() {
                     app.ui.options_pane = id.to_string();
                 }
@@ -140,6 +143,22 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// Shorten `label` with an ellipsis so it fits `max_w` points (#1266).
+fn fit_label(ctx: &egui::Context, label: &str, font: FontId, color: Color32, max_w: f32) -> String {
+    let width = |t: &str| ctx.fonts_mut(|f| f.layout_no_wrap(t.to_owned(), font.clone(), color).size().x);
+    if width(label) <= max_w {
+        return label.to_owned();
+    }
+    let mut out = String::new();
+    for c in label.chars() {
+        if width(&format!("{out}{c}…")) > max_w {
+            break;
+        }
+        out.push(c);
+    }
+    format!("{out}…")
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -612,13 +631,29 @@ mod tests {
     use serde_json::json;
     use wordcraft_geom::Unit;
 
-    use super::{decimal, length, unit};
+    use super::{decimal, fit_label, length, unit};
 
     use crate::theme::Appearance;
     use crate::{Services, UiState, WordApp};
 
     fn app() -> WordApp {
         WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default())
+    }
+
+    #[test]
+    fn long_pane_labels_are_ellipsized_to_their_row() {
+        // #1266: the Russian Accessibility label (~215 px) must fit its 150 px row.
+        use crate::theme::regular;
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        let font = regular(14.0);
+        let color = egui::Color32::WHITE;
+        assert_eq!(fit_label(&ctx, "General", font.clone(), color, 150.0), "General");
+        let label = "Специальные возможности";
+        let shown = fit_label(&ctx, label, font.clone(), color, 150.0);
+        assert!(shown.ends_with("…") && shown.len() < label.len(), "{shown}");
+        let w = ctx.fonts_mut(|f| f.layout_no_wrap(shown.clone(), font, color).size().x);
+        assert!(w <= 150.0, "{w}");
     }
 
     /// File › Options settings come back after a restart, and a `ui.json` with a wrong value in
