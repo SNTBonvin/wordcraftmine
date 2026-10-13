@@ -6,9 +6,11 @@ use wordcraft_doc::{SectionProps, Watermark};
 
 use crate::xml::esc;
 
-/// The shape type the watermark shape uses: a straight path across the middle of the box that
-/// the `v:textpath` text follows, stretched to fit the shape (`fitshape`).
+/// The shape type the watermark shape uses: two straight subpaths, the box's top and bottom
+/// edges, between which the `v:textpath` text is stretched to fit the shape (`fitshape`). A single
+/// path gives the text no height, and Word draws nothing.
 const SHAPETYPE_ID: &str = "_x0000_t136";
+const SHAPETYPE_PATH: &str = "m0,0l21600,0m0,21600l21600,21600e";
 
 /// The watermark text as written: what the reader accepts (non-blank, at most 200 characters).
 pub(super) fn text(wm: &Watermark) -> Option<String> {
@@ -39,12 +41,13 @@ pub(super) fn run(wm: &Watermark, n: usize, page: &SectionProps) -> Option<Strin
     Some(format!(
         concat!(
             r#"<w:r><w:rPr><w:noProof/></w:rPr><w:pict>"#,
-            r#"<v:shapetype id="{st}" coordsize="21600,21600" o:spt="136" path="m0,10800l21600,10800e">"#,
+            r#"<v:shapetype id="{st}" coordsize="21600,21600" o:spt="136" path="{path}">"#,
             r#"<v:path textpathok="t"/><v:textpath on="t" fitshape="t"/></v:shapetype>"#,
             r##"<v:shape id="PowerPlusWaterMarkObject{n}" type="#{st}" style="{style}" o:allowincell="f" fillcolor="#{color}" stroked="f">"##,
             r#"{fill}<v:textpath style="{tstyle}" string="{text}"/></v:shape></w:pict></w:r>"#
         ),
         st = SHAPETYPE_ID,
+        path = SHAPETYPE_PATH,
         n = n,
         style = esc(&style),
         color = wm.color.hex(),

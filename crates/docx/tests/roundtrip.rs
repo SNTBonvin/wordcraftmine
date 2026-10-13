@@ -1284,6 +1284,8 @@ fn watermark_without_header_gains_one() {
     let hdr = part_xml(&bytes, "word/header1.xml");
     assert_eq!(hdr.matches("<v:shape ").count(), 1);
     assert!(hdr.contains(r#"id="PowerPlusWaterMarkObject1""#) && hdr.contains("rotation:315") && hdr.contains(r#"<v:fill opacity=".5"/>"#));
+    // The text sits between the top and bottom edges: on one line Word gives it no height.
+    assert!(hdr.contains(r#"path="m0,0l21600,0m0,21600l21600,21600e""#));
     assert!(part_xml(&bytes, "word/document.xml").contains(r#"<w:headerReference w:type="default""#));
     let r = wordcraft_docx::read(&bytes).unwrap();
     assert_eq!(r.settings.watermark, d.settings.watermark);
