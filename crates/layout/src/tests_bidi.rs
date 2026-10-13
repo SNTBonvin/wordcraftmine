@@ -232,6 +232,29 @@ fn rtl_list_label_sits_on_the_right() {
     assert!(gx(dot) < gx(one), "label shows .1");
 }
 
+/// Centred or end-aligned (left), a right-to-left list paragraph keeps its label beside the text.
+#[test]
+fn rtl_list_label_moves_with_the_aligned_text() {
+    let placed = |align: Option<Align>| {
+        let mut d = doc_of(&[("مورد اول", true)]);
+        let id = d.numbering.add_list(wordcraft_doc::ListKind::BulletChar('\u{2022}'));
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p: &mut ParaProps| {
+            p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 });
+            p.align = align;
+        })
+        .unwrap();
+        let l = lay(&d);
+        let (pl, x) = first_line(&l, 0);
+        (x + pl.label.as_ref().expect("bulleted").x, caret_x(&l, 0, 0))
+    };
+    let (lab0, text0) = placed(None);
+    for align in [Align::Center, Align::Right] {
+        let (lab, text) = placed(Some(align));
+        assert!(text < text0 - 100.0, "{align:?}: the text moves ({text0} -> {text})");
+        assert!(((lab - text) - (lab0 - text0)).abs() < 0.5, "{align:?}: label at {lab}, text at {text}; start-aligned {lab0}, {text0}");
+    }
+}
+
 #[test]
 fn rtl_empty_and_trailing_lines_mirror() {
     let d = doc_of(&[("", true)]);

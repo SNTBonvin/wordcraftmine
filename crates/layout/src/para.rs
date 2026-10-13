@@ -1939,6 +1939,14 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             for v in xs.iter_mut().skip(align_from - c0) {
                 *v += shift;
             }
+            // The list label moves with the text it leads, as in Word, unless a tab in the text
+            // keeps the start of the line in place.
+            if first
+                && last_tab.is_none()
+                && let Some(lab) = pl.label.as_mut()
+            {
+                lab.x += shift;
+            }
         }
         let justify = display.is_none() && ((rp.align == Align::Justify && end == LineEnd::Wrap) || rp.align == Align::Distribute);
         // A line that only fits with shrunk spaces is shrunk, the last line of the paragraph too.
