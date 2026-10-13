@@ -174,7 +174,7 @@ pub fn picker_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SmartArtForm) -> bool {
         ui.vertical(|ui| {
             ui.set_width(3.0 * 96.0 + 16.0);
             ui.set_min_height(2.0 * 96.0 + 8.0);
-            egui::Grid::new("smart_art_layouts").spacing(vec2(8.0, 8.0)).show(ui, |ui| {
+            crate::rtl::grid(ui, egui::Grid::new("smart_art_layouts").spacing(vec2(8.0, 8.0)), |ui| {
                 for (k, layout) in f.shown().into_iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 88.0), Sense::click());
                     let on = f.layout == layout;

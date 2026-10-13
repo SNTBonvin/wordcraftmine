@@ -23,6 +23,7 @@ macro_rules! tl {
 pub mod a11y;
 pub mod a11y_pane;
 pub mod backstage;
+pub mod bidi;
 pub mod canvas;
 pub mod caret_glide;
 pub mod chrome;
@@ -66,6 +67,7 @@ pub mod print_page;
 pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
+pub mod rtl;
 pub mod scroll;
 pub mod system_clipboard;
 pub mod table_mouse;
@@ -1405,7 +1407,8 @@ impl WordApp {
     /// Install the interface fonts when the language, the CJK fallback, or a caption fallback
     /// face has changed since the last install.
     fn install_ui_fonts(&mut self, ctx: &egui::Context, lang: i18n::Lang) {
-        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
+        // An Arabic interface asks the same way for an installed Arabic font when none is embedded.
+        let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk() || lang.rtl();
         if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
             theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
             self.fonts_hans = lang.prefers_hans();

@@ -197,7 +197,7 @@ pub fn type_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ChartTypeForm) -> bool {
     let t = Tokens::get(ui.ctx());
     let col = accents(app);
     let mut chosen = None;
-    egui::Grid::new("chart_types").spacing(vec2(8.0, 8.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("chart_types").spacing(vec2(8.0, 8.0)), |ui| {
         for (k, kind) in ChartType::ALL.into_iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(112.0, 92.0), Sense::click());
             let on = f.kind == kind;

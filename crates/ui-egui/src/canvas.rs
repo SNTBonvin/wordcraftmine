@@ -1313,7 +1313,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     } else {
         None
     };
-    let menu = egui::Popup::menu(&resp).open_memory(open);
+    let menu = crate::rtl::menu(&resp).open_memory(open);
     let menu = match app.canvas.context_menu_at {
         Some(p) => menu.at_position(p),
         None => menu.at_pointer_fixed(),
@@ -2453,7 +2453,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     let item = |ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: serde_json::Value| {
         let sc = crate::widgets::shortcut_text(app, id);
         let on = crate::widgets::enabled(app, id);
-        if ui.add_enabled(on, egui::Button::new(tl!(label)).shortcut_text(sc)).clicked() {
+        if ui.add_enabled(on, crate::rtl::menu_item(ui, tl!(label), &sc, 0.0)).clicked() {
             let _ = app.run(id, params);
             ui.close();
         }
@@ -2494,17 +2494,19 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     ui.separator();
     if let Some(syn) = app.canvas.context_synonyms.clone().and_then(|v| v.as_array().cloned()).filter(|a| !a.is_empty()) {
         ui.menu_button(tl!("Synonyms"), |ui| {
-            for w in syn.iter().filter_map(|x| x.as_str()) {
-                if ui.button(w).clicked() {
-                    let _ = app.run("select.word", json!({}));
-                    let (a, b) = app.session.sel.ordered();
-                    let trimmed = app.session.doc.para_at(&a).and_then(|p| p.text.get(a.off..b.off)).map(|t| t.trim_end().len()).unwrap_or(0);
-                    let end = wordcraft_doc::Pos { off: a.off + trimmed, ..b };
-                    app.session.sel = wordcraft_engine::Selection { anchor: a, focus: end };
-                    let _ = app.run("text.insert", json!({"text": w, "raw": true}));
-                    ui.close();
+            crate::rtl::root(ui, |ui| {
+                for w in syn.iter().filter_map(|x| x.as_str()) {
+                    if ui.button(w).clicked() {
+                        let _ = app.run("select.word", json!({}));
+                        let (a, b) = app.session.sel.ordered();
+                        let trimmed = app.session.doc.para_at(&a).and_then(|p| p.text.get(a.off..b.off)).map(|t| t.trim_end().len()).unwrap_or(0);
+                        let end = wordcraft_doc::Pos { off: a.off + trimmed, ..b };
+                        app.session.sel = wordcraft_engine::Selection { anchor: a, focus: end };
+                        let _ = app.run("text.insert", json!({"text": w, "raw": true}));
+                        ui.close();
+                    }
                 }
-            }
+            })
         });
     }
     item(ui, app, "Font…", "ui.dialog", json!({"name": "font"}));
@@ -2540,10 +2542,12 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         let pick = table_pick(&app.session);
         ui.separator();
         ui.menu_button(tl!("Insert"), |ui| {
-            item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
-            item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
-            item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
-            item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
+            crate::rtl::root(ui, |ui| {
+                item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
+                item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
+                item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
+                item(ui, app, "Insert Rows Below", "table.insertRowBelow", json!({}));
+            })
         });
         match pick {
             TablePick::Cell | TablePick::Cells => item(ui, app, "Delete Cells", "table.deleteCells", json!({})),
@@ -2563,9 +2567,11 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         }
         if pick == TablePick::Table {
             ui.menu_button(tl!("AutoFit"), |ui| {
-                item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
-                item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
-                item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
+                crate::rtl::root(ui, |ui| {
+                    item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
+                    item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
+                    item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));
+                })
             });
         }
         item(ui, app, "Text Direction", "table.textDirection", json!({}));

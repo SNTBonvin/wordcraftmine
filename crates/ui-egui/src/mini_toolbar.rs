@@ -198,7 +198,7 @@ fn sep(ui: &mut egui::Ui, t: &Tokens) {
 
 /// Highlight colour grid, matching the ribbon's.
 fn highlight_menu(ui: &mut egui::Ui, app: &mut WordApp) {
-    egui::Grid::new("mini_hl").spacing(Vec2::new(3.0, 3.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("mini_hl").spacing(Vec2::new(3.0, 3.0)), |ui| {
         for (i, h) in wordcraft_doc::props::Highlight::ALL.iter().enumerate().skip(1) {
             let Some(c) = h.rgb() else { continue };
             let (r, resp) = ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());

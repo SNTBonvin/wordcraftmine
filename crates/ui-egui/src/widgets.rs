@@ -190,11 +190,13 @@ pub fn small(ui: &mut Ui, app: &mut WordApp, icon: &str, label: Option<&str>, ti
     keytip_badge(ui, r, id, tip);
     let on = enabled(app, id);
     bg(ui, r, &resp, checked, &t);
-    let ic = Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0));
+    let rtl = crate::rtl::flows(ui);
+    let ic = Rect::from_center_size(pos2(crate::rtl::lead_x(rtl, r, 12.0), r.center().y), vec2(17.0, 17.0));
     let (c, a) = if on { (t.icon, t.accent) } else { (t.text_disabled, t.text_disabled) };
     icons::paint(ui.painter(), ic, icon, c, a);
     if let Some(l) = label {
-        ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), if on { t.text } else { t.text_disabled });
+        let at = pos2(crate::rtl::lead_x(rtl, r, 24.0), r.center().y);
+        ui.painter().text(at, crate::rtl::lead_center(rtl), l, regular(11.5), if on { t.text } else { t.text_disabled });
     }
     let resp = tooltip(app, resp, tip, id);
     command_menu(&resp, app, id);
@@ -235,7 +237,7 @@ pub fn split(
     if resp.clicked() {
         run_from_ribbon(app, id, params);
     }
-    egui::Popup::menu(&aresp).show(|ui| {
+    crate::rtl::menu(&aresp).show(|ui| {
         ui.set_min_width(180.0);
         menu(ui, app);
     });
@@ -286,18 +288,21 @@ pub fn menu_button(
         let (r, resp) = ui.allocate_exact_size(vec2(24.0 + text_w + 10.0, 22.0), Sense::click());
         keytip_badge(ui, r, "menu", tip);
         bg(ui, r, &resp, false, &t);
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0)), icon, c, a);
+        let rtl = crate::rtl::flows(ui);
+        let lead = |inset: f32| crate::rtl::lead_x(rtl, r, inset);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(lead(12.0), r.center().y), vec2(17.0, 17.0)), icon, c, a);
         if let Some(l) = label {
-            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), text);
+            ui.painter().text(pos2(lead(24.0), r.center().y), crate::rtl::lead_center(rtl), l, regular(11.5), text);
         }
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 6.0, r.center().y), vec2(DROPDOWN, DROPDOWN)), "dropdown", c, c);
+        let arrow = pos2(crate::rtl::trail_x(rtl, r, 6.0), r.center().y);
+        icons::paint(ui.painter(), Rect::from_center_size(arrow, vec2(DROPDOWN, DROPDOWN)), "dropdown", c, c);
         resp
     };
     let resp = resp.on_hover_text(tip);
     if !on {
         return;
     }
-    egui::Popup::menu(&resp).show(|ui| {
+    crate::rtl::menu(&resp).show(|ui| {
         ui.set_min_width(200.0);
         menu(ui, app);
     });
@@ -320,10 +325,14 @@ pub fn group(ui: &mut Ui, title: &str, launcher: Option<&str>, app: &mut WordApp
 pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&str>, app: &mut WordApp, add: impl FnOnce(&mut Ui, &mut WordApp)) {
     let t = Tokens::get(ui.ctx());
     let label_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(title.to_string(), regular(11.0), t.group_label).size().x);
+    // Groups follow the ribbon's direction: in a right-to-left interface the content starts at
+    // the right, and the launcher and the divider sit on the left.
+    let rtl = crate::rtl::flows(ui);
     let start = ui.cursor().min;
-    let inner = ui.vertical(|ui| {
-        ui.set_min_width(label_w + if launcher.is_some() { 22.0 } else { 10.0 });
-        let content = ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+    let min_w = label_w + if launcher.is_some() { 22.0 } else { 10.0 };
+    let inner = crate::rtl::vertical(ui, |ui| {
+        ui.set_min_width(min_w);
+        let content = ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), crate::rtl::row_layout(ui, egui::Align::Min), |ui| {
             ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
             add(ui, app);
         });
@@ -335,11 +344,12 @@ pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&
         let _ = content;
     });
     let r = inner.response.rect;
-    let r = Rect::from_min_max(start, pos2(r.max.x, start.y + CONTENT_H + LABEL_H));
+    let left = if rtl { r.min.x } else { start.x };
+    let r = Rect::from_min_max(pos2(left, start.y), pos2(r.max.x, start.y + CONTENT_H + LABEL_H));
     let title_y = r.max.y - LABEL_H / 2.0;
     ui.painter().text(pos2(r.center().x, title_y), Align2::CENTER_CENTER, title, regular(11.0), t.group_label);
     if let Some(cmd) = launcher {
-        let lr = Rect::from_center_size(pos2(r.max.x - 6.0, title_y), vec2(11.0, 11.0));
+        let lr = Rect::from_center_size(pos2(crate::rtl::trail_x(rtl, r, 6.0), title_y), vec2(11.0, 11.0));
         let resp = ui.interact(lr, ui.id().with(("launch", id_title)), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(lr.expand(2.0), 2.0, t.hover);
@@ -350,7 +360,7 @@ pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&
         }
     }
     ui.add_space(5.0);
-    let x = ui.cursor().min.x;
+    let x = if rtl { ui.cursor().max.x } else { ui.cursor().min.x };
     ui.painter().line_segment([pos2(x, start.y + 4.0), pos2(x, start.y + CONTENT_H + LABEL_H - 4.0)], Stroke::new(1.0, t.border));
     ui.add_space(6.0);
 }
@@ -388,7 +398,7 @@ pub fn command_icon(id: &str) -> &str {
 /// Right-click on a command's button: put it on (or take it off) the Quick Access Toolbar, or
 /// open Customize Ribbon (#379).
 pub fn command_menu(resp: &Response, app: &mut WordApp, id: &str) {
-    resp.context_menu(|ui| {
+    crate::rtl::context_menu(resp, |ui| {
         let known = app.session.registry.get(id).is_some();
         let on_qat = app.session.ribbon.qat().contains(&id);
         if known && !on_qat && ui.button(tl!("Add to Quick Access Toolbar")).clicked() {
@@ -630,7 +640,7 @@ fn combo_impl(
         ui.painter().rect(ar, 0.0, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
         icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), "dropdown", t.icon, t.accent);
         // The list drops from the box's left edge, as in Word, not from the arrow (#535).
-        egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).show(|ui| {
+        crate::rtl::menu(&aresp).anchor(resp.rect.union(ar)).show(|ui| {
             if let Some(v) = combo_list(ui, width, current, items, preview) {
                 out = Some(v);
                 ui.close();
@@ -825,18 +835,21 @@ fn icon_text_button_with(ui: &mut Ui, icon: &str, text: &str, font: egui::FontId
     let st = drawn_state(ui, &resp, true);
     let r = r.expand(st.expansion);
     ui.painter().rect(r, ui.visuals().widgets.inactive.corner_radius, st.fill, st.stroke, egui::StrokeKind::Inside);
+    // By language, not by layout: these buttons also sit in far-side clusters, which fill from
+    // the other end.
+    let rtl = crate::rtl::on();
     icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(r.min.x + pad.x + icon_w / 2.0, r.center().y), vec2(icon_w, icon_w)),
+        Rect::from_center_size(pos2(crate::rtl::lead_x(rtl, r, pad.x + icon_w / 2.0), r.center().y), vec2(icon_w, icon_w)),
         icon,
         t.icon,
         t.accent,
     );
-    let text_x = r.min.x + pad.x + icon_w + 4.0;
     let text_w = galley.size().x;
+    let text_x = crate::rtl::lead_left(rtl, r, pad.x + icon_w + 4.0, text_w);
     ui.painter().galley(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, st.text);
     if marker {
-        let c = pos2(text_x + text_w + 4.0 + DROPDOWN / 2.0, r.center().y);
+        let c = pos2(if rtl { text_x - 4.0 - DROPDOWN / 2.0 } else { text_x + text_w + 4.0 + DROPDOWN / 2.0 }, r.center().y);
         icons::paint(ui.painter(), Rect::from_center_size(c, vec2(DROPDOWN, DROPDOWN)), "dropdown", st.text, st.text);
     }
     resp

@@ -19,8 +19,8 @@ native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **19 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,057–2,454 entries
+- **20 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr`, Bulgarian `bg` and Arabic `ar`. Catalogs have 2,057–2,454 entries
   each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
   `pl`, `pl-PL` and `pl_PL.UTF-8` system locales pick Polish automatically.
@@ -48,7 +48,7 @@ shared items below.
 | Simplified Chinese (Mandarin) | zh-hans | 929 entries; 98% of extracted, ~95% of visible | most; newer panes English | CJK ✅, IME ✅; Windows UI font fixed (#248); interface font chain covers every catalog character, installed CJK font after the embedded ones when it doesn't, PingFang found on macOS 12 (#486); font list by Chinese names (宋体, 微软雅黑, #505); no vertical text | no | partial | 3–5 |
 | Spanish | es | ~930; 98% / ~95% | most | Latin ✅ | no | partial | 1–2 |
 | Hindi | hi | 0 | ❌ | Devanagari shaping via HarfRust, untested; no hyphenation | no | none | 4–6 |
-| Arabic | ar | 0 | ❌ | shaping, joining, lam-alef, bidi ✅ (#207); no kashida; **no mirrored UI** | no | none | 6–8 |
+| Arabic | ar | 2,463 entries; every key of every other catalog (the full interface audit) | most; long wrapped notes break at the wrong end | shaping, joining, lam-alef, bidi ✅ (#207); no kashida; interface text reads right to left and the **window is mirrored**; grid forms inside dialogs keep their column order | no | partial | 2–3 plus the grid forms below |
 | French | fr | 2,033 entries | most; newer dialogs partly English | Latin ✅ | no | partial | 1–2 |
 | Portuguese | pt-br (pt-PT none) | ~930; 98% / ~95% (pt-BR) | most | Latin ✅ | no | partial | 2–4 (pt-BR finish + pt-PT) |
 | Indonesian | id | 0 | ❌ | Latin ✅ | no | none | 3–4 |
@@ -56,6 +56,22 @@ shared items below.
 | German | de | 2,021 entries; same key set as zh-hans (#574); 98% of extracted, ~95% of visible | most | Latin ✅ | no | partial | 1–2 |
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
+
+Arabic (`ar`, every `ar-*` system locale, `{"value":"ar"}`) is written in typing order in
+`ar.tsv` and put into display order when the catalog loads (`crates/ui-egui/src/bidi.rs`): egui
+joins the letters of a word but lays words out left to right. Placeholders, keyboard shortcuts
+and caption colons stay in place, ribbon locations read from the right, and command search matches
+a query of several Arabic words word by word. The Arabic face is Noto Sans Arabic from craft-fonts
+(kept in the web build too); a native build without it uses an installed Arabic font.
+The window is mirrored (`crates/ui-egui/src/rtl.rs`): the title bar, tabs, ribbon groups and their
+buttons, status bar, File page, dialogs' rows and buttons, menus, check boxes and radio buttons run
+from the right, and the side panes swap sides. The document area is not mirrored: its direction
+belongs to the document. The same
+face is the document fallback for Arabic text, so Arabic typed or opened in the browser, which
+has no system fonts, is drawn and exported instead of showing boxes. Not done:
+grid forms inside dialogs (egui's `Grid` cannot run right to left, so a label stays to the left of
+its field, with the block set against the right edge), text fields' own alignment, labels that wrap
+onto a second line, Arabic-Indic digits, and Arabic proofing.
 
 Other shipped languages: **13** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
 Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`), Russian (`ru`), Italian (`it`, #594), Polish (`pl`), Czech (`cs`), Hungarian (`hu`), French (`fr`) and Bulgarian (`bg`), all partial.
@@ -149,7 +165,7 @@ WordCraft keeps 2,54 cm).
 | Item | Hours | Notes |
 |---|---|---|
 | Wrap the remaining English literals in `tl!` and translate them in every catalog | 4–6 | Makes the six partial languages full except script items |
-| Mirrored (right-to-left) interface for Arabic and Hebrew | 15–25 | Ribbon, panes, dialogs, rulers |
+| Mirrored (right-to-left) interface for Arabic and Hebrew | 4–8 left | Done for Arabic (`rtl.rs`): title bar, ribbon, panes, status bar, File page, dialogs, menus. Left: grid forms inside dialogs (needs a grid of our own), wrapped right-to-left labels, text-field alignment |
 | Vertical text, ruby, document grid (Chinese, Japanese, Korean) | counted in [layout-parity.md](layout-parity.md) | |
 | Proofing dictionaries, grammar and hyphenation for the 11 non-English key languages | 20–40 | Open dictionaries only (licence check per dictionary); issues #25, #40, #100. Per-run languages, the Hunspell-style affix engine and the TeX pattern reader landed with Polish, so a language with an open Hunspell dictionary and hyphenation patterns is mostly data plus grammar rules |
 | Native-speaker review of every catalog | human | None reviewed yet |
@@ -158,6 +174,7 @@ WordCraft keeps 2,54 cm).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Arabic interface catalog (2,463 entries, every key of every other catalog) shown in right-to-left reading order, `ar-*` locales, saved preference, word-by-word command search, Arabic face in web builds; the window is mirrored right to left (grid forms inside dialogs keep their column order) |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
 | 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |

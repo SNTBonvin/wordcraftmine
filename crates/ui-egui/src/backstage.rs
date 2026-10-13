@@ -21,12 +21,14 @@ const PAGES: [(&str, &str); 9] = [
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let mac = app.integrated_titlebar;
-    egui::Panel::left("backstage_nav")
+    crate::rtl::start_panel("backstage_nav")
         .exact_size(200.0)
         // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
         .resizable(false)
         .frame(egui::Frame::NONE.fill(APP_COLOR).inner_margin(egui::Margin { left: 0, right: 0, top: if mac { 0 } else { 12 }, bottom: 12 }))
         .show(ui, |ui| {
+            // Right to left the navigation is on the right, away from the macOS traffic lights.
+            let rtl = crate::rtl::on();
             let back = if mac {
                 // macOS (#222): the Backstage covers the title bar, so its top band is the title
                 // bar: the back button sits beside the traffic lights, centred with them and as far
@@ -36,16 +38,22 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
                 // The chevron's stroke starts at the content edge.
-                let c = pos2(band.min.x + crate::chrome::MAC_CONTENT_LEFT + 3.0, band.center().y);
+                let c = pos2(if rtl { band.max.x - 26.0 } else { band.min.x + crate::chrome::MAC_CONTENT_LEFT + 3.0 }, band.center().y);
                 let resp = ui.interact(Rect::from_center_size(c, vec2(22.0, band.height())), ui.id().with("backstage_back"), Sense::click());
-                icons::paint(ui.painter(), Rect::from_center_size(c, vec2(18.0, 18.0)), "chevronLeft", egui::Color32::WHITE, egui::Color32::WHITE);
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(c, vec2(18.0, 18.0)),
+                    if rtl { "chevronRight" } else { "chevronLeft" },
+                    egui::Color32::WHITE,
+                    egui::Color32::WHITE,
+                );
                 resp
             } else {
                 let (r, resp) = ui.allocate_exact_size(vec2(200.0, 40.0), Sense::click());
                 icons::paint(
                     ui.painter(),
-                    Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(18.0, 18.0)),
-                    "chevronLeft",
+                    Rect::from_center_size(pos2(crate::rtl::lead_x(rtl, r, 26.0), r.center().y), vec2(18.0, 18.0)),
+                    if rtl { "chevronRight" } else { "chevronLeft" },
                     egui::Color32::WHITE,
                     egui::Color32::WHITE,
                 );
@@ -67,8 +75,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
                 }
                 ui.painter().text(
-                    pos2(r.min.x + 22.0, r.center().y),
-                    Align2::LEFT_CENTER,
+                    pos2(crate::rtl::lead_x(rtl, r, 22.0), r.center().y),
+                    crate::rtl::lead_center(rtl),
                     tl!(label),
                     if active { semibold(14.0) } else { medium(14.0) },
                     egui::Color32::WHITE,
@@ -104,7 +112,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     if resp.hovered() {
                         ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
                     }
-                    ui.painter().text(pos2(r.min.x + 22.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
+                    let at = pos2(crate::rtl::lead_x(rtl, r, 22.0), r.center().y);
+                    ui.painter().text(at, crate::rtl::lead_center(rtl), tl!(label), regular(13.0), egui::Color32::WHITE);
                     if resp.clicked() {
                         if id == "discord" {
                             let _ = app.run("ui.discord", json!({}));
@@ -116,15 +125,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             });
         });
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30))).show(ui, |ui| {
-        egui::ScrollArea::vertical().show(ui, |ui| match app.ui.backstage_page.as_str() {
-            "home" => home_page(app, ui),
-            "new" => new_page(app, ui),
-            "open" => open_page(app, ui),
-            "saveAs" => save_as_page(app, ui),
-            "info" => info_page(app, ui),
-            "print" | "export" => export_page(app, ui),
-            "options" => crate::options::page(app, ui),
-            _ => home_page(app, ui),
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            crate::rtl::root(ui, |ui| match app.ui.backstage_page.as_str() {
+                "home" => home_page(app, ui),
+                "new" => new_page(app, ui),
+                "open" => open_page(app, ui),
+                "saveAs" => save_as_page(app, ui),
+                "info" => info_page(app, ui),
+                "print" | "export" => export_page(app, ui),
+                "options" => crate::options::page(app, ui),
+                _ => home_page(app, ui),
+            })
         });
     });
 }
@@ -136,7 +147,7 @@ fn heading(ui: &mut Ui, s: &str) {
 
 fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
     let t = Tokens::get(ui.ctx());
-    ui.vertical(|ui| {
+    crate::rtl::vertical(ui, |ui| {
         // The label sits right under the thumbnail whatever row gap the gallery uses.
         ui.spacing_mut().item_spacing.y = 0.0;
         let (r, resp) = ui.allocate_exact_size(vec2(150.0, 194.0), Sense::click());
@@ -192,7 +203,9 @@ fn matching_templates(query: &str) -> Vec<(&'static str, &'static str)> {
     let q = query.trim().to_lowercase();
     TEMPLATES
         .into_iter()
-        .filter(|(label, id)| q.is_empty() || id.contains(&q) || label.to_lowercase().contains(&q) || tl!(label).to_lowercase().contains(&q))
+        .filter(|(label, id)| {
+            q.is_empty() || id.contains(&q) || label.to_lowercase().contains(&q) || crate::i18n::label_matches(&tl!(label).to_lowercase(), &q)
+        })
         .collect()
 }
 
@@ -314,7 +327,7 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
         let mut props = app.session.doc.core.clone();
         let mut edited = None;
         let mut focused = None;
-        egui::Grid::new("props").num_columns(2).spacing(vec2(12.0, 6.0)).show(ui, |ui| {
+        crate::rtl::grid(ui, egui::Grid::new("props").num_columns(2).spacing(vec2(12.0, 6.0)), |ui| {
             for (l, v) in [("Title", &mut props.title), ("Subject", &mut props.subject), ("Author", &mut props.creator), ("Keywords", &mut props.keywords), ("Category", &mut props.category)] {
                 let label = ui.label(tl!(l));
                 let r = ui.add(egui::TextEdit::singleline(v).id_salt(("info-prop", l))).labelled_by(label.id);

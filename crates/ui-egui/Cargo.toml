@@ -26,6 +26,8 @@ image = { workspace = true }
 # The system's preferred interface languages (#8) and region (#838). Native: OS APIs; wasm:
 # the browser's languages (`js`).
 sys-locale = { version = "0.3", features = ["js"] }
+# Display order for a right-to-left interface language (Arabic): egui lays words out left to right.
+unicode-bidi = { workspace = true }
 
 # Linux only, where winit reports no system theme: the desktop portal's light/dark answer (see
 # `desktop_theme.rs`). Already in the tree, with these features, through egui's own accessibility

@@ -40,7 +40,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | File dialogs (Open, Save As, Export, Insert Picture) | system dialog, without blocking the window (#94); Linux/BSD without a file chooser portal or zenity: WordCraft's own browser, also File › Open › Browse in WordCraft… (#576) | system dialog | 95% | — |
 | Platform conventions (macOS menus/traffic lights #255, Windows title bar, Linux CSD on Wayland #78) | partial | native | 70% | 3–5 |
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on; the document canvas describes paragraphs, headings (level), list items, tables, links, pictures (alt text) and the caret and selection, for the pages on screen (#488); not yet tried with real screen readers | full | 50% | 5–8 |
-| Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
+| Right-to-left (mirrored) interface | 🟡 Arabic: title bar, ribbon, panes, status bar, File page, dialogs and menus mirrored; grid forms inside dialogs keep their column order | ✅ (Arabic, Hebrew Word) | 80% | in localization |
 
 ## Revision history
 
