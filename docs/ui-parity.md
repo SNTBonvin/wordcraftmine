@@ -119,7 +119,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-10 | trivial | System interface theme keeps following OS appearance changes (no longer pins the macOS window); Dark page no longer darkens the interface (#311, #312) |
 | 2026-10-11 | trivial | Insert › Icons picker: search, category chips, icons drawn live from the library's path data; Picture Format › Icon Color (#309) |
 | 2026-10-10 | trivial | AutoSave switch greyed out with a tooltip saying why where AutoSave can't save; Save As from it (#196, #176) |
-| 2026-10-13 | trivial | Review › Language and the status bar's language menu end with Set Proofing Language… (the Language dialog: every language, Set As Default) and Language Preferences…; a language outside the short list (French…) shows by name and checked (#860) |
+| 2026-10-13 | trivial | Review › Language and the status bar's language menu end with Set Proofing Language… (the Language dialog: every language, Set As Default) and Language Preferences…; a language outside the short list (French…) shows by name and checked, another region of a listed language by language and region (French (Canada)) (#860) |
 | 2026-10-10 | minor | Status bar language: the caret's language, a click opens the proofing-language menu (also Review › Language); context menu items translated |
 | 2026-10-10 | trivial | Table Properties dialog and Table Layout Height/Width boxes (#44) |
 | 2026-10-10 | minor | Merged main: Style Inspector, Column Selection, zoom buttons, inertial scrolling, File Info landed |
