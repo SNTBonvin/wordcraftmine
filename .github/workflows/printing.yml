@@ -1,5 +1,4 @@
-# Exercise the native print host and all UI tests on PRs; the broad FreeBSD/ARM64 gates
-# stay on their existing nightly/release schedule.
+# Exercise the native print host and all UI tests on PRs.
 name: Printing
 
 on:
@@ -33,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:

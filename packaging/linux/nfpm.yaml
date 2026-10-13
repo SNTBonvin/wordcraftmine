@@ -1,4 +1,4 @@
-# .deb and .rpm packages (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
+# .deb package (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
 # the file tree, substitutes its path for ${STAGE} (nfpm doesn't expand env vars in `src`) and
 # exports VERSION and NFPM_ARCH.
 #
@@ -39,18 +39,6 @@ overrides:
       - libxcursor1
       - libxi6
       - libxrandr2
-      - mesa-vulkan-drivers
-      - xdg-desktop-portal
-  rpm:
-    depends:
-      - libxkbcommon
-      - (vulkan-loader or libglvnd-egl)
-    recommends:
-      - libwayland-client
-      - libX11
-      - libXcursor
-      - libXi
-      - libXrandr
       - mesa-vulkan-drivers
       - xdg-desktop-portal
 
