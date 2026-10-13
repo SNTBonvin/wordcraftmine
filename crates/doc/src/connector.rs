@@ -34,6 +34,10 @@ pub struct ShapeExtra {
     pub arrow_start: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub arrow_end: bool,
+    /// The outline's gradient (`a:ln/a:gradFill`), kept for saving; the outline is drawn in its
+    /// main colour (the shape's `stroke`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outline_fill: Option<crate::fill::Fill>,
 }
 
 fn is_zero(v: &u32) -> bool {
