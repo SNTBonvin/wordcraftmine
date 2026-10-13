@@ -406,3 +406,88 @@ plus migration. Deferred as medium-risk feature work, documented here.
 | 19 | Bug Report: Incorrect RTL (Right-to-Left) Text Rendering and Alignment | NOT REPRODUCIBLE | no repro info |
 | 18 | The styles not working on the portable | NOT REPRODUCIBLE | no repro info |
 | 15 | Print dialog and text render | NOT REPRODUCIBLE | no repro info |
+
+## Owner decisions (2026-10-13)
+
+Owner decided every NEEDS DECISION item plus #1155:
+
+### Implement now (40)
+- #70
+- #100
+- #167
+- #184
+- #199
+- #374
+- #375
+- #529
+- #582
+- #641
+- #714
+- #754
+- #778
+- #820
+- #824
+- #867
+- #898
+- #918
+- #974
+- #995
+- #1001
+- #1018
+- #1053
+- #1054
+- #1063
+- #1065
+- #1086
+- #1113
+- #1124
+- #1155
+- #1167
+- #1183
+- #1189
+- #1211
+- #1213
+- #1225
+- #1227
+- #1237
+- #1264
+- #1266
+
+### Deferred (26)
+- #322
+- #403
+- #498
+- #518
+- #534
+- #575
+- #585
+- #650
+- #781
+- #785
+- #799
+- #851
+- #883
+- #895
+- #903
+- #949
+- #951
+- #993
+- #1055
+- #1058
+- #1077
+- #1079
+- #1081
+- #1196
+- #1230
+- #1251
+
+### Rejected (10)
+- #105 (stays closed: out of scope / not actionable)
+- #618 (stays closed: out of scope / not actionable)
+- #634 (stays closed: out of scope / not actionable)
+- #793 (stays closed: out of scope / not actionable)
+- #959 (stays closed: out of scope / not actionable)
+- #1022 (stays closed: out of scope / not actionable)
+- #1192 (stays closed: out of scope / not actionable)
+
+Note: the triage table above still shows the pre-decision `NEEDS DECISION` label; this section overrides it.
