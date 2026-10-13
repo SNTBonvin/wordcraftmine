@@ -264,6 +264,17 @@ fn menu_tree() -> Vec<(&'static str, Vec<Node>)> {
     ]
 }
 
+/// Name the process "WordCraft" so the macOS app menu reads right when the dev binary is run
+/// without a bundle: macOS takes the app-menu title from the process/bundle name, and the bare
+/// executable is `wordcraft`. The packaged app sets `CFBundleName` itself, so this only touches
+/// dev builds. Call on the main thread before the event loop starts.
+pub fn name_process() {
+    use objc2_foundation::{NSProcessInfo, NSString};
+    let info = NSProcessInfo::processInfo();
+    info.setProcessName(&NSString::from_str("WordCraft"));
+    log::info!("process name: {}", info.processName());
+}
+
 /// A menu item's command: the id and params [`WordApp::run`] takes.
 struct Action {
     id: String,

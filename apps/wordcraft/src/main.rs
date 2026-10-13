@@ -242,6 +242,11 @@ fn main() -> eframe::Result {
     // First, so the panic hook and every start-up warning are recorded (`logging`).
     let logger = logging::install();
     logging::install_panic_hook();
+    // The dev binary is `wordcraft`, which macOS would show as the app-menu title; name it
+    // WordCraft before the event loop and its menu exist (the packaged app's `CFBundleName`
+    // covers release).
+    #[cfg(target_os = "macos")]
+    menu::name_process();
     let mut control_port: Option<u16> = std::env::var("WORDCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut files = Vec::new();
     let mut sample = false;
