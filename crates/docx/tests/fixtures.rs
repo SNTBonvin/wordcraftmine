@@ -121,6 +121,25 @@ fn single_entry_toc_keeps_formatted_result_and_nested_page_field() {
 }
 
 #[test]
+fn dirty_field_begin_markers_round_trip() {
+    // #877: `w:dirty` on a field begin tells Word to rebuild the result; dropping it
+    // leaves stale placeholder text visible.
+    let d = read_body(
+        r#"<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText> TOC \o "1-1" \h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+    );
+    let p = paras(&d);
+    assert_eq!(
+        p[0].objects.iter().find_map(|o| match o {
+            InlineObject::FieldStart { dirty, .. } => Some(*dirty),
+            _ => None,
+        }),
+        Some(true)
+    );
+    let files = unzip(&wordcraft_docx::write(&d).unwrap());
+    assert!(text(&files, "word/document.xml").contains("w:dirty"), "dirty survives the save");
+}
+
+#[test]
 fn toc_complex_field_spanning_paragraphs() {
     let body = r#"
 <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>
@@ -135,7 +154,7 @@ fn toc_complex_field_spanning_paragraphs() {
     let p = paras(&d);
     assert_eq!(p.len(), 5);
     assert_eq!(p[0].text, "\u{FFFC}Intro\t\u{FFFC}");
-    assert_eq!(p[0].objects[0], InlineObject::FieldStart { instr: r#"TOC \o "1-3" \h \z \u"#.into(), locked: false });
+    assert_eq!(p[0].objects[0], InlineObject::FieldStart { instr: r#"TOC \o "1-3" \h \z \u"#.into(), locked: false, dirty: false });
     assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false, code: false });
     assert_eq!(p[0].props_of_char(3).link.as_deref(), Some("#_Toc1"));
     assert_eq!(p[0].props.style.as_deref(), Some("TOC1"));
@@ -1501,7 +1520,7 @@ fn includepicture_keeps_its_embedded_picture() {
             let p = paras(d);
             let objs = &p[0].objects;
             assert_eq!(objs.len(), 3, "{objs:?}");
-            assert_eq!(objs[0], InlineObject::FieldStart { instr: "INCLUDEPICTURE \"picture.png\"".into(), locked });
+            assert_eq!(objs[0], InlineObject::FieldStart { instr: "INCLUDEPICTURE \"picture.png\"".into(), locked, dirty: false });
             let InlineObject::Image { media, .. } = &objs[1] else { panic!("{objs:?}") };
             assert_eq!(d.media.get(media).unwrap().as_slice(), png);
             assert_eq!(objs[2], InlineObject::FieldEnd);

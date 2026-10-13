@@ -454,6 +454,9 @@ pub enum InlineObject {
         instr: String,
         #[serde(default)]
         locked: bool,
+        /// Refresh the cached result on open (`w:dirty`).
+        #[serde(default)]
+        dirty: bool,
     },
     /// The end of the innermost open [`InlineObject::FieldStart`].
     FieldEnd,

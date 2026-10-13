@@ -166,7 +166,8 @@ mod tests {
     fn cite(d: &mut Document, block: usize, off: usize, text: &str) {
         let c = CharProps::default();
         let p = d.para_mut(StoryRef::Body, &Path::top(block)).unwrap();
-        p.insert_object(off, InlineObject::FieldStart { instr: "ADDIN ZOTERO_ITEM CSL_CITATION {}".into(), locked: false }, &c).unwrap();
+        p.insert_object(off, InlineObject::FieldStart { instr: "ADDIN ZOTERO_ITEM CSL_CITATION {}".into(), locked: false, dirty: false }, &c)
+            .unwrap();
         let n = p.insert_text(off + 3, text, &c).unwrap();
         p.insert_object(off + 3 + n, InlineObject::FieldEnd, &c).unwrap();
     }

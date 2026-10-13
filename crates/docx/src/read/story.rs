@@ -59,6 +59,7 @@ struct FieldState {
     buf: Vec<(Item, CharProps)>,
     props: CharProps,
     locked: bool,
+    dirty: bool,
     /// Kept as a range field: its result flows into the document as ordinary content between
     /// `FieldStart` and `FieldEnd` markers instead of being buffered.
     range: bool,
@@ -463,7 +464,7 @@ impl Reader<'_> {
             "w:fldSimple" => {
                 let instr = k.attr("w:instr").unwrap_or("").to_string();
                 let props = k.child("w:r").and_then(|r| r.child("w:rPr")).map(|p| self.run_props(p, ctx)).unwrap_or_else(|| self.run_props_none(ctx));
-                self.begin_field(sc, props, instr, on_off_attr(k, "w:fldLock"));
+                self.begin_field(sc, props, instr, on_off_attr(k, "w:fldLock"), on_off_attr(k, "w:dirty"));
                 self.separate_field(sc, pb);
                 self.read_inline_children(sc, pb, k, rels, ctx, depth + 1);
                 self.end_field(sc, pb);
@@ -619,7 +620,7 @@ impl Reader<'_> {
                 }
             }
             "w:fldChar" => match k.attr("w:fldCharType") {
-                Some("begin") => self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock")),
+                Some("begin") => self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock"), on_off_attr(k, "w:dirty")),
                 Some("separate") => self.separate_field(sc, pb),
                 Some("end") => self.end_field(sc, pb),
                 _ => {}
@@ -746,13 +747,23 @@ impl Reader<'_> {
 
     // ---- fields ----
 
-    fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool) {
+    fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool, dirty: bool) {
         if sc.fields.len() >= MAX_FIELD_DEPTH || sc.ignored_begins > 0 {
             sc.ignored_begins += 1;
             return;
         }
         // Fields nested deeper than the cap are ignored (their content flows to the enclosing field).
-        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false, sizes: Vec::new() });
+        sc.fields.push(FieldState {
+            instr,
+            phase: Phase::Instr,
+            spilled: false,
+            buf: Vec::new(),
+            props,
+            locked,
+            dirty,
+            range: false,
+            sizes: Vec::new(),
+        });
     }
 
     /// Whether the field below the innermost one is still collecting its code (a field nested
@@ -775,7 +786,7 @@ impl Reader<'_> {
         f.phase = Phase::Result;
         if !f.spilled && !nested_in_instr && is_range_instr(&f.instr) {
             f.range = true;
-            let (obj, props) = (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, f.props.clone());
+            let (obj, props) = (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, f.props.clone());
             self.emit_obj(sc, pb, obj, &props);
         }
     }
@@ -796,7 +807,7 @@ impl Reader<'_> {
         }
         if f.phase == Phase::Instr && !nested_in_instr && is_range_instr(&f.instr) {
             // A range field with no result yet.
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
             return;
         }
@@ -804,7 +815,7 @@ impl Reader<'_> {
         // picture) can't be a text result: keep the field as a range around it so the picture
         // stays in the document and is saved again. The linked source is never read.
         if !nested_in_instr && f.buf.iter().any(|(it, _)| matches!(it, Item::Obj(o) if o.frame().is_some())) {
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
             for (it, p) in f.buf {
                 match it {
                     Item::Text(t) => self.emit_text(sc, pb, &t, &p),
@@ -1015,8 +1026,7 @@ impl Reader<'_> {
         let fallback = ac.child("mc:Fallback")?;
         let fb_drawing = fallback.child("w:drawing")?;
         let InlineObject::Image { media, w, h, alt, float, .. } = self.read_drawing(sc, fb_drawing, rels)? else { return None };
-        let kept =
-            El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback.clone())] };
+        let kept = El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback.clone())] };
         let source = self.keep_embedded(&kept, rels, &[])?;
         let graphic = Arc::new(Graphic {
             kind: GraphicKind::Chart,

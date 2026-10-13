@@ -212,7 +212,7 @@ impl Writer<'_> {
             && let Some((instr, locked, props)) = self.toc_field.take()
         {
             self.rev_open(w, &props);
-            self.field_start(w, &instr, locked, &props);
+            self.field_start(w, &instr, locked, false, &props);
             self.rev_close(w, &props);
         }
         let toc_end = std::mem::take(&mut self.toc_end_here);
@@ -477,9 +477,9 @@ impl Writer<'_> {
                 }
             }
             InlineObject::Field { instr, result, locked, .. } => self.field(w, instr, result, *locked, props),
-            InlineObject::FieldStart { instr, locked } => {
+            InlineObject::FieldStart { instr, locked, dirty } => {
                 self.rev_open(w, props);
-                self.field_start(w, instr, *locked, props);
+                self.field_start(w, instr, *locked, *dirty, props);
                 self.rev_close(w, props);
             }
             InlineObject::FieldEnd => {
@@ -550,11 +550,8 @@ impl Writer<'_> {
                 if fallback.is_some() {
                     // Ink normalizes its Choice to `wpi`; anything else keeps the requirements
                     // its choice stated (#997).
-                    let requires = if ink {
-                        "wpi"
-                    } else {
-                        alternate.and_then(|e| e.child("mc:Choice")).and_then(|e| e.attr("Requires")).unwrap_or("wpi")
-                    };
+                    let requires =
+                        if ink { "wpi" } else { alternate.and_then(|e| e.child("mc:Choice")).and_then(|e| e.attr("Requires")).unwrap_or("wpi") };
                     w.open("mc:AlternateContent", &[]);
                     w.open("mc:Choice", &[("Requires", requires)]);
                 }
@@ -788,7 +785,7 @@ impl Writer<'_> {
             w.close("w:r");
         };
         self.rev_open(w, props);
-        self.field_start(w, instr, locked, props);
+        self.field_start(w, instr, locked, false, props);
         if !result.is_empty() {
             run(w, &|w| {
                 let mut buf = String::new();
@@ -866,7 +863,7 @@ impl Writer<'_> {
     }
 
     /// A field's begin, instruction and separate runs.
-    fn field_start(&self, w: &mut W, instr: &str, locked: bool, props: &CharProps) {
+    fn field_start(&self, w: &mut W, instr: &str, locked: bool, dirty: bool, props: &CharProps) {
         let del = self.is_del(props);
         let run = |w: &mut W, f: &dyn Fn(&mut W)| {
             w.open("w:r", &[]);
@@ -875,11 +872,14 @@ impl Writer<'_> {
             w.close("w:r");
         };
         run(w, &|w| {
+            let mut attrs = vec![("w:fldCharType", "begin")];
             if locked {
-                w.empty("w:fldChar", &[("w:fldCharType", "begin"), ("w:fldLock", "1")])
-            } else {
-                w.empty("w:fldChar", &[("w:fldCharType", "begin")])
+                attrs.push(("w:fldLock", "1"));
             }
+            if dirty {
+                attrs.push(("w:dirty", "true"));
+            }
+            w.empty("w:fldChar", &attrs);
         });
         let instr_text = format!(" {} ", instr.trim());
         run(w, &|w| w.leaf(if del { "w:delInstrText" } else { "w:instrText" }, &[("xml:space", "preserve")], &instr_text));
