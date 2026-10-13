@@ -5353,6 +5353,7 @@ dependencies = [
  "wordcraft-fonts",
  "wordcraft-geom",
  "wordcraft-layout",
+ "wordcraft-proof",
  "wordcraft-render",
  "wordcraft-zotero",
  "zbus",

@@ -980,6 +980,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 painter.image(tex.id(), visual_sr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
             let page_scale = page_screen_scale(visual_sr, page, geo.scale);
+            // Spelling and grammar marks, drawn over the page (never part of its texture).
+            if app.session.view.proofing {
+                let render = wordcraft_render::RenderOptions { dark: dark_page, dark_paper, ..screen_render_options() };
+                let ink = |c| render.ink(c);
+                app.proofing.paint(&painter, &app.session.doc, &layout, i, visual_sr, page_scale, dim_body, &ink);
+            }
             // Header/footer editing chrome.
             if let StoryRef::Part(id) = app.session.sel.focus.story {
                 let sect_body = page.body;
@@ -2379,7 +2385,9 @@ fn dims_body(app: &WordApp, layout: &DocLayout) -> bool {
 /// The spelling suggestions and synonyms the context menu offers for the selection or the word
 /// at the caret.
 fn context_suggestions(app: &mut WordApp) {
-    app.canvas.context_issue = app.session.run("review.suggestions", &json!({})).ok().filter(|v| !v.is_null());
+    // From the background check's marks: no paragraph is checked and no suggestion computed
+    // here (they arrive in a later frame).
+    app.canvas.context_issue = if app.session.view.proofing { app.proofing.issue_at(&app.session, &app.session.sel.focus.clone()) } else { None };
     app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
 }
 
@@ -2466,18 +2474,25 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             .unwrap_or_default();
         // English rules' messages are catalog keys; Polish rules already explain in Polish.
         ui.label(egui::RichText::new(tl!(issue.get("message").and_then(|m| m.as_str()).unwrap_or(""))).small().weak());
-        if sugg.is_empty() {
+        // While the worker is still finding suggestions the menu shows none yet (they fill in).
+        if sugg.is_empty() && !app.proofing.suggesting(&issue) {
             ui.label(egui::RichText::new(tl!("(no suggestions)")).italics());
         }
+        // The issue's range and text as the background check found them: the change applies
+        // there, or not at all if that text has changed since.
+        let at = json!({"start": issue.get("start"), "end": issue.get("end"), "expected": issue.get("text")});
         for sgt in sugg {
             if ui.button(egui::RichText::new(&sgt).strong()).clicked() {
-                let _ = app.run("review.applySuggestion", json!({"text": sgt}));
+                let mut params = at.clone();
+                params["text"] = json!(sgt);
+                let _ = app.run("review.applySuggestion", params);
                 ui.close();
             }
         }
         if issue.get("kind").and_then(|k| k.as_str()) == Some("spelling") {
-            item(ui, app, "Ignore All", "review.ignoreAll", json!({}));
-            item(ui, app, "Add to Dictionary", "review.addToDictionary", json!({}));
+            let word = json!({"word": issue.get("text")});
+            item(ui, app, "Ignore All", "review.ignoreAll", word.clone());
+            item(ui, app, "Add to Dictionary", "review.addToDictionary", word);
         }
         ui.separator();
     }

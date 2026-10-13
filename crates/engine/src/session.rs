@@ -369,21 +369,11 @@ pub struct Session {
     /// mail merge, recover), never on an edit.
     document_id: u64,
     cache: LayoutCache,
-    /// (revision, width, read height, view, read line spacing, layout, proofing, outline,
-    /// (deletions left out, body deletions in balloons), numeral display).
+    /// (revision, width, read height, view, read line spacing, layout, outline,
+    /// (deletions left out, body deletions in balloons), numeral display). Proofing isn't part
+    /// of it: the editor draws spelling and grammar marks over the pages.
     #[allow(clippy::type_complexity)]
-    layout: Option<(
-        u64,
-        f32,
-        f32,
-        ViewMode,
-        Option<u32>,
-        Arc<DocLayout>,
-        bool,
-        Option<wordcraft_layout::outline::OutlineView>,
-        (bool, bool),
-        NumeralMode,
-    )>,
+    layout: Option<(u64, f32, f32, ViewMode, Option<u32>, Arc<DocLayout>, Option<wordcraft_layout::outline::OutlineView>, (bool, bool), NumeralMode)>,
     /// Picture edits: edited media key → original media key (Reset Picture).
     pub originals: std::collections::HashMap<String, String>,
     /// Last mutating command (Repeat).
@@ -524,6 +514,12 @@ impl Default for Prefs {
 }
 
 impl Prefs {
+    /// What the squiggles mark: grammar too (Mark grammar errors as you type) and what the
+    /// spelling check skips ([`wordcraft_layout::proofing::check_document`]).
+    pub fn proof_options(&self) -> wordcraft_layout::ProofOptions {
+        wordcraft_layout::ProofOptions { grammar: self.mark_grammar, spelling: self.spelling() }
+    }
+
     /// What the spelling check skips.
     pub fn spelling(&self) -> wordcraft_proof::Options {
         wordcraft_proof::Options {
@@ -735,13 +731,12 @@ impl Session {
         let hide_deleted = !self.view.show_markup || self.prefs.markup.hides_deletions();
         let deleted = (hide_deleted, self.revisions_in_balloons());
         let outline = (mode == ViewMode::Outline).then(|| self.view.outline.view());
-        if let Some((r, w, h, m, sp, l, pf, o, hd, n)) = &self.layout
+        if let Some((r, w, h, m, sp, l, o, hd, n)) = &self.layout
             && *r == self.rev
             && (*w == width || mode == ViewMode::Print)
             && *h == height
             && *m == mode
             && *sp == spacing
-            && *pf == self.view.proofing
             && *n == self.view.numeral
             && *hd == deleted
             && *o == outline
@@ -756,15 +751,13 @@ impl Session {
             show_hidden: self.view.marks || self.prefs.marks.hidden,
             hide_deleted,
             deletions_in_balloons: deleted.1,
-            proofing: self.view.proofing,
             numeral: self.view.numeral.resolve(SYSTEM_LOCALE.get().map(String::as_str)),
             comment_balloons: false,
             field_codes: self.view.field_codes,
             outline: outline.clone(),
-            proof: wordcraft_layout::ProofOptions { grammar: self.prefs.mark_grammar, spelling: self.prefs.spelling() },
         };
         let l = Arc::new(wordcraft_layout::layout(&self.doc, &mut self.cache, &opts));
-        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), self.view.proofing, outline, deleted, self.view.numeral));
+        self.layout = Some((self.rev, width, height, mode, spacing, l.clone(), outline, deleted, self.view.numeral));
         l
     }
     /// A layout for output (PDF, images, print): no proofing marks, print view.

@@ -14,6 +14,7 @@ wordcraft-geom = { workspace = true }
 wordcraft-doc = { workspace = true }
 wordcraft-fonts = { workspace = true }
 wordcraft-layout = { workspace = true }
+wordcraft-proof = { workspace = true }
 wordcraft-render = { workspace = true }
 wordcraft-engine = { workspace = true }
 wordcraft-zotero = { workspace = true }

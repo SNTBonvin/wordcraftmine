@@ -4126,7 +4126,7 @@ fn hyphenation_and_proofing_follow_each_runs_language() {
     d.format_range(&Pos::body(0, 0), &Pos::body(0, eng), &|c| c.lang = Some("pl-PL".into())).unwrap();
     d.format_range(&Pos::body(0, eng), &Pos::body(0, text.len()), &|c| c.lang = Some("en-US".into())).unwrap();
     let mut c = LayoutCache::new();
-    let l = layout(&d, &mut c, &LayoutOptions { proofing: true, ..LayoutOptions::default() });
+    let l = layout(&d, &mut c, &LayoutOptions::default());
     let para = l.pages[0].items.iter().find_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None }).expect("a paragraph");
     // Byte offsets after which a hyphen may go.
     let ends: Vec<usize> = para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end)).collect();
@@ -4137,12 +4137,14 @@ fn hyphenation_and_proofing_follow_each_runs_language() {
         assert!(ends.contains(&(eng + prefix.len())), "English ty-pog-ra-phy: no break after {prefix:?} in {ends:?}");
     }
     // Spelling: the Polish misspelling and the English one; Polish words aren't English errors.
-    let flagged: Vec<&str> = para.issues.iter().filter(|i| !i.2).map(|i| &text[i.0..i.1]).collect();
+    let checked = proofing::check_document(&d, &ProofOptions::default(), &mut proofing::ProofCache::new());
+    let found = &checked[&(StoryRef::Body, Path::top(0))].issues;
+    let flagged: Vec<&str> = found.iter().filter(|i| i.kind == wordcraft_proof::IssueKind::Spelling).map(|i| &text[i.start..i.end]).collect();
     assert_eq!(flagged, ["żeka", "beautifull"]);
-    // The layout and the Review commands report the same issues.
+    // The squiggles and the Review commands report the same issues.
     let p = d.para(StoryRef::Body, &Path::top(0)).unwrap();
     let issues = para::paragraph_issues(p, &para::proof_runs(&d, p, None), &Default::default(), true);
-    assert_eq!(issues.iter().map(|i| (i.start, i.end, i.kind == wordcraft_proof::IssueKind::Grammar)).collect::<Vec<_>>(), para.issues);
+    assert_eq!(&issues, found);
     assert_eq!(issues[0].lang, wordcraft_proof::ProofLang::Pl);
     assert_eq!(issues[1].lang, wordcraft_proof::ProofLang::En);
 }
@@ -4153,10 +4155,8 @@ fn hyphenation_and_proofing_follow_each_runs_language() {
 fn unproofed_languages_and_no_proof_runs_are_not_marked() {
     // A tiny synthetic Polish dictionary (real ones are installed on the system, not bundled).
     wordcraft_proof::pl::install_dictionary("SET UTF-8\nSFX B Y 1\nSFX B y ego y\n", "2\nkonstytucyjny/B\npłynie\n").unwrap();
-    let opts = LayoutOptions { proofing: true, ..LayoutOptions::default() };
     let issues = |d: &Document| -> usize {
-        let l = layout(d, &mut LayoutCache::new(), &opts);
-        l.pages[0].items.iter().map(|i| if let Placed::Lines { para, .. } = i { para.issues.len() } else { 0 }).sum()
+        proofing::check_document(d, &ProofOptions::default(), &mut proofing::ProofCache::new()).values().map(|p| p.issues.len()).sum()
     };
     let text = "Nous écrivons beaucoup aujourd'hui.";
     let mut d = Document::from_text(text);
@@ -4169,6 +4169,34 @@ fn unproofed_languages_and_no_proof_runs_are_not_marked() {
     assert_eq!(issues(&pl), 1);
     pl.format_range(&Pos::body(0, 0), &Pos::body(0, "Płynie żeka.".len()), &|c| c.no_proof = Some(true)).unwrap();
     assert_eq!(issues(&pl), 0);
+}
+
+/// Proofing marks sit under the issue's text on the page, below its line's baseline, and the
+/// page itself (its display list) has no squiggles: layout never depends on proofing.
+#[test]
+fn proof_marks_follow_the_laid_out_text() {
+    let text = "Hello zxqmarkword there";
+    let d = Document::from_text(text);
+    let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+    let page = &l.pages[0];
+    let start = text.find("zxq").unwrap();
+    let end = start + "zxqmarkword".len();
+    let marks = display::proof_marks(&d, page, &|story, path| {
+        if story == StoryRef::Body && *path == Path::top(0) { vec![(start, end, false)] } else { Vec::new() }
+    });
+    assert_eq!(marks.len(), 1);
+    let m = marks[0];
+    assert!(!m.grammar && !m.header_footer && m.story == StoryRef::Body);
+    assert_eq!(m.a.1, m.b.1, "a horizontal line");
+    let (para, x, y) =
+        page.items.iter().find_map(|i| if let Placed::Lines { para, x, y, .. } = i { Some((para.clone(), *x, *y)) } else { None }).unwrap();
+    let line = &para.lines[0];
+    assert!(m.a.1 > y + (line.baseline - line.top), "under the baseline");
+    let spans = para.x_spans(0, start, end);
+    assert_eq!((m.a.0, m.b.0), (x + spans[0].0, x + spans[0].1));
+    // Nothing proofing-related is drawn into the page.
+    let draws = display::page_display(&d, page, &display::DisplayOptions::default());
+    assert!(!draws.iter().any(|d| matches!(d, display::Draw::Line { stroke: display::Stroke::Wave, .. })));
 }
 
 /// #451: page totals in the body show the document's page count (the stale cached result is
