@@ -3,7 +3,7 @@
 //! The player lives in [`crate::speech`]; these commands drive it, so the player window, the
 //! ribbon, the CLI and agents all control reading the same way.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use wordcraft_doc::para::OBJ;
 use wordcraft_doc::{InlineObject, Pos};
 
@@ -26,8 +26,34 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"value"?: bool}"#)
             .pure(),
         CommandSpec::new("readAloud.status", "Read Aloud Status", "Review › Speech", status).pure(),
+        CommandSpec::new("tools.dictate", "Dictate", "Home › Voice", dictate)
+            .params(r#"{"action"?: "start"|"stop"|"status", "lang"?: "BCP 47 language tag"} → status (dictation needs a speech model; use the system dictation)"#)
+            .pure(),
         CommandSpec::new("caret.pastCitation", "Move Past Citation", "Zotero › Citations", past_citation).pure(),
     ]
+}
+
+/// Dictate: there is no speech recognition in WordCraft (it would need a speech
+/// model, chosen by the owner per gaps.md #28), so starting errors with
+/// guidance; `stop` and `status` (the default) just report. Pure.
+fn dictate(_s: &mut Session, v: &Value) -> CmdResult {
+    if let Some(l) = p::str(v, "lang") {
+        wordcraft_proof::lang::normalize_tag(l).ok_or_else(|| CmdError::Params(format!("`lang` must be a language tag such as en-US, not {l:?}")))?;
+    }
+    match p::str(v, "action") {
+        None | Some("status") => Ok(json!({
+            "dictating": false,
+            "available": false,
+            "lang": p::str(v, "lang").unwrap_or(""),
+            "message": "WordCraft has no speech model: dictate with your system (Windows Win+H, macOS Fn twice), then type or paste",
+        })),
+        Some("stop") => Ok(json!({"dictating": false})),
+        Some("start") => Err(CmdError::Failed(
+            "dictation isn't available: WordCraft has no speech model — dictate with your system (Windows Win+H, macOS Fn twice), then type or paste"
+                .into(),
+        )),
+        Some(other) => Err(CmdError::Params(format!("`action` is start, stop or status, not {other:?}"))),
+    }
 }
 
 /// Start reading from the caret (or the selection); while reading, pause or carry on.
