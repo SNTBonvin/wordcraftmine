@@ -1,6 +1,6 @@
 //! Transient AI review overlays. Never modify saved content or the user's Track Changes setting.
 use crate::{WordApp, theme::Tokens};
-use egui::{Color32, Painter, Rect, Stroke, Ui, pos2, vec2};
+use egui::{Painter, Rect, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 use std::ops::Range;
 use wordcraft_doc::{Document, Pos, StoryRef};
@@ -252,16 +252,16 @@ pub fn paint(app: &WordApp, ui: &Ui, painter: &Painter, layout: &wordcraft_layou
     let recent = valid && !review.marks.is_empty() && (now - review.changed_at) < 3500.0;
     let animated = app.animations_on() && (busy || recent);
     let pulse = if animated { ((now / 360.0).sin() as f32 + 1.0) * 0.5 } else { 0.0 };
-    let purple = Color32::from_rgb(130, 93, 222);
+    let purple = t.diff_format;
     if valid {
         for (index, mark) in review.marks.iter().enumerate() {
-            let color = if mark.formatting || mark.summary { purple } else { t.green };
+            let color = if mark.formatting || mark.summary { purple } else { t.diff_add };
             for (pi, r) in layout.selection_rects(&app.session.doc, &mark.start, &mark.end, app.session.page_hint) {
                 if let Some(page) = pages.get(pi) {
                     let s = layout.pages.get(pi).map_or(scale, |p| crate::canvas::page_screen_scale(*page, p, scale));
                     let rect = Rect::from_min_size(pos2(page.min.x + r.x * s, page.min.y + r.y * s), vec2(r.w * s, r.h * s));
-                    painter.rect_filled(rect, 2.0, color.gamma_multiply(0.15 + 0.10 * pulse));
-                    painter.hline(rect.x_range(), rect.max.y, Stroke::new(1.2, color.gamma_multiply(0.8)));
+                    painter.rect_filled(rect, 2.0, color.gamma_multiply(0.08 + 0.035 * pulse));
+                    painter.hline(rect.x_range(), rect.max.y - 0.5, Stroke::new(0.7, color.gamma_multiply(0.42)));
                     ui.interact(rect, ui.id().with(("ai-change", index, pi)), egui::Sense::hover()).on_hover_text(if mark.formatting {
                         "Formatting changed by AI"
                     } else {
@@ -277,8 +277,8 @@ pub fn paint(app: &WordApp, ui: &Ui, painter: &Painter, layout: &wordcraft_layou
                 let x = page.min.x + c.x * s;
                 let y = page.min.y + c.top * s;
                 let rect = Rect::from_min_size(pos2(x - 3.0, y), vec2(6.0, (c.height * s).max(10.0)));
-                let color = if mark.removed.is_empty() { purple } else { t.red };
-                painter.line_segment([rect.left_top(), rect.left_bottom()], Stroke::new(3.0, color));
+                let color = if mark.removed.is_empty() { purple } else { t.diff_remove };
+                painter.line_segment([rect.left_top(), rect.left_bottom()], Stroke::new(1.5, color.gamma_multiply(0.8)));
                 ui.interact(rect.expand(4.0), ui.id().with(("ai-removed", index)), egui::Sense::hover()).on_hover_text(if mark.removed.is_empty() {
                     if mark.summary { "AI changed the document outside the review preview".into() } else { "AI changed formatting or layout".into() }
                 } else {
@@ -293,7 +293,7 @@ pub fn paint(app: &WordApp, ui: &Ui, painter: &Painter, layout: &wordcraft_layou
             painter.rect_stroke(
                 page.shrink(2.0),
                 3.0,
-                Stroke::new(2.0 + 1.0 * pulse, purple.gamma_multiply(0.35 + 0.35 * pulse)),
+                Stroke::new(1.0 + 0.3 * pulse, purple.gamma_multiply(0.20 + 0.18 * pulse)),
                 egui::StrokeKind::Inside,
             );
             let label = if busy {
@@ -306,8 +306,8 @@ pub fn paint(app: &WordApp, ui: &Ui, painter: &Painter, layout: &wordcraft_layou
             } else {
                 "AI changes highlighted"
             };
-            let rect = Rect::from_min_size(page.min + vec2(10.0, 6.0), vec2(178.0, 24.0));
-            painter.rect_filled(rect, 6.0, t.panel);
+            let rect = Rect::from_min_size(page.min + vec2(10.0, 6.0), vec2(178.0, 22.0));
+            painter.rect_filled(rect, 11.0, t.panel);
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), purple);
         }
     }

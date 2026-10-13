@@ -9,13 +9,13 @@ use crate::{WordApp, icons};
 /// Height of the ribbon content area (without group labels).
 pub const CONTENT_H: f32 = 66.0;
 /// Height of the group title row under the content.
-pub const LABEL_H: f32 = 18.0;
+pub const LABEL_H: f32 = if cfg!(target_os = "macos") { 0.0 } else { 18.0 };
 /// Large buttons: centre of the 32 px icon, top of the first label line, and the pitch and
 /// height of a label line (`regular(11.5)`; a test checks the font's real line height).
 pub const BIG_ICON_Y: f32 = 18.0;
 pub const BIG_LABEL_Y: f32 = 36.0;
-pub const LABEL_PITCH: f32 = 13.0;
-pub const LABEL_LINE_H: f32 = 14.0;
+pub const LABEL_PITCH: f32 = 14.0;
+pub const LABEL_LINE_H: f32 = 15.0;
 // #653: a two-line label ends inside the content, above the group title row.
 const _: () = assert!(BIG_LABEL_Y + LABEL_PITCH + LABEL_LINE_H <= CONTENT_H);
 const _: () = assert!(BIG_ICON_Y + 16.0 <= BIG_LABEL_Y);
@@ -322,10 +322,15 @@ pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&
     let label_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(title.to_string(), regular(11.0), t.group_label).size().x);
     let start = ui.cursor().min;
     let inner = ui.vertical(|ui| {
-        ui.set_min_width(label_w + if launcher.is_some() { 22.0 } else { 10.0 });
+        if LABEL_H > 0.0 {
+            ui.set_min_width(label_w + if launcher.is_some() { 22.0 } else { 10.0 });
+        }
         let content = ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTENT_H), egui::Layout::left_to_right(egui::Align::Min), |ui| {
             ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
             add(ui, app);
+            if LABEL_H == 0.0 && launcher.is_some() {
+                ui.add_space(12.0);
+            }
         });
         #[cfg(test)]
         if content.response.rect.height() > CONTENT_H + 0.5 {
@@ -336,8 +341,10 @@ pub fn group_titled(ui: &mut Ui, id_title: &str, title: &str, launcher: Option<&
     });
     let r = inner.response.rect;
     let r = Rect::from_min_max(start, pos2(r.max.x, start.y + CONTENT_H + LABEL_H));
-    let title_y = r.max.y - LABEL_H / 2.0;
-    ui.painter().text(pos2(r.center().x, title_y), Align2::CENTER_CENTER, title, regular(11.0), t.group_label);
+    let title_y = if LABEL_H == 0.0 { r.max.y - 7.0 } else { r.max.y - LABEL_H / 2.0 };
+    if LABEL_H > 0.0 {
+        ui.painter().text(pos2(r.center().x, title_y), Align2::CENTER_CENTER, title, regular(11.0), t.group_label);
+    }
     if let Some(cmd) = launcher {
         let lr = Rect::from_center_size(pos2(r.max.x - 6.0, title_y), vec2(11.0, 11.0));
         let resp = ui.interact(lr, ui.id().with(("launch", id_title)), Sense::click());

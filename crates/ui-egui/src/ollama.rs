@@ -17,6 +17,7 @@ mod project;
 mod transport;
 
 mod edits;
+mod history;
 mod markdown;
 
 const MAX_INPUT: usize = 16_000;
@@ -84,6 +85,19 @@ pub struct State {
     pub review: edits::Review,
     markdown: egui_commonmark::CommonMarkCache,
     show_changes: bool,
+    library: history::Library,
+    active_chat: Option<u64>,
+    history_open: bool,
+    history_filter: String,
+    history_dirty: bool,
+    history_error: String,
+    delete_chat: Option<u64>,
+    delete_all: bool,
+    rename_chat: Option<(u64, String)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    history_path: Option<std::path::PathBuf>,
+    #[cfg(not(target_arch = "wasm32"))]
+    history_store: Option<history::Store>,
     project_excerpts: Vec<(String, String)>,
     selected_source: Option<String>,
     entries: Vec<(String, String)>,
@@ -125,6 +139,19 @@ impl Default for State {
             review: edits::Review::default(),
             markdown: egui_commonmark::CommonMarkCache::default(),
             show_changes: false,
+            library: Default::default(),
+            active_chat: None,
+            history_open: false,
+            history_filter: String::new(),
+            history_dirty: false,
+            history_error: String::new(),
+            delete_chat: None,
+            delete_all: false,
+            rename_chat: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            history_path: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            history_store: None,
             project_excerpts: Vec::new(),
             selected_source: None,
             entries: Vec::new(),
@@ -216,6 +243,7 @@ impl State {
             self.markdown = Default::default();
         }
         self.entries.push((role.into(), clip(&text, 24_000)));
+        self.history_dirty = true;
     }
 }
 
@@ -415,10 +443,12 @@ fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, S
 }
 
 pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
+    history::sync(app);
     if app.ollama.document.is_some_and(|d| d != app.session.document_id()) {
         app.ollama.stop();
         app.ollama.document = Some(app.session.document_id());
         app.ollama.entries.clear();
+        app.ollama.active_chat = None;
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
@@ -524,6 +554,10 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
             }
         }
     }
+    if app.ollama.history_dirty {
+        history::sync(app);
+        ctx.request_repaint();
+    }
     if app.ollama.busy {
         app.ollama.events = Some(rx);
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -602,7 +636,7 @@ fn effort_label(effort: &str) -> &str {
 }
 
 fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_commonmark::CommonMarkCache) {
-    ui.add_space(16.0);
+    ui.add_space(20.0);
     if role == "Thinking summary" {
         ui.collapsing("Thought summary", |ui| {
             markdown::show(ui, cache, text);
@@ -622,7 +656,7 @@ fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_com
     }
     if role == "You" {
         ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
-            egui::Frame::NONE.fill(t.hover).corner_radius(14).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
+            egui::Frame::NONE.fill(t.chat_user).corner_radius(18).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
                 ui.set_max_width((ui.available_width() - 28.0).max(60.0));
                 ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.add(egui::Label::new(text).wrap().selectable(true));
@@ -651,6 +685,7 @@ fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
         app.ollama.effort.clear();
         app.ollama.history.clear();
         app.ollama.entries.clear();
+        app.ollama.active_chat = None;
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
@@ -707,7 +742,7 @@ fn changes_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         if ui
-            .add(egui::Button::new(RichText::new(format!("{} document changes  ▾", app.ollama.review.marks.len())).color(t.green)).frame(false))
+            .add(egui::Button::new(RichText::new(format!("Review {} changes  ▾", app.ollama.review.marks.len())).color(t.diff_add)).frame(false))
             .clicked()
         {
             app.ollama.show_changes = !app.ollama.show_changes;
@@ -722,13 +757,13 @@ fn changes_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
         }
     });
     if app.ollama.show_changes {
-        ui.small("Green: added · red: removed · purple: formatting");
+        ui.small("Additions · removals · formatting");
         if app.ollama.review.revision != app.session.rev() {
             ui.small("Highlights cleared after subsequent manual edits. Changes below are the AI's earlier edits.");
         }
         let mut show = None;
         for (index, mark) in app.ollama.review.marks.iter().enumerate() {
-            egui::Frame::NONE.stroke(Stroke::new(1.0, t.border)).corner_radius(8).inner_margin(10).show(ui, |ui| {
+            egui::Frame::NONE.fill(t.chat_surface).corner_radius(12).inner_margin(12).show(ui, |ui| {
                 ui.set_width((ui.available_width() - 2.0).max(20.0));
                 if ui.add_enabled(app.ollama.review.revision == app.session.rev(), egui::Button::new("Show in document").frame(false)).clicked() {
                     show = Some(index);
@@ -737,10 +772,12 @@ fn changes_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
                     ui.small("Formatting / layout changed");
                 }
                 if !mark.removed.is_empty() {
-                    ui.add(egui::Label::new(RichText::new(format!("− {}", mark.removed)).color(t.red).strikethrough()).wrap().selectable(true));
+                    ui.add(
+                        egui::Label::new(RichText::new(format!("− {}", mark.removed)).color(t.diff_remove).strikethrough()).wrap().selectable(true),
+                    );
                 }
                 if !mark.added.is_empty() {
-                    ui.add(egui::Label::new(RichText::new(format!("+ {}", mark.added)).color(t.green)).wrap().selectable(true));
+                    ui.add(egui::Label::new(RichText::new(format!("+ {}", mark.added)).color(t.diff_add)).wrap().selectable(true));
                 }
             });
             ui.add_space(5.0);
@@ -756,16 +793,182 @@ fn changes_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
     }
 }
 
+fn chat_icon(ui: &mut Ui, name: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(rect, 8.0, t.chat_surface);
+    }
+    crate::icons::paint(ui.painter(), rect.shrink(5.0), name, t.chat_dim, t.chat_dim);
+    response.on_hover_text(tip)
+}
+fn model_menu(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    let model = app.ollama.capabilities.iter().find(|o| o.model == app.ollama.model).map(|o| o.display_name.as_str()).unwrap_or(&app.ollama.model);
+    let friendly = if model.to_ascii_lowercase().starts_with("gpt-") {
+        if let Some((prefix, suffix)) = model.rsplit_once('-').filter(|(p, _)| p.contains('-')) {
+            let mut chars = suffix.chars();
+            let suffix = chars.next().map(|c| format!("{}{}", c.to_uppercase(), chars.as_str())).unwrap_or_default();
+            format!("{} {suffix}", prefix.replacen("gpt-", "GPT-", 1))
+        } else {
+            model.to_string()
+        }
+    } else {
+        model.to_string()
+    };
+    let model = friendly.as_str();
+    let label = if model.is_empty() {
+        "Select model".into()
+    } else if app.ollama.source == Source::Codex {
+        format!("{} · {}", clip(model, 22), effort_label(&app.ollama.effort))
+    } else {
+        clip(model, 26)
+    };
+    ui.menu_button(RichText::new(label).size(11.5).color(t.chat_text), |ui| {
+        ui.small(source_name(app.ollama.source));
+        let old = app.ollama.model.clone();
+        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+            for model in &app.ollama.models {
+                let label = app.ollama.capabilities.iter().find(|o| o.model == *model).map(|o| o.display_name.as_str()).unwrap_or(model);
+                if ui.selectable_value(&mut app.ollama.model, model.clone(), label).clicked() {
+                    ui.close();
+                }
+            }
+        });
+        if old != app.ollama.model {
+            app.ollama.effort.clear();
+            app.ollama.history.clear();
+        }
+        if app.ollama.source == Source::Codex {
+            ui.separator();
+            ui.small("Thinking");
+            ui.selectable_value(&mut app.ollama.effort, String::new(), "Auto · model default");
+            if let Some(options) = app.ollama.capabilities.iter().find(|o| o.model == app.ollama.model) {
+                for (level, description) in &options.efforts {
+                    ui.selectable_value(&mut app.ollama.effort, level.clone(), effort_label(level)).on_hover_text(description);
+                }
+            }
+        }
+        ui.separator();
+        ui.menu_button("Connection settings…", |ui| {
+            let ctx = ui.ctx().clone();
+            connection_menu(app, ui, &ctx);
+        });
+    });
+}
+fn confirm_history_deletion(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    if app.ollama.delete_chat.is_none() && !app.ollama.delete_all {
+        return;
+    }
+    egui::Frame::NONE.fill(t.chat_surface).corner_radius(12).inner_margin(12).show(ui, |ui| {
+        ui.add(egui::Label::new(if app.ollama.delete_all { "Delete all saved chats permanently?" } else { "Delete this chat permanently?" }).wrap());
+        ui.small("Document edits and their Undo history are kept.");
+        ui.horizontal(|ui| {
+            if ui.add(egui::Button::new(RichText::new("Delete").color(t.diff_remove)).fill(t.chat_surface).corner_radius(8)).clicked() {
+                if app.ollama.delete_all {
+                    let _ = command(app, "ui.agentClearHistory", &json!({}));
+                } else if let Some(id) = app.ollama.delete_chat {
+                    let _ = command(app, "ui.agentDeleteChat", &json!({"id":id}));
+                }
+                app.ollama.delete_chat = None;
+                app.ollama.delete_all = false;
+            }
+            if ui.button("Cancel").clicked() {
+                app.ollama.delete_chat = None;
+                app.ollama.delete_all = false;
+            }
+        });
+    });
+}
+fn rename_chat_window(app: &mut WordApp, ctx: &egui::Context) {
+    let Some((id, mut text)) = app.ollama.rename_chat.clone() else {
+        return;
+    };
+    let mut open = true;
+    let mut save = false;
+    egui::Window::new("Rename chat").id(egui::Id::new("rename_agent_chat")).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
+        let field = ui.add(egui::TextEdit::singleline(&mut text).char_limit(96).desired_width(280.0));
+        save = ui.add_enabled(!text.trim().is_empty(), egui::Button::new("Save")).clicked()
+            || (field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !text.trim().is_empty());
+    });
+    app.ollama.rename_chat = if open { Some((id, text.clone())) } else { None };
+    if save {
+        if let Err(error) = command(app, "ui.agentRenameChat", &json!({"id":id,"title":text})) {
+            app.ollama.history_error = error;
+        }
+        app.ollama.rename_chat = None;
+    }
+}
+
+fn history_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Chat history").font(crate::theme::semibold(18.0)));
+        if ui.add(egui::Button::new("Done").frame(false)).clicked() {
+            app.ollama.history_open = false;
+        }
+    });
+    ui.add(egui::TextEdit::singleline(&mut app.ollama.history_filter).hint_text("Search chats").desired_width(ui.available_width()).char_limit(200));
+    ui.add_space(8.0);
+    if app.ollama.library.chats.is_empty() {
+        ui.label(RichText::new("Your conversations will appear here.").color(t.chat_dim));
+        return;
+    }
+    let filter = app.ollama.history_filter.to_lowercase();
+    let mut open = None;
+    for chat in &app.ollama.library.chats {
+        if !filter.is_empty() && !format!("{} {}", chat.title, chat.document).to_lowercase().contains(&filter) {
+            continue;
+        }
+        egui::Frame::NONE
+            .fill(if app.ollama.active_chat == Some(chat.id) { t.chat_surface } else { t.chat })
+            .corner_radius(12)
+            .inner_margin(10)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        let width = (ui.available_width() - 38.0).max(40.0);
+                        ui.set_min_width(width);
+                        ui.set_max_width(width);
+                        if ui.add(egui::Button::new(RichText::new(&chat.title).size(13.0)).truncate().frame(false)).clicked() {
+                            open = Some(chat.id);
+                        }
+                        ui.add(
+                            egui::Label::new(RichText::new(format!("{} · {}", chat.document, chat.model)).size(10.5).color(t.chat_dim)).truncate(),
+                        );
+                    });
+                    ui.menu_button("•••", |ui| {
+                        if ui.button("Rename…").clicked() {
+                            app.ollama.rename_chat = Some((chat.id, chat.title.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Delete chat…").clicked() {
+                            app.ollama.delete_chat = Some(chat.id);
+                            ui.close();
+                        }
+                    });
+                });
+            });
+    }
+    ui.add_space(12.0);
+    if ui.add(egui::Button::new(RichText::new("Delete all history…").size(11.0).color(t.diff_remove)).frame(false)).clicked() {
+        app.ollama.delete_all = true;
+    }
+    if let Some(id) = open
+        && let Err(error) = command(app, "ui.agentOpenChat", &json!({"id":id}))
+    {
+        app.ollama.history_error = error;
+    }
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if !app.ollama.open {
         return;
     }
     let t = Tokens::get(ui.ctx());
     egui::Panel::right("agent_chat_v2")
-        .default_size(440.0)
-        .size_range(340.0..=680.0)
+        .default_size(460.0)
+        .size_range(340.0..=720.0)
         .resizable(true)
-        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(18).stroke(Stroke::new(1.0, t.border)))
+        .frame(egui::Frame::NONE.fill(t.chat).inner_margin(20).stroke(Stroke::new(1.0, t.border)))
         .show(ui, |ui| {
             let ctx = ui.ctx().clone();
             for (url, _) in &app.ollama.project_excerpts {
@@ -775,23 +978,46 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
             // This scope changes only the chat: quiet, borderless controls retain native focus/hover.
             let visuals = ui.visuals_mut();
+            visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+            visuals.widgets.inactive.bg_fill = t.chat_surface;
+            visuals.widgets.hovered.weak_bg_fill = t.chat_user;
             for visual in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered] {
                 visual.bg_stroke = Stroke::NONE;
                 visual.corner_radius = egui::CornerRadius::same(8);
             }
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            ui.style_mut().text_styles.insert(egui::TextStyle::Body, crate::theme::regular(14.0));
+            ui.style_mut().text_styles.insert(egui::TextStyle::Button, crate::theme::regular(12.0));
+            ui.style_mut().text_styles.insert(egui::TextStyle::Small, crate::theme::regular(11.0));
+            ui.visuals_mut().override_text_color = Some(t.chat_text);
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(source_name(app.ollama.source)).size(18.0).strong());
+                ui.label(RichText::new("Chat").font(crate::theme::semibold(16.0)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add(egui::Button::new("×").frame(false)).on_hover_text("Close chat").clicked() {
                         app.ollama.open = false;
                     }
+                    if chat_icon(ui, "history", "Chat history", &t).clicked() {
+                        let _ = command(app, "ui.agentHistory", &json!({}));
+                    }
                     ui.add_enabled_ui(!app.ollama.busy, |ui| {
                         ui.menu_button("•••", |ui| {
+                            if ui.button("Chat history").clicked() {
+                                app.ollama.history_open = true;
+                                ui.close();
+                            }
+                            if app.ollama.active_chat.is_some() && ui.button("Delete this chat…").clicked() {
+                                app.ollama.delete_chat = app.ollama.active_chat;
+                                ui.close();
+                            }
+                            if ui.button("Delete all history…").clicked() {
+                                app.ollama.delete_all = true;
+                                ui.close();
+                            }
+                            ui.separator();
                             connection_menu(app, ui, &ctx);
                         });
-                        if ui.add(egui::Button::new("New chat").frame(false)).clicked() {
+                        if chat_icon(ui, "newChat", "New chat", &t).clicked() {
                             let _ = command(app, "ui.ollamaNewChat", &json!({}));
                             app.ollama.markdown = Default::default();
                             app.ollama.thinking.clear();
@@ -805,13 +1031,25 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.checkbox(&mut app.ollama.allow_edits, "Allow editing").on_hover_text("Hard permission switch: AI changes are rejected while off.");
+                let active = app.ollama.allow_edits;
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new(if active { "● Editing enabled" } else { "Read only" }).size(11.0).color(if active {
+                            t.diff_add
+                        } else {
+                            t.chat_dim
+                        }))
+                        .frame(false),
+                    )
+                    .on_hover_text("Hard permission switch. Click to enable or disable document changes.")
+                    .clicked()
+                {
+                    let _ = app.run("ui.ollamaEdit", json!({"value":!active}));
+                }
                 ui.label(
-                    RichText::new(if app.ollama.allow_edits { "Live edits" } else { "Read only" }).size(11.0).color(if app.ollama.allow_edits {
-                        t.accent_text
-                    } else {
-                        t.text_dim
-                    }),
+                    RichText::new(format!("{}{}", source_name(app.ollama.source), if app.ollama.internet { " · Web on" } else { "" }))
+                        .size(11.0)
+                        .color(t.chat_dim),
                 );
             });
             ui.horizontal(|ui| {
@@ -840,7 +1078,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             ui.separator();
             let extra = if app.ollama.models.is_empty() && !app.ollama.busy { 30.0 } else { 0.0 }
                 + if app.ollama.status != "Ready." && !app.ollama.busy { 28.0 } else { 0.0 };
-            let height = (ui.available_height() - 190.0 - extra).max(40.0);
+            confirm_history_deletion(app, ui, &t);
+            rename_chat_window(app, &ctx);
+            if !app.ollama.history_error.is_empty() {
+                ui.add(egui::Label::new(RichText::new(&app.ollama.history_error).size(11.0).color(t.red)).wrap());
+            }
+            let welcome = app.ollama.entries.is_empty() && !app.ollama.history_open;
+            let height = if welcome { (ui.available_height() * 0.40).clamp(160.0, 280.0) } else { (ui.available_height() - 166.0 - extra).max(40.0) };
             ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
                 ui.set_min_height(height);
                 egui::ScrollArea::vertical()
@@ -852,21 +1096,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                        if app.ollama.history_open {
+                            history_view(app, ui, &t);
+                            return;
+                        }
                         if app.ollama.entries.is_empty() {
-                            ui.add_space(55.0);
-                            ui.label(RichText::new("Write something great.").size(22.0));
-                            ui.add_space(6.0);
-                            ui.label(RichText::new("Your document, with a thinking partner.").color(t.text_dim));
-                            ui.add_space(22.0);
-                            for (label, prompt) in [
-                                ("Summarize", "Summarize the current document."),
-                                ("Refine my writing", "Suggest improvements to the selected text, or the document if nothing is selected."),
-                                ("Research", "Help me research a topic for this document. Ask which topic first."),
-                            ] {
-                                if ui.add(egui::Button::new(label).frame(false)).clicked() {
-                                    app.ollama.input = prompt.into();
-                                }
-                            }
+                            ui.add_space((height - 82.0).max(24.0));
+                            ui.vertical_centered(|ui| {
+                                ui.add(
+                                    egui::Label::new(RichText::new("What should we work on?").font(crate::theme::regular(25.0)).color(t.chat_text))
+                                        .wrap(),
+                                );
+                                ui.add_space(12.0);
+                                ui.add(egui::Label::new(RichText::new("Write, revise or explore an idea.").size(13.0).color(t.chat_dim)).wrap());
+                            });
                         }
                         for (role, text) in &app.ollama.entries {
                             message(ui, role, text, &t, &mut app.ollama.markdown);
@@ -937,89 +1180,86 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 });
             }
             ui.add_space(10.0);
-            egui::Frame::NONE.fill(t.hover.gamma_multiply(0.45)).stroke(Stroke::new(1.0, t.border)).corner_radius(14).inner_margin(12).show(
-                ui,
-                |ui| {
-                    let response = ui.add(
-                        egui::TextEdit::multiline(&mut app.ollama.input)
-                            .frame(egui::Frame::NONE)
-                            .hint_text("Ask anything about your document")
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY)
-                            .char_limit(MAX_INPUT),
-                    );
-                    let submit = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
-                    ui.horizontal(|ui| {
-                        if ui.checkbox(&mut app.ollama.internet, "Web").on_hover_text("Allow public web search and browsing").changed()
-                            && app.ollama.busy
-                            && !app.ollama.internet
-                        {
+            egui::Frame::NONE.fill(t.chat_surface).stroke(Stroke::new(0.6, t.border)).corner_radius(24).inner_margin(14).show(ui, |ui| {
+                let response = ui.add(
+                    egui::TextEdit::multiline(&mut app.ollama.input)
+                        .font(crate::theme::regular(14.0))
+                        .frame(egui::Frame::NONE)
+                        .hint_text("Ask about your document…")
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY)
+                        .char_limit(MAX_INPUT),
+                );
+                let submit = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.menu_button(RichText::new("+").size(23.0), |ui| {
+                        if ui.button("Link project folder…").clicked() {
+                            let _ = command(app, "ui.agentProject", &json!({}));
+                            ui.close();
+                        }
+                        if ui.checkbox(&mut app.ollama.internet, "Search the web").changed() && !app.ollama.internet && app.ollama.busy {
                             app.ollama.stop();
                         }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if app.ollama.busy {
-                                if ui.add(egui::Button::new("■").frame(false)).on_hover_text("Stop").clicked() {
-                                    app.ollama.stop();
-                                }
-                            } else {
-                                #[cfg(not(target_arch = "wasm32"))]
-                                if (ui
-                                    .add_enabled(
-                                        !app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty(),
-                                        egui::Button::new(RichText::new("↑").size(19.0).color(t.panel))
-                                            .fill(t.text)
-                                            .corner_radius(255)
-                                            .min_size(egui::vec2(28.0, 28.0)),
-                                    )
-                                    .on_hover_text("Send · ⌘/Ctrl Enter")
-                                    .clicked()
-                                    || submit)
-                                    && !app.ollama.input.trim().is_empty()
-                                {
-                                    send(app, &ctx);
-                                }
-                            }
+                        ui.checkbox(&mut app.ollama.allow_edits, "Allow document editing");
+                        if ui.button("Chat history").clicked() {
+                            app.ollama.history_open = true;
+                            ui.close();
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let send_button = ui
+                            .add_enabled(
+                                app.ollama.busy || (!app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty()),
+                                egui::Button::new(RichText::new(if app.ollama.busy { "■" } else { "↑" }).size(20.0).color(t.chat_send_text))
+                                    .fill(t.chat_send)
+                                    .corner_radius(255)
+                                    .min_size(egui::vec2(32.0, 32.0)),
+                            )
+                            .on_hover_text(if app.ollama.busy { "Stop response" } else { "Send · ⌘/Ctrl Enter" });
+                        if send_button.clicked() && app.ollama.busy {
+                            app.ollama.stop();
+                        } else if (send_button.clicked() || submit) && !app.ollama.input.trim().is_empty() && !app.ollama.busy {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            send(app, &ctx);
+                        }
+                        ui.add_enabled_ui(!app.ollama.busy, |ui| {
+                            model_menu(app, ui, &t);
                         });
                     });
-                },
-            );
-            ui.add_space(6.0);
-            ui.add_enabled_ui(!app.ollama.busy, |ui| {
-                ui.horizontal(|ui| {
-                    let old = app.ollama.model.clone();
-                    let title = app.ollama.capabilities.iter().find(|o| o.model == old).map_or_else(|| old.clone(), |o| o.display_name.clone());
-                    egui::ComboBox::from_id_salt("agent_model_v2")
-                        .truncate()
-                        .width((ui.available_width() - 160.0).max(90.0))
-                        .selected_text(RichText::new(if title.is_empty() { "Select model" } else { &title }).size(11.0))
-                        .show_ui(ui, |ui| {
-                            for model in &app.ollama.models {
-                                let label =
-                                    app.ollama.capabilities.iter().find(|o| o.model == *model).map_or(model.as_str(), |o| o.display_name.as_str());
-                                ui.selectable_value(&mut app.ollama.model, model.clone(), label);
-                            }
-                        });
-                    if old != app.ollama.model {
-                        app.ollama.effort.clear();
-                        app.ollama.history.clear();
-                    }
-                    if app.ollama.source == Source::Codex {
-                        let options = app.ollama.capabilities.iter().find(|o| o.model == app.ollama.model);
-                        egui::ComboBox::from_id_salt("agent_effort")
-                            .truncate()
-                            .width(144.0)
-                            .selected_text(RichText::new(format!("Thinking: {}", effort_label(&app.ollama.effort))).size(11.0))
-                            .show_ui(ui, |ui| {
-                                let label = options.map_or("Auto · model default".into(), |o| format!("Auto · {}", effort_label(&o.default_effort)));
-                                ui.selectable_value(&mut app.ollama.effort, String::new(), label);
-                                if let Some(options) = options {
-                                    for (level, description) in &options.efforts {
-                                        ui.selectable_value(&mut app.ollama.effort, level.clone(), effort_label(level)).on_hover_text(description);
-                                    }
-                                }
-                            });
+                });
+            });
+            ui.add_space(8.0);
+            if welcome {
+                ui.horizontal_wrapped(|ui| {
+                    for (label, prompt) in [
+                        ("Summarize", "Summarize the current document."),
+                        ("Improve writing", "Suggest improvements to the selected text, or the document if nothing is selected."),
+                        ("Research", "Help me research a topic for this document. Ask which topic first."),
+                    ] {
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new(label).size(11.5))
+                                    .fill(t.chat_surface)
+                                    .corner_radius(16)
+                                    .min_size(egui::vec2(0.0, 28.0)),
+                            )
+                            .clicked()
+                        {
+                            app.ollama.input = prompt.into();
+                        }
                     }
                 });
+                ui.add_space(10.0);
+            }
+            ui.horizontal(|ui| {
+                #[cfg(target_arch = "wasm32")]
+                let stored = false;
+                #[cfg(not(target_arch = "wasm32"))]
+                let stored = app.ollama.history_store.is_some();
+                ui.label(
+                    RichText::new(if stored { "Chats saved on this device" } else { "Chats kept for this session" }).size(10.5).color(t.chat_dim),
+                );
             });
             if app.ollama.models.is_empty() && !app.ollama.busy {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1037,7 +1277,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 pub fn inspect(app: &WordApp) -> Value {
     json!({"open":app.ollama.open,"model":app.ollama.model,"source":match app.ollama.source {Source::Cloud=>"cloud",Source::Local=>"local",Source::LlamaCpp=>"llamacpp",Source::Codex=>"codex"},
         "busy":app.ollama.busy,"status":app.ollama.status,"allowEdits":app.ollama.allow_edits,"internet":app.ollama.internet,
-        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"effort":app.ollama.effort,"capabilities":app.ollama.capabilities,"phase":app.ollama.phase,"thinking":app.ollama.thinking,"projectFolder":app.ollama.project_folder,"changes":app.ollama.review.inspect(app.session.rev()),"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
+        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"effort":app.ollama.effort,"capabilities":app.ollama.capabilities,"history":history::inspect(&app.ollama),"phase":app.ollama.phase,"thinking":app.ollama.thinking,"projectFolder":app.ollama.project_folder,"changes":app.ollama.review.inspect(app.session.rev()),"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
 }
 
 pub fn commands(app: &WordApp) -> Vec<Value> {
@@ -1058,6 +1298,11 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         ("ui.ollamaEdit", "Allow AI editing", r#"{"value"?:bool}"#),
         ("ui.ollamaInternet", "Internet access", r#"{"value"?:bool}"#),
         ("ui.ollamaUndo", "Undo AI change", "{}"),
+        ("ui.agentHistory", "Chat history",r#"{"value"?:bool}"#),
+        ("ui.agentOpenChat", "Open saved chat",r#"{"id":number}"#),
+        ("ui.agentDeleteChat", "Delete saved chat",r#"{"id":number}"#),
+        ("ui.agentClearHistory", "Delete all chat history","{}"),
+        ("ui.agentRenameChat", "Rename saved chat",r#"{"id":number,"title":string}"#),
         ("ui.agentProject", "Link project folder", r#"{"path"?:string}"#),
         ("ui.agentDismissChanges", "Dismiss AI highlighting", "{}"),
         ("ui.agentShowChange", "Show AI change in document", r#"{"index"?:number}"#),
@@ -1071,7 +1316,52 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
 }
 
 pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, String> {
+    history::sync(app);
     match id {
+        "ui.agentHistory" => app.ollama.history_open = p.get("value").and_then(Value::as_bool).unwrap_or(!app.ollama.history_open),
+        "ui.agentOpenChat" => {
+            history::restore(&mut app.ollama, p.get("id").and_then(Value::as_u64).ok_or("id required")?)?;
+            app.ollama.open = true;
+        }
+        "ui.agentDeleteChat" => {
+            let id = p.get("id").and_then(Value::as_u64).ok_or("id required")?;
+            if !app.ollama.library.chats.iter().any(|c| c.id == id) {
+                return Err("Chat not found".into());
+            }
+            if app.ollama.active_chat == Some(id) {
+                app.ollama.stop();
+                app.ollama.entries.clear();
+                app.ollama.sources.clear();
+                app.ollama.project_excerpts.clear();
+                app.ollama.active_chat = None;
+                app.ollama.thinking.clear();
+            }
+            app.ollama.library.chats.retain(|c| c.id != id);
+            app.ollama.history_dirty = true;
+        }
+        "ui.agentClearHistory" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            history::reset_store(app);
+            app.ollama.history_error.clear();
+            app.ollama.stop();
+            app.ollama.entries.clear();
+            app.ollama.sources.clear();
+            app.ollama.project_excerpts.clear();
+            app.ollama.thinking.clear();
+            app.ollama.active_chat = None;
+            app.ollama.library.chats.clear();
+            app.ollama.history_dirty = true;
+        }
+        "ui.agentRenameChat" => {
+            let id = p.get("id").and_then(Value::as_u64).ok_or("id required")?;
+            let title = p
+                .get("title")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty() && s.len() <= 256)
+                .ok_or("A title of up to 256 bytes is required")?;
+            app.ollama.library.chats.iter_mut().find(|c| c.id == id).ok_or("Chat not found")?.title = clip(title.trim(), 96);
+            app.ollama.history_dirty = true;
+        }
         #[cfg(not(target_arch = "wasm32"))]
         "ui.agentProject" => {
             if let Some(path) = p.get("path").and_then(Value::as_str) {
@@ -1080,6 +1370,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.project_folder = folder;
                 // Revocation clears prior retrieved content from the conversation sent to providers.
                 app.ollama.entries.clear();
+                app.ollama.active_chat = None;
                 app.ollama.sources.clear();
                 app.ollama.project_excerpts.clear();
                 app.ollama.selected_source = None;
@@ -1108,6 +1399,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.model.clear();
                 app.ollama.models.clear();
                 app.ollama.entries.clear();
+                app.ollama.active_chat = None;
                 app.ollama.markdown = Default::default();
                 app.ollama.thinking.clear();
                 app.ollama.sources.clear();
@@ -1145,6 +1437,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             }
         }
         "ui.ollamaNewChat" => {
+            app.ollama.active_chat = None;
+            app.ollama.history_open = false;
             app.ollama.stop();
             app.ollama.history.clear();
             app.ollama.entries.clear();
@@ -1212,6 +1506,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
         }
         _ => return Err("Ollama requires the desktop app".into()),
     }
+    history::sync(app);
     Ok(inspect(app))
 }
 
@@ -1281,4 +1576,15 @@ mod tests;
 
 pub(crate) fn paint_edits(app: &WordApp, ui: &Ui, painter: &egui::Painter, layout: &wordcraft_layout::DocLayout, pages: &[egui::Rect], scale: f32) {
     edits::paint(app, ui, painter, layout, pages, scale);
+}
+
+impl WordApp {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_agent_history(&mut self, path: std::path::PathBuf, ctx: &egui::Context) {
+        history::initialize(self, path, ctx);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn flush_agent_history(&self) -> Result<(), String> {
+        history::flush(&self.ollama)
+    }
 }

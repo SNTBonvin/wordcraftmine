@@ -405,6 +405,7 @@ fn ai_changes_are_highlighted_and_verified_rollback_leaves_no_ghost_diff() {
     app.ollama.document = Some(app.session.document_id());
     app.ollama.turn_revision = Some(app.session.rev());
     app.ollama.allow_edits = true;
+    app.ollama.cancel = Arc::new(AtomicBool::new(false));
     document_tool(&mut app, "write_text", &json!({"mode":"append","text":" Verified"})).unwrap();
     let previous = inspect(&app)["changes"]["items"].clone();
     assert!(document_tool(&mut app, "write_text", &json!({"mode":"append","text":"\""})).is_err());
@@ -472,6 +473,7 @@ fn overflowing_reply() -> String {
 fn wide_markdown_cannot_expand_the_chat_sidebar() {
     for width in [800.0, 1440.0] {
         let ctx = egui::Context::default();
+        ctx.set_fonts(crate::theme::font_definitions(false, false));
         let mut app = app();
         app.ollama.open = true;
         app.ollama.model = "test".into();
@@ -485,7 +487,7 @@ fn wide_markdown_cannot_expand_the_chat_sidebar() {
                 |ui| {
                     let before = ui.available_width();
                     show(&mut app, ui);
-                    assert!(ui.available_width() >= before - 681.0, "panel expanded: {}", ui.available_width());
+                    assert!(ui.available_width() >= before - 721.0, "panel expanded: {}", ui.available_width());
                 },
             )
             .drop_without_applying_deltas();
@@ -576,4 +578,172 @@ fn project_folder_picker_is_registered_and_never_opens_a_document() {
     assert_eq!(text(&app), "Original");
     assert_eq!(app.session.undo_depth(), 0);
     assert!(commands(&app).iter().any(|c| c["id"] == "ui.agentProject"));
+}
+
+#[test]
+fn saved_chat_history_can_be_resumed_renamed_and_deleted_without_editing() {
+    let mut app = app();
+    app.ollama.entry("You", "First question".into());
+    app.ollama.entry("Assistant", "**First answer**".into());
+    history::sync(&mut app);
+    let first = app.ollama.active_chat.unwrap();
+    command(&mut app, "ui.ollamaNewChat", &json!({})).unwrap();
+    app.ollama.entry("You", "Second question".into());
+    history::sync(&mut app);
+    let second = app.ollama.active_chat.unwrap();
+    assert_ne!(first, second);
+    assert_eq!(app.ollama.library.chats.len(), 2);
+    let before = app.session.doc.clone();
+    let selection = app.session.sel.clone();
+    let undo = app.session.undo_depth();
+    command(&mut app, "ui.agentOpenChat", &json!({"id":first})).unwrap();
+    assert_eq!(app.ollama.entries[0].1, "First question");
+    assert!(!app.ollama.allow_edits);
+    command(&mut app, "ui.agentRenameChat", &json!({"id":first,"title":"Paper review"})).unwrap();
+    assert_eq!(app.ollama.library.chats.iter().find(|c| c.id == first).unwrap().title, "Paper review");
+    command(&mut app, "ui.agentDeleteChat", &json!({"id":first})).unwrap();
+    assert_eq!(app.ollama.library.chats.len(), 1);
+    assert!(app.ollama.entries.is_empty());
+    assert!(command(&mut app, "ui.agentOpenChat", &json!({"id":first})).is_err());
+    command(&mut app, "ui.agentClearHistory", &json!({})).unwrap();
+    assert!(app.ollama.library.chats.is_empty());
+    assert_eq!(app.session.doc, before);
+    assert_eq!(app.session.sel, selection);
+    assert_eq!(app.session.undo_depth(), undo);
+}
+
+#[test]
+#[ignore = "Renders redesigned chat, history and Mac ribbon for visual inspection"]
+fn render_chat_redesign_and_history() {
+    let mut app = app();
+    app.integrated_titlebar = true;
+    app.ollama.open = true;
+    app.ollama.source = Source::Codex;
+    app.ollama.model = "gpt-6-luna".into();
+    app.ollama.models = vec!["gpt-6-luna".into()];
+    app.ollama.status = "Ready.".into();
+    let folder = std::env::var("WORDCRAFT_CHAT_SHOTS").unwrap();
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_pixels_per_point(2.0).wgpu().build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/welcome-light.png")).unwrap();
+    let app = harness.state_mut();
+    app.ui.theme = crate::theme::Appearance::Dark;
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/welcome-dark.png")).unwrap();
+    let app = harness.state_mut();
+    app.ollama.entry("You", "Help me strengthen the evidence in this paper.".into());
+    app.ollama.entry("Assistant","## Three useful improvements\n\nSeparate your **findings** from interpretation.\n\n1. Describe the sample and recruitment.\n2. Cite each factual claim.\n3. Discuss limitations.\n\n> Keep your welcoming voice while making the methods precise.".into());
+    history::sync(app);
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/reply-dark.png")).unwrap();
+    let app = harness.state_mut();
+    command(app, "ui.ollamaNewChat", &json!({})).unwrap();
+    app.ollama.entry("You", "Draft an introduction for my paper".into());
+    history::sync(app);
+    app.ollama.history_open = true;
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/history-dark.png")).unwrap();
+    let app = harness.state_mut();
+    app.ui.theme = crate::theme::Appearance::Light;
+    app.ollama.history_open = false;
+    app.session.set_document(wordcraft_doc::Document::from_text(
+        "The study talked to people about shared resources. The findings are interesting and broadly relevant.",
+    ));
+    app.ollama.document = Some(app.session.document_id());
+    app.ollama.turn_revision = Some(app.session.rev());
+    app.ollama.allow_edits = true;
+    app.ollama.cancel = Arc::new(AtomicBool::new(false));
+    document_tool(app,"write_text",&json!({"mode":"replace_document","text":"The study interviewed 37 participants about shared resources. The findings describe this community and its practical routines."})).unwrap();
+    app.ollama.show_changes = true;
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/diff-light.png")).unwrap();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn local_history_survives_restart_and_credentials_are_never_serialized() {
+    let folder = std::env::temp_dir().join(format!("wordcraft-history-restart-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("history.json");
+    let ctx = egui::Context::default();
+    let mut first = app();
+    first.load_agent_history(path.clone(), &ctx);
+    first.ollama.api_key = "NEVER_SAVE_THIS_KEY".into();
+    first.ollama.entry("You", "Explain the paper".into());
+    first.ollama.entry("Assistant", "A **formatted** answer".into());
+    history::sync(&mut first);
+    first.flush_agent_history().unwrap();
+    let id = first.ollama.active_chat.unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(!String::from_utf8_lossy(&bytes).contains("NEVER_SAVE_THIS_KEY"));
+    let mut second = app();
+    second.load_agent_history(path.clone(), &ctx);
+    command(&mut second, "ui.agentOpenChat", &json!({"id":id})).unwrap();
+    assert_eq!(second.ollama.entries[1].1, "A **formatted** answer");
+    assert_eq!(text(&second), "Original");
+    command(&mut second, "ui.agentDeleteChat", &json!({"id":id})).unwrap();
+    second.flush_agent_history().unwrap();
+    let mut third = app();
+    third.load_agent_history(path.clone(), &ctx);
+    assert!(third.ollama.library.chats.is_empty());
+    drop(first);
+    drop(second);
+    drop(third);
+    std::fs::remove_dir_all(folder).unwrap();
+}
+#[test]
+fn history_capacity_and_hostile_counter_preserve_existing_chats() {
+    let mut state = State::default();
+    state.library.next_id = u64::MAX;
+    for index in 0..50 {
+        state.entries.clear();
+        state.active_chat = None;
+        state.entry("You", format!("Question {index}"));
+        history::capture(&mut state, "Paper");
+    }
+    let ids: Vec<_> = state.library.chats.iter().map(|c| c.id).collect();
+    assert_eq!(ids.len(), 50);
+    let set: std::collections::BTreeSet<_> = ids.iter().collect();
+    assert_eq!(set.len(), 50);
+    state.entries.clear();
+    state.active_chat = None;
+    state.entry("You", "Do not overwrite earlier conversations".into());
+    history::capture(&mut state, "Paper");
+    assert_eq!(state.library.chats.iter().map(|c| c.id).collect::<Vec<_>>(), ids);
+    assert!(state.history_error.contains("full"));
+}
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn closing_before_repaint_saves_the_latest_visible_question() {
+    let folder = std::env::temp_dir().join(format!("wordcraft-history-close-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("chats.json");
+    let mut first = app();
+    first.load_agent_history(path.clone(), &egui::Context::default());
+    first.ollama.entry("You", "Last question before closing".into());
+    first.flush_agent_history().unwrap();
+    let mut second = app();
+    second.load_agent_history(path.clone(), &egui::Context::default());
+    assert_eq!(second.ollama.library.chats[0].entries[0].1, "Last question before closing");
+    drop(first);
+    drop(second);
+    std::fs::remove_dir_all(folder).unwrap();
 }

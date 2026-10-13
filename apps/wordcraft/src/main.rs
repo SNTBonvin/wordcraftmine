@@ -208,6 +208,9 @@ fn save_prefs(app: &WordApp) {
     if !prefs_enabled() {
         return;
     }
+    if let Err(error) = app.flush_agent_history() {
+        log::warn!("Chat history: {error}");
+    }
     if let Some(p) = prefs_path() {
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -339,6 +342,11 @@ fn main() -> eframe::Result {
             session.system_region = region;
             let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
+            if prefs_enabled()
+                && let Some(dir) = wordcraft_control_key::settings_dir()
+            {
+                app.load_agent_history(dir.join("chat-history.json"), &cc.egui_ctx);
+            }
             load_user_dictionary(&mut app);
             // A region chosen in File › Options replaces the system's for the first blank
             // document too (#838).

@@ -1,6 +1,6 @@
 # Ollama in WordCraft
 
-> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (document/research harness with Ollama and direct llama.cpp backends)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (redesigned chat, saved conversation history; document/research harness with Ollama and direct llama.cpp backends)
 
 Open **Agents → Agent Chat**. [Codex subscription chat](codex-chat.md) is also available in the same pane. The resizable chat pane opens on the right, beside the document.
 WordCraft reads the available models from Ollama; it does not download model weights itself.
@@ -20,7 +20,7 @@ WordCraft reads the available models from Ollama; it does not download model wei
   ```
 
 - **Refresh models** reloads the catalog. Changing a provider or model starts a new model context.
-  **New chat** clears the conversation without undoing completed document edits.
+  **New chat** starts another conversation and keeps the previous one in local history, without undoing document edits.
 - Backend, model and server choices persist between app launches. Editing permission always resets to off.
   API keys remain in memory for the current app session, and are never saved in preferences,
   document files, control inspection, or source code. `OLLAMA_API_KEY` is also supported.
@@ -102,3 +102,16 @@ spacing; no Microsoft assets were used.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-13 | minor | Local/cloud Ollama and direct llama.cpp; compact schema-constrained Word/research harness, verified writing, enforced editing permission, individual AI undo and web tools |
+
+## Chat history
+
+All providers share the [local history browser and deletion controls](codex-chat.md#chat-history-and-deletion).
+Use the clock button to search and resume chats, each row's **•••** to rename/delete, and the
+header's **•••** to delete all history. Model and Codex thinking choices are inside the composer;
+**+** offers project linking, web access and the hard document-editing switch.
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-13 | minor | Shared rounded chat composer, local searchable history, resume/rename/delete commands and softer AI review highlights |

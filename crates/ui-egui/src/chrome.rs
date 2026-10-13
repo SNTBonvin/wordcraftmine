@@ -253,7 +253,13 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     }
                 }
                 ui.add_space(8.0);
+                if mac && crate::widgets::icon_button(ui, "home", "Home").clicked() {
+                    let _ = app.run("ui.backstage", json!({"value":true,"page":"home"}));
+                }
                 quick_access(ui, app);
+                if mac && !app.session.ribbon.qat().contains(&"file.print") {
+                    qat_button(ui, app, "print", tl!("Print"), "file.print", true);
+                }
                 qat_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Account / community.

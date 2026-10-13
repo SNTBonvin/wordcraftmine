@@ -1,6 +1,6 @@
 # Codex chat in WordCraft
 
-> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (linked local project context, numbered references, published reasoning summaries and contained Markdown layout)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (local chat history, redesigned composer and softer document review visuals)
 
 Open **Agents → Codex Chat**, or choose **Codex** in the Agent chat provider menu.
 WordCraft starts the installed `codex app-server` over private stdin/stdout and uses its managed
@@ -32,10 +32,38 @@ inference still requires internet. The MCP connection ribbon toggle controls ext
 control independently of in-app Codex chat.
 
 Each turn uses an ephemeral Codex thread with the completed conversational text and a fresh
-live document snapshot. WordCraft keeps its transcript in memory; it does not persist chat
-history between launches. Stop kills the child app-server and abandons unfinished messages;
+live document snapshot. WordCraft keeps completed visible conversations in local chat history,
+including citations and retrieved project passages. Stop kills the child app-server and abandons unfinished messages;
 completed document changes remain undoable. Requests, event queues, response sizes and action
 counts are bounded. Browser sign-in and model turns time out after five minutes.
+
+## Chat history and deletion
+
+The clock button opens **Chat history**, with search, newest-first conversations and their
+associated document/model labels. Select a conversation to continue it; this restores its
+provider, model, thinking choice and linked project. The current document stays open, and
+AI editing is turned off. Each new turn still receives a fresh live document snapshot; old tool
+calls are never replayed. **New chat** keeps the previous conversation in history.
+
+Each history row's **•••** offers **Rename** and **Delete chat**. The main **•••** offers
+**Delete this chat** and **Delete all history**. Destructive UI actions require an in-app
+confirmation. Deletion removes chat text, stored citations and retrieved passages; it does not
+change documents or their Undo history. Programmatic command calls perform the requested action
+without a dialog, following the control protocol convention.
+
+Desktop history is saved automatically on a background worker to `chat-history.json` in the
+WordCraft settings folder. On macOS this is `~/Library/Application Support/WordCraft/`.
+Prepared files are synchronized before atomic replacement, with owner-only permissions on Unix;
+failed writes preserve the original. Shutdown flushes the latest visible exchange, including a
+question entered just before the next repaint. Damaged files are preserved and an error is shown;
+explicit **Delete all history** can reset an unreadable store. Provider API keys and account tokens
+are excluded. `WORDCRAFT_NO_PREFS` runs retain chats only for the current process.
+
+Storage is bounded to 50 conversations and 4 MiB; when full, an error asks you to delete chats
+rather than silently removing older conversations. Each conversation keeps the pane's latest
+96 visible messages, with existing response-size limits. Full private reasoning, transient edit
+snapshots and executable tool histories are not saved. Multiple independent app processes use
+separate in-memory libraries; concurrent writes are not merged.
 
 ## Linked local projects and references
 
@@ -75,7 +103,7 @@ Connection names must use letters, numbers, underscores or hyphens.
 The chat pane uses native CommonMark/GFM rendering for headings, emphasis, lists, links,
 blockquotes, tables and fenced code, with text selection and Copy. Image fetching and HTML
 execution are disabled. Wide tables scroll inside their own block; long prose wraps without expanding the chat pane. The composer stays at the bottom; model and thinking choices sit
-beneath it. Connection/account details are in the header's **•••** menu.
+inside its bottom toolbar. Connection/account details are in the header's **•••** menu.
 
 **Thinking** is populated from each Codex model's `supportedReasoningEfforts`. Auto explicitly
 uses that model's catalog default; other choices are validated and passed as `turn/start.effort`
@@ -137,6 +165,7 @@ the purple working-page animation and the composer staying anchored while stream
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Rounded composer, inline model/thinking menu, local history with search/rename/delete, shutdown persistence and softer document diffs |
 | 2026-10-13 | minor | Linked local folders, live read/search tools for Codex and Ollama Cloud, numbered claim/source citations, per-reply published thinking summaries, contained Markdown tables and title-bar clearance |
 | 2026-10-13 | minor | Cleaner anchored chat pane, native Markdown, transient word/formatting diffs, reduced-motion-aware document feedback and catalog-driven thinking controls |
 | 2026-10-13 | minor | Codex subscription provider, browser sign-in, model discovery, streamed chat and guarded live document/research tools; refreshed chat layout |

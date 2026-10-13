@@ -508,13 +508,22 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
             mi(ui, app, "Paste Special…", "edit.pasteSpecial", json!({}));
         });
         stack(ui, |ui| {
-            small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
-            let r = small(ui, app, "copy", Some("Copy"), "Copy", "edit.copy", json!({}), false);
+            small(ui, app, "cut", if cfg!(target_os = "macos") { None } else { Some("Cut") }, "Cut", "edit.cut", json!({}), false);
+            let r = small(ui, app, "copy", if cfg!(target_os = "macos") { None } else { Some("Copy") }, "Copy", "edit.copy", json!({}), false);
             if r.clicked() {
                 ui.ctx().copy_text(app.session.clipboard_text.clone());
             }
             let active = app.session.painter.is_some();
-            small(ui, app, "painter", Some("Format"), "Format Painter", "edit.formatPainter", json!({}), active);
+            small(
+                ui,
+                app,
+                "painter",
+                if cfg!(target_os = "macos") { None } else { Some("Format") },
+                "Format Painter",
+                "edit.formatPainter",
+                json!({}),
+                active,
+            );
         });
     });
     group(ui, "Font", Some("format.fontDialog"), app, |ui, app| {

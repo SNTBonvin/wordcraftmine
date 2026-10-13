@@ -73,13 +73,25 @@ impl Pen<'_> {
 
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
-    let pen = Pen { p, r, c, a: accent, w: 1.25 };
+    let pen = Pen { p, r, c, a: accent, w: 1.12 };
     let a = accent;
     let red = Color32::from_rgb(0xD1, 0x3B, 0x3B);
     let yellow = Color32::from_rgb(0xF2, 0xC8, 0x11);
     let green = Color32::from_rgb(0x2E, 0x8B, 0x57);
     let orange = Color32::from_rgb(0xE0, 0x7B, 0x1F);
     match name {
+        "home" => {
+            pen.line(&[(2.5, 9.0), (10.0, 2.5), (17.5, 9.0)]);
+            pen.line(&[(5.0, 8.0), (5.0, 17.5), (8.0, 17.5), (8.0, 12.0), (12.0, 12.0), (12.0, 17.5), (15.0, 17.5), (15.0, 8.0)]);
+        }
+        "history" => {
+            pen.circle(10.0, 10.0, 7.0, c);
+            pen.line(&[(10.0, 5.0), (10.0, 10.0), (13.5, 12.0)]);
+        }
+        "newChat" => {
+            pen.line(&[(12.0, 3.0), (4.0, 3.0), (4.0, 17.0), (16.0, 17.0), (16.0, 10.0)]);
+            pen.line(&[(9.0, 11.0), (17.0, 3.0), (19.0, 5.0), (11.0, 13.0), (8.0, 14.0), (9.0, 11.0)]);
+        }
         // Clipboard
         "paste" => {
             pen.rect(4.0, 3.5, 14.0, 17.0, c);
