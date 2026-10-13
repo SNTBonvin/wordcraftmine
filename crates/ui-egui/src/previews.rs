@@ -742,7 +742,8 @@ mod tests {
         for (key, nodes, display, pt, size) in equation_pictures() {
             let img = math_image(&nodes, display, pt, size.x, size.y, 1.0).unwrap_or_else(|| panic!("{key} renders"));
             assert!(img.pixels.iter().all(|p| *p == egui::Color32::from_white_alpha(p.a())), "{key}: an ink mask");
-            assert_eq!(img.pixels.first().map(|p| p.a()), Some(0), "{key}: transparent paper in the corner");
+            // Ink may reach the corner (a matrix bracket with Windows fonts): look for paper anywhere.
+            assert!(img.pixels.iter().any(|p| p.a() == 0), "{key}: transparent paper");
             for t in [Tokens::light(), Tokens::dark()] {
                 let (bg, fg) = (t.input, t.text);
                 let (lo, hi) = (bg.r().min(fg.r()), bg.r().max(fg.r()));
