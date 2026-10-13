@@ -780,6 +780,7 @@
 	Undo	Visszavonás
 	Undo {action}	Visszavonás: {action}
 	Up	Fel
+	Update	Frissítés
 	Update Field	Mező frissítése
 	Update Index	Tárgymutató frissítése
 	Update Style to Match Selection	Stílus frissítése a kijelölés alapján
