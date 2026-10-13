@@ -127,6 +127,7 @@
 	Check Spelling as You Type	Helyesírás ellenőrzése gépelés közben
 	Check\nAccessibility	Akadálymentesség\nellenőrzése
 	Citation Style	Hivatkozási stílus
+	Citation Style (CSL styles: docs/csl-styles.md)	Hivatkozási stílus (CSL-stílusok: docs/csl-styles.md)
 	Citation Styles (CSL)	Hivatkozási stílusok (CSL)
 	Citations & Bibliography	Forráshivatkozások és irodalomjegyzék
 	Clear	Törlés
@@ -709,6 +710,8 @@
 	Style based on:	Alapstílus:
 	Style Set	Stíluskészlet
 	Style: {style}	Stílus: {style}
+	Style {style} added	A(z) {style} stílus hozzáadva
+	Style {style} added, with warnings: {warnings}	A(z) {style} stílus hozzáadva, figyelmeztetésekkel: {warnings}
 	Style: APA	Stílus: APA
 	Styles	Stílusok
 	Styles Pane	Stílusok panel
@@ -2008,6 +2011,7 @@
 	Above the item	Az elem fölött
 	Accessed on	Megtekintés dátuma
 	Add New Source…	Új forrás hozzáadása…
+	Add style from file…	Stílus hozzáadása fájlból…
 	Add the chapter number	Fejezetszám hozzáadása
 	Atmosphere	Légkör
 	Below the item	Az elem alatt
@@ -2295,6 +2299,7 @@
 	All files	Minden fájl
 	Recipient lists	Címzettlisták
 	Source libraries	Forrástárak
+	CSL styles	CSL-stílusok
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	A rendszer fájlpárbeszédablaka nem érhető el, ezért a WordCraft a sajátját mutatja. A rendszer párbeszédablakához telepíts egy fájlválasztó portált (például xdg-desktop-portal-gtk) vagy a zenity programot.
 	Up one level	Egy szinttel feljebb
 	Home folder	Saját mappa

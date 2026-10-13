@@ -256,6 +256,7 @@
 	Check Spelling as You Type	輸入時檢查拼字
 	Check\nAccessibility	檢查協助工具
 	Citation Style	引文樣式
+	Citation Style (CSL styles: docs/csl-styles.md)	引文樣式（CSL 樣式：docs/csl-styles.md）
 	Citations & Bibliography	引文與參考書目
 	Clear	清除
 	Clear All Formatting	清除所有格式設定
@@ -846,6 +847,8 @@
 	Style based on:	樣式依據：
 	Style Set	樣式集
 	Style: {style}	樣式：{style}
+	Style {style} added	已新增樣式 {style}
+	Style {style} added, with warnings: {warnings}	已新增樣式 {style}，警告：{warnings}
 	Styles	樣式
 	Styles Pane	樣式窗格
 	Subscript	下標
@@ -1734,6 +1737,7 @@
 	All files	所有檔案
 	Recipient lists	收件者清單
 	Source libraries	來源庫
+	CSL styles	CSL 樣式
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	系統檔案對話方塊無法使用，因此 WordCraft 顯示自己的對話方塊。若要使用系統對話方塊，請安裝檔案選擇器入口（例如 xdg-desktop-portal-gtk）或 zenity。
 	Up one level	上移一層
 	Home folder	個人資料夾
@@ -1828,6 +1832,7 @@
 	Above the item	項目上方
 	Accessed on	存取日期
 	Add New Source…	新增來源…
+	Add style from file…	從檔案新增樣式…
 	Add the chapter number	加入章節編號
 	Atmosphere	大氣
 	Below the item	項目下方

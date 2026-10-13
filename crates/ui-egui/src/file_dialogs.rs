@@ -20,8 +20,8 @@ use crate::WordApp;
 /// A file dialog the app asks the host to show ([`Services::file_dialog`](crate::Services::file_dialog)).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileDialogRequest {
-    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`, `font`), as for
-    /// `pick_open`.
+    /// Pick a file to open; `purpose` says what for (`document`, `picture`, `recipients`, `font`,
+    /// `sources`, `csl-style`), as for `pick_open`.
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
     Save { name: String },
@@ -36,14 +36,15 @@ const DOCUMENTS: &[&str] = &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt"
 
 /// The file types Open offers, as (label, extensions; `*` is any file): pictures for Insert/Change
 /// Picture, recipient lists for Select Recipients › Use an Existing List…, source libraries for
-/// Manage Sources › Import…, documents otherwise. The host's system dialog and the built-in
-/// browser offer the same.
+/// Manage Sources › Import…, CSL styles for References › Style › Add style from file…, documents
+/// otherwise. The host's system dialog and the built-in browser offer the same.
 pub fn open_filters(purpose: &str) -> &'static [(&'static str, &'static [&'static str])] {
     match purpose {
         "picture" => &[("Pictures", PICTURES)],
         "font" => &[("Fonts", wordcraft_fonts::FONT_FILE_EXTS)],
         "recipients" => &[("Recipient lists", &["csv", "tsv", "txt", "xlsx", "xlsm", "ods"]), ("All files", &["*"])],
         "sources" => &[("Source libraries", &["bib", "ris", "json"]), ("All files", &["*"])],
+        "csl-style" => &[("CSL styles", &["csl"]), ("All files", &["*"])],
         _ => &[("Documents", DOCUMENTS), ("Word document", &["docx"]), ("All files", &["*"])],
     }
 }
@@ -65,6 +66,10 @@ pub(crate) enum AfterPick {
     /// Import the picked BibTeX/RIS/CSL-JSON library as the document's sources (Manage Sources ▸
     /// Import…, #1058).
     ImportSources,
+    /// Install the picked CSL file as a citation style (References ▸ Style ▸ Add style from
+    /// file…, #1058): `references.cslStyles {"add"}`, its warnings in the status line, then the
+    /// added style becomes the document's.
+    CslStyle,
     /// Add the picked font file (#582).
     Font,
     /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
@@ -227,6 +232,40 @@ impl WordApp {
                 }
                 r
             }
+            AfterPick::CslStyle => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                let r = self.run("references.cslStyles", json!({"add": path}));
+                match &r {
+                    Ok(v) => {
+                        // Say the warnings in the status line, then make the added style the
+                        // document's (`csl:<id>`), so the combo's label confirms what happened.
+                        let warnings = v
+                            .get("warnings")
+                            .and_then(Value::as_array)
+                            .map_or(String::new(), |w| w.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "));
+                        let Some(id) = v.get("id").and_then(Value::as_str) else { return r };
+                        let title = self.session.csl_styles.iter().find(|e| e.id().eq_ignore_ascii_case(id)).map_or_else(
+                            || id.to_string(),
+                            |e| {
+                                if e.style.title.is_empty() { e.file.clone() } else { e.style.title.clone() }
+                            },
+                        );
+                        if warnings.is_empty() {
+                            self.status(crate::i18n::fmt(tl!("Style {style} added"), &[("style", &title)]));
+                        } else {
+                            self.status(crate::i18n::fmt(
+                                tl!("Style {style} added, with warnings: {warnings}"),
+                                &[("style", &title), ("warnings", &warnings)],
+                            ));
+                        }
+                        if let Err(e) = self.run("references.citationStyle", json!({"style": format!("csl:{id}")})) {
+                            self.status(e);
+                        }
+                    }
+                    Err(e) => self.status(e.clone()),
+                }
+                r
+            }
             AfterPick::ComparePath { revised } => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 crate::dialogs_review::set_compare_path(self, revised, path);
@@ -341,6 +380,16 @@ mod tests {
 
     const UNSAVED: &str = "My unsaved novel chapter";
 
+    /// A test CSL style that loads with a warning (`default-locale` isn't en-US) — written for
+    /// these tests, like every file here.
+    const CSL_HARVARD: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/csl" version="1.0" default-locale="de-DE">
+  <info><id>http://wordcraft.test/harvard</id><title>WordCraft Test Harvard</title></info>
+  <citation><layout><text variable="title"/></layout></citation>
+  <bibliography><layout><text variable="title"/></layout></bibliography>
+</style>
+"#;
+
     /// Dialogs the fake host was asked to show, each with the channel its answer goes through.
     type Shown = Rc<RefCell<Vec<(FileDialogRequest, Sender<FileDialogAnswer>)>>>;
 
@@ -363,6 +412,22 @@ mod tests {
     fn answer(shown: &Shown, picked: Option<&str>) {
         let (_, tx) = shown.borrow_mut().pop().unwrap();
         tx.send(Ok(picked.map(str::to_string))).unwrap();
+    }
+
+    /// An app whose host shows dialogs asynchronously, over a session the test set up: nothing is
+    /// answered until the test does.
+    fn async_session_app(session: Session) -> (WordApp, Shown) {
+        let shown: Shown = Rc::default();
+        let log = shown.clone();
+        let services = Services {
+            file_dialog: Some(Box::new(move |req| {
+                let (tx, rx) = channel();
+                log.borrow_mut().push((req, tx));
+                rx
+            })),
+            ..Default::default()
+        };
+        (WordApp::new(session, services), shown)
     }
 
     fn typed(a: &mut WordApp) {
@@ -503,6 +568,38 @@ mod tests {
         answer(&shown, None);
         assert_eq!(a.poll_file_dialog().unwrap().unwrap(), json!({"cancelled": true}));
         assert_eq!(a.session.merge.rows.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1058: References ▸ Style ▸ Add style from file… asks the host's file dialog for a CSL
+    /// style and, once the answer arrives, installs it in the styles folder, says its warnings
+    /// in the status line and makes it the document's citation style. Cancelling adds nothing.
+    #[test]
+    fn a_csl_style_picked_later_is_added_selected_and_warns() {
+        let dir = scratch("csl");
+        let styles = dir.join("styles");
+        std::fs::create_dir_all(&styles).unwrap();
+        let picked = dir.join("harvard.csl");
+        std::fs::write(&picked, CSL_HARVARD.as_bytes()).unwrap();
+        let mut session = Session::new(wordcraft_doc::Document::new());
+        session.set_csl_styles_dir(styles.clone());
+        let (mut a, shown) = async_session_app(session);
+        let _ = a.ask_file(FileDialogRequest::Open { purpose: "csl-style".into() }, AfterPick::CslStyle);
+        assert_eq!(shown.borrow()[0].0, FileDialogRequest::Open { purpose: "csl-style".into() });
+        assert!(a.file_dialog_open());
+        answer(&shown, Some(&picked.to_string_lossy()));
+        let r = a.poll_file_dialog().unwrap().unwrap();
+        assert_eq!(r["id"], "http://wordcraft.test/harvard", "{r}");
+        assert!(styles.join("harvard.csl").is_file(), "copied into the styles folder");
+        assert_eq!(a.session.bib_style, "csl:http://wordcraft.test/harvard", "the added style becomes the document's");
+        let status = a.status_msg.as_ref().map(|(m, _)| m.as_str()).unwrap_or_default();
+        assert!(status.contains("with warnings"), "the warnings show in the status line: {status}");
+        assert!(status.contains("default-locale"), "the style's own warnings, not a fixed text: {status}");
+        // Cancelling installs nothing and changes nothing.
+        let _ = a.ask_file(FileDialogRequest::Open { purpose: "csl-style".into() }, AfterPick::CslStyle);
+        answer(&shown, None);
+        assert_eq!(a.poll_file_dialog().unwrap().unwrap(), json!({"cancelled": true}));
+        assert_eq!(a.session.bib_style, "csl:http://wordcraft.test/harvard");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

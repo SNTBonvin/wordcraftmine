@@ -123,6 +123,7 @@
 	Check for Errors	Wyszukaj błędy
 	Check\nAccessibility	Sprawdź ułatwienia\ndostępu
 	Citation Style	Styl cytowania
+	Citation Style (CSL styles: docs/csl-styles.md)	Styl cytowania (style CSL: docs/csl-styles.md)
 	Citation Styles (CSL)	Style cytowań (CSL)
 	Citations & Bibliography	Cytaty i bibliografia
 	Clear	Wyczyść
@@ -1308,6 +1309,8 @@
 	Studio	Studio
 	Style:	Styl:
 	Style: {style}	Styl: {style}
+	Style {style} added	Dodano styl {style}
+	Style {style} added, with warnings: {warnings}	Dodano styl {style}, z ostrzeżeniami: {warnings}
 	Subset:	Podzbiór:
 	Sum	Suma
 	Tab character	Znak tabulacji
@@ -1490,6 +1493,7 @@
 	Accessed on	Data dostępu
 	Accessibility Pane	Okienko ułatwień dostępu
 	Add New Source…	Dodaj nowe źródło…
+	Add style from file…	Dodaj styl z pliku…
 	Add Pen	Dodaj pióro
 	Add line numbering	Dodaj numerowanie wierszy
 	Add the chapter number	Dodaj numer rozdziału
@@ -1936,6 +1940,7 @@
 	Recent documents to show:	Liczba ostatnich dokumentów do pokazania:
 	Recipient lists	Listy adresatów
 	Source libraries	Biblioteki źródeł
+	CSL styles	Style CSL
 	Red:	Czerwony:
 	Reflection	Odbicie
 	Regular expressions	Wyrażenia regularne

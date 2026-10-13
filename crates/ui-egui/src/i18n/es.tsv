@@ -242,6 +242,7 @@
 	Check for Errors	Buscar errores
 	Check\nAccessibility	Comprobar\naccesibilidad
 	Citation Style	Estilo de cita
+	Citation Style (CSL styles: docs/csl-styles.md)	Estilo de cita (estilos CSL: docs/csl-styles.md)
 	Citations & Bibliography	Citas y bibliografía
 	Clear	Borrar
 	Clear All	Borrar todo
@@ -884,6 +885,8 @@
 	Style Set	Conjunto de estilos
 	Style based on:	Estilo basado en:
 	Style: {style}	Estilo: {style}
+	Style {style} added	Estilo {style} añadido
+	Style {style} added, with warnings: {warnings}	Estilo {style} añadido, con avisos: {warnings}
 	Styles	Estilos
 	Styles Pane	Panel de estilos
 	Subject	Asunto
@@ -1773,6 +1776,7 @@
 	All files	Todos los archivos
 	Recipient lists	Listas de destinatarios
 	Source libraries	Bibliotecas de fuentes
+	CSL styles	Estilos CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	El cuadro de diálogo de archivos del sistema no está disponible, así que WordCraft muestra el suyo. Para usar el del sistema, instala un portal selector de archivos (como xdg-desktop-portal-gtk) o zenity.
 	Up one level	Subir un nivel
 	Home folder	Carpeta personal
@@ -1867,6 +1871,7 @@
 	Above the item	Encima del elemento
 	Accessed on	Consultado el
 	Add New Source…	Agregar nueva fuente…
+	Add style from file…	Añadir estilo desde archivo…
 	Add the chapter number	Agregar el número de capítulo
 	Atmosphere	Atmósfera
 	Below the item	Debajo del elemento

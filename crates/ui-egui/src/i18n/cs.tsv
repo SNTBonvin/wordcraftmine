@@ -195,6 +195,7 @@
 	Check Spelling as You Type	Kontrolovat pravopis při psaní
 	Check\nAccessibility	Kontrola\npřístupnosti
 	Citation Style	Styl citací
+	Citation Style (CSL styles: docs/csl-styles.md)	Styl citací (styly CSL: docs/csl-styles.md)
 	Citation Styles (CSL)	Styly citací (CSL)
 	Citations	Citace
 	Citations & Bibliography	Citace a bibliografie
@@ -1289,6 +1290,8 @@
 	Trademark Sign	Symbol ochranné známky
 	Size (pt):	Velikost (b.):
 	Style: {style}	Styl: {style}
+	Style {style} added	Styl {style} byl přidán
+	Style {style} added, with warnings: {warnings}	Styl {style} byl přidán, s upozorněními: {warnings}
 	Align Top Left	Zarovnat nahoru vlevo
 	Align Top Center	Zarovnat nahoru na střed
 	Align Top Right	Zarovnat nahoru vpravo
@@ -1511,6 +1514,7 @@
 	Above the item	Nad položkou
 	Accessed on	Datum přístupu
 	Add New Source…	Přidat nový pramen…
+	Add style from file…	Přidat styl ze souboru…
 	Add the chapter number	Přidat číslo kapitoly
 	Atmosphere	Atmosféra
 	Below the item	Pod položkou
@@ -1923,6 +1927,7 @@
 	All files	Všechny soubory
 	Recipient lists	Seznamy příjemců
 	Source libraries	Knihovny pramenů
+	CSL styles	Styly CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Systémový dialog pro práci se soubory není k dispozici, proto WordCraft zobrazuje vlastní. Chcete-li používat systémový dialog, nainstalujte portál pro výběr souborů (například xdg-desktop-portal-gtk) nebo zenity.
 	Up one level	O úroveň výš
 	Home folder	Domovská složka

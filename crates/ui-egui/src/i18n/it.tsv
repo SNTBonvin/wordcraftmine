@@ -189,6 +189,7 @@
 	Check for Errors	Controllo errori
 	Check\nAccessibility	Verifica\naccessibilità
 	Citation Style	Stile citazione
+	Citation Style (CSL styles: docs/csl-styles.md)	Stile citazione (stili CSL: docs/csl-styles.md)
 	Citations & Bibliography	Citazioni e bibliografia
 	Clear	Cancella
 	Clear All	Cancella tutto
@@ -791,6 +792,8 @@
 	Style Set	Set di stili
 	Style based on:	Stile basato su:
 	Style: {style}	Stile: {style}
+	Style {style} added	Stile {style} aggiunto
+	Style {style} added, with warnings: {warnings}	Stile {style} aggiunto, con avvisi: {warnings}
 	Styles	Stili
 	Styles Pane	Riquadro Stili
 	Subscript	Pedice
@@ -1842,6 +1845,7 @@
 	Above the item	Sopra l'elemento
 	Accessed on	Consultato il
 	Add New Source…	Aggiungi nuova fonte…
+	Add style from file…	Aggiungi stile da file…
 	Add the chapter number	Aggiungi il numero di capitolo
 	Atmosphere	Atmosfera
 	Below the item	Sotto l'elemento
@@ -2331,6 +2335,7 @@
 	Radicals	Radicali
 	Recipient lists	Elenchi destinatari
 	Source libraries	Raccolte di fonti
+	CSL styles	Stili CSL
 	Resize Table by Dragging	Ridimensiona la tabella trascinando
 	Select Column	Seleziona colonna
 	Select Table Cells by Clicking	Seleziona celle della tabella con un clic

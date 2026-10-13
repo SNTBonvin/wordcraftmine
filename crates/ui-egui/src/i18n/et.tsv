@@ -123,6 +123,7 @@
 	Check spelling as you type	Kontrolli õigekirja kirjutamise ajal
 	Check\nAccessibility	Kontrolli\nligipääsetavust
 	Citation Style	Viitamisstiil
+	Citation Style (CSL styles: docs/csl-styles.md)	Viitamisstiil (CSL-i stiilid: docs/csl-styles.md)
 	Citation Styles (CSL)	Viitamisstiilid (CSL)
 	Citations & Bibliography	Viited ja allikaloend
 	Clear	Tühjenda
@@ -763,6 +764,8 @@
 	Style Set	Stiilikomplekt
 	Style based on:	Stiili alus:
 	Style: {style}	Stiil: {style}
+	Style {style} added	Stiil {style} on lisatud
+	Style {style} added, with warnings: {warnings}	Stiil {style} on lisatud, hoiatustega: {warnings}
 	Styles	Stiilid
 	Styles Pane	Stiilipaan
 	Subject	Teema
@@ -1734,6 +1737,7 @@
 	All files	Kõik failid
 	Recipient lists	Adressaatide loendid
 	Source libraries	Allikate kogud
+	CSL styles	CSL-i stiilid
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Süsteemi failidialoog pole saadaval, seega näitab WordCraft enda oma. Süsteemi dialoogi saamiseks paigalda failivalija portaal (näiteks xdg-desktop-portal-gtk) või zenity.
 	Up one level	Taseme võrra üles
 	Home folder	Kodukaust
@@ -1828,6 +1832,7 @@
 	Above the item	Objekti kohal
 	Accessed on	Vaadatud
 	Add New Source…	Lisa uus allikas…
+	Add style from file…	Lisa stiil failist…
 	Add the chapter number	Lisa peatüki number
 	Atmosphere	Atmosfäär
 	Below the item	Objekti all

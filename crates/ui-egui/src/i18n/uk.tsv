@@ -238,6 +238,7 @@
 	Check Spelling as You Type	Перевіряти правопис під час введення
 	Check\nAccessibility	Перевірити\nдоступність
 	Citation Style	Стиль цитування
+	Citation Style (CSL styles: docs/csl-styles.md)	Стиль цитування (стилі CSL: docs/csl-styles.md)
 	Citations & Bibliography	Цитати й бібліографія
 	Clear	Очистити
 	Clear All	Очистити все
@@ -872,6 +873,8 @@
 	Style Inspector	Інспектор стилів
 	Style Set	Набір стилів
 	Style: {style}	Стиль: {style}
+	Style {style} added	Стиль {style} додано
+	Style {style} added, with warnings: {warnings}	Стиль {style} додано, із попередженнями: {warnings}
 	Styles	Стилі
 	Styles Pane	Панель стилів
 	Subscript	Нижній індекс
@@ -1745,6 +1748,7 @@
 	All files	Усі файли
 	Recipient lists	Списки одержувачів
 	Source libraries	Бібліотеки джерел
+	CSL styles	Стилі CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Системне діалогове вікно файлів недоступне, тож WordCraft показує власне. Щоб отримати системне вікно, установіть портал вибору файлів (наприклад, xdg-desktop-portal-gtk) або zenity.
 	Up one level	На рівень вище
 	Home folder	Домашня тека
@@ -1839,6 +1843,7 @@
 	Above the item	Над елементом
 	Accessed on	Дата звернення
 	Add New Source…	Додати нове джерело…
+	Add style from file…	Додати стиль із файла…
 	Add the chapter number	Додати номер розділу
 	Atmosphere	Атмосфера
 	Below the item	Під елементом
