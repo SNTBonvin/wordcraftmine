@@ -273,27 +273,67 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
     }
 }
 
+/// File › Open: the shared places panel (storytold/craft-libs#49). Recent lists the documents
+/// opened lately, This computer is WordCraft's own file browser and Browse the system's dialog.
+/// Remote storage adds one place per account here; there is none yet.
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
+    use craft_ui::places::{Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesLabels, PlacesPanel, PlacesStyle};
     heading(ui, "Open");
-    if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
-        let _ = app.run("ui.openFileDialog", json!({}));
+    let t = Tokens::get(ui.ctx());
+    let style = PlacesStyle {
+        fill: t.ribbon,
+        border: t.border,
+        text: t.text,
+        weak: t.text_dim,
+        hover: t.hover,
+        selected: t.checked,
+        accent: t.accent,
+        icon: t.icon,
+        ..PlacesStyle::from_visuals(ui.visuals())
+    };
+    let labels = PlacesLabels { places: tl!("Places"), add_place: tl!("Add a place"), browse: tl!("Browse…"), loading: tl!("Loading…") };
+    let mut places = vec![Place { kind: PlaceKind::Recent, label: tl!("Recent"), detail: None }];
+    // The browser has no folders to list, so there the system's picker is the only way in.
+    if cfg!(not(target_arch = "wasm32")) {
+        places.push(Place { kind: PlaceKind::Local, label: tl!("This computer"), detail: None });
     }
-    // Linux and the BSDs (#576): the system dialog needs a file chooser portal or zenity; when it
-    // doesn't show up, WordCraft's own browser is always one click away.
-    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
-    if ui
-        .button(egui::RichText::new(tl!("Browse in WordCraft…")).font(medium(14.0)))
-        .on_hover_text(tl!("Open a file with WordCraft's own browser when the system file dialog doesn't appear."))
-        .clicked()
-    {
-        let _ = app.run("ui.fileBrowser", json!({}));
+    let recent: Vec<(String, String, String)> = app
+        .ui
+        .recent
+        .iter()
+        .take(app.ui.recent_shown())
+        .map(|p| {
+            let path = std::path::Path::new(p);
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+            let folder = path.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+            (p.clone(), name, folder)
+        })
+        .collect();
+    let entries: Vec<PlaceEntry<'_>> =
+        recent.iter().map(|(_, name, folder)| PlaceEntry { name, folder: false, detail: folder, attention: false, remote: false }).collect();
+    let content =
+        if entries.is_empty() { PlacesContent::Message(tl!("Documents you open will show up here.")) } else { PlacesContent::Entries(&entries) };
+    let crumbs = [tl!("Recent")];
+    match PlacesPanel::new(&places, Some(0), content, &style, labels).crumbs(&crumbs).show(ui).action {
+        Some(PlacesAction::Activate(i)) => {
+            if let Some((path, ..)) = recent.get(i) {
+                let _ = app.run("file.open", json!({"path": path}));
+                app.ui.backstage = false;
+                app.canvas.want_focus = true;
+            }
+        }
+        // Recent is where the page already is; This computer opens WordCraft's own browser (#576),
+        // which also serves a desktop whose system file dialog doesn't show up.
+        Some(PlacesAction::Select(1)) => {
+            let _ = app.run("ui.fileBrowser", json!({}));
+        }
+        Some(PlacesAction::Browse) => {
+            let _ = app.run("ui.openFileDialog", json!({}));
+        }
+        _ => {}
     }
-    ui.add_space(18.0);
-    open_list(app, ui);
 }
 
-/// Save As: Browse… asks where to save. It has no recent-documents list: clicking one of those
-/// opens it, which is not what Save As is for.
 fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Save As");
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
@@ -492,6 +532,31 @@ mod tests {
         assert_eq!((a.session.doc.core.title.as_str(), a.session.doc.core.creator.as_str()), ("ALPHA", ""));
         a.session.run("edit.undo", &json!({})).unwrap();
         assert_eq!(a.session.doc.core.title, "");
+    }
+
+    /// File › Open is the shared places panel: Recent with the documents opened lately, This
+    /// computer for WordCraft's own browser and Browse for the system's dialog.
+    #[test]
+    fn open_page_lists_places_and_recent_documents() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.recent = vec!["/home/ada/Documents/Handbook.docx".into(), "/home/ada/Desktop/Notes.docx".into()];
+        a.run("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for label in ["This computer", "Browse…", "Handbook.docx", "Notes.docx"] {
+            assert!(h.query_by_label(label).is_some(), "{label} is on the Open page");
+        }
+        assert!(h.query_by_label("Add a place").is_none(), "there is no remote storage to add yet");
+        h.get_by_label("This computer").click();
+        h.run_steps(4);
+        assert!(h.state().file_dialog_open(), "This computer opens WordCraft's own browser");
     }
 
     #[test]
