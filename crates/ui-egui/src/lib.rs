@@ -1799,25 +1799,48 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
 }
 
 /// Commands that work while no document is open (#1129): opening or creating one, closing the
-/// window, Help, and the settings (File › Options, the view and interface preferences it sets,
-/// Customize Ribbon and Keyboard). Everything else needs a document.
+/// window, Help, adding fonts (a font file dropped on the empty window), and the settings (File ›
+/// Options, the view and interface preferences it sets, Customize Ribbon and Keyboard).
+/// Everything else needs a document, `ui.*` included: only the interface commands listed here
+/// (tabs, Backstage, dialogs, appearance, opening files) work without one.
 pub(crate) fn works_without_document(id: &str) -> bool {
-    match id {
-        "file.new" | "file.open" | "file.close" | "file.options" | "file.setAuthor" => true,
-        "readAloud.speed" | "readAloud.skipCitations" | "tools.customizeKeyboard" | "tools.customizeRibbon" => true,
-        "view.darkMode" | "view.marks" | "view.ruler" | "view.numeral" => true,
-        // UI commands that act on the document (print it, change or link its objects, merge
-        // into it) need one; the rest switch tabs, pages, dialogs and settings.
-        "ui.print"
-        | "ui.printSubmit"
-        | "ui.printSettings"
-        | "ui.changePicture"
-        | "ui.linkTextBox"
-        | "ui.openRecipientList"
-        | "ui.render"
-        | "ui.contextMenu" => false,
-        _ => id.starts_with("help.") || id.starts_with("ui."),
-    }
+    matches!(
+        id,
+        "file.new"
+            | "file.open"
+            | "file.close"
+            | "file.options"
+            | "file.setAuthor"
+            | "font.add"
+            | "font.list"
+            | "font.remove"
+            | "readAloud.speed"
+            | "readAloud.skipCitations"
+            | "tools.customizeKeyboard"
+            | "tools.customizeRibbon"
+            | "view.darkMode"
+            | "view.marks"
+            | "view.ruler"
+            | "view.numeral"
+            | "ui.tab"
+            | "ui.backstage"
+            | "ui.dialog"
+            | "ui.closeDialog"
+            | "ui.collapseRibbon"
+            | "ui.keytips"
+            | "ui.dark"
+            | "ui.theme"
+            | "ui.interfaceSize"
+            | "ui.animations"
+            | "ui.language"
+            | "ui.saveChanges"
+            | "ui.openFileDialog"
+            | "ui.fileBrowser"
+            | "ui.makeDefaultApp"
+            | "ui.discord"
+            | "ui.caretAnimation"
+            | "ui.startScreen"
+    ) || id.starts_with("help.")
 }
 
 /// User commands that replace or close the document (`file.open` without a path only shows the
@@ -2005,6 +2028,13 @@ mod tests {
             assert!(widgets::enabled(a, id), "{id} works with no document");
         }
         assert!(!chrome::qat_enabled(a, "file.save"));
+        // Only the listed interface commands work: the ones that act on the document don't.
+        for id in ["ui.contextMenu", "ui.render", "ui.linkTextBox", "ui.zotero.refresh", "ui.unlistedCommand"] {
+            assert!(!works_without_document(id), "{id} needs a document");
+        }
+        let refused = a.run("ui.zotero.status", json!({})).unwrap_err();
+        assert!(refused.contains("No document is open"), "refused before it runs: {refused}");
+        assert!(works_without_document("font.add"), "a font file dropped on the empty window is added");
         // Neither keys nor commands reach the hidden placeholder.
         assert!(a.run("text.insert", json!({"text": "Hello"})).is_err());
         assert!(a.execute("format.bold", json!({})).is_err());
@@ -4321,6 +4351,26 @@ mod tests {
         a.canvas.scroll_to_caret = false;
         a.run("text.insert", json!({"text": "x"})).unwrap();
         assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
+    }
+
+    /// #1129: with no document open (the Start screen's empty window), `document.inspect` and
+    /// `ui.render` on the control channel say so instead of reading the hidden placeholder.
+    #[test]
+    fn control_inspect_and_render_need_a_document() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.start_screen();
+        assert!(!a.has_document());
+        for (method, params) in [("document.inspect", json!({})), ("ui.render", json!({"page": 1, "scale": 0.5}))] {
+            let (req, _reply) = ControlRequest::new(method, params);
+            let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("{method} replies at once") };
+            assert_eq!(v["ok"], false, "{method}: {v}");
+            assert!(v["error"].as_str().is_some_and(|e| e.contains("no document is open")), "{method}: {v}");
+        }
+        a.run("file.new", json!({})).unwrap();
+        let (req, _reply) = ControlRequest::new("document.inspect", json!({}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("document.inspect replies at once") };
+        assert_eq!(v["ok"], true, "with a document it works: {v}");
     }
 
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of
