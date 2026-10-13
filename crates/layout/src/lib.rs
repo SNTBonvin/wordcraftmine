@@ -2693,6 +2693,16 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
 /// it runs onto (#1352).
 const MAX_PAGE_RELAYS: usize = 64;
 
+/// Run `f`, a layout of a paragraph again, with the automatic equation numbers it counted from
+/// (`eq_start`) the first time, and leave the count where it was: laying it out again doesn't
+/// count its numbered equations twice.
+fn again<T>(ctx: &mut Ctx, eq_start: u32, f: impl FnOnce(&mut Ctx) -> T) -> T {
+    let now = std::mem::replace(&mut ctx.eq_count, eq_start);
+    let out = f(ctx);
+    ctx.eq_count = now;
+    out
+}
+
 /// Run `f` with `map` as the field context's page map (`FieldCtx::page_from`), then take it back.
 fn with_page_map<T>(ctx: &mut Ctx, map: &mut Vec<(usize, u32)>, f: impl FnOnce(&mut Ctx) -> T) -> T {
     ctx.fields.page_from = std::mem::take(map);
@@ -2714,6 +2724,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     // and lent to the field context only while this paragraph itself is laid out, so footnotes,
     // text boxes and headers laid out in between never see it (#1352).
     let mut page_map: Vec<(usize, u32)> = Vec::new();
+    // Where its automatic equation numbers start: each layout of it again counts from here.
+    let eq_start = ctx.eq_count;
     let (mut float_rects, mut pl, mut rel) = anchor_floats(ctx, pb, p, guess, space_before, excl_mark, &label);
     // The page its fields were laid out for (and the width), and how many times it was laid out again for a later
     // page (bounded: a paragraph over hundreds of pages keeps the last number it got).
@@ -2794,7 +2806,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     // A different top only matters when there is something to wrap around.
     if spot(pb) != placed_at || ((pb.y - guess).abs() > 0.01 && !pb.excl.is_empty()) {
         let y0 = pb.y;
-        (float_rects, pl, rel) = anchor_floats(ctx, pb, p, y0, applied_before, excl_mark, &label);
+        (float_rects, pl, rel) = again(ctx, eq_start, |ctx| anchor_floats(ctx, pb, p, y0, applied_before, excl_mark, &label));
         (laid_page, laid_width) = (pb.number, pb.col_w());
         anchor_y = y0 - applied_before;
     }
@@ -2816,7 +2828,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             page_relays += 1;
             page_map.push((resume, pb.number));
             ctx.fields.page = laid_page;
-            let relaid = with_page_map(ctx, &mut page_map, |ctx| ctx.para_labelled(p, laid_width, None, &rel, label.clone()));
+            let relaid =
+                with_page_map(ctx, &mut page_map, |ctx| again(ctx, eq_start, |ctx| ctx.para_labelled(p, laid_width, None, &rel, label.clone())));
             match relaid.lines.iter().position(|l| l.start == resume) {
                 Some(k) => {
                     pl = relaid;
@@ -2921,7 +2934,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 pb.advance(block, body_top);
                 if l0 == 0 {
                     let y0 = pb.y;
-                    (float_rects, pl, rel) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
+                    (float_rects, pl, rel) = again(ctx, eq_start, |ctx| anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label));
                     (laid_page, laid_width) = (pb.number, pb.col_w());
                     anchor_y = y0;
                     n = pl.lines.len();
@@ -3032,7 +3045,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     && let Some(resume) = pl.lines.get(l0).map(|l| l.start)
                 {
                     let y0 = pb.y;
-                    let (rects, relaid, relaid_rel) = with_page_map(ctx, &mut page_map, |ctx| anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label));
+                    let (rects, relaid, relaid_rel) =
+                        with_page_map(ctx, &mut page_map, |ctx| again(ctx, eq_start, |ctx| anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label)));
                     if let Some(k) = relaid.lines.iter().position(|l| l.start == resume) {
                         (float_rects, pl, rel) = (rects, relaid, relaid_rel);
                         (laid_page, laid_width) = (pb.number, pb.col_w());

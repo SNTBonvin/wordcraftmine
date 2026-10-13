@@ -5077,3 +5077,64 @@ fn footnote_page_field_from_a_split_paragraph_shows_its_page() {
     let in_note = fields_in(StoryRef::Part(id));
     assert_eq!(in_note, [(1, "2".to_string())], "the note is on page 2 and says so");
 }
+
+/// The automatic equation numbers drawn in each body paragraph (from the layout of its last
+/// piece, the one its last lines are drawn with), in order.
+fn equation_numbers(l: &DocLayout) -> Vec<String> {
+    let mut last: Vec<(u32, Arc<ParaLayout>)> = Vec::new();
+    for it in l.pages.iter().flat_map(|p| p.items.iter()) {
+        if let Placed::Lines { story: StoryRef::Body, path, para, .. } = it
+            && let [b] = path.0[..]
+        {
+            match last.iter_mut().find(|e| e.0 == b) {
+                Some(e) => e.1 = para.clone(),
+                None => last.push((b, para.clone())),
+            }
+        }
+    }
+    last.sort_by_key(|e| e.0);
+    let mut out = Vec::new();
+    for (_, pl) in last {
+        for (_, m) in &pl.maths {
+            let all: String =
+                m.items.iter().filter_map(|it| if let crate::math::MItem::Glyphs { text, .. } = it { Some(text.as_str()) } else { None }).collect();
+            if let Some(at) = all.rfind('(') {
+                out.push(all[at..].to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Laying a paragraph out again (placed again after a page break before, or the rest of it again
+/// for a later page's PAGE fields) doesn't count its numbered equations twice: they read (1), (2), (3).
+#[test]
+fn relaid_paragraphs_keep_their_equation_numbers() {
+    let eq = |s: &str| InlineObject::Equation {
+        linear: s.into(),
+        display: true,
+        math: wordcraft_doc::math::Math { nodes: wordcraft_doc::math::parse_linear(s), ..Default::default() },
+    };
+    let mut d = Document::from_text("Before\n\nTail");
+    // Paragraph 1: a numbered equation on a new page (laid out again there).
+    let p1 = d.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
+    p1.insert_object(0, eq("a=b#"), &Default::default()).unwrap();
+    p1.props.page_break_before = Some(true);
+    // Paragraph 2: long, with a PAGE field, running onto the next page (the rest laid out again
+    // there), then a numbered equation.
+    let p2 = d.para_mut(StoryRef::Body, &Path::top(2)).unwrap();
+    let long = "words that fill the page ".repeat(400);
+    p2.insert_text(0, &long, &Default::default()).unwrap();
+    let n = p2.len();
+    p2.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+        .unwrap();
+    let n = p2.len();
+    p2.insert_object(n, eq("c=d#"), &Default::default()).unwrap();
+    // Paragraph 3: one more.
+    d.body.push(wordcraft_doc::para_block(wordcraft_doc::Paragraph::new()));
+    let p3 = d.para_mut(StoryRef::Body, &Path::top(3)).unwrap();
+    p3.insert_object(0, eq("e=f#"), &Default::default()).unwrap();
+    let l = lay(&d);
+    assert!(l.pages.len() >= 3, "{} pages", l.pages.len());
+    assert_eq!(equation_numbers(&l), ["(1)", "(2)", "(3)"]);
+}
