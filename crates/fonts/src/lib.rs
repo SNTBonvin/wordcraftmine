@@ -160,6 +160,22 @@ pub fn shape(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(cha
     out
 }
 
+/// [`shape`] in visual order for a one-line, left-to-right label drawn without the line layout
+/// (a font list entry): direction runs left to right, a right-to-left run's glyphs in the order
+/// they're drawn, so a Hebrew name doesn't come out backwards.
+pub fn shape_visual(face: &FontFace, text: &str, features: &[Feature], map: impl Fn(char) -> char) -> Vec<ShapedGlyph> {
+    let mut out = Vec::with_capacity(text.len());
+    for (r, rtl) in direction_runs(text) {
+        let Some(sub) = text.get(r.clone()) else { continue };
+        let mut g = shape_dir(face, sub, features, &map, rtl);
+        for x in &mut g {
+            x.cluster += r.start;
+        }
+        out.extend(g);
+    }
+    out
+}
+
 /// Shape `text` as one run in a known direction (the caller ran the bidi algorithm: `rtl` is an
 /// odd embedding level). Right-to-left runs get Arabic joining, mirrored brackets and right-to-left
 /// mark positioning. Glyphs come back in logical order like [`shape`]: clusters in text order,
@@ -248,6 +264,17 @@ mod tests {
         for s in ["Regular", "Italic", "Bold", "Semibold"] {
             assert!(styles.iter().any(|x| x == s), "{s} in {styles:?}");
         }
+    }
+
+    /// A one-line label is drawn in the order `shape_visual` returns: a Hebrew run comes back
+    /// right to left (last letter first), Latin around it left to right.
+    #[test]
+    fn visual_shaping_draws_hebrew_right_to_left() {
+        let face = FontDb::global().face(DEFAULT_FAMILY, "Regular");
+        let clusters = |t: &str| shape_visual(&face, t, &[], |c| c).iter().map(|g| g.cluster).collect::<Vec<_>>();
+        assert_eq!(clusters("Ab"), vec![0, 1]);
+        assert_eq!(clusters("אבג"), vec![4, 2, 0]);
+        assert_eq!(clusters("A אב"), vec![0, 1, 4, 2]);
     }
 
     #[test]

@@ -90,7 +90,8 @@ impl Previews {
         self.families = None;
         ctx.data_mut(|d| {
             for f in families {
-                d.remove::<TextureHandle>(egui::Id::new(format!("font:{f}")));
+                d.remove::<TextureHandle>(egui::Id::new(entry_key(&f, None)));
+                d.remove::<TextureHandle>(egui::Id::new(entry_key(&f, crate::i18n::current().font_sample())));
             }
         });
     }
@@ -98,7 +99,8 @@ impl Previews {
     /// A closure drawing a font-menu entry in its own face.
     pub fn font_preview_fn(&mut self) -> Box<dyn Fn(&mut Ui, &str) -> Response> {
         Box::new(|ui: &mut Ui, name: &str| {
-            let key = format!("font:{name}");
+            let lang = crate::i18n::current();
+            let key = entry_key(name, lang.font_sample());
             let tex: Option<TextureHandle> = ui.ctx().data(|d| d.get_temp::<TextureHandle>(egui::Id::new(&key)));
             let (r, resp) = ui.allocate_exact_size(vec2(260.0, crate::widgets::COMBO_PREVIEW_ROW_H), Sense::click());
             let t = Tokens::get(ui.ctx());
@@ -121,7 +123,7 @@ impl Previews {
                     return None;
                 }
                 let ppp = ui.ctx().pixels_per_point();
-                let mut img = font_entry_image(name, ppp);
+                let mut img = font_entry_image(name, lang.font_sample(), ppp);
                 ink_mask(&mut img);
                 let h = ui.ctx().load_texture(&key, img, egui::TextureOptions::LINEAR);
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(&key), h.clone()));
@@ -254,14 +256,52 @@ pub fn ink_mask(img: &mut egui::ColorImage) {
 /// and dropped (#848): browsing the list used to load every family shown for good, so each trip
 /// through the Font box grew memory by tens of megabytes. A name the font has no glyphs for (a
 /// symbol font's), or a font that can't be read, shows in the default face.
-pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {
+///
+/// A font that has the `sample` letters (the interface's script, [`crate::i18n::Lang::font_sample`])
+/// also shows them in its face at the far end of the entry, as Word does, so a Hebrew font looks
+/// like Hebrew and not only like its Latin name: the name at the left, the sample at the right,
+/// in the mirrored interface too.
+pub fn font_entry_image(name: &str, sample: Option<&str>, ppp: f32) -> egui::ColorImage {
+    const W: f32 = 244.0;
+    const SIZE: f32 = 13.0;
     let db = wordcraft_fonts::FontDb::global();
-    let face = db
-        .preview_face(name)
-        .filter(|f| name.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))
-        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, "Regular"));
-    let img = wordcraft_render::render_text_line(&face, name, 13.0, 244.0, 22.0, 2.0, ppp);
-    egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &img.to_straight())
+    let covers = |f: &wordcraft_fonts::FontFace, s: &str| s.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c));
+    let own = db.preview_face(name);
+    let name_face = own.clone().filter(|f| covers(f, name)).unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, "Regular"));
+    let line = |face: &wordcraft_fonts::FontFace, text: &str, w: f32| {
+        let img = wordcraft_render::render_text_line(face, text, SIZE, w, 22.0, 2.0, ppp);
+        egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &img.to_straight())
+    };
+    let Some((sample, face)) = sample.zip(own).filter(|(s, f)| covers(f, s)) else {
+        return line(&name_face, name, W);
+    };
+    let sample_w = wordcraft_render::text_line_width(&face, sample, SIZE) + 4.0;
+    let name_room = (W - sample_w - 12.0).max(1.0);
+    let name_w = (wordcraft_render::text_line_width(&name_face, name, SIZE) + 4.0).min(name_room);
+    let mut img = line(&name_face, "", W);
+    blit(&mut img, &line(&name_face, name, name_w), 0.0, ppp);
+    blit(&mut img, &line(&face, sample, sample_w), W - sample_w, ppp);
+    img
+}
+
+/// The texture id of a font list entry drawn with `sample` ([`font_entry_image`]).
+fn entry_key(name: &str, sample: Option<&str>) -> String {
+    match sample {
+        Some(s) => format!("font:{name}\u{1f}{s}"),
+        None => format!("font:{name}"),
+    }
+}
+
+/// Copy `src` into `dst` `x` points from the left, clipped to `dst`.
+fn blit(dst: &mut egui::ColorImage, src: &egui::ColorImage, x: f32, ppp: f32) {
+    let x0 = (x * ppp).round().max(0.0) as usize;
+    let [dw, dh] = dst.size;
+    let [sw, sh] = src.size;
+    for y in 0..sh.min(dh) {
+        for sx in 0..sw.min(dw.saturating_sub(x0)) {
+            dst.pixels[y * dw + x0 + sx] = src.pixels[y * sw + sx];
+        }
+    }
 }
 
 /// Lay out `para` (with `base`'s styles) in a `w`×`h` pt box and rasterise it.
@@ -526,8 +566,8 @@ mod tests {
     fn font_menu_entries_leave_installed_families_unloaded() {
         let db = wordcraft_fonts::FontDb::global();
         let ink = |img: &egui::ColorImage| img.pixels.iter().filter(|p| p.r() < 128).count();
-        assert!(ink(&font_entry_image("Source Sans 3", 1.0)) > 20, "the bundled face draws");
-        assert!(ink(&font_entry_image("No Such Font 848", 1.0)) > 20, "an unknown font shows in the default face");
+        assert!(ink(&font_entry_image("Source Sans 3", None, 1.0)) > 20, "the bundled face draws");
+        assert!(ink(&font_entry_image("No Such Font 848", None, 1.0)) > 20, "an unknown font shows in the default face");
         // Tests running alongside share this database and may load a fallback (a math font for
         // an equation, a font for a script) at any time: leave the math fonts out, and allow a
         // stray load or two. Before #848 every family previewed was loaded.
@@ -535,13 +575,40 @@ mod tests {
         let unloaded: Vec<String> = db.families().into_iter().filter(|f| !db.is_loaded(f) && !shared(f)).take(25).collect();
         let mut loaded = Vec::new();
         for f in &unloaded {
-            let img = font_entry_image(f, 1.0);
+            let img = font_entry_image(f, None, 1.0);
             assert_eq!(img.size, [244, 22]);
             if db.is_loaded(f) {
                 loaded.push(f.clone());
             }
         }
         assert!(loaded.len() <= 2, "previewing loaded {loaded:?}");
+    }
+
+    /// In the Hebrew interface a font with Hebrew letters shows a Hebrew sample beside its name,
+    /// as Word does: the name at the left, the sample at the right. A font without them, or no
+    /// sample, keeps the plain entry.
+    #[test]
+    fn font_entries_show_a_hebrew_sample_for_hebrew_fonts() {
+        let sample = crate::i18n::Lang::from_code("he").and_then(|l| l.font_sample());
+        assert!(sample.is_some());
+        let db = wordcraft_fonts::FontDb::global();
+        let hebrew = |f: &str| db.preview_face(f).is_some_and(|x| ['א', 'ש', 'A', 'a'].iter().all(|&c| x.covers(c)));
+        let Some(fam) = ["Arial", "Noto Sans Hebrew", "DejaVu Sans", "Heebo"].into_iter().find(|f| hebrew(f)) else {
+            eprintln!("no Hebrew font installed: skipped");
+            return;
+        };
+        // Ink in columns [a, b) points of a 1-pixel-per-point entry.
+        let ink = |img: &egui::ColorImage, a: usize, b: usize| {
+            (0..img.size[1]).flat_map(|y| (a..b).map(move |x| (x, y))).filter(|&(x, y)| img.pixels[y * img.size[0] + x].r() < 128).count()
+        };
+        let plain = font_entry_image(fam, None, 1.0);
+        assert_eq!(ink(&plain, 180, 244), 0, "{fam}: a short name ends well before the far end");
+        let with = font_entry_image(fam, sample, 1.0);
+        assert_eq!(with.size, [244, 22]);
+        assert!(ink(&with, 180, 244) > 20, "{fam}: the sample at the right");
+        assert!(ink(&with, 0, 30) > 20, "{fam}: the name at the left");
+        let no_hebrew = font_entry_image("Source Sans 3", sample, 1.0);
+        assert_eq!(no_hebrew.pixels, font_entry_image("Source Sans 3", None, 1.0).pixels, "no Hebrew letters, no sample");
     }
 
     /// #663: gallery previews are dimmed in the dark theme, unless they show Switch Modes' dark

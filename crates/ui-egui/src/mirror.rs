@@ -30,6 +30,9 @@ pub struct Mirror {
     /// Where those popups were this frame (logical), with the axis they were mirrored about (as
     /// the sum `x + x'`), for the pointer.
     anchored_rects: Vec<(Rect, f32)>,
+    /// The other menus, popups and windows on screen (logical): they're flipped with the
+    /// interface, and the pointer over one goes to it even where it's drawn over the page.
+    floating: Vec<Rect>,
     /// The text field being edited (logical), for the pointer.
     field: Option<Rect>,
     /// The window's horizontal extent, from the last frame.
@@ -59,9 +62,14 @@ impl egui::Plugin for Mirror {
             shifted.push((f, keep_shift(span, f)));
         }
         let anchored = &self.anchored_rects;
+        let floating = &self.floating;
+        let on_floating = |p: Pos2| floating.iter().any(|r| r.contains(Pos2::new(flip_x(span, p.x), p.y)));
         let to_logical = |p: Pos2| -> Pos2 {
             if let Some((_, sum)) = anchored.iter().find(|(r, sum)| flip_rect((0.0, *sum), *r).contains(p)) {
                 return Pos2::new(sum - p.x, p.y);
+            }
+            if on_floating(p) {
+                return Pos2::new(flip_x(span, p.x), p.y);
             }
             match shifted.iter().find(|(r, d)| r.translate(Vec2::new(*d, 0.0)).contains(p)) {
                 Some((_, d)) => Pos2::new(p.x - d, p.y),
@@ -69,7 +77,9 @@ impl egui::Plugin for Mirror {
             }
         };
         let over_page = |p: Option<Pos2>| {
-            p.is_some_and(|p| shifted.last().is_some_and(|(c, d)| self.canvas.is_some() && c.translate(Vec2::new(*d, 0.0)).contains(p)))
+            p.is_some_and(|p| {
+                !on_floating(p) && shifted.last().is_some_and(|(c, d)| self.canvas.is_some() && c.translate(Vec2::new(*d, 0.0)).contains(p))
+            })
         };
         let flip_wheel = !over_page(self.pointer);
         for event in &mut input.events {
@@ -94,11 +104,22 @@ impl egui::Plugin for Mirror {
         let span = (screen.min.x, screen.max.x);
         self.span = Some(span);
         self.anchored_rects.clear();
+        self.floating.clear();
         self.field = None;
         if !self.on {
             return;
         }
         self.field = editing_field(&ctx);
+        // Menus, popups and windows (the page is in the background, in the central panel).
+        let anchored = &self.anchored;
+        let layers: Vec<LayerId> = ctx.memory(|m| {
+            let areas = m.areas();
+            m.layer_ids()
+                .filter(|l| matches!(l.order, Order::Middle | Order::Foreground) && areas.is_visible(l) && !anchored.contains(&l.id))
+                .collect()
+        });
+        self.floating =
+            layers.into_iter().filter_map(|l| egui::containers::AreaState::load(&ctx, l.id).filter(|s| s.interactable).map(|s| s.rect())).collect();
         let Some(canvas) = self.canvas else { return };
         // Tooltips follow the pointer: over the page they belong to the page.
         const ORDERS: [Order; 5] = [Order::Background, Order::Middle, Order::Foreground, Order::Tooltip, Order::Debug];
@@ -324,6 +345,13 @@ mod tests {
         let mut on_menu = RawInput { events: vec![Event::PointerMoved(pos2(112.0, 5.0))], ..Default::default() };
         egui::Plugin::input_hook(&mut m, &Context::default(), &mut on_menu);
         assert!(matches!(on_menu.events[0], Event::PointerMoved(p) if p == pos2(18.0, 5.0)), "on a popup from the page: its own axis");
+        // The Font list, laid out at 50–75 and flipped to 25–50, hangs over the page (drawn at
+        // 40–100): the pointer there goes to the list, beside it to the page.
+        m.floating = vec![Rect::from_min_max(pos2(50.0, 0.0), pos2(75.0, 40.0))];
+        let mut list = RawInput { events: vec![Event::PointerMoved(pos2(45.0, 5.0)), Event::PointerMoved(pos2(55.0, 5.0))], ..Default::default() };
+        egui::Plugin::input_hook(&mut m, &Context::default(), &mut list);
+        assert!(matches!(list.events[0], Event::PointerMoved(p) if p == pos2(55.0, 5.0)), "on a menu over the page: flipped");
+        assert!(matches!(list.events[1], Event::PointerMoved(p) if p == pos2(15.0, 5.0)), "beside it, on the page: shifted");
         m.on = false;
         let mut plain = RawInput { events: vec![Event::PointerMoved(pos2(90.0, 70.0))], ..Default::default() };
         egui::Plugin::input_hook(&mut m, &Context::default(), &mut plain);

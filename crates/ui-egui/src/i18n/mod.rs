@@ -188,6 +188,15 @@ impl Lang {
         self.0.rtl()
     }
 
+    /// Letters a font list entry shows after the name of a font that has them, as Word does for
+    /// the scripts it's set up to write: Hebrew in the Hebrew interface.
+    pub fn font_sample(self) -> Option<&'static str> {
+        match self.0.code {
+            "he" => Some("אבגד הוז"),
+            _ => None,
+        }
+    }
+
     pub fn prefers_hans(self) -> bool {
         self.0.prefer_hans
     }

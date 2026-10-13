@@ -450,7 +450,7 @@ pub fn render_text_line(face: &wordcraft_fonts::FontFace, text: &str, size: f32,
     let ascent = if face.ascent.is_finite() { face.ascent.clamp(0.0, upem * 4.0) } else { upem * 0.8 };
     let baseline = margin + ascent * k;
     let mut x = margin;
-    for g in wordcraft_fonts::shape(face, text, &[], |c| c) {
+    for g in wordcraft_fonts::shape_visual(face, text, &[], |c| c) {
         let o = face.glyph_outline(g.gid);
         ctx.set_transform(view * Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * Affine::scale(k));
         ctx.fill_path(&o);
@@ -466,6 +466,13 @@ pub fn render_text_line(face: &wordcraft_fonts::FontFace, text: &str, size: f32,
         ctx.render(pm, &mut res);
     }
     Rendered { width: w16 as u32, height: h16 as u32, pixels }
+}
+
+/// How wide [`render_text_line`] draws `text` in `face` at `size` points, in points.
+pub fn text_line_width(face: &wordcraft_fonts::FontFace, text: &str, size: f32) -> f32 {
+    let upem = if face.upem.is_finite() && face.upem > 0.0 { face.upem } else { 1000.0 };
+    let units: f64 = wordcraft_fonts::shape_visual(face, text, &[], |c| c).iter().map(|g| f64::from(g.x_advance)).sum();
+    (units * f64::from(size) / upem) as f32
 }
 
 fn draw_watermark(ctx: &mut RenderContext, view: Affine, page: &Page, wm: &wordcraft_doc::Watermark, opts: &RenderOptions) {
