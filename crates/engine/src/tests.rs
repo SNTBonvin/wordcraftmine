@@ -5026,6 +5026,30 @@ fn find_replace_and_go_to_open_like_word() {
 /// their own extension so a save writes them as WMF/EMF parts.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
+/// Typing after `insert.picture` must not delete the picture (#965): the caret lands after
+/// it, collapsed, instead of selecting it.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn typing_after_insert_picture_keeps_the_picture() {
+    let dir = scratch_dir("insert-kept");
+    let path = dir.join("pic.png");
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 80, 160, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&path, &png).unwrap();
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "x"}));
+    run(&mut s, "insert.picture", json!({"path": path.to_string_lossy()}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "cap"}));
+    let mut media = 0;
+    s.doc.objects_in_reading_order(&mut |o| media += matches!(o, wordcraft_doc::InlineObject::Image { .. }) as usize);
+    assert_eq!(media, 1, "the picture survives typing");
+    assert_eq!(s.doc.plain_text(StoryRef::Body).replace("\n", "\n"), "x\ncap".replace("\n", "\n"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn insert_picture_takes_a_windows_metafile() {
     use wordcraft_doc::para::InlineObject;
     // One WMF record: size in words, function, parameters.
