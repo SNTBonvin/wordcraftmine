@@ -4922,3 +4922,101 @@ fn automatic_spacing_drops_between_list_items() {
         );
     }
 }
+
+/// #1352 helpers: a body paragraph with a PAGE field after each piece of `pieces` (a piece may
+/// hold a page break), after `before` paragraphs that each start a new page.
+fn page_field_doc(before: usize, pieces: &[&str]) -> Document {
+    let mut d = Document::new();
+    let mut body = Vec::new();
+    for i in 0..before {
+        let mut q = wordcraft_doc::Paragraph::with_text(&format!("Filler {i}"), Default::default());
+        q.props.page_break_before = Some(i > 0);
+        body.push(wordcraft_doc::para_block(q));
+    }
+    let mut p = wordcraft_doc::Paragraph::new();
+    for piece in pieces {
+        let n = p.len();
+        p.insert_text(n, piece, &Default::default()).unwrap();
+        let n = p.len();
+        p.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+            .unwrap();
+    }
+    p.props.page_break_before = Some(before > 0);
+    body.push(wordcraft_doc::para_block(p));
+    d.body = body;
+    d
+}
+
+/// #1352: the field results drawn on each page (only the lines placed there), and the text
+/// ranges of body paragraph `block` placed on each page, in order.
+fn shown_and_ranges(l: &DocLayout, block: u32) -> (Vec<Vec<String>>, Vec<std::ops::Range<usize>>) {
+    let mut shown = Vec::new();
+    let mut ranges = Vec::new();
+    for page in &l.pages {
+        let mut on = Vec::new();
+        for it in &page.items {
+            let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, .. } = it else { continue };
+            if path.0 != [block] {
+                continue;
+            }
+            let (Some(f), Some(e)) = (para.lines.get(*l0), l1.checked_sub(1).and_then(|k| para.lines.get(k))) else { continue };
+            on.extend(para.shown.iter().filter(|s| s.0 >= f.c0 && s.0 < e.c1).map(|s| s.1.clone()));
+            ranges.push(f.start..e.stop);
+        }
+        shown.push(on);
+    }
+    (shown, ranges)
+}
+
+/// The placed pieces of a paragraph cover its text once, in order.
+fn assert_contiguous(ranges: &[std::ops::Range<usize>], len: usize) {
+    let mut at = 0;
+    for r in ranges {
+        assert_eq!(r.start, at, "piece {r:?} doesn't follow on from {at}: {ranges:?}");
+        at = r.end;
+    }
+    assert_eq!(at, len, "the text up to {len} is placed: {ranges:?}");
+}
+
+/// #1352: a PAGE field after a page break inside its paragraph shows the page it is on.
+#[test]
+fn page_field_after_intra_paragraph_break_shows_its_page() {
+    let brk = wordcraft_doc::para::PAGE_BREAK;
+    let d = page_field_doc(0, &["A", &format!("{brk}B")]);
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2);
+    let (shown, _) = shown_and_ranges(&l, 0);
+    assert_eq!(shown, [vec!["1".to_string()], vec!["2".to_string()]]);
+}
+
+/// #1352: a paragraph running over onto the next page shows that page's number in its tail.
+#[test]
+fn page_field_in_a_split_paragraph_tail_shows_its_page() {
+    let long = "words that fill the page ".repeat(400);
+    let d = page_field_doc(0, &["Head", &long]);
+    let l = lay(&d);
+    assert!(l.pages.len() >= 2, "{} pages", l.pages.len());
+    let (shown, ranges) = shown_and_ranges(&l, 0);
+    assert_eq!(shown.first().unwrap(), &["1"]);
+    let last = l.pages.len().to_string();
+    assert_eq!(shown.last().unwrap(), &[last]);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(0)).map(|p| p.len()).unwrap_or(0));
+}
+
+/// #1352: from page 9 to page 10 every field gets a digit wider; the lines on page 10 are broken
+/// again for the wider results, and the paragraph's text is still placed exactly once.
+#[test]
+fn page_fields_from_page_nine_to_ten_rebreak_the_rest() {
+    let pieces: Vec<String> = (0..900).map(|i| format!(" word{i}")).collect();
+    let pieces: Vec<&str> = pieces.iter().map(String::as_str).collect();
+    let d = page_field_doc(8, &pieces);
+    let l = lay(&d);
+    assert!(l.pages.len() >= 10, "{} pages", l.pages.len());
+    let (shown, ranges) = shown_and_ranges(&l, 8);
+    let nine = shown.get(8).unwrap();
+    let ten = shown.get(9).unwrap();
+    assert!(!nine.is_empty() && nine.iter().all(|s| s == "9"), "page 9: {nine:?}");
+    assert!(!ten.is_empty() && ten.iter().all(|s| s == "10"), "page 10: {ten:?}");
+    assert_eq!(shown.iter().map(Vec::len).sum::<usize>(), 900, "every field drawn once");
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(8)).map(|p| p.len()).unwrap_or(0));
+}

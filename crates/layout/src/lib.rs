@@ -447,6 +447,8 @@ struct Key {
     width: u32,
     label: Option<String>,
     page: Option<(u32, u32, u32, u32)>,
+    /// The pages a split paragraph's fields are on after its first (`FieldCtx::page_from`).
+    page_from: u64,
     table: u64,
     notes: u64,
     excl: u64,
@@ -524,6 +526,11 @@ fn has_page_fields(p: &Paragraph) -> bool {
         }
         _ => false,
     })
+}
+
+/// Does `p` show a PAGE field, whose result is the number of the page it lands on?
+fn has_page_number_fields(p: &Paragraph) -> bool {
+    p.objects.iter().any(|o| matches!(o, InlineObject::Field { instr, .. } if fields::field_name(instr) == "PAGE"))
 }
 
 /// Does `p` show a page total, which depends on how many pages the document has?
@@ -694,6 +701,7 @@ impl Ctx<'_> {
             rev: p.rev,
             width: width.to_bits(),
             label: label.as_ref().map(|(t, l)| format!("{t}|{}|{}|{:?}|{:?}|{:?}|{:?}", l.indent, l.hanging, l.suffix, l.align, l.tab, l.chr)),
+            page_from: if page.is_some() && !self.fields.page_from.is_empty() { hash_of(&self.fields.page_from) } else { 0 },
             page,
             table: table.map(|t| hash_of(&format!("{t:?}"))).unwrap_or(0),
             notes: if p.objects.iter().any(|o| matches!(o, InlineObject::NoteRef { .. })) { self.notes_hash } else { 0 },
@@ -2518,7 +2526,7 @@ fn anchor_floats(
     before: f32,
     excl_mark: usize,
     label: &Option<(String, Level)>,
-) -> (HashMap<usize, Rect>, Arc<ParaLayout>) {
+) -> (HashMap<usize, Rect>, Arc<ParaLayout>, Vec<para::Exclusion>) {
     pb.excl.truncate(excl_mark);
     ctx.fields.page = pb.number;
     let (col_x, width) = (pb.col_x(), pb.col_w());
@@ -2543,7 +2551,8 @@ fn anchor_floats(
         }
     }
     let rel = rel_exclusions(&pb.excl, col_x, y0);
-    (rects, ctx.para_labelled(p, width, None, &rel, label.clone()))
+    let pl = ctx.para_labelled(p, width, None, &rel, label.clone());
+    (rects, pl, rel)
 }
 
 /// Where a paragraph's floating objects are positioned from, when they aren't placed already:
@@ -2680,6 +2689,10 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
     place_para_in_flow(ctx, pb, p, block, body_top);
 }
 
+/// How many times one body paragraph is laid out again for the page numbers of the later pages
+/// it runs onto (#1352).
+const MAX_PAGE_RELAYS: usize = 64;
+
 fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, body_top: f32) {
     let width = pb.col_w();
     // Floating objects anchored here join the page's wrap areas before the text is laid out; if
@@ -2689,7 +2702,13 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     let excl_mark = pb.excl.len();
     let guess = pb.y + space_before;
     let label = ctx.next_label(p);
-    let (mut float_rects, mut pl) = anchor_floats(ctx, pb, p, guess, space_before, excl_mark, &label);
+    // The pages fields are on start from this paragraph's own (#1352).
+    ctx.fields.page_from.clear();
+    let (mut float_rects, mut pl, mut rel) = anchor_floats(ctx, pb, p, guess, space_before, excl_mark, &label);
+    // The page its fields were laid out for (and the width), and how many times it was laid out again for a later
+    // page (bounded: a paragraph over hundreds of pages keeps the last number it got).
+    let (mut laid_page, mut laid_width) = (pb.number, pb.col_w());
+    let mut page_relays = 0usize;
     // The anchor paragraph's top (above its space before) the floats were placed from.
     let mut anchor_y = pb.y;
     let spot = |pb: &PageBuilder| (pb.pages.len(), pb.col);
@@ -2765,12 +2784,40 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     // A different top only matters when there is something to wrap around.
     if spot(pb) != placed_at || ((pb.y - guess).abs() > 0.01 && !pb.excl.is_empty()) {
         let y0 = pb.y;
-        (float_rects, pl) = anchor_floats(ctx, pb, p, y0, applied_before, excl_mark, &label);
+        (float_rects, pl, rel) = anchor_floats(ctx, pb, p, y0, applied_before, excl_mark, &label);
+        (laid_page, laid_width) = (pb.number, pb.col_w());
         anchor_y = y0 - applied_before;
     }
     let mut n = pl.lines.len();
     let mut l0 = 0;
     while l0 < n {
+        // Page fields in the lines going onto a new page show that page's number: lay the
+        // paragraph out again with the fields from there on on this page (the lines before stay as
+        // they were, so the line the rest starts with is still there), breaking the rest again for
+        // the new results' widths (#1352). Only a paragraph with page fields pays for this.
+        if l0 > 0
+            && pl.has_page_fields
+            && !pb.web
+            && page_relays < MAX_PAGE_RELAYS
+            && let Some(resume) = pl.lines.get(l0).map(|l| l.start)
+            && ctx.fields.page_from.last().map_or(laid_page, |e| e.1) != pb.number
+            && has_page_number_fields(p)
+        {
+            page_relays += 1;
+            ctx.fields.page_from.push((resume, pb.number));
+            ctx.fields.page = laid_page;
+            let relaid = ctx.para_labelled(p, laid_width, None, &rel, label.clone());
+            match relaid.lines.iter().position(|l| l.start == resume) {
+                Some(k) => {
+                    pl = relaid;
+                    n = pl.lines.len();
+                    l0 = k;
+                }
+                None => {
+                    ctx.fields.page_from.pop();
+                }
+            }
+        }
         // How many lines fit?
         let Some(first) = pl.lines.get(l0) else { break };
         // A paragraph's first line may start below its top (pushed down by a floating object).
@@ -2862,7 +2909,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 pb.advance(block, body_top);
                 if l0 == 0 {
                     let y0 = pb.y;
-                    (float_rects, pl) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
+                    (float_rects, pl, rel) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
+                    (laid_page, laid_width) = (pb.number, pb.col_w());
                     anchor_y = y0;
                     n = pl.lines.len();
                 }
@@ -2972,9 +3020,10 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     && let Some(resume) = pl.lines.get(l0).map(|l| l.start)
                 {
                     let y0 = pb.y;
-                    let (rects, relaid) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
+                    let (rects, relaid, relaid_rel) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
                     if let Some(k) = relaid.lines.iter().position(|l| l.start == resume) {
-                        (float_rects, pl) = (rects, relaid);
+                        (float_rects, pl, rel) = (rects, relaid, relaid_rel);
+                        (laid_page, laid_width) = (pb.number, pb.col_w());
                         anchor_y = y0;
                         n = pl.lines.len();
                         l0 = k;
@@ -2985,6 +3034,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             _ => {}
         }
     }
+    ctx.fields.page_from.clear();
     pb.y += pl.rp.space_after;
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after, pl.rp.after_auto, label.is_some()));
 }
