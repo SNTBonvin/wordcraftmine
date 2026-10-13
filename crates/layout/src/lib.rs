@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use wordcraft_doc::numbering::{Counters, Level};
 use wordcraft_doc::para::{Anchor, Float, FloatAlign, InlineObject, Wrap, WrapText};
-use wordcraft_doc::props::{Border, CharProps, Rgb, TableFloat, TextDirection};
+use wordcraft_doc::props::{Border, BorderStyle, Borders, CharProps, Rgb, TableFloat, TextDirection};
 use wordcraft_doc::section::{HeaderSet, SectionProps, SectionStart};
 use wordcraft_doc::{Block, Blocks, Document, Paragraph, Path, StoryRef};
 use wordcraft_geom::{Point, Rect, Spin};
@@ -878,6 +878,7 @@ fn layout_box(
     let mut prev_after_auto = false;
     let mut prev_listed = false;
     let mut prev_style: Option<(String, bool)> = None;
+    let mut prev_box: Option<ParaBox> = None;
     let mut last_top = 0.0f32;
     for (i, b) in blocks.iter().enumerate() {
         last_top = y;
@@ -931,6 +932,22 @@ fn layout_box(
                     before = (before - prev_after).max(0.0);
                 }
                 y += if i == 0 { before } else { before.max(0.0) };
+                let mut edges = ParaBox::of(&pl.rp);
+                let joined_up = match (&edges, &prev_box) {
+                    (Some(e), Some(a)) if e.joins(a) => Some(a.text_bottom),
+                    _ => None,
+                };
+                if let (Some(_), Some(a)) = (joined_up, &prev_box) {
+                    y -= a.bottom;
+                }
+                y += edges.map_or(0.0, |e| e.top_after(prev_box.as_ref()));
+                let joined_below = edges.is_some_and(|e| {
+                    blocks
+                        .get(i + 1)
+                        .and_then(|b| b.as_para())
+                        .and_then(|n| ParaBox::of(&ctx.doc.styles.resolve_para(&n.props)))
+                        .is_some_and(|n| n.joins(&e))
+                });
                 // Floating objects anchored here: place them, then wrap the text around them.
                 // One left out of the layout (hidden, or deleted in the final text) takes no room.
                 let mut floats = HashMap::new();
@@ -950,7 +967,8 @@ fn layout_box(
                     pl = ctx.para_labelled(p, width, table, &rel, label);
                 }
                 let lead = pl.lines.first().map_or(0.0, |l| l.top.max(0.0));
-                push_para(&mut items, story, &path, &pl, 0, pl.lines.len(), 0.0, y + lead, width);
+                let joint = BoxJoint { up: joined_up, below: joined_below };
+                push_para_joined(&mut items, story, &path, &pl, (0, pl.lines.len()), (0.0, y + lead), width, joint);
                 // Pictures, shapes and text boxes: drawn, their areas and text boxes' text.
                 if !p.objects.is_empty() {
                     let at = ObjFrame { page: frame, col: (0.0, width), para_y: y, table_chr: table.map(|t| &t.chr) };
@@ -962,13 +980,20 @@ fn layout_box(
                 }
                 // Automatic space after: none after the last paragraph of a cell or box.
                 let after = if pl.rp.after_auto && i + 1 == blocks.len() { 0.0 } else { pl.rp.space_after };
-                y += pl.height + after;
+                y += pl.height;
+                if let Some(e) = &mut edges {
+                    e.text_bottom = y;
+                    y += e.bottom;
+                }
+                y += after;
+                prev_box = edges;
                 prev_after = after;
                 prev_after_auto = pl.rp.after_auto;
                 prev_listed = listed;
                 prev_style = Some((pl.rp.style.clone(), ctxl));
             }
             Block::Table(t) => {
+                prev_box = None;
                 if depth > 8 {
                     continue;
                 }
@@ -1182,8 +1207,80 @@ fn fit_box(items: Vec<Placed>, height: f32) -> Vec<Placed> {
     out
 }
 
+/// The room a paragraph's borders take above and below its lines, and what makes a run of
+/// bordered paragraphs one box. Measured in Word for Windows: a border stands its distance from
+/// the text and takes its own width (a double line three widths: two lines and the gap between);
+/// paragraphs with the same borders and indents share one box, so only the first has the top
+/// border and only the last the bottom one, and a border between them takes its distance on both
+/// sides plus its width.
+#[derive(Clone, Copy)]
+struct ParaBox {
+    borders: Borders,
+    indents: (f32, f32),
+    top: f32,
+    bottom: f32,
+    /// Where the paragraph's last line ended, once it is placed.
+    text_bottom: f32,
+}
+
+/// How a bordered paragraph meets its neighbours in a run that shares one box.
+#[derive(Clone, Copy, Default)]
+struct BoxJoint {
+    /// It continues the box of the paragraph above, whose text ended at this y: no top border,
+    /// the sides (and shading) reach up to there, and a border between the two is drawn.
+    up: Option<f32>,
+    /// The paragraph below continues the box: no bottom border.
+    below: bool,
+}
+
+impl ParaBox {
+    fn of(rp: &wordcraft_doc::resolve::ResolvedPara) -> Option<ParaBox> {
+        let borders = rp.borders?;
+        Some(ParaBox {
+            borders,
+            indents: (rp.indent_left, rp.indent_right),
+            top: border_room(borders.top),
+            bottom: border_room(borders.bottom),
+            text_bottom: 0.0,
+        })
+    }
+
+    /// Whether this paragraph continues the box of the bordered paragraph above.
+    fn joins(&self, above: &ParaBox) -> bool {
+        self.borders == above.borders && self.indents == above.indents
+    }
+
+    /// Room above the first line, below the paragraph `above` (when that one is bordered).
+    fn top_after(&self, above: Option<&ParaBox>) -> f32 {
+        match above {
+            Some(a) if self.joins(a) => self.borders.between.filter(Border::is_visible).map_or(0.0, |b| border_room(Some(b)) + b.space.max(0.0)),
+            _ => self.top,
+        }
+    }
+}
+
+/// A border's distance from the text plus its line.
+fn border_room(b: Option<Border>) -> f32 {
+    b.filter(Border::is_visible).map_or(0.0, |b| b.space.max(0.0) + b.width * if b.style == BorderStyle::Double { 3.0 } else { 1.0 })
+}
+
 /// Paragraph lines plus their shading and borders.
 fn push_para(items: &mut Vec<Placed>, story: StoryRef, path: &[u32], pl: &Arc<ParaLayout>, l0: usize, l1: usize, x: f32, y: f32, width: f32) {
+    push_para_joined(items, story, path, pl, (l0, l1), (x, y), width, BoxJoint::default());
+}
+
+/// [`push_para`] for a paragraph in a run of bordered paragraphs that share one box.
+#[allow(clippy::too_many_arguments)]
+fn push_para_joined(
+    items: &mut Vec<Placed>,
+    story: StoryRef,
+    path: &[u32],
+    pl: &Arc<ParaLayout>,
+    (l0, l1): (usize, usize),
+    (x, y): (f32, f32),
+    width: f32,
+    joint: BoxJoint,
+) {
     let (Some(first), Some(last)) = (pl.lines.get(l0), l1.checked_sub(1).and_then(|k| pl.lines.get(k))) else {
         return;
     };
@@ -1193,21 +1290,35 @@ fn push_para(items: &mut Vec<Placed>, story: StoryRef, path: &[u32], pl: &Arc<Pa
     let (li, ri) = if pl.rp.bidi { (pl.rp.indent_right, start) } else { (start, pl.rp.indent_right) };
     let left = x + li;
     let right = x + width - ri;
+    // Joined to the paragraph above (the first lines of the paragraph only): up to its text.
+    let up = joint.up.filter(|_| l0 == 0).map(|t| t.min(y));
+    let below = joint.below && l1 >= pl.lines.len();
     if let Some(c) = pl.rp.shading {
         let pad = pl.rp.borders.as_ref().map(|b| b.left.map(|l| l.space).unwrap_or(4.0)).unwrap_or(0.0);
-        items.push(Placed::Fill { rect: Rect::new(left - pad, y, right - left + pad * 2.0, h), color: c });
+        // Shading fills the box out to its borders: their distance above the first line and
+        // below the last, as at the sides.
+        let room = |o: Option<Border>| o.filter(Border::is_visible).map_or(0.0, |b| b.space.max(0.0));
+        let (above, under) = pl.rp.borders.map_or((0.0, 0.0), |b| (room(b.top), room(b.bottom)));
+        let top = up.unwrap_or(if l0 == 0 { y - above } else { y });
+        let bottom = y + h + if l1 >= pl.lines.len() && !below { under } else { 0.0 };
+        items.push(Placed::Fill { rect: Rect::new(left - pad, top, right - left + pad * 2.0, bottom - top), color: c });
     }
     items.push(Placed::Lines { story, path: Path(path.to_vec()), para: pl.clone(), l0, l1, x, y, turn: TextDirection::Horizontal });
     if let Some(b) = &pl.rp.borders {
         let sp = |o: &Option<Border>| o.map(|b| b.space).unwrap_or(0.0);
         let (lx, rx) = (left - sp(&b.left), right + sp(&b.right));
-        let (ty, by) = (y - sp(&b.top), y + h + sp(&b.bottom));
-        if let Some(t) = b.top.filter(|_| l0 == 0)
+        let (ty, by) = (up.unwrap_or(y - sp(&b.top)), if below { y + h } else { y + h + sp(&b.bottom) });
+        if let Some(t) = b.top.filter(|_| l0 == 0 && up.is_none())
             && t.is_visible()
         {
             items.push(Placed::Rule { x0: lx, y0: ty, x1: rx, y1: ty, border: t });
         }
-        if let Some(t) = b.bottom.filter(|_| l1 >= pl.lines.len())
+        if let Some(t) = b.between.filter(|_| up.is_some())
+            && t.is_visible()
+        {
+            items.push(Placed::Rule { x0: lx, y0: y - t.space, x1: rx, y1: y - t.space, border: t });
+        }
+        if let Some(t) = b.bottom.filter(|_| l1 >= pl.lines.len() && !below)
             && t.is_visible()
         {
             items.push(Placed::Rule { x0: lx, y0: by, x1: rx, y1: by, border: t });
@@ -1243,6 +1354,8 @@ struct PageBuilder<'a> {
     /// The paragraph above: its style, contextual spacing, space after, whether that is automatic
     /// and whether it is a list item.
     prev: Option<(String, bool, f32, bool, bool)>,
+    /// The bordered paragraph above, for joining a run of them into one box (see [`ParaBox`]).
+    prev_box: Option<ParaBox>,
     /// The previous paragraph ended with a page break (its mark stayed with the break): the next
     /// paragraph, first on the new page, gets no space before (Word).
     after_break_mark: bool,
@@ -1839,6 +1952,7 @@ fn layout_pass(
         carry: Vec::new(),
         orig_bottom: 0.0,
         prev: None,
+        prev_box: None,
         after_break_mark: false,
         excl: Vec::new(),
         float_tables: Vec::new(),
@@ -2668,12 +2782,13 @@ fn para_notes(doc: &Document, p: &Paragraph, pl: &ParaLayout) -> Vec<(usize, u32
 fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, body_top: f32) {
     if !pb.web && ctx.quiet_marks.binary_search(&block).is_ok() {
         // Its (empty) line stays where the text ended, even at the bottom of a full column.
-        let (y, prev, bottom, content_bottom, at) = (pb.y, pb.prev.clone(), pb.bottom, pb.content_bottom, (pb.pages.len(), pb.col));
+        let (y, prev, prev_box, bottom, content_bottom, at) =
+            (pb.y, pb.prev.clone(), pb.prev_box, pb.bottom, pb.content_bottom, (pb.pages.len(), pb.col));
         pb.bottom = f32::MAX / 4.0;
         place_para_in_flow(ctx, pb, p, block, body_top);
         pb.bottom = bottom;
         if (pb.pages.len(), pb.col) == at {
-            (pb.y, pb.prev, pb.content_bottom) = (y, prev, content_bottom);
+            (pb.y, pb.prev, pb.prev_box, pb.content_bottom) = (y, prev, prev_box, content_bottom);
         }
         return;
     }
@@ -2748,6 +2863,27 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     if pl.rp.before_auto && block == 0 {
         before = 0.0;
     }
+    // Borders take room above and below the text; a run of paragraphs with the same ones is one box.
+    let above = pb.prev_box.take().filter(|_| !pb.at_top());
+    let mut edges = ParaBox::of(&pl.rp);
+    let edge_top = edges.map_or(0.0, |e| e.top_after(above.as_ref()));
+    let joined_up = match (&edges, &above) {
+        (Some(e), Some(a)) if e.joins(a) => Some(a.text_bottom),
+        _ => None,
+    };
+    if let (Some(_), Some(a)) = (joined_up, &above) {
+        pb.y -= a.bottom;
+    }
+    let joined_at = (pb.pages.len(), pb.col);
+    // The paragraph below continues the box when it has the same borders and indents.
+    let joined_below = edges.is_some_and(|e| {
+        ctx.doc
+            .body
+            .get(block + 1)
+            .and_then(|b| b.as_para())
+            .and_then(|n| ParaBox::of(&ctx.doc.styles.resolve_para(&n.props)))
+            .is_some_and(|n| n.joins(&e))
+    });
     pb.y += before;
     let mut applied_before = before;
     // Keep lines together: if it doesn't fit but would on an empty column, move it. Keep with
@@ -2774,7 +2910,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
         // How many lines fit?
         let Some(first) = pl.lines.get(l0) else { break };
         // A paragraph's first line may start below its top (pushed down by a floating object).
-        let lead = if l0 == 0 { first.top.max(0.0) } else { 0.0 };
+        let lead = if l0 == 0 { first.top.max(0.0) + edge_top } else { 0.0 };
         let mut l1 = l0;
         let mut forced_break = None;
         // A page break followed only by the paragraph mark: the mark's (empty) line stays on this
@@ -2849,6 +2985,10 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 l1 = l0; // orphan: move the first line to the next page
             } else if n - l1 == 1 && l1 - l0 >= 3 {
                 l1 -= 1; // widow: take one more line along
+            } else if n - l1 == 1 && l1 - l0 == 2 && l0 == 0 && !pb.at_top() {
+                // A three-line paragraph with room for two: taking a line along would leave
+                // the first one alone, so the whole paragraph moves (Word).
+                l1 = l0;
             }
         }
         // A row (text both sides of a floating object) stays together.
@@ -2895,7 +3035,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             pb.bottom = pb.body_floor().max(placed_bottom).min(pb.orig_bottom);
         }
         let mut items = Vec::new();
-        push_para(&mut items, StoryRef::Body, &[block as u32], &pl, l0, l1, x, y, width);
+        let joint = BoxJoint { up: joined_up.filter(|_| (pb.pages.len(), pb.col) == joined_at), below: joined_below };
+        push_para_joined(&mut items, StoryRef::Body, &[block as u32], &pl, (l0, l1), (x, y), width, joint);
         // Pictures, shapes and text boxes in these lines (web view: floats placed by this piece).
         let at = ObjFrame {
             page: Some(PageFrame { sect: pb.sect, origin: (0.0, 0.0) }),
@@ -2985,6 +3126,12 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             _ => {}
         }
     }
+    if let Some(e) = &mut edges {
+        e.text_bottom = pb.y;
+        pb.y += e.bottom;
+        pb.content_bottom = pb.content_bottom.max(pb.y);
+    }
+    pb.prev_box = edges;
     pb.y += pl.rp.space_after;
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after, pl.rp.after_auto, label.is_some()));
 }
@@ -3096,6 +3243,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32
 
 fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, block: usize, body_top: f32) {
     pb.prev = None;
+    pb.prev_box = None;
     let width = pb.col_w();
     let mut tl = table::layout_table(ctx, StoryRef::Body, t, &[block as u32], width, 1);
     if let Some(f) = t.props.float.filter(|_| !pb.web) {

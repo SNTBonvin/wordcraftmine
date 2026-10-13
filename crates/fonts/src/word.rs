@@ -29,6 +29,8 @@ fn substitutes(family: &str) -> &'static [&'static str] {
     const SERIF: &[&str] = &["Caladea", "Times New Roman", "Liberation Serif", "Georgia", "Noto Serif", "DejaVu Serif", "Source Serif 4"];
     const MONO: &[&str] = &["Courier New", "Liberation Mono", "Menlo", "Consolas", "DejaVu Sans Mono", "JetBrains Mono"];
     const ARIAL: &[&str] = &["Liberation Sans", "Helvetica", "Helvetica Neue", "Arimo", "Source Sans 3"];
+    // Helvetica Neue isn't installed outside macOS; Word for Windows draws it with Arial.
+    const HELVETICA_NEUE: &[&str] = &["Arial", "Liberation Sans", "Helvetica", "Arimo", "Source Sans 3"];
     const TIMES: &[&str] = &["Liberation Serif", "Times", "Tinos", "Source Serif 4"];
     // Word's symbol fonts (Symbol, Wingdings…) are proprietary: their characters are drawn as their
     // Unicode equivalents (`wordcraft_doc::symbol_fonts`) from these faces or any face that has them.
@@ -66,6 +68,7 @@ fn substitutes(family: &str) -> &'static [&'static str] {
     match f.as_str() {
         "palatino linotype" | "book antiqua" | "palatino" => PALATINO,
         "arial" | "helvetica" | "arial nova" => ARIAL,
+        "helvetica neue" => HELVETICA_NEUE,
         "times new roman" | "times" => TIMES,
         "courier new" | "courier" | "consolas" | "lucida console" | "cascadia code" | "cascadia mono" => MONO,
         "symbol" | "wingdings" | "wingdings 2" | "wingdings 3" | "segoe ui symbol" | "webdings" => SYMBOL,
@@ -272,6 +275,13 @@ mod tests {
         // A negative gap adds nothing; the most negative descender doesn't overflow.
         assert_eq!(hhea_line(1000, -300, -50), (1000.0, 300.0));
         assert_eq!(hhea_line(1000, i16::MIN, 0), (1000.0, 32768.0));
+    }
+
+    #[test]
+    fn a_missing_helvetica_neue_becomes_arial() {
+        // Word for Windows draws Helvetica Neue with Arial, not with the default sans (Calibri).
+        assert_eq!(substitutes("Helvetica Neue").first(), Some(&"Arial"));
+        assert_eq!(substitutes("helvetica neue").get(1), Some(&"Liberation Sans"));
     }
 
     #[test]

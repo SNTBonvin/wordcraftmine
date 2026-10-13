@@ -783,7 +783,8 @@ impl<'a> Builder<'a> {
         if let Some(p) = cur {
             segs.push((seg_start, text.len(), p));
         }
-        let no_kern = [wordcraft_fonts::feature_value(b"kern", 0)];
+        let no_kern = wordcraft_fonts::feature_value(b"kern", 0);
+        let no_liga = wordcraft_fonts::feature_value(b"liga", 0);
         for (a, b, key) in segs {
             let Some(sub) = text.get(a..b) else { continue };
             let rc = match (&rc_cs, key.complex) {
@@ -823,7 +824,16 @@ impl<'a> Builder<'a> {
                 }
             };
             // The shaper kerns by default; Word kerns only when Kerning for fonts covers the size.
-            let features: &[wordcraft_fonts::Feature] = if rc.kerned() { &[] } else { &no_kern };
+            // It forms standard ligatures by default too; Word forms none (Ligatures: None) in
+            // Latin text, so "tt" and "ti" keep their two advances. Complex scripts keep theirs.
+            let mut features: Vec<wordcraft_fonts::Feature> = Vec::with_capacity(2);
+            if !rc.kerned() {
+                features.push(no_kern);
+            }
+            if !key.complex {
+                features.push(no_liga);
+            }
+            let features = features.as_slice();
             let shaped = if use_levels {
                 wordcraft_fonts::shape_run(&st.face, shape_text, features, map, key.rtl)
             } else {
@@ -1657,6 +1667,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         let mut j = i;
         let mut pending_tab: Option<(usize, TabStop, f32)> = None; // tab cluster, stop, x where tab started
         let mut space_w = 0.0f32; // width of the spaces so far on this line
+        // Where the text ended before the spaces in front of the current word, and the width of
+        // the spaces before those: the line as it would be without the word.
+        let mut before_word: Option<(f32, f32)> = None;
         let mut has_tab = false;
         while j < n {
             let Some(c) = pl.clusters.get(j).cloned() else { break };
@@ -1726,7 +1739,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     _ => false,
                 }
             });
-            let shrink = if shrink_spaces && !has_tab { space_w * MAX_SPACE_SHRINK } else { 0.0 };
+            let shrink = if shrink_spaces && !has_tab { space_shrink_room(space_w, before_word, right_edge) } else { 0.0 };
             let fits = absorbs || x + c.adv <= right_edge + shrink + 0.01 || c.kind == ClKind::Space || c.kind == ClKind::Marker;
             if !fits && j > c0 {
                 // Wrap: back up to the last break opportunity on this line.
@@ -1749,6 +1762,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     // No opportunity: break here (a long word).
                 }
                 break;
+            }
+            if c.kind == ClKind::Space && j > c0 && pl.clusters.get(j - 1).is_some_and(|p| p.kind != ClKind::Space) {
+                before_word = Some((x, space_w));
             }
             xs.push(x);
             x += c.adv;
@@ -1849,6 +1865,8 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         // The tallest picture on the line (it sits on the baseline).
         let mut obj_asc = 0.0f32;
         let mut any = false;
+        // Whether anything but pictures (text, an equation) sets the line's height.
+        let mut text = false;
         let dropped = pl.drop_cap.map_or(0, |d| d.0);
         for (k, c) in pl.clusters.get(c0..c1).into_iter().flatten().enumerate() {
             // Spaces and tabs never make a line taller, whatever their size: Word sizes a line by
@@ -1863,6 +1881,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                 let (a, d) = if matches!(c.kind, ClKind::Object(_)) && c.obj_h > 0.0 {
                     if pl.maths.iter().any(|(k, _)| c.kind == ClKind::Object(*k)) {
                         // An equation is text: its ascent and descent count like the text's.
+                        text = true;
                         (c.obj_h, c.obj_d)
                     } else {
                         obj_asc = obj_asc.max(c.obj_h);
@@ -1870,6 +1889,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     }
                 } else {
                     // `obj_h` is set on text clusters only under ruby text, which the line grows to fit.
+                    text = true;
                     ((st.ascent + st.shift.max(0.0)).max(c.obj_h + st.shift), st.descent + (-st.shift).max(0.0))
                 };
                 asc = asc.max(a);
@@ -1893,22 +1913,29 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         }
         // Line spacing scales the text's height, never a picture's: a line is at least as tall
         // as its tallest picture plus the descent below the baseline.
-        // shortcut: Word leaves less than a full descent below a line of only pictures (0.5pt to
-        // 1.9pt in docxide-pdf's header fixtures case121/case123, where the descent is 3.3pt), and
-        // no rule tried so far (none, only the text's descent) matched both; it needs Word probes.
         let natural = asc + desc;
         let pictures = if obj_asc > asc { obj_asc + desc } else { 0.0 };
+        // A line of only pictures has no descent below them: it is as tall as the tallest, and
+        // multiple spacing adds its share of the font's line below (measured in Word for Windows:
+        // a 72 pt picture alone on a line of Calibri 11 and 22, Times New Roman and Arial took
+        // 72 pt at single spacing and 72 pt + (m - 1) x the font's line at 1.08, 1.5 and 2).
+        let picture_line = match rp.line_spacing {
+            LineSpacing::Multiple(m) if !text && obj_asc > asc && grid.is_none() => Some(obj_asc + (m - 1.0).max(0.0) * natural),
+            _ => None,
+        };
         // Document grid: the line takes whole line pitches, its text centred in them.
         let (height, centred) = match (rp.line_spacing, grid) {
             (LineSpacing::Multiple(m), Some(g)) => ((g.snap_height(natural) * m).max(g.snap_height(pictures)), true),
             (LineSpacing::AtLeast(v), Some(g)) => (g.snap_height(natural.max(pictures)).max(v), true),
-            (LineSpacing::Multiple(m), None) => ((natural * m).max(pictures), false),
+            (LineSpacing::Multiple(m), None) => (picture_line.unwrap_or((natural * m).max(pictures)), false),
             (LineSpacing::AtLeast(v), None) => (natural.max(pictures).max(v), false),
             (LineSpacing::Exactly(v), _) => (v, false),
         };
         let baseline = if centred {
             let up = asc.max(obj_asc);
             top + ((height - up - desc) / 2.0).max(0.0) + up
+        } else if picture_line.is_some() {
+            top + obj_asc
         } else {
             top + baseline_offset(rp.line_spacing, asc, height, desc).max(obj_asc.min(height - desc))
         };
@@ -2160,14 +2187,21 @@ const MIN_SPAN: f32 = 20.0;
 /// How far below a line's top its baseline sits. Multiple spacing at or above single keeps the
 /// text at the top of the line and puts the extra leading below the baseline; below single it
 /// shrinks the whole box, ascent included (Word's output for docxide-pdf's fixtures: 1.15-spaced
-/// Times New Roman 12pt sits one ascent below the line top, not 1.8pt lower). Exact and at-least
-/// spacing keep the descent below the baseline and the rest above it.
+/// Times New Roman 12pt sits one ascent below the line top, not 1.8pt lower). At-least spacing
+/// keeps the descent below the baseline and the rest above it. Exact spacing puts the baseline
+/// four-fifths of the way down the line, whatever the font and its size (measured in Word for
+/// Windows: exactly 10, 12, 14, 16, 20 and 40 pt lines of Calibri, Arial and Times New Roman at
+/// 8 to 24 pt).
 fn baseline_offset(spacing: LineSpacing, asc: f32, height: f32, desc: f32) -> f32 {
     match spacing {
         LineSpacing::Multiple(m) => asc * m.min(1.0),
-        LineSpacing::AtLeast(_) | LineSpacing::Exactly(_) => height - desc,
+        LineSpacing::AtLeast(_) => height - desc,
+        LineSpacing::Exactly(_) => height * EXACT_BASELINE,
     }
 }
+
+/// Where the baseline sits in an exactly spaced line, as a share of the line's height from its top.
+const EXACT_BASELINE: f32 = 0.8;
 
 /// The spans of a row at `top` (about `h` tall) between `lo` and `hi` that text can use around
 /// the exclusions, left to right (Square wrapping uses both sides of an object). `Err(y)`: none
@@ -2222,8 +2256,31 @@ fn row_spans(exclusions: &[Exclusion], top: f32, h: f32, lo: f32, hi: f32) -> Re
 const HYPHENATION_ZONE: f32 = wordcraft_doc::DEFAULT_HYPHENATION_ZONE;
 
 /// How much of their width the spaces of a justified line may give up to fit more text (Word
-/// 2013+, compatibility mode 15).
-const MAX_SPACE_SHRINK: f32 = 0.2;
+/// 2013+, compatibility mode 15): a quarter (measured in Word for Windows with the right indent
+/// moved in 0.1 pt steps: lines needing up to 24.8% were kept whole, none needing over 25%).
+const MAX_SPACE_SHRINK: f32 = 0.25;
+
+/// A justified line keeps a word by shrinking its spaces only while that distorts them less than
+/// leaving the word out would: shrinking counts double, so the spaces may shrink by at most half
+/// of what they would have to stretch without the word.
+const SHRINK_PER_STRETCH: f32 = 0.5;
+
+/// How far past the right edge the current word may reach on a justified line whose spaces are
+/// `space_w` wide in all: what the spaces can give up. `before_word`: where the text ended
+/// before the word (and the spaces in front of it), and the width of the spaces up to there.
+///
+/// Measured in Word for Windows (words of 5 to 40 pt after 7, 14 and 16 spaces, in Calibri at 11
+/// and 22 pt, Times New Roman, Consolas and Courier New, the overrun moved in 0.05 to 0.25 pt
+/// steps): the word stays when the overrun is at most [`MAX_SPACE_SHRINK`] of the spaces, and
+/// the share of the spaces it takes is at most [`SHRINK_PER_STRETCH`] of the share the line's
+/// other spaces would grow by to fill the line without the word.
+fn space_shrink_room(space_w: f32, before_word: Option<(f32, f32)>, right_edge: f32) -> f32 {
+    let room = space_w * MAX_SPACE_SHRINK;
+    match before_word {
+        Some((end, inner)) if inner > 0.0 => room.min(SHRINK_PER_STRETCH * (right_edge - end).max(0.0) / inner * space_w),
+        _ => room,
+    }
+}
 
 /// Take `-slack` (an overflow) out of the line's inner spaces, in proportion to their widths and
 /// never more than [`MAX_SPACE_SHRINK`] of them. Trailing spaces hang and are left alone.
@@ -2331,12 +2388,29 @@ fn pl_text_at(c: &Cluster) -> bool {
     c.dot
 }
 
+/// How much of a decimal tab's text (`seg` wide, after the tab at cluster `tj`) comes before its
+/// first decimal point: that part ends at the tab stop. All of it when it has no point.
+fn decimal_lead(pl: &ParaLayout, tj: usize, seg: f32) -> f32 {
+    let mut w = 0.0;
+    for c in pl.clusters.iter().skip(tj + 1) {
+        if w >= seg - 0.001 {
+            break;
+        }
+        if c.dot {
+            return w;
+        }
+        w += c.adv;
+    }
+    seg
+}
+
 fn resolve_tab(pl: &mut ParaLayout, pending: &mut Option<(usize, TabStop, f32)>, xs: &mut [f32], c0: usize, x: f32, xo: &mut f32) {
     // Finish a centre/right/decimal tab: its text (possibly empty) ends at `x`.
     let Some((tj, stop, tx)) = pending.take() else { return };
     let seg = x - tx - pl.clusters.get(tj).map(|c| c.adv).unwrap_or(0.0);
     let want = match stop.align {
-        TabAlign::Right | TabAlign::Decimal => stop.pos - tx - seg,
+        TabAlign::Right => stop.pos - tx - seg,
+        TabAlign::Decimal => stop.pos - tx - decimal_lead(pl, tj, seg),
         TabAlign::Center => stop.pos - tx - seg / 2.0,
         _ => return,
     }

@@ -481,6 +481,192 @@ fn right_tab_aligns_text_end() {
     assert!((end - 472.0).abs() < 1.0, "{end}");
 }
 
+/// A decimal tab puts the decimal point at the stop, at the end of a line too (the text was
+/// right-aligned there, its last digit at the stop): the point of "24.75" starts at 72 + 400,
+/// and a number without a point ends there.
+#[test]
+fn decimal_tab_aligns_the_point_at_the_end_of_a_line() {
+    let at = |text: &str, off: usize| {
+        let mut d = Document::from_text(text);
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.tabs =
+                Some(vec![wordcraft_doc::props::TabStop { pos: 400.0, align: wordcraft_doc::props::TabAlign::Decimal, leader: Default::default() }])
+        })
+        .unwrap();
+        lay(&d).caret(&Pos::body(0, off)).unwrap().x
+    };
+    assert!((at("Lantern\t24.75", "Lantern\t24".len()) - 472.0).abs() < 0.01, "{}", at("Lantern\t24.75", 10));
+    assert!((at("Lantern\t2475", "Lantern\t2475".len()) - 472.0).abs() < 0.01);
+}
+
+/// Paragraph borders take room: a border stands its distance from the text and takes its own
+/// width (a double line three widths), above the first line or below the last. Paragraphs with
+/// the same borders share one box (top border on the first only, bottom on the last only), and
+/// a border between them takes its distance on both sides plus its width.
+#[test]
+fn paragraph_borders_take_their_distance_and_width() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let line = |style, width, space| Some(Border { style, width, color: None, space });
+    // Tops of four paragraphs; `borders[i]` goes on paragraph i.
+    let tops = |borders: [Option<Borders>; 4]| -> Vec<f32> {
+        let mut d = Document::from_text("one\ntwo\nthree\nfour");
+        for (i, b) in borders.into_iter().enumerate() {
+            d.format_paragraphs(&Pos::body(i, 0), &Pos::body(i, 0), &|p| p.borders = b).unwrap();
+        }
+        let l = lay(&d);
+        (0..4).map(|i| l.caret(&Pos::body(i, 0)).unwrap().top).collect()
+    };
+    let plain = tops([None; 4]);
+    let moved = |b: [Option<Borders>; 4]| -> Vec<f32> { tops(b).iter().zip(&plain).map(|(a, p)| a - p).collect() };
+    let near = |got: &[f32], want: [f32; 4]| got.iter().zip(want).all(|(g, w)| (g - w).abs() < 0.01);
+
+    // Bottom border 2.25 pt, 6 pt from the text: what follows moves down 6 + 2.25.
+    let bottom = Borders { bottom: line(BorderStyle::Single, 2.25, 6.0), ..Default::default() };
+    let m = moved([None, Some(bottom), None, None]);
+    assert!(near(&m, [0.0, 0.0, 8.25, 8.25]), "{m:?}");
+    // A double line 0.75 pt wide, 1 pt away: 1 + 3 x 0.75.
+    let double = Borders { bottom: line(BorderStyle::Double, 0.75, 1.0), ..Default::default() };
+    let m = moved([None, Some(double), None, None]);
+    assert!(near(&m, [0.0, 0.0, 3.25, 3.25]), "{m:?}");
+    // Top and bottom, 0.75 pt, 4 pt away: the paragraph itself moves down 4.75, the rest 9.5.
+    let both = Borders { top: line(BorderStyle::Single, 0.75, 4.0), bottom: line(BorderStyle::Single, 0.75, 4.0), ..Default::default() };
+    let m = moved([None, Some(both), None, None]);
+    assert!(near(&m, [0.0, 4.75, 9.5, 9.5]), "{m:?}");
+    // The same box on paragraphs two and three is one box: one top, one bottom.
+    let m = moved([None, Some(both), Some(both), None]);
+    assert!(near(&m, [0.0, 4.75, 4.75, 9.5]), "{m:?}");
+    // With a border between (0.5 pt, 4 pt away) the second of them moves down 4 + 0.5 + 4 more.
+    let between = Borders { between: line(BorderStyle::Single, 0.5, 4.0), ..both };
+    let m = moved([None, Some(between), Some(between), None]);
+    assert!(near(&m, [0.0, 4.75, 4.75 + 8.5, 9.5 + 8.5]), "{m:?}");
+}
+
+/// Widow/orphan control never splits a three-line paragraph: with room for two of its lines at
+/// the bottom of a page, leaving the third alone on the next page is a widow and taking one
+/// along an orphan, so the paragraph starts the next page. A four-line one splits two and two.
+#[test]
+fn a_three_line_paragraph_is_never_split() {
+    use wordcraft_doc::props::{LineSpacing, ParaProps};
+    // 20 pt lines, no spacing: the 648 pt body holds 32. After 30 one-line paragraphs two fit.
+    let pages_of_last = |lines: usize| {
+        let props =
+            ParaProps { line_spacing: Some(LineSpacing::Exactly(20.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+        let mut d = Document::new();
+        let mut body: Vec<_> = (0..30).map(|_| wordcraft_doc::Paragraph::with_text("line", Default::default())).collect();
+        body.push(wordcraft_doc::Paragraph::with_text(&vec!["line"; lines].join("\n"), Default::default()));
+        d.body = body
+            .into_iter()
+            .map(|mut p| {
+                p.props = props.clone();
+                wordcraft_doc::para_block(p)
+            })
+            .collect();
+        let l = lay(&d);
+        let len = lines * 5 - 1;
+        (l.caret(&Pos::body(30, 0)).unwrap().page, l.caret(&Pos::body(30, len)).unwrap().page)
+    };
+    assert_eq!(pages_of_last(2), (0, 0), "two lines fit");
+    assert_eq!(pages_of_last(3), (1, 1), "three lines move whole");
+    assert_eq!(pages_of_last(4), (0, 1), "four lines split two and two");
+}
+
+/// A run of paragraphs with the same borders is drawn as one box: one line above the first, one
+/// below the last, the sides unbroken from top to bottom, and a line between two paragraphs
+/// only when a border between is set.
+#[test]
+fn a_run_of_boxed_paragraphs_is_drawn_as_one_box() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let line = Some(Border { style: BorderStyle::Single, width: 0.5, color: None, space: 4.0 });
+    let boxed = Borders { top: line, left: line, bottom: line, right: line, ..Default::default() };
+    // (horizontal lines, vertical lines, top of the highest vertical, bottom of the lowest, and
+    // the same of the vertical pieces laid end to end)
+    let rules = |borders: Borders, n: usize| {
+        let mut d = Document::from_text("one\ntwo\nthree\nfour");
+        for i in 1..=n {
+            d.format_paragraphs(&Pos::body(i, 0), &Pos::body(i, 0), &|p| p.borders = Some(borders)).unwrap();
+        }
+        let l = lay(&d);
+        let all: Vec<(f32, f32, f32, f32)> = l.pages[0]
+            .items
+            .iter()
+            .filter_map(|i| if let Placed::Rule { x0, y0, x1, y1, .. } = i { Some((*x0, *y0, *x1, *y1)) } else { None })
+            .collect();
+        let across = all.iter().filter(|r| (r.1 - r.3).abs() < 0.01).count();
+        let mut left: Vec<(f32, f32)> =
+            all.iter().filter(|r| (r.0 - r.2).abs() < 0.01 && r.0 < 100.0).map(|r| (r.1.min(r.3), r.1.max(r.3))).collect();
+        left.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let unbroken = left.windows(2).all(|w| (w[1].0 - w[0].1).abs() < 0.01);
+        (across, unbroken)
+    };
+    assert_eq!(rules(boxed, 1), (2, true), "one paragraph: its own box");
+    assert_eq!(rules(boxed, 3), (2, true), "three paragraphs: one top, one bottom, sides end to end");
+    assert_eq!(rules(Borders { between: line, ..boxed }, 3), (4, true), "with a border between: two more lines");
+}
+
+/// A cell that ends with a nested table must still end with a paragraph; left empty, that
+/// paragraph takes no room, so the row is as tall with it as the same cell is tall without it.
+#[test]
+fn the_empty_paragraph_after_a_nested_table_takes_no_room() {
+    let next_row_top = |mark: Option<&str>| {
+        let para = |t: &str| wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(t, Default::default()));
+        let mut d = Document::from_text("Above");
+        let mut inner = Table::new(1, 1, 100.0);
+        inner.rows[0].cells[0].blocks = vec![para("in")];
+        let mut t = Table::new(2, 1, 300.0);
+        let mut blocks = vec![para("outer"), std::sync::Arc::new(wordcraft_doc::Block::Table(inner))];
+        blocks.extend(mark.map(para));
+        t.rows[0].cells[0].blocks = blocks;
+        t.rows[1].cells[0].blocks = vec![para("below")];
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, 1, 0, 0]), off: 0 }).unwrap().top
+    };
+    let (none, empty, text) = (next_row_top(None), next_row_top(Some("")), next_row_top(Some("x")));
+    assert!((empty - none).abs() < 0.01, "an empty mark adds nothing: {empty} vs {none}");
+    assert!(text > none + 5.0, "a paragraph with text takes its line: {text} vs {none}");
+}
+
+/// An autofit table that its indent pushes past the right margin shrinks to end at the margin,
+/// each column giving up room in proportion to what it has above its longest word: of two
+/// 150 pt columns, the one holding a long word narrows less than the one holding a short one.
+#[test]
+fn an_indented_autofit_table_shrinks_to_the_margin() {
+    let widths = |indent: f32| {
+        let para = |t: &str| wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(t, Default::default()));
+        let mut d = Document::from_text("");
+        let mut t = Table::new(1, 3, 450.0);
+        t.props.indent = Some(indent);
+        for (c, text) in t.rows[0].cells.iter_mut().zip(["a", "incomprehensibilities", "a"]) {
+            c.props.width = Some(150.0);
+            c.blocks = vec![para(text)];
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let xs: Vec<f32> = l.pages[0]
+            .items
+            .iter()
+            .filter_map(|i| if let Placed::Cell { rect, row: 0, .. } = i { Some((rect.x, rect.w)) } else { None })
+            .flat_map(|(x, w)| [x, x + w])
+            .collect();
+        (xs[2] - xs[0], xs[4] - xs[2], xs[5] - xs[4], xs[5])
+    };
+    // 450 pt in a 468 pt column: it fits while the indent leaves it room.
+    let (a, b, c, right) = widths(10.0);
+    assert!((a - 150.0).abs() < 0.01 && (b - 150.0).abs() < 0.01 && (c - 150.0).abs() < 0.01 && right < 540.0, "{a} {b} {c} {right}");
+    // Pushed 60 pt further it ends at the right margin (72 + 468), its last border (0.5 pt,
+    // centred on the cell's edge) just inside: the outer columns give up the same, and more
+    // than the middle one with its long word.
+    let (a, b, c, right) = widths(70.0);
+    assert!((right - (540.0 - 0.25)).abs() < 0.05, "ends at {right}");
+    assert!((a - c).abs() < 0.01 && b > a + 1.0 && a < 149.0, "{a} {b} {c}");
+    // Each column gives up the same share of its room above its longest word, so twice the
+    // overrun takes twice as much from each.
+    let over = 150.0 * 3.0 - (a + b + c);
+    let (a2, b2, _, right) = widths(70.0 + over);
+    assert!((right - (540.0 - 0.25)).abs() < 0.05, "ends at {right}");
+    assert!(((150.0 - a2) - 2.0 * (150.0 - a)).abs() < 0.05 && ((150.0 - b2) - 2.0 * (150.0 - b)).abs() < 0.05, "{a2} {b2}");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");
@@ -2202,10 +2388,32 @@ fn line_spacing_does_not_scale_pictures() {
     let l = lay(&d);
     let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
     let line = &para.lines[0];
-    let desc = para.styles[0].descent;
-    // Word: the picture plus the font's descent, not (picture + descent) x 1.15.
-    assert!((line.height - (144.0 + desc)).abs() < 0.01, "line {} for a 144pt picture (descent {desc})", line.height);
+    let font_line = para.styles[0].ascent + para.styles[0].descent;
+    // Word: the picture, and below it the 0.15 of the font's line that the spacing adds; not
+    // (picture + descent) x 1.15, and no descent under a line of only a picture.
+    assert!((line.height - (144.0 + 0.15 * font_line)).abs() < 0.01, "line {} for a 144pt picture (font line {font_line})", line.height);
     assert!((line.baseline - line.top - 144.0).abs() < 0.01, "the picture stands on the baseline");
+}
+
+/// A line of only a picture is as tall as the picture at single spacing, and with text beside
+/// the picture it keeps the text's descent below the baseline.
+#[test]
+fn a_line_of_only_a_picture_is_as_tall_as_the_picture() {
+    use wordcraft_doc::props::LineSpacing;
+    let line = |text: &str| {
+        let mut d = Document::from_text(text);
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(LineSpacing::Multiple(1.0));
+            p.insert_object(0, picture(72.0, 72.0, Default::default()), &Default::default()).unwrap();
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        (para.lines[0].height, para.styles[0].descent)
+    };
+    let (alone, _) = line("");
+    assert!((alone - 72.0).abs() < 0.01, "{alone}");
+    let (with_text, desc) = line("text");
+    assert!((with_text - (72.0 + desc)).abs() < 0.01, "{with_text}");
 }
 
 #[test]
@@ -2231,15 +2439,26 @@ fn multiple_line_spacing_adds_its_leading_below_the_text() {
             );
         }
     }
-    // Exact spacing still keeps the descent below the baseline.
-    let mut d = Document::from_text("Exact");
-    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
-        p.props.line_spacing = Some(LineSpacing::Exactly(30.0));
+}
+
+/// Exact line spacing puts the baseline four-fifths of the way down the line, whatever the font's
+/// size: 0.8 × 30 = 24 pt below the top of a 30 pt line, 0.8 × 10 = 8 pt below the top of a 10 pt one.
+#[test]
+fn exact_line_baseline_sits_four_fifths_down() {
+    use wordcraft_doc::props::{CharProps, LineSpacing};
+    for (height, size) in [(30.0, 11.0), (30.0, 20.0), (10.0, 11.0)] {
+        let mut d = Document::new();
+        let chr = CharProps { size: Some(size), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Exact", chr))];
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(LineSpacing::Exactly(height));
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        let line = &para.lines[0];
+        assert!((line.height - height).abs() < 0.01);
+        assert!((line.baseline - line.top - 0.8 * height).abs() < 0.01, "{size} pt in {height} pt: {}", line.baseline - line.top);
     }
-    let l = lay(&d);
-    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-    let line = &para.lines[0];
-    assert!((line.top + line.height - line.baseline - para.styles[0].descent).abs() < 0.01);
 }
 
 #[test]
@@ -2369,6 +2588,69 @@ fn justified_lines_shrink_spaces_in_word_2013_mode() {
     for e in &ends[..ends.len() - 1] {
         assert!((*e - 540.0).abs() < 0.05, "justified line ends at {e}");
     }
+}
+
+/// A justified line's spaces give up to a quarter of their width to keep a word: six words whose
+/// natural width overruns the line by 24% of their five spaces stay on one line, by 26% wrap.
+#[test]
+fn justified_spaces_shrink_by_up_to_a_quarter() {
+    use wordcraft_doc::props::CharProps;
+    let text = "amber basket cedar harbor ledger mirror";
+    let doc = |text: &str, align: Align, right: f32| {
+        let mut d = Document::new();
+        d.settings.compat_mode = 15;
+        let chr = CharProps { kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.align = Some(align);
+            p.indent_right = Some(right);
+        })
+        .unwrap();
+        d
+    };
+    let width = |text: &str| {
+        let l = lay(&doc(text, Align::Left, 0.0));
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    let natural = width(text);
+    let spaces = 5.0 * (width("r m") - width("rm"));
+    let lines = |share: f32| lines_of(&lay(&doc(text, Align::Justify, 468.0 - (natural - share * spaces))));
+    assert_eq!(lines(0.24), 1, "24% of the spaces is given up");
+    assert_eq!(lines(0.26), 2, "26% is too much");
+}
+
+/// A short word is kept on a justified line only while shrinking the spaces for it distorts
+/// them less than stretching them without it would (shrinking counts double). With n spaces of
+/// width s on the line and a last word w wide, the overrun x is kept while
+/// x / n <= (w + s - x) / (n - 1) / 2, that is x <= n (w + s) / (3n - 2).
+#[test]
+fn justified_spaces_shrink_no_more_than_half_of_what_they_would_stretch() {
+    use wordcraft_doc::props::CharProps;
+    let text = "amber basket cedar harbor ledger mirror a";
+    let doc = |text: &str, align: Align, right: f32| {
+        let mut d = Document::new();
+        d.settings.compat_mode = 15;
+        let chr = CharProps { kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.align = Some(align);
+            p.indent_right = Some(right);
+        })
+        .unwrap();
+        d
+    };
+    let width = |text: &str| {
+        let l = lay(&doc(text, Align::Left, 0.0));
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    let (natural, word) = (width(text), width("a"));
+    let space = width("r a") - width("ra");
+    let n = 6.0;
+    let limit = n * (word + space) / (3.0 * n - 2.0);
+    assert!(limit * 1.05 < 0.25 * n * space, "the quarter-of-the-spaces limit must not be the one tested");
+    let lines = |over: f32| lines_of(&lay(&doc(text, Align::Justify, 468.0 - (natural - over))));
+    assert_eq!(lines(limit * 0.95), 1, "just inside the limit the word stays");
+    assert_eq!(lines(limit * 1.05), 2, "just past it the word wraps");
 }
 
 #[test]
@@ -2664,6 +2946,63 @@ fn compatibility_mode_decides_where_a_table_s_edge_sits() {
     // inside it. Earlier modes: the text at the margin, the border a cell margin outside it.
     assert!((cell_text_x(15) - (72.0 + 0.25 + 5.4)).abs() < 0.01, "{}", cell_text_x(15));
     assert!((cell_text_x(12) - 72.0).abs() < 0.01, "{}", cell_text_x(12));
+}
+
+/// A fixed-layout table whose grid says three equal columns but whose cells ask for 72, 144 and
+/// 216 pt: the cells win, so the cell boxes start 0, 72 and 216 pt from the first one.
+#[test]
+fn fixed_table_columns_take_their_cells_preferred_widths() {
+    let cell_xs = |fixed: bool, disagree: bool| {
+        let mut d = Document::from_text("");
+        let mut t = Table::new(2, 3, 468.0);
+        t.props.fixed = fixed;
+        for row in &mut t.rows {
+            for (c, w) in row.cells.iter_mut().zip([72.0, 144.0, 216.0]) {
+                c.props.width = Some(w);
+            }
+        }
+        if disagree {
+            t.rows[1].cells[0].props.width = Some(100.0);
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let xs: Vec<f32> =
+            l.pages[0].items.iter().filter_map(|i| if let Placed::Cell { rect, row: 0, .. } = i { Some(rect.x) } else { None }).collect();
+        (xs[1] - xs[0], xs[2] - xs[0])
+    };
+    let (b, c) = cell_xs(true, false);
+    assert!((b - 72.0).abs() < 0.01 && (c - (72.0 + 144.0)).abs() < 0.01, "{b} {c}");
+    // A column whose cells disagree keeps its grid width (468 / 3); the others still follow.
+    let (b, c) = cell_xs(true, true);
+    assert!((b - 156.0).abs() < 0.01 && (c - (156.0 + 144.0)).abs() < 0.01, "{b} {c}");
+}
+
+/// A cell's text keeps clear of its side borders: the border is centred on the cell's edge, so
+/// with cell margins narrower than half its width the text starts that half inside the edge;
+/// wider margins are measured from the edge as before.
+#[test]
+fn cell_text_keeps_clear_of_the_side_borders() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let inset = |margin: f32, border: f32| {
+        let mut d = Document::from_text("");
+        let line = Some(Border { style: BorderStyle::Single, width: border, color: None, space: 0.0 });
+        let mut t = Table::new(1, 2, 200.0);
+        t.props.borders = Some(Borders { top: line, left: line, bottom: line, right: line, between: line, inside_v: line });
+        t.props.cell_margins = Some([0.0, margin, 0.0, margin]);
+        for c in &mut t.rows[0].cells {
+            c.blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("cell", Default::default()))];
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let items = &l.pages[0].items;
+        let cell_x = items.iter().find_map(|i| if let Placed::Cell { rect, cell: 1, .. } = i { Some(rect.x) } else { None }).unwrap();
+        let text_x = items.iter().filter_map(|i| if let Placed::Lines { x, .. } = i { Some(*x) } else { None }).fold(f32::MIN, f32::max);
+        text_x - cell_x
+    };
+    assert!((inset(0.0, 3.0) - 1.5).abs() < 0.01, "{}", inset(0.0, 3.0));
+    assert!((inset(1.0, 3.0) - 1.5).abs() < 0.01, "{}", inset(1.0, 3.0));
+    assert!((inset(5.4, 3.0) - 5.4).abs() < 0.01, "{}", inset(5.4, 3.0));
+    assert!((inset(0.0, 0.5) - 0.25).abs() < 0.01, "{}", inset(0.0, 0.5));
 }
 
 #[test]
@@ -4760,6 +5099,27 @@ fn kerning_follows_kerning_for_fonts_like_word() {
     let mut d = Document::new();
     d.styles.default_chr.kern = None;
     assert!(d.styles.resolve_char(None, &Default::default()).kern == 0.0, "no Kerning for fonts: not kerned");
+}
+
+/// Word forms no ligatures unless the text asks for them (Font ▸ Advanced ▸ Ligatures is None by
+/// default), so letters a font would join keep an advance each: "ffi" is as wide as "f", "f" and
+/// "i" apart. WordCraft joined them, and each "tt" or "ti" in Calibri pulled the rest of its line
+/// about 0.4 pt left of Word's (measured in Word for Windows at 8–36 pt).
+#[test]
+fn latin_text_forms_no_ligatures_by_default() {
+    use wordcraft_doc::props::CharProps;
+    let width = |text: &str| {
+        let mut d = Document::new();
+        // A bundled face with standard ligatures (fi, fl, ffi), unkerned.
+        let chr = CharProps { font: Some(wordcraft_fonts::DEFAULT_FAMILY.into()), size: Some(24.0), kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        let l = lay(&d);
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    for (joined, parts) in [("ffi", ["f", "f", "i"]), ("fi", ["f", "i", ""]), ("fl", ["f", "l", ""])] {
+        let apart: f32 = parts.iter().map(|p| width(p)).sum();
+        assert!((width(joined) - apart).abs() < 0.01, "{joined}: {} vs {apart}", width(joined));
+    }
 }
 
 /// Word's automatic (HTML-style) paragraph spacing, measured in Word for Windows: 14 pt at any
