@@ -2707,16 +2707,25 @@ fn again<T>(ctx: &mut Ctx, eq_start: u32, f: impl FnOnce(&mut Ctx) -> T) -> T {
 /// columns and pages it runs onto (#1374).
 const MAX_WRAP_RELAYS: usize = 64;
 
+#[cfg(test)]
+thread_local! {
+    /// How many wrap relays (#1374) the layouts on this thread made: tests check none happen
+    /// without something new to wrap around.
+    static WRAP_RELAYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The wrap areas for a paragraph laid out against `rel` (relative to its top) whose lines from the
 /// one at `t` (relative to its top) on go into the column starting at `x0`, that line at `y` on
 /// the page, which has the wrap areas `excl` (#1374). The areas the lines before were broken
 /// around end at `t`; the column's start there (one reaching above `t` with an outline keeps its
 /// whole outline, so it may change a line before, and the paragraph is then not broken again).
-fn continued_exclusions(rel: &[para::Exclusion], excl: &[WrapArea], x0: f32, y: f32, t: f32) -> Vec<para::Exclusion> {
+/// Areas well clear of the column (outside `-width..2 * width`, room for negative indents) can't
+/// touch its lines and are left out.
+fn continued_exclusions(rel: &[para::Exclusion], excl: &[WrapArea], x0: f32, y: f32, t: f32, width: f32) -> Vec<para::Exclusion> {
     let before = rel.iter().filter(|e| e.top < t).map(|e| para::Exclusion { bottom: e.bottom.min(t), ..e.clone() });
     let here = rel_exclusions(excl, x0, y - t)
         .into_iter()
-        .filter(|e| e.bottom > t)
+        .filter(|e| e.bottom > t && e.right > -width && e.left < 2.0 * width)
         .map(|e| if e.top < t && e.contour.is_none() { para::Exclusion { top: t, ..e } } else { e });
     before.chain(here).collect()
 }
@@ -2841,12 +2850,19 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             && wrap_relays < MAX_WRAP_RELAYS
             && let Some((resume, t)) = pl.lines.get(l0).map(|l| (l.start, l.top))
         {
-            let here = continued_exclusions(&rel, &pb.excl, pb.col_x(), pb.y, t);
+            let here = continued_exclusions(&rel, &pb.excl, pb.col_x(), pb.y, t, laid_width);
             if here != rel {
                 wrap_relays += 1;
                 ctx.fields.page = laid_page;
-                let relaid = with_page_map(ctx, &mut page_map, |ctx| ctx.para_labelled(p, laid_width, None, &here, label.clone()));
-                if let Some(k) = relaid.lines.iter().position(|l| l.start == resume) {
+                #[cfg(test)]
+                WRAP_RELAYS.with(|c| c.set(c.get() + 1));
+                let relaid =
+                    with_page_map(ctx, &mut page_map, |ctx| again(ctx, eq_start, |ctx| ctx.para_labelled(p, laid_width, None, &here, label.clone())));
+                // Only if the rest still starts at the same line, at the same height (an outline
+                // reaching above it could move the lines before down, and the column's areas with them).
+                if let Some(k) = relaid.lines.iter().position(|l| l.start == resume)
+                    && relaid.lines.get(k).is_some_and(|l| (l.top - t).abs() < 0.01)
+                {
                     (pl, rel) = (relaid, here);
                     n = pl.lines.len();
                     l0 = k;

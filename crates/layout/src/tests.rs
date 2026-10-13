@@ -5214,6 +5214,18 @@ fn paragraph_continued_into_next_column_wraps_around_a_shape_there() {
     assert_clear_of(&line_boxes(&l, 0, 1, col2), r, "column 2");
 }
 
+/// #1374: a shape far to the left of the next column (in the page margin, beyond a column's width
+/// from it) doesn't make the paragraph going into that column be laid out again.
+#[test]
+fn paragraph_continued_into_next_column_ignores_shapes_well_clear_of_it() {
+    let d = column_wrap_doc(2, Some(page_shape(0.0, 300.0, 20.0, 100.0)), 450);
+    WRAP_RELAYS.with(|c| c.set(0));
+    let l = lay(&d);
+    assert_eq!(WRAP_RELAYS.with(|c| c.get()), 0, "no wrap relay");
+    let (_, ranges) = shown_and_ranges(&l, 1);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(1)).map(|p| p.len()).unwrap_or(0));
+}
+
 /// #1374: lines continued onto a new page are broken for that page: a shape on the page before
 /// (reaching below its body) doesn't push them aside there.
 #[test]
@@ -5235,11 +5247,13 @@ fn paragraph_continued_onto_next_page_is_broken_for_that_page() {
 }
 
 /// #1374: with nothing to wrap around, the lines going into the next column are those broken in
-/// the first (one layout, not laid out again).
+/// the first: the paragraph isn't laid out again (no wrap relay), and both pieces share one layout.
 #[test]
 fn paragraph_continued_into_next_column_without_shapes_is_not_laid_out_again() {
     let d = column_wrap_doc(2, None, 450);
+    WRAP_RELAYS.with(|c| c.set(0));
     let l = lay(&d);
+    assert_eq!(WRAP_RELAYS.with(|c| c.get()), 0, "no wrap relay");
     let pieces: Vec<&Arc<ParaLayout>> = l.pages[0]
         .items
         .iter()
