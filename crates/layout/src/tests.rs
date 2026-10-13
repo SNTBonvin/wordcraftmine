@@ -2666,6 +2666,35 @@ fn compatibility_mode_decides_where_a_table_s_edge_sits() {
     assert!((cell_text_x(12) - 72.0).abs() < 0.01, "{}", cell_text_x(12));
 }
 
+/// A fixed-layout table whose grid says three equal columns but whose cells ask for 72, 144 and
+/// 216 pt: the cells win, so the cell boxes start 0, 72 and 216 pt from the first one.
+#[test]
+fn fixed_table_columns_take_their_cells_preferred_widths() {
+    let cell_xs = |fixed: bool, disagree: bool| {
+        let mut d = Document::from_text("");
+        let mut t = Table::new(2, 3, 468.0);
+        t.props.fixed = fixed;
+        for row in &mut t.rows {
+            for (c, w) in row.cells.iter_mut().zip([72.0, 144.0, 216.0]) {
+                c.props.width = Some(w);
+            }
+        }
+        if disagree {
+            t.rows[1].cells[0].props.width = Some(100.0);
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let xs: Vec<f32> =
+            l.pages[0].items.iter().filter_map(|i| if let Placed::Cell { rect, row: 0, .. } = i { Some(rect.x) } else { None }).collect();
+        (xs[1] - xs[0], xs[2] - xs[0])
+    };
+    let (b, c) = cell_xs(true, false);
+    assert!((b - 72.0).abs() < 0.01 && (c - (72.0 + 144.0)).abs() < 0.01, "{b} {c}");
+    // A column whose cells disagree keeps its grid width (468 / 3); the others still follow.
+    let (b, c) = cell_xs(true, true);
+    assert!((b - 156.0).abs() < 0.01 && (c - (156.0 + 144.0)).abs() < 0.01, "{b} {c}");
+}
+
 #[test]
 fn floating_tables_take_no_room_and_text_wraps_beside_them() {
     use wordcraft_doc::para::Anchor;

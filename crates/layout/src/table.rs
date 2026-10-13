@@ -323,6 +323,9 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
     } else {
         vec![avail / ncols as f32; ncols]
     };
+    if t.props.fixed {
+        fixed_cell_widths(&mut grid, t);
+    }
     let mut total: f32 = grid.iter().sum();
     let target = match (t.props.width_pct, t.props.width) {
         (Some(p), _) if p > 0.0 => Some(avail * (p / 100.0).min(1.0)),
@@ -1026,6 +1029,34 @@ fn is_automatic(t: &Table) -> bool {
     t.props.width.is_none()
         && t.props.width_pct.is_none()
         && t.rows.iter().all(|r| r.cells.iter().all(|c| c.props.width.is_none() && c.props.width_pct.is_none()))
+}
+
+/// A fixed-layout table's columns take their cells' preferred widths, whatever the grid says:
+/// a column whose unmerged cells all ask for one width in points gets it (measured in Word for
+/// Windows on tables whose grid gave three equal columns and whose cells asked for 72/144/216
+/// and 90/270/108 pt). Files written by other tools often leave the grid at equal shares. A
+/// column whose cells disagree, or ask for nothing, keeps its grid width.
+fn fixed_cell_widths(grid: &mut [f32], t: &Table) {
+    for (col, w) in grid.iter_mut().enumerate() {
+        let mut asked: Option<f32> = None;
+        let mut agree = true;
+        for row in &t.rows {
+            let mut at = 0;
+            for c in &row.cells {
+                if at == col && c.span() == 1 {
+                    match (c.props.width.filter(|v| v.is_finite() && *v > 0.0), asked) {
+                        (Some(v), None) => asked = Some(v),
+                        (Some(v), Some(a)) if (v - a).abs() > 0.05 => agree = false,
+                        _ => {}
+                    }
+                }
+                at += c.span();
+            }
+        }
+        if let (Some(a), true) = (asked, agree) {
+            *w = a.max(4.0);
+        }
+    }
 }
 
 /// Word's autofit for a table whose widths may follow its content (`tblLayout` not fixed).
