@@ -3,6 +3,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::Path;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -16,6 +17,29 @@ pub trait Backend {
     fn has_ui(&self) -> bool;
     /// Short human description ("headless", "connected to 127.0.0.1:7981").
     fn describe(&self) -> String;
+}
+
+/// The optional channel and normal MCP tools use one physical control connection.
+/// Listening uses short polls, so a pending listen cannot hold up tools for 30 seconds.
+#[derive(Clone)]
+pub struct SharedRemote(Arc<Mutex<Remote>>);
+
+impl SharedRemote {
+    pub fn new(remote: Remote) -> Self {
+        Self(Arc::new(Mutex::new(remote)))
+    }
+}
+
+impl Backend for SharedRemote {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).call(method, params)
+    }
+    fn has_ui(&self) -> bool {
+        true
+    }
+    fn describe(&self) -> String {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).describe()
+    }
 }
 
 /// Looks up the control key for an address (`HOST:PORT`).
@@ -155,31 +179,17 @@ impl Remote {
         Ok(reply)
     }
 
-    /// One request and its reply, with one retry on a new connection (the app may have
-    /// restarted; a new connection also reads the key again).
+    /// One request and its reply. A lost response is ambiguous and is never replayed.
     fn exchange(&mut self, id: u64, method: &str, params: &Value) -> Result<Value, String> {
         let unreachable = |addr: &str, e: std::io::Error| format!("WordCraft app at {addr} is not reachable: {e}");
-        let mut first = true;
-        let reply = loop {
-            let tried = if self.conn.is_some() { Ok(()) } else { self.reconnect() };
-            let result = match tried {
-                Ok(()) => {
-                    let line = self.request_line(id, method, params)?;
-                    self.roundtrip(&line)
-                }
-                Err(e) => Err(e),
-            };
-            match result {
-                Ok(r) => break r,
-                Err(e) => {
-                    self.conn = None;
-                    if !first {
-                        return Err(unreachable(&self.addr, e));
-                    }
-                    first = false;
-                }
-            }
-        };
+        if self.conn.is_none() {
+            self.reconnect().map_err(|e| unreachable(&self.addr, e))?;
+        }
+        let line = self.request_line(id, method, params)?;
+        let reply = self.roundtrip(&line).map_err(|e| {
+            self.conn = None;
+            format!("AMBIGUOUS_RESPONSE: request was not replayed; reconnect and inspect: {e}")
+        })?;
         serde_json::from_str(reply.trim()).map_err(|e| format!("bad reply from app: {e}"))
     }
 }
@@ -210,7 +220,8 @@ impl Backend for Remote {
                 |w| format!("unauthorized: {w}"),
             ))
         } else {
-            Err(v.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string())
+            let error = v.get("error").and_then(Value::as_str).unwrap_or("unknown error");
+            Err(v.get("errorCode").and_then(Value::as_str).map_or_else(|| error.to_string(), |code| format!("{code}: {error}")))
         }
     }
 
@@ -230,6 +241,33 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::{Receiver, channel};
+
+    #[test]
+    fn channel_and_tools_share_one_physical_control_connection() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let count = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                count.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    let mut writer = stream.try_clone().unwrap();
+                    for line in BufReader::new(stream).lines() {
+                        let req: Value = serde_json::from_str(&line.unwrap()).unwrap();
+                        let result = if req["method"] == "agent.listen" { json!({"id":7}) } else { json!({"id":7,"shown":true,"done":true}) };
+                        writeln!(writer, "{}", json!({"id":req["id"],"ok":true,"result":result})).unwrap();
+                    }
+                });
+            }
+        });
+        let remote = Remote::connect_with(&format!("127.0.0.1:{port}"), fixed_key("synthetic")).unwrap();
+        let mut channel = SharedRemote::new(remote);
+        let mut tools = channel.clone();
+        assert_eq!(channel.call("agent.listen", json!({"timeoutMs":500})).unwrap()["id"], 7);
+        assert_eq!(tools.call("agent.reply", json!({"id":7,"text":"done"})).unwrap()["shown"], true);
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn key_from_env_then_key_file() {
@@ -350,7 +388,7 @@ mod tests {
         assert_eq!(r.call("document.inspect", json!({})).unwrap(), json!(1));
         assert_eq!(reads.load(Ordering::SeqCst), 2);
 
-        // The app quits mid-session (connection closed): the retry reads the key again.
+        // An ambiguous lost response is never replayed. The next explicit call reconnects.
         let (port, seen) = fake_app(|req| if req["id"] == 2 { None } else { Some((json!({"ok": true, "result": 1}), false)) });
         let reads = Arc::new(AtomicUsize::new(0));
         let n = reads.clone();
@@ -360,7 +398,10 @@ mod tests {
         r.call("document.inspect", json!({})).unwrap_err();
         let keys: Vec<Value> = seen.try_iter().map(|v| v["key"].clone()).collect();
         assert_eq!(keys.first(), Some(&json!("key-0")), "{keys:?}");
-        assert_eq!(keys.last(), Some(&json!("key-1")), "{keys:?}");
+        assert_eq!(keys.len(), 2, "the failed call was sent exactly once");
+        assert_eq!(keys.last(), Some(&json!("key-0")), "{keys:?}");
+        assert_eq!(r.call("document.inspect", json!({})).unwrap(), json!(1));
+        assert_eq!(seen.recv_timeout(WAIT).unwrap()["key"], "key-1");
     }
 
     #[test]
