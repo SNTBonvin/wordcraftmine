@@ -458,7 +458,12 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                             ui.painter().rect_filled(r, 3.0, t.hover);
                         }
                         icons::paint(ui.painter(), r.shrink(3.0), icon, t.icon, t.accent);
-                        if resp.on_hover_text(id.trim_start_matches("view.")).clicked() {
+                        let label = match icon {
+                            "webLayout" => tl!("Web Layout"),
+                            "printLayout" => tl!("Print Layout"),
+                            _ => tl!("Read Mode"),
+                        };
+                        if resp.on_hover_text(label).clicked() {
                             let _ = app.run(id, json!({}));
                         }
                     }
