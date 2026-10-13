@@ -583,12 +583,8 @@ impl WordApp {
         // A `ui.json` from before #822: its interface size was on top of the display scale, so it
         // becomes absolute on the first frame that knows that scale (`logic`). A chosen `uiScale`
         // (the current key) wins; "auto" can't be told from a missing key, so the old size does.
-        self.legacy_interface_size = self
-            .ui
-            .legacy_interface_size
-            .take()
-            .filter(|_| self.ui.interface_size.is_auto())
-            .and_then(|old| theme::legacy_interface_percent(&old));
+        self.legacy_interface_size =
+            self.ui.legacy_interface_size.take().filter(|_| self.ui.interface_size.is_auto()).and_then(|old| theme::legacy_interface_percent(&old));
         // The session owns the name from here on; `prefs` copies it back when saving.
         let author = std::mem::take(&mut self.ui.author);
         if !author.trim().is_empty() {
