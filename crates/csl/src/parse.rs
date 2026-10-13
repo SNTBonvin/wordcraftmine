@@ -47,6 +47,9 @@ pub fn parse(bytes: &[u8]) -> Result<Style, String> {
     }
     let mut w = Warnings::default();
     warn_style_attrs(&root, &mut w);
+    let mut style_name_options = NameOptions::default();
+    inheritable_name_attrs(&root, &mut style_name_options);
+    warn_unsupported_name_attrs(&root, &mut w);
 
     let mut title = String::new();
     let mut id = String::new();
@@ -83,14 +86,14 @@ pub fn parse(bytes: &[u8]) -> Result<Style, String> {
                 if citation.is_some() {
                     w.push("more than one <citation>; the first is used".into());
                 } else {
-                    citation = parse_citation(el, &mut w);
+                    citation = parse_citation(el, &style_name_options, &mut w);
                 }
             }
             "bibliography" => {
                 if bibliography.is_some() {
                     w.push("more than one <bibliography>; the first is used".into());
                 } else {
-                    bibliography = Some(parse_bibliography(el, &mut w));
+                    bibliography = Some(parse_bibliography(el, &style_name_options, &mut w));
                 }
             }
             _ => {} // unknown top-level element, ignored
@@ -105,7 +108,7 @@ pub fn parse(bytes: &[u8]) -> Result<Style, String> {
     resolve_macros(&mut macros, &mut citation, &mut bibliography, &mut w);
     check_term_references(&citation, &bibliography, &macros, &terms, &mut w);
 
-    Ok(Style { id, title, locale_terms: terms, macros, citation, bibliography, warnings: w.into_vec() })
+    Ok(Style { id, title, locale_terms: terms, name_options: style_name_options, macros, citation, bibliography, warnings: w.into_vec() })
 }
 
 // ---------------------------------------------------------------------------
@@ -176,8 +179,8 @@ fn warn_style_attrs(root: &El, w: &mut Warnings) {
     if root.attr("initialize-with-hyphen").is_some() {
         w.push("initialize-with-hyphen is not supported".into());
     }
-    if root.attr("name-delimiter").is_some() || root.attr("names-delimiter").is_some() {
-        w.push("style-level name delimiters (name-delimiter/names-delimiter) are not supported".into());
+    if root.attr("names-delimiter").is_some() {
+        w.push("style-level names-delimiter (between name variables) is not supported".into());
     }
 }
 
@@ -246,22 +249,62 @@ fn parse_term(t: &El, terms: &mut TermSet, w: &mut Warnings) {
 // ---------------------------------------------------------------------------
 // Citation and bibliography
 
-/// Attributes the sections share with `<names>` but that only `<names>` renders.
-const INHERITED_NAME_ATTRS: &[&str] = &[
-    "et-al-min",
-    "et-al-use-first",
-    "et-al-use-last",
-    "initialize-with",
-    "name-as-sort-order",
-    "and",
-    "name-delimiter",
-    "delimiter-precedes-last",
-    "delimiter-precedes-et-al",
-    "sort-separator",
-];
+/// The inheritable name options `<style>`, `<citation>`, `<bibliography>`, `<names>` and
+/// `<name>` share (the spec's Inheritable Name Options), read into `options`.
+fn inheritable_name_attrs(el: &El, options: &mut NameOptions) {
+    if let Some(v) = el.attr("name-as-sort-order") {
+        options.name_as_sort_order = match v {
+            "all" => Some(NameAsSortOrder::All),
+            "first" => Some(NameAsSortOrder::First),
+            _ => None,
+        };
+    }
+    if let Some(v) = el.attr("initialize-with") {
+        options.initialize_with = Some(clamp(v));
+    }
+    if let Some(v) = el.attr("et-al-min") {
+        options.et_al_min = v.parse().ok();
+    }
+    if let Some(v) = el.attr("et-al-use-first") {
+        options.et_al_use_first = v.parse().ok();
+    }
+    if let Some(v) = el.attr("and") {
+        options.and = match v {
+            "text" => Some(AndStyle::Text),
+            "symbol" => Some(AndStyle::Symbol),
+            _ => None,
+        };
+    }
+    if let Some(v) = el.attr("name-delimiter") {
+        options.delimiter = Some(clamp(v));
+    }
+}
 
-/// `<citation>`: its layout, or `None` when it has none (the caller refuses the style).
-fn parse_citation(el: &El, w: &mut Warnings) -> Option<Layout> {
+/// Name-option semantics outside the subset, wherever they appear (root, section,
+/// `<names>`, `<name>`): warned, never silently changed.
+fn warn_unsupported_name_attrs(el: &El, w: &mut Warnings) {
+    if let Some(v) = el.attr("form") {
+        w.push(format!("name form '{v}' is not supported; names render in full"));
+    }
+    if el.attr("name-form").is_some() {
+        w.push("name-form is not supported; names render in full".into());
+    }
+    if el.attr("et-al-use-last").is_some() {
+        w.push("et-al-use-last is not supported".into());
+    }
+    if let Some(v) = el.attr("sort-separator")
+        && v != ", "
+    {
+        w.push("sort-separator other than ', ' is not supported".into());
+    }
+    if el.attr("delimiter-precedes-last").is_some() || el.attr("delimiter-precedes-et-al").is_some() {
+        w.push("delimiter-precedes-last/delimiter-precedes-et-al rules are not supported".into());
+    }
+}
+
+/// `<citation>`: its layout (with the section's name options merged over the root's), or
+/// `None` when it has none (the caller refuses the style).
+fn parse_citation(el: &El, root: &NameOptions, w: &mut Warnings) -> Option<Layout> {
     if el.attr("collapse").is_some() {
         w.push("citation collapsing (collapse) is not supported; citations render expanded".into());
     }
@@ -271,23 +314,26 @@ fn parse_citation(el: &El, w: &mut Warnings) -> Option<Layout> {
     if el.attr("near-note-distance").is_some() {
         w.push("near-note is not supported".into());
     }
-    if el.attrs.iter().any(|(k, _)| INHERITED_NAME_ATTRS.contains(&k.as_str())) {
-        w.push("name options set on <citation> are not supported; set them on <names>".into());
-    }
-    section_layout(el, "citation", w)
+    let mut options = NameOptions::default();
+    inheritable_name_attrs(el, &mut options);
+    warn_unsupported_name_attrs(el, w);
+    let mut layout = section_layout(el, "citation", w)?;
+    layout.name_options = options.with_defaults(root);
+    Some(layout)
 }
 
-/// `<bibliography>`: its layout and sort keys, or `None` when it has no layout.
-fn parse_bibliography(el: &El, w: &mut Warnings) -> Option<Bibliography> {
+/// `<bibliography>`: its layout (with the section's name options merged over the root's)
+/// and sort keys, or `None` when it has no layout.
+fn parse_bibliography(el: &El, root: &NameOptions, w: &mut Warnings) -> Option<Bibliography> {
     if el.attr("second-field-align").is_some() {
         w.push("bibliography second-field-align is not supported".into());
     }
     if ["hanging-indent", "entry-spacing", "line-spacing", "subsequent-author-substitute"].iter().any(|a| el.attr(a).is_some()) {
         w.push("bibliography formatting (hanging-indent, entry-spacing, line-spacing, subsequent-author-substitute) is not supported".into());
     }
-    if el.attrs.iter().any(|(k, _)| INHERITED_NAME_ATTRS.contains(&k.as_str())) {
-        w.push("name options set on <bibliography> are not supported; set them on <names>".into());
-    }
+    let mut options = NameOptions::default();
+    inheritable_name_attrs(el, &mut options);
+    warn_unsupported_name_attrs(el, w);
     let mut sort = Vec::new();
     let mut layout = None;
     for c in el.els() {
@@ -297,7 +343,10 @@ fn parse_bibliography(el: &El, w: &mut Warnings) -> Option<Bibliography> {
             _ => {}
         }
     }
-    layout.map(|layout| Bibliography { layout, sort })
+    layout.map(|mut layout| {
+        layout.name_options = options.with_defaults(root);
+        Bibliography { layout, sort }
+    })
 }
 
 /// `<sort>`: keys in order.
@@ -518,50 +567,15 @@ fn label_common(el: &El) -> Label {
     }
 }
 
-/// Name options from a `<names>` element or a `<name>` child (the child wins where both set
-/// them). Attributes outside the subset warn.
+/// Name options from a `<names>` element or a `<name>` child (the child wins where both
+/// set them): the inheritable attributes plus the plain `delimiter` styles also write on
+/// these elements. Attributes outside the subset warn.
 fn apply_name_attrs(el: &El, options: &mut NameOptions, w: &mut Warnings) {
-    if let Some(v) = el.attr("name-as-sort-order") {
-        options.name_as_sort_order = match v {
-            "all" => Some(NameAsSortOrder::All),
-            "first" => Some(NameAsSortOrder::First),
-            _ => None,
-        };
-    }
-    if let Some(v) = el.attr("initialize-with") {
-        options.initialize_with = Some(clamp(v));
-    }
-    if let Some(v) = el.attr("et-al-min") {
-        options.et_al_min = v.parse().ok();
-    }
-    if let Some(v) = el.attr("et-al-use-first") {
-        options.et_al_use_first = v.parse().ok();
-    }
-    if let Some(v) = el.attr("and") {
-        options.and = match v {
-            "text" => Some(AndStyle::Text),
-            "symbol" => Some(AndStyle::Symbol),
-            _ => None,
-        };
-    }
+    inheritable_name_attrs(el, options);
     if let Some(v) = el.attr("delimiter") {
         options.delimiter = Some(clamp(v));
     }
-    // Outside the subset, but meaning-changing: warn.
-    if let Some(v) = el.attr("form") {
-        w.push(format!("name form '{v}' is not supported; names render in full"));
-    }
-    if let Some(v) = el.attr("sort-separator")
-        && v != ", "
-    {
-        w.push("sort-separator other than ', ' is not supported".into());
-    }
-    if el.attr("delimiter-precedes-last").is_some() || el.attr("delimiter-precedes-et-al").is_some() {
-        w.push("delimiter-precedes-last/delimiter-precedes-et-al rules are not supported".into());
-    }
-    if el.attr("et-al-use-last").is_some() {
-        w.push("et-al-use-last is not supported".into());
-    }
+    warn_unsupported_name_attrs(el, w);
 }
 
 /// `<choose>`: if/else-if branches (with their conditions) and an optional else.
@@ -615,7 +629,13 @@ fn branch(el: &El, w: &mut Warnings) -> Branch {
 /// A `<layout>` (or `<else>`) body.
 fn parse_layout(el: &El, w: &mut Warnings) -> Layout {
     warn_formatting_attrs(el, w);
-    Layout { elements: elements(el, w), prefix: attr(el, "prefix"), suffix: attr(el, "suffix"), delimiter: attr(el, "delimiter") }
+    Layout {
+        elements: elements(el, w),
+        prefix: attr(el, "prefix"),
+        suffix: attr(el, "suffix"),
+        delimiter: attr(el, "delimiter"),
+        name_options: NameOptions::default(),
+    }
 }
 
 // ---------------------------------------------------------------------------

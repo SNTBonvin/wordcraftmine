@@ -300,6 +300,31 @@ const DATE_PARTS: &str = r#"<style version="1.0">
   </citation>
 </style>"#;
 
+/// The APA shape: inheritable name options (root `initialize-with`, section et-al), a
+/// `date-parts="year"` localized date, and an 18-entry type list.
+const APA_SHAPE: &str = r#"<style version="1.0" class="in-text" initialize-with=". ">
+  <macro name="author">
+    <names variable="author">
+      <name name-as-sort-order="all"/>
+    </names>
+  </macro>
+  <citation et-al-min="3" et-al-use-first="1">
+    <layout prefix="(" suffix=")">
+      <group delimiter=", ">
+        <text macro="author"/>
+        <choose>
+          <if type="article-journal article-magazine article-newspaper broadcast chapter dataset entry entry-dictionary entry-encyclopedia figure graphic interview legal_case legislation manuscript map musical_score motion-picture" match="any">
+            <date variable="issued" form="numeric" date-parts="year"/>
+          </if>
+          <else>
+            <text term="no date" form="short"/>
+          </else>
+        </choose>
+      </group>
+    </layout>
+  </citation>
+</style>"#;
+
 // ---------------------------------------------------------------------------
 // Tests
 
@@ -379,6 +404,43 @@ fn long_type_lists_dispatch_beyond_sixteen_entries() {
     .unwrap();
     assert_eq!(s.cite(&src("film", "film"), Position::First, 1, ""), "[T");
     assert_eq!(s.cite(&src("other", "other"), Position::First, 1, ""), "[OTHER");
+}
+
+#[test]
+fn inherited_name_options_render_the_apa_shape() {
+    let s = style(APA_SHAPE);
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+
+    // Root initialize-with + element sort order + section et-al, all in one name render.
+    let mut film = src("film", "film");
+    film.author = "Kilns, Dana; Mora, Pia".into();
+    film.year = "2021".into();
+    film.month = "3".into();
+    film.day = "15".into();
+    // motion-picture is the type list's 18th entry; the date narrows to its year.
+    assert_eq!(s.cite(&film, Position::First, 1, ""), "(Kilns, D., Mora, P., 2021)");
+
+    // Three names hit the section's et-al-min, keeping one.
+    let mut trio = src("trio", "film");
+    trio.author = "Kilns, Dana; Mora, Pia; Tan, Wu".into();
+    trio.year = "2021".into();
+    assert_eq!(s.cite(&trio, Position::First, 1, ""), "(Kilns, D., et al., 2021)");
+
+    // A type outside the list: the no-date term, with the element-won sort order.
+    let mut misc = src("misc", "other");
+    misc.author = "Tan, Wu".into();
+    assert_eq!(s.cite(&misc, Position::First, 1, ""), "(Tan, W., n.d.)");
+
+    // Element-level options win over the inherited ones.
+    let s = parse(
+        br#"<style version="1.0" initialize-with=". "><citation><layout>
+        <names variable="author"><name name-as-sort-order="all" initialize-with=""/></names>
+      </layout></citation></style>"#,
+    )
+    .unwrap();
+    let mut who = src("who", "book");
+    who.author = "Kilns, Dana".into();
+    assert_eq!(s.cite(&who, Position::First, 1, ""), "Kilns, D");
 }
 
 #[test]

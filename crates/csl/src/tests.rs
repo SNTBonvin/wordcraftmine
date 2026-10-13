@@ -204,6 +204,7 @@ fn golden_style_parses_into_the_expected_tree() {
             prefix: "(".into(),
             suffix: ")".into(),
             delimiter: "; ".into(),
+            ..Layout::default()
         }
     );
 
@@ -238,6 +239,7 @@ fn golden_style_parses_into_the_expected_tree() {
             prefix: String::new(),
             suffix: ".".into(),
             delimiter: ". ".into(),
+            ..Layout::default()
         }
     );
 }
@@ -310,7 +312,7 @@ fn unsupported_constructs_load_with_a_warning() {
     let cases: &[(&str, &str)] = &[
         (r#"<citation collapse="citation-number"><layout/></citation>"#, "collapse"),
         (r#"<citation disambiguate-add-year-suffix="true"><layout/></citation>"#, "disambiguation"),
-        (r#"<citation et-al-min="3"><layout/></citation>"#, "name options"),
+        (r#"<citation et-al-use-last="true"><layout/></citation>"#, "et-al-use-last"),
         (r#"<citation near-note-distance="2"><layout/></citation>"#, "near-note"),
         (r#"<citation><sort><key variable="author"/></sort><layout/></citation>"#, "sorting"),
         (r#"<bibliography second-field-align="margin"><layout/></bibliography>"#, "second-field-align"),
@@ -358,7 +360,7 @@ fn unsupported_constructs_load_with_a_warning() {
             "demote-non-dropping-particle",
         ),
         (r#"<style version="2.0"><citation><layout/></citation></style>"#, "version"),
-        (r#"<style version="1.0" name-delimiter="; "><citation><layout/></citation></style>"#, "name delimiters"),
+        (r#"<style version="1.0" names-delimiter="; "><citation><layout/></citation></style>"#, "names-delimiter"),
         (r#"<style version="1.0" initialize-with-hyphen="false"><citation><layout/></citation></style>"#, "initialize-with-hyphen"),
     ];
     for (xml, needle) in style_cases {
@@ -569,6 +571,41 @@ fn wide_attribute_lists_load_with_truncation_warnings() {
     warned_contains(&s, "more than 64");
     let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
     assert_eq!(n.variables.len(), 64);
+}
+
+#[test]
+fn inheritable_name_options_parse_from_root_and_sections() {
+    // Root options land as the style's defaults; `name-delimiter` is the spec's attribute.
+    let s =
+        parse(br#"<style version="1.0" initialize-with=". " name-as-sort-order="all" name-delimiter="; "><citation><layout/></citation></style>"#)
+            .unwrap();
+    assert_eq!(s.name_options.initialize_with, Some(". ".into()));
+    assert_eq!(s.name_options.name_as_sort_order, Some(NameAsSortOrder::All));
+    assert_eq!(s.name_options.delimiter, Some("; ".into()));
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+
+    // Section options merge over the root's; the bibliography, setting none, inherits.
+    let s = parse(
+        br#"<style version="1.0" initialize-with=". " et-al-min="9">
+          <citation et-al-min="3" et-al-use-first="1"><layout/></citation>
+          <bibliography and="symbol"><layout/></bibliography>
+        </style>"#,
+    )
+    .unwrap();
+    assert_eq!(s.name_options.et_al_min, Some(9));
+    assert_eq!(s.citation.name_options.et_al_min, Some(3));
+    assert_eq!(s.citation.name_options.et_al_use_first, Some(1));
+    assert_eq!(s.citation.name_options.initialize_with, Some(". ".into())); // inherited
+    assert_eq!(s.bibliography.as_ref().map(|b| b.layout.name_options.and), Some(Some(crate::model::AndStyle::Symbol)));
+    assert_eq!(s.bibliography.as_ref().map(|b| b.layout.name_options.et_al_min), Some(Some(9))); // inherited
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+
+    // `names-delimiter` (between name variables) is still outside the subset.
+    let s = parse(br#"<style version="1.0" names-delimiter="; "><citation><layout/></citation></style>"#).unwrap();
+    warned_contains(&s, "names-delimiter");
+    // The section options that cannot render still warn, at every level.
+    let s = parse(br#"<style version="1.0" et-al-use-last="true"><citation><layout/></citation></style>"#).unwrap();
+    warned_contains(&s, "et-al-use-last");
 }
 
 #[test]

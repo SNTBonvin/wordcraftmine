@@ -24,6 +24,9 @@ pub struct Style {
     /// The en-US terms the renderer may draw on: the CSL 1.0.2 spec appendix defaults merged
     /// with the style's own `xml:lang="en-US"` overrides.
     pub locale_terms: TermSet,
+    /// The inheritable name options set on the root `<style>`: the defaults every
+    /// `<names>` in the style renders under (section and element options win).
+    pub name_options: NameOptions,
     /// `<macro name="…">` bodies, by name.
     pub macros: BTreeMap<String, Vec<Element>>,
     /// The `<citation><layout>`; a style without one is refused by the parser.
@@ -76,6 +79,10 @@ pub struct Layout {
     pub prefix: String,
     pub suffix: String,
     pub delimiter: String,
+    /// The inheritable name options set on the `<citation>`/`<bibliography>` section,
+    /// merged over the root's; branch and else layouts leave this default (the options
+    /// in scope reach them through the section they render in).
+    pub name_options: NameOptions,
 }
 
 /// Every rendering element of the subset.
@@ -240,6 +247,22 @@ pub struct NameOptions {
     pub and: Option<AndStyle>,
     /// `delimiter`: the separator between names (default ", ").
     pub delimiter: Option<String>,
+}
+
+impl NameOptions {
+    /// These options rendering under inherited `defaults`: every option left unset falls
+    /// back to the inherited value (the spec's inheritable name options — root, then
+    /// section, then `<names>`, then `<name>`, each more specific level winning).
+    pub fn with_defaults(&self, defaults: &NameOptions) -> NameOptions {
+        NameOptions {
+            name_as_sort_order: self.name_as_sort_order.or(defaults.name_as_sort_order),
+            initialize_with: self.initialize_with.clone().or_else(|| defaults.initialize_with.clone()),
+            et_al_min: self.et_al_min.or(defaults.et_al_min),
+            et_al_use_first: self.et_al_use_first.or(defaults.et_al_use_first),
+            and: self.and.or(defaults.and),
+            delimiter: self.delimiter.clone().or_else(|| defaults.delimiter.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

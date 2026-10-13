@@ -61,6 +61,9 @@ struct Ctx<'a> {
     position: Position,
     /// Bibliography rendering: position conditions are false there (they test cites).
     in_bibliography: bool,
+    /// The inheritable name options in scope (the section's, already merged over the
+    /// root's at parse); every `<names>` renders under them where it sets nothing itself.
+    name_defaults: NameOptions,
     depth: u32,
 }
 
@@ -222,7 +225,7 @@ fn text_variable(ctx: &Ctx, name: &str) -> String {
         return ctx.item.locator.trim().to_string();
     }
     if NAME_VARIABLES.iter().any(|v| var_is(name, v)) {
-        return render_name_list(&ctx.style.locale_terms, &names_of(ctx.item.source, name), &NameOptions::default());
+        return render_name_list(&ctx.style.locale_terms, &names_of(ctx.item.source, name), &ctx.name_defaults);
     }
     if var_is(name, "issued") || var_is(name, "accessed") {
         let (year, month, day) = date_parts(ctx.item.source, name);
@@ -310,7 +313,14 @@ impl Style {
     /// first/subsequent/ibid state choose branches test), with `number` as the item's
     /// `citation-number` and `pages` as its `locator` (the cited pages).
     pub fn cite(&self, item: &Source, position: Position, number: usize, pages: &str) -> String {
-        let mut ctx = Ctx { style: self, item: Item { source: item, number, locator: pages }, position, in_bibliography: false, depth: 0 };
+        let mut ctx = Ctx {
+            style: self,
+            item: Item { source: item, number, locator: pages },
+            position,
+            in_bibliography: false,
+            name_defaults: self.citation.name_options.clone(),
+            depth: 0,
+        };
         render_layout(&mut ctx, &self.citation).text
     }
 
@@ -321,12 +331,20 @@ impl Style {
     /// (1-based). A style without a `<bibliography>` renders no entries.
     pub fn entries(&self, items: &[Source]) -> Vec<(String, Vec<String>)> {
         let Some(bib) = self.bibliography.as_ref() else { return Vec::new() };
-        let mut order: Vec<(usize, &Source, Vec<String>)> = items.iter().enumerate().map(|(i, s)| (i, s, self.sort_key(s, &bib.sort))).collect();
+        let name_defaults = bib.layout.name_options.clone();
+        let mut order: Vec<(usize, &Source, Vec<String>)> =
+            items.iter().enumerate().map(|(i, s)| (i, s, self.sort_key(s, &bib.sort, &name_defaults))).collect();
         order.sort_by(|a, b| compare_keys(&a.2, &b.2, &bib.sort));
         let mut out = Vec::with_capacity(items.len());
         for (rank, (_, source, key)) in order.into_iter().enumerate() {
-            let mut ctx =
-                Ctx { style: self, item: Item { source, number: rank + 1, locator: "" }, position: Position::First, in_bibliography: true, depth: 0 };
+            let mut ctx = Ctx {
+                style: self,
+                item: Item { source, number: rank + 1, locator: "" },
+                position: Position::First,
+                in_bibliography: true,
+                name_defaults: name_defaults.clone(),
+                depth: 0,
+            };
             out.push((render_layout(&mut ctx, &bib.layout).text, key));
         }
         out
@@ -339,8 +357,15 @@ impl Style {
     }
 
     /// The sort key of one source: one string per `<sort>` key, as it ordered.
-    fn sort_key(&self, source: &Source, sort: &[SortKey]) -> Vec<String> {
-        let mut ctx = Ctx { style: self, item: Item { source, number: 0, locator: "" }, position: Position::First, in_bibliography: true, depth: 0 };
+    fn sort_key(&self, source: &Source, sort: &[SortKey], name_defaults: &NameOptions) -> Vec<String> {
+        let mut ctx = Ctx {
+            style: self,
+            item: Item { source, number: 0, locator: "" },
+            position: Position::First,
+            in_bibliography: true,
+            name_defaults: name_defaults.clone(),
+            depth: 0,
+        };
         sort.iter()
             .map(|k| match &k.field {
                 SortField::Variable(v) => pad_numeric(&raw_variable(&ctx, v)),
@@ -749,7 +774,8 @@ fn render_names(ctx: &mut Ctx, n: &Names) -> Rendered {
         return Rendered::variable(String::new());
     };
     let people = names_of(ctx.item.source, variable);
-    let mut out = render_name_list(&ctx.style.locale_terms, &people, &n.options);
+    let options = n.options.with_defaults(&ctx.name_defaults);
+    let mut out = render_name_list(&ctx.style.locale_terms, &people, &options);
     if let Some(label) = &n.with_label {
         out.push_str(&names_label_text(ctx, label, variable, people.len()));
     }
