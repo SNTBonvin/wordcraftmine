@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Mac document stage, fixed icon stroke weight and editable chat branches; ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -42,6 +42,19 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on; the document canvas describes paragraphs, headings (level), list items, tables, links, pictures (alt text) and the caret and selection, for the pages on screen (#488); not yet tried with real screen readers | full | 50% | 5–8 |
 | Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
 
+## Mac document stage and chat branches (2026-10-13)
+
+The installed Word app was observed with an empty synthetic document and its Home stage.
+Mac WordCraft now uses a narrow neutral icon rail, Templates, Recents/Favourites, bounded
+filename/path rows and a selection-based Create/Open footer. Double-click opens or creates;
+single-click selects. Favourites persist in local UI settings. Other file actions remain in
+the rail's menu. The Mac ribbon begins with Home (File is in the native menu); its style gallery shows four
+tiles and a visible Styles Pane control. Icon stroke width is capped at 1.15 pt so large glyphs keep fine outlines.
+Chat has inline question editing, Copy and branch menus, saved parent links and navigation
+back to the original conversation. See [chat behavior](codex-chat.md#edit-messages-and-branch-conversations).
+The computer tool denied access to the ChatGPT app itself; the supplied ChatGPT image was used
+as the chat reference. These changes do not establish complete visual or functional parity.
+
 ## Visual reference pass (2026-10-13)
 
 The compact Mac ribbon and neutral light/dark surfaces were compared against a
@@ -64,6 +77,7 @@ are inspected, and all ribbon groups retain their layout regression coverage.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Mac grey document-stage rail, selection/Create/Open footer, persisted favourites and bounded recent rows; thin original line icons; inline chat editing and saved branches with read-only restart and original-chat navigation |
 | 2026-10-13 | minor | ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; original artwork and installed interface fonts; readiness estimates unchanged |
 | 2026-10-13 | minor | Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; title-bar content gains 16 pt clearance; live synthetic-project tests passed with Codex and Ollama Cloud |
 | 2026-10-13 | minor | Native Markdown chat, model-supported Codex thinking levels and transient document diffs/animation; no saved review markup introduced |

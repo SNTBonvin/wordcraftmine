@@ -175,6 +175,7 @@ pub struct UiState {
     pub print: print_page::PrintSettings,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
+    pub favourite_documents: Vec<String>,
     /// Symbols inserted from the Symbol dialog, most recent first (#321).
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
     /// Colours picked in the Colors dialog (More Colors…), most recent first (#606).
@@ -272,6 +273,7 @@ impl Default for UiState {
             print: print_page::PrintSettings::default(),
             ribbon_collapsed: false,
             recent: Vec::new(),
+            favourite_documents: Vec::new(),
             recent_symbols: Vec::new(),
             recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
@@ -1063,6 +1065,8 @@ impl WordApp {
             | "ui.agentDeleteChat"
             | "ui.agentClearHistory"
             | "ui.agentRenameChat"
+            | "ui.agentBranchChat"
+            | "ui.agentEditMessage"
             | "ui.agentProject"
             | "ui.agentDismissChanges"
             | "ui.codexChat"
@@ -1080,6 +1084,22 @@ impl WordApp {
                     return Some(Err(error));
                 }
                 json!({"undone": true})
+            }
+            "ui.favoriteDocument" => {
+                let Some(path) = s("path").filter(|v| !v.is_empty() && v.len() <= 4096) else {
+                    return Some(Err("A file path of up to 4096 bytes is required".into()));
+                };
+                let exists = self.ui.favourite_documents.iter().any(|v| v == path);
+                let value = p.get("value").and_then(Value::as_bool).unwrap_or(!exists);
+                if value && !exists {
+                    if self.ui.favourite_documents.len() >= MAX_RECENT {
+                        return Some(Err("The favourites list is full".into()));
+                    }
+                    self.ui.favourite_documents.push(path.into());
+                } else if !value {
+                    self.ui.favourite_documents.retain(|v| v != path);
+                }
+                json!({"favourite":value})
             }
             "ui.backstage" => {
                 self.ui.backstage = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ui.backstage);

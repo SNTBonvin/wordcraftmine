@@ -6,6 +6,8 @@ const MAX_BYTES: usize = 4 * 1024 * 1024;
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Conversation {
     pub id: u64,
+    #[serde(default)]
+    pub parent: Option<u64>,
     pub title: String,
     pub updated: u64,
     pub source: Source,
@@ -100,6 +102,7 @@ pub fn capture(state: &mut State, document: &str) {
         0,
         Conversation {
             id,
+            parent: state.branch_from,
             title,
             updated: crate::now_ms().max(0.0) as u64,
             source: state.source,
@@ -145,6 +148,9 @@ pub fn restore(state: &mut State, id: u64) -> Result<(), String> {
         })
         .collect();
     state.active_chat = Some(id);
+    state.branch_from = chat.parent;
+    state.edit_message = None;
+    state.input.clear();
     state.history_open = false;
     state.review = Default::default();
     state.markdown = Default::default();
@@ -156,9 +162,62 @@ pub fn restore(state: &mut State, id: u64) -> Result<(), String> {
     state.status = "Ready.".into();
     Ok(())
 }
+/// Prepare a new conversation transactionally. The original transcript and live document stay intact.
+pub fn fork(state: &mut State, document: &str, index: usize, replacement: Option<&str>) -> Result<(), String> {
+    if state.busy {
+        return Err("Stop the current response before editing or branching.".into());
+    }
+    let (role, _) = state.entries.get(index).ok_or("Message not found")?;
+    if !matches!(role.as_str(), "You" | "Assistant") {
+        return Err("Choose a question or an answer.".into());
+    }
+    if let Some(text) = replacement {
+        if role != "You" {
+            return Err("Only your own messages can be edited.".into());
+        }
+        if text.trim().is_empty() || text.chars().count() > super::MAX_INPUT {
+            return Err("Enter a message of up to 16,000 characters.".into());
+        }
+    }
+    if state.library.chats.len() >= MAX_CHATS {
+        return Err("Chat history is full. Delete a chat before creating a branch.".into());
+    }
+    capture(state, document);
+    if !state.history_error.is_empty() {
+        return Err(state.history_error.clone());
+    }
+    let mut draft = State::default();
+    draft.library.clone_from(&state.library);
+    draft.branch_from = state.active_chat;
+    draft.source = state.source;
+    draft.model.clone_from(&state.model);
+    draft.effort.clone_from(&state.effort);
+    draft.project_folder.clone_from(&state.project_folder);
+    draft.entries = state.entries.iter().take(index.saturating_add(1)).cloned().collect();
+    if let Some(text) = replacement
+        && let Some((_, prompt)) = draft.entries.last_mut()
+    {
+        *prompt = text.trim().to_string();
+    }
+    draft.sources.clone_from(&state.sources);
+    draft.project_excerpts.clone_from(&state.project_excerpts);
+    capture(&mut draft, document);
+    let id = draft
+        .active_chat
+        .ok_or_else(|| if draft.history_error.is_empty() { "The branch needs a question first.".into() } else { draft.history_error.clone() })?;
+    if !draft.history_error.is_empty() {
+        return Err(draft.history_error.clone());
+    }
+    state.library = std::mem::take(&mut draft.library);
+    restore(state, id)?;
+    state.input.clear();
+    state.history_dirty = true;
+    state.status = "Branched chat · document editing is off.".into();
+    Ok(())
+}
 pub fn inspect(state: &State) -> Value {
     json!({"active":state.active_chat,"count":state.library.chats.len(),"storageError":state.history_error,
-      "chats":state.library.chats.iter().map(|c|json!({"id":c.id,"title":c.title,"updated":c.updated,"model":c.model,"document":c.document,"messages":c.entries.len()})).collect::<Vec<_>>()})
+      "chats":state.library.chats.iter().map(|c|json!({"id":c.id,"title":c.title,"updated":c.updated,"model":c.model,"document":c.document,"messages":c.entries.len(),"parent":c.parent})).collect::<Vec<_>>()})
 }
 #[cfg(not(target_arch = "wasm32"))]
 mod disk {
@@ -354,6 +413,7 @@ pub(crate) fn flush(state: &State) -> Result<(), String> {
         let mut snapshot = State::default();
         snapshot.library.clone_from(&state.library);
         snapshot.active_chat.clone_from(&state.active_chat);
+        snapshot.branch_from = state.branch_from;
         snapshot.entries.clone_from(&state.entries);
         snapshot.sources.clone_from(&state.sources);
         snapshot.project_excerpts.clone_from(&state.project_excerpts);

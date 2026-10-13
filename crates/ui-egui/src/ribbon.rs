@@ -172,7 +172,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     // contextual ones (the Outlining tab right after File). A contextual tab (Table, Picture
     // Format) may be stored while the selection moved away, and a tab may have been hidden.
     let user_tabs = app.session.ribbon.tabs().into_owned();
-    let mut tabs: Vec<(String, bool)> = vec![("File".to_string(), false)];
+    let mut tabs: Vec<(String, bool)> = if app.integrated_titlebar { Vec::new() } else { vec![("File".to_string(), false)] };
     tabs.extend(user_tabs.iter().filter(|e| !e.hidden).map(|e| (e.name.clone(), e.custom)));
     for ct in contextual_tabs(&app.session) {
         if ct == "Outlining" {
@@ -744,6 +744,9 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Styles", Some("styles.pane"), app, |ui, app| {
         crate::previews::style_gallery(app, ui, &st);
+        if app.integrated_titlebar {
+            big(ui, app, "stylesPane", "Styles Pane", "view.stylesPane", json!({"value":true}), false);
+        }
     });
     group(ui, "Editing", None, app, |ui, app| {
         stack(ui, |ui| {

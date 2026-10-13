@@ -305,7 +305,7 @@ impl Tokens {
             title_bar: Color32::from_rgb(0x25, 0x25, 0x25),
             ribbon: Color32::from_rgb(0x25, 0x25, 0x25),
             tab_strip: Color32::from_rgb(0x25, 0x25, 0x25),
-            canvas: Color32::from_rgb(0x14, 0x14, 0x14),
+            canvas: Color32::from_rgb(0x25, 0x25, 0x25),
             panel: Color32::from_rgb(0x26, 0x26, 0x26),
             border: Color32::from_rgb(0x3A, 0x3A, 0x3A),
             border_strong: Color32::from_rgb(0x55, 0x55, 0x55),

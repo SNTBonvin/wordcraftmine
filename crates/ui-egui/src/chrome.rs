@@ -62,6 +62,9 @@ fn quick_access(ui: &mut Ui, app: &mut WordApp) {
             undo_list_button(ui, app, enabled);
         }
     }
+    if app.integrated_titlebar && !ids.iter().any(|id| id == "file.print") {
+        qat_button(ui, app, "print", tl!("Print"), "file.print", true);
+    }
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(26.0, 24.0), Sense::hover());
     let resp = ui.interact(r, qat_menu_button_id(), Sense::click());
@@ -257,9 +260,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     let _ = app.run("ui.backstage", json!({"value":true,"page":"home"}));
                 }
                 quick_access(ui, app);
-                if mac && !app.session.ribbon.qat().contains(&"file.print") {
-                    qat_button(ui, app, "print", tl!("Print"), "file.print", true);
-                }
+
                 qat_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Account / community.

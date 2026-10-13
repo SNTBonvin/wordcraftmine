@@ -22,7 +22,7 @@ impl Pen<'_> {
         pos2(o.x + x * s, o.y + y * s)
     }
     fn stroke(&self, c: Color32) -> Stroke {
-        Stroke::new(self.w * self.s(), c)
+        Stroke::new((self.w * self.s()).clamp(0.85, 1.15), c)
     }
     fn line(&self, pts: &[(f32, f32)]) {
         self.line_c(pts, self.c);
@@ -80,6 +80,9 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
     let green = Color32::from_rgb(0x2E, 0x8B, 0x57);
     let orange = Color32::from_rgb(0xE0, 0x7B, 0x1F);
     match name {
+        "folderOutline" => {
+            pen.closed(&[(2.0, 5.0), (7.5, 5.0), (9.0, 7.0), (18.0, 7.0), (18.0, 17.0), (2.0, 17.0)], c);
+        }
         "home" => {
             pen.line(&[(2.5, 9.0), (10.0, 2.5), (17.5, 9.0)]);
             pen.line(&[(5.0, 8.0), (5.0, 17.5), (8.0, 17.5), (8.0, 12.0), (12.0, 12.0), (12.0, 17.5), (15.0, 17.5), (15.0, 8.0)]);
@@ -319,7 +322,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fill(&[(17.0, 10.5), (18.0, 9.5), (19.5, 11.0), (18.5, 12.0)], a);
         }
         "table" => {
-            pen.frect(3.0, 3.0, 17.0, 7.0, a);
+            pen.frect(3.0, 3.0, 17.0, 7.0, a.gamma_multiply(0.16));
             pen.rect(3.0, 3.0, 17.0, 17.0, c);
             pen.line(&[(3.0, 7.0), (17.0, 7.0)]);
             pen.line(&[(3.0, 12.0), (17.0, 12.0)]);
@@ -338,7 +341,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         }
         "shapes" => {
             pen.rect(3.0, 3.0, 11.0, 11.0, c);
-            pen.fcircle(13.0, 13.0, 4.5, a);
+            pen.circle(13.0, 13.0, 4.5, a);
         }
         // Shape Effects: a square casting a soft shadow down and to the right.
         "shapeEffects" => {

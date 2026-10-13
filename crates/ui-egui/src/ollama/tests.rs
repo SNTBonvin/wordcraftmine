@@ -650,6 +650,13 @@ fn render_chat_redesign_and_history() {
         harness.step();
     }
     harness.render().unwrap().save(format!("{folder}/reply-dark.png")).unwrap();
+    harness.state_mut().ollama.edit_message = Some((0, "Help me improve the methods section instead.".into()));
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/edit-dark.png")).unwrap();
+    harness.state_mut().ollama.edit_message = None;
+
     let app = harness.state_mut();
     command(app, "ui.ollamaNewChat", &json!({})).unwrap();
     app.ollama.entry("You", "Draft an introduction for my paper".into());
@@ -675,6 +682,19 @@ fn render_chat_redesign_and_history() {
         harness.step();
     }
     harness.render().unwrap().save(format!("{folder}/diff-light.png")).unwrap();
+    let app = harness.state_mut();
+    app.ui.backstage = true;
+    app.ui.backstage_page = "home".into();
+    app.ui.recent = vec!["/A very long folder/project/research/shared/documents/An example research paper.docx".into()];
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/stage-light.png")).unwrap();
+    harness.state_mut().ui.theme = crate::theme::Appearance::Dark;
+    for _ in 0..6 {
+        harness.step();
+    }
+    harness.render().unwrap().save(format!("{folder}/stage-dark.png")).unwrap();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -746,4 +766,114 @@ fn closing_before_repaint_saves_the_latest_visible_question() {
     drop(first);
     drop(second);
     std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[test]
+fn editing_and_branching_keep_original_messages_and_document() {
+    let mut app = app();
+    app.ollama.entry("You", "First question".into());
+    app.ollama.entry("Assistant", "First answer".into());
+    app.ollama.entry("Activity", "A tool ran".into());
+    app.ollama.entry("You", "Later question".into());
+    history::sync(&mut app);
+    let original = app.ollama.active_chat.unwrap();
+    let entries = app.ollama.entries.clone();
+    let doc = app.session.doc.clone();
+    let selection = app.session.sel.clone();
+    let undo = app.session.undo_depth();
+    app.ollama.allow_edits = true;
+    command(&mut app, "ui.agentBranchChat", &json!({"index":1})).unwrap();
+    let branch = app.ollama.active_chat.unwrap();
+    assert_ne!(branch, original);
+    assert_eq!(app.ollama.branch_from, Some(original));
+    assert_eq!(app.ollama.entries.len(), 2);
+    assert!(!app.ollama.allow_edits);
+    assert_eq!(app.ollama.history.len(), 2);
+    assert!(app.ollama.history.iter().all(|v| v["role"] != "tool"));
+    command(&mut app, "ui.agentOpenChat", &json!({"id":original})).unwrap();
+    command(&mut app, "ui.agentEditMessage", &json!({"index":0,"text":"Revised é question", "send":false})).unwrap();
+    assert_eq!(app.ollama.entries, vec![("You".into(), "Revised é question".into())]);
+    assert_eq!(app.ollama.branch_from, Some(original));
+    assert_eq!(app.ollama.library.chats.iter().find(|c| c.id == original).unwrap().entries, entries);
+    assert_eq!(app.session.doc, doc);
+    assert_eq!(app.session.sel, selection);
+    assert_eq!(app.session.undo_depth(), undo);
+    let bytes = serde_json::to_vec(&app.ollama.library).unwrap();
+    let loaded: history::Library = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(loaded.chats.first().unwrap().parent, Some(original));
+}
+
+#[test]
+fn invalid_chat_edits_and_full_history_do_not_destroy_the_active_conversation() {
+    let mut app = app();
+    app.ollama.entry("You", "Keep this".into());
+    app.ollama.entry("Assistant", "Keep the answer".into());
+    history::sync(&mut app);
+    let original = app.ollama.active_chat;
+    let entries = app.ollama.entries.clone();
+    for params in [
+        json!({"index":u64::MAX,"text":"hello"}),
+        json!({"index":-1,"text":"hello"}),
+        json!({"index":1,"text":"hello"}),
+        json!({"index":0,"text":" "}),
+        json!({"index":0,"text":"a".repeat(MAX_INPUT+1)}),
+        json!({"index":0,"text":"hello","send":true}),
+    ] {
+        assert!(command(&mut app, "ui.agentEditMessage", &params).is_err());
+        assert_eq!(app.ollama.active_chat, original);
+        assert_eq!(app.ollama.entries, entries);
+    }
+    app.ollama.busy = true;
+    assert!(command(&mut app, "ui.agentBranchChat", &json!({"index":0})).is_err());
+    app.ollama.busy = false;
+    let chat = app.ollama.library.chats.first().unwrap().clone();
+    for id in 100..149 {
+        let mut copy = chat.clone();
+        copy.id = id;
+        app.ollama.library.chats.push(copy);
+    }
+    assert!(command(&mut app, "ui.agentBranchChat", &json!({"index":0})).is_err());
+    assert_eq!(app.ollama.active_chat, original);
+    assert_eq!(app.ollama.entries, entries);
+    assert_eq!(app.ollama.library.chats.len(), 50);
+}
+
+#[test]
+fn chat_enter_submits_and_shift_enter_adds_a_line() {
+    let mut app = app();
+    app.ollama.open = true;
+    app.ollama.input = "Question".into();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(4);
+    let id = egui::Id::new("agent_composer");
+    h.state().ctx.as_ref().unwrap().memory_mut(|m| m.request_focus(id));
+    h.run_steps(2);
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(2);
+    assert_eq!(h.state().ollama.status, "Select a model first.");
+    assert_eq!(h.state().ollama.input, "Question");
+    h.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::SHIFT,
+    });
+    h.run_steps(2);
+    assert!(h.state().ollama.input.contains('\n'));
+    assert!(!h.state().ollama.busy);
 }

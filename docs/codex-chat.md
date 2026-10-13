@@ -1,6 +1,6 @@
 # Codex chat in WordCraft
 
-> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (local chat history, redesigned composer and softer document review visuals)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (message editing and saved branches; local chat history, redesigned composer and softer document review visuals)
 
 Open **Agents → Codex Chat**, or choose **Codex** in the Agent chat provider menu.
 WordCraft starts the installed `codex app-server` over private stdin/stdout and uses its managed
@@ -36,6 +36,23 @@ live document snapshot. WordCraft keeps completed visible conversations in local
 including citations and retrieved project passages. Stop kills the child app-server and abandons unfinished messages;
 completed document changes remain undoable. Requests, event queues, response sizes and action
 counts are bounded. Browser sign-in and model turns time out after five minutes.
+
+## Edit messages and branch conversations
+
+Press **Enter** to send; **Shift+Enter** inserts a new line.
+
+Use the pencil beneath one of your questions to edit it inline. **Cancel** restores the normal
+conversation. **Save & send** creates a new saved branch with the revised question and asks the
+selected provider again. Later replies from the original conversation are excluded. The original
+chat remains available in history; **Open original** returns to it. Replies have **Copy** and a
+**••• → Branch chat from here** menu; questions have the same branch menu. Branching without
+editing copies the conversation through that message and lets you continue from there.
+
+Branches start with document editing off. They do not revert or repeat previous document edits;
+use the document's Undo controls for that. Old tool calls are never replayed. Stop an active
+response before editing or branching. Invalid indices, empty/oversized edits and full storage
+return errors without replacing the original conversation. Provider failures leave the new
+question visible and the original chat intact. The same controls work with Ollama.
 
 ## Chat history and deletion
 

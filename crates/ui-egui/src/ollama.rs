@@ -94,6 +94,8 @@ pub struct State {
     delete_chat: Option<u64>,
     delete_all: bool,
     rename_chat: Option<(u64, String)>,
+    edit_message: Option<(usize, String)>,
+    branch_from: Option<u64>,
     #[cfg(not(target_arch = "wasm32"))]
     history_path: Option<std::path::PathBuf>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -148,6 +150,8 @@ impl Default for State {
             delete_chat: None,
             delete_all: false,
             rename_chat: None,
+            edit_message: None,
+            branch_from: None,
             #[cfg(not(target_arch = "wasm32"))]
             history_path: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -449,6 +453,8 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.document = Some(app.session.document_id());
         app.ollama.entries.clear();
         app.ollama.active_chat = None;
+        app.ollama.branch_from = None;
+        app.ollama.edit_message = None;
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
@@ -580,6 +586,10 @@ pub(crate) fn refresh(app: &mut WordApp, ctx: &egui::Context) {
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
     let input = app.ollama.input.trim().to_string();
+    if app.ollama.edit_message.is_some() {
+        app.ollama.status = "Save or cancel the message edit first.".into();
+        return;
+    }
     if input.is_empty() || app.ollama.busy {
         return;
     }
@@ -635,6 +645,16 @@ fn effort_label(effort: &str) -> &str {
     }
 }
 
+fn message_action(ui: &mut Ui, icon: &str, label: &str, t: &Tokens) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
+    if response.hovered() {
+        ui.painter().rect_filled(rect, 6.0, t.chat_user);
+    }
+    crate::icons::paint(ui.painter(), egui::Rect::from_center_size(rect.center(), egui::vec2(15.0, 15.0)), icon, t.chat_dim, t.chat_dim);
+    response.on_hover_text(label)
+}
+
 fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_commonmark::CommonMarkCache) {
     ui.add_space(20.0);
     if role == "Thinking summary" {
@@ -665,10 +685,6 @@ fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_com
         });
     } else {
         markdown::show(ui, cache, text);
-        ui.add_space(6.0);
-        if ui.add(egui::Button::new(RichText::new("Copy").size(11.0).color(t.text_dim)).frame(false)).clicked() {
-            ui.ctx().copy_text(text.to_string());
-        }
     }
 }
 
@@ -686,6 +702,8 @@ fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
         app.ollama.history.clear();
         app.ollama.entries.clear();
         app.ollama.active_chat = None;
+        app.ollama.branch_from = None;
+        app.ollama.edit_message = None;
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
@@ -1083,6 +1101,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             if !app.ollama.history_error.is_empty() {
                 ui.add(egui::Label::new(RichText::new(&app.ollama.history_error).size(11.0).color(t.red)).wrap());
             }
+            if let Some(parent) = app.ollama.branch_from {
+                ui.horizontal(|ui| {
+                    ui.small(RichText::new("Branched conversation").color(t.chat_dim));
+                    if app.ollama.library.chats.iter().any(|c| c.id == parent)
+                        && ui.small_button("Open original").clicked()
+                        && let Err(error) = command(app, "ui.agentOpenChat", &json!({"id":parent}))
+                    {
+                        app.ollama.status = error;
+                    }
+                });
+            }
             let welcome = app.ollama.entries.is_empty() && !app.ollama.history_open;
             let height = if welcome { (ui.available_height() * 0.40).clamp(160.0, 280.0) } else { (ui.available_height() - 166.0 - extra).max(40.0) };
             ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -1090,7 +1119,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 egui::ScrollArea::vertical()
                     .id_salt("agent_conversation_v2")
                     .auto_shrink([false, false])
-                    .stick_to_bottom(true)
+                    .stick_to_bottom(app.ollama.edit_message.is_none())
                     .max_height(height)
                     .min_scrolled_height(height)
                     .show(ui, |ui| {
@@ -1111,11 +1140,84 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                                 ui.add(egui::Label::new(RichText::new("Write, revise or explore an idea.").size(13.0).color(t.chat_dim)).wrap());
                             });
                         }
-                        for (role, text) in &app.ollama.entries {
-                            message(ui, role, text, &t, &mut app.ollama.markdown);
+                        let mut action = None;
+                        for (index, (role, text)) in app.ollama.entries.iter().enumerate() {
+                            if app.ollama.edit_message.as_ref().is_some_and(|(editing, _)| index > *editing) {
+                                break;
+                            }
+                            if app.ollama.edit_message.as_ref().is_some_and(|(i, _)| *i == index) {
+                                if let Some((_, draft)) = &mut app.ollama.edit_message {
+                                    egui::Frame::NONE.fill(t.chat_surface).corner_radius(18).inner_margin(14).show(ui, |ui| {
+                                        ui.add(
+                                            egui::TextEdit::multiline(draft)
+                                                .id_salt(("agent_edit_message", index))
+                                                .text_color(t.chat_text)
+                                                .font(crate::theme::regular(14.0))
+                                                .desired_width(ui.available_width())
+                                                .desired_rows(4)
+                                                .char_limit(MAX_INPUT)
+                                                .frame(egui::Frame::NONE),
+                                        );
+                                        ui.small("Editing creates a new branch. The original chat is kept.");
+                                        ui.horizontal(|ui| {
+                                            if ui.button("Cancel").clicked() {
+                                                action = Some(("cancel", json!({})));
+                                            }
+                                            if ui
+                                                .add_enabled(!draft.trim().is_empty() && !app.ollama.busy, egui::Button::new("Save & send"))
+                                                .clicked()
+                                            {
+                                                action = Some(("ui.agentEditMessage", json!({"index":index,"text":draft,"send":true})));
+                                            }
+                                        });
+                                    });
+                                }
+                            } else {
+                                message(ui, role, text, &t, &mut app.ollama.markdown);
+                                if matches!(role.as_str(), "You" | "Assistant") {
+                                    ui.push_id(("message_actions", index), |ui| {
+                                        ui.horizontal(|ui| {
+                                            if message_action(ui, "copy", "Copy message", &t).clicked() {
+                                                ui.ctx().copy_text(text.clone());
+                                            }
+                                            if role == "You"
+                                                && ui
+                                                    .add_enabled_ui(!app.ollama.busy, |ui| message_action(ui, "pencil", "Edit message", &t))
+                                                    .inner
+                                                    .clicked()
+                                            {
+                                                action = Some(("edit", json!({"index":index,"text":text})));
+                                            }
+                                            ui.menu_button(RichText::new("•••").color(t.chat_dim), |ui| {
+                                                if ui.add_enabled(!app.ollama.busy, egui::Button::new("Branch chat from here")).clicked() {
+                                                    action = Some(("ui.agentBranchChat", json!({"index":index})));
+                                                    ui.close();
+                                                }
+                                            });
+                                        });
+                                    });
+                                }
+                            }
                             for (url, _) in &app.ollama.project_excerpts {
                                 if app.ollama.markdown.get_link_hook(url) == Some(true) {
                                     app.ollama.selected_source = Some(url.clone());
+                                }
+                            }
+                        }
+                        if let Some((id, params)) = action {
+                            match id {
+                                "cancel" => app.ollama.edit_message = None,
+                                "edit" => {
+                                    app.ollama.edit_message = params
+                                        .get("index")
+                                        .and_then(Value::as_u64)
+                                        .and_then(|v| usize::try_from(v).ok())
+                                        .map(|i| (i, params["text"].as_str().unwrap_or_default().to_string()))
+                                }
+                                _ => {
+                                    if let Err(error) = command(app, id, &params) {
+                                        app.ollama.status = error;
+                                    }
                                 }
                             }
                         }
@@ -1183,6 +1285,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             egui::Frame::NONE.fill(t.chat_surface).stroke(Stroke::new(0.6, t.border)).corner_radius(24).inner_margin(14).show(ui, |ui| {
                 let response = ui.add(
                     egui::TextEdit::multiline(&mut app.ollama.input)
+                        .id(egui::Id::new("agent_composer"))
+                        .return_key(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter))
                         .font(crate::theme::regular(14.0))
                         .frame(egui::Frame::NONE)
                         .hint_text("Ask about your document…")
@@ -1190,7 +1294,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         .desired_width(f32::INFINITY)
                         .char_limit(MAX_INPUT),
                 );
-                let submit = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
+                let submit =
+                    response.has_focus() && app.ollama.edit_message.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.menu_button(RichText::new("+").size(23.0), |ui| {
@@ -1210,13 +1315,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let send_button = ui
                             .add_enabled(
-                                app.ollama.busy || (!app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty()),
+                                app.ollama.busy
+                                    || (app.ollama.edit_message.is_none() && !app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty()),
                                 egui::Button::new(RichText::new(if app.ollama.busy { "■" } else { "↑" }).size(20.0).color(t.chat_send_text))
                                     .fill(t.chat_send)
                                     .corner_radius(255)
                                     .min_size(egui::vec2(32.0, 32.0)),
                             )
-                            .on_hover_text(if app.ollama.busy { "Stop response" } else { "Send · ⌘/Ctrl Enter" });
+                            .on_hover_text(if app.ollama.busy { "Stop response" } else { "Send · Enter (Shift Enter for a new line)" });
                         if send_button.clicked() && app.ollama.busy {
                             app.ollama.stop();
                         } else if (send_button.clicked() || submit) && !app.ollama.input.trim().is_empty() && !app.ollama.busy {
@@ -1303,14 +1409,17 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         ("ui.agentDeleteChat", "Delete saved chat",r#"{"id":number}"#),
         ("ui.agentClearHistory", "Delete all chat history","{}"),
         ("ui.agentRenameChat", "Rename saved chat",r#"{"id":number,"title":string}"#),
+        ("ui.favoriteDocument", "Favourite document",r#"{"path":string,"value"?:bool}"#),
+        ("ui.agentBranchChat", "Branch chat here",r#"{"index":number}"#),
+        ("ui.agentEditMessage", "Edit message in new branch",r#"{"index":number,"text":string,"send"?:bool}"#),
         ("ui.agentProject", "Link project folder", r#"{"path"?:string}"#),
         ("ui.agentDismissChanges", "Dismiss AI highlighting", "{}"),
         ("ui.agentShowChange", "Show AI change in document", r#"{"index"?:number}"#),
     ]
     .into_iter()
     .map(|(id, label, params)| {
-        json!({"id":id,"label":label,"location":"Agents","params":params,
-        "enabled":!cfg!(target_arch="wasm32") && (id!="ui.ollamaUndo" || can_undo(app))})
+        json!({"id":id,"label":label,"location":if id == "ui.favoriteDocument" { "File" } else { "Agents" },"params":params,
+        "enabled":(id == "ui.favoriteDocument" || !cfg!(target_arch="wasm32")) && (id!="ui.ollamaUndo" || can_undo(app))})
     })
     .collect()
 }
@@ -1318,6 +1427,27 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
 pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, String> {
     history::sync(app);
     match id {
+        "ui.agentBranchChat" | "ui.agentEditMessage" => {
+            let index = p.get("index").and_then(Value::as_u64).and_then(|v| usize::try_from(v).ok()).ok_or("A valid message index is required")?;
+            let text = if id == "ui.agentEditMessage" { Some(p.get("text").and_then(Value::as_str).ok_or("text required")?) } else { None };
+            let resend = text.is_some() && p.get("send").and_then(Value::as_bool).unwrap_or(false);
+            #[cfg(not(target_arch = "wasm32"))]
+            let ctx = if resend { Some(app.ctx.clone().ok_or("The app is not ready yet")?) } else { None };
+            if resend && app.ollama.model.is_empty() {
+                return Err("Select a model first.".into());
+            }
+            let title = document_title(app);
+            history::fork(&mut app.ollama, &title, index, text)?;
+            app.ollama.open = true;
+            app.ollama.edit_message = None;
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(ctx) = ctx {
+                app.ollama.entries.pop();
+                app.ollama.history.pop();
+                app.ollama.input = text.unwrap_or_default().trim().to_string();
+                send(app, &ctx);
+            }
+        }
         "ui.agentHistory" => app.ollama.history_open = p.get("value").and_then(Value::as_bool).unwrap_or(!app.ollama.history_open),
         "ui.agentOpenChat" => {
             history::restore(&mut app.ollama, p.get("id").and_then(Value::as_u64).ok_or("id required")?)?;
@@ -1334,6 +1464,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.sources.clear();
                 app.ollama.project_excerpts.clear();
                 app.ollama.active_chat = None;
+                app.ollama.branch_from = None;
+                app.ollama.edit_message = None;
                 app.ollama.thinking.clear();
             }
             app.ollama.library.chats.retain(|c| c.id != id);
@@ -1349,6 +1481,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             app.ollama.project_excerpts.clear();
             app.ollama.thinking.clear();
             app.ollama.active_chat = None;
+            app.ollama.branch_from = None;
+            app.ollama.edit_message = None;
             app.ollama.library.chats.clear();
             app.ollama.history_dirty = true;
         }
@@ -1371,6 +1505,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 // Revocation clears prior retrieved content from the conversation sent to providers.
                 app.ollama.entries.clear();
                 app.ollama.active_chat = None;
+                app.ollama.branch_from = None;
+                app.ollama.edit_message = None;
                 app.ollama.sources.clear();
                 app.ollama.project_excerpts.clear();
                 app.ollama.selected_source = None;
@@ -1400,6 +1536,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.models.clear();
                 app.ollama.entries.clear();
                 app.ollama.active_chat = None;
+                app.ollama.branch_from = None;
+                app.ollama.edit_message = None;
                 app.ollama.markdown = Default::default();
                 app.ollama.thinking.clear();
                 app.ollama.sources.clear();
@@ -1438,6 +1576,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
         }
         "ui.ollamaNewChat" => {
             app.ollama.active_chat = None;
+            app.ollama.branch_from = None;
+            app.ollama.edit_message = None;
             app.ollama.history_open = false;
             app.ollama.stop();
             app.ollama.history.clear();
