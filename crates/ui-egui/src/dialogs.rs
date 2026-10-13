@@ -657,7 +657,10 @@ pub struct TableRegion {
     pub borders: bool,
     pub fill: String,
     pub bold: bool,
+    pub italic: bool,
     pub color: String,
+    pub font: String,
+    pub size: String,
 }
 
 /// The Table Style dialog's regions, in the order of `table_style::REGIONS` (the param names).
@@ -677,7 +680,15 @@ fn table_regions(app: &WordApp, id: &str) -> Box<[TableRegion; 7]> {
     let region = |borders: Option<wordcraft_doc::props::Borders>, fill: Option<wordcraft_doc::Rgb>, chr: &wordcraft_doc::CharProps| {
         let mut c = st.chr.clone();
         c.overlay(chr);
-        TableRegion { borders: lines(borders), fill: hex(fill), bold: c.bold.unwrap_or(false), color: text(&c) }
+        TableRegion {
+            borders: lines(borders),
+            fill: hex(fill),
+            bold: c.bold.unwrap_or(false),
+            italic: c.italic.unwrap_or(false),
+            color: text(&c),
+            font: c.font.clone().unwrap_or_default(),
+            size: c.size.map(|s| s.to_string()).unwrap_or_default(),
+        }
     };
     let none = wordcraft_doc::CharProps::default();
     Box::new([
@@ -826,8 +837,21 @@ fn region_changes(r: &TableRegion, basis: &TableRegion) -> Value {
     if r.bold != basis.bold {
         v["bold"] = json!(r.bold);
     }
+    if r.italic != basis.italic {
+        v["italic"] = json!(r.italic);
+    }
     if r.color != basis.color {
         v["color"] = color(&r.color);
+    }
+    if r.font != basis.font && !r.font.trim().is_empty() {
+        v["font"] = json!(r.font.trim());
+    }
+    if r.size != basis.size
+        && let Ok(size) = r.size.trim().parse::<f32>()
+        && size.is_finite()
+        && size > 0.0
+    {
+        v["size"] = json!(size);
     }
     v
 }
@@ -2189,6 +2213,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut r.borders, tl!("Borders"));
                     ui.checkbox(&mut r.bold, tl!("Bold"));
+                    ui.checkbox(&mut r.italic, tl!("Italic"));
                 });
                 egui::Grid::new("tstyle_colors").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
                     ui.label(tl!("Fill color:"));
@@ -2196,6 +2221,16 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     ui.end_row();
                     ui.label(tl!("Font color:"));
                     color_menu(ui, &theme, &mut r.color);
+                    ui.end_row();
+                    ui.label(tl!("Font:"));
+                    let fams = app.previews.families();
+                    let prev = app.previews.font_preview_fn();
+                    if let Some(f) = crate::widgets::font_combo(ui, "tstyle_font", 200.0, &r.font, &fams, Some(&*prev)) {
+                        r.font = f;
+                    }
+                    ui.end_row();
+                    ui.label(tl!("Size:"));
+                    ui.text_edit_singleline(&mut r.size);
                     ui.end_row();
                 });
             }
@@ -3294,6 +3329,18 @@ mod tests {
     use wordcraft_doc::Pos;
     use wordcraft_doc::props::Align;
     use wordcraft_engine::Session;
+
+    #[test]
+    fn table_style_region_changes_carry_italic_font_and_size() {
+        // #714: the Table Style dialog offers italic, font and size, not just bold/fill.
+        let basis = TableRegion::default();
+        let r = TableRegion { italic: true, font: "Arial".into(), size: "12".into(), ..Default::default() };
+        let v = region_changes(&r, &basis);
+        assert_eq!(v["italic"], true);
+        assert_eq!(v["font"], "Arial");
+        assert_eq!(v["size"], 12.0);
+        assert!(region_changes(&basis, &basis).as_object().is_some_and(|o| o.is_empty()));
+    }
 
     /// Go To's page box (#712): a number, +n / -n from the current page (a typographic minus
     /// too), empty for the next page; anything else is refused.
