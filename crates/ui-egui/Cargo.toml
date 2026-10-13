@@ -11,7 +11,7 @@ workspace = true
 [dependencies]
 # The File column and the places panel from storytold/craft-libs#50, pinned to its branch in a fork
 # until it merges.
-craft-ui = { git = "https://github.com/brzuchal/craft-libs", rev = "249571bd12bc61d4b3070f53d37b38ce6ad5ae45" }
+craft-ui = { git = "https://github.com/brzuchal/craft-libs", rev = "bd6ae9409302653d4781ec330ca10f771a11c5ce" }
 wordcraft-geom = { workspace = true }
 wordcraft-doc = { workspace = true }
 wordcraft-fonts = { workspace = true }

@@ -252,7 +252,9 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
 /// folder; Browse shows the system's dialog. Remote storage adds one place per account; there is
 /// none yet.
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
-    use craft_ui::places::{Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesLabels, PlacesPanel, PlacesStyle};
+    use craft_ui::places::{
+        Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesIcon, PlacesLabels, PlacesNotice, PlacesPanel, PlacesStyle,
+    };
     let t = Tokens::get(ui.ctx());
     let style = PlacesStyle {
         fill: t.ribbon,
@@ -283,24 +285,7 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     let mut failed = None;
     match (&dir, &app.file_browser.page_listing) {
         (Some(_), Some(Ok(listing))) => rows.extend(listing.entries.iter().map(|e| (e.path.clone(), e.name.clone(), String::new(), e.dir))),
-        // A folder the system keeps closed (macOS guards Documents, Desktop and Downloads) still
-        // opens through Browse: a document the user picks there is theirs to open.
-        (Some(_), Some(Err(why))) => {
-            failed = Some(match why {
-                // macOS asks once whether the app may read such a folder, and stays silent after a
-                // No, or when the app was started by a program that itself has no access.
-                std::io::ErrorKind::PermissionDenied if cfg!(target_os = "macos") => format!(
-                    "{} {}",
-                    tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it."),
-                    tl!("To list it here, allow WordCraft in System Settings, under Privacy & Security, Files and Folders.")
-                ),
-                std::io::ErrorKind::PermissionDenied => {
-                    tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it.").to_string()
-                }
-                std::io::ErrorKind::NotFound => tl!("This folder is no longer there.").to_string(),
-                _ => tl!("This folder can't be read.").to_string(),
-            });
-        }
+        (Some(_), Some(Err(why))) => failed = Some(*why),
         (Some(_), None) => {}
         (None, _) => rows.extend(app.ui.recent.iter().take(app.ui.recent_shown()).map(|p| {
             let path = std::path::Path::new(p);
@@ -311,10 +296,26 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     }
     let entries: Vec<PlaceEntry<'_>> =
         rows.iter().map(|(_, name, detail, folder)| PlaceEntry { name, folder: *folder, detail, attention: false, remote: false }).collect();
-    let content = match (&failed, entries.is_empty(), dir.is_some()) {
-        (Some(why), ..) => PlacesContent::Message(why),
-        (None, true, true) => PlacesContent::Message(tl!("This folder is empty.")),
-        (None, true, false) => PlacesContent::Message(tl!("Documents you open will show up here.")),
+    // A folder the system keeps closed (macOS guards Documents, Desktop and Downloads) still opens
+    // through Browse: a document the user picks there is theirs to open. macOS asks once whether
+    // the app may read such a folder, and stays silent after a No.
+    let no_access = tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it.");
+    let denied = if cfg!(target_os = "macos") {
+        format!("{no_access} {}", tl!("To list it here, allow WordCraft in System Settings, under Privacy & Security, Files and Folders."))
+    } else {
+        no_access.to_string()
+    };
+    let notice = |icon, title, body, action| PlacesContent::Notice(PlacesNotice { icon, title, body, action });
+    let content = match (failed, entries.is_empty(), dir.is_some()) {
+        (Some(std::io::ErrorKind::PermissionDenied), ..) => {
+            notice(PlacesIcon::Locked, tl!("No access to this folder"), &denied, Some(tl!("Browse…")))
+        }
+        (Some(std::io::ErrorKind::NotFound), ..) => {
+            notice(PlacesIcon::Folder, tl!("This folder is no longer there."), tl!("It may have been moved or deleted."), None)
+        }
+        (Some(_), ..) => notice(PlacesIcon::Folder, tl!("This folder can't be read."), "", None),
+        (None, true, true) => notice(PlacesIcon::Folder, tl!("This folder is empty."), "", None),
+        (None, true, false) => notice(PlacesIcon::Recent, tl!("Documents you open will show up here."), "", None),
         (None, false, _) => PlacesContent::Entries(&entries),
     };
 
@@ -357,7 +358,8 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
             }
             None => {}
         },
-        Some(PlacesAction::Browse) => {
+        // The notice's button is Browse, offered where the folder itself stays closed.
+        Some(PlacesAction::Browse | PlacesAction::Notice) => {
             let _ = app.run("ui.openFileDialog", json!({}));
         }
         Some(PlacesAction::AddPlace) | None => {}
