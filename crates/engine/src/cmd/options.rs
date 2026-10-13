@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.options", "Options", "File", options)
             .params(
-                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "defaultFormatting"?: {"font": string, "size": pt, "spaceBefore": pt, "spaceAfter": pt, "lineSpacing": {"rule": "multiple|atLeast|exactly", "value": pt}}, "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL, saved: the paper File › New starts on, the default units and the decimal separator; auto: the system's), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
+                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "defaultFormatting"?: {"font": string, "size": pt, "spaceBefore": pt, "spaceAfter": pt, "lineSpacing": {"rule": "multiple|atLeast|exactly", "value": pt}}, "useDocumentNormal"?: true (copy this document's effective Normal style), "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL, saved: the paper File › New starts on, the default units and the decimal separator; auto: the system's), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
             )
             .pure(),
         CommandSpec::new("text.overtype", "Overtype", "File › Options › Advanced", |s, v| {
@@ -122,6 +122,10 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         Some(_) => return Err(CmdError::Params("`region` must be a locale tag like pl-PL, or auto".into())),
     };
     let default_formatting = default_formatting_param(v)?;
+    let use_document_normal = bool_param(v, "useDocumentNormal")?;
+    if default_formatting.is_some() && use_document_normal == Some(true) {
+        return Err(CmdError::Params("`defaultFormatting` and `useDocumentNormal` cannot be used together".into()));
+    }
     let mut flag_values = Vec::new();
     for (k, f) in flags() {
         if let Some(b) = bool_param(v, k)? {
@@ -149,6 +153,7 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         || units.is_some()
         || region.is_some()
         || default_formatting.is_some()
+        || use_document_normal == Some(true)
         || !flag_values.is_empty()
         || !mark_values.is_empty()
         || check_spelling.is_some()
@@ -167,6 +172,11 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         s.prefs.region = r;
     }
     if let Some(formatting) = default_formatting {
+        s.prefs.default_formatting = formatting;
+    }
+    if use_document_normal == Some(true) {
+        let formatting = DefaultFormatting::from_normal(&s.doc);
+        formatting.validate()?;
         s.prefs.default_formatting = formatting;
     }
     for (f, b) in flag_values {

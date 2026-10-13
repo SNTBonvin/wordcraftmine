@@ -5143,6 +5143,25 @@ fn new_documents_follow_the_saved_default_formatting() {
     assert_eq!(restored.prefs.default_formatting, before);
 }
 
+#[test]
+fn current_normal_style_can_become_the_new_document_default() {
+    use wordcraft_doc::props::LineSpacing;
+
+    let mut session = s();
+    run(
+        &mut session,
+        "styles.modify",
+        json!({"style": "Normal", "chr": {"font": "Courier New", "size": 10.0}, "para": {"spaceBefore": 2.0, "spaceAfter": 0.0, "lineSpacing": {"rule": "multiple", "value": 1.0}}}),
+    );
+    run(&mut session, "file.options", json!({"useDocumentNormal": true}));
+    assert_eq!(session.prefs.default_formatting.font, "Courier New");
+    assert_eq!(session.prefs.default_formatting.line_spacing, LineSpacing::Multiple(1.0));
+
+    run(&mut session, "styles.modify", json!({"style": "Normal", "chr": {"font": "Liberation Mono", "size": 11.0}}));
+    run(&mut session, "design.setDefault", json!({}));
+    assert_eq!((session.prefs.default_formatting.font.as_str(), session.prefs.default_formatting.size), ("Liberation Mono", 11.0));
+}
+
 /// Automatic (HTML-style) paragraph spacing: `para.spacing` turns it on and off, and a number
 /// replaces it, as typing one in Word's Paragraph dialog does; Ctrl+0 and Remove Space After work
 /// on it too.

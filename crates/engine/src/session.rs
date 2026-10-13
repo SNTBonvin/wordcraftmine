@@ -485,6 +485,19 @@ impl Default for DefaultFormatting {
 }
 
 impl DefaultFormatting {
+    /// Copy the effective Normal style from a document into a new-document template.
+    pub fn from_normal(doc: &Document) -> Self {
+        let chr = doc.styles.resolve_char(Some("Normal"), &CharProps::default());
+        let para = doc.styles.resolve_para(&wordcraft_doc::ParaProps { style: Some("Normal".into()), ..Default::default() });
+        DefaultFormatting {
+            font: chr.font,
+            size: chr.size,
+            space_before: para.space_before,
+            space_after: para.space_after,
+            line_spacing: para.line_spacing,
+        }
+    }
+
     /// Apply the saved Normal-template values to a new document's style defaults.
     pub fn apply_to(&self, doc: &mut Document) {
         doc.styles.default_chr.font = Some(self.font.clone());
