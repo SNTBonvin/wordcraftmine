@@ -213,6 +213,12 @@ pub enum Dialog {
     Borders {
         form: Box<crate::dialogs_para::BordersForm>,
     },
+    /// Format Page Numbers (#1113).
+    PageNumberFormat {
+        format: String,
+        start: String,
+        message: String,
+    },
     Find {
         query: String,
         replace: String,
@@ -933,6 +939,7 @@ impl Dialog {
             Dialog::TableProperties { .. } => "tableProperties",
             Dialog::Password { .. } => "password",
             Dialog::EncryptPassword { .. } => "encryptPassword",
+            Dialog::PageNumberFormat { .. } => "pageNumberFormat",
             Dialog::DefineList { .. } => "defineList",
             Dialog::TrackOptions { .. } => "trackChangesOptions",
             Dialog::Review(d) => d.name(),
@@ -1183,6 +1190,12 @@ impl Dialog {
                 Dialog::FieldCode { code: field.instr, edit: true, message: String::new() }
             }
             "encryptPassword" => Dialog::EncryptPassword { password: Password::default(), confirm: Password::default(), message: String::new() },
+            "pageNumberFormat" => {
+                let st = app.session.run("layout.section", &json!({})).map_err(|e| e.to_string()).unwrap_or_default();
+                let format = st.get("pageNumFormat").and_then(Value::as_str).unwrap_or("decimal").to_string();
+                let start = st.get("pageNumStart").and_then(Value::as_u64).map(|n| n.to_string()).unwrap_or_default();
+                Dialog::PageNumberFormat { format, start, message: String::new() }
+            }
             "ruleIf" | "ruleSkipIf" => {
                 let fields = app.session.merge.headers.clone();
                 Dialog::MergeRule {
@@ -1382,6 +1395,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::TableProperties { .. } => "Table Properties",
         Dialog::Password { .. } => "Password",
         Dialog::EncryptPassword { .. } => "Encrypt with Password",
+        Dialog::PageNumberFormat { .. } => "Format Page Numbers",
         Dialog::DefineList { .. } => "Define New Multilevel List",
         Dialog::TrackOptions { .. } => "Track Changes Options",
         Dialog::Review(d) => d.title(),
@@ -2446,6 +2460,53 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             }
             cancel
         }
+        Dialog::PageNumberFormat { format, start, message } => {
+            const FORMATS: [(&str, &str); 5] = [
+                ("decimal", "1, 2, 3, …"),
+                ("upperRoman", "I, II, III, …"),
+                ("lowerRoman", "i, ii, iii, …"),
+                ("upperLetter", "A, B, C, …"),
+                ("lowerLetter", "a, b, c, …"),
+            ];
+            egui::Grid::new("page_number_format").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+                ui.label(tl!("Number format:"));
+                let shown = FORMATS.iter().find(|(v, _)| *v == format).map(|(_, l)| tl!(l)).unwrap_or_default();
+                egui::ComboBox::from_id_salt("page_number_format").selected_text(shown).show_ui(ui, |ui| {
+                    for (v, l) in FORMATS {
+                        ui.selectable_value(format, v.to_string(), tl!(l));
+                    }
+                });
+                ui.end_row();
+                ui.label(tl!("Start at:"));
+                ui.add(egui::TextEdit::singleline(start).hint_text(tl!("Empty continues the previous section")).desired_width(140.0));
+                ui.end_row();
+            });
+            if !message.is_empty() {
+                ui.label(egui::RichText::new(message.as_str()).small().color(ui.visuals().error_fg_color));
+            }
+            let (ok, cancel) = buttons(ui, tl!("OK"));
+            if ok {
+                let mut v = json!({"format": format});
+                match start.trim() {
+                    "" => {}
+                    digits => match digits.parse::<u32>() {
+                        Ok(n) if n >= 1 => v["start"] = json!(n),
+                        _ => {
+                            *message = tl!("Start at needs a number from 1.").to_string();
+                            return false;
+                        }
+                    },
+                }
+                return match app.run("layout.pageNumberFormat", v) {
+                    Ok(_) => true,
+                    Err(e) => {
+                        *message = e;
+                        false
+                    }
+                };
+            }
+            cancel
+        }
         Dialog::Password { name, params, password, message } => {
             ui.label(crate::i18n::fmt(tl!("{name} is protected with a password."), &[("name", name)]));
             ui.add_space(4.0);
@@ -3329,6 +3390,21 @@ mod tests {
     use wordcraft_doc::Pos;
     use wordcraft_doc::props::Align;
     use wordcraft_engine::Session;
+
+    #[test]
+    fn format_page_numbers_opens_its_dialog() {
+        // #1113: the menu item opens the dialog instead of silently doing nothing.
+        let mut a = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        let d = Dialog::open("pageNumberFormat", &mut a).expect("dialog opens");
+        assert!(matches!(d, Dialog::PageNumberFormat { .. }), "not a page-number dialog");
+        let r = a.run("layout.pageNumberFormat", serde_json::json!({})).unwrap();
+        assert_eq!(r["pending"], "pageNumberFormat");
+        // With settings it applies directly, and roman + start stick.
+        a.run("layout.pageNumberFormat", serde_json::json!({"format": "upperRoman", "start": 4})).unwrap();
+        let st = a.session.run("layout.section", &serde_json::json!({})).unwrap();
+        assert_eq!(st["pageNumFormat"], "upperRoman");
+        assert_eq!(st["pageNumStart"], 4);
+    }
 
     #[test]
     fn table_style_region_changes_carry_italic_font_and_size() {
