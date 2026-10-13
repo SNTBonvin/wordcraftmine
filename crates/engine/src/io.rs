@@ -116,7 +116,11 @@ pub fn open_bytes_with(name: &str, bytes: &[u8], password: Option<&str>) -> Resu
     let mut doc = match ext.as_str() {
         // Plain text goes through the formats importer: BOMs, unmarked UTF-16, Windows-1252.
         "txt" | "text" | "" => wordcraft_formats::txt::import(bytes),
-        "json" => serde_json::from_slice::<Document>(bytes).map_err(|e| format!("{name}: {e}"))?,
+        "json" => {
+            let mut d = serde_json::from_slice::<Document>(bytes).map_err(|e| format!("{name}: {e}"))?;
+            d.normalize_runs();
+            d
+        }
         other => match crate::io_ext::open(other, bytes) {
             Some(r) => r?,
             None => return open_by_content(name, other, bytes, password),
