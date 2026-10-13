@@ -212,6 +212,26 @@ fn ukrainian_covers_the_entire_existing_interface_catalog() {
 }
 
 #[test]
+fn arabic_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // A superset of the reference catalog (zh-hans): the union of every language's keys, plus
+    // its own — the same completeness the enforced tab/command test relies on.
+    assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("ar").0.source)));
+    let ar = lang("ar");
+    assert_eq!(tr(ar, "Home"), "الصفحة الرئيسية");
+    assert_eq!(tr(ar, "Font"), "خط");
+    assert_eq!(tr(ar, "Save"), "حفظ");
+    assert_eq!(tr(ar, "unknown future label"), "unknown future label");
+    assert_eq!(fmt(tr(ar, "{words} words"), &[("words", "5")]), "الكلمات: 5");
+    assert_eq!(fmt(tr(ar, "Exported {path}"), &[("path", "draft-3.docx")]), "تم التصدير إلى draft-3.docx");
+    // Count-neutral wording stays grammatical for Arabic's six integer categories.
+    for count in ["0", "1", "2", "5", "11", "12", "21", "22", "25", "111", "121"] {
+        assert_eq!(fmt(tr(ar, "{words} words"), &[("words", count)]), format!("الكلمات: {count}"));
+    }
+}
+
+#[test]
 fn bundled_interface_fonts_cover_ukrainian_without_system_fallbacks() {
     let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
     let (entries, errors) = parse_entries(lang("uk").0.source);
