@@ -38,6 +38,7 @@ pub fn state(s: &Session) -> Value {
         "lockedStyles": s.doc.styles.styles.iter().filter(|x| x.locked).map(|x| x.id.clone()).collect::<Vec<_>>(),
         "exceptions": regions.len(),
         "regions": regions,
+        "formFields": s.doc.fillable_controls(),
     })
 }
 
@@ -403,8 +404,16 @@ pub(crate) fn protection_lifted(before: &Document, after: &Document) -> bool {
 }
 
 /// The first position in an editable range after `from` (wrapping round), for Find Next Region
-/// I Can Edit; with it, the range's end.
+/// I Can Edit; with it, the range's end. Filling in forms: the next fillable control's content.
 pub fn next_region(s: &Session, from: &Pos) -> Option<(Pos, Pos)> {
+    if s.doc.settings.protection.as_deref() == Some("forms") {
+        let stories = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|k| StoryRef::Part(*k)));
+        let mut ranges: Vec<(Pos, Pos)> =
+            stories.flat_map(|story| s.doc.control_ranges(story)).filter(|r| r.control.lock.can_edit()).map(|r| (r.content_start(), r.end)).collect();
+        ranges.sort_by(|a, b| a.0.cmp(&b.0));
+        let next = ranges.iter().find(|r| r.0 > *from).or_else(|| ranges.first())?;
+        return Some((next.0.clone(), next.1.clone()));
+    }
     let ranges: Vec<PermRange> = s.doc.perm_ranges().into_iter().filter(|r| editable_by(r, &s.author)).collect();
     let next = ranges.iter().find(|r| r.start > *from).or_else(|| ranges.first())?;
     Some((next.start.clone(), next.end.clone()))
@@ -588,6 +597,36 @@ mod tests {
         select(&mut s, "Size");
         assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
         assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
+    /// Discoverability in forms mode: the state counts the fillable controls (`formFields`),
+    /// and Find Next Region I Can Edit walks their contents in order, wrapping round. Other
+    /// modes keep the perm-range behaviour.
+    #[test]
+    fn form_fields_state_and_find_next_region() {
+        let mut s = Session::new(Document::from_text("Alpha.\nBeta.\n"));
+        select(&mut s, "Alpha.");
+        s.run("developer.richText", &json!({"tag": "first"})).unwrap();
+        select(&mut s, "Beta.");
+        s.run("developer.richText", &json!({"tag": "second"})).unwrap();
+        assert_eq!(state(&s)["formFields"], 2, "the count is reported in every mode");
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        assert_eq!(state(&s)["formFields"], 2);
+        let ranges = s.doc.control_ranges(StoryRef::Body);
+        let first = ranges.iter().find(|r| r.control.tag == "first").unwrap();
+        let second = ranges.iter().find(|r| r.control.tag == "second").unwrap();
+        let (start, end) = next_region(&s, &s.doc.start_of(StoryRef::Body)).unwrap();
+        assert_eq!(start, first.content_start());
+        assert_eq!(end, first.end);
+        let (start, end) = next_region(&s, &first.end).unwrap();
+        assert_eq!(start, second.content_start());
+        assert_eq!(end, second.end);
+        let (start, end) = next_region(&s, &second.end).unwrap();
+        assert_eq!(start, first.content_start(), "wraps round to the first control");
+        assert_eq!(end, first.end);
+        // Without forms mode, Find Next Region is about perm ranges: none here, nothing to find.
+        s.run("review.restrict", &json!({"mode": "readOnly"})).unwrap();
+        assert_eq!(next_region(&s, &s.doc.start_of(StoryRef::Body)), None);
     }
 
     /// Malformed control markers — an orphan end, starts nested past the walk's depth cap that
