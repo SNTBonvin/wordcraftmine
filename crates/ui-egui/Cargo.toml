@@ -31,6 +31,7 @@ sys-locale = { version = "0.3", features = ["js"] }
 # Ollama HTTP requests run on background workers; TLS remains Rust-native.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 quick-xml = { workspace = true }
+toml = "1"
 
 # Linux only, where winit reports no system theme: the desktop portal's light/dark answer (see
 # `desktop_theme.rs`). Already in the tree, with these features, through egui's own accessibility

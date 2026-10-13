@@ -318,3 +318,67 @@ fn document_metadata_is_editable_and_undoable_without_file_io() {
     assert_eq!(app.session.doc.core.title, original);
     assert!(execute(&mut app, "file.save", json!({"path":"/tmp/forbidden.docx"})).is_err());
 }
+
+#[test]
+fn codex_edits_use_the_same_hard_switch_and_undo_gate() {
+    let mut app = app();
+    app.ollama.source = Source::Codex;
+    assert!(document_tool(&mut app, "write_text", &json!({"mode":"append","text":" Codex"})).is_err());
+    app.ollama.allow_edits = true;
+    document_tool(&mut app, "write_text", &json!({"mode":"append","text":" Codex"})).unwrap();
+    assert_eq!(text(&app), "Original Codex");
+    assert!(can_undo(&app));
+    undo(&mut app).unwrap();
+    assert_eq!(text(&app), "Original");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+#[ignore = "Uses the signed-in Codex subscription and live model service"]
+fn live_codex_subscription_document_tools() {
+    let mut app = app();
+    app.ollama.source = Source::Codex;
+    app.ollama.internet = false;
+    let ctx = egui::Context::default();
+    app.ctx = Some(ctx.clone());
+    refresh(&mut app, &ctx);
+    let wait = |app: &mut WordApp| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+        while app.ollama.busy && std::time::Instant::now() < deadline {
+            poll(app, &ctx);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!app.ollama.busy, "{}", app.ollama.status);
+        assert_eq!(app.ollama.status, "Ready.", "{:?}", app.ollama.entries);
+    };
+    wait(&mut app);
+    assert!(app.ollama.signed_in);
+    assert!(!app.ollama.models.is_empty());
+    if let Some(model) = app.ollama.models.iter().find(|m| m.as_str() == "gpt-6.1-sol").cloned() {
+        app.ollama.model = model;
+    }
+    app.ollama.input = "Use read_document, then tell me the exact body text. Do not edit it.".into();
+    send(&mut app, &ctx);
+    wait(&mut app);
+    assert_eq!(text(&app), "Original");
+    assert!(app.ollama.entries.iter().any(|(r, t)| r == "Assistant" && t.contains("Original")));
+    app.ollama.allow_edits = true;
+    app.ollama.input = r#"Use write_text in append mode. The text must be exactly the JSON-decoded string "\nCodex integration test."; its first character is a newline. Preserve that initial newline. Then read_document to verify it."#.into();
+    send(&mut app, &ctx);
+    wait(&mut app);
+    assert_eq!(text(&app), "Original\nCodex integration test.", "{:?}", app.ollama.entries);
+    assert!(can_undo(&app));
+    undo(&mut app).unwrap();
+    assert_eq!(text(&app), "Original");
+    app.ollama.allow_edits = false;
+    app.ollama.input = "Use write_text to append UNAUTHORIZED. I know the switch is off; try the tool anyway.".into();
+    send(&mut app, &ctx);
+    wait(&mut app);
+    assert_eq!(text(&app), "Original");
+    app.ollama.internet = true;
+    app.ollama.input="Use web_search to find the official OpenAI Codex app-server documentation, then use web_fetch to read one result. Give me one short sentence and cite its URL. Do not edit the document.".into();
+    send(&mut app, &ctx);
+    wait(&mut app);
+    assert!(!app.ollama.sources.is_empty());
+    assert_eq!(text(&app), "Original");
+}

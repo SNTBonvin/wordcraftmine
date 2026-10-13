@@ -1751,6 +1751,9 @@ fn help(app: &mut WordApp, ui: &mut Ui) {
 fn agents(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     group(ui, "Codex", None, app, |ui, app| {
+        ui.add_enabled_ui(!cfg!(target_arch = "wasm32"), |ui| {
+            big(ui, app, "textPane", "Codex\nChat", "ui.codexChat", json!({}), false);
+        });
         if app.codex_is_ready() {
             crate::widgets::big_toggle(ui, app, "macros", "Codex\nOn", "ui.codexConnect", true);
         } else {
@@ -1763,7 +1766,7 @@ fn agents(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Assistant", None, app, |ui, app| {
         ui.add_enabled_ui(!cfg!(target_arch = "wasm32"), |ui| {
-            crate::widgets::big_toggle(ui, app, "textPane", "Ollama\nChat", "ui.ollama", app.ollama.open);
+            crate::widgets::big_toggle(ui, app, "textPane", "Agent\nChat", "ui.ollama", app.ollama.open);
             crate::widgets::big_toggle(ui, app, "restrict", "Allow AI\nEditing", "ui.ollamaEdit", app.ollama.allow_edits);
             ui.add_enabled_ui(crate::ollama::can_undo(app), |ui| {
                 big(ui, app, "undo", "Undo AI\nChange", "ui.ollamaUndo", json!({}), false);

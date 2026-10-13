@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -10,7 +10,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Area | WordCraft | Word | Parity | Hours |
 |---|---|---|---|---|
-| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation, Outlining (Outline view, #493); ribbon overflow (#43, #129); Agents tab toggles the protected Codex endpoint and opens [Ollama chat](ollama.md) in a resizable right task pane, with local/cloud model selection, editing permission and AI undo. Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
+| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation, Outlining (Outline view, #493); ribbon overflow (#43, #129); Agents tab toggles the protected Codex endpoint and opens [Ollama chat](ollama.md) in a resizable right task pane, with Codex subscription and local/cloud model selection, editing permission and AI undo; original rounded chat cards and composer. Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
 | Keytips (Alt / F10) | Ribbon badges (#43) and numbered Quick Access Toolbar badges in the user's button order (#620); File › Options › Advanced › Display switch saved per user (`ui.keytips`); Alt leaves macOS Option typing alone | ✅ | 85% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43, two rows #535) | ✅ | 80% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43) | ✅ | 80% | 1–2 |
@@ -48,6 +48,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | [Codex subscription chat](codex-chat.md) joins local/cloud agents with streamed replies and guarded document tools; refreshed right chat pane |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |

@@ -2,7 +2,7 @@
 
 > **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (document/research harness with Ollama and direct llama.cpp backends)
 
-Open **Agents → Ollama Chat**. The resizable chat pane opens on the right, beside the document.
+Open **Agents → Agent Chat**. [Codex subscription chat](codex-chat.md) is also available in the same pane. The resizable chat pane opens on the right, beside the document.
 WordCraft reads the available models from Ollama; it does not download model weights itself.
 
 - **Local Ollama:** start your installed Ollama app or `ollama serve`, then choose a local model.
@@ -42,7 +42,7 @@ command, including commands already queued by a model. Switching documents cance
 work and turns editing off. If you manually change the document during inference, the assistant
 must read it again before editing.
 
-Each AI editing command creates a separate **Ollama: …** step in the normal Undo history.
+Each AI editing command creates a separate **Ollama: …** or **Codex: …** step in the normal Undo history.
 **Undo AI change** reverts the latest consecutive AI step and stops an in-flight request. It is
 disabled after a later manual edit; use the ordinary Undo history to undo those later steps first.
 This avoids discarding manual writing. Completed edits remain undoable after Stop or New chat.

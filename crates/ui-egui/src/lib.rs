@@ -1058,7 +1058,8 @@ impl WordApp {
                 self.ollama.allow_edits = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ollama.allow_edits);
                 json!({"allowEdits": self.ollama.allow_edits})
             }
-            "ui.ollamaRefresh" | "ui.ollamaSend" | "ui.ollamaStop" | "ui.ollamaNewChat" | "ui.ollamaSettings" | "ui.ollamaInternet" => {
+            "ui.codexChat" | "ui.codexSignIn" | "ui.ollamaRefresh" | "ui.ollamaSend" | "ui.ollamaStop" | "ui.ollamaNewChat" | "ui.ollamaSettings"
+            | "ui.ollamaInternet" => {
                 return Some(ollama::command(self, id, p));
             }
             "ui.ollamaUndo" => {
