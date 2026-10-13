@@ -616,9 +616,12 @@ pub fn to_doc_in(flow: &Flow, section: wordcraft_doc::SectionProps) -> Document 
     doc
 }
 
-/// `blocks` as document blocks of `doc` (their pictures go into its media), for a header,
-/// footer or other part an importer adds itself.
+/// `blocks` as document blocks of `doc` (their pictures go into its media, the code style into
+/// its styles), for a header, footer or other part an importer adds itself.
 pub fn part_blocks(doc: &mut Document, blocks: &[FBlock]) -> Blocks {
+    if uses_kind(blocks, Kind::Code, 0) {
+        doc.styles.upsert(code_style());
+    }
     let mut out = Builder { doc }.blocks(blocks, 0);
     if out.is_empty() {
         out.push(para_block(Paragraph::new()));
