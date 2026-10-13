@@ -776,13 +776,13 @@ impl Exporter<'_> {
                     self.draw(s, d);
                 }
             }
-            Draw::Glyphs { face, size, glyphs, color, alpha, synth_bold, synth_italic, text, link, ranges } => {
+            Draw::Glyphs { face, size, glyphs, color, alpha, synth_bold, synth_italic, text, link, ranges, .. } => {
                 self.glyphs(s, face, *size, glyphs, *color, *alpha, *synth_bold, *synth_italic, text, ranges);
                 if let Some(l) = link {
                     self.link_rect(face, *size, glyphs, l);
                 }
             }
-            Draw::Fill { rect, color, alpha } => {
+            Draw::Fill { rect, color, alpha, .. } => {
                 if let Some(p) = rect_path(rect) {
                     s.set_stroke(None);
                     s.set_fill(Some(fill(*color, *alpha)));

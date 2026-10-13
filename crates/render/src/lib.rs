@@ -374,7 +374,33 @@ impl RenderOptions {
         let lift = |v: u8| (p + v as u32 * (255 - p) / 255).min(255) as u8;
         Rgb(lift(r), lift(g), lift(b))
     }
+
+    /// The on-screen colour for a text background (highlight, character shading). A dark page
+    /// dims it toward black, keeping its hue, instead of inverting it: inverting leaves bright
+    /// hues such as yellow bright, so the white text on them can't be read (#1252). Every
+    /// colour lands dark enough for white text (WCAG contrast ≥ 4.5); yellow turns a dim olive.
+    pub fn ink_bg(&self, c: Rgb) -> Rgb {
+        if !self.dark {
+            return c;
+        }
+        let f = |v: u8| (DARK_TEXT_BG_FLOOR as u32 + v as u32 * DARK_TEXT_BG_SPAN as u32 / 255).min(255) as u8;
+        Rgb(f(c.0), f(c.1), f(c.2))
+    }
+
+    /// The on-screen colour for text, `on_text_bg` when it is drawn on a text background. A dark
+    /// page dims those backgrounds ([`RenderOptions::ink_bg`]), so text on them is drawn in the
+    /// lighter of its colour and its inverted colour: black (explicit or Automatic) turns white,
+    /// and Automatic white on a dark highlight stays white.
+    pub fn ink_text(&self, c: Rgb, on_text_bg: bool) -> Rgb {
+        let inked = self.ink(c);
+        if self.dark && on_text_bg && c.luma() > inked.luma() { c } else { inked }
+    }
 }
+
+/// Darkest channel of a text background on a dark page ([`RenderOptions::ink_bg`]).
+pub const DARK_TEXT_BG_FLOOR: u8 = 0x10;
+/// How far a full channel lifts a dark page's text background above the floor.
+pub const DARK_TEXT_BG_SPAN: u8 = 0x3A;
 
 /// Invert HSL lightness, keeping hue and saturation: shifting every channel by
 /// `255 - max - min` maps the lightest channel to `255 - min` and the darkest to `255 - max`.
@@ -539,13 +565,13 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
                 draw(ctx, doc, d, view, visible, opts);
             }
         }
-        Draw::Fill { rect, color: c, alpha } => {
+        Draw::Fill { rect, color: c, alpha, text_bg } => {
             let r = kurbo::Rect::new(rect.x as f64, rect.y as f64, rect.right() as f64, rect.bottom() as f64);
             if !r.overlaps(*visible) {
                 return;
             }
             ctx.set_transform(view);
-            ctx.set_paint(color(opts.ink(*c), *alpha));
+            ctx.set_paint(color(if *text_bg { opts.ink_bg(*c) } else { opts.ink(*c) }, *alpha));
             ctx.fill_rect(&r);
         }
         Draw::Line { x0, y0, x1, y1, width, color: c, stroke, alpha } => {
@@ -581,14 +607,14 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.set_stroke(st);
             line(ctx, 0.0);
         }
-        Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, .. } => {
+        Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, on_text_bg, .. } => {
             // Invisible glyphs (WordArt letters are drawn from their outlines) carry text only.
             if *alpha <= 0.0 {
                 return;
             }
             let db = FontDb::global();
             let k = *size as f64 / face.upem.max(1.0);
-            ctx.set_paint(color(opts.ink(*c), *alpha));
+            ctx.set_paint(color(opts.ink_text(*c, *on_text_bg), *alpha));
             let skew = if *synth_italic { Affine::new([1.0, 0.0, -0.21, 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
             // Outline strokes, in font units: synthetic bold, then on-screen stem darkening (a
             // stroke grows the outline by half its width on each side). Darkening is skipped for
@@ -1124,6 +1150,78 @@ mod tests {
         assert_eq!(img.pixel(5, 5), [DARK_PAPER, DARK_PAPER, DARK_PAPER, 255]);
         let light = (72..300).flat_map(|x| (72..100).map(move |y| (x, y))).filter(|(x, y)| img.pixel(*x, *y)[0] > 128).count();
         assert!(light > 30, "light {light}");
+    }
+
+    /// A document whose only text is a yellow-highlighted run.
+    fn yellow_highlight_doc() -> (Document, wordcraft_layout::DocLayout) {
+        let cp = wordcraft_doc::CharProps { highlight: Some(wordcraft_doc::props::Highlight::Yellow), size: Some(24.0), ..Default::default() };
+        let mut d = Document::from_text("x");
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("HHHH HHHH", cp))];
+        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+        (d, l)
+    }
+
+    /// #1252: on a dark page a highlight is drawn dimmed (keeping its hue) so the white text on it
+    /// reads; a light page is unchanged.
+    #[test]
+    fn dark_page_dims_a_highlight_raster() {
+        let (d, l) = yellow_highlight_doc();
+        let items = page_display(&d, &l.pages[0], &DisplayOptions::default());
+        let r = items
+            .iter()
+            .find_map(|i| match i {
+                Draw::Fill { rect, color, .. } if *color == Rgb(255, 255, 0) => Some(*rect),
+                _ => None,
+            })
+            .unwrap();
+        // Just inside the top-left corner of the highlight: above the capitals, so pure background.
+        let (px, py) = ((r.x + 1.5) as u32, (r.y + 1.5) as u32);
+        let light = render_page(&d, &l.pages[0], 1.0, &RenderOptions::default());
+        assert_eq!(light.pixel(px, py), [255, 255, 0, 255], "light page keeps bright yellow");
+        let dark = render_page(&d, &l.pages[0], 1.0, &RenderOptions { dark: true, ..Default::default() });
+        let [r8, g8, b8, _] = dark.pixel(px, py);
+        assert!(r8 < 0x60 && g8 < 0x60, "dark page highlight is dim, got {:?}", (r8, g8, b8));
+        assert!(r8.abs_diff(g8) <= 4 && g8 > b8.saturating_add(0x20), "dark page highlight stays yellow in hue, got {:?}", (r8, g8, b8));
+    }
+
+    /// WCAG 2 contrast ratio between two sRGB colours.
+    fn contrast(a: Rgb, b: Rgb) -> f32 {
+        let lin = |v: u8| {
+            let s = v as f32 / 255.0;
+            if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
+        };
+        let lum = |c: Rgb| 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2);
+        let (la, lb) = (lum(a), lum(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    /// #1252: on a dark page every highlight colour is dimmed so the text drawn on it reads
+    /// (Automatic and explicit black text both draw white); a light page is the identity.
+    #[test]
+    fn dark_page_text_backgrounds_keep_text_readable() {
+        use wordcraft_doc::props::{Highlight, TextColor};
+        use wordcraft_layout::display::text_color;
+        let dark = RenderOptions { dark: true, ..Default::default() };
+        let light = RenderOptions::default();
+        let colours: Vec<Rgb> = Highlight::ALL.iter().filter_map(|h| h.rgb()).collect();
+        assert_eq!(colours.len(), 16);
+        for c in colours {
+            let bg = dark.ink_bg(c);
+            for (what, tc) in [("automatic", text_color(&TextColor::Auto, Some(c))), ("black", Rgb::BLACK)] {
+                let fg = dark.ink_text(tc, true);
+                assert_eq!(fg, Rgb::WHITE, "{what} text on {c:?} draws white");
+                let k = contrast(fg, bg);
+                assert!(k >= 4.5, "{what} text on {c:?}: {fg:?} on {bg:?} has contrast {k:.2}");
+            }
+            assert_eq!(light.ink_bg(c), c, "light page keeps {c:?}");
+            assert_eq!(light.ink_text(c, true), c, "light page keeps text {c:?}");
+        }
+        // Yellow turns a dim olive (~#4a4a10), still yellow in hue.
+        let Rgb(r, g, b) = dark.ink_bg(Rgb(255, 255, 0));
+        assert!(r.abs_diff(0x4A) <= 8 && g.abs_diff(0x4A) <= 8 && b.abs_diff(0x10) <= 8, "yellow → {:?}", (r, g, b));
+        assert!(r == g && g > b);
+        // Text off a highlight keeps the plain inversion.
+        assert_eq!(dark.ink_text(Rgb::WHITE, false), dark.ink(Rgb::WHITE));
     }
 
     /// One EMF record: type, size, payload (a multiple of 4 bytes).
