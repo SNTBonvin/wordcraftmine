@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{Cursor, Read};
 
 use super::{
-    DateKind, Grid, MAX_CELL_CHARS, MAX_CELLS, MAX_COLS, MAX_ENTRY, MAX_ROWS, MAX_SHARED, MAX_SHEETS, MAX_XFS, TextBudget, builtin_date, custom_date, number, serial_date,
+    DateKind, Grid, MAX_CELL_CHARS, MAX_CELLS, MAX_COLS, MAX_ENTRY, MAX_ROWS, MAX_SHARED, MAX_SHEETS, MAX_XFS, TextBudget, builtin_date, custom_date,
+    number, serial_date,
 };
 
 /// The compound-file signature every `.xls` (and `.doc`) starts with.
@@ -306,11 +307,7 @@ fn sheet_rows(stream: &[u8], offset: usize, g: &Globals) -> Result<Vec<Vec<Strin
     let mut budget = TextBudget::default();
     // Whether a cell of `len` bytes at (row, col) fits under the caps; spends its text budget.
     let mut fits = |cells: &BTreeMap<u16, BTreeMap<u16, String>>, row: u16, col: u16, len: usize, count: usize| {
-        usize::from(col) < MAX_COLS
-            && count < MAX_CELLS
-            && len > 0
-            && (cells.contains_key(&row) || cells.len() < MAX_ROWS)
-            && budget.take(len)
+        usize::from(col) < MAX_COLS && count < MAX_CELLS && len > 0 && (cells.contains_key(&row) || cells.len() < MAX_ROWS) && budget.take(len)
     };
     let mut put = |cells: &mut BTreeMap<u16, BTreeMap<u16, String>>, row: u16, col: u16, v: &str, count: &mut usize| {
         if fits(cells, row, col, v.len(), *count) && cells.entry(row).or_default().insert(col, v.to_string()).is_none() {
