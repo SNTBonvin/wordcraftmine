@@ -453,7 +453,6 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
             let (x0, x1) = if rtl { ((acc - x1).max(0.0), (acc - x0).max(0.0)) } else { (x0, x1) };
             let margins = cell.props.margins.unwrap_or(margins_def);
             let margins = if rtl { [margins[0], margins[3], margins[2], margins[1]] } else { margins };
-            let cw = (x1 - x0 - margins[1] - margins[3]).max(4.0);
             let mut fill = cell.props.shading;
             let region = region_of(t, style.as_ref(), ri, g, span, ncols);
             let (_, _, first_col, last_col, _, col_band) = region;
@@ -521,6 +520,11 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
             // border): the border's width sits on top of the cell margin.
             let band = |b: Option<Border>| b.filter(Border::is_visible).map_or(0.0, |b| b.width.clamp(0.0, 12.0));
             let (band_t, band_b) = (band(borders.top), if ri + 1 == nrows { band(borders.bottom) } else { 0.0 });
+            // Sideways too: a border is centred on the cell's edge, and a cell margin narrower
+            // than the half of it inside the cell gives way to it (Word for Windows: with zero
+            // cell margins and 0.5 pt borders the text starts 0.25 pt inside each edge).
+            let margins = [margins[0], margins[1].max(band(borders.left) / 2.0), margins[2], margins[3].max(band(borders.right) / 2.0)];
+            let cw = (x1 - x0 - margins[1] - margins[3]).max(4.0);
             let insets = margins[0] + margins[2] + band_t + band_b;
             let turn = cell.props.text_direction;
             let mut turned = None;

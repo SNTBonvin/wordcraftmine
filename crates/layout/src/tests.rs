@@ -2977,6 +2977,34 @@ fn fixed_table_columns_take_their_cells_preferred_widths() {
     assert!((b - 156.0).abs() < 0.01 && (c - (156.0 + 144.0)).abs() < 0.01, "{b} {c}");
 }
 
+/// A cell's text keeps clear of its side borders: the border is centred on the cell's edge, so
+/// with cell margins narrower than half its width the text starts that half inside the edge;
+/// wider margins are measured from the edge as before.
+#[test]
+fn cell_text_keeps_clear_of_the_side_borders() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let inset = |margin: f32, border: f32| {
+        let mut d = Document::from_text("");
+        let line = Some(Border { style: BorderStyle::Single, width: border, color: None, space: 0.0 });
+        let mut t = Table::new(1, 2, 200.0);
+        t.props.borders = Some(Borders { top: line, left: line, bottom: line, right: line, between: line, inside_v: line });
+        t.props.cell_margins = Some([0.0, margin, 0.0, margin]);
+        for c in &mut t.rows[0].cells {
+            c.blocks = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("cell", Default::default()))];
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let items = &l.pages[0].items;
+        let cell_x = items.iter().find_map(|i| if let Placed::Cell { rect, cell: 1, .. } = i { Some(rect.x) } else { None }).unwrap();
+        let text_x = items.iter().filter_map(|i| if let Placed::Lines { x, .. } = i { Some(*x) } else { None }).fold(f32::MIN, f32::max);
+        text_x - cell_x
+    };
+    assert!((inset(0.0, 3.0) - 1.5).abs() < 0.01, "{}", inset(0.0, 3.0));
+    assert!((inset(1.0, 3.0) - 1.5).abs() < 0.01, "{}", inset(1.0, 3.0));
+    assert!((inset(5.4, 3.0) - 5.4).abs() < 0.01, "{}", inset(5.4, 3.0));
+    assert!((inset(0.0, 0.5) - 0.25).abs() < 0.01, "{}", inset(0.0, 0.5));
+}
+
 #[test]
 fn floating_tables_take_no_room_and_text_wraps_beside_them() {
     use wordcraft_doc::para::Anchor;
