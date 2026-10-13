@@ -166,6 +166,8 @@ play it back (`tools.recordMacro`, `tools.macros`).
 
 The desktop app writes its log records to standard error and to `logs/wordcraft.log` next to its
 preferences: `$XDG_CONFIG_HOME/wordcraft/logs/` (by default `~/.config/wordcraft/logs/`).
+Portable mode: an empty `portable.txt` next to the executable keeps preferences, logs and
+key files in a `WordCraftData` folder beside it instead.
 A start from a desktop menu has no terminal, so this file is what to attach to a bug
 report: unreadable parts of a .docx, pictures or fonts a PDF export had to leave out and panics the
 command guard recovered from land there. Each launch moves the previous log to `wordcraft.1.log`
