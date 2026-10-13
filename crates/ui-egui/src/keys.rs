@@ -109,8 +109,12 @@ pub fn combo(m: Modifiers, key: &str, with_shift: bool) -> String {
 /// a character.
 fn ui_shortcut(key: Key, m: Modifiers) -> Option<(&'static str, Value)> {
     let alt_only = m.alt && !m.command && !m.ctrl && !m.mac_cmd && !m.shift;
+    let zoom_mod = (m.ctrl || m.command) && !m.shift && !m.alt;
     match key {
         Key::Q if alt_only && !cfg!(target_os = "macos") => Some(("ui.dialog", json!({"name": "commands"}))),
+        // Ctrl+numpad + / - zooms (#1237); Ctrl+= stays subscript.
+        Key::Plus if zoom_mod => Some(("view.zoomIn", json!({}))),
+        Key::Minus if zoom_mod => Some(("view.zoomOut", json!({}))),
         _ => None,
     }
 }
@@ -230,6 +234,21 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         return;
     }
     for e in events {
+        // Middle-click autoscrolling (#1065): a middle press toggles, a primary press stops.
+        if let egui::Event::PointerButton { button: egui::PointerButton::Middle, pressed: true, pos, .. } = &e
+            && !app.session.view.read_mode
+        {
+            if app.canvas.autoscroll.is_some() {
+                app.canvas.autoscroll = None;
+            } else {
+                app.canvas.autoscroll = Some(*pos);
+                app.status(tl!("Autoscrolling — move the mouse; click to stop"));
+            }
+            continue;
+        }
+        if matches!(&e, egui::Event::PointerButton { button: egui::PointerButton::Primary, pressed: true, .. }) {
+            app.canvas.autoscroll = None;
+        }
         // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
         match &e {
             egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,
@@ -319,10 +338,16 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     && let Some(t) = r.get("text").and_then(Value::as_str)
                     && !t.is_empty()
                 {
-                    ctx.copy_text(t.to_string());
+                    crate::system_clipboard::copied(app, ctx, t);
                 }
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                if key == Key::Escape && app.canvas.autoscroll.take().is_some() {
+                    continue;
+                }
+                if key == Key::Escape && app.canvas.paste_options.take().is_some() {
+                    continue;
+                }
                 if key == Key::Escape && app.session.painter.is_some() {
                     app.session.painter = None;
                     continue;
@@ -422,6 +447,17 @@ mod tests {
         assert_eq!(ui_shortcut(Key::Q, m(true, false, true)), None, "Mod+Alt+Q");
         assert_eq!(ui_shortcut(Key::Q, m(false, false, false)), None, "a plain Q");
         assert_eq!(ui_shortcut(Key::W, m(true, false, false)), None);
+    }
+
+    #[test]
+    fn ctrl_plus_and_minus_zoom() {
+        // #1237: Ctrl (+/=) on the keypad zooms; Ctrl+= stays subscript.
+        let m = |ctrl, shift| egui::Modifiers { ctrl, command: ctrl, shift, ..Default::default() };
+        assert_eq!(ui_shortcut(Key::Plus, m(true, false)), Some(("view.zoomIn", json!({}))));
+        assert_eq!(ui_shortcut(Key::Minus, m(true, false)), Some(("view.zoomOut", json!({}))));
+        assert_eq!(ui_shortcut(Key::Plus, m(true, true)), None, "Ctrl+Shift+= stays subscript");
+        assert_eq!(ui_shortcut(Key::Equals, m(true, false)), None, "Ctrl+= stays subscript");
+        assert_eq!(ui_shortcut(Key::Plus, m(false, false)), None, "a plain + types");
     }
 
     #[test]

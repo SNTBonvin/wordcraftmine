@@ -499,6 +499,10 @@ pub struct Prefs {
     /// in Word). A damaged saved value reads as the defaults.
     #[serde(deserialize_with = "crate::cmd::tools::lenient_autocorrect")]
     pub autocorrect: crate::cmd::tools::AutoCorrectPrefs,
+    /// Normal-template defaults for new documents (#1264): `design.setDefault` stores the open
+    /// document's Normal style here; `Session::blank_document` applies it.
+    pub normal_chr: wordcraft_doc::CharProps,
+    pub normal_para: wordcraft_doc::ParaProps,
 }
 
 impl Default for Prefs {
@@ -519,6 +523,8 @@ impl Default for Prefs {
             ignore_internet: true,
             detect_language: true,
             autocorrect: Default::default(),
+            normal_chr: Default::default(),
+            normal_para: Default::default(),
         }
     }
 }
@@ -950,7 +956,13 @@ impl Session {
     /// A new blank document (the Normal template) on the region's paper: Letter in the US and
     /// other Letter regions, A4 elsewhere (#838). Margins stay 2.54 cm (1") all round.
     pub fn blank_document(&self) -> Document {
-        blank_document(&self.region())
+        let mut d = blank_document(&self.region());
+        // Normal-template defaults stored by `design.setDefault` (#1264).
+        if let Some(st) = d.styles.get_mut("Normal") {
+            st.chr.overlay(&self.prefs.normal_chr);
+            st.para.overlay(&self.prefs.normal_para);
+        }
+        d
     }
 
     /// Replace the document (open/new).
@@ -959,6 +971,18 @@ impl Session {
         self.bib_style = doc_bib_style(&doc);
         self.doc = doc;
         self.doc.ensure_nonempty();
+        // #995: open in the view the file was saved in (nothing stated: keep the current view).
+        match self.doc.settings.view.as_deref() {
+            None => {}
+            Some("web") => self.view.mode = wordcraft_layout::ViewMode::Web,
+            Some("outline") => self.view.mode = wordcraft_layout::ViewMode::Outline,
+            Some(_) => self.view.mode = wordcraft_layout::ViewMode::Print,
+        }
+        if let Some(z) = self.doc.settings.zoom {
+            self.view.zoom = (z as f32) / 100.0;
+            self.view.fit.clear();
+            self.view.multi_page = false;
+        }
         self.password = None;
         self.sel = Selection::caret(self.doc.start_of(StoryRef::Body));
         self.pending = None;

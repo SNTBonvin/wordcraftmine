@@ -507,10 +507,16 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
             mi(ui, app, "Paste Special…", "edit.pasteSpecial", json!({}));
         });
         stack(ui, |ui| {
-            small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
+            let cut = small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
             let r = small(ui, app, "copy", Some("Copy"), "Copy", "edit.copy", json!({}), false);
             if r.clicked() {
-                ui.ctx().copy_text(app.session.clipboard_text.clone());
+                crate::system_clipboard::copied(app, ui.ctx(), &app.session.clipboard_text.clone());
+            }
+            // Cut fills the session clipboard like Copy does; push it to the system
+            // clipboard too, or a paste (here or in another program) repeats the last
+            // copy (#1265).
+            if cut.clicked() && !app.session.clipboard_text.is_empty() {
+                crate::system_clipboard::copied(app, ui.ctx(), &app.session.clipboard_text.clone());
             }
             let active = app.session.painter.is_some();
             small(ui, app, "painter", Some("Format"), "Format Painter", "edit.formatPainter", json!({}), active);
@@ -2327,6 +2333,16 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
             let g = app.session.view.table_gridlines;
             small(ui, app, "gridlines", Some("View Gridlines"), "View Gridlines", "table.viewGridlines", json!({}), g);
             small(ui, app, "properties", Some("Properties"), "Table Properties", "table.properties", json!({}), false);
+            // Right-to-left tables (#529): the first column stands at the right.
+            let rtl = app
+                .session
+                .sel
+                .focus
+                .path
+                .cell()
+                .and_then(|(tp, _, _)| app.session.doc.table(app.session.sel.focus.story, &tp))
+                .is_some_and(|t| t.props.bidi_visual);
+            small(ui, app, "textRtl", Some("Right-to-Left"), "Right-to-Left Table", "table.rtl", json!({}), rtl);
         });
     });
     group(ui, "Draw", None, app, |ui, app| {

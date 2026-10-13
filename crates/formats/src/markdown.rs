@@ -164,18 +164,29 @@ fn split_row(l: &str) -> Vec<String> {
     let mut cells = Vec::new();
     let mut cur = String::new();
     let mut chars = t.chars().peekable();
-    let mut in_code = false;
+    // Open code span delimiter length, 0 outside code (#1008). A closer must match the
+    // opener's length, so multi-backtick spans and backticks inside code don't desync.
+    // (An unclosed opener reads to the end of the line; GFM would call it literal text.)
+    let mut code_len = 0usize;
     while let Some(c) = chars.next() {
         match c {
-            '\\' if chars.peek() == Some(&'|') => {
-                cur.push('|');
-                chars.next();
+            '\\' if matches!(chars.peek(), Some('|') | Some('\\') | Some('`')) => {
+                cur.push(chars.next().unwrap_or('\\'));
             }
             '`' => {
-                in_code = !in_code;
-                cur.push(c);
+                let mut n = 1;
+                while chars.peek() == Some(&'`') {
+                    chars.next();
+                    n += 1;
+                }
+                cur.push_str(&"`".repeat(n));
+                if code_len == 0 {
+                    code_len = n;
+                } else if code_len == n {
+                    code_len = 0;
+                }
             }
-            '|' if !in_code => cells.push(std::mem::take(&mut cur).trim().to_string()),
+            '|' if code_len == 0 => cells.push(std::mem::take(&mut cur).trim().to_string()),
             _ => cur.push(c),
         }
     }

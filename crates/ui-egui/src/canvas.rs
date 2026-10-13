@@ -103,6 +103,10 @@ pub struct CanvasState {
     scroll_max: egui::Vec2,
     /// Explicit page turn to apply on the next frame (reading navigation buttons/keys).
     scroll_request: Option<egui::Vec2>,
+    /// Middle-click autoscrolling (#1065): the origin press, in screen pixels.
+    pub(crate) autoscroll: Option<Pos2>,
+    /// Paste Options after a paste (#820): where the widget sits, in screen pixels.
+    pub(crate) paste_options: Option<Pos2>,
     /// The viewport (the content's visible rect on screen) at the end of last frame; the
     /// drag-select edge auto-scroll decides this frame's scroll from it (#688).
     pub(crate) viewport: Option<egui::Rect>,
@@ -197,6 +201,8 @@ impl Default for CanvasState {
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
             scroll_request: None,
+            autoscroll: None,
+            paste_options: None,
             viewport: None,
             cols: 1,
             balloon: None,
@@ -863,6 +869,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         && let Some(p) = pointer
     {
         vec2(edge_scroll(p.x, vp.min.x, vp.max.x, dt), edge_scroll(p.y, vp.min.y, vp.max.y, dt))
+    } else if !app.session.view.read_mode
+        && let Some(origin) = app.canvas.autoscroll
+        && let Some(p) = pointer
+    {
+        // Middle-click autoscrolling (#1065): still past a dead zone, faster further out.
+        let d = p - origin;
+        let step = |v: f32| {
+            let a = v.abs();
+            if a < 8.0 { 0.0 } else { v.signum() * ((a - 8.0) * 6.0 + 60.0).min(1200.0) * dt }
+        };
+        vec2(step(d.x), step(d.y))
     } else {
         egui::Vec2::ZERO
     };
@@ -1351,6 +1368,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     {
         crate::mini_toolbar::show(app, ui.ctx(), sel, area);
     }
+    crate::mini_toolbar::paste_options(app, ui.ctx());
     if app.session.view.read_mode {
         // Fixed navigation chrome, independent of the horizontally moving columns.
         let step = app.session.view.read_width * app.canvas.scale + GAP;
@@ -2481,12 +2499,27 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         }
         ui.separator();
     }
-    item(ui, app, "Cut", "edit.cut", json!({}));
+    if ui
+        .add_enabled(
+            crate::widgets::enabled(app, "edit.cut"),
+            egui::Button::new(tl!("Cut")).shortcut_text(crate::widgets::shortcut_text(app, "edit.cut")),
+        )
+        .clicked()
+    {
+        // Like Copy below, Cut must reach the system clipboard too (#1265).
+        if let Ok(r) = app.run("edit.cut", json!({}))
+            && let Some(t) = r.get("text").and_then(|t| t.as_str())
+            && !t.is_empty()
+        {
+            crate::system_clipboard::copied(app, ui.ctx(), t);
+        }
+        ui.close();
+    }
     if ui.add(egui::Button::new(tl!("Copy")).shortcut_text(crate::widgets::shortcut_text(app, "edit.copy"))).clicked() {
         if let Ok(r) = app.run("edit.copy", json!({}))
             && let Some(t) = r.get("text").and_then(|t| t.as_str())
         {
-            ui.ctx().copy_text(t.to_string());
+            crate::system_clipboard::copied(app, ui.ctx(), t);
         }
         ui.close();
     }
@@ -2653,6 +2686,71 @@ fn is_followable_link(url: &str) -> bool {
 mod tests {
     use super::*;
     use crate::table_resize::tests::{H, cell, screen, steps, table_window};
+    use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn paste_options_widget_comes_and_goes() {
+        // #820: pasting offers Keep Source / Merge / Text Only until something else runs.
+        let a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("hi")), crate::Services::default());
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..4 {
+            h.step();
+        }
+        h.state_mut().run("select.all", serde_json::json!({})).unwrap();
+        h.state_mut().run("edit.copy", serde_json::json!({})).unwrap();
+        h.state_mut().run("caret.docEnd", serde_json::json!({})).unwrap();
+        assert!(h.state().canvas.paste_options.is_none());
+        h.state_mut().run("edit.paste", serde_json::json!({})).unwrap();
+        h.step();
+        assert!(h.state().canvas.paste_options.is_some(), "pasting shows the widget");
+        h.get_by_label("Merge").click();
+        h.step();
+        let text = h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        assert_eq!(text, "hihi", "merge redoes the paste, once: {text}");
+        h.state_mut().run("text.insert", serde_json::json!({"text": "!"})).unwrap();
+        h.step();
+        assert!(h.state().canvas.paste_options.is_none(), "typing dismisses it");
+    }
+
+    #[test]
+    fn middle_click_toggles_autoscroll() {
+        // #1065: a middle press starts autoscrolling, another (or primary, or Escape) stops it.
+        use egui::{Event, PointerButton};
+        let mods = egui::Modifiers::default();
+        let a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("one\ntwo\nthree")), crate::Services::default());
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..4 {
+            h.step();
+        }
+        let at = egui::pos2(700.0, 450.0);
+        assert_eq!(h.state().canvas.autoscroll, None);
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Middle, pressed: true, modifiers: mods });
+        h.step();
+        assert_eq!(h.state().canvas.autoscroll, Some(at));
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Middle, pressed: true, modifiers: mods });
+        h.step();
+        assert_eq!(h.state().canvas.autoscroll, None, "a second middle press stops");
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Middle, pressed: true, modifiers: mods });
+        h.step();
+        assert!(h.state().canvas.autoscroll.is_some());
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: true, modifiers: mods });
+        h.step();
+        assert_eq!(h.state().canvas.autoscroll, None, "a primary press stops");
+    }
 
     #[test]
     fn reading_animation_eases_then_lands_exactly_on_column_start() {

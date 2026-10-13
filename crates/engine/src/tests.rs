@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use serde_json::json;
 use wordcraft_doc::props::BorderStyle;
 use wordcraft_doc::{Pos, StoryRef};
@@ -1151,6 +1153,37 @@ fn cell_size_boxes_set_row_height_and_column_width() {
     assert_eq!(s.doc.body.iter().find_map(|b| b.as_table()).unwrap(), &t0);
 }
 
+/// #866: `document.text` (MCP `get_text`, `wordcraft-cli text`) reads with every change
+/// accepted: insertions kept, tracked deletions dropped.
+#[test]
+fn document_text_shows_tracked_changes_as_final() {
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Signed by Alice Smith, Partner."}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "select.text", json!({"text": "Alice Smith, Partner"}));
+    run(&mut s, "text.insert", json!({"text": "Bob Jones, Director"}));
+    let t = run(&mut s, "document.text", json!({}))["text"].clone();
+    assert_eq!(t, "Signed by Bob Jones, Director.");
+}
+
+/// Whole-table selection (#1242): Height/Width apply to every selected row/column, not just the
+/// caret's.
+#[test]
+fn cell_size_boxes_apply_to_the_whole_selection() {
+    use wordcraft_doc::props::HeightRule;
+    let mut s = s();
+    run(&mut s, "insert.table", json!({"rows": 2, "cols": 3}));
+    run(&mut s, "table.autofit", json!({"mode": "window"}));
+    run(&mut s, "table.selectTable", json!({}));
+    run(&mut s, "table.columnWidth", json!({"width": 90.0}));
+    run(&mut s, "table.rowHeight", json!({"height": 25.0, "rule": "exact"}));
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert!(t.grid.iter().all(|w| *w == 90.0), "{:?}", t.grid);
+    for (r, row) in t.rows.iter().enumerate() {
+        assert_eq!((r, row.props.height, row.props.height_rule), (r, Some(25.0), HeightRule::Exact));
+    }
+}
+
 /// Table Properties (#44): table, row, column and cell settings land as one undo step, and
 /// without settings the command reports the current ones (the dialog's source).
 #[test]
@@ -1766,7 +1799,7 @@ fn imported_range_toc_is_refreshed_in_place() {
             let p = d.para_mut(StoryRef::Body, &wordcraft_doc::Path::top(1)).unwrap();
             let n = p.len();
             p.insert_object(n, InlineObject::FieldEnd, &CharProps::default()).unwrap();
-            p.insert_object(0, InlineObject::FieldStart { instr: r#"TOC \o "1-2" \h"#.into(), locked }, &CharProps::default()).unwrap();
+            p.insert_object(0, InlineObject::FieldStart { instr: r#"TOC \o "1-2" \h"#.into(), locked, dirty: false }, &CharProps::default()).unwrap();
         }
         let mut s = Session::new(d);
         for (i, style) in [(2, "Heading 1"), (3, "Heading 2")] {
@@ -2296,6 +2329,68 @@ fn html_pictures_load_relative_to_the_file() {
     assert_eq!(doc.media.len(), 1);
     let text = doc.plain_text(StoryRef::Body);
     assert!(!text.contains("Logo") && text.contains('T') && text.contains("Web"), "{text:?}");
+}
+
+/// The document the #1037 test opens: a tracked deletion inside a field result.
+fn field_del_doc() -> wordcraft_doc::Document {
+    const DOC: &str = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =SUM(ABOVE) </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="1" w:author="T"><w:r><w:delText>$150.00</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="3" w:author="T"><w:r><w:t>$140.00</w:t></w:r></w:ins></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =2+3 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="4" w:author="T"><w:r><w:delText>5</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="5" w:author="T"><w:r><w:t>five</w:t></w:r></w:ins></w:p>"#;
+    let root = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{DOC}</w:body></w:document>"#
+    );
+    let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, bytes) in [("_rels/.rels", root.as_bytes()), ("word/document.xml", doc.as_bytes())] {
+        zw.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        zw.write_all(bytes).unwrap();
+    }
+    let bytes = zw.finish().unwrap().into_inner();
+    wordcraft_docx::read(&bytes).unwrap()
+}
+
+/// #1037: Accept All drops a tracked deletion inside a field result instead of leaving
+/// the stale result text behind (`$$140.00`).
+#[test]
+fn tracked_deletion_in_a_field_result_is_resolved() {
+    let bytes = wordcraft_docx::write(&field_del_doc()).unwrap();
+    let mut s = Session::new(crate::io::open_bytes("t.docx", &bytes).unwrap());
+    assert_eq!(s.doc.final_text(StoryRef::Body).replace('\n', " "), "$140.00 five");
+    run(&mut s, "review.acceptAll", json!({}));
+    assert_eq!(text(&s).replace('\n', " "), "$140.00 five", "{:?}", text(&s));
+}
+
+/// `design.setDefault` persists the Normal style for new documents (#1264).
+#[test]
+fn set_default_persists_normal_for_new_documents() {
+    let mut s = s();
+    run(&mut s, "styles.modify", json!({"style": "Normal", "chr": {"font": "Courier New"}, "para": {"spaceAfter": 0}}));
+    run(&mut s, "design.setDefault", json!({}));
+    let d = s.blank_document();
+    let n = d.styles.get("Normal").unwrap();
+    assert_eq!(n.chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(n.para.space_after, Some(0.0));
+    // The prefs survive a ui.json round trip.
+    let v = serde_json::to_value(&s.prefs).unwrap();
+    let back: crate::Prefs = serde_json::from_value(v).unwrap();
+    assert_eq!(back.normal_chr.font.as_deref(), Some("Courier New"));
+}
+
+/// View and zoom survive a save/reopen round trip (#995): the file remembers them, and
+/// opening applies them.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn saved_view_settings_reopen() {
+    let dir = scratch_dir("view-settings");
+    let path = dir.join("v.docx");
+    let p = path.to_string_lossy().to_string();
+    let mut s = s();
+    run(&mut s, "view.zoom", json!({"value": 150}));
+    run(&mut s, "file.save", json!({"path": p}));
+    assert_eq!(s.doc.settings.zoom, Some(150));
+    assert_eq!(s.doc.settings.view.as_deref(), Some("print"));
+    run(&mut s, "view.zoom", json!({"value": 100}));
+    run(&mut s, "file.open", json!({"path": p}));
+    assert_eq!(s.view.zoom, 1.5, "the saved zoom comes back");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// A fresh, empty scratch folder for one test.
@@ -4954,6 +5049,30 @@ fn find_replace_and_go_to_open_like_word() {
     run(&mut s, "edit.goto", json!({"pageBy": -99}));
     assert_eq!(page(&mut s), 1, "before the start: the first page");
     assert!(s.run("edit.goto", &json!({"pageBy": i64::MIN})).is_ok(), "hostile numbers never panic");
+}
+
+/// Typing after `insert.picture` must not delete the picture (#965): the caret lands after
+/// it, collapsed, instead of selecting it.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn typing_after_insert_picture_keeps_the_picture() {
+    let dir = scratch_dir("insert-kept");
+    let path = dir.join("pic.png");
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 80, 160, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&path, &png).unwrap();
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "x"}));
+    run(&mut s, "insert.picture", json!({"path": path.to_string_lossy()}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "cap"}));
+    let mut media = 0;
+    s.doc.objects_in_reading_order(&mut |o| media += matches!(o, wordcraft_doc::InlineObject::Image { .. }) as usize);
+    assert_eq!(media, 1, "the picture survives typing");
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "x\ncap");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// #802: Insert › Picture takes Windows Metafiles (and EMF) at their own frame size, stored under

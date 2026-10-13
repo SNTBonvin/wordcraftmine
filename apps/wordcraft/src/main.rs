@@ -211,6 +211,8 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         make_default_app: default_apps::hook(),
         animations_enabled: Some(animations::hook(ctx)),
         clipboard_text: Some(Box::new(clipboard::text)),
+        clipboard_write: Some(Box::new(clipboard::set)),
+        clipboard_write_image: Some(Box::new(clipboard::set_image)),
         clipboard_html: Some(Box::new(clipboard::html)),
         clipboard_rtf: Some(Box::new(clipboard::rtf)),
         clipboard_formats: Some(Box::new(clipboard::formats)),
@@ -244,6 +246,12 @@ fn main() -> eframe::Result {
         match a.as_str() {
             "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
             "--sample" => sample = true,
+            "--help" | "-h" => {
+                println!(
+                    "wordcraft — WordCraft word processor\n\nUSAGE:\n  wordcraft [OPTIONS] [FILE...]\n\nOPTIONS:\n  --sample         open with the sample document\n  --control PORT   expose the control channel on 127.0.0.1:PORT (see docs/control-protocol.md)\n  --version          print the version and exit\n  --help, -h         print this help and exit"
+                );
+                return Ok(());
+            }
             "--version" => {
                 println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_sha());
                 return Ok(());
@@ -336,11 +344,20 @@ fn main() -> eframe::Result {
                 app = app.with_control(rx);
                 key_file = file;
             }
-            // Nothing to open (no files, no sample, no control channel driving the editor): start
-            // on File › Home, as Word does (#766), unless the Start screen option is off. Files
-            // macOS hands over later open on top of it and close it (`apple_events`).
+            // Nothing to open (no files, no sample, no control channel driving the editor):
+            // the last document when asked (#918), else File › Home as in Word (#766) unless
+            // the Start screen option is off. Files handed over later open on top of it.
             if files.is_empty() && !sample && control_port.is_none() {
-                app.start_screen();
+                let mut reopened = false;
+                if app.ui.reopen_last
+                    && let Some(last) = app.ui.last_open.clone()
+                    && std::path::Path::new(&last).is_file()
+                {
+                    reopened = app.run("file.open", serde_json::json!({"path": last})).is_ok();
+                }
+                if !reopened {
+                    app.start_screen();
+                }
             }
             for f in files {
                 if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {

@@ -28,7 +28,7 @@ pub(crate) fn set_author(s: &mut Session, v: &Value) -> CmdResult {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|letter|resume|report"}"#).pure(),
+        CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|letter|resume|report|mla|apa"}"#).pure(),
         CommandSpec::new("file.open", "Open", "File", open)
             .key("Mod+O / Mod+F12")
             .params(r#"{"path": string, "data"?: base64 (the file's bytes; `path` then only names it), "password"?: string (for a password-protected Word document)}"#)
@@ -88,7 +88,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("document.inspect", "Inspect Document", "Agents", inspect).params(r#"{"text"?: bool}"#).pure(),
         CommandSpec::new("document.text", "Document Text", "Agents", |s, v| {
             let story = super::story_param(s, v);
-            Ok(json!({"text": s.doc.plain_text(story)}))
+            Ok(json!({"text": s.doc.final_text(story)}))
         })
         .pure(),
         CommandSpec::new("document.paragraph", "Paragraph Details", "Agents", paragraph).params(r#"{"path": [n], "story"?: Story}"#).pure(),
@@ -119,6 +119,8 @@ fn new(s: &mut Session, v: &Value) -> CmdResult {
         "letter" => crate::sample::letter(),
         "resume" => crate::sample::resume(),
         "report" => crate::sample::report(),
+        "mla" => crate::sample::mla(),
+        "apa" => crate::sample::apa(),
         // The Normal template: the region's paper (#838), written in the editing language (the
         // templates' text is English).
         _ => {
@@ -200,6 +202,19 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
         s.password = Some(crate::io::Password::new(pw));
     }
     s.stamp_save();
+    // #995: remember the view in the file, so reopening restores it (Draft and Read have no
+    // OOXML view value and keep whatever the file had).
+    if !matches!(s.view.mode, wordcraft_layout::ViewMode::Draft | wordcraft_layout::ViewMode::Read) {
+        s.doc.settings.view = Some(
+            match s.view.mode {
+                wordcraft_layout::ViewMode::Web => "web",
+                wordcraft_layout::ViewMode::Outline => "outline",
+                _ => "print",
+            }
+            .to_string(),
+        );
+    }
+    s.doc.settings.zoom = Some((s.view.zoom * 100.0).round().clamp(10.0, 500.0) as u32);
     let password = s.password.as_ref().map(crate::io::Password::as_str);
     crate::io::save_path_with(&path, &s.doc, password, &export_options(s, v)).map_err(CmdError::Failed)?;
     let encrypted = password.is_some() && crate::io::can_encrypt(&path.to_string_lossy());

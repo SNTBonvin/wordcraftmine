@@ -280,12 +280,68 @@ fn txt_round_trip() {
     assert_eq!(import("txt", &[0x63, 0x61, 0x66, 0xE9, 0x80]).unwrap().unwrap().plain_text(Default::default()), "café€");
 }
 
+/// #1264: a modified Normal style (font, size, spacing) round-trips through RTF.
+#[test]
+fn rtf_round_trips_the_normal_style() {
+    use crate::{export, import};
+    let mut d = Document::from_text("Hello");
+    d.styles.get_mut("Normal").unwrap().chr.font = Some("Courier New".into());
+    d.styles.get_mut("Normal").unwrap().chr.size = Some(10.0);
+    d.styles.get_mut("Normal").unwrap().para.space_after = Some(0.0);
+    let bytes = export("rtf", &d).unwrap().unwrap();
+    let rtf = String::from_utf8_lossy(&bytes);
+    assert!(rtf.contains("Courier New"), "{rtf}");
+    let back = import("rtf", &bytes).unwrap().unwrap();
+    let normal = back.styles.get("Normal").unwrap();
+    assert_eq!(normal.chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(normal.chr.size, Some(10.0));
+    assert_eq!(normal.para.space_after, Some(0.0));
+    // The default font channel agrees too (monospaced defaults are kept).
+    assert_eq!(back.styles.default_chr.font.as_deref(), Some("Courier New"));
+}
+
+/// #1264: a monospaced `\\deff` is a default like any other on import.
+#[test]
+fn rtf_import_keeps_a_monospaced_default_font() {
+    use crate::import;
+    let d = import("rtf", br"{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern Courier New;}} Hello\par}").unwrap().unwrap();
+    assert_eq!(d.styles.default_chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(d.plain_text(wordcraft_doc::StoryRef::Body).trim(), "Hello");
+}
+
+/// #1008: code spans with pipes or backticks don't split table cells; escaped pipes stay.
+#[test]
+fn markdown_table_cells_keep_code_span_pipes() {
+    let md = "| A | B |\n|---|---|\n| ``a|b`` | z |\n| ``x`y`` | w |\n| p\\|q | v |\n";
+    let d = import("md", md.as_bytes()).unwrap().unwrap();
+    let out = String::from_utf8(export("md", &d).unwrap().unwrap()).unwrap();
+    // Exact rows: nothing shifted, truncated or re-escaped.
+    for want in ["| `a|b` | z |", "| ``x`y`` | w |", "| p\\|q | v |"] {
+        assert!(out.lines().any(|l| l == want), "{want} in:\n{out}");
+    }
+}
+
 #[test]
 fn txt_export_writes_symbol_font_text_as_unicode() {
     let mut d = Document::from_text("Done J\u{F0FC}");
     d.format_range(&wordcraft_doc::Pos::body(0, 5), &wordcraft_doc::Pos::body(0, 9), &|c| c.font = Some("Wingdings".into())).unwrap();
     let out = export("txt", &d).unwrap().unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "Done \u{263A}\u{2713}");
+}
+
+/// #1080: `txt` export (and so `wordcraft-cli text`) keeps list labels, so a list item reads
+/// apart from an ordinary paragraph.
+#[test]
+fn txt_export_keeps_list_labels() {
+    let mut d = Document::new();
+    let bul = d.numbering.add_list(wordcraft_doc::ListKind::Bullet);
+    let mut p = Paragraph::with_text("alpha", CharProps::default());
+    p.props.numbering = Some(wordcraft_doc::props::NumRef { num: bul, level: 0 });
+    d.body = vec![para_block(p), para_block(Paragraph::with_text("plain", CharProps::default()))];
+    let out = String::from_utf8(export("txt", &d).unwrap().unwrap()).unwrap();
+    let mut lines = out.split("\r\n");
+    assert!(lines.next().is_some_and(|l| l.contains("alpha") && !l.starts_with("alpha")), "{out:?}");
+    assert_eq!(lines.next(), Some("plain"));
 }
 
 /// #569: a file with an extension we don't know opens as text when it is text (a playlist), and
@@ -645,9 +701,11 @@ fn exported_links_keep_only_safe_targets() {
     d.body = vec![para_block(p)];
     let html = String::from_utf8(export("html", &d).unwrap().unwrap()).unwrap();
     let md = String::from_utf8(export("md", &d).unwrap().unwrap()).unwrap();
+    let tex = String::from_utf8(export("tex", &d).unwrap().unwrap()).unwrap();
     for bad in ["javascript", "vbscript", "data:"] {
         assert!(!html.to_ascii_lowercase().contains(bad), "html: {html}");
         assert!(!md.to_ascii_lowercase().replace('\n', "").contains(bad), "md: {md}");
+        assert!(!tex.to_ascii_lowercase().contains(bad), "tex: {tex}");
     }
     for (text, _) in links {
         assert!(html.contains(text), "html keeps the text {text:?}: {html}");
@@ -661,4 +719,6 @@ fn exported_links_keep_only_safe_targets() {
         assert!(!html.contains(&format!(">{text}</a>")), "html: {html}");
         assert!(!md.contains(&format!("[{text}](")), "md: {md}");
     }
+    assert!(!tex.contains("\\href{java") && !tex.contains("\\href{vbscript") && !tex.contains("\\href{data:"), "tex: {tex}");
+    assert!(tex.contains("https://ok.example/x"), "tex: {tex}");
 }

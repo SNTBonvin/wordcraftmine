@@ -399,6 +399,18 @@ pub struct CustomProp {
     pub value: String,
 }
 
+/// A page background picture fill.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PageBackground {
+    /// Key in [`Document::media`].
+    pub media: String,
+    /// The `v:fill` type (`tile`, `frame`, …), written back verbatim.
+    pub fill: String,
+    /// The `v:fill` title, written back verbatim.
+    pub title: String,
+}
+
 /// Document properties (File › Info).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -419,6 +431,12 @@ pub struct CoreProps {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub track_changes: bool,
+    /// Document view (`w:view`: `print`, `web`, `outline`, …), when the file states one (#995).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    /// Zoom percent (`w:zoom`), when the file states one (#995).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoom: Option<u32>,
     /// Default tab stop interval, points.
     pub default_tab: f32,
     pub even_odd_headers: bool,
@@ -432,6 +450,10 @@ pub struct Settings {
     /// Most consecutive lines that may end with a hyphen (`w:consecutiveHyphenLimit`); 0 = no limit.
     pub consecutive_hyphen_limit: u32,
     pub page_color: Option<Rgb>,
+    /// Page background picture/texture fill (`w:background` + `v:fill`): media key and the
+    /// fill type (`tile`, …). Only carried through saves for now (#999).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_background: Option<PageBackground>,
     pub watermark: Option<Watermark>,
     /// Theme fonts (major = headings, minor = body).
     pub major_font: String,
@@ -473,6 +495,10 @@ pub struct Settings {
     /// records one (OOXML's `b:Sources/@StyleName`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bib_style: Option<String>,
+    /// settings.xml elements the model doesn't represent, kept verbatim for the next save
+    /// (#1034): other compatibility settings, rsids and anything unknown. Capped on read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_xml: Vec<String>,
     /// The template the document is attached to (Tools › Templates and Add-ins): the target of
     /// `w:attachedTemplate`'s relationship, a path or `file:` URL as the file gives it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -529,6 +555,8 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             track_changes: false,
+            view: None,
+            zoom: None,
             default_tab: 36.0,
             even_odd_headers: false,
             mirror_margins: false,
@@ -537,6 +565,7 @@ impl Default for Settings {
             hyphenate_caps: true,
             consecutive_hyphen_limit: 0,
             page_color: None,
+            page_background: None,
             watermark: None,
             major_font: styles::HEADING_FONT.into(),
             minor_font: styles::BODY_FONT.into(),
@@ -556,6 +585,7 @@ impl Default for Settings {
             bib_style: None,
             attached_template: None,
             link_styles: false,
+            extra_xml: Vec::new(),
         }
     }
 }
@@ -803,6 +833,19 @@ impl Document {
     /// The whole text of a story, paragraphs separated by `\n` (tables: cells by `\t`).
     pub fn plain_text(&self, s: StoryRef) -> String {
         self.story_text(s, false)
+    }
+
+    /// [`Self::plain_text`] with every tracked change accepted (insertions kept, deletions
+    /// dropped): the text as it reads with changes shown as final (#866).
+    pub fn final_text(&self, s: StoryRef) -> String {
+        let mut out = String::new();
+        if let Some(bl) = self.story(s) {
+            final_text_of(bl, &mut out, 0);
+        }
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
     }
 
     /// [`Self::plain_text`] as it reads on screen: symbol-font characters (Wingdings…) as their
@@ -1311,6 +1354,33 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize, shown: bool) {
                     for c in &row.cells {
                         let mut s = String::new();
                         text_of(&c.blocks, &mut s, depth + 1, shown);
+                        cells.push(s.trim_end_matches('\n').replace('\n', " "));
+                    }
+                    out.push_str(&cells.join("\t"));
+                    out.push('\n');
+                }
+            }
+        }
+    }
+}
+
+/// [`text_of`] with every tracked change accepted (insertions kept, deletions dropped).
+fn final_text_of(bl: &Blocks, out: &mut String, depth: usize) {
+    if depth > 16 {
+        return;
+    }
+    for b in bl {
+        match &**b {
+            Block::Para(p) => {
+                out.push_str(&p.final_text());
+                out.push('\n');
+            }
+            Block::Table(t) => {
+                for row in &t.rows {
+                    let mut cells = Vec::new();
+                    for c in &row.cells {
+                        let mut s = String::new();
+                        final_text_of(&c.blocks, &mut s, depth + 1);
                         cells.push(s.trim_end_matches('\n').replace('\n', " "));
                     }
                     out.push_str(&cells.join("\t"));

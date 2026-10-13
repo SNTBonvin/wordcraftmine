@@ -213,6 +213,12 @@ pub enum Dialog {
     Borders {
         form: Box<crate::dialogs_para::BordersForm>,
     },
+    /// Format Page Numbers (#1113).
+    PageNumberFormat {
+        format: String,
+        start: String,
+        message: String,
+    },
     Find {
         query: String,
         replace: String,
@@ -370,6 +376,7 @@ pub enum Dialog {
         fields: Vec<String>,
         rows: Vec<Vec<String>>,
         message: String,
+        filter: String,
     },
     /// Mailings › Select Recipients › Use an Existing List… picked a workbook with several sheets
     /// (#334): which sheet holds the recipients, and whether its first row names the fields.
@@ -656,7 +663,10 @@ pub struct TableRegion {
     pub borders: bool,
     pub fill: String,
     pub bold: bool,
+    pub italic: bool,
     pub color: String,
+    pub font: String,
+    pub size: String,
 }
 
 /// The Table Style dialog's regions, in the order of `table_style::REGIONS` (the param names).
@@ -676,7 +686,15 @@ fn table_regions(app: &WordApp, id: &str) -> Box<[TableRegion; 7]> {
     let region = |borders: Option<wordcraft_doc::props::Borders>, fill: Option<wordcraft_doc::Rgb>, chr: &wordcraft_doc::CharProps| {
         let mut c = st.chr.clone();
         c.overlay(chr);
-        TableRegion { borders: lines(borders), fill: hex(fill), bold: c.bold.unwrap_or(false), color: text(&c) }
+        TableRegion {
+            borders: lines(borders),
+            fill: hex(fill),
+            bold: c.bold.unwrap_or(false),
+            italic: c.italic.unwrap_or(false),
+            color: text(&c),
+            font: c.font.clone().unwrap_or_default(),
+            size: c.size.map(|s| s.to_string()).unwrap_or_default(),
+        }
     };
     let none = wordcraft_doc::CharProps::default();
     Box::new([
@@ -825,8 +843,21 @@ fn region_changes(r: &TableRegion, basis: &TableRegion) -> Value {
     if r.bold != basis.bold {
         v["bold"] = json!(r.bold);
     }
+    if r.italic != basis.italic {
+        v["italic"] = json!(r.italic);
+    }
     if r.color != basis.color {
         v["color"] = color(&r.color);
+    }
+    if r.font != basis.font && !r.font.trim().is_empty() {
+        v["font"] = json!(r.font.trim());
+    }
+    if r.size != basis.size
+        && let Ok(size) = r.size.trim().parse::<f32>()
+        && size.is_finite()
+        && size > 0.0
+    {
+        v["size"] = json!(size);
     }
     v
 }
@@ -908,6 +939,7 @@ impl Dialog {
             Dialog::TableProperties { .. } => "tableProperties",
             Dialog::Password { .. } => "password",
             Dialog::EncryptPassword { .. } => "encryptPassword",
+            Dialog::PageNumberFormat { .. } => "pageNumberFormat",
             Dialog::DefineList { .. } => "defineList",
             Dialog::TrackOptions { .. } => "trackChangesOptions",
             Dialog::Review(d) => d.name(),
@@ -1140,11 +1172,11 @@ impl Dialog {
             "recipientList" | "newRecipientList" => {
                 let m = &app.session.merge;
                 if name == "recipientList" && !m.headers.is_empty() {
-                    Dialog::RecipientList { fields: m.headers.clone(), rows: m.rows.clone(), message: String::new() }
+                    Dialog::RecipientList { fields: m.headers.clone(), rows: m.rows.clone(), message: String::new(), filter: String::new() }
                 } else {
                     let fields: Vec<String> = NEW_LIST_FIELDS.iter().map(|f| f.to_string()).collect();
                     let rows = vec![vec![String::new(); fields.len()]];
-                    Dialog::RecipientList { fields, rows, message: String::new() }
+                    Dialog::RecipientList { fields, rows, message: String::new(), filter: String::new() }
                 }
             }
             "insertMergeField" => {
@@ -1158,6 +1190,12 @@ impl Dialog {
                 Dialog::FieldCode { code: field.instr, edit: true, message: String::new() }
             }
             "encryptPassword" => Dialog::EncryptPassword { password: Password::default(), confirm: Password::default(), message: String::new() },
+            "pageNumberFormat" => {
+                let st = app.session.run("layout.section", &json!({})).map_err(|e| e.to_string()).unwrap_or_default();
+                let format = st.get("pageNumFormat").and_then(Value::as_str).unwrap_or("decimal").to_string();
+                let start = st.get("pageNumStart").and_then(Value::as_u64).map(|n| n.to_string()).unwrap_or_default();
+                Dialog::PageNumberFormat { format, start, message: String::new() }
+            }
             "ruleIf" | "ruleSkipIf" => {
                 let fields = app.session.merge.headers.clone();
                 Dialog::MergeRule {
@@ -1357,6 +1395,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::TableProperties { .. } => "Table Properties",
         Dialog::Password { .. } => "Password",
         Dialog::EncryptPassword { .. } => "Encrypt with Password",
+        Dialog::PageNumberFormat { .. } => "Format Page Numbers",
         Dialog::DefineList { .. } => "Define New Multilevel List",
         Dialog::TrackOptions { .. } => "Track Changes Options",
         Dialog::Review(d) => d.title(),
@@ -2188,6 +2227,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut r.borders, tl!("Borders"));
                     ui.checkbox(&mut r.bold, tl!("Bold"));
+                    ui.checkbox(&mut r.italic, tl!("Italic"));
                 });
                 egui::Grid::new("tstyle_colors").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
                     ui.label(tl!("Fill color:"));
@@ -2195,6 +2235,16 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     ui.end_row();
                     ui.label(tl!("Font color:"));
                     color_menu(ui, &theme, &mut r.color);
+                    ui.end_row();
+                    ui.label(tl!("Font:"));
+                    let fams = app.previews.families();
+                    let prev = app.previews.font_preview_fn();
+                    if let Some(f) = crate::widgets::font_combo(ui, "tstyle_font", 200.0, &r.font, &fams, Some(&*prev)) {
+                        r.font = f;
+                    }
+                    ui.end_row();
+                    ui.label(tl!("Size:"));
+                    ui.text_edit_singleline(&mut r.size);
                     ui.end_row();
                 });
             }
@@ -2384,7 +2434,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let _ = app.run("ui.saveChanges", json!({"answer": answer}));
             true
         }
-        Dialog::RecipientList { fields, rows, message } => recipient_list(app, ui, fields, rows, message),
+        Dialog::RecipientList { fields, rows, message, filter } => recipient_list(app, ui, fields, rows, message, filter),
         Dialog::InsertMergeField { fields, field } => {
             if fields.is_empty() {
                 ui.label(egui::RichText::new(tl!("Select recipients first to choose from their fields.")).small().weak());
@@ -2407,6 +2457,53 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             if ok && !field.trim().is_empty() {
                 let _ = app.run("mailings.insertField", json!({"field": field.trim()}));
                 return true;
+            }
+            cancel
+        }
+        Dialog::PageNumberFormat { format, start, message } => {
+            const FORMATS: [(&str, &str); 5] = [
+                ("decimal", "1, 2, 3, …"),
+                ("upperRoman", "I, II, III, …"),
+                ("lowerRoman", "i, ii, iii, …"),
+                ("upperLetter", "A, B, C, …"),
+                ("lowerLetter", "a, b, c, …"),
+            ];
+            egui::Grid::new("page_number_format").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+                ui.label(tl!("Number format:"));
+                let shown = FORMATS.iter().find(|(v, _)| *v == format).map(|(_, l)| tl!(l)).unwrap_or_default();
+                egui::ComboBox::from_id_salt("page_number_format").selected_text(shown).show_ui(ui, |ui| {
+                    for (v, l) in FORMATS {
+                        ui.selectable_value(format, v.to_string(), tl!(l));
+                    }
+                });
+                ui.end_row();
+                ui.label(tl!("Start at:"));
+                ui.add(egui::TextEdit::singleline(start).hint_text(tl!("Empty continues the previous section")).desired_width(140.0));
+                ui.end_row();
+            });
+            if !message.is_empty() {
+                ui.label(egui::RichText::new(message.as_str()).small().color(ui.visuals().error_fg_color));
+            }
+            let (ok, cancel) = buttons(ui, tl!("OK"));
+            if ok {
+                let mut v = json!({"format": format});
+                match start.trim() {
+                    "" => {}
+                    digits => match digits.parse::<u32>() {
+                        Ok(n) if n >= 1 => v["start"] = json!(n),
+                        _ => {
+                            *message = tl!("Start at needs a number from 1.").to_string();
+                            return false;
+                        }
+                    },
+                }
+                return match app.run("layout.pageNumberFormat", v) {
+                    Ok(_) => true,
+                    Err(e) => {
+                        *message = e;
+                        false
+                    }
+                };
             }
             cancel
         }
@@ -2656,7 +2753,14 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
 }
 
 /// The Recipient List dialog's body: a file button, the editable table, OK/Cancel. True to close.
-fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows: &mut Vec<Vec<String>>, message: &mut String) -> bool {
+fn recipient_list(
+    app: &mut WordApp,
+    ui: &mut Ui,
+    fields: &mut Vec<String>,
+    rows: &mut Vec<Vec<String>>,
+    message: &mut String,
+    filter: &mut String,
+) -> bool {
     const CELL_W: f32 = 120.0;
     const X_W: f32 = 18.0;
     const ROW_H: f32 = 24.0;
@@ -2670,7 +2774,13 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
         let _ = app.run("ui.openRecipientList", json!({}));
         return true;
     }
+    // Find-as-you-type over every cell (#778); OK still writes every row.
+    ui.add(egui::TextEdit::singleline(filter).hint_text(tl!("Filter")).desired_width(200.0));
     ui.add_space(6.0);
+    let needle = filter.trim().to_lowercase();
+    // Displayed row order maps back to `rows`, so removing a filtered row removes the right one.
+    let shown: Vec<usize> =
+        rows.iter().enumerate().filter(|(_, r)| needle.is_empty() || r.iter().any(|c| c.to_lowercase().contains(&needle))).map(|(i, _)| i).collect();
     let mut remove_field = None;
     let can_remove = fields.len() > 1;
     let mut remove_row = None;
@@ -2688,8 +2798,9 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
                 }
             });
             ui.separator();
-            egui::ScrollArea::vertical().id_salt("recipients_v").max_height(260.0).show_rows(ui, ROW_H, rows.len(), |ui, range| {
-                for r in range {
+            egui::ScrollArea::vertical().id_salt("recipients_v").max_height(260.0).show_rows(ui, ROW_H, shown.len(), |ui, range| {
+                for d in range {
+                    let Some(&r) = shown.get(d) else { continue };
                     let Some(row) = rows.get_mut(r) else { continue };
                     ui.horizontal(|ui| {
                         for c in row.iter_mut() {
@@ -3279,6 +3390,33 @@ mod tests {
     use wordcraft_doc::Pos;
     use wordcraft_doc::props::Align;
     use wordcraft_engine::Session;
+
+    #[test]
+    fn format_page_numbers_opens_its_dialog() {
+        // #1113: the menu item opens the dialog instead of silently doing nothing.
+        let mut a = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        let d = Dialog::open("pageNumberFormat", &mut a).expect("dialog opens");
+        assert!(matches!(d, Dialog::PageNumberFormat { .. }), "not a page-number dialog");
+        let r = a.run("layout.pageNumberFormat", serde_json::json!({})).unwrap();
+        assert_eq!(r["pending"], "pageNumberFormat");
+        // With settings it applies directly, and roman + start stick.
+        a.run("layout.pageNumberFormat", serde_json::json!({"format": "upperRoman", "start": 4})).unwrap();
+        let st = a.session.run("layout.section", &serde_json::json!({})).unwrap();
+        assert_eq!(st["pageNumFormat"], "upperRoman");
+        assert_eq!(st["pageNumStart"], 4);
+    }
+
+    #[test]
+    fn table_style_region_changes_carry_italic_font_and_size() {
+        // #714: the Table Style dialog offers italic, font and size, not just bold/fill.
+        let basis = TableRegion::default();
+        let r = TableRegion { italic: true, font: "Arial".into(), size: "12".into(), ..Default::default() };
+        let v = region_changes(&r, &basis);
+        assert_eq!(v["italic"], true);
+        assert_eq!(v["font"], "Arial");
+        assert_eq!(v["size"], 12.0);
+        assert!(region_changes(&basis, &basis).as_object().is_some_and(|o| o.is_empty()));
+    }
 
     /// Go To's page box (#712): a number, +n / -n from the current page (a typographic minus
     /// too), empty for the next page; anything else is refused.

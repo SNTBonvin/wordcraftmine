@@ -85,6 +85,8 @@ pub(crate) struct Reader<'p> {
     /// was kept while reading (those not glued to are dropped at the end).
     pub glued: HashSet<u32>,
     pub shape_ids: bool,
+    /// Whether we've seen a VML shape fallback and need to keep its AlternateContent on save.
+    vml_shape_keep: bool,
     /// The main document part's name.
     main: String,
     /// The package's content types, read when first needed.
@@ -152,6 +154,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         graphic_budget: MAX_GRAPHIC_WORK,
         glued: HashSet::new(),
         shape_ids: false,
+        vml_shape_keep: false,
         main: main.clone(),
         content_types: None,
         embedded: EmbeddedManifest::default(),
@@ -159,6 +162,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
     r.pc.minor_font = r.doc.settings.minor_font.clone();
+
     let part = |t: &str| rels.by_type(t).filter(|x| !x.external).map(|x| x.target.clone());
 
     // The font table and the fonts embedded through it ride along as opaque parts.
@@ -228,6 +232,16 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     if let Some(bg) = root.child("w:background").and_then(|b| b.attr("w:color")).and_then(Rgb::parse) {
         r.doc.settings.page_color = Some(bg);
     }
+    // A picture/texture background fill rides along as document media (#999); drawing it is
+    // still to come, like the shapes in #611/#743.
+    if let Some(el) = root.child("w:background").and_then(|b| b.find("v:fill"))
+        && let Some(id) = el.attr("r:id")
+        && let Some(key) = r.media_for(&rels, id)
+    {
+        let fill = el.attr("type").filter(|t| !t.is_empty() && t.len() <= 32).unwrap_or("tile").to_string();
+        let title = el.attr("o:title").filter(|t| t.chars().count() <= 128).unwrap_or("").to_string();
+        r.doc.settings.page_background = Some(wordcraft_doc::PageBackground { media: key, fill, title });
+    }
     if let Some(body) = root.child("w:body") {
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();
@@ -290,6 +304,14 @@ pub(crate) struct MoveCtx {
 }
 
 impl Reader<'_> {
+    pub fn has_vml_shape_keep(&self) -> bool {
+        self.vml_shape_keep
+    }
+
+    pub fn set_vml_shape_keep(&mut self, v: bool) {
+        self.vml_shape_keep = v;
+    }
+
     /// A `w:moveFromRangeStart/End` or `w:moveToRangeStart/End`.
     pub fn move_range(&mut self, e: &El) {
         let (side, start) = match e.name.as_str() {
@@ -418,7 +440,7 @@ fn toc_field_to_heading(body: &mut Blocks) {
         }
         let Some((field, props, end)) = body[i].as_para().and_then(|p| {
             let (field, end) = match p.object_at(0) {
-                Some(InlineObject::FieldStart { instr, locked }) if is_toc(instr) => {
+                Some(InlineObject::FieldStart { instr, locked, .. }) if is_toc(instr) => {
                     (InlineObject::Field { instr: instr.clone(), result: String::new(), locked: *locked, code: false }, Some(toc_range_end(body, i)?))
                 }
                 Some(f @ InlineObject::Field { result, .. }) if result.is_empty() && has_toc(f) => (f.clone(), None),
@@ -979,6 +1001,35 @@ impl Reader<'_> {
         lv
     }
 
+    /// Most raw bytes of unrecognized settings.xml elements kept for the next save (#1034).
+    const MAX_EXTRA_XML: usize = 65536;
+
+    /// Keep an unrecognized settings element verbatim when it only uses the settings
+    /// namespaces (`w:`, `m:`); anything exotic is left out rather than rewritten broken.
+    fn keep_setting(s: &mut wordcraft_doc::Settings, k: &El) {
+        fn prefixed(name: &str) -> Option<&str> {
+            let (p, _) = name.split_once(':')?;
+            Some(p)
+        }
+        // Check the serialized form, children included.
+        let xml = k.to_xml();
+        let exotic = xml
+            .split('<')
+            .skip(1)
+            .filter_map(|t| t.split([' ', '>', '/', '?']).next())
+            .any(|t| !t.is_empty() && !t.starts_with('?') && !t.starts_with('!') && prefixed(t).is_none_or(|p| p != "w" && p != "m"));
+        if exotic {
+            log::warn!("docx: settings <{}> uses namespaces WordCraft does not carry; left out", k.name);
+            return;
+        }
+        let used: usize = s.extra_xml.iter().map(|x| x.len()).sum();
+        if used + xml.len() <= Self::MAX_EXTRA_XML {
+            s.extra_xml.push(xml);
+        } else {
+            log::warn!("docx: too many unrecognized settings; the rest are left out");
+        }
+    }
+
     fn read_settings(&mut self, path: &str) -> Result<(), DocxError> {
         let Some(root) = self.xml(path)? else { return Ok(()) };
         let rels = self.pkg.rels(path);
@@ -1006,6 +1057,12 @@ impl Reader<'_> {
                     if let Some(m) = mode.and_then(u32_of) {
                         s.compat_mode = m.clamp(11, 99);
                     }
+                    // Every other compatibility setting rides along verbatim (#1034).
+                    for c in k.children("w:compatSetting") {
+                        if c.attr("w:name") != Some("compatibilityMode") {
+                            Self::keep_setting(s, c);
+                        }
+                    }
                 }
                 "w:trackRevisions" => s.track_changes = on_off(k),
                 "w:defaultTabStop" => {
@@ -1014,6 +1071,20 @@ impl Reader<'_> {
                     }
                 }
                 "w:evenAndOddHeaders" => s.even_odd_headers = on_off(k),
+                // #995: the view the file was saved in (one of none/print/outline/masterViews/normal/web).
+                "w:view" => {
+                    s.view = k
+                        .attr("w:val")
+                        .filter(|v| !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_ascii_alphanumeric()))
+                        .map(str::to_string);
+                }
+                "w:zoom" => {
+                    s.zoom = k.attr("w:percent").and_then(|v| v.parse::<u32>().ok()).map(|z| z.clamp(10, 500));
+                }
+                "w:displayBackgroundShape" => {
+                    // Page background (color or image) is present; page_color is set by the color attribute
+                    // We don't track the background image here; it's kept in extra_xml for round-trip.
+                }
                 "w:drawingGridHorizontalSpacing" | "w:drawingGridVerticalSpacing" => {
                     if let Some(v) = tw(k, "w:val").filter(|v| *v > 0.0) {
                         let v = v.clamp(0.5, 1584.0);
@@ -1047,7 +1118,7 @@ impl Reader<'_> {
                     s.endnote_pr = props::note_pr(k, false);
                 }
                 "w:documentProtection" => read_protection(k, s),
-                _ => {}
+                _ => Self::keep_setting(s, k),
             }
         }
         Ok(())

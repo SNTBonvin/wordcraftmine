@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 
-use egui::{RichText, Ui, vec2};
+use egui::{Color32, FontId, RichText, Ui, vec2};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -116,7 +116,10 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
                     ui.painter().rect_filled(r, 4.0, t.hover);
                 }
                 let font = if active { semibold(14.0) } else { crate::theme::regular(14.0) };
-                ui.painter().text(egui::pos2(r.min.x + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, font, t.text);
+                // Long translations (Russian «Специальные возможности») are ellipsized to the
+                // row instead of crossing the divider (#1266).
+                let shown = fit_label(ui.ctx(), label, font.clone(), t.text, r.width() - 12.0 - 8.0);
+                ui.painter().text(egui::pos2(r.min.x + 12.0, r.center().y), egui::Align2::LEFT_CENTER, shown, font, t.text);
                 if resp.clicked() {
                     app.ui.options_pane = id.to_string();
                 }
@@ -140,6 +143,22 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// Shorten `label` with an ellipsis so it fits `max_w` points (#1266).
+fn fit_label(ctx: &egui::Context, label: &str, font: FontId, color: Color32, max_w: f32) -> String {
+    let width = |t: &str| ctx.fonts_mut(|f| f.layout_no_wrap(t.to_owned(), font.clone(), color).size().x);
+    if width(label) <= max_w {
+        return label.to_owned();
+    }
+    let mut out = String::new();
+    for c in label.chars() {
+        if width(&format!("{out}{c}…")) > max_w {
+            break;
+        }
+        out.push(c);
+    }
+    format!("{out}…")
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -194,6 +213,8 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     {
         let _ = app.run("ui.startScreen", json!({"value": start}));
     }
+    ui.checkbox(&mut app.ui.reopen_last, tl!("Reopen the last document at startup"))
+        .on_hover_text(tl!("On: with nothing else to open, WordCraft reopens the file it had open instead of the Start screen."));
     ui.add_space(8.0);
     section(ui, "Personalize");
     egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
@@ -264,8 +285,76 @@ fn proofing(app: &mut WordApp, ui: &mut Ui) {
     flag(app, ui, "Check spelling as you type", "checkSpelling", spelling);
     ui.add_enabled_ui(app.session.view.proofing, |ui| flag(app, ui, "Mark grammar errors as you type", "markGrammar", pr.mark_grammar));
     ui.add_space(8.0);
+    section(ui, "Dictionaries");
+    dictionaries(app, ui);
+    ui.add_space(8.0);
     section(ui, "Custom dictionary");
     custom_dictionary(app, ui);
+}
+
+/// Hunspell dictionaries folder, searched first (#100, #1063), with help getting
+/// dictionaries (#1225) and a hint for document languages that have none (#1167).
+fn dictionaries(app: &mut WordApp, ui: &mut Ui) {
+    let mut dir = app.ui.dictionaries_dir.clone();
+    ui.horizontal(|ui| {
+        ui.label(tl!("Dictionaries folder:"));
+        let r = ui.add(egui::TextEdit::singleline(&mut dir).hint_text(tl!("Empty uses the default locations")));
+        if r.changed() {
+            let clean = dir.trim().to_string();
+            app.ui.dictionaries_dir = clean.clone();
+            wordcraft_engine::proof::hunspell::set_dictionary_dir(if clean.is_empty() { None } else { Some(clean.into()) });
+        }
+    });
+    note(
+        ui,
+        "Hunspell .aff/.dic pairs are searched here first, then in WORDCRAFT_DICTIONARIES, then in the system locations (LibreOffice dictionaries work).",
+    );
+    ui.horizontal(|ui| {
+        #[cfg(all(unix, not(target_os = "macos")))]
+        if ui.button(tl!("Open dictionaries folder")).clicked() {
+            let target = if app.ui.dictionaries_dir.trim().is_empty() { String::new() } else { app.ui.dictionaries_dir.clone() };
+            if target.is_empty() {
+                app.status(tl!("Set a dictionaries folder first."));
+            } else if std::process::Command::new("xdg-open").arg(&target).spawn().is_err() {
+                app.status(tl!("Could not open the folder."));
+            }
+        }
+    });
+    // Languages used by the open document that have no dictionary installed (#1167).
+    let rev = app.session.rev();
+    let key = egui::Id::new("options_missing_dicts");
+    let cached: Option<(u64, Vec<String>)> = ui.data(|d| d.get_temp(key));
+    let missing = match cached {
+        Some((r, langs)) if r == rev => langs,
+        _ => {
+            let langs = missing_dict_languages(&app.session.doc);
+            ui.data_mut(|d| d.insert_temp(key, (rev, langs.clone())));
+            langs
+        }
+    };
+    for lang in missing.iter().take(4) {
+        let text = crate::i18n::fmt(tl!("No dictionary for {lang}: those runs won't be spell-checked."), &[("lang", lang)]);
+        ui.label(egui::RichText::new(text).small());
+    }
+}
+
+/// BCP 47 tags used anywhere in the body with no proofing dictionary installed, first-seen
+/// order (#1167). Bounded: distinct tags only.
+fn missing_dict_languages(doc: &wordcraft_doc::Document) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    let story = wordcraft_doc::StoryRef::Body;
+    for path in doc.para_paths(story) {
+        let Some(p) = doc.para(story, &path) else { continue };
+        for (_, props) in p.run_ranges() {
+            let Some(tag) = props.lang.as_deref().map(str::trim).filter(|t| !t.is_empty()) else { continue };
+            if seen.insert(tag.to_ascii_lowercase()) && !wordcraft_engine::proof::has_dictionary(Some(tag)) && out.len() < 8 {
+                out.push(tag.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// The custom dictionary: the words Add to Dictionary kept, each with a Remove button, and a
@@ -612,13 +701,43 @@ mod tests {
     use serde_json::json;
     use wordcraft_geom::Unit;
 
-    use super::{decimal, length, unit};
+    use super::{decimal, fit_label, length, unit};
 
     use crate::theme::Appearance;
     use crate::{Services, UiState, WordApp};
 
     fn app() -> WordApp {
         WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default())
+    }
+
+    #[test]
+    fn missing_dictionaries_are_listed_by_language() {
+        // #1167: runs tagged with a language WordCraft cannot proof are reported.
+        use wordcraft_doc::{Paragraph, para_block};
+        let mut d = wordcraft_doc::Document::new();
+        let mut p = Paragraph::with_text("Hello", wordcraft_doc::CharProps::default());
+        let n = p.len();
+        p.insert_text(n, " bonjour", &wordcraft_doc::CharProps { lang: Some("fr".into()), ..Default::default() }).unwrap();
+        d.body = vec![para_block(p)];
+        assert_eq!(super::missing_dict_languages(&d), vec!["fr".to_string()]);
+        let plain = wordcraft_doc::Document::from_text("Hello");
+        assert!(super::missing_dict_languages(&plain).is_empty());
+    }
+
+    #[test]
+    fn long_pane_labels_are_ellipsized_to_their_row() {
+        // #1266: the Russian Accessibility label (~215 px) must fit its 150 px row.
+        use crate::theme::regular;
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        let font = regular(14.0);
+        let color = egui::Color32::WHITE;
+        assert_eq!(fit_label(&ctx, "General", font.clone(), color, 150.0), "General");
+        let label = "Специальные возможности";
+        let shown = fit_label(&ctx, label, font.clone(), color, 150.0);
+        assert!(shown.ends_with("…") && shown.len() < label.len(), "{shown}");
+        let w = ctx.fonts_mut(|f| f.layout_no_wrap(shown.clone(), font, color).size().x);
+        assert!(w <= 150.0, "{w}");
     }
 
     /// File › Options settings come back after a restart, and a `ui.json` with a wrong value in

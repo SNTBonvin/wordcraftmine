@@ -59,6 +59,7 @@ struct FieldState {
     buf: Vec<(Item, CharProps)>,
     props: CharProps,
     locked: bool,
+    dirty: bool,
     /// Kept as a range field: its result flows into the document as ordinary content between
     /// `FieldStart` and `FieldEnd` markers instead of being buffered.
     range: bool,
@@ -463,7 +464,7 @@ impl Reader<'_> {
             "w:fldSimple" => {
                 let instr = k.attr("w:instr").unwrap_or("").to_string();
                 let props = k.child("w:r").and_then(|r| r.child("w:rPr")).map(|p| self.run_props(p, ctx)).unwrap_or_else(|| self.run_props_none(ctx));
-                self.begin_field(sc, props, instr, on_off_attr(k, "w:fldLock"));
+                self.begin_field(sc, props, instr, on_off_attr(k, "w:fldLock"), on_off_attr(k, "w:dirty"));
                 self.separate_field(sc, pb);
                 self.read_inline_children(sc, pb, k, rels, ctx, depth + 1);
                 self.end_field(sc, pb);
@@ -619,7 +620,7 @@ impl Reader<'_> {
                 }
             }
             "w:fldChar" => match k.attr("w:fldCharType") {
-                Some("begin") => self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock")),
+                Some("begin") => self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock"), on_off_attr(k, "w:dirty")),
                 Some("separate") => self.separate_field(sc, pb),
                 Some("end") => self.end_field(sc, pb),
                 _ => {}
@@ -676,6 +677,10 @@ impl Reader<'_> {
             "w:ruby" => self.read_ruby(sc, pb, k, props),
             "mc:AlternateContent" => {
                 if let Some(o) = self.read_ink_alternate(sc, k, rels) {
+                    self.emit_obj(sc, pb, o, props);
+                } else if let Some(o) = self.read_opaque_alternate(sc, k, rels) {
+                    self.emit_obj(sc, pb, o, props);
+                } else if let Some(o) = self.read_shape_alternate(sc, k, rels) {
                     self.emit_obj(sc, pb, o, props);
                 } else if let Some(c) = children_of_choice(k) {
                     for x in c.els() {
@@ -744,13 +749,23 @@ impl Reader<'_> {
 
     // ---- fields ----
 
-    fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool) {
+    fn begin_field(&mut self, sc: &mut StoryCtx, props: CharProps, instr: String, locked: bool, dirty: bool) {
         if sc.fields.len() >= MAX_FIELD_DEPTH || sc.ignored_begins > 0 {
             sc.ignored_begins += 1;
             return;
         }
         // Fields nested deeper than the cap are ignored (their content flows to the enclosing field).
-        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false, sizes: Vec::new() });
+        sc.fields.push(FieldState {
+            instr,
+            phase: Phase::Instr,
+            spilled: false,
+            buf: Vec::new(),
+            props,
+            locked,
+            dirty,
+            range: false,
+            sizes: Vec::new(),
+        });
     }
 
     /// Whether the field below the innermost one is still collecting its code (a field nested
@@ -773,7 +788,7 @@ impl Reader<'_> {
         f.phase = Phase::Result;
         if !f.spilled && !nested_in_instr && is_range_instr(&f.instr) {
             f.range = true;
-            let (obj, props) = (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, f.props.clone());
+            let (obj, props) = (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, f.props.clone());
             self.emit_obj(sc, pb, obj, &props);
         }
     }
@@ -793,8 +808,21 @@ impl Reader<'_> {
             return;
         }
         if f.phase == Phase::Instr && !nested_in_instr && is_range_instr(&f.instr) {
-            // A range field with no result yet.
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
+            return;
+        }
+        // A cached result with tracked revisions in it (an edited SUM subtotal, a formula
+        // whose result changed, #1037): the result is ordinary content between range markers
+        // so Accept/Reject All see the revisions, as pandoc does.
+        if !nested_in_instr && f.buf.iter().any(|(_, p)| (p.del.is_some() && p.del != f.props.del) || (p.ins.is_some() && p.ins != f.props.ins)) {
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
+            for (it, p) in f.buf {
+                match it {
+                    Item::Text(t) => pb.push_text(&t, &p),
+                    Item::Obj(o) => pb.push_obj(*o, &p),
+                }
+            }
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
             return;
         }
@@ -802,7 +830,7 @@ impl Reader<'_> {
         // picture) can't be a text result: keep the field as a range around it so the picture
         // stays in the document and is saved again. The linked source is never read.
         if !nested_in_instr && f.buf.iter().any(|(it, _)| matches!(it, Item::Obj(o) if o.frame().is_some())) {
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
             for (it, p) in f.buf {
                 match it {
                     Item::Text(t) => self.emit_text(sc, pb, &t, &p),
@@ -825,6 +853,8 @@ impl Reader<'_> {
             None => (f.instr.trim().to_string(), result),
         };
         let obj = InlineObject::Field { instr, result, locked: f.locked, code: false };
+        // If this field is nested inside another field's instruction, append the result
+        // to the parent's instruction text instead of emitting a separate object.
         if let Some(parent) = sc.fields.last_mut()
             && !parent.spilled
             && parent.phase == Phase::Instr
@@ -843,7 +873,15 @@ impl Reader<'_> {
                 continue;
             }
             f.spilled = true;
-            pb.push_obj(InlineObject::Field { instr: f.instr.trim().to_string(), result: String::new(), locked: f.locked, code: false }, &f.props);
+            let result = f
+                .buf
+                .iter()
+                .map(|(it, _)| match it {
+                    Item::Text(t) => t.to_string(),
+                    Item::Obj(o) => o.plain_text().to_string(),
+                })
+                .collect::<String>();
+            pb.push_obj(InlineObject::Field { instr: f.instr.trim().to_string(), result, locked: f.locked, code: false }, &f.props);
             for (it, p) in f.buf.drain(..) {
                 match it {
                     Item::Text(t) => pb.push_text(&t, &p),
@@ -994,6 +1032,59 @@ impl Reader<'_> {
                 }
                 // A malformed or over-budget fallback must not discard a valid native part.
             }
+        }
+        Some(object)
+    }
+
+    /// An AlternateContent whose Choice is a drawing WordCraft doesn't model (extended charts
+    /// like `cx:chart`, #997): the fallback picture shows, and the whole Choice rides along for
+    /// the next save, chart data and workbook included. `None` when the Choice is understood
+    /// (the normal path takes it) or has no drawing, or the fallback has no picture.
+    fn read_opaque_alternate(&mut self, sc: &mut StoryCtx, ac: &El, rels: &Rels) -> Option<InlineObject> {
+        // Keep in sync with `children_of_choice`: understood requirements take the normal path.
+        const KNOWN: &[&str] = &["wps", "wpg", "wpc", "wpi", "w14", "w15", "wp14", "a14", "w16se", "w16cid", "w16", "w16cex", "w16sdtdh", "v"];
+        let choice = ac.child("mc:Choice")?;
+        if choice.attr("Requires").unwrap_or("").split_whitespace().all(|r| KNOWN.contains(&r)) {
+            return None;
+        }
+        choice.child("w:drawing")?;
+        let fallback = ac.child("mc:Fallback")?;
+        let fb_drawing = fallback.child("w:drawing")?;
+        let InlineObject::Image { media, w, h, alt, float, .. } = self.read_drawing(sc, fb_drawing, rels)? else { return None };
+        let kept = El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback.clone())] };
+        let source = self.keep_embedded(&kept, rels, &[])?;
+        let graphic = Arc::new(Graphic {
+            kind: GraphicKind::Chart,
+            items: vec![GraphicItem::Image { rect: [0.0, 0.0, w, h], media }],
+            w,
+            h,
+            source: Some(source),
+            ..Default::default()
+        });
+        Some(InlineObject::Graphic { w, h, alt, float, graphic })
+    }
+
+    /// A shape (or shape group) whose native markup is a `wps:wsp`/`wpg:wgp` drawing, with a
+    /// VML fallback: the model keeps what it can draw, and the whole AlternateContent rides
+    /// along so a save writes the shapes back for other apps (#886). `None` when the Choice
+    /// holds no drawing WordCraft reads, or the fallback has none.
+    fn read_shape_alternate(&mut self, sc: &mut StoryCtx, ac: &El, rels: &Rels) -> Option<InlineObject> {
+        let choice = children_of_choice(ac)?;
+        let drawing = choice.child("w:drawing")?;
+        // The fallback keeps the shape for apps without the new namespaces; the model needs no
+        // VML, so only its presence is recorded (through `keep`).
+        let fallback = ac.child("mc:Fallback");
+        if fallback.is_some_and(|f| f.child("w:drawing").is_some_and(|d| d.find("v:shape").is_some())) && !self.has_vml_shape_keep() {
+            self.set_vml_shape_keep(true);
+        }
+        let mut object = self.read_drawing(sc, drawing, rels)?;
+        let kept = El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback?.clone())] };
+        let source = self.keep_embedded(&kept, rels, &[]);
+        // Only drawing objects carry source markup; anything else keeps reading as before.
+        if let Some(src) = source
+            && let Some(set) = object.source_slot_mut()
+        {
+            *set = Some(src);
         }
         Some(object)
     }

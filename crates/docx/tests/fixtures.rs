@@ -120,6 +120,41 @@ fn single_entry_toc_keeps_formatted_result_and_nested_page_field() {
     assert_eq!(p[1].objects, vec![InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false, code: false }]);
 }
 
+const FIELD_DEL_DOC: &str = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =SUM(ABOVE) </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="1" w:author="Tester" w:date="2026-10-12T00:00:00Z"><w:r><w:delText>$150.00</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="3" w:author="Tester" w:date="2026-10-12T00:00:00Z"><w:r><w:t>$140.00</w:t></w:r></w:ins></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =2+3 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="4" w:author="Tester" w:date="2026-10-12T00:00:00Z"><w:r><w:delText>5</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="5" w:author="Tester" w:date="2026-10-12T00:00:00Z"><w:r><w:t>five</w:t></w:r></w:ins></w:p>"#;
+
+#[test]
+fn tracked_deletion_inside_a_field_result_stays_a_revision() {
+    // #1037: pandoc reads the original as `[$150.00]{.deletion}`; WordCraft used to see the
+    // deleted result as ordinary text, so Accept All left `$$140.00`.
+    let d = wordcraft_docx::read(&docx(FIELD_DEL_DOC, &[], &[])).unwrap();
+    // The deleted result is a tracked deletion, not shown text, and the insertions survive.
+    let final_text = |doc: &Document| doc.final_text(wordcraft_doc::StoryRef::Body).replace('\n', " ");
+    assert_eq!(final_text(&d), "$140.00 five");
+    assert!(!d.plain_text(wordcraft_doc::StoryRef::Body).replace('\u{FFFC}', "").is_empty());
+    // Saving writes the deletions back as revisions.
+    let r = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(final_text(&r), "$140.00 five");
+}
+
+#[test]
+fn dirty_field_begin_markers_round_trip() {
+    // #877: `w:dirty` on a field begin tells Word to rebuild the result; dropping it
+    // leaves stale placeholder text visible.
+    let d = read_body(
+        r#"<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText> TOC \o "1-1" \h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+    );
+    let p = paras(&d);
+    assert_eq!(
+        p[0].objects.iter().find_map(|o| match o {
+            InlineObject::FieldStart { dirty, .. } => Some(*dirty),
+            _ => None,
+        }),
+        Some(true)
+    );
+    let files = unzip(&wordcraft_docx::write(&d).unwrap());
+    assert!(text(&files, "word/document.xml").contains("w:dirty"), "dirty survives the save");
+}
+
 #[test]
 fn toc_complex_field_spanning_paragraphs() {
     let body = r#"
@@ -135,7 +170,7 @@ fn toc_complex_field_spanning_paragraphs() {
     let p = paras(&d);
     assert_eq!(p.len(), 5);
     assert_eq!(p[0].text, "\u{FFFC}Intro\t\u{FFFC}");
-    assert_eq!(p[0].objects[0], InlineObject::FieldStart { instr: r#"TOC \o "1-3" \h \z \u"#.into(), locked: false });
+    assert_eq!(p[0].objects[0], InlineObject::FieldStart { instr: r#"TOC \o "1-3" \h \z \u"#.into(), locked: false, dirty: false });
     assert_eq!(p[0].objects[1], InlineObject::Field { instr: r#"PAGEREF _Toc1 \h"#.into(), result: "1".into(), locked: false, code: false });
     assert_eq!(p[0].props_of_char(3).link.as_deref(), Some("#_Toc1"));
     assert_eq!(p[0].props.style.as_deref(), Some("TOC1"));
@@ -906,6 +941,56 @@ fn graphics(d: &Document) -> Vec<InlineObject> {
     paras(d).iter().flat_map(|p| p.objects.iter()).filter(|o| matches!(o, InlineObject::Graphic { .. })).cloned().collect()
 }
 
+const CX_PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really a png";
+
+/// A document with an extended (`cx:chart`) drawing: the chart Choice plus a picture Fallback.
+fn cx_docx() -> Vec<u8> {
+    let body = r#"<w:p><w:r><mc:AlternateContent><mc:Choice Requires="cx"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="2743200" cy="1371600"/><wp:docPr id="3" name="Chart 3"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2014/chartex"><cx:chart xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId7"/></cx:chart></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="2743200" cy="1371600"/><wp:docPr id="3" name="Chart 3"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="3" name="Chart 3"/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2743200" cy="1371600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></a:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Fallback></mc:AlternateContent></w:r></w:p>"#;
+    let chart_rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Worksheet.xlsx"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors1.xml"/></Relationships>"#;
+    let types = format!(
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="xlsx" ContentType="{CT_XLSX}"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/charts/chart1.xml" ContentType="{CT_CHART}"/><Override PartName="/word/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/></Types>"#
+    );
+    let r = rels(&[("rId7", "chart", "charts/chart1.xml"), ("rId9", "image", "media/fallback.png")]);
+    let doc = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W_NS}><w:body>{body}</w:body></w:document>"#);
+    zip(&[
+        ("_rels/.rels", ROOT_RELS.as_bytes()),
+        ("word/document.xml", doc.as_bytes()),
+        ("word/_rels/document.xml.rels", r.as_bytes()),
+        ("[Content_Types].xml", types.as_bytes()),
+        ("word/charts/chart1.xml", CHART_XML.as_bytes()),
+        ("word/charts/_rels/chart1.xml.rels", chart_rels.as_bytes()),
+        ("word/charts/colors1.xml", COLORS_XML.as_bytes()),
+        ("word/embeddings/Microsoft_Excel_Worksheet.xlsx", WORKBOOK.as_bytes()),
+        ("word/media/fallback.png", CX_PNG),
+    ])
+}
+
+#[test]
+fn extended_chart_round_trips_with_its_parts() {
+    // #997: the `cx:chart` Choice shows its fallback picture but keeps the chart data.
+    let d = wordcraft_docx::read(&cx_docx()).unwrap();
+    let g = graphics(&d);
+    let [wordcraft_doc::InlineObject::Graphic { graphic, .. }] = g.as_slice() else { panic!("{g:?}") };
+    assert!(graphic.source.is_some(), "the chart markup is kept");
+    assert!(graphic.items.iter().any(|i| matches!(i, wordcraft_doc::graphic::GraphicItem::Image { .. })), "the fallback shows");
+    let out = wordcraft_docx::write(&d).unwrap();
+    let files = unzip(&out);
+    let body = text(&files, "word/document.xml");
+    assert!(body.contains("2014/chartex"), "the extended chart is written back");
+    assert!(body.contains("Fallback"), "with its fallback picture");
+    let ids = attr_values(&body, "c:chart", "r:id");
+    assert_eq!(ids.len(), 1, "{body}");
+    assert_eq!(check_chart(&files, &ids[0]), "word/charts/chart1.xml");
+    assert!(files.keys().any(|k| k.starts_with("word/media/")), "fallback picture kept");
+    // Read back: still drawn from the fallback, and a second save still carries the data.
+    let back = wordcraft_docx::read(&out).unwrap();
+    let g = graphics(&back);
+    assert_eq!(g.len(), 1);
+    let again = unzip(&wordcraft_docx::write(&back).unwrap());
+    let ids = attr_values(&text(&again, "word/document.xml"), "c:chart", "r:id");
+    check_chart(&again, &ids[0]);
+}
+
 #[test]
 fn chart_round_trips_with_its_parts() {
     let d = wordcraft_docx::read(&chart_docx()).unwrap();
@@ -1451,7 +1536,7 @@ fn includepicture_keeps_its_embedded_picture() {
             let p = paras(d);
             let objs = &p[0].objects;
             assert_eq!(objs.len(), 3, "{objs:?}");
-            assert_eq!(objs[0], InlineObject::FieldStart { instr: "INCLUDEPICTURE \"picture.png\"".into(), locked });
+            assert_eq!(objs[0], InlineObject::FieldStart { instr: "INCLUDEPICTURE \"picture.png\"".into(), locked, dirty: false });
             let InlineObject::Image { media, .. } = &objs[1] else { panic!("{objs:?}") };
             assert_eq!(d.media.get(media).unwrap().as_slice(), png);
             assert_eq!(objs[2], InlineObject::FieldEnd);
