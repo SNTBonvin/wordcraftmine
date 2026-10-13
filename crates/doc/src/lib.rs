@@ -11,6 +11,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod bidi;
+pub mod chart;
+mod cjk_numbers;
+pub mod cluster;
+pub mod collate;
+pub mod connector;
+pub mod control;
 pub mod edit;
 pub mod effects;
 pub mod encoding;
@@ -18,6 +24,8 @@ pub mod eq;
 pub mod fields;
 pub mod freeform;
 pub mod graphic;
+pub mod link;
+pub mod locale_number;
 pub mod math;
 pub mod math_edit;
 pub mod math_latex;
@@ -28,8 +36,11 @@ pub mod para;
 pub mod props;
 pub mod resolve;
 pub mod section;
+pub mod smart_art;
 pub mod styles;
+pub mod symbol_fonts;
 pub mod table;
+pub mod wordart;
 pub mod wrap;
 
 use std::collections::BTreeMap;
@@ -37,6 +48,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+pub use control::{ContentControl, ControlKind, ControlLock, ControlRange, ControlWrap};
 pub use fields::FieldRange;
 pub use numbering::{ListKind, Numbering};
 pub use para::{InlineObject, Paragraph, Run};
@@ -125,6 +137,11 @@ impl BoxBudget {
     /// Done expanding the box last entered.
     pub fn leave(&mut self) {
         self.open.pop();
+    }
+
+    /// Whether a text box is being expanded now.
+    pub fn inside(&self) -> bool {
+        !self.open.is_empty()
     }
 
     /// Boxes expanded so far.
@@ -265,11 +282,27 @@ pub struct TextBody {
     /// continues in when it doesn't fit this one. The linked box shows the rest of this box's
     /// story; its own blocks are unused. See [`Document::text_box_chains`].
     pub next: Option<u32>,
+    /// Internal margins (left, top, right, bottom), EMU, when the file gives its own
+    /// (`wps:bodyPr` `lIns`… ECMA-376 Part 1 §21.1.2.1.1); `None` is Word's defaults.
+    pub inset: Option<[u32; 4]>,
+    /// Resize shape to fit text (`a:spAutoFit`): Word grows the box to its text, so none of
+    /// the text is cut.
+    pub auto_fit: bool,
 }
+
+/// Word's default text box margins (left, top, right, bottom), EMU: 0.1" and 0.05".
+pub const TEXT_BOX_INSET: [u32; 4] = [91_440, 45_720, 91_440, 45_720];
+/// Widest text box margin kept, EMU (22", the largest page side).
+pub const MAX_TEXT_BOX_INSET: u32 = 20_116_800;
 
 impl TextBody {
     pub fn is_default(&self) -> bool {
         *self == TextBody::default()
+    }
+
+    /// The internal margins (left, top, right, bottom) in points.
+    pub fn insets_pt(&self) -> [f32; 4] {
+        self.inset.unwrap_or(TEXT_BOX_INSET).map(|v| v.min(MAX_TEXT_BOX_INSET) as f32 / 12_700.0)
     }
 }
 
@@ -414,7 +447,18 @@ pub struct Settings {
     pub footnote_pr: section::NoteProps,
     #[serde(skip_serializing_if = "section::NoteProps::is_empty")]
     pub endnote_pr: section::NoteProps,
+    /// Restrict Editing, when enforced: `readOnly`, `comments`, `trackedChanges`, `forms`, or
+    /// `none` when only formatting is restricted (`w:documentProtection w:edit`).
     pub protection: Option<String>,
+    /// Restrict Editing limits formatting to the styles that aren't locked, and forbids direct
+    /// formatting (`w:formatting="1"`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub protect_formatting: bool,
+    /// The protection password's hash, as the file's `w:documentProtection` attributes
+    /// (`w:algorithmName`, `w:hashValue`, `w:saltValue`, `w:spinCount`, or the older
+    /// `w:cryptAlgorithmSid`, `w:hash`, `w:salt`…). Empty: no password.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub protect_hash: Vec<(String, String)>,
     /// Word compatibility mode the document is laid out in (`compatibilityMode`): 15 for Word
     /// 2013 and later, which places a table's border at the margin rather than its text and lets
     /// justified lines shrink their spaces to fit more text.
@@ -425,6 +469,16 @@ pub struct Settings {
     /// Equation options (`m:mathPr`), when the document has them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub math: Option<math::MathProps>,
+    /// Citation and bibliography style (References › Style) by name, when the document
+    /// records one (OOXML's `b:Sources/@StyleName`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bib_style: Option<String>,
+    /// The template the document is attached to (Tools › Templates and Add-ins): the target of
+    /// `w:attachedTemplate`'s relationship, a path or `file:` URL as the file gives it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_template: Option<String>,
+    /// Update the document's styles from the attached template when it is opened (`w:linkStyles`).
+    pub link_styles: bool,
 }
 
 /// Word's compatibility mode for documents that don't state one.
@@ -493,10 +547,15 @@ impl Default for Settings {
             footnote_pr: section::NoteProps::default(),
             endnote_pr: section::NoteProps::default(),
             protection: None,
+            protect_formatting: false,
+            protect_hash: Vec::new(),
             compat_mode: COMPAT_MODE_CURRENT,
             grid_h: DEFAULT_GRID,
             grid_v: DEFAULT_GRID,
             math: None,
+            bib_style: None,
+            attached_template: None,
+            link_styles: false,
         }
     }
 }
@@ -743,9 +802,19 @@ impl Document {
 
     /// The whole text of a story, paragraphs separated by `\n` (tables: cells by `\t`).
     pub fn plain_text(&self, s: StoryRef) -> String {
+        self.story_text(s, false)
+    }
+
+    /// [`Self::plain_text`] as it reads on screen: symbol-font characters (Wingdings…) as their
+    /// Unicode equivalents ([`Paragraph::shown_text`]).
+    pub fn shown_text(&self, s: StoryRef) -> String {
+        self.story_text(s, true)
+    }
+
+    fn story_text(&self, s: StoryRef, shown: bool) -> String {
         let mut out = String::new();
         if let Some(bl) = self.story(s) {
-            text_of(bl, &mut out, 0);
+            text_of(bl, &mut out, 0, shown);
         }
         if out.ends_with('\n') {
             out.pop();
@@ -823,14 +892,22 @@ impl Document {
         id
     }
 
-    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit).
+    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit,
+    /// including generated numbered-list labels).
     pub fn word_count(&self) -> usize {
-        count_words(&self.plain_text(StoryRef::Body))
+        self.story_word_count(StoryRef::Body)
     }
 
     /// Word's default count: the body plus its text boxes, footnotes and endnotes.
     pub fn word_count_including_notes(&self) -> usize {
-        self.counted_stories().iter().map(|s| count_words(&self.plain_text(*s))).sum()
+        self.counted_stories().iter().map(|s| self.story_word_count(*s)).sum()
+    }
+
+    /// Word count of one story, including generated numbered-list labels.
+    pub fn story_word_count(&self, s: StoryRef) -> usize {
+        let Some(bl) = self.story(s) else { return 0 };
+        let mut counters = numbering::Counters::default();
+        story_word_count_of(bl, &self.numbering, &self.styles, &mut counters, 0)
     }
 
     /// The body, then the text boxes, footnotes and endnotes it shows (nested ones too), in
@@ -1026,6 +1103,49 @@ impl Document {
         out
     }
 
+    /// A drawing id no shape uses yet (for gluing a connector to a shape that has none).
+    pub fn next_shape_id(&self) -> u32 {
+        let mut max = 0u32;
+        let mut see = |o: &InlineObject| match o {
+            InlineObject::Shape { extra, .. } => max = max.max(extra.id),
+            InlineObject::Group { children, .. } => {
+                for c in children {
+                    if let InlineObject::Shape { extra, .. } = &c.obj {
+                        max = max.max(extra.id);
+                    }
+                }
+            }
+            _ => {}
+        };
+        for blocks in std::iter::once(&self.body).chain(self.parts.values().map(|p| &p.blocks)) {
+            for b in blocks {
+                edit::each_para(b, 0, &mut |p| p.objects.iter().for_each(&mut see));
+            }
+        }
+        max.saturating_add(1).max(1)
+    }
+
+    /// Change every inline object in every story (paragraphs inside tables too), copying only
+    /// the blocks whose paragraphs `wants` says have objects to change.
+    pub fn objects_mut(&mut self, wants: &dyn Fn(&InlineObject) -> bool, f: &mut dyn FnMut(&mut InlineObject)) {
+        let mut stories: Vec<&mut Blocks> = vec![&mut self.body];
+        stories.extend(self.parts.values_mut().map(|p| &mut p.blocks));
+        for blocks in stories {
+            for b in blocks.iter_mut() {
+                let mut any = false;
+                edit::each_para(b, 0, &mut |p| any |= p.objects.iter().any(wants));
+                if any {
+                    edit::each_para_mut(Arc::make_mut(b), 0, &mut |p| {
+                        if p.objects.iter().any(wants) {
+                            p.objects.iter_mut().filter(|o| wants(o)).for_each(&mut *f);
+                            p.touch();
+                        }
+                    });
+                }
+            }
+        }
+    }
+
     /// Number of paragraphs in the body (all depths).
     pub fn paragraph_count(&self) -> usize {
         self.para_paths(StoryRef::Body).len()
@@ -1070,6 +1190,47 @@ impl Document {
         self.custom_props.len() != n
     }
 
+    /// Ranges that stay editable while the document is protected (Restrict Editing exceptions),
+    /// in document order across every story: the [`InlineObject::PermStart`]'s id, group and
+    /// editor, its start (just after the marker) and its end (at the matching
+    /// [`InlineObject::PermEnd`], or the end of the story when it has none).
+    pub fn perm_ranges(&self) -> Vec<PermRange> {
+        let mut out: Vec<PermRange> = Vec::new();
+        let stories = std::iter::once(StoryRef::Body).chain(self.parts.keys().map(|k| StoryRef::Part(*k)));
+        for story in stories {
+            let mut open: Vec<usize> = Vec::new();
+            for path in self.para_paths(story) {
+                let Some(p) = self.para(story, &path) else { continue };
+                for off in p.object_offsets() {
+                    match p.object_at(off) {
+                        Some(InlineObject::PermStart { id, group, editor }) => {
+                            let start = Pos { story, path: path.clone(), off: off + para::OBJ.len_utf8() };
+                            open.push(out.len());
+                            out.push(PermRange { id: *id, group: group.clone(), editor: editor.clone(), start: start.clone(), end: start });
+                        }
+                        Some(InlineObject::PermEnd { id }) => {
+                            if let Some(k) = open.iter().rposition(|i| out.get(*i).is_some_and(|r| r.id == *id)) {
+                                let i = open.remove(k);
+                                if let Some(r) = out.get_mut(i) {
+                                    r.end = Pos { story, path: path.clone(), off };
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // A range left open runs to the end of its story.
+            let end = self.end_of(story);
+            for i in open {
+                if let Some(r) = out.get_mut(i) {
+                    r.end = end.clone();
+                }
+            }
+        }
+        out
+    }
+
     /// Bookmark names in the body, in order.
     pub fn bookmarks(&self) -> Vec<(String, Pos)> {
         let mut out = Vec::new();
@@ -1083,6 +1244,25 @@ impl Document {
             }
         }
         out
+    }
+}
+
+/// A range that stays editable while the document is protected; see [`Document::perm_ranges`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PermRange {
+    pub id: u32,
+    /// Editing group (`everyone`, `editors`…); empty when the range names an editor.
+    pub group: String,
+    /// The one editor the range is for; empty for a group.
+    pub editor: String,
+    pub start: Pos,
+    pub end: Pos,
+}
+
+impl PermRange {
+    /// Can everyone edit it (rather than one person or group)?
+    pub fn everyone(&self) -> bool {
+        self.group.eq_ignore_ascii_case("everyone")
     }
 }
 
@@ -1115,14 +1295,14 @@ fn walk(bl: &Blocks, prefix: &mut Vec<u32>, out: &mut Vec<Path>, depth: usize) {
     }
 }
 
-fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
+fn text_of(bl: &Blocks, out: &mut String, depth: usize, shown: bool) {
     if depth > 16 {
         return;
     }
     for b in bl {
         match &**b {
             Block::Para(p) => {
-                out.push_str(&p.plain_text());
+                out.push_str(&if shown { p.shown_text() } else { p.plain_text() });
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -1130,7 +1310,7 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
                     let mut cells = Vec::new();
                     for c in &row.cells {
                         let mut s = String::new();
-                        text_of(&c.blocks, &mut s, depth + 1);
+                        text_of(&c.blocks, &mut s, depth + 1, shown);
                         cells.push(s.trim_end_matches('\n').replace('\n', " "));
                     }
                     out.push_str(&cells.join("\t"));
@@ -1139,6 +1319,35 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize) {
             }
         }
     }
+}
+
+fn story_word_count_of(bl: &Blocks, numbering: &Numbering, styles: &styles::StyleSheet, counters: &mut numbering::Counters, depth: usize) -> usize {
+    if depth > 16 {
+        return 0;
+    }
+    let mut total = 0usize;
+    for b in bl {
+        match &**b {
+            Block::Para(p) => {
+                let n = p.props.numbering.or_else(|| styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0);
+                if let Some(n) = n
+                    && let Some((label, def)) = counters.next_label(numbering, n.num, n.level)
+                    && !matches!(def.format, section::NumFormat::Bullet | section::NumFormat::None)
+                {
+                    total = total.saturating_add(count_words(&label));
+                }
+                total = total.saturating_add(count_words(&p.plain_text()));
+            }
+            Block::Table(t) => {
+                for row in &t.rows {
+                    for c in &row.cells {
+                        total = total.saturating_add(story_word_count_of(&c.blocks, numbering, styles, counters, depth + 1));
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 #[cfg(test)]

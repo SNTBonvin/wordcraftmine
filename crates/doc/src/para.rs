@@ -294,6 +294,10 @@ pub enum ShapeKind {
     TextBox,
     /// A shape drawn point by point, such as ink (its geometry is the shape's `freeform`).
     Freeform,
+    /// Connectors: lines whose ends can be glued to other shapes (see [`crate::connector`]).
+    StraightConnector,
+    ElbowConnector,
+    CurvedConnector,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -404,6 +408,9 @@ pub enum InlineObject {
         /// Shadow, glow and soft edges.
         #[serde(default, skip_serializing_if = "crate::effects::ShapeEffects::is_empty")]
         effects: crate::effects::ShapeEffects,
+        /// Drawing id, text warp, connector ends and arrowheads.
+        #[serde(default, skip_serializing_if = "crate::connector::ShapeExtra::is_empty")]
+        extra: crate::connector::ShapeExtra,
     },
     /// Pictures, shapes and text boxes grouped into one object (Layout › Arrange › Group): it
     /// moves, wraps and resizes as one. Its members are laid out in the group's own coordinate
@@ -440,8 +447,8 @@ pub enum InlineObject {
         code: bool,
     },
     /// The start of a field whose result is ordinary content — formatted, possibly spanning
-    /// paragraphs — up to the matching [`InlineObject::FieldEnd`]. Citation managers' `ADDIN`
-    /// fields (Zotero, Mendeley, EndNote) are kept this way; `instr` is the field code. See
+    /// paragraphs — up to the matching [`InlineObject::FieldEnd`]. Imported TOCs and citation
+    /// managers' `ADDIN` fields are kept this way; `instr` is the field code. See
     /// [`crate::fields`].
     FieldStart {
         instr: String,
@@ -450,6 +457,13 @@ pub enum InlineObject {
     },
     /// The end of the innermost open [`InlineObject::FieldStart`].
     FieldEnd,
+    /// The start of a content control whose content is what follows, up to the matching
+    /// [`InlineObject::ControlEnd`]. See [`crate::control`].
+    ControlStart {
+        control: Box<crate::control::ContentControl>,
+    },
+    /// The end of the innermost open [`InlineObject::ControlStart`].
+    ControlEnd,
     NoteRef {
         kind: NoteKind,
         /// `Document::parts` id of the note's story.
@@ -468,6 +482,20 @@ pub enum InlineObject {
         id: u32,
     },
     CommentEnd {
+        id: u32,
+    },
+    /// The start of a range that stays editable while the document is protected (Restrict
+    /// Editing exceptions, `w:permStart`): for everyone (`group` = `everyone`), another editing
+    /// group, or one editor (`editor`, a user name or address).
+    PermStart {
+        id: u32,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        group: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        editor: String,
+    },
+    /// The end of the editable range [`InlineObject::PermStart`] with the same `id` opened.
+    PermEnd {
         id: u32,
     },
     /// An equation: its linear format (`x=(-b±√(b^2-4ac))/2a`, for plain text) and structure.
@@ -638,8 +666,12 @@ impl InlineObject {
                 | InlineObject::BookmarkEnd { .. }
                 | InlineObject::CommentStart { .. }
                 | InlineObject::CommentEnd { .. }
+                | InlineObject::PermStart { .. }
+                | InlineObject::PermEnd { .. }
                 | InlineObject::FieldStart { .. }
                 | InlineObject::FieldEnd
+                | InlineObject::ControlStart { .. }
+                | InlineObject::ControlEnd
         )
     }
     /// A drawing's description (alternative text), wherever it is kept.
@@ -796,6 +828,30 @@ impl Paragraph {
             } else {
                 out.push(c);
             }
+        }
+        out
+    }
+    /// [`Self::plain_text`] as it reads on screen: characters in runs set in a symbol font
+    /// (Symbol, Wingdings…) become their standard Unicode equivalents
+    /// ([`crate::symbol_fonts`]). For copying as text and plain-text export; the stored text is
+    /// unchanged.
+    pub fn shown_text(&self) -> String {
+        let mut out = String::with_capacity(self.text.len());
+        let mut k = 0;
+        let mut runs = self.run_ranges().peekable();
+        for (i, c) in self.text.char_indices() {
+            while runs.peek().is_some_and(|(r, _)| r.end <= i) {
+                runs.next();
+            }
+            if c == OBJ {
+                if let Some(o) = self.objects.get(k) {
+                    out.push_str(o.plain_text());
+                }
+                k += 1;
+                continue;
+            }
+            let font = runs.peek().filter(|(r, _)| r.contains(&i)).and_then(|(_, p)| p.font.as_deref());
+            out.push(font.and_then(|f| crate::symbol_fonts::symbol_char(f, c)).unwrap_or(c));
         }
         out
     }
@@ -1008,7 +1064,12 @@ impl Paragraph {
         if self.runs.is_empty() || a == 0 {
             // Keep the formatting of what's deleted for the mark when emptying.
             if b == self.text.len() {
-                self.mark = self.props_of_char(a).clone();
+                // Formatting only: the mark is a tracked change of its own or it is not, whatever
+                // revision the deleted text was part of.
+                let revisions = (self.mark.ins, self.mark.del, self.mark.fmt_change.clone());
+                let mut mark = self.props_of_char(a).clone();
+                (mark.ins, mark.del, mark.fmt_change) = revisions;
+                self.mark = mark;
             }
         }
         let k0 = self.objects_before(a);
@@ -1026,6 +1087,33 @@ impl Paragraph {
         }
         self.normalize();
         self.touch();
+        Ok(())
+    }
+
+    /// Delete `a..b` except the one-character objects at the offsets in `keep` (control
+    /// markers a deletion leaves in place).
+    pub fn delete_except(&mut self, a: usize, b: usize, keep: &[usize]) -> Result<()> {
+        let (a, b) = (a.min(b), a.max(b));
+        let mut keep: Vec<usize> =
+            keep.iter().copied().filter(|k| *k >= a && k + OBJ.len_utf8() <= b && self.text.get(*k..).is_some_and(|t| t.starts_with(OBJ))).collect();
+        if keep.is_empty() {
+            return self.delete(a, b);
+        }
+        keep.sort_unstable();
+        keep.dedup();
+        // Pieces between the kept objects, last first so earlier offsets stay valid.
+        let mut pieces = Vec::with_capacity(keep.len() + 1);
+        let mut from = a;
+        for k in &keep {
+            pieces.push((from, *k));
+            from = k + OBJ.len_utf8();
+        }
+        pieces.push((from, b));
+        for (x, y) in pieces.into_iter().rev() {
+            if y > x {
+                self.delete(x, y)?;
+            }
+        }
         Ok(())
     }
 
@@ -1117,19 +1205,24 @@ impl Paragraph {
         self.touch();
     }
 
-    /// Previous grapheme boundary before `off` (0 at start).
+    /// Previous caret stop before `off` (0 at start): a grapheme boundary that doesn't split a
+    /// complex-script syllable ([`crate::cluster`]).
     pub fn prev_boundary(&self, off: usize) -> usize {
-        use unicode_segmentation::GraphemeCursor;
-        let off = self.clamp(off);
-        let mut c = GraphemeCursor::new(off, self.text.len(), true);
-        c.prev_boundary(&self.text, 0).ok().flatten().unwrap_or(0)
+        crate::cluster::prev_cluster(&self.text, self.clamp(off))
     }
-    /// Next grapheme boundary after `off` (len at end).
+    /// Next caret stop after `off` (len at end), see [`Self::prev_boundary`].
     pub fn next_boundary(&self, off: usize) -> usize {
-        use unicode_segmentation::GraphemeCursor;
+        crate::cluster::next_cluster(&self.text, self.clamp(off))
+    }
+    /// Where Backspace at `off` deletes from: the previous character in the Brahmic scripts
+    /// (Myanmar, Khmer, Devanagari, Thai…), where it removes one vowel sign or stacked consonant
+    /// at a time, otherwise the previous caret stop.
+    pub fn backspace_from(&self, off: usize) -> usize {
         let off = self.clamp(off);
-        let mut c = GraphemeCursor::new(off, self.text.len(), true);
-        c.next_boundary(&self.text, 0).ok().flatten().unwrap_or(self.text.len())
+        match self.text.get(..off).and_then(|t| t.char_indices().next_back()) {
+            Some((i, c)) if crate::cluster::backspaces_by_char(c) => i,
+            _ => self.prev_boundary(off),
+        }
     }
     /// Start of the word at or before `off` (Ctrl+Left).
     pub fn word_start(&self, off: usize) -> usize {
@@ -1346,6 +1439,24 @@ mod tests {
         let t = p.split_off(p.len()).unwrap();
         assert!(t.is_empty());
         assert_eq!(t.mark.bold, Some(true));
+    }
+
+    #[test]
+    fn emptying_a_paragraph_keeps_the_formatting_but_not_the_revisions_of_its_text() {
+        let mut props = bold();
+        props.ins = Some(3);
+        props.del = Some(4);
+        let mut p = Paragraph::with_text("Hello", props);
+        p.mark = bold();
+        p.delete(0, 5).unwrap();
+        assert!(p.is_empty());
+        assert_eq!(p.mark.bold, Some(true));
+        assert_eq!((p.mark.ins, p.mark.del), (None, None));
+        // A mark that is itself a tracked change keeps its own revision.
+        let mut p = Paragraph::with_text("Hello", bold());
+        p.mark.del = Some(7);
+        p.delete(0, 5).unwrap();
+        assert_eq!((p.mark.ins, p.mark.del), (None, Some(7)));
     }
 
     #[test]

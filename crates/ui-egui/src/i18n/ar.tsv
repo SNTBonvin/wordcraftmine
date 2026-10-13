@@ -2020,3 +2020,468 @@ preview	Title	العنوان
 	Turkish	التركية
 	Ukrainian	الأوكرانية
 	{language} is now the document's default language.	أصبحت {language} الآن اللغة الافتراضية للمستند.
+	0 or More Characters	صفر أو أكثر من المحارف
+	1. Formatting restrictions	1. قيود التنسيق
+	2. Editing restrictions	2. قيود التحرير
+	3. Start enforcement	3. بدء التطبيق
+	<< Less	<< أقل
+	Above Chart	أعلى المخطط
+	Accent Gradient	تدرج بلون التمييز
+	Accent with Reflection	لون التمييز مع انعكاس
+	Accent {n}	لون التمييز {n}
+	Add Chart Element	إضافة عنصر مخطط
+	Add Font…	إضافة خط…
+	Add Row	إضافة صف
+	Add Series	إضافة سلسلة
+	Add Shape	إضافة شكل
+	Add\nShape	إضافة\nشكل
+	Added Fonts	الخطوط المضافة
+	All files	كل الملفات
+	All Levels	كل المستويات
+	All pages	كل الصفحات
+	All pages in the range	كل الصفحات في النطاق
+	Allow line breaks	السماح بفواصل الأسطر
+	Animate the caret (it glides and fades)	تحريك مؤشر الإدراج (ينزلق ويتلاشى)
+	Animation	الحركة
+	Animation effects:	مؤثرات الحركة:
+	Another file	ملف آخر
+	Any Character	أي محرف
+	Any Digit	أي رقم
+	Any Letter	أي حرف
+	APA	APA
+	Apply as you type	التطبيق أثناء الكتابة
+	Arch Down	قوس لأسفل
+	Arch Up	قوس لأعلى
+	Area	مساحة
+	As you type	أثناء الكتابة
+	Asian text font:	خط النص الآسيوي:
+	Attach Template	إرفاق قالب
+	Attach…	إرفاق…
+	AutoCorrect	تصحيح تلقائي
+	AutoFit Column by Double-Clicking	ضبط عرض العمود تلقائيًا بالنقر المزدوج
+	AutoFormat As You Type	تنسيق تلقائي أثناء الكتابة
+	Automatic ({region})	تلقائي ({region})
+	Automatic bulleted lists	قوائم نقطية تلقائية
+	Automatic numbered lists	قوائم مرقمة تلقائية
+	Automatically Update Document Styles	تحديث أنماط المستند تلقائيًا
+	Automatically update document styles	تحديث أنماط المستند تلقائيًا
+	AutoSave writes your changes to the file a moment after you stop typing.	يكتب الحفظ التلقائي تغييراتك في الملف بعد لحظة من توقفك عن الكتابة.
+	Basic Cycle	دورة أساسية
+	Basic List	قائمة أساسية
+	Basic Matrix	مصفوفة أساسية
+	Basic Process	عملية أساسية
+	Basic Pyramid	هرم أساسي
+	Basic Radial	مخطط شعاعي أساسي
+	Basic Venn	مخطط فن أساسي
+	Beginning of Word	بداية الكلمة
+	Blue:	الأزرق:
+	Border lines	خطوط الحدود
+	Browse in WordCraft…	استعراض داخل WordCraft…
+	Building Block Gallery Content Control	عنصر تحكم بالمحتوى لمعرض اللبنات الأساسية
+	Can't be deleted	لا يمكن حذفه
+	Capitalize first letter of sentences	تكبير أول حرف في الجمل
+	Capitalize first letter of table cells	تكبير أول حرف في خلايا الجدول
+	Capitalize names of days	تكبير أسماء الأيام
+	Capitalize the first word of a sentence	تكبير أول كلمة في الجملة
+	Caret Character	محرف الإقحام
+	Case changes	تغييرات حالة الأحرف
+	Categories	الفئات
+	Category {n}	الفئة {n}
+	Centimeters	سنتيمترات
+	Change Chart Type	تغيير نوع المخطط
+	Change Colors	تغيير الألوان
+	Change Layout	تغيير التخطيط
+	Change to Level 6	تغيير إلى المستوى 6
+	Change to Level 7	تغيير إلى المستوى 7
+	Change to Level 8	تغيير إلى المستوى 8
+	Change to Level 9	تغيير إلى المستوى 9
+	Change\nChart Type	تغيير\nنوع المخطط
+	Change\nColors	تغيير\nالألوان
+	Character in Range	محرف ضمن النطاق
+	Character level	مستوى المحرف
+	Chart Design	تصميم المخطط
+	Chart Layouts	تخطيطات المخطط
+	Chart Title	عنوان المخطط
+	Check Box Content Control	عنصر تحكم بالمحتوى: خانة اختيار
+	Check spelling as you type	التدقيق الإملائي أثناء الكتابة
+	Checked styles are allowed:	الأنماط المحددة مسموح بها:
+	Checked symbol	رمز التحديد
+	Chevron Down	شيفرون لأسفل
+	Chevron Up	شيفرون لأعلى
+	Chicago	Chicago
+	Choose List Item	اختيار عنصر من القائمة
+	Click to switch back to inserting	انقر للعودة إلى وضع الإدراج
+	Clipboard Contents	محتويات الحافظة
+	Close Outline View	إغلاق عرض المخطط التفصيلي
+	Close Outline\nView	إغلاق عرض\nالمخطط التفصيلي
+	Clustered Bar	أشرطة مجمّعة
+	Clustered Column	أعمدة مجمّعة
+	Collapse	طي
+	Collate copies	ترتيب النسخ
+	Color model:	نموذج اللون:
+	Colorful	ملوّن
+	Colors:	الألوان:
+	Combine Documents	دمج المستندات
+	Combo Box Content Control	عنصر تحكم بالمحتوى: مربع تحرير وسرد
+	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	التعليقات بجانب كل صفحة والتغييرات المتعقبة في ملفات PDF والمطبوعات والصور؛ وقائمة بالتعليقات في نهاية صفحات الويب وملفات Markdown والنصوص.
+	Compare Documents	مقارنة المستندات
+	Compared: {changes} changes	تمت المقارنة: {changes} تغيير
+	Comparing with another file needs the desktop app.	تتطلب المقارنة مع ملف آخر تطبيق سطح المكتب.
+	Comparison settings	إعدادات المقارنة
+	Connect Shapes	ربط الأشكال
+	Content Control at Selection	عنصر التحكم بالمحتوى عند التحديد
+	Content Control Properties	خصائص عنصر التحكم بالمحتوى
+	Contents can't be edited	لا يمكن تحرير المحتويات
+	Context	السياق
+	Controls	عناصر التحكم
+	Copies	النسخ
+	Copy Styles	نسخ الأنماط
+	Correct accidental usage of cAPS LOCK key	تصحيح الاستخدام العرضي لمفتاح Caps Lock
+	Correct TWo INitial CApitals	تصحيح حرفين كبيرين في بداية الكلمة
+	Couldn't make WordCraft the default: {error}	تعذّر جعل WordCraft التطبيق الافتراضي: {error}
+	Create Graphic	إنشاء رسم
+	Current	الحالي
+	Current page	الصفحة الحالية
+	Curved Arrow Connector	موصل سهم منحنٍ
+	Curved Connector	موصل منحنٍ
+	Custom dictionary	قاموس مخصص
+	Custom range	نطاق مخصص
+	Cycle	دورة
+	Dark with Shadow	داكن مع ظل
+	Data Labels	تسميات البيانات
+	Date format	تنسيق التاريخ
+	Date Picker Content Control	عنصر تحكم بالمحتوى: منتقي التاريخ
+	Deflate	تقليص
+	Deleted	محذوف
+	Demote to Body Text	خفض إلى نص أساسي
+	Design Mode	وضع التصميم
+	Detach Template	فصل القالب
+	Developer	المطوّر
+	Display text	نص العرض
+	Do Not Check Spelling or Grammar	عدم التدقيق الإملائي أو النحوي
+	Document template:	قالب المستند:
+	Documents	المستندات
+	Don't capitalize after:	عدم التكبير بعد:
+	Doughnut	دونات
+	Drop-Down List Content Control	عنصر تحكم بالمحتوى: قائمة منسدلة
+	Edit Data	تحرير البيانات
+	Edit Items	تحرير العناصر
+	Edit\nData	تحرير\nالبيانات
+	Editing in this document is restricted.	التحرير في هذا المستند مقيّد.
+	Elbow Arrow Connector	موصل سهم مرفقي
+	Elbow Connector	موصل مرفقي
+	End of Word	نهاية الكلمة
+	Even pages only	الصفحات الزوجية فقط
+	Every change is recorded as a tracked change.	يُسجَّل كل تغيير كتغيير متعقَّب.
+	Everyone	الجميع
+	Exceptions (optional)	الاستثناءات (اختياري)
+	Exceptions…	الاستثناءات…
+	Expand or Collapse Heading	توسيع العنوان أو طيّه
+	Expression	تعبير
+	Extend Selection by Units	توسيع التحديد بوحدات
+	Extra space	مسافة إضافية
+	Fields	الحقول
+	File name:	اسم الملف:
+	Filling in forms	تعبئة النماذج
+	Find Next Editable Region	البحث عن منطقة التحرير التالية
+	Find What Expression	البحث عن تعبير
+	Find What Text	البحث عن نص
+	Fix Position on Page	تثبيت الموضع في الصفحة
+	Footnotes and endnotes	الحواشي السفلية والتعليقات الختامية
+	Formatting exceptions	استثناءات التنسيق
+	Formatting marks	علامات التنسيق
+	Formatting, case changes, white space and tables are compared; the other settings are kept for later.	تتم مقارنة التنسيق وتغييرات حالة الأحرف والمسافات البيضاء والجداول؛ وتُحفظ الإعدادات الأخرى لوقت لاحق.
+	Fractions (1/2) as fraction characters (½)	الكسور (1/2) كمحارف كسرية (½)
+	GB/T 7714	GB/T 7714
+	GOST (name sort)	GOST (الترتيب حسب الاسم)
+	GOST (title sort)	GOST (الترتيب حسب العنوان)
+	Graphic	رسم
+	Green:	الأخضر:
+	Harvard (Anglia)	Harvard (Anglia)
+	Headers and footers	الرؤوس والتذييلات
+	Hex:	سداسي عشري:
+	Hidden text	نص مخفي
+	Hide White Space	إخفاء المسافة البيضاء
+	Hierarchy	تسلسل هرمي
+	Hindi	الهندية
+	Hollow	مفرغ
+	Home folder	المجلد الرئيسي
+	Hue:	تدرج اللون:
+	Hyphens (--) as dashes (—)	الواصلات (--) كشرطات (—)
+	IEEE	IEEE
+	Ignore punctuation characters	تجاهل علامات الترقيم
+	Ignore web and file addresses	تجاهل عناوين الويب والملفات
+	Ignore white-space characters	تجاهل المسافات البيضاء
+	Ignore words in capitals	تجاهل الكلمات المكتوبة بأحرف كبيرة
+	Ignore words with numbers	تجاهل الكلمات التي تحتوي على أرقام
+	In Default apps, choose WordCraft for the document types you want it to open.	في «التطبيقات الافتراضية»، اختر WordCraft لأنواع المستندات التي تريد أن يفتحها.
+	In equations, typing a name after a backslash replaces it with its symbol.	في المعادلات، تؤدي كتابة اسم بعد الشرطة المائلة العكسية إلى استبداله برمزه.
+	Inches	بوصات
+	Inflate	تضخيم
+	Initials:	الأحرف الأولى:
+	Insert Caption…	إدراج تسمية توضيحية…
+	Insert Chart	إدراج مخطط
+	Insert Row or Column by Clicking	إدراج صف أو عمود بالنقر
+	Insert SmartArt	إدراج SmartArt
+	Inside:	الداخل:
+	Interface	الواجهة
+	Interface language	لغة الواجهة
+	Internet addresses as links	عناوين الإنترنت كارتباطات
+	ISO 690 (author-date)	ISO 690 (المؤلف والتاريخ)
+	ISO 690 (numerical)	ISO 690 (رقمي)
+	Label changes with:	تمييز التغييرات بـ:
+	Large	كبير
+	Latin text font:	خط النص اللاتيني:
+	Layouts	التخطيطات
+	Legend	مفتاح المخطط
+	Level 4	المستوى 4
+	Level 5	المستوى 5
+	Level 6	المستوى 6
+	Level 7	المستوى 7
+	Level 8	المستوى 8
+	Level 9	المستوى 9
+	Light with Outline	فاتح مع مخطط تفصيلي
+	Limit and	الحد و
+	Limit formatting to a selection of styles	قصر التنسيق على مجموعة مختارة من الأنماط
+	List	قائمة
+	List entries	عناصر القائمة
+	Log	لوغاريتمي
+	Lum:	السطوع:
+	Make WordCraft the default for Word documents…	جعل WordCraft الافتراضي لمستندات Word…
+	Manual Line Break	فاصل أسطر يدوي
+	Manual Page Break	فاصل صفحات يدوي
+	Mark grammar errors as you type	تمييز الأخطاء النحوية أثناء الكتابة
+	Match prefix	مطابقة البادئة
+	Match suffix	مطابقة اللاحقة
+	Math AutoCorrect	تصحيح تلقائي للرياضيات
+	Measurement units:	وحدات القياس:
+	Millimeters	ملّيمترات
+	Mirror indents	مسافات بادئة معكوسة
+	MLA	MLA
+	More >>	المزيد >>
+	More Colors…	مزيد من الألوان…
+	Move Down	نقل لأسفل
+	Move Table by Dragging	نقل الجدول بالسحب
+	Move Up	نقل لأعلى
+	Move with Text	نقل مع النص
+	Moves	عمليات النقل
+	New comments and tracked changes are recorded under this name and these initials.	تُسجَّل التعليقات الجديدة والتغييرات المتعقبة بهذا الاسم وهذه الأحرف الأولى.
+	New document	مستند جديد
+	New word	كلمة جديدة
+	No changes (read only)	بلا تغييرات (للقراءة فقط)
+	No Fill	بلا تعبئة
+	No Outline	بلا مخطط
+	No Reflection	بلا انعكاس
+	No Transform	بلا تحويل
+	No words yet. Add to Dictionary on a misspelled word puts it here.	لا توجد كلمات بعد. تظهر هنا الكلمات التي تضيفها إلى القاموس من كلمة خاطئة إملائيًا.
+	Not	ليس
+	Num Occurrences	عدد مرات الظهور
+	Numerals	الأرقام
+	Numerals:	الأرقام:
+	Odd pages only	الصفحات الفردية فقط
+	Off	إيقاف
+	On	تشغيل
+	On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off.	تشغيل: ينزلق مؤشر الإدراج إلى مكانه الجديد عند الكتابة أو استخدام مفاتيح الأسهم، ويتلاشى وميضه. إيقاف: ينتقل فورًا ويومض بين الظهور والاختفاء.
+	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	تشغيل: يفتح WordCraft على ملف ‹ الرئيسية، مع مستند فارغ والقوالب ومستنداتك الأخيرة. إيقاف: يفتح مستندًا فارغًا.
+	One line per item. Enter adds an item.	سطر واحد لكل عنصر. يضيف Enter عنصرًا.
+	Only allow this kind of editing:	السماح بهذا النوع من التحرير فقط:
+	Only comments can be added, except in regions marked editable.	يمكن إضافة التعليقات فقط، عدا المناطق المعلَّمة بأنها قابلة للتحرير.
+	Only form fields can be filled in.	يمكن تعبئة حقول النموذج فقط.
+	Only the allowed styles can be applied.	يمكن تطبيق الأنماط المسموح بها فقط.
+	Open a file with WordCraft's own browser when the system file dialog doesn't appear.	افتح ملفًا بمتصفح الملفات الخاص بـ WordCraft عندما لا يظهر مربع حوار الملفات الخاص بالنظام.
+	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	يفتح ملفات .docx و.doc و.rtf و.odt وقوالب Word باستخدام WordCraft من الآن فصاعدًا.
+	Opens Settings › Default apps, where you choose WordCraft for .docx and the other document types.	يفتح الإعدادات ‹ التطبيقات الافتراضية، حيث تختار WordCraft لملفات .docx وأنواع المستندات الأخرى.
+	Ordinals (1st) as superscript	الأعداد الترتيبية (1st) بخط مرتفع
+	Organizer	المنظِّم
+	Organizer…	المنظِّم…
+	Original document	المستند الأصلي
+	Outline State	حالة المخطط التفصيلي
+	Outline Tools	أدوات المخطط التفصيلي
+	Outlining	المخطط التفصيلي
+	Outside:	الخارج:
+	Overtype	استبدال
+	Overtype (typing replaces the characters after the caret)	الكتابة فوق النص (تستبدل الكتابة المحارف الواقعة بعد مؤشر الإدراج)
+	Page display	عرض الصفحة
+	Pages like 1-3, 5	صفحات مثل 1-3، 5
+	Paragraph Character	محرف الفقرة
+	Paragraph marks	علامات الفقرات
+	Pastes the clipboard's picture.	يلصق الصورة الموجودة في الحافظة.
+	Personalize	تخصيص
+	Picas	بيكا
+	Picture	صورة
+	Picture Content Control	عنصر تحكم بالمحتوى: صورة
+	Pie	دائري
+	Placeholder text	نص العنصر النائب
+	Plain Text Content Control	عنصر تحكم بالمحتوى: نص عادي
+	Points	نقاط
+	Possible spelling mistake	خطأ إملائي محتمل
+	Previous 1 or More	واحد أو أكثر من السابق
+	Previous Page	الصفحة السابقة
+	Print Markup	طباعة العلامات
+	Print the page color	طباعة لون الصفحة
+	Print to PDF	طباعة إلى PDF
+	Printing	الطباعة
+	Process	عملية
+	Promote to Heading 1	ترقية إلى عنوان 1
+	Proofing language	لغة التدقيق
+	Put the caret in a content control first.	ضع مؤشر الإدراج داخل عنصر تحكم بالمحتوى أولًا.
+	Pyramid	هرم
+	Reading	القراءة
+	Reading Column Width	عرض عمود القراءة
+	Reading Line Spacing	تباعد أسطر القراءة
+	Reading Text Size	حجم نص القراءة
+	Recent Colors	الألوان الأخيرة
+	Recent documents to show:	عدد المستندات الأخيرة المعروضة:
+	Recipient lists	قوائم المستلمين
+	Red:	الأحمر:
+	Reflection	انعكاس
+	Region:	المنطقة:
+	Regular expressions	تعبيرات نمطية
+	Relationship	علاقة
+	Remove Added Font	إزالة الخط المضاف
+	Remove Content Control	إزالة عنصر التحكم بالمحتوى
+	Remove row	إزالة الصف
+	Remove series	إزالة السلسلة
+	Remove the control once edited	إزالة عنصر التحكم بعد تحريره
+	Remove the space before the punctuation	إزالة المسافة قبل علامة الترقيم
+	Rename Style	إعادة تسمية النمط
+	Repeating Section Content Control	عنصر تحكم بالمحتوى: مقطع متكرر
+	Replace as you type	الاستبدال أثناء الكتابة
+	Replace text as you type	استبدال النص أثناء الكتابة
+	Replace:	استبدال:
+	Reset Graphic	إعادة تعيين الرسم
+	Reset\nGraphic	إعادة تعيين\nالرسم
+	Resize Table by Dragging	تغيير حجم الجدول بالسحب
+	Revised document	المستند المُنقَّح
+	Rich Text Content Control	عنصر تحكم بالمحتوى: نص منسق
+	Sat:	التشبع:
+	Save documents	حفظ المستندات
+	Save these pages as PDF…	حفظ هذه الصفحات بصيغة PDF…
+	Scatter	مبعثر
+	Search	بحث
+	Search Options	خيارات البحث
+	Section Break	فاصل مقطع
+	Section Character	محرف المقطع
+	Select Column	تحديد العمود
+	Select Heading and Content	تحديد العنوان والمحتوى
+	Select Table Cells by Clicking	تحديد خلايا الجدول بالنقر
+	Select text, then tick who can still edit it.	حدّد النص، ثم علِّم من يمكنه الاستمرار في تحريره.
+	Selected pages	الصفحات المحددة
+	Series name	اسم السلسلة
+	Series {n}	السلسلة {n}
+	Set Date	تعيين التاريخ
+	Settings…	الإعدادات…
+	Show All Levels	إظهار كل المستويات
+	Show changes at:	إظهار التغييرات عند:
+	Show changes in:	إظهار التغييرات في:
+	Show First Line Only	إظهار السطر الأول فقط
+	Show KeyTips (Alt or F10)	إظهار تلميحات المفاتيح (Alt أو F10)
+	Show Level	إظهار المستوى
+	Show Level 1	إظهار المستوى 1
+	Show Level 2	إظهار المستوى 2
+	Show Level 3	إظهار المستوى 3
+	Show Level 4	إظهار المستوى 4
+	Show Level 5	إظهار المستوى 5
+	Show Level 6	إظهار المستوى 6
+	Show Level 7	إظهار المستوى 7
+	Show Level 8	إظهار المستوى 8
+	Show Level 9	إظهار المستوى 9
+	Show Text Formatting	إظهار تنسيق النص
+	Show the mini toolbar when text is selected	إظهار شريط الأدوات المصغّر عند تحديد نص
+	Show the Start screen when WordCraft starts	إظهار شاشة البدء عند تشغيل WordCraft
+	Showing the first {count} items.	عرض أول {count} عنصر.
+	Shows a tree: each item below the item it belongs to.	يعرض شجرة: كل عنصر أسفل العنصر الذي يتبعه.
+	Shows items around a central idea: the first item is the centre.	يعرض عناصر حول فكرة مركزية: العنصر الأول هو المركز.
+	Shows items of equal weight as blocks in rows.	يعرض عناصر متساوية الأهمية ككتل في صفوف.
+	Shows overlapping ideas as overlapping circles.	يعرض الأفكار المتداخلة كدوائر متداخلة.
+	Shows parts of a whole as quadrants.	يعرض أجزاء الكل كأرباع.
+	Shows parts that build on each other, largest at the bottom.	يعرض أجزاءً يبني بعضها على بعض، والأكبر في الأسفل.
+	Shows steps in order, left to right, with arrows between them.	يعرض الخطوات بالترتيب من اليسار إلى اليمين مع أسهم بينها.
+	Shows steps that repeat, around a circle.	يعرض الخطوات المتكررة حول دائرة.
+	SIST02	SIST02
+	Slant Down	ميل لأسفل
+	Slant Up	ميل لأعلى
+	Smart quotes instead of straight quotes	علامات اقتباس ذكية بدلًا من المستقيمة
+	SmartArt Design	تصميم SmartArt
+	SmartArt Styles	أنماط SmartArt
+	Smooth scrolling and zooming, and menus and buttons that fade in. Off shows every change at once.	تمرير وتكبير سلسان، وقوائم وأزرار تظهر تدريجيًا. يعرض الإيقاف كل تغيير فورًا.
+	Soft Glow	توهج ناعم
+	Solid Accent	لون تمييز ممتلئ
+	Spaces	المسافات
+	Special	خاص
+	Spelling	الإملاء
+	Spelling and grammar are checked in English (United States).	يجري التدقيق الإملائي والنحوي بالإنجليزية (الولايات المتحدة).
+	Stacked Bar	أشرطة مكدّسة
+	Stacked Column	أعمدة مكدّسة
+	Standard	قياسي
+	Start Enforcing Protection	بدء تطبيق الحماية
+	Start-up	بدء التشغيل
+	Stop Protection	إيقاف الحماية
+	Straight Arrow Connector	موصل سهم مستقيم
+	Straight Connector	موصل مستقيم
+	Style: APA	النمط: APA
+	System	النظام
+	Tab Character	محرف علامة التبويب
+	Tab characters	محارف علامة التبويب
+	Table Properties…	خصائص الجدول…
+	Templates	القوالب
+	Templates and Add-ins	القوالب والوظائف الإضافية
+	Text boxes	مربعات النص
+	Text Fill	تعبئة النص
+	Text Outline	مخطط النص
+	Text Pane	جزء النص
+	The document is read only, except for regions marked editable.	المستند للقراءة فقط، عدا المناطق المعلَّمة بأنها قابلة للتحرير.
+	The password is optional; without it anyone can stop the protection.	كلمة المرور اختيارية؛ وبدونها يمكن لأي شخص إيقاف الحماية.
+	The printer, two-sided printing and pages per sheet are chosen in that dialog.	يجري اختيار الطابعة والطباعة على الوجهين وعدد الصفحات في الورقة في ذلك المربع.
+	The spelling and grammar check is complete.	اكتمل التدقيق الإملائي والنحوي.
+	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	مربع حوار الملفات الخاص بالنظام غير متاح، لذا يعرض WordCraft مربعه الخاص. للحصول على مربع حوار النظام، ثبّت بوابة اختيار الملفات (مثل xdg-desktop-portal-gtk) أو zenity.
+	These marks show even when Show/Hide ¶ is off.	تظهر هذه العلامات حتى عندما يكون إظهار/إخفاء ¶ متوقفًا.
+	This document	هذا المستند
+	This folder can't be read: {error}	تعذّرت قراءة هذا المجلد: {error}
+	This password type isn't supported.	نوع كلمة المرور هذا غير مدعوم.
+	Title Bar	شريط العنوان
+	To open Word documents with WordCraft by default: select one in Finder, choose File › Get Info, pick WordCraft under Open with, then click Change All.	لفتح مستندات Word باستخدام WordCraft افتراضيًا: حدّد أحدها في Finder، واختر ملف ‹ الحصول على معلومات، ثم اختر WordCraft ضمن «فتح بواسطة»، وانقر «تغيير الكل».
+	Today	اليوم
+	Toggle Check Box	تبديل خانة الاختيار
+	Tracked changes	التغييرات المتعقبة
+	Transform	تحويل
+	Triangle Down	مثلث لأسفل
+	Triangle Up	مثلث لأعلى
+	Turabian	Turabian
+	Type	النوع
+	Type the categories down the side and a column of values per series.	اكتب الفئات على الجانب وعمودًا من القيم لكل سلسلة.
+	Type the password to stop the protection.	اكتب كلمة المرور لإيقاف الحماية.
+	Typing	الكتابة
+	Typing replaces selected text	تستبدل الكتابة النص المحدد
+	Unchecked symbol	رمز عدم التحديد
+	Undo 1 Action	التراجع عن إجراء واحد
+	Undo Actions	التراجع عن الإجراءات
+	Undo History	سجل التراجع
+	Undo {n} Actions	التراجع عن {n} إجراءات
+	Up one level	مستوى أعلى
+	Update fields before printing	تحديث الحقول قبل الطباعة
+	Update Styles from Template	تحديث الأنماط من القالب
+	Use "a" before a consonant sound	استخدام "a" قبل الصوت الساكن
+	Use "an" before a vowel sound	استخدام "an" قبل الصوت المتحرك
+	Use the Insert key to switch overtype on and off	استخدام مفتاح Insert لتشغيل وضع الكتابة فوق النص وإيقافه
+	Use wildcards	استخدام أحرف البدل
+	Value	القيمة
+	Visual effects	المؤثرات المرئية
+	Warm Gradient with Outline	تدرج دافئ مع مخطط تفصيلي
+	White Space	المسافة البيضاء
+	White space	المسافة البيضاء
+	With:	بـ:
+	Word document	مستند Word
+	Word level	مستوى الكلمة
+	Word XML Document (*.xml)	مستند Word XML (*.xml)
+	WordArt Styles	أنماط WordArt
+	WordCraft is now the default app for Word documents.	أصبح WordCraft التطبيق الافتراضي لمستندات Word.
+	Your system doesn't report an animation setting, so animation effects stay on.	لا يُبلغ نظامك عن إعداد الحركة، لذا تبقى مؤثرات الحركة قيد التشغيل.
+	Your system has animation effects turned off.	مؤثرات الحركة متوقفة في نظامك.
+	Your system has animation effects turned on.	مؤثرات الحركة قيد التشغيل في نظامك.
+	{count} of {total} pages will print	ستُطبع {count} من {total} صفحات
+	{name} already exists. Choose Save again to replace it.	الملف {name} موجود بالفعل. اختر «حفظ» مرة أخرى لاستبداله.
+	{name} wasn't found.	لم يُعثر على {name}.
+	“{text}” ({row}, {series}) isn't a number.	“{text}” ({row}، {series}) ليس رقمًا.
+	➕ New comment	➕ تعليق جديد
+	📂  Browse…	📂  استعراض…

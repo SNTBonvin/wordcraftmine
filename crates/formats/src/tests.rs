@@ -281,6 +281,34 @@ fn txt_round_trip() {
 }
 
 #[test]
+fn txt_export_writes_symbol_font_text_as_unicode() {
+    let mut d = Document::from_text("Done J\u{F0FC}");
+    d.format_range(&wordcraft_doc::Pos::body(0, 5), &wordcraft_doc::Pos::body(0, 9), &|c| c.font = Some("Wingdings".into())).unwrap();
+    let out = export("txt", &d).unwrap().unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "Done \u{263A}\u{2713}");
+}
+
+/// #569: a file with an extension we don't know opens as text when it is text (a playlist), and
+/// a binary file is told apart.
+#[test]
+fn text_sniffing() {
+    use crate::txt::is_text;
+    assert!(is_text(b""));
+    assert!(is_text(b"#EXTM3U\r\n#EXTINF:123,Artist - Title\r\nC:\\Music\\song.mp3\r\n"));
+    assert!(is_text("#EXTM3U\n#EXTINF:-1,Мелодия — ünïcødé\nhttp://x/y.mp3\n".as_bytes()));
+    assert!(is_text(&[0x23, 0x45, 0x58, 0x54, 0xE9, 0x0D, 0x0A, 0x1A])); // Windows-1252, DOS ^Z
+    assert!(is_text(&[0xEF, 0xBB, 0xBF, b'a']));
+    let u16le: Vec<u8> = "#EXTM3U\r\n".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    assert!(is_text(&u16le));
+    assert!(!is_text(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"));
+    assert!(!is_text(b"PK\x03\x04\x14\0\x06\0"));
+    assert!(!is_text(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"));
+    assert!(!is_text(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 3, 4, 5, 6, 7, 8]));
+    // Odd-length bytes with zeros mixed in: binary, not UTF-16.
+    assert!(!is_text(&[1, 0, 2, 0, 3]));
+}
+
+#[test]
 fn dispatch_unknown() {
     assert!(import("xyz", b"").is_none());
     assert!(export("docx", &Document::new()).is_none());
@@ -589,4 +617,48 @@ fn bounded_scans_keep_ordinary_markdown_and_entities() {
     let long = format!("<p>&{};</p>", "a".repeat(40));
     let t = import("html", long.as_bytes()).unwrap().unwrap().plain_text(Default::default());
     assert!(t.contains(&"a".repeat(40)), "{t}");
+}
+
+/// A document's hyperlink can be `javascript:` (WordCraft refuses to follow it); the exported
+/// HTML and Markdown must not hand it to a browser either. Web, mail, bookmark and relative links
+/// still export as links.
+#[test]
+fn exported_links_keep_only_safe_targets() {
+    let links = [
+        ("script", "javascript:alert(1)"),
+        ("split", "java\nscript:alert(1)"),
+        ("vb", "vbscript:MsgBox(1)"),
+        ("data", "data:text/html,<b>x</b>"),
+        ("web", "https://ok.example/x"),
+        ("mail", "mailto:a@b.example"),
+        ("bookmark", "#top"),
+        ("relative", "other.html"),
+    ];
+    let mut d = Document::new();
+    let mut p = Paragraph::with_text("", CharProps::default());
+    for (text, l) in links {
+        let n = p.len();
+        p.insert_text(n, text, &CharProps { link: Some(l.to_string()), ..Default::default() }).unwrap();
+        let n = p.len();
+        p.insert_text(n, " ", &CharProps::default()).unwrap();
+    }
+    d.body = vec![para_block(p)];
+    let html = String::from_utf8(export("html", &d).unwrap().unwrap()).unwrap();
+    let md = String::from_utf8(export("md", &d).unwrap().unwrap()).unwrap();
+    for bad in ["javascript", "vbscript", "data:"] {
+        assert!(!html.to_ascii_lowercase().contains(bad), "html: {html}");
+        assert!(!md.to_ascii_lowercase().replace('\n', "").contains(bad), "md: {md}");
+    }
+    for (text, _) in links {
+        assert!(html.contains(text), "html keeps the text {text:?}: {html}");
+        assert!(md.contains(text), "md keeps the text {text:?}: {md}");
+    }
+    for (text, l) in &links[4..] {
+        assert!(html.contains(&format!("<a href=\"{l}\">{text}</a>")), "html: {html}");
+        assert!(md.contains(&format!("[{text}]({l})")), "md: {md}");
+    }
+    for text in ["script", "split", "vb", "data"] {
+        assert!(!html.contains(&format!(">{text}</a>")), "html: {html}");
+        assert!(!md.contains(&format!("[{text}](")), "md: {md}");
+    }
 }

@@ -60,6 +60,9 @@ pub fn specs() -> Vec<CommandSpec> {
             with_sect(s, |x| x.rtl = on)
         })
         .params(r#"{"value"?: bool} (true: the section's columns run right to left; without a value it toggles)"#),
+        CommandSpec::new("layout.textDirection", "Text Direction", "Layout › Page Setup", text_direction).params(
+            r#"{"value"?: "horizontal|down|up"} (also lrTb|tbRl|btLr; down: rotate all text 90°, lines top to bottom stacking right to left; up: 270°; default: the next after the current). In a table cell it turns the selected cells, in a text box the box; anywhere else the section(s) of the selection"#,
+        ),
         CommandSpec::new("layout.differentFirstPage", "Different First Page", "Header & Footer › Options", |s, v| {
             let on = p::bool(v, "value").unwrap_or(!sect(s).title_page);
             with_sect(s, |x| x.title_page = on)
@@ -234,6 +237,44 @@ pub(crate) fn with_sect(s: &mut Session, f: impl Fn(&mut SectionProps)) -> CmdRe
         f(s.doc.section_mut(block));
     }
     Ok(serde_json::to_value(sect(s)).unwrap_or(Value::Null))
+}
+
+/// The text direction Layout › Text Direction would change: the caret cell's, the text box's,
+/// or the section's.
+pub fn text_direction_at(s: &Session) -> wordcraft_doc::props::TextDirection {
+    if let Some((tp, r, c)) = s.sel.focus.path.cell() {
+        return s.doc.table(s.sel.focus.story, &tp).and_then(|t| t.rows.get(r)?.cells.get(c).map(|cl| cl.props.text_direction)).unwrap_or_default();
+    }
+    if let Some((_, id)) = super::objects::text_box_target(s) {
+        return s.doc.parts.get(&id).map(|p| p.body.vert.turn()).unwrap_or_default();
+    }
+    sect(s).text_direction
+}
+
+/// Layout › Text Direction: like Word's button it works on what the caret is in — the selected
+/// table cells, the text box, or else the section.
+fn text_direction(s: &mut Session, v: &Value) -> CmdResult {
+    use wordcraft_doc::props::{TextDirection, TextVert};
+    let dir = match p::str(v, "value") {
+        Some("horizontal" | "lrTb" | "horz") => Some(TextDirection::Horizontal),
+        Some("down" | "tbRl" | "vert" | "rotate90") => Some(TextDirection::Down),
+        Some("up" | "btLr" | "vert270" | "rotate270") => Some(TextDirection::Up),
+        Some(x) => return Err(CmdError::Params(format!("unknown text direction `{x}`"))),
+        None => None,
+    };
+    let dir = dir.unwrap_or(text_direction_at(s).next());
+    if s.sel.focus.path.cell().is_some() {
+        return super::table::text_direction(s, &json!({"value": dir.ooxml()}));
+    }
+    if super::objects::text_box_target(s).is_some() {
+        let vert = match dir {
+            TextDirection::Horizontal => TextVert::Horz,
+            TextDirection::Down => TextVert::Vert,
+            TextDirection::Up => TextVert::Vert270,
+        };
+        return super::objects::set_text_body(s, |b| b.vert = vert);
+    }
+    with_sect(s, |x| x.text_direction = dir)
 }
 
 /// The default font size (Normal style), which the character pitch is based on.
@@ -439,14 +480,24 @@ fn breaks(s: &mut Session, v: &Value) -> CmdResult {
         "oddPage" => SectionStart::OddPage,
         x => return Err(CmdError::Params(format!("unknown break `{x}`"))),
     };
-    if s.sel.focus.story != wordcraft_doc::StoryRef::Body || s.sel.focus.path.depth() > 0 {
+    // A section break goes just before the selection and never replaces it, as in Word (#852:
+    // selected text was deleted, so the first section lost its text).
+    let old = s.sel.clone();
+    let (at, end) = old.ordered();
+    if at.story != wordcraft_doc::StoryRef::Body || at.path.depth() > 0 {
         return Err(CmdError::Failed("section breaks go in the main text".into()));
     }
     // Section break: the paragraph before the caret ends a section with the current props; the
     // new section (after) takes them too and starts as requested.
-    let at = super::delete_selection(s)?;
+    s.sel = Selection::caret(at.clone());
     let cur = sect(s);
-    let new = s.doc.split_paragraph(&at)?;
+    let new = match s.doc.split_paragraph(&at) {
+        Ok(p) => p,
+        Err(e) => {
+            s.sel = old;
+            return Err(e.into());
+        }
+    };
     let ended = at.path.clone();
     let para = s.doc.para_mut(at.story, &ended)?;
     let mut props = cur;
@@ -455,9 +506,30 @@ fn breaks(s: &mut Session, v: &Value) -> CmdResult {
     para.section = Some(Box::new(props.clone()));
     props.start = start;
     *s.doc.section_mut(next_block) = props;
-    s.sel = Selection::caret(Pos { off: 0, ..new });
+    // The selection keeps its text, which now starts the new section.
+    let first = Pos { off: 0, ..new };
+    let last = shifted_by_split(&end, &at, &first);
+    s.sel = if old.anchor <= old.focus { Selection { anchor: first, focus: last } } else { Selection { anchor: last, focus: first } };
     let _ = Block::Para;
     sel_result(s)
+}
+
+/// Where `p` lands after the top-level body paragraph at `at` was split there, the second half
+/// starting at `new`: later text in that paragraph moves into the new one, later blocks move down.
+fn shifted_by_split(p: &Pos, at: &Pos, new: &Pos) -> Pos {
+    if p.story != at.story {
+        return p.clone();
+    }
+    if p.path == at.path {
+        return if p.off >= at.off { Pos { off: p.off.saturating_sub(at.off), ..new.clone() } } else { p.clone() };
+    }
+    let mut q = p.clone();
+    if let (Some(first), Some(i)) = (q.path.0.first_mut(), at.path.0.first())
+        && *first > *i
+    {
+        *first = first.saturating_add(1);
+    }
+    q
 }
 
 #[cfg(test)]
@@ -466,6 +538,79 @@ mod tests {
 
     fn doc() -> Session {
         Session::new(wordcraft_doc::Document::from_text("one\ntwo\nthree"))
+    }
+
+    /// Layout › Text Direction turns the section, or the table cell the caret is in; one undo step.
+    #[test]
+    fn text_direction_turns_the_section_or_the_cell() {
+        use wordcraft_doc::props::TextDirection;
+        let mut s = doc();
+        s.run("layout.textDirection", &json!({"value": "down"})).unwrap();
+        assert_eq!(sect(&s).text_direction, TextDirection::Down);
+        assert_eq!(text_direction_at(&s), TextDirection::Down);
+        // Without a value: the next one, like Word's button.
+        s.run("layout.textDirection", &json!({})).unwrap();
+        assert_eq!(sect(&s).text_direction, TextDirection::Up);
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(sect(&s).text_direction, TextDirection::Down);
+        assert!(s.run("layout.textDirection", &json!({"value": "diagonal"})).is_err());
+        assert_eq!(sect(&s).text_direction, TextDirection::Down);
+        // In a table cell it turns the cell, not the section.
+        s.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
+        assert!(s.sel.focus.path.cell().is_some());
+        s.run("layout.textDirection", &json!({"value": "btLr"})).unwrap();
+        assert_eq!(text_direction_at(&s), TextDirection::Up);
+        assert_eq!(sect(&s).text_direction, TextDirection::Down);
+    }
+
+    /// #852: a continuous section break with text selected goes before the selection and keeps
+    /// it, as in Word; it used to delete the text, so the first section came out empty. Saved and
+    /// opened again, both sections' text lays out on page 1, the second below the first.
+    #[test]
+    fn section_break_keeps_the_selected_text() {
+        let mut s = Session::new(wordcraft_doc::Document::from_text("one\ntwo"));
+        s.run("select.text", &json!({"text": "one"})).unwrap();
+        s.run("layout.break", &json!({"kind": "continuous"})).unwrap();
+        assert_eq!(s.selected_text(), "one");
+        assert_eq!(s.doc.sections().len(), 2);
+        let texts = |d: &wordcraft_doc::Document| -> Vec<String> {
+            d.body.iter().filter_map(|b| if let Block::Para(p) = &**b { Some(p.plain_text().to_string()) } else { None }).collect()
+        };
+        assert_eq!(texts(&s.doc), ["", "one", "two"]);
+        // A backward selection in the middle of a paragraph keeps its text and direction too.
+        let mut s = Session::new(wordcraft_doc::Document::from_text("alpha beta\ngamma"));
+        let p = |off| Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off };
+        s.sel = Selection { anchor: p(10), focus: p(6) };
+        s.run("layout.break", &json!({"kind": "continuous"})).unwrap();
+        assert_eq!(s.selected_text(), "beta");
+        assert!(s.sel.anchor > s.sel.focus);
+        assert_eq!(texts(&s.doc), ["alpha ", "beta", "gamma"]);
+
+        // The issue's document: "one", a continuous break, "two" — both on page 1 after a round trip.
+        let mut s = Session::new(wordcraft_doc::Document::from_text("one\ntwo"));
+        s.run("select.text", &json!({"text": "one"})).unwrap();
+        s.run("caret.end", &json!({})).unwrap();
+        s.run("layout.break", &json!({"kind": "continuous"})).unwrap();
+        let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+        assert_eq!(back.sections().len(), 2);
+        assert_eq!(back.last_section.start, SectionStart::Continuous);
+        let mut s = Session::new(back);
+        let l = s.layout();
+        assert_eq!(l.pages.len(), 1);
+        let mut lines: Vec<(String, f32)> = l.pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                crate::layout::Placed::Lines { path, y, .. } => {
+                    let Some(Block::Para(p)) = s.doc.body.get(path.last()).map(|b| &**b) else { return None };
+                    (!p.plain_text().is_empty()).then(|| (p.plain_text().to_string(), *y))
+                }
+                _ => None,
+            })
+            .collect();
+        lines.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let order: Vec<&str> = lines.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(order, ["one", "two"]);
     }
 
     /// More Columns: unequal widths with a line between, as one undo step.

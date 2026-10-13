@@ -13,6 +13,7 @@ use wordcraft_doc::props::Rgb;
 use wordcraft_fonts::FontDb;
 use wordcraft_layout::Page;
 use wordcraft_layout::display::{DisplayOptions, Draw, Stroke, page_display};
+use wordcraft_layout::wordart::ArtPaint;
 use wordcraft_metafile::{Item, Picture, PlacedItem, Seg};
 
 pub mod icon_lib;
@@ -197,6 +198,24 @@ fn premul_pixmap(w: u32, h: u32, rgba: &[u8]) -> Option<Pixmap> {
 /// Pixel size of an encoded image.
 pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
+}
+
+/// The natural size in points of a Windows Metafile or Enhanced Metafile picture, and the file
+/// extension it is stored under (`"wmf"` or `"emf"`), or None for anything else (#802). Very large
+/// frames are scaled down to 22 inches on the longer side, keeping the shape.
+pub fn metafile_size(bytes: &[u8]) -> Option<(f32, f32, &'static str)> {
+    if !wordcraft_metafile::is_metafile(bytes) {
+        return None;
+    }
+    let pic = wordcraft_metafile::parse(bytes).ok()?;
+    let (w, h) = (pic.width, pic.height);
+    if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0) {
+        return None;
+    }
+    let k = (1584.0 / w.max(h)).min(1.0);
+    // An EMF starts with its header record, type 1.
+    let ext = if bytes.get(..4) == Some(&[1, 0, 0, 0]) { "emf" } else { "wmf" };
+    Some((w * k, h * k, ext))
 }
 
 /// A metafile (WMF/EMF) picture, parsed once. The geometry comes placed by the metafile crate; the
@@ -411,6 +430,44 @@ pub fn render_region(doc: &Document, page: &Page, w: u32, h: u32, view: Affine, 
     Rendered { width: w16 as u32, height: h16 as u32, pixels }
 }
 
+/// One line of `text` in `face` at `size` points, black on white, in a `w`×`h` point raster at
+/// `scale` pixels per point, starting `margin` points in with the baseline `margin` + the face's
+/// ascent down: a font list entry. Outlines come straight from the face, not the shared outline
+/// cache, so a face read just for the preview leaves nothing behind once dropped (#848).
+pub fn render_text_line(face: &wordcraft_fonts::FontFace, text: &str, size: f32, w: f32, h: f32, margin: f32, scale: f32) -> Rendered {
+    let fin = |v: f32, d: f32| if v.is_finite() && v >= 0.0 { v } else { d };
+    let (size, w, h, margin) = (fin(size, 12.0).min(1000.0) as f64, fin(w, 1.0), fin(h, 1.0), fin(margin, 0.0).min(1000.0) as f64);
+    let scale = if scale.is_finite() && scale > 0.0 { scale.min(16.0) } else { 1.0 };
+    let (w16, h16) = (((w * scale).ceil() as u32).clamp(1, MAX_SIDE) as u16, ((h * scale).ceil() as u32).clamp(1, MAX_SIDE) as u16);
+    let mut ctx = RenderContext::new_with(w16, h16, vello_cpu::RenderSettings { num_threads: 0, ..Default::default() });
+    ctx.set_transform(Affine::IDENTITY);
+    ctx.set_paint(color(Rgb(255, 255, 255), 1.0));
+    ctx.fill_rect(&kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64));
+    ctx.set_paint(color(Rgb(0, 0, 0), 1.0));
+    let upem = if face.upem.is_finite() && face.upem > 0.0 { face.upem } else { 1000.0 };
+    let k = size / upem;
+    let view = Affine::scale(scale as f64);
+    let ascent = if face.ascent.is_finite() { face.ascent.clamp(0.0, upem * 4.0) } else { upem * 0.8 };
+    let baseline = margin + ascent * k;
+    let mut x = margin;
+    for g in wordcraft_fonts::shape(face, text, &[], |c| c) {
+        let o = face.glyph_outline(g.gid);
+        ctx.set_transform(view * Affine::translate((x + g.x_offset as f64 * k, baseline - g.y_offset as f64 * k)) * Affine::scale(k));
+        ctx.fill_path(&o);
+        x += g.x_advance as f64 * k;
+        if x > w as f64 {
+            break;
+        }
+    }
+    ctx.flush();
+    let mut pixels = vec![0u8; w16 as usize * h16 as usize * 4];
+    let mut res = Resources::new();
+    if let Some(pm) = vello_cpu::PixmapMut::new(w16, h16, &mut pixels) {
+        ctx.render(pm, &mut res);
+    }
+    Rendered { width: w16 as u32, height: h16 as u32, pixels }
+}
+
 fn draw_watermark(ctx: &mut RenderContext, view: Affine, page: &Page, wm: &wordcraft_doc::Watermark, opts: &RenderOptions) {
     let r = wordcraft_fonts::word::resolve(&wm.font, false, false);
     let face = r.face;
@@ -420,11 +477,13 @@ fn draw_watermark(ctx: &mut RenderContext, view: Affine, page: &Page, wm: &wordc
     if raw_w <= 0.0 {
         return;
     }
-    let diag = if wm.diagonal { ((page.w as f64).powi(2) + (page.h.min(2000.0) as f64).powi(2)).sqrt() } else { page.w as f64 };
+    // The document page, not a Print Markup area beside it.
+    let pw = (page.w - page.markup.max(0.0)).max(1.0) as f64;
+    let diag = if wm.diagonal { (pw.powi(2) + (page.h.min(2000.0) as f64).powi(2)).sqrt() } else { pw };
     let size = (diag * 0.5 / raw_w).min(200.0);
     let k = size / upem;
-    let angle = if wm.diagonal { -((page.h.min(2000.0) as f64) / page.w.max(1.0) as f64).atan() } else { 0.0 };
-    let base = Affine::translate((page.w as f64 / 2.0, page.h.min(2000.0) as f64 / 2.0))
+    let angle = if wm.diagonal { -((page.h.min(2000.0) as f64) / pw).atan() } else { 0.0 };
+    let base = Affine::translate((pw / 2.0, page.h.min(2000.0) as f64 / 2.0))
         * Affine::rotate(angle)
         * Affine::translate((-raw_w * size / 2.0, size * 0.35));
     ctx.set_paint(color(opts.ink(wm.color), if wm.semitransparent { 0.35 } else { 0.8 }));
@@ -523,6 +582,10 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             line(ctx, 0.0);
         }
         Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, .. } => {
+            // Invisible glyphs (WordArt letters are drawn from their outlines) carry text only.
+            if *alpha <= 0.0 {
+                return;
+            }
             let db = FontDb::global();
             let k = *size as f64 / face.upem.max(1.0);
             ctx.set_paint(color(opts.ink(*c), *alpha));
@@ -648,6 +711,32 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
                 ctx.set_paint(color(opts.ink(*s), 1.0));
                 ctx.set_stroke(kurbo::Stroke::new(w as f64));
                 ctx.stroke_path(&path);
+            }
+        }
+        Draw::Art { path, fx, color: c, alpha } => {
+            let Some(b) = wordcraft_layout::wordart::path_box(path) else { return };
+            if !b.inflate(200.0, 200.0).overlaps(*visible) {
+                return;
+            }
+            ctx.set_transform(view);
+            for l in wordcraft_layout::wordart::art_layers(path, fx, *c, *alpha) {
+                match &l.paint {
+                    ArtPaint::Solid(c, a) => ctx.set_paint(color(opts.ink(*c), *a)),
+                    ArtPaint::Linear { p0, p1, stops } => {
+                        let stops: Vec<peniko::ColorStop> =
+                            stops.iter().map(|(o, c, a)| peniko::ColorStop::from((o.clamp(0.0, 1.0), color(opts.ink(*c), *a)))).collect();
+                        let g = peniko::Gradient::new_linear((f64::from(p0.0), f64::from(p0.1)), (f64::from(p1.0), f64::from(p1.1)))
+                            .with_stops(stops.as_slice());
+                        ctx.set_paint(g);
+                    }
+                }
+                match l.stroke {
+                    Some(w) => {
+                        ctx.set_stroke(kurbo::Stroke::new(f64::from(w.clamp(0.1, 400.0))).with_join(kurbo::Join::Round));
+                        ctx.stroke_path(&l.path);
+                    }
+                    None => ctx.fill_path(&l.path),
+                }
             }
         }
         Draw::Ink { pts, color: c, width, alpha } => {
@@ -793,10 +882,18 @@ pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
         ShapeKind::Ellipse => kurbo::Ellipse::from_rect(r).to_path(0.1),
         ShapeKind::Triangle => poly(&[(cx, r.y0), (r.x1, r.y1), (r.x0, r.y1)]),
         ShapeKind::Diamond => poly(&[(cx, r.y0), (r.x1, cy), (cx, r.y1), (r.x0, cy)]),
+        // DrawingML's `line`: top-left to bottom-right (flips give the other directions).
         ShapeKind::Line => {
             let mut p = BezPath::new();
-            p.move_to((r.x0, r.y1));
-            p.line_to((r.x1, r.y0));
+            p.move_to((r.x0, r.y0));
+            p.line_to((r.x1, r.y1));
+            p
+        }
+        // Connectors are drawn as paths (`Draw::Path`); this is their frame's diagonal.
+        ShapeKind::StraightConnector | ShapeKind::ElbowConnector | ShapeKind::CurvedConnector => {
+            let mut p = BezPath::new();
+            p.move_to((r.x0, r.y0));
+            p.line_to((r.x1, r.y1));
             p
         }
         ShapeKind::Arrow => {
@@ -902,6 +999,7 @@ mod tests {
                 story: None,
                 freeform: None,
                 effects,
+                extra: Default::default(),
             };
             let at = wordcraft_doc::Pos { story: wordcraft_doc::StoryRef::Body, path: wordcraft_doc::Path::top(0), off: 0 };
             d.insert_object(&at, shape, &Default::default()).unwrap();
@@ -1162,6 +1260,14 @@ mod tests {
         for k in [ShapeKind::Rectangle, ShapeKind::Ellipse, ShapeKind::Star, ShapeKind::Heart, ShapeKind::Arrow, ShapeKind::Line] {
             assert!(!shape_path(k, r).elements().is_empty());
         }
+    }
+
+    /// #611: a line runs as DrawingML's `line` preset does, top-left to bottom-right (Word's
+    /// files flip it for the other diagonal), not bottom-left to top-right.
+    #[test]
+    fn a_line_runs_from_top_left_to_bottom_right() {
+        let p = shape_path(ShapeKind::Line, kurbo::Rect::new(10.0, 20.0, 30.0, 60.0));
+        assert_eq!(p.elements(), &[kurbo::PathEl::MoveTo((10.0, 20.0).into()), kurbo::PathEl::LineTo((30.0, 60.0).into())]);
     }
 }
 

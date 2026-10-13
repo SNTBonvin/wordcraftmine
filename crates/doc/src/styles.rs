@@ -37,6 +37,10 @@ pub struct Style {
     pub hidden: bool,
     /// Built in (cannot be deleted).
     pub builtin: bool,
+    /// Can't be applied while Restrict Editing limits formatting to a selection of styles
+    /// (`w:locked`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
     /// Table style: conditional formatting for header row, banding etc.
     pub table: Option<TableStyleParts>,
 }
@@ -134,6 +138,9 @@ pub struct StyleSheet {
     /// Document defaults (`w:docDefaults`).
     pub default_chr: CharProps,
     pub default_para: ParaProps,
+    /// Preserve an explicit `w:pPrDefault`, even when empty. Omission leaves defaults to
+    /// the application; nonempty `default_para` is always written after spacing edits.
+    pub default_para_present: bool,
     pub styles: Vec<Style>,
 }
 
@@ -161,13 +168,13 @@ fn color(c: Rgb) -> Option<TextColor> {
 
 impl StyleSheet {
     pub fn empty() -> Self {
-        StyleSheet { default_chr: CharProps::default(), default_para: ParaProps::default(), styles: Vec::new() }
+        StyleSheet { default_chr: CharProps::default(), default_para: ParaProps::default(), default_para_present: true, styles: Vec::new() }
     }
 
     /// The built-in style set used for new documents.
     pub fn builtin() -> Self {
         let mut s = StyleSheet {
-            default_chr: CharProps { font: Some(BODY_FONT.into()), size: Some(12.0), kern: Some(0.0), lang: Some("en-US".into()), ..chr() },
+            default_chr: CharProps { font: Some(BODY_FONT.into()), size: Some(12.0), kern: Some(1.0), lang: Some("en-US".into()), ..chr() },
             default_para: ParaProps {
                 space_after: Some(8.0),
                 space_before: Some(0.0),
@@ -175,6 +182,7 @@ impl StyleSheet {
                 widow_control: Some(true),
                 ..para()
             },
+            default_para_present: true,
             styles: Vec::new(),
         };
         let mut add = |st: Style| s.styles.push(st);
@@ -436,6 +444,19 @@ impl StyleSheet {
         out.reverse();
         out
     }
+    /// Which indents (left, first line) of a paragraph that gets its list from style `id` the style
+    /// chain sets over the list level's own. Word applies the level's indents on top of the most
+    /// derived style that gives a list, so that style and the ones based on it win over the level,
+    /// and the styles it is based on don't (Heading 3 with its own left indent on Heading 2's
+    /// list). `(false, false)` when no style in the chain gives a list.
+    pub fn indents_over_list(&self, id: &str) -> (bool, bool) {
+        let chain = self.chain(id);
+        let Some(k) = chain.iter().rposition(|s| s.para.numbering.is_some()) else { return (false, false) };
+        let set = |v: Option<f32>, chars: Option<f32>| v.is_some() || chars.is_some_and(|c| c != 0.0);
+        chain.get(k..).unwrap_or_default().iter().fold((false, false), |(l, f), s| {
+            (l || set(s.para.indent_left, s.para.indent_left_chars), f || set(s.para.indent_first, s.para.indent_first_chars))
+        })
+    }
     /// Table style `id` with its based-on chain merged, base styles first (`None` when there is no
     /// such table style). Styles of other kinds in the chain are skipped.
     pub fn table_style(&self, id: &str) -> Option<TableStyleProps> {
@@ -582,6 +603,18 @@ mod tests {
         let g = s.gallery();
         assert_eq!(g.first().map(|s| s.id.as_str()), Some("Normal"));
         assert!(g.iter().any(|s| s.id == "Heading1"));
+    }
+
+    #[test]
+    fn older_serialized_styles_keep_explicit_defaults() {
+        let mut value = serde_json::to_value(StyleSheet::empty()).unwrap();
+        value.as_object_mut().unwrap().remove("defaultParaPresent");
+        let sheet: StyleSheet = serde_json::from_value(value).unwrap();
+        assert!(sheet.default_para_present);
+        let mut omitted = sheet;
+        omitted.default_para_present = false;
+        let again: StyleSheet = serde_json::from_str(&serde_json::to_string(&omitted).unwrap()).unwrap();
+        assert_eq!(again, omitted);
     }
 
     #[test]

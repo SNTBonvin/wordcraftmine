@@ -1,11 +1,14 @@
-//! Charts and SmartArt diagrams: drawings shown but not edited, kept as neutral items ready to draw.
+//! Charts, SmartArt diagrams and native ink: drawings kept as neutral items ready to draw. Charts and SmartArt
+//! WordCraft can edit also keep their model ([`crate::chart::ChartSpec`],
+//! [`crate::smart_art::SmartArtSpec`]); the rest are shown, not edited.
 
 use serde::{Deserialize, Serialize};
 
 use crate::para::ShapeKind;
 use crate::props::Rgb;
 
-/// A drawing shown but not edited: a chart or a SmartArt diagram, as items ready to draw.
+/// A chart, SmartArt diagram or native ink preview, as items ready to draw (and, for an editable chart or SmartArt
+/// graphic, its model).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Graphic {
@@ -19,10 +22,19 @@ pub struct Graphic {
     pub w: f32,
     #[serde(default)]
     pub h: f32,
-    /// Where the graphic was read from, so saving writes the chart or diagram itself back (not
+    /// Where the graphic was read from, so saving writes the original drawing itself back (not
     /// only these items). `None` for graphics made some other way.
     #[serde(skip)]
     pub source: Option<std::sync::Arc<Embedded>>,
+    /// A SmartArt graphic WordCraft can edit (one it made, or one read back exactly as it wrote
+    /// it): saving writes the diagram parts from it, and the items are drawn from it. See
+    /// [`crate::smart_art`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart_art: Option<std::sync::Arc<crate::smart_art::SmartArtSpec>>,
+    /// A chart WordCraft can edit (one it made, or one read back that holds nothing more): saving
+    /// writes the chart part from it, and the items are drawn from it. See [`crate::chart`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chart: Option<std::sync::Arc<crate::chart::ChartSpec>>,
 }
 
 /// What an object read from a file needs to be written back as it was: its own markup in the
@@ -32,7 +44,8 @@ pub struct Graphic {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Embedded {
     /// The object's markup as a standalone XML element with its namespace declarations (DOCX:
-    /// the `a:graphic` of a chart or SmartArt diagram, the `w:object` of an OLE object).
+    /// the `a:graphic` of a chart, SmartArt diagram or native ink, an ink `mc:AlternateContent`,
+    /// or the `w:object` of an OLE object).
     pub xml: String,
     /// The relationships it uses, by the ids in `xml` (or in its parts, for a SmartArt drawing).
     pub refs: Vec<EmbeddedRef>,
@@ -56,6 +69,8 @@ pub enum GraphicKind {
     #[default]
     Chart,
     Diagram,
+    /// Word's native InkML, kept opaque; displayed as its fallback picture when available.
+    Ink,
 }
 
 impl GraphicKind {
@@ -64,6 +79,7 @@ impl GraphicKind {
         match self {
             GraphicKind::Chart => "chart",
             GraphicKind::Diagram => "diagram",
+            GraphicKind::Ink => "ink",
         }
     }
 }

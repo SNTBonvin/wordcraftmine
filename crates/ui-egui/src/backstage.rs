@@ -59,13 +59,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 );
                 resp
             };
-            if back.clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // Escape in the built-in file browser closes only the browser.
+            if back.clicked() || (!app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
             ui.add_space(if mac { 12.0 } else { 6.0 });
             for (id, label) in PAGES {
                 let (r, resp) = ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click());
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                 let active = app.ui.backstage_page == id;
                 if active {
                     ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(46));
@@ -81,14 +83,23 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 );
                 if resp.clicked() {
                     match id {
+                        // A document without a file goes to the Save As page (as in Word) instead
+                        // of `file.save`, which would also open the native Save As dialog.
+                        // In the browser a save is a download, so it saves right away.
+                        "save" if app.session.path.is_none() && app.services.download.is_none() => {
+                            app.ui.backstage_page = "saveAs".into();
+                        }
                         "save" => {
-                            let _ = app.run("file.save", json!({}));
+                            let r = app.run("file.save", json!({}));
+                            if r.is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true) || v.get("downloaded").is_some()) {
+                                app.ui.backstage = false;
+                                app.canvas.want_focus = true;
+                            } else {
+                                app.ui.backstage_page = "saveAs".into();
+                            }
                         }
                         "saveAs" => {
-                            app.save_as_dialog();
-                        }
-                        "open" => {
-                            app.ui.backstage_page = id.into();
+                            app.ui.backstage_page = "saveAs".into();
                         }
                         _ => app.ui.backstage_page = id.into(),
                     }
@@ -97,6 +108,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 for (label, id) in [("About", "about"), ("Discord community", "discord")] {
                     let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                     if resp.hovered() {
                         ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
                     }
@@ -118,9 +130,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 "home" => home_page(app, ui),
                 "new" => new_page(app, ui),
                 "open" => open_page(app, ui),
+                "saveAs" => save_as_page(app, ui),
                 "info" => info_page(app, ui),
                 "print" | "export" => export_page(app, ui),
-                "options" => options_page(app, ui),
+                "options" => crate::options::page(app, ui),
                 _ => home_page(app, ui),
             })
         });
@@ -147,8 +160,11 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
         );
         let ppp = ui.ctx().pixels_per_point();
         let key = format!("tpl:{template}:{ppp}");
+        let region = app.session.region();
         let tex = ui.ctx().data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new(&key))).or_else(|| {
             let mut s = wordcraft_engine::Session::new(wordcraft_doc::Document::new());
+            // The blank tile shows the region's paper (#838).
+            s.system_region = region;
             let _ = s.run("file.new", &json!({"template": template}));
             let l = s.export_layout();
             let page = l.pages.first()?;
@@ -253,7 +269,7 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
     if app.ui.recent.is_empty() {
         ui.label(egui::RichText::new(tl!("Documents you open will show up here.")).color(t.text_dim));
     }
-    for p in app.ui.recent.clone() {
+    for p in app.ui.recent.iter().take(app.ui.recent_shown()).cloned().collect::<Vec<_>>() {
         let name = std::path::Path::new(&p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(p.clone());
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width().min(700.0), 40.0), Sense::click());
         if resp.hovered() {
@@ -275,8 +291,27 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
         let _ = app.run("ui.openFileDialog", json!({}));
     }
+    // Linux and the BSDs (#576): the system dialog needs a file chooser portal or zenity; when it
+    // doesn't show up, WordCraft's own browser is always one click away.
+    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+    if ui
+        .button(egui::RichText::new(tl!("Browse in WordCraft…")).font(medium(14.0)))
+        .on_hover_text(tl!("Open a file with WordCraft's own browser when the system file dialog doesn't appear."))
+        .clicked()
+    {
+        let _ = app.run("ui.fileBrowser", json!({}));
+    }
     ui.add_space(18.0);
     open_list(app, ui);
+}
+
+/// Save As: Browse… asks where to save. It has no recent-documents list: clicking one of those
+/// opens it, which is not what Save As is for.
+fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
+    heading(ui, "Save As");
+    if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
+        app.save_as_dialog();
+    }
 }
 
 fn info_page(app: &mut WordApp, ui: &mut Ui) {
@@ -344,161 +379,27 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
 }
 
 fn export_page(app: &mut WordApp, ui: &mut Ui) {
-    let is_print = app.ui.backstage_page == "print";
-    heading(ui, if is_print { "Print" } else { "Export" });
-    if is_print && app.services.print.is_some() {
-        ui.label(tl!("Send the document straight to the system print dialog, or save a copy in another format below."));
-        ui.add_space(12.0);
-        if ui.add(egui::Button::new(egui::RichText::new(tl!("Print")).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
-            let _ = app.run("ui.print", json!({}));
+    if app.ui.backstage_page == "print" {
+        heading(ui, "Print");
+        // Print Markup (a print setting, as in Word): the comments beside each page.
+        let mut markup = app.session.prefs.print_markup;
+        if ui
+            .checkbox(&mut markup, tl!("Print Markup"))
+            .on_hover_text(tl!(
+                "Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text."
+            ))
+            .changed()
+        {
+            let _ = app.run("file.printMarkup", json!({"value": markup}));
         }
         ui.add_space(12.0);
-        ui.separator();
-        ui.add_space(12.0);
-        ui.label(tl!("Or save a copy in another format:"));
-    } else {
-        ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
+        crate::print_page::show(app, ui);
+        return;
     }
+    heading(ui, "Export");
+    ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
     ui.add_space(12.0);
-    for (label, ext) in [
-        ("PDF document (*.pdf)", "pdf"),
-        ("Word document (*.docx)", "docx"),
-        ("OpenDocument Text (*.odt)", "odt"),
-        ("Rich Text Format (*.rtf)", "rtf"),
-        ("Web page (*.html)", "html"),
-        ("Markdown (*.md)", "md"),
-        ("LaTeX (*.tex)", "tex"),
-        ("Plain text (*.txt)", "txt"),
-        ("Page image (*.png)", "png"),
-    ] {
-        if ui.add(egui::Button::new(egui::RichText::new(tl!(label)).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
-            app.export_dialog(ext);
-        }
-        ui.add_space(4.0);
-    }
-}
-
-fn options_page(app: &mut WordApp, ui: &mut Ui) {
-    heading(ui, "Options");
-    ui.label(egui::RichText::new(tl!("General")).font(semibold(15.0)));
-    language_picker(app, ui);
-    ui.horizontal(|ui| {
-        ui.label(tl!("User name:"));
-        let mut n = app.session.author.clone();
-        if ui.text_edit_singleline(&mut n).changed() {
-            app.session.author = n;
-        }
-    });
-    theme_picker(app, ui);
-    interface_size_picker(app, ui);
-    // The browser can't write to the user's files, so AutoSave can't be turned on there (#176).
-    let browser = app.autosave_block() == Some(crate::AutoSaveBlock::Browser);
-    let mut autosave = app.autosave && !browser;
-    let r = ui.add_enabled(!browser, egui::Checkbox::new(&mut autosave, tl!("AutoSave documents you have saved in WordCraft")));
-    if browser {
-        r.on_disabled_hover_text(crate::AutoSaveBlock::Browser.reason());
-    } else if r.changed() {
-        app.autosave = autosave;
-        app.session.autosave = autosave;
-    }
-    let mut dark_page = app.session.view.dark_mode;
-    if ui
-        .checkbox(&mut dark_page, tl!("Dark page (white text on black)"))
-        .on_hover_text(tl!("Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged."))
-        .changed()
-    {
-        let _ = app.run("view.darkMode", json!({"value": dark_page}));
-    }
-    crate::rtl::checkbox(ui, &mut app.ui.show_discord, tl!("Show the community button in the title bar"));
-    ui.add_space(10.0);
-    ui.label(egui::RichText::new(tl!("Display")).font(semibold(15.0)));
-    let mut marks = app.session.view.marks;
-    if crate::rtl::checkbox(ui, &mut marks, tl!("Show all formatting marks")).changed() {
-        let _ = app.run("view.marks", json!({"value": marks}));
-    }
-    let mut ruler = app.session.view.ruler;
-    if crate::rtl::checkbox(ui, &mut ruler, tl!("Show rulers")).changed() {
-        let _ = app.run("view.ruler", json!({"value": ruler}));
-    }
-    ui.add_space(10.0);
-    ui.label(egui::RichText::new(tl!("Customize")).font(semibold(15.0)));
-    ui.horizontal(|ui| {
-        ui.label(tl!("Keyboard shortcuts:"));
-        if ui.button(tl!("Customize…")).clicked() {
-            let _ = app.run("tools.customizeKeyboard", json!({}));
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label(tl!("Ribbon and Quick Access Toolbar:"));
-        if ui.button(tl!("Customize…")).clicked() {
-            let _ = app.run("tools.customizeRibbon", json!({}));
-        }
-    });
-    ui.add_space(10.0);
-    ui.label(egui::RichText::new(tl!("Agents")).font(semibold(15.0)));
-    ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
-}
-
-/// File ▸ Options ▸ Interface theme: Light, Dark, or follow the system's appearance (#115).
-fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
-    use crate::theme::Appearance;
-    ui.horizontal(|ui| {
-        ui.label(tl!("Interface theme:"));
-        egui::ComboBox::from_id_salt("interface_theme").selected_text(tl!(app.ui.theme.label())).width(220.0).show_ui(ui, |ui| {
-            for a in Appearance::ALL {
-                if ui.selectable_label(app.ui.theme == a, tl!(a.label())).clicked() {
-                    let _ = app.run("ui.theme", json!({"value": a.code()}));
-                }
-            }
-        });
-    });
-}
-
-/// File ▸ Options ▸ Interface size: 80–200 %, on top of the system's display scale (#475).
-fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
-    use crate::theme::InterfaceSize;
-    let current = app.ui.interface_size.percent();
-    ui.horizontal(|ui| {
-        ui.label(tl!("Interface size:"));
-        egui::ComboBox::from_id_salt("interface_size").selected_text(format!("{current}%")).width(220.0).show_ui(ui, |ui| {
-            for pct in InterfaceSize::PRESETS {
-                if ui.selectable_label(current == pct, format!("{pct}%")).clicked() {
-                    let _ = app.run("ui.interfaceSize", json!({"percent": pct}));
-                }
-            }
-        });
-    });
-    ui.label(
-        egui::RichText::new(tl!(
-            "Makes the ribbon, menus and dialogs larger or smaller, on top of your system's display scaling. Document zoom is separate."
-        ))
-        .small()
-        .weak(),
-    );
-}
-
-/// File ▸ Options ▸ Interface language: follow the system (the default) or pick one (#8).
-fn language_picker(app: &mut WordApp, ui: &mut Ui) {
-    use crate::i18n::{AUTO, Lang};
-    // The language names are in their own scripts: fonts for them load from the next frame.
-    app.want_system_cjk = true;
-    let system = crate::i18n::system_lang();
-    let auto_label = crate::i18n::fmt(tl!("Automatic ({language})"), &[("language", system.name())]);
-    let current = if app.ui.language == AUTO { auto_label.clone() } else { Lang::from_pref(&app.ui.language).name().to_string() };
-    ui.horizontal(|ui| {
-        ui.label(tl!("Interface language:"));
-        egui::ComboBox::from_id_salt("interface_language").selected_text(current).width(220.0).show_ui(ui, |ui| {
-            if ui.selectable_label(app.ui.language == AUTO, auto_label.as_str()).clicked() {
-                let _ = app.run("ui.language", json!({"value": AUTO}));
-            }
-            for lang in Lang::all() {
-                if ui.selectable_label(app.ui.language == lang.code(), lang.name()).clicked() {
-                    let _ = app.run("ui.language", json!({"value": lang.code()}));
-                }
-            }
-        });
-    });
-    ui.label(egui::RichText::new(tl!("Automatic follows your system's language. Menus and commands change; your documents don't.")).small().weak());
+    crate::print_page::export_formats(app, ui);
 }
 
 #[cfg(test)]
@@ -604,5 +505,116 @@ mod tests {
         assert_eq!((a.session.doc.core.title.as_str(), a.session.doc.core.creator.as_str()), ("ALPHA", ""));
         a.session.run("edit.undo", &json!({})).unwrap();
         assert_eq!(a.session.doc.core.title, "");
+    }
+
+    #[test]
+    fn save_as_page_shows_browse_and_no_open_list() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "saveAs"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        assert!(h.query_by_label("Browse…").is_some(), "Save As has Browse button");
+        assert!(h.query_by_label("Recent").is_none(), "Save As has no list that opens documents");
+    }
+
+    #[test]
+    fn backstage_save_navigates_to_save_as_when_unnamed() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Save").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "saveAs", "unnamed Save opens Save As page");
+        assert!(h.state().ui.backstage, "backstage remains open");
+    }
+
+    /// Save on a document without a file shows the Save As page only: no native dialog as well.
+    #[test]
+    fn backstage_save_when_unnamed_opens_no_file_dialog() {
+        let shown = std::rc::Rc::new(std::cell::Cell::new(0));
+        let count = shown.clone();
+        let services = Services {
+            file_dialog: Some(Box::new(move |_| {
+                count.set(count.get() + 1);
+                std::sync::mpsc::channel::<crate::FileDialogAnswer>().1
+            })),
+            ..Default::default()
+        };
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Save").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "saveAs");
+        assert_eq!(shown.get(), 0, "no native Save As dialog");
+        assert!(!h.state().file_dialog_open());
+    }
+
+    #[test]
+    fn backstage_save_closes_when_saved() {
+        let got: std::rc::Rc<std::cell::RefCell<Vec<(String, Vec<u8>)>>> = Default::default();
+        let sink = got.clone();
+        let services = Services {
+            download: Some(Box::new(move |n: &str, b: &[u8]| {
+                sink.borrow_mut().push((n.to_string(), b.to_vec()));
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Save").click();
+        h.run_steps(4);
+        assert!(!h.state().ui.backstage, "successful save closes backstage");
+    }
+
+    #[test]
+    fn backstage_save_as_sidebar_opens_save_as_page() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Save As").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "saveAs");
     }
 }
