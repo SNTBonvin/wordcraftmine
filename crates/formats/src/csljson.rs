@@ -2,7 +2,7 @@
 //!
 //! The format is the Citation Style Language project's CSL-JSON 1.0 (the citeproc data schema):
 //! a top-level array of items, or an object wrapping them as `{"items": […]}`. Per item `id`
-//! becomes the tag, `type` the Word source kind (`journal-article`→article, `book`→book,
+//! becomes the tag, `type` the Word source kind (`article-journal`→article, `book`→book,
 //! `chapter`→bookSection, `paper-conference`→conference, `report`→report, `webpage`→website,
 //! else `other`), `author`/`editor` arrays of `{family, given, literal}` names join into
 //! `"Last, First; …"` (`literal` verbatim), and `issued`'s `date-parts[0][0]` is the year.
@@ -80,7 +80,9 @@ fn check_depth(b: &[u8]) -> Result<(), String> {
 /// The Word source kind for an item `type`.
 fn kind_of(t: &str) -> &'static str {
     match t {
-        "journal-article" => "article",
+        // The spec's type is "article-journal"; "journal-article" is a lenient alias —
+        // real-world exporters have misspelled it, and either names a journal article.
+        "article-journal" | "journal-article" => "article",
         "book" => "book",
         "chapter" => "bookSection",
         "paper-conference" => "conference",
@@ -183,7 +185,7 @@ mod tests {
     const LIB: &str = r#"[
   {
     "id": "doe2020",
-    "type": "journal-article",
+    "type": "article-journal",
     "author": [{"family": "Doe", "given": "Jane"}, {"family": "Smith", "given": "John Q."}],
     "editor": [{"literal": "Editor, Anon"}],
     "issued": {"date-parts": [[2020, 3, 15]]},
@@ -255,8 +257,9 @@ mod tests {
 
     #[test]
     fn every_type_maps_to_a_kind() {
-        let types = ["journal-article", "book", "chapter", "paper-conference", "report", "webpage", "speech"];
-        let kinds = ["article", "book", "bookSection", "conference", "report", "website", "other"];
+        // Both spellings of the journal type: the spec's, and the one sloppy exporters write.
+        let types = ["article-journal", "journal-article", "book", "chapter", "paper-conference", "report", "webpage", "speech"];
+        let kinds = ["article", "article", "book", "bookSection", "conference", "report", "website", "other"];
         let lib = format!("[{}]", types.iter().enumerate().map(|(i, t)| format!(r#"{{"id":"{i}","type":"{t}"}}"#)).collect::<Vec<_>>().join(","));
         let out = import(lib.as_bytes()).unwrap();
         let got: Vec<&str> = out.iter().map(|s| s.kind.as_str()).collect();
