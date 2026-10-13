@@ -648,6 +648,11 @@ impl WordApp {
         if !matches!(id, "ui.openRecipientList" | "mailings.recipients") {
             self.recipient_list_pending = false;
         }
+        // The control channel has no Save-changes dialog to answer: refuse to discard unsaved
+        // changes without an explicit `"force": true`, as `run` asks instead (#1268).
+        if self.session.dirty && discards_document(id, &params) && params.get("force").and_then(Value::as_bool) != Some(true) {
+            return Err("the document has unsaved changes (pass {\"force\": true} to discard them)".into());
+        }
         if let Some(r) = self.ui_command(id, &params) {
             return r;
         }
@@ -792,6 +797,11 @@ impl WordApp {
         };
         if !go {
             return Ok(json!({"done": false}));
+        }
+        // The user answered the prompt: the discarding command runs without asking again (#1268).
+        let mut params = params;
+        if let Some(o) = params.as_object_mut() {
+            o.insert("force".into(), Value::Bool(true));
         }
         self.execute_user(&then, params).map(|r| json!({"done": true, "result": r}))
     }
@@ -2696,6 +2706,22 @@ mod tests {
         a.run("file.new", json!({"template": "letter"})).unwrap();
         assert_eq!(prompt(&a), None);
         assert!(!body_text(&a).trim().is_empty());
+    }
+
+    /// #1268: the control channel has no dialog to answer, so `execute` refuses to discard
+    /// unsaved changes without `"force": true` instead of quitting on them.
+    #[test]
+    fn execute_refuses_to_discard_unsaved_changes() {
+        let mut a = typed();
+        let err = a.execute("file.close", json!({})).unwrap_err();
+        assert!(err.contains("unsaved"), "{err}");
+        assert!(body_text(&a).contains(UNSAVED), "nothing was discarded");
+        assert!(a.session.dirty);
+        assert!(!a.quit_requested, "the app doesn't quit on unsaved work");
+        a.execute("file.close", json!({"force": true})).unwrap();
+        assert!(a.quit_requested, "a forced close still closes");
+        let mut clean = app();
+        clean.execute("file.close", json!({})).unwrap();
     }
 
     /// #55: a password-protected document asks for its password (after Save Changes) instead of
