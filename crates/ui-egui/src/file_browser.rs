@@ -29,7 +29,7 @@ pub(crate) struct State {
     /// The folder File › Open is showing under This computer; `None` while Recent is chosen.
     pub(crate) page_dir: Option<PathBuf>,
     /// That folder's documents and subfolders, read once when the page moved there.
-    pub(crate) page_listing: Option<Result<Listing, String>>,
+    pub(crate) page_listing: Option<Result<Listing, std::io::ErrorKind>>,
 }
 
 impl State {
@@ -37,7 +37,8 @@ impl State {
     /// every frame; like the browser, it lists names and never reads a file.
     pub(crate) fn show_page_dir(&mut self, dir: PathBuf) {
         let exts: Vec<String> = open_filters("document").first().map(|(_, exts)| exts.iter().map(|e| (*e).to_string()).collect()).unwrap_or_default();
-        self.page_listing = Some(list_dir(&dir, &exts, MAX_LISTED).map_err(|e| e.to_string()));
+        // Why it failed, not the system's own wording: the page says it in the interface language.
+        self.page_listing = Some(list_dir(&dir, &exts, MAX_LISTED).map_err(|e| e.kind()));
         self.page_dir = Some(dir);
     }
 

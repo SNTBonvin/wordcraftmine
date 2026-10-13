@@ -2473,3 +2473,7 @@ preview	Title	Tytuł
 	This folder is empty.	Ten folder jest pusty.
 	Back	Wstecz
 file	Home	Strona główna
+	WordCraft has no permission to read this folder. Use Browse to open a document from it.	WordCraft nie ma uprawnień do odczytu tego folderu. Użyj polecenia Przeglądaj, aby otworzyć z niego dokument.
+	This folder is no longer there.	Tego folderu już nie ma.
+	This folder can't be read.	Nie można odczytać tego folderu.
+	To list it here, allow WordCraft in System Settings, under Privacy & Security, Files and Folders.	Aby wyświetlić go tutaj, zezwól aplikacji WordCraft w Ustawieniach systemowych, w sekcji Prywatność i ochrona, Pliki i foldery.

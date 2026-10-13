@@ -283,7 +283,24 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     let mut failed = None;
     match (&dir, &app.file_browser.page_listing) {
         (Some(_), Some(Ok(listing))) => rows.extend(listing.entries.iter().map(|e| (e.path.clone(), e.name.clone(), String::new(), e.dir))),
-        (Some(_), Some(Err(why))) => failed = Some(why.clone()),
+        // A folder the system keeps closed (macOS guards Documents, Desktop and Downloads) still
+        // opens through Browse: a document the user picks there is theirs to open.
+        (Some(_), Some(Err(why))) => {
+            failed = Some(match why {
+                // macOS asks once whether the app may read such a folder, and stays silent after a
+                // No, or when the app was started by a program that itself has no access.
+                std::io::ErrorKind::PermissionDenied if cfg!(target_os = "macos") => format!(
+                    "{} {}",
+                    tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it."),
+                    tl!("To list it here, allow WordCraft in System Settings, under Privacy & Security, Files and Folders.")
+                ),
+                std::io::ErrorKind::PermissionDenied => {
+                    tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it.").to_string()
+                }
+                std::io::ErrorKind::NotFound => tl!("This folder is no longer there.").to_string(),
+                _ => tl!("This folder can't be read.").to_string(),
+            });
+        }
         (Some(_), None) => {}
         (None, _) => rows.extend(app.ui.recent.iter().take(app.ui.recent_shown()).map(|p| {
             let path = std::path::Path::new(p);
@@ -613,6 +630,27 @@ mod tests {
         assert_eq!(tr(pl, "Home"), "Start", "the ribbon tab keeps its word");
         assert_eq!(trc(de, "file", "Home"), tr(de, "Home"));
         assert_ne!(tr(pl, "About"), tr(pl, "Info"), "two rows of one column must not read the same");
+    }
+
+    /// A folder that cannot be listed says why in the interface language, never in the system's
+    /// own error text.
+    #[test]
+    fn a_folder_that_cannot_be_read_says_so_in_words() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+        a.file_browser.show_page_dir(std::env::temp_dir().join("wordcraft-no-such-folder-for-the-open-page"));
+        assert_eq!(a.file_browser.page_listing.as_ref().and_then(|l| l.as_ref().err()), Some(&std::io::ErrorKind::NotFound));
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        assert!(h.query_by_label("This folder is no longer there.").is_some());
+        assert!(h.query_by_label_contains("os error").is_none(), "the system's wording stays out of the page");
     }
 
     #[test]
