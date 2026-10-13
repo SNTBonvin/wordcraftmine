@@ -481,6 +481,24 @@ fn right_tab_aligns_text_end() {
     assert!((end - 472.0).abs() < 1.0, "{end}");
 }
 
+/// A decimal tab puts the decimal point at the stop, at the end of a line too (the text was
+/// right-aligned there, its last digit at the stop): the point of "24.75" starts at 72 + 400,
+/// and a number without a point ends there.
+#[test]
+fn decimal_tab_aligns_the_point_at_the_end_of_a_line() {
+    let at = |text: &str, off: usize| {
+        let mut d = Document::from_text(text);
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.tabs =
+                Some(vec![wordcraft_doc::props::TabStop { pos: 400.0, align: wordcraft_doc::props::TabAlign::Decimal, leader: Default::default() }])
+        })
+        .unwrap();
+        lay(&d).caret(&Pos::body(0, off)).unwrap().x
+    };
+    assert!((at("Lantern\t24.75", "Lantern\t24".len()) - 472.0).abs() < 0.01, "{}", at("Lantern\t24.75", 10));
+    assert!((at("Lantern\t2475", "Lantern\t2475".len()) - 472.0).abs() < 0.01);
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");

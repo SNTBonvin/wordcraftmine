@@ -31,7 +31,7 @@ font can't match Word's metrics.
 | Kerning only where Kerning for fonts asks for it (`w:kern`, at or above its size) | ✅ | Measured in Word for Windows: no `w:kern` or `w:kern="0"` is unkerned; WordCraft kerned every run, so its lines held more text than Word's. `layout::tests::kerning_follows_kerning_for_fonts_like_word` | — |
 | Automatic (HTML-style) paragraph spacing (`w:beforeAutospacing`, `w:afterAutospacing`) | ✅ | Measured in Word for Windows: 14 pt at any size, none at the top of the document or a cell or after a cell's last paragraph, the larger of two neighbouring spaces. `layout::tests::automatic_paragraph_spacing_like_word`, `…_drops_at_cell_edges` | — |
 | Widow/orphan control, keep with next, keep lines together, page break before | ✅ | `lib.rs` keep_next/keep_lines; a line holding only a page break stays at the bottom of a full page instead of leaving a blank page (#534) | — |
-| Tabs (left, center, right, decimal, bar), leaders | 🟡 | Bar tabs untested | 1–2 |
+| Tabs (left, center, right, decimal, bar), leaders | 🟡 | Bar tabs untested; a decimal tab aligns the point at the end of a line too (`layout::tests::decimal_tab_aligns_the_point_at_the_end_of_a_line`) | 1–2 |
 | Hyphenation (automatic, zone from the document, words in capitals, soft hyphens, consecutive limit, Manual Hyphenation, #407) | 🟡 | English patterns only; other languages hyphenate wrongly or not at all | in localization |
 | Drop caps | ✅ | 2026-10-06 | — |
 | Columns, column breaks, separators, balancing | ✅ | Columns balance on a section's last page when the next section starts continuous (also at the document end, which Word only balances when the document ends with a continuous break); not after next-page/even/odd breaks or on a page with a column break; keep-together, keep-with-next, widow/orphan control and unsplittable rows can leave them slightly uneven (#350) | — |
@@ -83,6 +83,7 @@ font can't match Word's metrics.
 | 2026-10-12 | trivial | Fixed-layout tables take a column's width from its cells' preferred widths when they agree (measured in Word for Windows; the grid of files written by other tools is often equal shares) |
 | 2026-10-12 | trivial | Latin text forms no standard ligatures by default, as in Word (measured in Word for Windows: each Calibri tt or ti pulled the rest of its line about 0.4 pt left) |
 | 2026-10-12 | trivial | Exact line spacing puts the baseline four-fifths of the way down the line, whatever the font and size (measured in Word for Windows) |
+| 2026-10-12 | trivial | A decimal tab puts the decimal point at the stop when its text ends the line (it was right-aligned there); measured in Word for Windows |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |

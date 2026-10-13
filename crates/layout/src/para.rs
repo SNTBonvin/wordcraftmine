@@ -2348,12 +2348,29 @@ fn pl_text_at(c: &Cluster) -> bool {
     c.dot
 }
 
+/// How much of a decimal tab's text (`seg` wide, after the tab at cluster `tj`) comes before its
+/// first decimal point: that part ends at the tab stop. All of it when it has no point.
+fn decimal_lead(pl: &ParaLayout, tj: usize, seg: f32) -> f32 {
+    let mut w = 0.0;
+    for c in pl.clusters.iter().skip(tj + 1) {
+        if w >= seg - 0.001 {
+            break;
+        }
+        if c.dot {
+            return w;
+        }
+        w += c.adv;
+    }
+    seg
+}
+
 fn resolve_tab(pl: &mut ParaLayout, pending: &mut Option<(usize, TabStop, f32)>, xs: &mut [f32], c0: usize, x: f32, xo: &mut f32) {
     // Finish a centre/right/decimal tab: its text (possibly empty) ends at `x`.
     let Some((tj, stop, tx)) = pending.take() else { return };
     let seg = x - tx - pl.clusters.get(tj).map(|c| c.adv).unwrap_or(0.0);
     let want = match stop.align {
-        TabAlign::Right | TabAlign::Decimal => stop.pos - tx - seg,
+        TabAlign::Right => stop.pos - tx - seg,
+        TabAlign::Decimal => stop.pos - tx - decimal_lead(pl, tj, seg),
         TabAlign::Center => stop.pos - tx - seg / 2.0,
         _ => return,
     }
