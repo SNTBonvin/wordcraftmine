@@ -147,6 +147,7 @@ pub(crate) struct FileBrowser {
 impl FileBrowser {
     pub(crate) fn new(req: FileDialogRequest, after: AfterPick, start: PathBuf, unavailable: bool) -> Self {
         let (name, filters) = match &req {
+            FileDialogRequest::Folder => (String::new(), vec![("Folders".into(), vec![])]),
             FileDialogRequest::Open { purpose } => {
                 (String::new(), open_filters(purpose).iter().map(|(l, e)| ((*l).to_string(), e.iter().map(|x| (*x).to_string()).collect())).collect())
             }
@@ -198,6 +199,9 @@ impl FileBrowser {
     /// pick. Save adds the chosen type's extension to a name without one and asks once more
     /// before replacing a file; Open wants a file that exists.
     pub(crate) fn accept(&mut self) -> Step {
+        if self.req == FileDialogRequest::Folder {
+            return Step::Pick(self.selected.clone().filter(|p| p.is_dir()).unwrap_or_else(|| self.dir.clone()));
+        }
         if let Some(dir) = self.selected.take().filter(|p| p.is_dir()) {
             self.navigate(dir);
             return Step::Stay;
@@ -209,6 +213,7 @@ impl FileBrowser {
             return Step::Stay;
         }
         match self.req {
+            FileDialogRequest::Folder => Step::Stay,
             FileDialogRequest::Open { .. } => {
                 if path.is_file() {
                     return Step::Pick(path);
@@ -242,6 +247,7 @@ impl FileBrowser {
 
     fn title(&self) -> &'static str {
         match self.req {
+            FileDialogRequest::Folder => "Link folder",
             FileDialogRequest::Open { .. } => "Open",
             FileDialogRequest::Save { .. } => "Save As",
         }
@@ -249,6 +255,7 @@ impl FileBrowser {
 
     fn ok_label(&self) -> &'static str {
         match self.req {
+            FileDialogRequest::Folder => "Link folder",
             FileDialogRequest::Open { .. } => "Open",
             FileDialogRequest::Save { .. } => "Save",
         }

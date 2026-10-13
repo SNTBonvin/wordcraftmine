@@ -56,6 +56,7 @@ impl Launcher {
             // Built here, on the UI thread: macOS shows the panel as a sheet on the window now.
             let dialog = rfd::AsyncFileDialog::new().set_parent(parent);
             let picking: Picking = match req {
+                FileDialogRequest::Folder => Box::pin(dialog.pick_folder()),
                 FileDialogRequest::Open { purpose } => Box::pin(open_filters(dialog, &purpose).pick_file()),
                 FileDialogRequest::Save { name } => {
                     let exts = save_exts(&name);

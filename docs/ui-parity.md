@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -48,6 +48,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; title-bar content gains 16 pt clearance; live synthetic-project tests passed with Codex and Ollama Cloud |
 | 2026-10-13 | minor | Native Markdown chat, model-supported Codex thinking levels and transient document diffs/animation; no saved review markup introduced |
 | 2026-10-13 | minor | [Codex subscription chat](codex-chat.md) joins local/cloud agents with streamed replies and guarded document tools; refreshed right chat pane |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |

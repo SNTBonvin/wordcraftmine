@@ -50,10 +50,64 @@ fn safe_source(text: &str) -> Cow<'_, str> {
 pub fn show(ui: &mut egui::Ui, cache: &mut CommonMarkCache, text: &str) {
     let clipped = super::clip(text, 48_000);
     let source = safe_source(&clipped);
-    ui.scope(|ui| {
-        ui.style_mut().interaction.selectable_labels = true;
-        CommonMarkViewer::new().enable_scroll_to_heading(false).show(ui, cache, &source);
-    });
+    for clicked in cache.link_hooks_mut().values_mut() {
+        *clicked = false;
+    }
+    // A child's intrinsic width must never resize the containing right panel. GFM tables
+    // intentionally scroll within their own block; prose remains wrapped and selectable.
+    let width = ui.available_width().max(1.0);
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(ui.next_widget_position(), egui::vec2(width, ui.available_height())))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(ui.clip_rect());
+    child.style_mut().interaction.selectable_labels = true;
+    child.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+    let mut blocks = Vec::new();
+    let mut table_start = None;
+    for (event, range) in Parser::new_ext(&source, Options::all()).into_offset_iter().take(100_000) {
+        match event {
+            Event::Start(Tag::Table(_)) => table_start = Some(range.start),
+            Event::End(pulldown_cmark::TagEnd::Table) => {
+                if let Some(start) = table_start.take() {
+                    blocks.push(start..range.end);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut offset = 0;
+    for (i, range) in blocks.iter().enumerate() {
+        if let Some(prose) = source.get(offset..range.start) {
+            viewer(&mut child, cache, prose);
+        }
+        egui::ScrollArea::horizontal()
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+            .id_salt(("markdown_table", i))
+            .auto_shrink([false, true])
+            .max_width(width)
+            .show(&mut child, |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                if let Some(table) = source.get(range.clone()) {
+                    viewer(ui, cache, table);
+                }
+            });
+        offset = range.end;
+    }
+    if let Some(prose) = source.get(offset..) {
+        viewer(&mut child, cache, prose);
+    }
+    ui.allocate_space(egui::vec2(width, child.min_rect().height()));
+}
+fn viewer(ui: &mut egui::Ui, cache: &mut CommonMarkCache, source: &str) {
+    let clicked: Vec<String> = cache.link_hooks().iter().filter(|(_, v)| **v).map(|(k, _)| k.clone()).collect();
+    CommonMarkViewer::new().enable_scroll_to_heading(false).show(ui, cache, source);
+    for url in clicked {
+        if let Some(value) = cache.link_hooks_mut().get_mut(&url) {
+            *value = true;
+        }
+    }
 }
 #[cfg(test)]
 mod tests {

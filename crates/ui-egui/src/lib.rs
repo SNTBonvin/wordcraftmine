@@ -1058,7 +1058,8 @@ impl WordApp {
                 self.ollama.allow_edits = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ollama.allow_edits);
                 json!({"allowEdits": self.ollama.allow_edits})
             }
-            "ui.agentDismissChanges"
+            "ui.agentProject"
+            | "ui.agentDismissChanges"
             | "ui.codexChat"
             | "ui.codexSignIn"
             | "ui.ollamaRefresh"

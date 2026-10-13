@@ -427,3 +427,153 @@ fn formatting_changes_are_visible_and_dismiss_does_not_edit() {
     assert_eq!(app.session.doc, doc);
     assert_eq!(app.session.undo_depth(), depth);
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn unlinking_project_revokes_worker_and_drops_retrieved_context() {
+    let mut app = app();
+    command(&mut app, "ui.agentProject", &json!({"path":std::env::temp_dir()})).unwrap();
+    let before = text(&app);
+    let flag = app.ollama.cancel.clone();
+    app.ollama.history.push(json!({"role":"assistant","content":"private project passage"}));
+    app.ollama.entry("Assistant", "private project passage".into());
+    command(&mut app, "ui.agentProject", &json!({"path":""})).unwrap();
+    assert!(flag.load(Ordering::SeqCst));
+    assert!(app.ollama.history.is_empty() && app.ollama.entries.is_empty());
+    assert!(app.ollama.project_folder.is_empty());
+    assert_eq!(text(&app), before);
+}
+
+#[test]
+fn thinking_summaries_stay_with_completed_replies() {
+    let mut app = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.ollama.events = Some(rx);
+    app.ollama.busy = true;
+    tx.send(Event::Thinking("A readable summary".into())).unwrap();
+    tx.send(Event::Message("Reply one".into())).unwrap();
+    poll(&mut app, &egui::Context::default());
+    assert!(app.ollama.thinking.is_empty());
+    assert_eq!(app.ollama.entries[0], ("Thinking summary".into(), "A readable summary".into()));
+    assert_eq!(app.ollama.entries[1].1, "Reply one");
+}
+
+fn overflowing_reply() -> String {
+    format!(
+        "# Research notes\n\n{}\n\n**Evidence** and *inference* remain readable.\n\n| Source | Claim | Evidence | Limitation |\n|---|---|---|---|\n| {} | {} | {} | {} |\n\n- First finding\n- Second finding\n\n[Official reference](https://example.com/research)\n",
+        "A long paragraph about collaboration, inclusion and sustainable resource use. ".repeat(16),
+        "VeryWideColumn".repeat(20),
+        "Claim".repeat(30),
+        "Evidence".repeat(30),
+        "Limitation".repeat(30)
+    )
+}
+#[test]
+fn wide_markdown_cannot_expand_the_chat_sidebar() {
+    for width in [800.0, 1440.0] {
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.ollama.open = true;
+        app.ollama.model = "test".into();
+        app.ollama.models = vec!["test".into()];
+        app.ollama.status = "Ready.".into();
+        app.ollama.entry("You", "What does this mean?".into());
+        app.ollama.entry("Assistant", overflowing_reply());
+        for _ in 0..4 {
+            ctx.run_ui(
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 900.0))), ..Default::default() },
+                |ui| {
+                    let before = ui.available_width();
+                    show(&mut app, ui);
+                    assert!(ui.available_width() >= before - 681.0, "panel expanded: {}", ui.available_width());
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+    }
+}
+
+#[test]
+#[ignore = "Renders native Markdown layout for visual inspection"]
+fn render_chat_project_and_long_markdown() {
+    let mut app = app();
+    app.integrated_titlebar = true;
+    app.ui.tab = "Agents".into();
+    app.ollama.open = true;
+    app.ollama.source = Source::Codex;
+    app.ollama.model = "gpt-6-luna".into();
+    app.ollama.models = vec![app.ollama.model.clone()];
+    app.ollama.status = "Ready.".into();
+    app.ollama.project_folder = "/tmp/Paper project".into();
+    app.ollama.entry("You", "What are the broader claims and their supporting evidence?".into());
+    app.ollama.entry("Thinking summary", "I reviewed the methods and source passages to separate evidence from interpretation.".into());
+    app.ollama.entry("Assistant", overflowing_reply());
+    app.ollama.sources =
+        vec![("Official research reference".into(), "https://example.com/research".into()), ("paper.md · line 14".into(), "#project-test".into())];
+    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_pixels_per_point(2.0).wgpu().build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    for _ in 0..6 {
+        harness.step();
+    }
+    let path = std::env::var("WORDCRAFT_CHAT_SHOT").expect("WORDCRAFT_CHAT_SHOT");
+    harness.render().unwrap().save(path).unwrap();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+#[ignore = "Uses live signed-in Codex and Ollama cloud services with synthetic project content"]
+fn live_linked_project_citations_codex_and_cloud() {
+    let folder = std::env::temp_dir().join(format!("wordcraft-project-live-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("paper.md"), "# Synthetic paper\nThe study recruited 37 volunteers.\nThe project code is BLUE-731.\n").unwrap();
+    for (source, model) in [(Source::Codex, "gpt-6-luna"), (Source::Cloud, "gemma4:31b-cloud")] {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        app.ctx = Some(ctx.clone());
+        app.ollama.source = source;
+        app.ollama.model = model.into();
+        app.ollama.internet = false;
+        command(&mut app, "ui.agentProject", &json!({"path":folder})).unwrap();
+        app.ollama.input="Use project_list, then project_read on paper.md. How many volunteers were recruited and what is the project code? Cite each claim using the exact citation Markdown returned by project_read. Do not edit the document.".into();
+        send(&mut app, &ctx);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
+        while app.ollama.busy && std::time::Instant::now() < deadline {
+            poll(&mut app, &ctx);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!app.ollama.busy, "{source:?}: timed out");
+        assert_eq!(app.ollama.status, "Ready.", "{source:?}: {:?}", app.ollama.entries);
+        let reply = app.ollama.entries.iter().filter(|(r, _)| r == "Assistant").map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(reply.contains("37") && reply.contains("BLUE-731") && reply.contains("#project-"), "{source:?}: {reply}");
+        assert!(!app.ollama.project_excerpts.is_empty());
+        assert_eq!(text(&app), "Original");
+        println!("{source:?}: project retrieval and cited answer passed");
+    }
+    std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn project_folder_picker_is_registered_and_never_opens_a_document() {
+    let mut app = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let rx = std::cell::RefCell::new(Some(rx));
+    app.services.file_dialog = Some(Box::new(move |req| {
+        assert_eq!(req, crate::FileDialogRequest::Folder);
+        rx.borrow_mut().take().unwrap()
+    }));
+    command(&mut app, "ui.agentProject", &json!({})).unwrap();
+    assert!(app.file_dialog_open());
+    tx.send(Ok(Some(std::env::temp_dir().to_string_lossy().into_owned()))).unwrap();
+    app.poll_file_dialog().unwrap().unwrap();
+    assert!(!app.ollama.project_folder.is_empty());
+    assert_eq!(text(&app), "Original");
+    assert_eq!(app.session.undo_depth(), 0);
+    assert!(commands(&app).iter().any(|c| c["id"] == "ui.agentProject"));
+}

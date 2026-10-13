@@ -12,6 +12,8 @@ use std::sync::{
 #[cfg(not(target_arch = "wasm32"))]
 mod codex;
 #[cfg(not(target_arch = "wasm32"))]
+mod project;
+#[cfg(not(target_arch = "wasm32"))]
 mod transport;
 
 mod edits;
@@ -40,6 +42,7 @@ pub struct Preferences {
     pub model: String,
     pub internet: bool,
     pub effort: String,
+    pub project_folder: String,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -50,6 +53,7 @@ impl Default for Preferences {
             model: String::new(),
             internet: true,
             effort: String::new(),
+            project_folder: String::new(),
         }
     }
 }
@@ -73,12 +77,15 @@ pub struct State {
     pub signed_in: bool,
     pub usage: String,
     pub effort: String,
+    pub project_folder: String,
     pub capabilities: Vec<ModelOptions>,
     pub phase: String,
     pub thinking: String,
     pub review: edits::Review,
     markdown: egui_commonmark::CommonMarkCache,
     show_changes: bool,
+    project_excerpts: Vec<(String, String)>,
+    selected_source: Option<String>,
     entries: Vec<(String, String)>,
     history: Vec<Value>,
     context: Value,
@@ -111,12 +118,15 @@ impl Default for State {
             signed_in: false,
             usage: String::new(),
             effort: String::new(),
+            project_folder: String::new(),
             capabilities: Vec::new(),
             phase: String::new(),
             thinking: String::new(),
             review: edits::Review::default(),
             markdown: egui_commonmark::CommonMarkCache::default(),
             show_changes: false,
+            project_excerpts: Vec::new(),
+            selected_source: None,
             entries: Vec::new(),
             history: Vec::new(),
             context: Value::Null,
@@ -161,6 +171,7 @@ pub(super) enum Event {
     Message(String),
     Partial(String),
     Sources(Vec<(String, String)>),
+    ProjectSource { title: String, url: String, text: String },
     Tool { name: String, args: Value, reply: Sender<Value> },
     Finished(Result<Vec<Value>, String>),
 }
@@ -174,6 +185,7 @@ impl State {
             model: self.model.clone(),
             internet: self.internet,
             effort: self.effort.clone(),
+            project_folder: self.project_folder.clone(),
         }
     }
     pub fn apply_preferences(&mut self, p: &Preferences) {
@@ -184,6 +196,7 @@ impl State {
         self.model = clip(&p.model, 256);
         self.internet = p.internet;
         self.effort = clip(&p.effort, 64);
+        self.project_folder = clip(&p.project_folder, 4096);
         self.allow_edits = false;
         self.models.clear();
         self.status = "Choose a model to start.".into();
@@ -409,6 +422,8 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
+        app.ollama.project_excerpts.clear();
+        app.ollama.selected_source = None;
         app.ollama.undo.clear();
         app.ollama.review = edits::Review::default();
         app.ollama.allow_edits = false;
@@ -459,14 +474,25 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
                     Err(error) => app.ollama.status = error,
                 }
             }
+            Event::ProjectSource { title, url, text } => {
+                if app.ollama.project_excerpts.len() < 96 && !app.ollama.project_excerpts.iter().any(|(u, _)| u == &url) {
+                    app.ollama.markdown.add_link_hook(&url);
+                    app.ollama.sources.push((title, url.clone()));
+                    app.ollama.project_excerpts.push((url, text));
+                }
+            }
             Event::Message(text) => {
+                let summary = std::mem::take(&mut app.ollama.thinking);
+                if !summary.is_empty() {
+                    app.ollama.entry("Thinking summary", summary);
+                }
                 app.ollama.live_response.clear();
                 app.ollama.entry("Assistant", text);
             }
             Event::Partial(text) => app.ollama.live_response = text,
             Event::Sources(sources) => {
                 for source in sources {
-                    if app.ollama.sources.len() < 24 && !app.ollama.sources.iter().any(|(_, url)| url == &source.1) {
+                    if app.ollama.sources.len() < 96 && !app.ollama.sources.iter().any(|(_, url)| url == &source.1) {
                         app.ollama.sources.push(source);
                     }
                 }
@@ -541,7 +567,7 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
     app.ollama.turn_revision = Some(app.session.rev());
     app.ollama.context = json!({"title":document_title(app),"documentId":app.session.document_id(),"revision":app.session.rev(),
         "textPreview":clip(&app.session.doc.plain_text(wordcraft_doc::StoryRef::Body),12_000),
-        "selectedText":clip(&app.session.selected_text(),2000),"selection":app.session.sel,"allowEdits":app.ollama.allow_edits});
+        "selectedText":clip(&app.session.selected_text(),2000),"selection":app.session.sel,"allowEdits":app.ollama.allow_edits,"linkedProject":if app.ollama.project_folder.is_empty() { Value::Null } else { json!({"name":std::path::Path::new(&app.ollama.project_folder).file_name().map(|n| n.to_string_lossy().into_owned()),"tools":["project_list","project_search","project_read"]}) }});
     app.ollama.cancel = Arc::new(AtomicBool::new(false));
     app.ollama.history.push(json!({"role":"user","content":input}));
     app.ollama.entry("You", input);
@@ -577,6 +603,12 @@ fn effort_label(effort: &str) -> &str {
 
 fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_commonmark::CommonMarkCache) {
     ui.add_space(16.0);
+    if role == "Thinking summary" {
+        ui.collapsing("Thought summary", |ui| {
+            markdown::show(ui, cache, text);
+        });
+        return;
+    }
     if role == "Activity" {
         ui.horizontal(|ui| {
             ui.colored_label(t.green, "✓");
@@ -622,6 +654,8 @@ fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
         app.ollama.markdown = Default::default();
         app.ollama.thinking.clear();
         app.ollama.sources.clear();
+        app.ollama.project_excerpts.clear();
+        app.ollama.selected_source = None;
         #[cfg(not(target_arch = "wasm32"))]
         refresh(app, ctx);
     }
@@ -734,12 +768,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .frame(egui::Frame::NONE.fill(t.panel).inner_margin(18).stroke(Stroke::new(1.0, t.border)))
         .show(ui, |ui| {
             let ctx = ui.ctx().clone();
+            for (url, _) in &app.ollama.project_excerpts {
+                if app.ollama.markdown.get_link_hook(url).is_none() {
+                    app.ollama.markdown.add_link_hook(url);
+                }
+            }
             // This scope changes only the chat: quiet, borderless controls retain native focus/hover.
             let visuals = ui.visuals_mut();
             for visual in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered] {
                 visual.bg_stroke = Stroke::NONE;
                 visual.corner_radius = egui::CornerRadius::same(8);
             }
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(source_name(app.ollama.source)).size(18.0).strong());
@@ -774,6 +814,28 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     }),
                 );
             });
+            ui.horizontal(|ui| {
+                if app.ollama.project_folder.is_empty() {
+                    if ui
+                        .add(egui::Button::new("+ Link project").frame(false))
+                        .on_hover_text("Use a local folder as read-only context. Retrieved passages are shared with the selected model.")
+                        .clicked()
+                    {
+                        let _ = command(app, "ui.agentProject", &json!({}));
+                    }
+                } else {
+                    let name = std::path::Path::new(&app.ollama.project_folder)
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Project".into());
+                    ui.add(egui::Label::new(RichText::new(format!("Project · {name}")).size(11.0).color(t.accent_text)).truncate()).on_hover_text(
+                        "Files are read live when requested. Read-only context is shared with the selected model; project files cannot be edited.",
+                    );
+                    if ui.add(egui::Button::new("×").frame(false)).on_hover_text("Unlink project and clear its chat context").clicked() {
+                        let _ = command(app, "ui.agentProject", &json!({"path":""}));
+                    }
+                }
+            });
             ui.add_space(4.0);
             ui.separator();
             let extra = if app.ollama.models.is_empty() && !app.ollama.busy { 30.0 } else { 0.0 }
@@ -783,11 +845,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ui.set_min_height(height);
                 egui::ScrollArea::vertical()
                     .id_salt("agent_conversation_v2")
+                    .auto_shrink([false, false])
                     .stick_to_bottom(true)
                     .max_height(height)
                     .min_scrolled_height(height)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                         if app.ollama.entries.is_empty() {
                             ui.add_space(55.0);
                             ui.label(RichText::new("Write something great.").size(22.0));
@@ -804,14 +868,22 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                                 }
                             }
                         }
-                        if !app.ollama.thinking.is_empty() {
-                            ui.add_space(10.0);
-                            ui.collapsing("Thinking summary", |ui| {
-                                markdown::show(ui, &mut app.ollama.markdown, &app.ollama.thinking);
-                            });
-                        }
                         for (role, text) in &app.ollama.entries {
                             message(ui, role, text, &t, &mut app.ollama.markdown);
+                            for (url, _) in &app.ollama.project_excerpts {
+                                if app.ollama.markdown.get_link_hook(url) == Some(true) {
+                                    app.ollama.selected_source = Some(url.clone());
+                                }
+                            }
+                        }
+                        if !app.ollama.thinking.is_empty() {
+                            ui.add_space(10.0);
+                            egui::CollapsingHeader::new(if app.ollama.busy { "Thinking · live summary" } else { "Thought summary" })
+                                .id_salt(("live_thinking", app.ollama.entries.len()))
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    markdown::show(ui, &mut app.ollama.markdown, &app.ollama.thinking);
+                                });
                         }
                         if !app.ollama.live_response.is_empty() {
                             message(ui, "Assistant", &app.ollama.live_response, &t, &mut app.ollama.markdown);
@@ -831,13 +903,39 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         if !app.ollama.sources.is_empty() {
                             ui.add_space(8.0);
                             ui.collapsing("Sources", |ui| {
-                                for (title, url) in &app.ollama.sources {
-                                    ui.hyperlink_to(title, url);
+                                for (index, (title, url)) in app.ollama.sources.iter().enumerate() {
+                                    egui::Frame::NONE.fill(t.hover.gamma_multiply(0.4)).corner_radius(8).inner_margin(8).show(ui, |ui| {
+                                        if url.starts_with("#project-") {
+                                            if ui
+                                                .add(egui::Button::new(format!("{} · {title}", index.saturating_add(1))).wrap().frame(false))
+                                                .clicked()
+                                            {
+                                                app.ollama.selected_source = Some(url.clone());
+                                            }
+                                            ui.small(RichText::new("Linked project · retrieved passage").color(t.text_dim));
+                                        } else {
+                                            ui.add(egui::Hyperlink::from_label_and_url(format!("{} · {title}", index.saturating_add(1)), url));
+                                            let domain = url.split('/').nth(2).unwrap_or(url);
+                                            ui.small(RichText::new(domain).color(t.text_dim));
+                                        }
+                                    });
                                 }
                             });
                         }
                     });
             });
+            if let Some(url) = &app.ollama.selected_source.clone() {
+                egui::Window::new("Project source").id(egui::Id::new("agent_project_source")).default_width(500.0).resizable(true).show(&ctx, |ui| {
+                    if ui.button("Close").clicked() {
+                        app.ollama.selected_source = None;
+                    }
+                    if let Some((_, text)) = app.ollama.project_excerpts.iter().find(|(u, _)| u == url) {
+                        egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                            ui.add(egui::Label::new(text).wrap().selectable(true));
+                        });
+                    }
+                });
+            }
             ui.add_space(10.0);
             egui::Frame::NONE.fill(t.hover.gamma_multiply(0.45)).stroke(Stroke::new(1.0, t.border)).corner_radius(14).inner_margin(12).show(
                 ui,
@@ -939,7 +1037,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 pub fn inspect(app: &WordApp) -> Value {
     json!({"open":app.ollama.open,"model":app.ollama.model,"source":match app.ollama.source {Source::Cloud=>"cloud",Source::Local=>"local",Source::LlamaCpp=>"llamacpp",Source::Codex=>"codex"},
         "busy":app.ollama.busy,"status":app.ollama.status,"allowEdits":app.ollama.allow_edits,"internet":app.ollama.internet,
-        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"effort":app.ollama.effort,"capabilities":app.ollama.capabilities,"phase":app.ollama.phase,"changes":app.ollama.review.inspect(app.session.rev()),"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
+        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"effort":app.ollama.effort,"capabilities":app.ollama.capabilities,"phase":app.ollama.phase,"thinking":app.ollama.thinking,"projectFolder":app.ollama.project_folder,"changes":app.ollama.review.inspect(app.session.rev()),"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
 }
 
 pub fn commands(app: &WordApp) -> Vec<Value> {
@@ -960,6 +1058,7 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         ("ui.ollamaEdit", "Allow AI editing", r#"{"value"?:bool}"#),
         ("ui.ollamaInternet", "Internet access", r#"{"value"?:bool}"#),
         ("ui.ollamaUndo", "Undo AI change", "{}"),
+        ("ui.agentProject", "Link project folder", r#"{"path"?:string}"#),
         ("ui.agentDismissChanges", "Dismiss AI highlighting", "{}"),
         ("ui.agentShowChange", "Show AI change in document", r#"{"index"?:number}"#),
     ]
@@ -973,6 +1072,25 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
 
 pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, String> {
     match id {
+        #[cfg(not(target_arch = "wasm32"))]
+        "ui.agentProject" => {
+            if let Some(path) = p.get("path").and_then(Value::as_str) {
+                let folder = if path.is_empty() { String::new() } else { project::root(path)?.to_string_lossy().into_owned() };
+                app.ollama.stop();
+                app.ollama.project_folder = folder;
+                // Revocation clears prior retrieved content from the conversation sent to providers.
+                app.ollama.entries.clear();
+                app.ollama.sources.clear();
+                app.ollama.project_excerpts.clear();
+                app.ollama.selected_source = None;
+                app.ollama.markdown = Default::default();
+                app.ollama.thinking.clear();
+                app.ollama.context = Value::Null;
+                app.ollama.status = "Ready.".into();
+            } else {
+                let _ = app.ask_file(crate::FileDialogRequest::Folder, crate::file_dialogs::AfterPick::ProjectFolder);
+            }
+        }
         "ui.agentShowChange" => {
             if app.ollama.review.revision != app.session.rev() {
                 return Err("The document has changed since this AI edit.".into());
@@ -993,6 +1111,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.markdown = Default::default();
                 app.ollama.thinking.clear();
                 app.ollama.sources.clear();
+                app.ollama.project_excerpts.clear();
+                app.ollama.selected_source = None;
             }
             app.ollama.open = p.get("value").and_then(Value::as_bool).unwrap_or(true);
             if !app.ollama.open {
@@ -1031,6 +1151,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             app.ollama.markdown = Default::default();
             app.ollama.thinking.clear();
             app.ollama.sources.clear();
+            app.ollama.project_excerpts.clear();
+            app.ollama.selected_source = None;
             app.ollama.status = "Ready.".into();
         }
         "ui.ollamaSettings" => {
