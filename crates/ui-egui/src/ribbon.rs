@@ -507,9 +507,15 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
             mi(ui, app, "Paste Special…", "edit.pasteSpecial", json!({}));
         });
         stack(ui, |ui| {
-            small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
+            let cut = small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
             let r = small(ui, app, "copy", Some("Copy"), "Copy", "edit.copy", json!({}), false);
             if r.clicked() {
+                ui.ctx().copy_text(app.session.clipboard_text.clone());
+            }
+            // Cut fills the session clipboard like Copy does; push it to the system
+            // clipboard too, or a paste (here or in another program) repeats the last
+            // copy (#1265).
+            if cut.clicked() && !app.session.clipboard_text.is_empty() {
                 ui.ctx().copy_text(app.session.clipboard_text.clone());
             }
             let active = app.session.painter.is_some();
