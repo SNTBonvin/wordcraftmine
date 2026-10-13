@@ -1266,6 +1266,44 @@ mod tests {
         }
     }
 
+    /// A rounded rectangle laid out and rendered: its corner pixel is painted when the corner is
+    /// square, left white with the default corner; turned a quarter, the same.
+    #[test]
+    fn rendered_rounded_rectangles_follow_their_corner() {
+        use wordcraft_doc::para::{Anchor, Float, ShapeKind, Wrap};
+        let rendered = |corner: Option<u32>, rot: f32| {
+            let float = Float { wrap: Wrap::InFrontOfText, h_rel: Anchor::Page, v_rel: Anchor::Page, x: 100.0, y: 100.0, rot, ..Default::default() };
+            let shape = wordcraft_doc::para::InlineObject::Shape {
+                kind: ShapeKind::RoundedRectangle,
+                w: 200.0,
+                h: 200.0,
+                fill: Some(wordcraft_doc::props::Rgb(0, 0, 0)),
+                stroke: None,
+                stroke_width: 0.0,
+                float,
+                story: None,
+                freeform: None,
+                effects: Default::default(),
+                extra: wordcraft_doc::connector::ShapeExtra { corner, ..Default::default() },
+            };
+            let mut p = wordcraft_doc::Paragraph::new();
+            p.insert_object(0, shape, &Default::default()).unwrap();
+            let mut d = Document::new();
+            d.body = vec![wordcraft_doc::para_block(p)];
+            let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+            render_page(&d, &l.pages[0], 1.0, &RenderOptions::default())
+        };
+        for rot in [0.0, 90.0] {
+            // 3 pt in from the frame's top-left corner, and its middle.
+            let (corner, middle) = ((103, 103), (200, 200));
+            let square = rendered(Some(0), rot);
+            assert_eq!(square.pixel(corner.0, corner.1)[0], 0, "square corner, turned {rot}");
+            let rounded = rendered(None, rot);
+            assert_eq!(rounded.pixel(corner.0, corner.1)[0], 255, "default corner, turned {rot}");
+            assert_eq!(rounded.pixel(middle.0, middle.1)[0], 0, "filled, turned {rot}");
+        }
+    }
+
     /// A rounded rectangle's corner is its file's (`roundRect`'s `adj`), not always 16%.
     #[test]
     fn rounded_rectangle_corners_follow_their_radius() {
