@@ -22,8 +22,7 @@ pub enum ProofLang {
     /// patterns.
     Pt,
     /// Italian (`it`, `it-IT`, `it-CH`): the installed Hunspell dictionary (`it_IT`, when there
-    /// is one), the Italian grammar rules. Hyphenation keeps using the English patterns, as for
-    /// [`ProofLang::Other`].
+    /// is one), the Italian grammar rules and the Italian hyphenation patterns.
     It,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without
     /// the language's proofing tools: no spelling or grammar marks, so its words are never

@@ -20,9 +20,9 @@
 //!   grammar rules with Portuguese messages, and `hyph-utf8`'s Portuguese patterns.
 //! - **Italian** ([`ProofLang::It`], module [`it`]): spelling against the Hunspell `it_IT`
 //!   dictionary installed on the system (not bundled — the upstream file is GPL-licensed),
-//!   suggestions tuned for Italian (missing accents, `REP` confusions, missing spaces) and
-//!   conservative grammar rules with Italian messages. Hyphenation keeps using the English
-//!   patterns.
+//!   suggestions tuned for Italian (missing accents, `REP` confusions, missing spaces),
+//!   conservative grammar rules with Italian messages, and `hyph-utf8`'s Italian patterns
+//!   (Beccari, MIT option).
 //! - **Other languages** ([`ProofLang::Other`]): no spelling or grammar marks, like Word without
 //!   the language's proofing tools.
 //! - **Hyphenation** ([`hyphen`]): dictionary, Liang patterns (English, Polish, Portuguese),
