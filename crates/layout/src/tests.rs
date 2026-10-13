@@ -5019,4 +5019,61 @@ fn page_fields_from_page_nine_to_ten_rebreak_the_rest() {
     assert!(!ten.is_empty() && ten.iter().all(|s| s == "10"), "page 10: {ten:?}");
     assert_eq!(shown.iter().map(Vec::len).sum::<usize>(), 900, "every field drawn once");
     assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(8)).map(|p| p.len()).unwrap_or(0));
+    // No line overflows its column with the wider results: each ends with the space after a field
+    // (which may hang), so the field before it ends within the line's right edge.
+    for (pi, page) in l.pages.iter().enumerate() {
+        for it in &page.items {
+            let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, .. } = it else { continue };
+            if path.0 != [8] {
+                continue;
+            }
+            for line in para.lines.get(*l0..*l1).unwrap_or(&[]) {
+                let ink = line.xs.len().checked_sub(2).and_then(|k| line.xs.get(k)).copied().unwrap_or(0.0);
+                assert!(ink <= line.right + 0.5, "page {}: a line runs to {ink} past its right edge {}", pi + 1, line.right);
+            }
+        }
+    }
+}
+
+/// #1352: a footnote's PAGE field, referenced from the part of a paragraph on its second page,
+/// shows the page the footnote is on (the paragraph's own page map doesn't leak into it).
+#[test]
+fn footnote_page_field_from_a_split_paragraph_shows_its_page() {
+    let long = "words that fill the page ".repeat(200);
+    let mut d = page_field_doc(0, &["Head", &long, "Tail"]);
+    let end = d.end_of(StoryRef::Body);
+    // A custom mark, so the note marks aren't mistaken for page numbers.
+    let id = d.add_part(
+        wordcraft_doc::PartKind::Footnote,
+        vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Note on page ", Default::default()))],
+    );
+    d.insert_object(&end, InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Footnote, id, custom: "*".into() }, &Default::default())
+        .unwrap();
+    let note = d.para_mut(StoryRef::Part(id), &Path::top(0)).unwrap();
+    let n = note.len();
+    note.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+        .unwrap();
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2, "the paragraph runs onto a second page");
+    // The PAGE results drawn in `story`, by page (not the "*" note marks).
+    let fields_in = |story: StoryRef| -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        for (pi, page) in l.pages.iter().enumerate() {
+            for it in page.items.iter().chain(page.footer.iter()) {
+                let Placed::Lines { story: s, para, l0, l1, .. } = it else { continue };
+                let (Some(f), Some(e)) = (para.lines.get(*l0), l1.checked_sub(1).and_then(|k| para.lines.get(k))) else { continue };
+                if *s != story {
+                    continue;
+                }
+                out.extend(para.shown.iter().filter(|x| x.0 >= f.c0 && x.0 < e.c1 && x.1 != "*").map(|x| (pi, x.1.clone())));
+            }
+        }
+        out
+    };
+    let body = fields_in(StoryRef::Body);
+    assert_eq!(body.first(), Some(&(0, "1".to_string())), "{body:?}");
+    assert!(body.iter().all(|(pi, t)| *t == (pi + 1).to_string()), "{body:?}");
+    assert_eq!(body.last().map(|x| x.0), Some(1), "{body:?}");
+    let in_note = fields_in(StoryRef::Part(id));
+    assert_eq!(in_note, [(1, "2".to_string())], "the note is on page 2 and says so");
 }

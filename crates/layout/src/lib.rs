@@ -2693,6 +2693,14 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
 /// it runs onto (#1352).
 const MAX_PAGE_RELAYS: usize = 64;
 
+/// Run `f` with `map` as the field context's page map (`FieldCtx::page_from`), then take it back.
+fn with_page_map<T>(ctx: &mut Ctx, map: &mut Vec<(usize, u32)>, f: impl FnOnce(&mut Ctx) -> T) -> T {
+    ctx.fields.page_from = std::mem::take(map);
+    let out = f(ctx);
+    *map = std::mem::take(&mut ctx.fields.page_from);
+    out
+}
+
 fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, body_top: f32) {
     let width = pb.col_w();
     // Floating objects anchored here join the page's wrap areas before the text is laid out; if
@@ -2702,8 +2710,10 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     let excl_mark = pb.excl.len();
     let guess = pb.y + space_before;
     let label = ctx.next_label(p);
-    // The pages fields are on start from this paragraph's own (#1352).
-    ctx.fields.page_from.clear();
+    // The pages this paragraph's fields are on after its first (`FieldCtx::page_from`), kept here
+    // and lent to the field context only while this paragraph itself is laid out, so footnotes,
+    // text boxes and headers laid out in between never see it (#1352).
+    let mut page_map: Vec<(usize, u32)> = Vec::new();
     let (mut float_rects, mut pl, mut rel) = anchor_floats(ctx, pb, p, guess, space_before, excl_mark, &label);
     // The page its fields were laid out for (and the width), and how many times it was laid out again for a later
     // page (bounded: a paragraph over hundreds of pages keeps the last number it got).
@@ -2800,13 +2810,13 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             && !pb.web
             && page_relays < MAX_PAGE_RELAYS
             && let Some(resume) = pl.lines.get(l0).map(|l| l.start)
-            && ctx.fields.page_from.last().map_or(laid_page, |e| e.1) != pb.number
+            && page_map.last().map_or(laid_page, |e| e.1) != pb.number
             && has_page_number_fields(p)
         {
             page_relays += 1;
-            ctx.fields.page_from.push((resume, pb.number));
+            page_map.push((resume, pb.number));
             ctx.fields.page = laid_page;
-            let relaid = ctx.para_labelled(p, laid_width, None, &rel, label.clone());
+            let relaid = with_page_map(ctx, &mut page_map, |ctx| ctx.para_labelled(p, laid_width, None, &rel, label.clone()));
             match relaid.lines.iter().position(|l| l.start == resume) {
                 Some(k) => {
                     pl = relaid;
@@ -2814,10 +2824,12 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     l0 = k;
                 }
                 None => {
-                    ctx.fields.page_from.pop();
+                    page_map.pop();
                 }
             }
         }
+        // What is laid out for these lines from here (their footnotes) is on this page.
+        ctx.fields.page = pb.number;
         // How many lines fit?
         let Some(first) = pl.lines.get(l0) else { break };
         // A paragraph's first line may start below its top (pushed down by a floating object).
@@ -3020,7 +3032,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     && let Some(resume) = pl.lines.get(l0).map(|l| l.start)
                 {
                     let y0 = pb.y;
-                    let (rects, relaid, relaid_rel) = anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label);
+                    let (rects, relaid, relaid_rel) = with_page_map(ctx, &mut page_map, |ctx| anchor_floats(ctx, pb, p, y0, 0.0, excl_mark, &label));
                     if let Some(k) = relaid.lines.iter().position(|l| l.start == resume) {
                         (float_rects, pl, rel) = (rects, relaid, relaid_rel);
                         (laid_page, laid_width) = (pb.number, pb.col_w());
@@ -3034,7 +3046,6 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             _ => {}
         }
     }
-    ctx.fields.page_from.clear();
     pb.y += pl.rp.space_after;
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after, pl.rp.after_auto, label.is_some()));
 }

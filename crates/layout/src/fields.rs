@@ -23,8 +23,8 @@ pub struct FieldCtx {
     pub author: Arc<str>,
     pub filename: Arc<str>,
     /// Where a paragraph runs onto later pages: from text offset `.0` on, its fields are on page
-    /// `.1` (ascending offsets; empty for a paragraph on one page). Set only while a body paragraph
-    /// split across pages is laid out again for its later pages (#1352).
+    /// `.1` (ascending offsets). Empty except during the layout of a body paragraph split across
+    /// pages, for its later pages (#1352); nothing else laid out meanwhile sees it.
     pub page_from: Vec<(usize, u32)>,
 }
 
