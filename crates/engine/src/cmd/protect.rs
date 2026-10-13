@@ -207,6 +207,8 @@ pub(crate) fn check_before(s: &Session, id: &str, params: &Value) -> Result<bool
     let exceptions = || s.doc.perm_ranges().iter().any(|r| editable_by(r, &s.author));
     match mode {
         "readOnly" if exceptions() => Ok(true),
+        // Filling in forms: the interiors of controls that allow it stay editable.
+        "forms" if s.doc.fillable_controls() > 0 => Ok(true),
         "readOnly" | "forms" => Err(CmdError::Disabled(format!("{id}: the document is protected (read only)"))),
         "comments" if comment_ok => Ok(false),
         "comments" if exceptions() => Ok(true),
@@ -241,10 +243,20 @@ fn check_formatting(s: &Session, id: &str, params: &Value) -> Result<(), CmdErro
     Ok(())
 }
 
-/// Did a command leave everything outside the exceptions as it was? Compares the text, run
-/// formatting and paragraph formatting outside the ranges `author` may edit, in every story.
+/// Which parts of a protected document stay editable: the `w:permStart` ranges `author` may
+/// edit (readOnly, comments), or — filling in forms — the interiors of the content controls
+/// whose `w:lock` allows editing them.
+enum HoleMode {
+    Perms(String),
+    Controls,
+}
+
+/// Did a command leave everything outside the editable regions as it was? Compares the text,
+/// run formatting and paragraph formatting outside the ranges `author` may edit, in every story.
 pub(crate) fn outside_unchanged(before: &Document, after: &Document, author: &str) -> bool {
-    outside(before, author) == outside(after, author)
+    // Protection can't change mid-command (`protection_lifted` guards undo and redo).
+    let mode = if Some("forms") == before.settings.protection.as_deref() { HoleMode::Controls } else { HoleMode::Perms(author.into()) };
+    outside(before, &mode) == outside(after, &mode)
 }
 
 /// One piece of protected content: text with its formatting, or a paragraph mark's formatting.
@@ -255,13 +267,29 @@ enum Piece {
     Mark(Box<wordcraft_doc::ParaProps>, CharProps),
 }
 
-/// Everything outside the editable ranges, in order.
-fn outside(doc: &Document, author: &str) -> Vec<Piece> {
-    let editable: Vec<u32> = doc.perm_ranges().iter().filter(|r| editable_by(r, author)).map(|r| r.id).collect();
+/// Deepest nesting of control markers the walk tracks (the doc crate's `MAX_DEPTH` pattern);
+/// deeper nesting — only a hostile document — keeps the stack at the cap, its interior treated
+/// like the innermost tracked control's, so the stack can't grow unboundedly.
+const MAX_CONTROL_DEPTH: usize = 16;
+
+/// Everything outside the editable regions, in order.
+fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
+    let editable: Vec<u32> = match mode {
+        HoleMode::Perms(author) => doc.perm_ranges().iter().filter(|r| editable_by(r, author)).map(|r| r.id).collect(),
+        HoleMode::Controls => Vec::new(),
+    };
     let mut out = Vec::new();
     let stories = std::iter::once(StoryRef::Body).chain(doc.parts.keys().map(|k| StoryRef::Part(*k)));
     for story in stories {
         let mut open: Vec<u32> = Vec::new();
+        let mut fillable: Vec<bool> = Vec::new();
+        // Control markers past the depth cap, so they still pair with their end.
+        let mut over = 0_usize;
+        // The perm range or fillable control the walk is inside, innermost last.
+        let in_hole = |open: &[u32], fillable: &[bool]| match mode {
+            HoleMode::Perms(_) => !open.is_empty(),
+            HoleMode::Controls => fillable.last() == Some(&true),
+        };
         for path in doc.para_paths(story) {
             let Some(p) = doc.para(story, &path) else { continue };
             let mut k = 0;
@@ -272,35 +300,61 @@ fn outside(doc: &Document, author: &str) -> Vec<Piece> {
                     if c == OBJ {
                         let obj = p.objects.get(k);
                         k += 1;
-                        match obj {
-                            Some(InlineObject::PermStart { id, .. }) if editable.contains(id) => {
-                                flush(&mut out, &mut piece, props, &open);
-                                open.push(*id);
-                                continue;
-                            }
-                            Some(InlineObject::PermEnd { id }) if editable.contains(id) => {
-                                flush(&mut out, &mut piece, props, &open);
-                                if let Some(j) = open.iter().rposition(|x| x == id) {
-                                    open.remove(j);
+                        // A marker that opens or closes a hole moves the walk's stack instead.
+                        let mut boundary = false;
+                        match mode {
+                            HoleMode::Perms(_) => match obj {
+                                Some(InlineObject::PermStart { id, .. }) if editable.contains(id) => {
+                                    flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
+                                    open.push(*id);
+                                    boundary = true;
                                 }
-                                continue;
-                            }
-                            _ => {}
+                                Some(InlineObject::PermEnd { id }) if editable.contains(id) => {
+                                    flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
+                                    if let Some(j) = open.iter().rposition(|x| x == id) {
+                                        open.remove(j);
+                                    }
+                                    boundary = true;
+                                }
+                                _ => {}
+                            },
+                            HoleMode::Controls => match obj {
+                                Some(InlineObject::ControlStart { control }) => {
+                                    flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
+                                    if fillable.len() < MAX_CONTROL_DEPTH {
+                                        fillable.push(control.lock.can_edit());
+                                    } else {
+                                        over = over.saturating_add(1);
+                                    }
+                                    boundary = true;
+                                }
+                                // An end marker nothing opened is an ordinary object below.
+                                Some(InlineObject::ControlEnd) if over > 0 || !fillable.is_empty() => {
+                                    flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
+                                    if over > 0 {
+                                        over -= 1;
+                                    } else {
+                                        fillable.pop();
+                                    }
+                                    boundary = true;
+                                }
+                                _ => {}
+                            },
                         }
-                        if open.is_empty() {
-                            flush(&mut out, &mut piece, props, &open);
+                        if !boundary && !in_hole(&open, &fillable) {
+                            flush(&mut out, &mut piece, props, false);
                             out.push(Piece::Object(obj.cloned()));
                         }
                         let _ = i;
                         continue;
                     }
-                    if open.is_empty() {
+                    if !in_hole(&open, &fillable) {
                         piece.push(c);
                     }
                 }
-                flush(&mut out, &mut piece, props, &open);
+                flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
             }
-            if open.is_empty() {
+            if !in_hole(&open, &fillable) {
                 out.push(Piece::Mark(Box::new(p.props.clone()), p.mark.clone()));
             }
         }
@@ -308,8 +362,8 @@ fn outside(doc: &Document, author: &str) -> Vec<Piece> {
     out
 }
 
-fn flush(out: &mut Vec<Piece>, piece: &mut String, props: &CharProps, open: &[u32]) {
-    if !piece.is_empty() && open.is_empty() {
+fn flush(out: &mut Vec<Piece>, piece: &mut String, props: &CharProps, in_hole: bool) {
+    if !piece.is_empty() && !in_hole {
         out.push(Piece::Text(std::mem::take(piece), props.clone()));
     }
     piece.clear();
@@ -363,6 +417,70 @@ mod tests {
             let _ = s.run("edit.undo", &json!({}));
         }
         assert_eq!(s.doc.settings.protection.as_deref(), Some("readOnly"));
+    }
+
+    #[test]
+    fn forms_mode_allows_edits_only_inside_fillable_controls() {
+        let mut s = Session::new(Document::from_text("Locked intro.\nPick size.\nFill name.\nLocked end."));
+        select(&mut s, "Pick size.");
+        s.run("developer.dropDown", &json!({"tag": "size", "items": ["S", "M", "L"]})).unwrap();
+        // A control that takes typing (a drop-down list doesn't: only its entries can be chosen).
+        select(&mut s, "Fill name.");
+        s.run("developer.plainText", &json!({"tag": "name"})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        assert_eq!(s.doc.settings.protection.as_deref(), Some("forms"));
+        // Filling the drop-down by tag (the caret is outside the control): allowed.
+        s.run("developer.chooseItem", &json!({"control": "size", "value": "M"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("\nM\n"));
+        // Typing inside the control's content: allowed (text.insert replaces the selection).
+        select(&mut s, "Fill");
+        s.run("text.insert", &json!({"text": "Filled"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("Filled name."));
+        // Typing and formatting outside: refused, document unchanged.
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "intro");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert!(s.run("format.bold", &json!({})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
+    #[test]
+    fn forms_mode_without_fillable_controls_stays_locked() {
+        let mut s = Session::new(Document::from_text("No controls here."));
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        select(&mut s, "controls");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+    }
+
+    /// Malformed control markers — an orphan end, starts nested past the walk's depth cap that
+    /// never close — keep forms mode conservative: no panic or loop, locked text stays locked.
+    #[test]
+    fn forms_mode_with_malformed_markers_stays_conservative() {
+        use wordcraft_doc::control::{ContentControl, ControlKind};
+        let mut s = Session::new(Document::from_text("Locked.\nPick.\nEnd."));
+        select(&mut s, "Pick.");
+        s.run("developer.dropDown", &json!({"tag": "size", "items": ["S", "M"]})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // An orphan end marker at the end of the first paragraph…
+        let props = CharProps::default();
+        let paths = s.doc.para_paths(StoryRef::Body);
+        let at = Pos { story: StoryRef::Body, path: paths[0].clone(), off: s.doc.para(StoryRef::Body, &paths[0]).map(|p| p.len()).unwrap_or(0) };
+        s.doc.insert_object(&at, InlineObject::ControlEnd, &props).unwrap();
+        // …and more nested starts than the walk tracks, none of them closed.
+        let mut at = Pos { story: StoryRef::Body, path: paths[2].clone(), off: 0 };
+        for _ in 0..MAX_CONTROL_DEPTH + 8 {
+            at = s
+                .doc
+                .insert_object(&at, InlineObject::ControlStart { control: Box::new(ContentControl::new(ControlKind::RichText)) }, &props)
+                .unwrap();
+        }
+        // Only the drop-down is a whole control; the unpaired markers don't count as fillable.
+        assert_eq!(s.doc.fillable_controls(), 1);
+        s.run("developer.chooseItem", &json!({"control": "size", "value": "M"})).unwrap();
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "Locked");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
     }
 
     #[test]
