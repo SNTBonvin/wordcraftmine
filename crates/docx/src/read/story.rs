@@ -1611,20 +1611,6 @@ fn wrap_polygon(e: &El) -> Option<wordcraft_doc::wrap::WrapPolygon> {
     wordcraft_doc::wrap::WrapPolygon::new(edited, pts)
 }
 
-/// A VML fraction (opacity), 0–1: a decimal (`0.5`), a percentage (`50%`) or 65536ths with an
-/// `f` suffix (`32768f`).
-fn vml_fraction(v: &str) -> Option<f32> {
-    let v = v.trim();
-    let f = if let Some(fd) = v.strip_suffix('f') {
-        fd.trim().parse::<f32>().ok()? / 65_536.0
-    } else if let Some(pc) = v.strip_suffix('%') {
-        pc.trim().parse::<f32>().ok()? / 100.0
-    } else {
-        v.parse::<f32>().ok()?
-    };
-    f.is_finite().then(|| f.clamp(0.0, 1.0))
-}
-
 /// The value of property `key` in a VML `style` attribute (CSS declarations; the last one wins).
 fn vml_style<'a>(style: &'a str, key: &str) -> Option<&'a str> {
     style.rsplit(';').filter_map(|d| d.split_once(':')).find(|(k, _)| k.trim().eq_ignore_ascii_case(key)).map(|(_, v)| v.trim())
