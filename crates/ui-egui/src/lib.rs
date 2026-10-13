@@ -917,6 +917,13 @@ impl WordApp {
         }
         // #995: OOXML has no slot for the fit mode, so remember each file's and give it back
         // on reopen (a saved document's own view settings, applied first, always win).
+        // #820: the Paste Options widget lives until another engine command runs.
+        if matches!(id, "edit.paste" | "edit.pasteMerge" | "edit.pasteText") {
+            self.canvas.paste_options =
+                if self.session.view.read_mode { None } else { crate::canvas::caret_screen(self).map(|(p, h)| p + egui::vec2(0.0, h + 4.0)) };
+        } else if !id.starts_with("ui.") {
+            self.canvas.paste_options = None;
+        }
         // #918: the last opened file, for reopening at startup.
         if let Ok(v) = r {
             if matches!(id, "file.save" | "file.saveAs") && v.get("saved").and_then(Value::as_bool) == Some(true) {
