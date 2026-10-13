@@ -188,10 +188,9 @@ fn open(s: &mut Session, v: &Value) -> CmdResult {
     s.set_document(doc);
     s.path = Some(path.into());
     // Another manager's citations ride along untouched; one status-bar note says so. Zotero
-    // fields and Word's own CITATION fields are driven live and say nothing.
-    if has_undriven_manager_fields(&s.doc) {
-        s.status = MANAGER_FIELDS_STATUS.into();
-    }
+    // fields and Word's own CITATION fields are driven live and say nothing. Unconditional:
+    // the note is about this document, so opening any other one clears it.
+    s.status = if has_undriven_manager_fields(&s.doc) { MANAGER_FIELDS_STATUS.into() } else { String::new() };
     // Like Word, a document opened with a password is saved with it again.
     if encrypted {
         s.password = password.map(crate::io::Password::new);

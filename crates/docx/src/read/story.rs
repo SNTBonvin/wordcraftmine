@@ -617,6 +617,7 @@ impl Reader<'_> {
             }
             // Tolerated placement: some producers write the data as a run child instead of
             // inside the begin marker (where the `w:fldChar` arm reads it).
+            // Unlike `w:instrText`'s guard, none is needed here: `push_capped` returns at cap.
             "w:fldData" => {
                 if sc.ignored_begins == 0
                     && let Some(f) = sc.fields.last_mut()

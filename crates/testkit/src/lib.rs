@@ -31,7 +31,8 @@ pub const MENDELEY_CITE: &str = r#"ADDIN MENDELEY_Citation {"citationId":"WC-SYN
 /// The bibliography field code; its result spans two paragraphs.
 pub const MENDELEY_BIBL_INSTR: &str = r#"ADDIN MENDELEY_Bibliography {"seed":"wc-synthetic"}"#;
 
-/// A Zotero-style citation (CSL JSON payload) on a begin flagged `w:dirty`.
+/// A Zotero-style citation (CSL JSON payload) on a begin flagged `w:dirty`. The dirty begin is
+/// forward-looking: the reader has no dirty handling today; it is asserted once #877 lands.
 pub const ZOTERO_CITE_INSTR: &str = r#"ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"wc2","citationItems":[{"id":9,"uris":["wc://synthetic/2"]}],"properties":{"formattedCitation":"(Doe, 2020)"}}"#;
 
 /// An EndNote-style citation carrying XML in its code, inside a tracked-insert range.

@@ -144,17 +144,9 @@ fn edit_pass_and_undo_to_start_keep_manager_fields() {
     assert!(!s.doc.has_unbalanced_field_ranges());
 }
 
-/// Opening a document with fields of a manager WordCraft doesn't drive (Mendeley, EndNote —
-/// in the body or a footnote) leaves one non-blocking status-bar note; Zotero fields and
-/// Word's own CITATION fields, which WordCraft drives live, leave none.
-#[test]
-fn opening_a_manager_document_notes_it_in_the_status_bar() {
-    let s = open_manager_doc();
-    assert_eq!(s.status, "Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.");
-    assert_eq!(s.status, crate::cmd::file::MANAGER_FIELDS_STATUS, "one source string, in the i18n catalogs");
-
-    // A document whose fields WordCraft drives — a Zotero range citation and one of Word's
-    // own CITATION fields — opens without the note.
+/// A document whose citation fields WordCraft drives live — a Zotero range citation and one
+/// of Word's own `CITATION` fields — so opening it must not raise (or keep) the note.
+fn driven_fields_docx() -> Vec<u8> {
     let mut driven = Session::new(Document::from_text("Z and "));
     let c = CharProps::default();
     let at = Pos::body(0, 6);
@@ -168,9 +160,33 @@ fn opening_a_manager_document_notes_it_in_the_status_bar() {
     driven.doc.sources.push(wordcraft_doc::Source { tag: "WC1".into(), ..Default::default() });
     run(&mut driven, "caret.docEnd", json!({}));
     run(&mut driven, "insert.field", json!({"instr": "CITATION WC1", "result": "(W, 1)"}));
-    let bytes = wordcraft_docx::write(&driven.doc).expect("docx write");
+    wordcraft_docx::write(&driven.doc).expect("docx write")
+}
+
+/// Opening a document with fields of a manager WordCraft doesn't drive (Mendeley, EndNote —
+/// in the body or a footnote) leaves one non-blocking status-bar note; Zotero fields and
+/// Word's own CITATION fields, which WordCraft drives live, leave none.
+#[test]
+fn opening_a_manager_document_notes_it_in_the_status_bar() {
+    let s = open_manager_doc();
+    assert_eq!(s.status, "Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.");
+    assert_eq!(s.status, crate::cmd::file::MANAGER_FIELDS_STATUS, "one source string, in the i18n catalogs");
+
+    // A document whose fields WordCraft drives — a Zotero range citation and one of Word's
+    // own CITATION fields — opens without the note.
     let mut s2 = Session::new(Document::new());
-    let data = cmd::insert::base64_encode(&bytes);
+    let data = cmd::insert::base64_encode(&driven_fields_docx());
     run(&mut s2, "file.open", json!({"path": "driven.docx", "data": data}));
     assert_eq!(s2.status, "", "driven fields must not raise the manager note");
+}
+
+/// The note is about the open document, so it must not outlive that document: reopening in
+/// the same session — here with a document whose fields WordCraft drives — clears it.
+#[test]
+fn the_note_does_not_survive_reopening_a_driven_document() {
+    let mut s = open_manager_doc();
+    assert_eq!(s.status, crate::cmd::file::MANAGER_FIELDS_STATUS);
+    let data = cmd::insert::base64_encode(&driven_fields_docx());
+    run(&mut s, "file.open", json!({"path": "driven.docx", "data": data}));
+    assert_eq!(s.status, "", "the previous document's note must not carry over");
 }
