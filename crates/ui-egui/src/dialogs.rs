@@ -1418,19 +1418,19 @@ pub(crate) fn paper_entry(paper: (f32, f32)) -> Option<&'static str> {
     wordcraft_geom::paper_name(paper.0 * ppu, paper.1 * ppu)
 }
 
-/// Page Setup's OK for the paper, orientation and margins (#1433), all in the measurement unit
-/// as the dialog shows them. Refuses (applying nothing) when the margins don't fit the paper.
-/// Otherwise it runs the commands in an order where none is refused on the way: the size first
+/// The commands Page Setup's OK runs for the paper, orientation and margins (#1433), all in the
+/// measurement unit as the dialog shows them. Refuses when the margins don't fit the paper.
+/// Otherwise it orders them so that none is refused on the way: the size first
 /// when the section's margins fit it, else the margins first, else margins of 0 in between.
 /// `layout.size` keeps the section's orientation; `layout.orientation` then turns the page and
 /// its margins to what the dialog shows. A size equal to the opened one (either way round,
 /// within 0.01 pt) doesn't run `layout.size`.
-fn apply_page_layout(
-    app: &mut WordApp,
+fn page_layout_commands(
+    app: &WordApp,
     (paper, was): ((f32, f32), (f32, f32)),
     landscape: bool,
     (top, bottom, left, right): (f32, f32, f32, f32),
-) -> Result<(), &'static str> {
+) -> Result<Vec<(&'static str, Value)>, &'static str> {
     use wordcraft_engine::cmd::page::{MARGINS_DONT_FIT, margins_fit, sect};
     let ppu = crate::options::unit().pt_per_unit();
     let (paper, was) = ((paper.0 * ppu, paper.1 * ppu), (was.0 * ppu, was.1 * ppu));
@@ -1442,28 +1442,33 @@ fn apply_page_layout(
     let turned = |on: bool, (a, b): (f32, f32)| if on { (a.max(b), a.min(b)) } else { (a.min(b), a.max(b)) };
     let ((w0, h0), (w1, h1)) = (turned(false, paper), turned(false, was));
     let new_size = (w0 - w1).abs() >= 0.01 || (h0 - h1).abs() >= 0.01;
-    let size = json!({"width": paper.0, "height": paper.1});
-    let orientation = json!({"value": if landscape { "landscape" } else { "portrait" }});
-    let margins = json!({"top": m.0, "bottom": m.1, "left": m.2, "right": m.3});
+    let size = ("layout.size", json!({"width": paper.0, "height": paper.1}));
+    let orientation = ("layout.orientation", json!({"value": if landscape { "landscape" } else { "portrait" }}));
+    let margins = ("layout.margins", json!({"top": m.0, "bottom": m.1, "left": m.2, "right": m.3}));
     let old_margins = (cur.margin_top, cur.margin_bottom, cur.margin_left, cur.margin_right);
-    let mut run = |id: &str, v: &Value| {
-        let _ = app.run(id, v.clone());
-    };
-    if !new_size || margins_fit(turned(cur.landscape, paper), old_margins, cur.gutter) {
-        if new_size {
-            run("layout.size", &size);
-        }
-        run("layout.orientation", &orientation);
-        run("layout.margins", &margins);
+    Ok(if !new_size || margins_fit(turned(cur.landscape, paper), old_margins, cur.gutter) {
+        let mut v = if new_size { vec![size] } else { Vec::new() };
+        v.extend([orientation, margins]);
+        v
     } else if margins_fit(turned(landscape, (cur.page_w, cur.page_h)), m, cur.gutter) {
-        run("layout.orientation", &orientation);
-        run("layout.margins", &margins);
-        run("layout.size", &size);
+        vec![orientation, margins, size]
     } else {
-        run("layout.orientation", &orientation);
-        run("layout.margins", &json!({"top": 0.0, "bottom": 0.0, "left": 0.0, "right": 0.0}));
-        run("layout.size", &size);
-        run("layout.margins", &margins);
+        vec![orientation, ("layout.margins", json!({"top": 0.0, "bottom": 0.0, "left": 0.0, "right": 0.0})), size, margins]
+    })
+}
+
+/// Run a dialog's commands as one undo step. If one fails, put the document and the undo stack
+/// back as they were (nothing applied) and return its error.
+fn run_as_one_step(app: &mut WordApp, commands: Vec<(&str, Value)>) -> Result<(), String> {
+    let snapshot = app.session.edit_snapshot();
+    for (i, (id, params)) in commands.into_iter().enumerate() {
+        if i > 0 {
+            app.session.join_next_undo();
+        }
+        if let Err(e) = app.run(id, params) {
+            app.session.restore(snapshot);
+            return Err(e);
+        }
     }
     Ok(())
 }
@@ -2038,24 +2043,30 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.label(egui::RichText::new(message.as_str()).small().color(ui.visuals().error_fg_color));
             }
             let (mut ok, cancel) = buttons(ui, tl!("OK"));
-            if ok && let Err(e) = apply_page_layout(app, (*paper, *paper_was), *landscape, (*top, *bottom, *left, *right)) {
-                *message = tl!(e).to_string();
-                ok = false;
-            }
             if ok {
-                if grid != grid_was {
-                    let kind = ["none", "lines", "linesAndChars", "snapToChars"].get(grid.0 as usize).copied().unwrap_or("none");
-                    let mut v = json!({"type": kind});
-                    if grid.1 != grid_was.1 {
-                        v["linesPerPage"] = json!(grid.1);
-                    }
-                    if grid.2 != grid_was.2 {
-                        v["charsPerLine"] = json!(grid.2);
-                    }
-                    let _ = app.run("layout.documentGrid", v);
-                }
-                if *rtl != wordcraft_engine::cmd::page::sect(&app.session).rtl {
-                    let _ = app.run("layout.sectionRtl", json!({"value": *rtl}));
+                // Everything OK changes is one undo step; a refused command applies nothing.
+                let result = page_layout_commands(app, (*paper, *paper_was), *landscape, (*top, *bottom, *left, *right))
+                    .map_err(|e| tl!(e).to_string())
+                    .and_then(|mut commands| {
+                        if grid != grid_was {
+                            let kind = ["none", "lines", "linesAndChars", "snapToChars"].get(grid.0 as usize).copied().unwrap_or("none");
+                            let mut v = json!({"type": kind});
+                            if grid.1 != grid_was.1 {
+                                v["linesPerPage"] = json!(grid.1);
+                            }
+                            if grid.2 != grid_was.2 {
+                                v["charsPerLine"] = json!(grid.2);
+                            }
+                            commands.push(("layout.documentGrid", v));
+                        }
+                        if *rtl != wordcraft_engine::cmd::page::sect(&app.session).rtl {
+                            commands.push(("layout.sectionRtl", json!({"value": *rtl})));
+                        }
+                        run_as_one_step(app, commands)
+                    });
+                if let Err(e) = result {
+                    *message = e;
+                    ok = false;
                 }
             }
             ok || cancel
@@ -4012,6 +4023,74 @@ mod tests {
         assert!(h.state().dialog.is_none());
         let s = wordcraft_engine::cmd::page::sect(&h.state().session);
         assert_eq!((s.page_w.round(), s.page_h.round(), s.margin_left.round(), s.margin_top.round()), (100.0, 500.0, 18.0, 18.0));
+    }
+
+    /// Open Page Setup in `h`, set its paper and margins (points) and press OK.
+    fn page_setup_ok(h: &mut egui_kittest::Harness<'_, WordApp>, (w, ht): (f32, f32), (t, b, l, r): (f32, f32, f32, f32)) {
+        use egui_kittest::kittest::Queryable;
+        let ppu = crate::options::unit().pt_per_unit();
+        h.state_mut().run("ui.dialog", json!({"name": "pageSetup"})).unwrap();
+        h.run_steps(2);
+        if let Some(Dialog::PageSetup { paper, landscape, top, bottom, left, right, .. }) = h.state_mut().dialog.as_mut() {
+            *paper = (w / ppu, ht / ppu);
+            *landscape = w > ht;
+            (*top, *bottom, *left, *right) = (t / ppu, b / ppu, l / ppu, r / ppu);
+        }
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+    }
+
+    /// #1433: one OK in Page Setup is one undo step, whichever order its commands run in (the
+    /// size first; the margins first; margins of 0 in between), and Undo restores the section.
+    #[test]
+    fn page_setup_ok_is_one_undo_step() {
+        let sect = |h: &egui_kittest::Harness<'_, WordApp>| wordcraft_engine::cmd::page::sect(&h.state().session);
+        // Size first, then orientation and margins.
+        let mut h = app_harness(app_with("Page"));
+        let (before, depth) = (sect(&h), h.state().session.undo_depth());
+        page_setup_ok(&mut h, (400.0, 600.0), (36.0, 36.0, 36.0, 36.0));
+        assert!(h.state().dialog.is_none());
+        assert_eq!((sect(&h).page_w, sect(&h).margin_left), (400.0, 36.0));
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one step");
+        h.state_mut().run("edit.undo", json!({})).unwrap();
+        assert_eq!(sect(&h), before, "one undo restores the section");
+
+        // Neither size first nor margins first fits on the way: margins of 0 in between.
+        h.state_mut().run("layout.margins", json!({"top": 72.0, "bottom": 72.0, "left": 250.0, "right": 250.0})).unwrap();
+        let (before, depth) = (sect(&h), h.state().session.undo_depth());
+        page_setup_ok(&mut h, (300.0, 900.0), (400.0, 400.0, 36.0, 36.0));
+        assert!(h.state().dialog.is_none());
+        let s = sect(&h);
+        assert_eq!((s.page_w, s.page_h, s.margin_top, s.margin_left), (300.0, 900.0, 400.0, 36.0));
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one step");
+        h.state_mut().run("edit.undo", json!({})).unwrap();
+        assert_eq!(sect(&h), before, "one undo restores the section");
+    }
+
+    /// #1433: a command the dialog runs that fails (here `layout.size`, refused by the second
+    /// selected section's margins) shows its error, keeps the dialog open and leaves the
+    /// document and the undo stack as they were.
+    #[test]
+    fn page_setup_shows_a_refused_command_and_applies_nothing() {
+        let mut app = app_with("one");
+        app.run("layout.break", json!({"kind": "nextPage"})).unwrap();
+        app.run("text.insert", json!({"text": "two"})).unwrap();
+        app.run("layout.margins", json!({"left": 150.0, "right": 150.0})).unwrap();
+        // Both sections selected, the first one's settings in the dialog.
+        app.run("select.all", json!({})).unwrap();
+        let sel = &mut app.session.sel;
+        std::mem::swap(&mut sel.anchor, &mut sel.focus);
+        let doc = app.session.doc.sections().iter().map(|(_, x)| (*x).clone()).collect::<Vec<_>>();
+        let depth = app.session.undo_depth();
+        let mut h = app_harness(app);
+        page_setup_ok(&mut h, (300.0, 500.0), (72.0, 72.0, 72.0, 72.0));
+        assert!(
+            matches!(&h.state().dialog, Some(Dialog::PageSetup { message, .. }) if message.contains("margins don't fit")),
+            "stays open with the error"
+        );
+        let after = h.state().session.doc.sections().iter().map(|(_, x)| (*x).clone()).collect::<Vec<_>>();
+        assert_eq!((after, h.state().session.undo_depth()), (doc, depth), "nothing applied");
     }
 
     /// #1433: Layout › Size › More Paper Sizes… opens Page Setup.
