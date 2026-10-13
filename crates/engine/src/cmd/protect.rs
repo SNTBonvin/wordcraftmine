@@ -701,6 +701,27 @@ mod tests {
         assert!(t.last_command.as_ref().is_none_or(|(_, p)| p.get("password").is_none()));
     }
 
+    #[test]
+    fn forms_protection_survives_save_and_password_guards_stop() {
+        let mut s = Session::new(Document::from_text("Form: [pick]."));
+        select(&mut s, "pick");
+        s.run("developer.dropDown", &json!({"tag": "opt", "items": ["A", "B"]})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms", "password": "pw"})).unwrap();
+        s.run("developer.chooseItem", &json!({"control": "opt", "value": "B"})).unwrap();
+        let bytes = crate::io::save_bytes("f.docx", &s.doc).unwrap();
+        let mut t = Session::new(crate::io::open_bytes("f.docx", &bytes).unwrap());
+        assert_eq!(t.doc.settings.protection.as_deref(), Some("forms"));
+        assert!(t.doc.plain_text(StoryRef::Body).contains('B'));
+        // Still enforced after reopen: outside edit refused, wrong password refused.
+        select(&mut t, "Form");
+        assert!(t.run("text.insert", &json!({"text": "x"})).is_err());
+        assert!(t.run("review.restrict", &json!({"stop": true, "password": "no"})).is_err());
+        // Right password lifts it; then outside edits work. Undo never lifts it.
+        t.run("review.restrict", &json!({"stop": true, "password": "pw"})).unwrap();
+        select(&mut t, "Form");
+        t.run("text.insert", &json!({"text": "x"})).unwrap();
+    }
+
     /// A Word file with the legacy hash (`w:cryptAlgorithmSid`): a wrong password is rejected, the
     /// right one unlocks; a hash WordCraft can't check never unlocks.
     #[test]
