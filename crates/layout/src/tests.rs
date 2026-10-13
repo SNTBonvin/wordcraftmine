@@ -5004,3 +5004,50 @@ fn space_after_may_overflow_the_bottom_margin_without_notes() {
     }
     assert!(tight > 0, "some step leaves less than the space after below the last line");
 }
+
+/// #1116: the sweep of `space_after_stays_clear_of_the_footnote_separator` with paragraphs `t`
+/// and `t + 1` changed by `tweak`: the last line of `t` stays `need` points clear of the separator.
+fn space_after_clear_with(tweak: impl Fn(&mut Document, usize), need: f32) {
+    for before in 0..=300 {
+        let (mut d, t, id) = space_after_doc(before as f32, true);
+        tweak(&mut d, t);
+        let l = lay(&d);
+        let (pieces, _) = para_pieces(&l, t);
+        let &(page, _, _, bottom) = pieces.last().unwrap();
+        let note = note_pieces(&l, id.unwrap());
+        assert_eq!(note.first().map(|p| p.0), Some(page), "before {before}: the note is on its reference's page");
+        let sep_top = note[0].3 - NOTE_SEP;
+        assert!(sep_top - bottom >= need - 0.01, "before {before}: last line ends at {bottom}, the separator starts at {sep_top}");
+    }
+}
+
+fn para_props(d: &mut Document, i: usize) -> &mut ParaProps {
+    match d.body.get_mut(i).map(std::sync::Arc::make_mut) {
+        Some(wordcraft_doc::Block::Para(p)) => &mut p.props,
+        _ => panic!("no paragraph {i}"),
+    }
+}
+
+#[test]
+fn space_after_stays_clear_when_only_the_next_paragraph_has_contextual_spacing() {
+    // Contextual spacing on the next paragraph alone drops its space before, not this one's space
+    // after (as the spacing between them): the space after still stays clear of the separator.
+    space_after_clear_with(|d, t| para_props(d, t + 1).contextual_spacing = Some(true), 6.0);
+}
+
+#[test]
+fn space_after_stays_clear_before_a_numbered_paragraph_without_a_label() {
+    // Automatic spacing drops only between two list items with labels: before a paragraph whose
+    // list doesn't exist (no label) a list item's automatic space after stays clear.
+    use wordcraft_doc::props::NumRef;
+    space_after_clear_with(
+        |d, t| {
+            let num = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+            let p = para_props(d, t);
+            p.numbering = Some(NumRef { num, level: 0 });
+            p.space_after_auto = Some(true);
+            para_props(d, t + 1).numbering = Some(NumRef { num: 9999, level: 0 });
+        },
+        wordcraft_doc::resolve::AUTO_SPACING,
+    );
+}

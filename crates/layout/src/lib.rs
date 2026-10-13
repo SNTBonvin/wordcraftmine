@@ -660,6 +660,14 @@ impl Ctx<'_> {
 
     /// The list label of `p`, advancing the list counters: call it once per paragraph, in
     /// document order (only for paragraphs that will show).
+    /// Whether `p` gets a list label ([`Ctx::next_label`] is `Some`), without counting it.
+    fn has_label(&self, p: &Paragraph) -> bool {
+        p.props
+            .numbering
+            .or_else(|| self.doc.styles.resolve_para(&p.props).numbering)
+            .filter(|n| n.num != 0)
+            .is_some_and(|n| self.doc.numbering.shows_label(n.num, n.level))
+    }
     fn next_label(&mut self, p: &Paragraph) -> Option<(String, Level)> {
         let n = p.props.numbering.or_else(|| self.doc.styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0)?;
         self.counters.next_label(&self.doc.numbering, n.num, n.level)
@@ -2769,7 +2777,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
         anchor_y = y0 - applied_before;
     }
     let mut n = pl.lines.len();
-    let after_on_page = space_after_kept(ctx, block, &pl.rp, label.is_some());
+    // Worked out only for a last line on a page with notes.
+    let mut after_on_page: Option<f32> = None;
     let mut l0 = 0;
     while l0 < n {
         // How many lines fit?
@@ -2813,7 +2822,11 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             // with widow control, one more with it). Without notes the space after may run past
             // the bottom margin as usual.
             let has_notes = !pb.notes.is_empty() || !new_notes.is_empty() || !line_notes.is_empty();
-            let tail = if has_notes && l1 + 1 == n { after_on_page } else { 0.0 };
+            let tail = if has_notes && l1 + 1 == n {
+                *after_on_page.get_or_insert_with(|| space_after_kept(ctx, block, &pl.rp, label.is_some()))
+            } else {
+                0.0
+            };
             let over = bottom + tail > limit + 0.01;
             // Notes too long for the rest of the page continue on the next one: the line still
             // fits if the notes before its last one, and that one's first line, fit below it.
@@ -3065,7 +3078,9 @@ fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: boo
 
 /// The space after body paragraph `block` (resolved as `rp`) that is really left below it: none
 /// when contextual spacing or automatic spacing between list items drops it before the next
-/// paragraph.
+/// paragraph. Same tests as the spacing between paragraphs in `place_para_in_flow`: contextual
+/// spacing removes this paragraph's space after only when this one asks for it, and the next
+/// counts as a list item when it gets a label.
 fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::ResolvedPara, listed: bool) -> f32 {
     let after = rp.space_after.max(0.0);
     if after <= 0.0 {
@@ -3073,11 +3088,10 @@ fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::Resolv
     }
     if let Some(Block::Para(next)) = ctx.doc.body.get(block + 1).map(|b| &**b) {
         let nrp = ctx.doc.styles.resolve_para(&next.props);
-        if nrp.style == rp.style && (rp.contextual_spacing || nrp.contextual_spacing) {
+        if nrp.style == rp.style && rp.contextual_spacing {
             return 0.0;
         }
-        let next_listed = next.props.numbering.or(nrp.numbering).is_some_and(|n| n.num != 0);
-        if listed && next_listed && rp.after_auto {
+        if listed && rp.after_auto && ctx.has_label(next) {
             return 0.0;
         }
     }
