@@ -135,6 +135,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
+| 2026-10-12 | Gap #20 benchmark: the deterministic 15,000-row × 8-column table DOCX (1,023 pages) opens in 402.6 ms and fully lays out in 2,403.5 ms in release; mixed 500-page coverage remains |
 | 2026-10-12 | Direct run-level native InkML (`w:contentPart`) now survives DOCX edits and repeated saves with its relationship, content type and bytes intact. Native InkML rendering/editing and ink nested in groups or canvases remain missing |
 | 2026-10-12 | RTF import now uses the RTF spec's defaults where a file names none (#902): no space before or after paragraphs, single line spacing, and the `\deff` default font, instead of WordCraft's Normal style; RTF files that relied on the old defaults open tighter, like in Word |
 | 2026-10-11 | Right-clicking a table cell offers the table's commands, and as in Word they follow the selection: with the caret in a cell Insert, Delete Cells, Split Cells, Text Direction and Table Properties…; with several cells Merge Cells instead of Split; with whole columns or rows Delete Columns or Rows, Merge Cells and Distribute Rows and Columns; with the whole table Delete Table, Distribute, AutoFit and Insert Caption…. A right-click beside selected cells moves the caret there instead of keeping them |
@@ -274,6 +275,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Gap #20: reproducible 1,023-page table DOCX open benchmark (402.6 ms open + 2,403.5 ms full layout in release); the 500-page mixed-content fixture remains |
 | 2026-10-12 | minor | Gap #20: full-row AutoFit measurement removes the old cached unbounded pre-layout of every cell; a 2,000-row × 8-column table's release cold layout is 335.6 ms, down from 1,223.7 ms, with the same 137 pages |
 | 2026-10-12 | trivial | Progress log: direct run-level native InkML content parts survive DOCX edits and repeated saves |
 | 2026-10-12 | trivial | Progress log: Accept All and Reject All keep the right paragraph marks (#864) |

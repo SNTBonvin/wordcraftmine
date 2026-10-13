@@ -1059,17 +1059,17 @@ mod tests {
                     any |= hi > 0.0;
                     let margins = cell.props.margins.unwrap_or(margins_def);
                     let need = (lo + margins[1] + margins[3], hi + margins[1] + margins[3]);
-                    if span == 1 {
-                        if let Some(col) = cols.get_mut(g) {
-                            col.0 = col.0.max(need.0);
-                            col.1 = col.1.max(need.1);
-                        }
+                    if span == 1
+                        && let Some(col) = cols.get_mut(g)
+                    {
+                        col.0 = col.0.max(need.0);
+                        col.1 = col.1.max(need.1);
                     }
                 }
                 g = g.saturating_add(span);
             }
         }
-        any.then_some(cols).unwrap_or_default()
+        if any { cols } else { Vec::new() }
     }
 
     fn legacy_para_content(pl: &crate::para::ParaLayout) -> (f32, f32) {

@@ -108,6 +108,32 @@ fn big_table_scroll_bench() {
     eprintln!("scroll offset after: {:?}", h.state().canvas.scroll_offset);
 }
 
+/// `cargo test -p wordcraft-ui-egui --release large_table_docx_open_bench -- --ignored --nocapture`
+///
+/// Builds a deterministic DOCX with one 15,000 × 8 table (about 1,000 Letter pages), then
+/// measures the same in-memory DOCX decoding used after the file bytes have been read and a full
+/// cold layout. Serialization deliberately happens before either timer.
+#[test]
+#[ignore]
+fn large_table_docx_open_bench() {
+    let bytes = wordcraft_engine::io::save_bytes("large-table.docx", &big_table_doc(15_000, 8)).unwrap();
+    let t = Instant::now();
+    let doc = wordcraft_engine::io::open_bytes("large-table.docx", &bytes).unwrap();
+    let open = t.elapsed();
+    let mut session = wordcraft_engine::Session::new(doc);
+    let t = Instant::now();
+    let layout = session.layout();
+    let full_layout = t.elapsed();
+    eprintln!(
+        "large table DOCX: {} bytes, open: {:.1} ms, full layout: {:.1} ms, {} pages",
+        bytes.len(),
+        open.as_secs_f64() * 1e3,
+        full_layout.as_secs_f64() * 1e3,
+        layout.pages.len()
+    );
+    assert!(layout.pages.len() >= 1_000, "fixture must stay approximately 1,000 pages");
+}
+
 /// AutoFit measurement is an implementation detail: a warm session and a clean layout cache must
 /// produce identical pagination for both the built-in sample and a long table.
 #[test]

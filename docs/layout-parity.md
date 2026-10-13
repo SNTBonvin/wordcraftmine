@@ -72,13 +72,14 @@ font can't match Word's metrics.
 | Cold layout, 188-page document | 61 ms | not measured | measured 2026-10-06 (not re-run this pass) |
 | Relayout after an edit | 1.4 ms | not measured | measured 2026-10-06 |
 | Font picker with many installed fonts | fixed freezes (#233) | instant | issue #31, #59 |
-| Large documents | 2,000-row × 8-column table: 1,223.7 ms → 335.6 ms cold layout (137 pages, release); DOCX open and the 500-page mixed-content fixture still need their dedicated benchmark | | measured 2026-10-12, release, headless (`tests_perf::big_table_scroll_bench`) |
+| Large documents | 15,000-row × 8-column table DOCX: 718,789 bytes; 402.6 ms open + 2,403.5 ms full cold layout (1,023 pages, release). The 2,000-row × 8-column synthetic table is 1,223.7 ms → 335.6 ms (137 pages); the 500-page mixed-content fixture remains | | measured 2026-10-12, release, headless (`tests_perf::large_table_docx_open_bench`, `big_table_scroll_bench`) |
 | Scrolling a 1,096-page document that is one 5,300-row table (#811) | ~2.4 ms idle, ~4.5 ms median scroll frame (was ~600 ms); opening still lays out for ~4–8 s | not measured | measured 2026-10-12, release, headless (`tests_perf::big_table_scroll_bench`) |
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Gap #20: reproducible 15,000×8 DOCX-open benchmark added: 718,789 bytes, 402.6 ms to open and 2,403.5 ms to fully lay out 1,023 pages in release; the mixed 500-page benchmark remains |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |
