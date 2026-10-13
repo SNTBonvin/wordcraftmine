@@ -4940,10 +4940,27 @@ fn highlight_fill_is_marked_as_a_text_background() {
         items.iter().filter_map(|i| if let display::Draw::Fill { color, text_bg, .. } = i { Some((*color, *text_bg)) } else { None }).collect();
     assert!(fills.contains(&(wordcraft_doc::Rgb(255, 255, 0), true)), "highlight is a text background: {fills:?}");
     assert!(fills.contains(&(wordcraft_doc::Rgb(0xDD, 0xEE, 0xFF), false)), "paragraph shading is not: {fills:?}");
-    let glyphs: Vec<(String, bool)> = items
+    let yellow = Some(wordcraft_doc::Rgb(255, 255, 0));
+    let glyphs: Vec<(String, Option<wordcraft_doc::Rgb>)> = items
         .iter()
-        .filter_map(|i| if let display::Draw::Glyphs { text, on_text_bg, .. } = i { Some((text.clone(), *on_text_bg)) } else { None })
+        .filter_map(|i| if let display::Draw::Glyphs { text, text_bg, .. } = i { Some((text.clone(), *text_bg)) } else { None })
         .collect();
-    assert!(glyphs.iter().any(|(t, on)| t.contains("Marked") && *on), "{glyphs:?}");
-    assert!(glyphs.iter().any(|(t, on)| t.contains("Plain") && !*on), "{glyphs:?}");
+    assert!(glyphs.iter().any(|(t, bg)| t.contains("Marked") && *bg == yellow), "{glyphs:?}");
+    assert!(glyphs.iter().any(|(t, bg)| t.contains("Plain") && bg.is_none()), "{glyphs:?}");
+}
+
+/// #1252 review: an underline and strikethrough on a highlighted run carry the highlight, like
+/// its glyphs; other lines (here a paragraph border) don't.
+#[test]
+fn underline_on_a_highlight_carries_the_text_background() {
+    use wordcraft_doc::props::{Highlight, Underline};
+    let cp =
+        wordcraft_doc::CharProps { highlight: Some(Highlight::Teal), underline: Some(Underline::Single), strike: Some(true), ..Default::default() };
+    let mut d = Document::from_text("x");
+    d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Marked", cp))];
+    let l = lay(&d);
+    let items = display::page_display(&d, &l.pages[0], &display::DisplayOptions::default());
+    let lines: Vec<Option<wordcraft_doc::Rgb>> =
+        items.iter().filter_map(|i| if let display::Draw::Line { text_bg, .. } = i { Some(*text_bg) } else { None }).collect();
+    assert_eq!(lines, vec![Some(wordcraft_doc::Rgb(0, 128, 128)); 2], "underline and strikethrough");
 }

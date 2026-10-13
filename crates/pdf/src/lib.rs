@@ -790,7 +790,7 @@ impl Exporter<'_> {
                     s.set_fill(None);
                 }
             }
-            Draw::Line { x0, y0, x1, y1, width, color, stroke, alpha } => self.line(s, (*x0, *y0, *x1, *y1), *width, *color, *stroke, *alpha),
+            Draw::Line { x0, y0, x1, y1, width, color, stroke, alpha, .. } => self.line(s, (*x0, *y0, *x1, *y1), *width, *color, *stroke, *alpha),
             Draw::Image { rect, media, crop, alpha } => self.picture(s, rect, media, crop, *alpha),
             Draw::Path { segs, fill: f, stroke, stroke_width } => {
                 let mut pb = PathBuilder::new();

@@ -387,20 +387,38 @@ impl RenderOptions {
         Rgb(f(c.0), f(c.1), f(c.2))
     }
 
-    /// The on-screen colour for text, `on_text_bg` when it is drawn on a text background. A dark
-    /// page dims those backgrounds ([`RenderOptions::ink_bg`]), so text on them is drawn in the
-    /// lighter of its colour and its inverted colour: black (explicit or Automatic) turns white,
-    /// and Automatic white on a dark highlight stays white.
-    pub fn ink_text(&self, c: Rgb, on_text_bg: bool) -> Rgb {
+    /// The on-screen colour for text (or its underline) drawn on the text background `bg`, if
+    /// any. A dark page dims those backgrounds ([`RenderOptions::ink_bg`]), so the text takes the
+    /// lighter of its colour and its inverted colour (black, explicit or Automatic, turns white;
+    /// Automatic white on a dark highlight stays white), and white if that still falls short of
+    /// 4.5:1 against the dimmed background (pure blue or red on a dim olive). White always
+    /// reaches it: no dimmed background is lighter than #4A4A4A.
+    pub fn ink_text(&self, c: Rgb, bg: Option<Rgb>) -> Rgb {
         let inked = self.ink(c);
-        if self.dark && on_text_bg && c.luma() > inked.luma() { c } else { inked }
+        let Some(bg) = bg.filter(|_| self.dark) else { return inked };
+        let lighter = if c.luma() > inked.luma() { c } else { inked };
+        if contrast(lighter, self.ink_bg(bg)) >= 4.5 { lighter } else { Rgb::WHITE }
     }
 }
 
+// The dim assumes the default dark paper grey (`DARK_PAPER`; the app never sets another
+// `dark_paper`): the backgrounds stay close to it and under #4A4A4A, so white text on them
+// reaches 4.5:1. Revisit both if the paper grey becomes configurable.
 /// Darkest channel of a text background on a dark page ([`RenderOptions::ink_bg`]).
-pub const DARK_TEXT_BG_FLOOR: u8 = 0x10;
+const DARK_TEXT_BG_FLOOR: u8 = 0x10;
 /// How far a full channel lifts a dark page's text background above the floor.
-pub const DARK_TEXT_BG_SPAN: u8 = 0x3A;
+const DARK_TEXT_BG_SPAN: u8 = 0x3A;
+
+/// WCAG 2 contrast ratio between two sRGB colours (1 to 21).
+fn contrast(a: Rgb, b: Rgb) -> f32 {
+    let lin = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
+    };
+    let lum = |c: Rgb| 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2);
+    let (la, lb) = (lum(a), lum(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
 
 /// Invert HSL lightness, keeping hue and saturation: shifting every channel by
 /// `255 - max - min` maps the lightest channel to `255 - min` and the darkest to `255 - max`.
@@ -574,9 +592,9 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.set_paint(color(if *text_bg { opts.ink_bg(*c) } else { opts.ink(*c) }, *alpha));
             ctx.fill_rect(&r);
         }
-        Draw::Line { x0, y0, x1, y1, width, color: c, stroke, alpha } => {
+        Draw::Line { x0, y0, x1, y1, width, color: c, stroke, alpha, text_bg } => {
             ctx.set_transform(view);
-            ctx.set_paint(color(opts.ink(*c), *alpha));
+            ctx.set_paint(color(opts.ink_text(*c, *text_bg), *alpha));
             let w = *width as f64;
             let mut st = kurbo::Stroke::new(w);
             match stroke {
@@ -607,14 +625,14 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.set_stroke(st);
             line(ctx, 0.0);
         }
-        Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, on_text_bg, .. } => {
+        Draw::Glyphs { face, size, glyphs, color: c, alpha, synth_bold, synth_italic, text_bg, .. } => {
             // Invisible glyphs (WordArt letters are drawn from their outlines) carry text only.
             if *alpha <= 0.0 {
                 return;
             }
             let db = FontDb::global();
             let k = *size as f64 / face.upem.max(1.0);
-            ctx.set_paint(color(opts.ink_text(*c, *on_text_bg), *alpha));
+            ctx.set_paint(color(opts.ink_text(*c, *text_bg), *alpha));
             let skew = if *synth_italic { Affine::new([1.0, 0.0, -0.21, 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
             // Outline strokes, in font units: synthetic bold, then on-screen stem darkening (a
             // stroke grows the outline by half its width on each side). Darkening is skipped for
@@ -1184,17 +1202,6 @@ mod tests {
         assert!(r8.abs_diff(g8) <= 4 && g8 > b8.saturating_add(0x20), "dark page highlight stays yellow in hue, got {:?}", (r8, g8, b8));
     }
 
-    /// WCAG 2 contrast ratio between two sRGB colours.
-    fn contrast(a: Rgb, b: Rgb) -> f32 {
-        let lin = |v: u8| {
-            let s = v as f32 / 255.0;
-            if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
-        };
-        let lum = |c: Rgb| 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2);
-        let (la, lb) = (lum(a), lum(b));
-        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
-    }
-
     /// #1252: on a dark page every highlight colour is dimmed so the text drawn on it reads
     /// (Automatic and explicit black text both draw white); a light page is the identity.
     #[test]
@@ -1208,20 +1215,63 @@ mod tests {
         for c in colours {
             let bg = dark.ink_bg(c);
             for (what, tc) in [("automatic", text_color(&TextColor::Auto, Some(c))), ("black", Rgb::BLACK)] {
-                let fg = dark.ink_text(tc, true);
+                let fg = dark.ink_text(tc, Some(c));
                 assert_eq!(fg, Rgb::WHITE, "{what} text on {c:?} draws white");
                 let k = contrast(fg, bg);
                 assert!(k >= 4.5, "{what} text on {c:?}: {fg:?} on {bg:?} has contrast {k:.2}");
             }
             assert_eq!(light.ink_bg(c), c, "light page keeps {c:?}");
-            assert_eq!(light.ink_text(c, true), c, "light page keeps text {c:?}");
+            assert_eq!(light.ink_text(c, Some(c)), c, "light page keeps text {c:?}");
         }
         // Yellow turns a dim olive (~#4a4a10), still yellow in hue.
         let Rgb(r, g, b) = dark.ink_bg(Rgb(255, 255, 0));
         assert!(r.abs_diff(0x4A) <= 8 && g.abs_diff(0x4A) <= 8 && b.abs_diff(0x10) <= 8, "yellow → {:?}", (r, g, b));
         assert!(r == g && g > b);
         // Text off a highlight keeps the plain inversion.
-        assert_eq!(dark.ink_text(Rgb::WHITE, false), dark.ink(Rgb::WHITE));
+        assert_eq!(dark.ink_text(Rgb::WHITE, None), dark.ink(Rgb::WHITE));
+    }
+
+    /// #1252 review: explicit coloured text (pure blue, red, every highlight colour) on every
+    /// dimmed highlight still reaches 4.5:1 on a dark page.
+    #[test]
+    fn dark_page_coloured_text_on_highlights_reads() {
+        use wordcraft_doc::props::Highlight;
+        let dark = RenderOptions { dark: true, ..Default::default() };
+        let colours: Vec<Rgb> = Highlight::ALL.iter().filter_map(|h| h.rgb()).collect();
+        let texts: Vec<Rgb> = [Rgb(0, 0, 255), Rgb(255, 0, 0)].into_iter().chain(colours.iter().copied()).collect();
+        for &h in &colours {
+            let bg = dark.ink_bg(h);
+            for &tc in &texts {
+                let fg = dark.ink_text(tc, Some(h));
+                let k = contrast(fg, bg);
+                assert!(k >= 4.5, "text {tc:?} on {h:?}: {fg:?} on {bg:?} has contrast {k:.2}");
+            }
+        }
+    }
+
+    /// #1252 review: an Automatic underline on a dark highlight (black) draws light on a dark page,
+    /// like the text it underlines, not the dark grey plain inversion gives white.
+    #[test]
+    fn dark_page_underline_on_a_dark_highlight_reads() {
+        use wordcraft_doc::props::{Highlight, Underline};
+        let cp =
+            wordcraft_doc::CharProps { highlight: Some(Highlight::Black), underline: Some(Underline::Thick), size: Some(24.0), ..Default::default() };
+        let mut d = Document::from_text("x");
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("HHHH HHHH", cp))];
+        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+        let items = page_display(&d, &l.pages[0], &DisplayOptions::default());
+        let (x0, x1, y, w) = items
+            .iter()
+            .find_map(|i| match i {
+                Draw::Line { x0, x1, y0, width, .. } => Some((*x0, *x1, *y0, *width)),
+                _ => None,
+            })
+            .unwrap();
+        assert!(w >= 1.5, "thick underline {w}");
+        let (px, py) = (((x0 + x1) / 2.0) as u32, y.round() as u32);
+        let dark = render_page(&d, &l.pages[0], 4.0, &RenderOptions { dark: true, ..Default::default() });
+        let [r8, g8, b8, _] = dark.pixel(px * 4, py * 4);
+        assert!(r8 > 0xC0 && g8 > 0xC0 && b8 > 0xC0, "underline draws light, got {:?}", (r8, g8, b8));
     }
 
     /// One EMF record: type, size, payload (a multiple of 4 bytes).
