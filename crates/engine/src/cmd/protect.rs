@@ -22,7 +22,47 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("review.restrict", "Restrict Editing", "Review › Protect", restrict).params(
             r#"{"mode"?: "none|readOnly|comments|trackedChanges|forms" (start enforcing; "none" stops), "formatting"?: bool (limit formatting to unlocked styles), "lockedStyles"?: [style id or name] (the styles that can't be applied; every other style is unlocked), "password"?: string (set when enforcing; required to stop a password-protected document), "stop"?: bool, "exception"?: "add" (the selection stays editable for everyone) | "remove" (exceptions touching the selection) | "removeAll"} → state"#,
         ),
+        CommandSpec::new("review.blockAuthors", "Block Authors", "Review › Protect", block_authors).params(
+            r#"{"author"?: co-author name, "action"?: "add" (default with an author) | "remove" | "list" | "clear"} → {"blocked": [...]} (blocked co-authors can't edit; document model only, not a Word file feature)"#,
+        ),
     ]
+}
+
+/// Blocked co-authors, at most this many (each trimmed, 1–256 characters).
+const MAX_BLOCKED: usize = 100;
+
+/// Review › Block Authors: block (or unblock) co-authors by name. Enforcement
+/// is against the session author name (File › Options user name): a blocked
+/// author can't run mutating commands ([`check_before`]), except this one, so
+/// blocking yourself is undone by unblocking yourself (or another user name).
+fn block_authors(s: &mut Session, v: &Value) -> CmdResult {
+    let action = match p::str(v, "action") {
+        Some("add" | "remove" | "list" | "clear") => p::str(v, "action"),
+        Some(other) => return Err(CmdError::Params(format!("`action` is add, remove, list or clear, not {other:?}"))),
+        None => None,
+    };
+    let list = &mut s.doc.settings.blocked_authors;
+    match (p::str(v, "author"), action) {
+        (Some(_), Some("list")) | (None, None) | (None, Some("list")) => {}
+        (Some(name), None) | (Some(name), Some("add")) => {
+            let name = name.trim();
+            if name.is_empty() || name.len() > 256 {
+                return Err(CmdError::Params("`author` must be 1–256 characters".into()));
+            }
+            if !list.iter().any(|a| a.eq_ignore_ascii_case(name)) {
+                if list.len() >= MAX_BLOCKED {
+                    return Err(CmdError::Failed(format!("at most {MAX_BLOCKED} blocked authors")));
+                }
+                list.push(name.to_string());
+            }
+        }
+        (Some(name), Some("remove")) => {
+            list.retain(|a| !a.eq_ignore_ascii_case(name.trim()));
+        }
+        (_, Some("clear")) => list.clear(),
+        (_, Some(_)) => return Err(CmdError::Params("`action` needs an `author`, except list and clear".into())),
+    }
+    Ok(json!({"blocked": list}))
 }
 
 /// The protection state, as `review.restrict` returns it and the Restrict Editing pane shows it.
@@ -189,13 +229,20 @@ fn remove_exceptions(s: &mut Session, all: bool) -> Result<(), CmdError> {
 
 /// Commands always allowed in a protected document: protection itself, file commands, undo.
 fn always_allowed(id: &str) -> bool {
-    id == "review.restrict" || id.starts_with("file.") || id == "edit.undo" || id == "edit.redo"
+    id == "review.restrict" || id == "review.blockAuthors" || id.starts_with("file.") || id == "edit.undo" || id == "edit.redo"
 }
 
 /// What a protected document lets command `id` do before it runs: `Err` refuses it; `Ok(true)`
 /// lets it run as long as it only changes the exceptions (checked afterwards with
 /// [`outside_unchanged`]).
 pub(crate) fn check_before(s: &Session, id: &str, params: &Value) -> Result<bool, CmdError> {
+    // Blocked co-authors can't edit (but can manage the block list itself).
+    if !always_allowed(id)
+        && !s.author.trim().is_empty()
+        && s.doc.settings.blocked_authors.iter().any(|a| a.trim().eq_ignore_ascii_case(s.author.trim()))
+    {
+        return Err(CmdError::Disabled(format!("{id}: {} is blocked from editing this document", s.author.trim())));
+    }
     let Some(mode) = s.doc.settings.protection.as_deref() else { return Ok(false) };
     if always_allowed(id) {
         return Ok(false);

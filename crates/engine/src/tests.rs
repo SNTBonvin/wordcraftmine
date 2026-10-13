@@ -2623,6 +2623,54 @@ fn styles_apply_rejected_on_protected_document() {
     assert_eq!(s.undo_labels(), undo);
 }
 
+#[test]
+fn blocked_authors_cannot_edit_but_manage_their_block() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello"}));
+    // Empty list, then add (the default with an author).
+    assert_eq!(run(&mut s, "review.blockAuthors", json!({}))["blocked"], json!([]));
+    let r = run(&mut s, "review.blockAuthors", json!({"author": "Blocked Bob"}));
+    assert_eq!(r["blocked"], json!(["Blocked Bob"]));
+    // Adding twice keeps one entry; names match case-insensitively.
+    run(&mut s, "review.blockAuthors", json!({"author": "blocked bob"}));
+    assert_eq!(s.doc.settings.blocked_authors.len(), 1);
+    assert!(s.run("review.blockAuthors", &json!({"author": "  "})).is_err());
+    assert!(s.run("review.blockAuthors", &json!({"author": "x", "action": "freeze"})).is_err());
+    // A blocked author can't edit, but can unblock themselves.
+    s.author = "Blocked Bob".into();
+    let r = s.run("text.insert", &json!({"text": "nope"}));
+    assert!(matches!(r, Err(crate::CmdError::Disabled(_))), "{r:?}");
+    assert_eq!(text(&s), "Hello");
+    run(&mut s, "review.blockAuthors", json!({"author": "Blocked Bob", "action": "remove"}));
+    run(&mut s, "text.insert", json!({"text": " back"}));
+    assert_eq!(text(&s), "Hello back");
+    // Clear empties the list; remove of a missing name is fine.
+    run(&mut s, "review.blockAuthors", json!({"author": "Nobody", "action": "remove"}));
+    run(&mut s, "review.blockAuthors", json!({"author": "A", "action": "add"}));
+    run(&mut s, "review.blockAuthors", json!({"action": "clear"}));
+    assert!(s.doc.settings.blocked_authors.is_empty());
+    assert!(s.run("review.blockAuthors", &json!({"action": "add"})).is_err(), "add needs an author");
+}
+
+#[test]
+fn translate_and_dictate_answer_without_services() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello"}));
+    // Translate validates and guides; the document is untouched.
+    let r = run(&mut s, "review.translate", json!({"target": "fr-FR", "scope": "document"}));
+    assert_eq!((r["translated"].clone(), r["target"].clone()), (json!(false), json!("fr-FR")));
+    assert!(s.run("review.translate", &json!({"target": "xx yy"})).is_err());
+    assert!(s.run("review.translate", &json!({"scope": "paragraph"})).is_err());
+    assert_eq!(text(&s), "Hello");
+    // Dictate reports, stops, and refuses to start without a speech model.
+    let r = run(&mut s, "tools.dictate", json!({}));
+    assert_eq!((r["dictating"].clone(), r["available"].clone()), (json!(false), json!(false)));
+    assert_eq!(run(&mut s, "tools.dictate", json!({"action": "stop"}))["dictating"], json!(false));
+    assert!(s.run("tools.dictate", &json!({"action": "start"})).is_err());
+    assert!(s.run("tools.dictate", &json!({"action": "shout"})).is_err());
+    assert!(s.run("tools.dictate", &json!({"lang": "xx yy"})).is_err());
+}
+
 fn column_doc() -> Session {
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "abcdef\nabcdef\nabcdef"}));

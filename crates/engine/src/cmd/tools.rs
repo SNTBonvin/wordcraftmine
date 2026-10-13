@@ -628,6 +628,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("review.language", "Language", "Review › Language", language).params(
             r#"{"lang"?: "en-US|en-GB|pl-PL|fr-FR|…" (BCP 47; default en-US), "noProof"?: bool, "detect"?: bool (detect language automatically, a preference), "default"?: bool (also the document's default language)}"#,
         ),
+        CommandSpec::new("review.translate", "Translate", "Review › Language", translate)
+            .params(r#"{"target"?: "BCP 47 language tag", "scope"?: "selection"|"document"} → guidance (translation needs an online service; documents stay offline)"#)
+            .pure(),
         CommandSpec::new("review.showMarkup", "Show Markup", "Review › Tracking", |s, v| {
             s.view.show_markup = p::bool(v, "value").unwrap_or(!s.view.show_markup);
             s.relayout();
@@ -676,6 +679,29 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .pure(),
     ]
+}
+
+/// Translate: there is no machine translation in WordCraft (it would need an
+/// online service, and documents stay offline), so this validates its
+/// parameters and answers what to do instead. Pure: the document is untouched.
+fn translate(s: &mut Session, v: &Value) -> CmdResult {
+    if let Some(t) = p::str(v, "target") {
+        wordcraft_proof::lang::normalize_tag(t)
+            .ok_or_else(|| CmdError::Params(format!("`target` must be a language tag such as fr-FR or de-DE, not {t:?}")))?;
+    }
+    if let Some(scope) = p::str(v, "scope")
+        && scope != "selection"
+        && scope != "document"
+    {
+        return Err(CmdError::Params("`scope` is selection or document".into()));
+    }
+    let _ = s;
+    Ok(json!({
+        "translated": false,
+        "target": p::str(v, "target").unwrap_or(""),
+        "scope": p::str(v, "scope").unwrap_or("selection"),
+        "message": "WordCraft keeps your documents offline: translation needs an online service, so copy the text to one",
+    }))
 }
 
 /// Set Proofing Language: the selection's language and "do not check spelling or grammar",

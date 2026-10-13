@@ -459,6 +459,11 @@ pub struct Settings {
     /// `w:cryptAlgorithmSid`, `w:hash`, `w:salt`…). Empty: no password.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub protect_hash: Vec<(String, String)>,
+    /// Review › Block Authors: co-authors blocked from editing, matched against
+    /// the session author name (there is no cloud co-authoring to block). Not a
+    /// Word file format feature: kept in the document model only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_authors: Vec<String>,
     /// Word compatibility mode the document is laid out in (`compatibilityMode`): 15 for Word
     /// 2013 and later, which places a table's border at the margin rather than its text and lets
     /// justified lines shrink their spaces to fit more text.
@@ -549,6 +554,7 @@ impl Default for Settings {
             protection: None,
             protect_formatting: false,
             protect_hash: Vec::new(),
+            blocked_authors: Vec::new(),
             compat_mode: COMPAT_MODE_CURRENT,
             grid_h: DEFAULT_GRID,
             grid_v: DEFAULT_GRID,
