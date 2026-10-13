@@ -1,6 +1,6 @@
 # Layout and pagination parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (a dragged floating object anchors in the column it lands in, #884; previously trivial: a paragraph ending on a page with footnotes keeps its space after above the separator, #1116; previously trivial: symbol-font text drawn as Unicode symbols, #776; previously trivial: large-table scrolling measured and fixed, #811; previously trivial: text boxes use their own margins; Resize shape to fit text never cuts text, #743; previously trivial: complex-script shaping and Myanmar line breaking, #604; previously trivial: body page totals, table-cell footnotes and bookmark link pages fixed, #450 #451 #455; previously major: first version; line breaking, pagination and object placement checked against Word's behaviour from the layout source on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** trivial (a list number stays with text after a leading page break; previously trivial: a dragged floating object anchors in the column it lands in, #884; previously trivial: a paragraph ending on a page with footnotes keeps its space after above the separator, #1116; previously trivial: symbol-font text drawn as Unicode symbols, #776; previously trivial: large-table scrolling measured and fixed, #811; previously trivial: text boxes use their own margins; Resize shape to fit text never cuts text, #743; previously trivial: complex-script shaping and Myanmar line breaking, #604; previously trivial: body page totals, table-cell footnotes and bookmark link pages fixed, #450 #451 #455; previously major: first version; line breaking, pagination and object placement checked against Word's behaviour from the layout source on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 A document only "opens correctly" if its pages break where Word breaks them: the same lines, the
 same page count, footnotes and pictures on the same pages. This checklist covers line breaking,
@@ -79,6 +79,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | trivial | A numbered paragraph whose text opens with a page break draws its number on the next page with the text, as Word does |
 | 2026-10-13 | trivial | A shape or picture dragged into another column anchors there, so the text in that column wraps around it (#884) |
 | 2026-10-13 | trivial | On a page with footnotes, a paragraph that ends there keeps its space after above the footnote separator; if it doesn't fit, its last line (and, with widow control, one more) goes to the next page with the note. Pages without notes are unchanged (#1116) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
