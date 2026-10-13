@@ -250,6 +250,10 @@ pub enum Dialog {
         /// first); `paper_was` as opened (`layout.size` runs only if it changed, #1433).
         paper: (f32, f32),
         paper_was: (f32, f32),
+        /// Custom size chosen in Paper size: shown even while the numbers match a named size.
+        paper_custom: bool,
+        /// Why OK didn't apply (the margins don't fit the paper).
+        message: String,
     },
     Link {
         url: String,
@@ -1079,6 +1083,8 @@ impl Dialog {
                 Dialog::PageSetup {
                     paper,
                     paper_was: paper,
+                    paper_custom: false,
+                    message: String::new(),
                     top: sp.margin_top / crate::options::unit().pt_per_unit(),
                     bottom: sp.margin_bottom / crate::options::unit().pt_per_unit(),
                     left: sp.margin_left / crate::options::unit().pt_per_unit(),
@@ -1412,22 +1418,60 @@ pub(crate) fn paper_entry(paper: (f32, f32)) -> Option<&'static str> {
     wordcraft_geom::paper_name(paper.0 * ppu, paper.1 * ppu)
 }
 
-/// Run `layout.size` for Page Setup's paper (in the measurement unit) if it is a new size;
-/// the same paper turned the other way is no new size, only an orientation.
-fn apply_paper_size(app: &mut WordApp, paper: (f32, f32), was: (f32, f32)) {
-    let sorted = |(a, b): (f32, f32)| (a.min(b), a.max(b));
-    let ((w0, h0), (w1, h1)) = (sorted(paper), sorted(was));
-    if (w0 - w1).abs() < 1e-4 && (h0 - h1).abs() < 1e-4 {
-        return;
-    }
+/// Page Setup's OK for the paper, orientation and margins (#1433), all in the measurement unit
+/// as the dialog shows them. Refuses (applying nothing) when the margins don't fit the paper.
+/// Otherwise it runs the commands in an order where none is refused on the way: the size first
+/// when the section's margins fit it, else the margins first, else margins of 0 in between.
+/// `layout.size` keeps the section's orientation; `layout.orientation` then turns the page and
+/// its margins to what the dialog shows. A size equal to the opened one (either way round,
+/// within 0.01 pt) doesn't run `layout.size`.
+fn apply_page_layout(
+    app: &mut WordApp,
+    (paper, was): ((f32, f32), (f32, f32)),
+    landscape: bool,
+    (top, bottom, left, right): (f32, f32, f32, f32),
+) -> Result<(), &'static str> {
+    use wordcraft_engine::cmd::page::{MARGINS_DONT_FIT, margins_fit, sect};
     let ppu = crate::options::unit().pt_per_unit();
-    let _ = app.run("layout.size", json!({"width": paper.0 * ppu, "height": paper.1 * ppu}));
+    let (paper, was) = ((paper.0 * ppu, paper.1 * ppu), (was.0 * ppu, was.1 * ppu));
+    let m = (top * ppu, bottom * ppu, left * ppu, right * ppu);
+    let cur = sect(&app.session);
+    if !margins_fit(paper, m, cur.gutter) {
+        return Err(MARGINS_DONT_FIT);
+    }
+    let turned = |on: bool, (a, b): (f32, f32)| if on { (a.max(b), a.min(b)) } else { (a.min(b), a.max(b)) };
+    let ((w0, h0), (w1, h1)) = (turned(false, paper), turned(false, was));
+    let new_size = (w0 - w1).abs() >= 0.01 || (h0 - h1).abs() >= 0.01;
+    let size = json!({"width": paper.0, "height": paper.1});
+    let orientation = json!({"value": if landscape { "landscape" } else { "portrait" }});
+    let margins = json!({"top": m.0, "bottom": m.1, "left": m.2, "right": m.3});
+    let old_margins = (cur.margin_top, cur.margin_bottom, cur.margin_left, cur.margin_right);
+    let mut run = |id: &str, v: &Value| {
+        let _ = app.run(id, v.clone());
+    };
+    if !new_size || margins_fit(turned(cur.landscape, paper), old_margins, cur.gutter) {
+        if new_size {
+            run("layout.size", &size);
+        }
+        run("layout.orientation", &orientation);
+        run("layout.margins", &margins);
+    } else if margins_fit(turned(landscape, (cur.page_w, cur.page_h)), m, cur.gutter) {
+        run("layout.orientation", &orientation);
+        run("layout.margins", &margins);
+        run("layout.size", &size);
+    } else {
+        run("layout.orientation", &orientation);
+        run("layout.margins", &json!({"top": 0.0, "bottom": 0.0, "left": 0.0, "right": 0.0}));
+        run("layout.size", &size);
+        run("layout.margins", &margins);
+    }
+    Ok(())
 }
 
 /// Page Setup's Paper group (#1433): a Paper size list (the named sizes and Custom size) and
 /// the width and height. The fields follow the orientation (the wide side is the width in
 /// landscape), and a typed size that is wider than tall turns the orientation to landscape.
-fn page_paper_group(ui: &mut Ui, paper: &mut (f32, f32), landscape: &mut bool) {
+fn page_paper_group(ui: &mut Ui, paper: &mut (f32, f32), landscape: &mut bool, custom: &mut bool) {
     if (*landscape && paper.0 < paper.1) || (!*landscape && paper.0 > paper.1) {
         *paper = (paper.1, paper.0);
     }
@@ -1436,18 +1480,23 @@ fn page_paper_group(ui: &mut Ui, paper: &mut (f32, f32), landscape: &mut bool) {
     let l = &PAPER_LABELS;
     ui.label(egui::RichText::new(tl!(l.group)).font(semibold(12.5)));
     ui.horizontal(|ui| {
-        ui.label(tl!(l.size));
-        let shown = tl!(paper_entry(*paper).unwrap_or(l.custom));
-        egui::ComboBox::from_id_salt("ps_paper_size").width(180.0).selected_text(shown).show_ui(ui, |ui| {
+        let label = ui.label(tl!(l.size));
+        let entry = paper_entry(*paper).filter(|_| !*custom);
+        let shown = tl!(entry.unwrap_or(l.custom));
+        let combo = egui::ComboBox::from_id_salt("ps_paper_size").width(180.0).height(400.0).selected_text(shown).show_ui(ui, |ui| {
             for (n, w, h) in wordcraft_geom::PAPER_SIZES {
-                if ui.selectable_label(paper_entry(*paper) == Some(*n), tl!(n)).clicked() {
+                if ui.selectable_label(entry == Some(*n), tl!(n)).clicked() {
                     let (w, h) = (w / ppu, h / ppu);
                     *paper = if *landscape { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
+                    *custom = false;
                 }
             }
-            // Custom size keeps the numbers to edit.
-            let _ = ui.selectable_label(paper_entry(*paper).is_none(), tl!(l.custom));
+            // Custom size keeps the numbers to edit, and stays chosen while they match a name.
+            if ui.selectable_label(entry.is_none(), tl!(l.custom)).clicked() {
+                *custom = true;
+            }
         });
+        combo.response.labelled_by(label.id);
     });
     egui::Grid::new("ps_paper").num_columns(4).show(ui, |ui| {
         use wordcraft_engine::cmd::page::{MAX_PAGE_SIDE, MIN_PAGE_SIDE};
@@ -1944,7 +1993,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             }
             ok || cancel
         }
-        Dialog::PageSetup { top, bottom, left, right, landscape, rtl, grid, grid_was, paper, paper_was } => {
+        Dialog::PageSetup { top, bottom, left, right, landscape, rtl, grid, grid_was, paper, paper_was, paper_custom, message } => {
             ui.label(egui::RichText::new(tl!("Margins")).font(semibold(12.5)));
             egui::Grid::new("ps").num_columns(4).show(ui, |ui| {
                 ui.label(tl!("Top:"));
@@ -1965,7 +2014,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.radio_value(landscape, false, tl!("Portrait"));
                 ui.radio_value(landscape, true, tl!("Landscape"));
             });
-            page_paper_group(ui, paper, landscape);
+            page_paper_group(ui, paper, landscape, paper_custom);
             ui.label(egui::RichText::new(tl!("Document Grid")).font(semibold(12.5)));
             ui.horizontal_wrapped(|ui| {
                 ui.radio_value(&mut grid.0, 0, tl!("No grid"));
@@ -1985,14 +2034,15 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.radio_value(rtl, false, tl!("Left-to-right"));
                 ui.radio_value(rtl, true, tl!("Right-to-left"));
             });
-            let (ok, cancel) = buttons(ui, tl!("OK"));
+            if !message.is_empty() {
+                ui.label(egui::RichText::new(message.as_str()).small().color(ui.visuals().error_fg_color));
+            }
+            let (mut ok, cancel) = buttons(ui, tl!("OK"));
+            if ok && let Err(e) = apply_page_layout(app, (*paper, *paper_was), *landscape, (*top, *bottom, *left, *right)) {
+                *message = tl!(e).to_string();
+                ok = false;
+            }
             if ok {
-                // The size first: `layout.size` keeps the section's orientation, and the
-                // orientation after it turns the page to what the dialog shows (#1433).
-                apply_paper_size(app, *paper, *paper_was);
-                let _ = app.run("layout.orientation", json!({"value": if *landscape { "landscape" } else { "portrait" }}));
-                let _ =
-                    app.run("layout.margins", json!({"top": *top * crate::options::unit().pt_per_unit(), "bottom": *bottom * crate::options::unit().pt_per_unit(), "left": *left * crate::options::unit().pt_per_unit(), "right": *right * crate::options::unit().pt_per_unit()}));
                 if grid != grid_was {
                     let kind = ["none", "lines", "linesAndChars", "snapToChars"].get(grid.0 as usize).copied().unwrap_or("none");
                     let mut v = json!({"type": kind});
@@ -3866,6 +3916,102 @@ mod tests {
         h.run_steps(3);
         assert_eq!(sect(h.state()), (400.0, 800.0, false));
         assert_eq!(size_steps(h.state()), 2, "turning the page isn't a new size");
+    }
+
+    /// #1433: the Paper group's own widgets: choosing A4 in Paper size fills Width and Height,
+    /// Landscape swaps them, OK gives an A4 landscape section; typing a width wider than the
+    /// height turns the orientation to Landscape and shows Custom size; choosing Custom size
+    /// keeps the numbers and stays chosen.
+    #[test]
+    fn page_setup_paper_widgets_work_together() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let ppu = crate::options::unit().pt_per_unit();
+        let mut h = app_harness(app_with("Page"));
+        h.state_mut().run("ui.dialog", json!({"name": "pageSetup"})).unwrap();
+        h.run_steps(3);
+        let state = |h: &egui_kittest::Harness<'_, WordApp>| match &h.state().dialog {
+            Some(Dialog::PageSetup { paper, landscape, .. }) => {
+                ((paper.0 * ppu * 100.0).round() / 100.0, (paper.1 * ppu * 100.0).round() / 100.0, *landscape)
+            }
+            _ => panic!("no page setup dialog"),
+        };
+        let combo = |h: &egui_kittest::Harness<'_, WordApp>| h.get_by_role_and_label(Role::ComboBox, "Paper size:").value();
+        assert_eq!(combo(&h).as_deref(), Some("Letter"));
+        h.get_by_role_and_label(Role::ComboBox, "Paper size:").click();
+        h.run_steps(3);
+        h.get_by_label("A4").click();
+        h.run_steps(3);
+        assert_eq!(state(&h), (595.28, 841.89, false), "A4 fills the fields");
+        assert_eq!(combo(&h).as_deref(), Some("A4"));
+        h.get_by_label("Landscape").click();
+        h.run_steps(3);
+        assert_eq!(state(&h), (841.89, 595.28, true), "Landscape swaps them");
+        assert_eq!(combo(&h).as_deref(), Some("A4"));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        let sect = wordcraft_engine::cmd::page::sect(&h.state().session);
+        assert_eq!(((sect.page_w * 100.0).round() / 100.0, (sect.page_h * 100.0).round() / 100.0, sect.landscape), (841.89, 595.28, true));
+
+        // Portrait A4 again; a width wider than the height turns it to Landscape, Custom size.
+        h.state_mut().run("layout.orientation", json!({"value": "portrait"})).unwrap();
+        h.state_mut().run("ui.dialog", json!({"name": "pageSetup"})).unwrap();
+        h.run_steps(3);
+        h.get_by_value("8.27\"").focus();
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.event(egui::Event::Text("15".into()));
+        h.key_press(egui::Key::Tab);
+        h.run_steps(3);
+        assert_eq!(state(&h), (1080.0, 841.89, true), "wider than tall: Landscape");
+        assert_eq!(combo(&h).as_deref(), Some("Custom size"));
+
+        // Back to A4, then Custom size: the numbers stay and so does the choice.
+        h.get_by_role_and_label(Role::ComboBox, "Paper size:").click();
+        h.run_steps(3);
+        h.get_by_label("A4").click();
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::ComboBox, "Paper size:").click();
+        h.run_steps(3);
+        h.get_by_label("Custom size").click();
+        h.run_steps(3);
+        assert_eq!(state(&h), (841.89, 595.28, true));
+        assert_eq!(combo(&h).as_deref(), Some("Custom size"));
+    }
+
+    /// #1433: Page Setup checks the new size and margins together: a page its margins don't fit
+    /// keeps the dialog open with a message and applies nothing; a smaller page with smaller
+    /// margins applies (margins first, so no step is refused on the way).
+    #[test]
+    fn page_setup_refuses_margins_that_dont_fit_and_applies_smaller_ones_first() {
+        use egui_kittest::kittest::Queryable;
+        let ppu = crate::options::unit().pt_per_unit();
+        let mut h = app_harness(app_with("Page"));
+        let before = wordcraft_engine::cmd::page::sect(&h.state().session);
+        let undo = h.state().session.undo_depth();
+        h.state_mut().run("ui.dialog", json!({"name": "pageSetup"})).unwrap();
+        h.run_steps(2);
+        if let Some(Dialog::PageSetup { paper, .. }) = h.state_mut().dialog.as_mut() {
+            *paper = (100.0 / ppu, 500.0 / ppu);
+        }
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        assert!(
+            matches!(&h.state().dialog, Some(Dialog::PageSetup { message, .. }) if message.contains("margins don't fit")),
+            "stays open with a message"
+        );
+        assert_eq!((wordcraft_engine::cmd::page::sect(&h.state().session), h.state().session.undo_depth()), (before, undo), "nothing applied");
+
+        if let Some(Dialog::PageSetup { top, bottom, left, right, .. }) = h.state_mut().dialog.as_mut() {
+            (*top, *bottom, *left, *right) = (18.0 / ppu, 18.0 / ppu, 18.0 / ppu, 18.0 / ppu);
+        }
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        assert!(h.state().dialog.is_none());
+        let s = wordcraft_engine::cmd::page::sect(&h.state().session);
+        assert_eq!((s.page_w.round(), s.page_h.round(), s.margin_left.round(), s.margin_top.round()), (100.0, 500.0, 18.0, 18.0));
     }
 
     /// #1433: Layout › Size › More Paper Sizes… opens Page Setup.
