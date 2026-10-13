@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (References ▸ Style lists added CSL styles and Add style from file…, #1058; previously trivial: Manage Sources ▸ Import… picks a source library, #1058; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (Status bar: opening a document with Mendeley/EndNote citations notes once that they're preserved, #1058; previously trivial: References ▸ Style lists added CSL styles and Add style from file…, #1058; previously trivial: Manage Sources ▸ Import… picks a source library, #1058; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -32,7 +32,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Zoom: Ctrl+scroll, pinch (#179), zoom buttons (#232), pages side by side when zoomed out (#251) | ✅ | ✅ | 85% | — |
 | Touchpad smooth/inertial scroll | ✅ (#252) | ✅ | 90% | — |
 | Reading Mode | Existing Read Mode ribbon button opens a read-only, viewport-column layout with animated horizontal paging, transient width/text/spacing controls, heading navigation (Navigation pane) and resize anchoring; print/export layout unchanged | reading-optimized view and navigation | 75% | 1–2 |
-| Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ (the language is the caret's; a click sets the proofing language) | ✅ | 85% | — |
+| Status bar (page x of y, words, language, view buttons, zoom slider) | ✅ (the language is the caret's; a click sets the proofing language; opening a document with Mendeley/EndNote citation fields notes once that the citations are preserved — live refresh stays Zotero's, #1058) | ✅ | 85% | — |
 | Caret motion: keys and typing glide the caret to its new place (100 ms, `cubic-bezier(0, 0, 0, 1)`), the blink fades (530 ms on and off, 100 ms fades); clicks and scripted moves don't glide. File › Options › Advanced › Animation (`ui.caretAnimation`) turns it off | ✅ as measured from Word for Windows (`caret_glide.rs`); zoom levels other than 100%, modifier keys and off-screen moves not measured | ✅ on Windows; Word for Mac not measured | 90% | 1–2 |
 | Interface themes (light, dark, system #249, follows OS changes live #311), dark page separate from the interface theme (#194, #312) | ✅ | ✅ | 90% | — |
 | Interface size (File › Options › General, 80–200 %, on top of the system display scale; `ui.interfaceSize`) (#475) | ✅ | system display scaling only | 100% | — |
@@ -46,6 +46,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | Status bar: opening a document with citation fields of a manager WordCraft doesn't drive (Mendeley, EndNote) notes once, non-blocking, that the citations are preserved — "Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live." — in all 18 interface languages (#1058, [zotero.md](zotero.md) ▸ Other citation managers) |
 | 2026-10-13 | trivial | References ▸ Style: the combo lists the twelve built-in styles plus the CSL styles you added and Add style from file…, which installs a .csl file into the styles folder and makes it the document's style; parser warnings show in the status line; the web build's picker yields nothing yet (#1058, [csl-styles.md](csl-styles.md)) |
 | 2026-10-13 | trivial | Manage Sources ▸ Import…: picks a BibTeX/RIS/CSL-JSON library (filters bib/ris/json) and runs `references.importSources`; the dialog's status line says "n added, n updated" (the window's status bar if the dialog closed); the web build's picker yields nothing yet (#1058) |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
