@@ -6,114 +6,81 @@ use serde_json::json;
 use crate::theme::{APP_COLOR, Tokens, medium, regular, semibold};
 use crate::{WordApp, icons};
 
-const PAGES: [(&str, &str); 9] = [
-    ("home", "Home"),
-    ("new", "New"),
-    ("open", "Open"),
-    ("info", "Info"),
-    ("save", "Save"),
-    ("saveAs", "Save As"),
-    ("print", "Print"),
-    ("export", "Export"),
-    ("options", "Options"),
-];
+/// WordCraft's icon for an entry of the File page's column; `None` is Back.
+fn nav_icon(key: Option<&str>) -> &'static str {
+    match key {
+        None => "chevronLeft",
+        Some("home") => "home",
+        Some("new") => "blankPage",
+        Some("open") => "open",
+        Some("save" | "saveAs") => "save",
+        Some("print") => "print",
+        Some("export") => "export",
+        Some("options") => "options",
+        Some("discord") => "comment",
+        Some(_) => "info",
+    }
+}
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let mac = app.integrated_titlebar;
+    // The column is the shared one (storytold/craft-libs#53): a labelled Back, the pages in groups,
+    // Options and About at the foot. WordCraft supplies the entries, their wording and icons.
     egui::Panel::left("backstage_nav")
         .exact_size(200.0)
         // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(APP_COLOR).inner_margin(egui::Margin { left: 0, right: 0, top: if mac { 0 } else { 12 }, bottom: 12 }))
+        .frame(egui::Frame::NONE.fill(APP_COLOR))
         .show(ui, |ui| {
-            let back = if mac {
-                // macOS (#222): the Backstage covers the title bar, so its top band is the title
-                // bar: the back button sits beside the traffic lights, centred with them and as far
-                // from them as the title bar's own controls, and the rest of the band drags the window.
-                let (band, drag) = ui.allocate_exact_size(vec2(200.0, crate::chrome::MAC_TITLE_BAR), Sense::click_and_drag());
-                if drag.drag_started() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                }
-                // The chevron's stroke starts at the content edge.
-                let c = pos2(band.min.x + crate::chrome::MAC_CONTENT_LEFT + 3.0, band.center().y);
-                let resp = ui.interact(Rect::from_center_size(c, vec2(22.0, band.height())), ui.id().with("backstage_back"), Sense::click());
-                icons::paint(ui.painter(), Rect::from_center_size(c, vec2(18.0, 18.0)), "chevronLeft", egui::Color32::WHITE, egui::Color32::WHITE);
-                resp
-            } else {
-                let (r, resp) = ui.allocate_exact_size(vec2(200.0, 40.0), Sense::click());
-                icons::paint(
-                    ui.painter(),
-                    Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(18.0, 18.0)),
-                    "chevronLeft",
-                    egui::Color32::WHITE,
-                    egui::Color32::WHITE,
-                );
-                resp
+            use craft_ui::file_nav::{FileNav, FileNavAction, FileNavItem, FileNavStyle};
+            let style =
+                FileNavStyle { font: medium(14.0), selected_font: semibold(14.0), foot_font: medium(13.0), ..FileNavStyle::on_accent(APP_COLOR) };
+            // "Home" is also the ribbon tab beside File: here it has its own wording.
+            let item = |key: &'static str, label: &'static str| FileNavItem {
+                key,
+                label: if key == "home" { crate::i18n::tc("file", label) } else { tl!(label) },
             };
+            let top = [item("home", "Home"), item("new", "New"), item("open", "Open")];
+            let rest = [item("info", "Info"), item("save", "Save"), item("saveAs", "Save As"), item("print", "Print"), item("export", "Export")];
+            let foot = [item("options", "Options"), item("discord", "Discord community"), item("about", "About")];
+            let paint = |key: Option<&str>, p: &egui::Painter, r: Rect, c: egui::Color32| icons::paint(p, r, nav_icon(key), c, c);
+            // macOS (#222): the File page covers the title bar, so the column's top band is the
+            // title bar. It holds only the window buttons and drags the window.
+            let band = if mac { crate::chrome::MAC_TITLE_BAR } else { 0.0 };
+            let showing = app.ui.backstage_page.clone();
+            let action =
+                FileNav::new(tl!("Back"), &[&top, &rest], Some(showing.as_str()), &style, &paint).foot(&foot).title_band(band).show(ui).action;
             // Escape in the built-in file browser closes only the browser.
-            if back.clicked() || (!app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
+            let escape = !app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            match action {
+                Some(FileNavAction::DragWindow) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag),
+                // A document without a file goes to the Save As page (as in Word) instead of
+                // `file.save`, which would also open the native Save As dialog. In the browser a
+                // save is a download, so it saves right away.
+                Some(FileNavAction::Choose("save")) if app.session.path.is_none() && app.services.download.is_none() => {
+                    app.ui.backstage_page = "saveAs".into();
+                }
+                Some(FileNavAction::Choose("save")) => {
+                    let r = app.run("file.save", json!({}));
+                    if r.is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true) || v.get("downloaded").is_some()) {
+                        app.ui.backstage = false;
+                        app.canvas.want_focus = true;
+                    } else {
+                        app.ui.backstage_page = "saveAs".into();
+                    }
+                }
+                Some(FileNavAction::Choose("discord")) => {
+                    let _ = app.run("ui.discord", json!({}));
+                }
+                Some(FileNavAction::Choose("about")) => app.dialog = crate::dialogs::Dialog::open("about", app),
+                Some(FileNavAction::Choose(page)) => app.ui.backstage_page = page.into(),
+                Some(FileNavAction::Back) | None => {}
+            }
+            if action == Some(FileNavAction::Back) || escape {
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
-            ui.add_space(if mac { 12.0 } else { 6.0 });
-            for (id, label) in PAGES {
-                let (r, resp) = ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
-                let active = app.ui.backstage_page == id;
-                if active {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(46));
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
-                }
-                ui.painter().text(
-                    pos2(r.min.x + 22.0, r.center().y),
-                    Align2::LEFT_CENTER,
-                    tl!(label),
-                    if active { semibold(14.0) } else { medium(14.0) },
-                    egui::Color32::WHITE,
-                );
-                if resp.clicked() {
-                    match id {
-                        // A document without a file goes to the Save As page (as in Word) instead
-                        // of `file.save`, which would also open the native Save As dialog.
-                        // In the browser a save is a download, so it saves right away.
-                        "save" if app.session.path.is_none() && app.services.download.is_none() => {
-                            app.ui.backstage_page = "saveAs".into();
-                        }
-                        "save" => {
-                            let r = app.run("file.save", json!({}));
-                            if r.is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true) || v.get("downloaded").is_some()) {
-                                app.ui.backstage = false;
-                                app.canvas.want_focus = true;
-                            } else {
-                                app.ui.backstage_page = "saveAs".into();
-                            }
-                        }
-                        "saveAs" => {
-                            app.ui.backstage_page = "saveAs".into();
-                        }
-                        _ => app.ui.backstage_page = id.into(),
-                    }
-                }
-            }
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                for (label, id) in [("About", "about"), ("Discord community", "discord")] {
-                    let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
-                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
-                    if resp.hovered() {
-                        ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
-                    }
-                    ui.painter().text(pos2(r.min.x + 22.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
-                    if resp.clicked() {
-                        if id == "discord" {
-                            let _ = app.run("ui.discord", json!({}));
-                        } else {
-                            app.dialog = crate::dialogs::Dialog::open("about", app);
-                        }
-                    }
-                }
-            });
         });
     // Open is the places panel from edge to edge, with its own scrolling: the navigation column
     // already says "Open", so the page needs no heading of its own.
@@ -596,7 +563,7 @@ mod tests {
             a,
         );
         h.run_steps(4);
-        for label in ["This computer", "Browse…", "Handbook.docx", "Notes.docx"] {
+        for label in ["This computer", "Browse…", "Handbook.docx, /home/ada/Documents", "Notes.docx, /home/ada/Desktop"] {
             assert!(h.query_by_label(label).is_some(), "{label} is on the Open page");
         }
         assert!(h.query_by_label("Add a place").is_none(), "there is no remote storage to add yet");
@@ -604,10 +571,48 @@ mod tests {
         h.run_steps(4);
         assert!(h.state().file_browser.page_dir.is_some(), "This computer lists a folder in the page");
         assert!(!h.state().file_dialog_open(), "and opens no dialog, unlike Browse");
-        assert!(h.query_by_label("Handbook.docx").is_none(), "the recent documents made way for the folder");
+        assert!(h.query_by_label("Handbook.docx, /home/ada/Documents").is_none(), "the recent documents made way for the folder");
         h.get_by_label("Recent").click();
         h.run_steps(4);
-        assert!(h.state().file_browser.page_dir.is_none() && h.query_by_label("Handbook.docx").is_some(), "Recent comes back");
+        assert!(h.state().file_browser.page_dir.is_none() && h.query_by_label("Handbook.docx, /home/ada/Documents").is_some(), "Recent comes back");
+    }
+
+    /// The File page's column (storytold/craft-libs#53): Back is a labelled first row, every page
+    /// is one click away, and Options sits at the foot.
+    #[test]
+    fn the_column_has_a_labelled_back_and_reaches_every_page() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "new"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for (label, page) in [("Options", "options"), ("Open", "open"), ("Info", "info"), ("Export", "export"), ("Home", "home")] {
+            h.get_by_label(label).click();
+            h.run_steps(4);
+            assert_eq!(h.state().ui.backstage_page, page, "{label} shows its page");
+            assert!(h.state().ui.backstage, "{label} stays on the File page");
+        }
+        h.get_by_label("Back").click();
+        h.run_steps(4);
+        assert!(!h.state().ui.backstage, "Back leaves the File page");
+    }
+
+    /// The File page's Home may be worded apart from the ribbon's Home tab; a language without
+    /// such an entry uses its ordinary one.
+    #[test]
+    fn the_file_pages_home_can_have_its_own_wording() {
+        use crate::i18n::{Lang, tr, trc};
+        let (pl, de) = (Lang::from_pref("pl"), Lang::from_pref("de"));
+        assert_eq!(trc(pl, "file", "Home"), "Strona główna");
+        assert_eq!(tr(pl, "Home"), "Start", "the ribbon tab keeps its word");
+        assert_eq!(trc(de, "file", "Home"), tr(de, "Home"));
+        assert_ne!(tr(pl, "About"), tr(pl, "Info"), "two rows of one column must not read the same");
     }
 
     #[test]

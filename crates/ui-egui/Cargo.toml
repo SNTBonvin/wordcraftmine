@@ -9,8 +9,9 @@ description = "WordCraft egui front end (Word-style ribbon UI); swappable: nothi
 workspace = true
 
 [dependencies]
-# The places panel from storytold/craft-libs#50, pinned to its branch in a fork until it merges.
-craft-ui = { git = "https://github.com/brzuchal/craft-libs", rev = "f81c2cc440cfa7a46474bda9ce358f800e6157fe" }
+# The File column and the places panel from storytold/craft-libs#50, pinned to its branch in a fork
+# until it merges.
+craft-ui = { git = "https://github.com/brzuchal/craft-libs", rev = "efdb37a8701fd3fd8aa4744e7df5d7961f61e3ce" }
 wordcraft-geom = { workspace = true }
 wordcraft-doc = { workspace = true }
 wordcraft-fonts = { workspace = true }
