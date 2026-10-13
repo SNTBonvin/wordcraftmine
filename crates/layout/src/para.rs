@@ -622,9 +622,10 @@ pub fn visual_order(levels: &[u8]) -> Vec<usize> {
     order
 }
 
-/// Text Word sets in the East Asian font: CJK ideographs, kana, bopomofo, CJK punctuation and
-/// fullwidth forms, and Hangul.
-fn east_asian(c: char) -> bool {
+/// Text Word sets in the East Asian font (`w:eastAsia`): CJK ideographs, kana, bopomofo, CJK
+/// punctuation and fullwidth forms, and Hangul. This is the predicate the shaper picks the run's
+/// East Asian face with, and what the ribbon's Font box shows that font for.
+pub fn uses_east_asian_font(c: char) -> bool {
     crate::kinsoku::is_east_asian(c) || matches!(u32::from(c), 0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF)
 }
 
@@ -715,7 +716,7 @@ impl<'a> Builder<'a> {
         let primary_ea = rc
             .font_ea
             .as_ref()
-            .filter(|f| !f.eq_ignore_ascii_case(&rc.font) && text.chars().any(east_asian))
+            .filter(|f| !f.eq_ignore_ascii_case(&rc.font) && text.chars().any(uses_east_asian_font))
             .map(|f| wordcraft_fonts::word::resolve(f, rc.bold, rc.italic))
             .filter(|r| !r.substituted)
             .map(|r| r.face);
@@ -757,7 +758,7 @@ impl<'a> Builder<'a> {
             let prim = if complex { primary_cs.unwrap_or(primary) } else { primary };
             let face = match cur {
                 Some(k) if mark => k.face,
-                _ if !complex && east_asian(c) && primary_ea.is_some_and(|f| f.covers(c)) => primary_ea,
+                _ if !complex && uses_east_asian_font(c) && primary_ea.is_some_and(|f| f.covers(c)) => primary_ea,
                 _ if prim.covers(dc) || c.is_whitespace() || c.is_control() || c == SOFT_HYPHEN => None,
                 // Stay in the fallback face the word started in while it covers the letters.
                 Some(SegKey { face: Some(f), .. }) if f.covers(dc) => Some(f),

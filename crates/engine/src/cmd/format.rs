@@ -2,6 +2,7 @@
 
 use serde_json::{Value, json};
 use wordcraft_doc::Pos;
+use wordcraft_doc::bidi::is_word_char;
 use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
 use wordcraft_doc::props::{Border, CharProps, Highlight, Rgb, TextColor, Underline, VertAlign};
 use wordcraft_doc::resolve::ResolvedChar;
@@ -147,24 +148,41 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-/// The selection to format: the selection, or the word around a collapsed caret (Word
-/// formats the whole word when the caret is inside one). `None` = caret between words.
+/// What a character-format command acts on, and what the ribbon reads: the selection, or
+/// nothing at all for a collapsed caret. Word never reformats the word a collapsed caret sits
+/// in — it only sets the format the *text typed next* will get there. Measured against Word
+/// 2019 (Windows): `CommandBars.ExecuteMso` for Bold, Italic, Underline and
+/// ClearFormatting, and assigning `Font.Name` or `Font.Size`, each left every character of a
+/// word holding the insertion point untouched while the insertion point reported the new
+/// format. Selecting the word instead does format it.
 fn target(s: &Session) -> Option<(Pos, Pos)> {
     let (a, b) = s.sel.ordered();
-    if a != b {
-        return Some((a, b));
-    }
-    let p = s.doc.para_at(&a)?;
-    let is_w = |c: char| c.is_alphanumeric() || c == '\'' || c == '_';
-    let before = p.text.get(..a.off)?.chars().next_back();
-    let after = p.text.get(a.off..)?.chars().next();
-    if before.is_some_and(is_w) && after.is_some_and(is_w) {
-        let (x, y) = p.word_at(a.off);
-        // word_at includes trailing spaces; Word formats just the word.
-        let word_end = p.text.get(x..y).map(|w| x + w.trim_end().len()).unwrap_or(y);
-        return Some((Pos { off: x, ..a.clone() }, Pos { off: word_end, ..a }));
-    }
-    None
+    (a != b).then_some((a, b))
+}
+
+/// The word `format.changeCase` changes at a collapsed caret. Change Case is the one character
+/// command that *does* take the whole word — the opposite of [`target`]: with the insertion point
+/// inside `World`, and again with it at `World`'s end, Word gives `WORLD`. So a word character to
+/// the left of the caret wins, and only at a word's start does the word on the right (measured
+/// from Word 2019 (Windows); `Selection.Range.Case` is the property its Change Case sets).
+/// A caret with no word character on either side changes nothing here, where Word goes back to
+/// the preceding word — a known, deliberate gap.
+fn word_at_caret(s: &Session) -> Option<(Pos, Pos)> {
+    let at = s.sel.focus.clone();
+    let p = s.doc.para_at(&at)?;
+    let before = p.text.get(..at.off).and_then(|t| t.chars().next_back());
+    let after = p.text.get(at.off..).and_then(|t| t.chars().next());
+    let from = match before {
+        Some(c) if is_word_char(c) => at.off - c.len_utf8(),
+        _ if after.is_some_and(is_word_char) => at.off,
+        // No word character on either side of the caret. Word goes back to the preceding word
+        // here; we stop, which is the gap noted above.
+        _ => return None,
+    };
+    let (x, y) = p.word_at(from);
+    // `word_at` takes the trailing spaces with it; Word changes just the word.
+    let end = p.text.get(x..y).map(|w| x + w.trim_end().len()).unwrap_or(y);
+    (x < end).then(|| (Pos { off: x, ..at.clone() }, Pos { off: end, ..at }))
 }
 
 /// The non-empty rows of a column selection, if one is active. Of whole cells, every paragraph:
@@ -216,7 +234,8 @@ pub fn apply(s: &mut Session, f: &dyn Fn(&mut CharProps)) -> CmdResult {
     sel_result(s)
 }
 
-/// Resolved formatting of every character in the target (or the caret).
+/// Resolved formatting of every character a command acts on (see [`target`]): the selection's
+/// characters, or the single insertion point for a collapsed caret.
 fn resolved(s: &Session) -> Vec<ResolvedChar> {
     let mut out = Vec::new();
     if let Some(rows) = column_rows(s) {
@@ -381,7 +400,7 @@ fn highlight(s: &mut Session, v: &Value) -> CmdResult {
 
 fn change_case(s: &mut Session, v: &Value) -> CmdResult {
     let (a, b) = s.sel.ordered();
-    let (a, b) = if a == b { target(s).unwrap_or((a, b)) } else { (a, b) };
+    let (a, b) = if a == b { word_at_caret(s).unwrap_or((a, b)) } else { (a, b) };
     if a == b {
         return sel_result(s);
     }
@@ -582,6 +601,23 @@ fn set(s: &mut Session, v: &Value) -> CmdResult {
     apply(s, &|c| c.overlay(&props))
 }
 
+/// Whether the Font box's readout is East Asian text. Word's box shows the font of the script at
+/// the insertion point: `Selection.Font.Name` reports the East Asian font for a CJK character and
+/// the Latin one for a Latin character. A selection goes by its first character — the ribbon has
+/// no one script to answer for a mix. Measured from Word 2019 (Windows).
+fn shown_east_asian(s: &Session) -> bool {
+    let (a, b) = s.sel.ordered();
+    let at = if a == b { &s.sel.focus } else { &a };
+    let Some(p) = s.doc.para_at(at) else { return false };
+    // At the end of a paragraph there is no character to the right: what is typed there continues
+    // the one before it, the same character `typing_props` takes its formatting from.
+    p.text
+        .get(at.off..)
+        .and_then(|t| t.chars().next())
+        .or_else(|| p.text.get(..at.off).and_then(|t| t.chars().next_back()))
+        .is_some_and(wordcraft_layout::para::uses_east_asian_font)
+}
+
 /// What the ribbon shows: the formatting at the selection (mixed values are null).
 pub fn state(s: &Session) -> Value {
     let all = resolved(s);
@@ -596,6 +632,8 @@ pub fn state(s: &Session) -> Value {
     json!({
         "font": same(&|r| json!(r.font)),
         "fontEastAsia": same(&|r| json!(r.font_ea)),
+        // Which of the two the Font box shows, and which one picking a font there sets.
+        "fontScript": if shown_east_asian(s) { "eastAsia" } else { "latin" },
         "size": same(&|r| json!(r.size)),
         "bold": all.iter().all(|r| r.bold),
         "italic": all.iter().all(|r| r.italic),

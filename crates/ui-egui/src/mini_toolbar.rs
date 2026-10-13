@@ -137,7 +137,9 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
     };
 
     row(ui, app, &|ui, app| {
-        let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
+        // The box shows, and sets, the font of the script at the caret (`fontScript`).
+        let ea = st.get("fontScript").and_then(Value::as_str) == Some("eastAsia");
+        let font = st.get(if ea { "fontEastAsia" } else { "font" }).and_then(Value::as_str).unwrap_or("").to_string();
         let font = app.previews.font_shown(&font);
         let fams = app.previews.families();
         let prev = app.previews.font_preview_fn();
@@ -146,7 +148,7 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
                 app.run("font.add", json!({}))
             } else {
                 let f = app.previews.font_stored(&f);
-                app.run("format.font", json!({"name": f}))
+                app.run("format.font", if ea { json!({"eastAsia": f}) } else { json!({"name": f}) })
             };
         }
         let size =

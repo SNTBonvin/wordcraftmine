@@ -505,7 +505,7 @@ fn backspace_and_delete() {
 }
 
 #[test]
-fn bold_toggles_selection_and_caret_word() {
+fn bold_toggles_selection_and_sets_the_caret_format() {
     let mut s = s();
     run(&mut s, "text.insert", json!({"text": "make this bold"}));
     run(&mut s, "select.text", json!({"text": "this"}));
@@ -515,13 +515,60 @@ fn bold_toggles_selection_and_caret_word() {
     assert_eq!(p.props_of_char(0).bold, None);
     run(&mut s, "format.bold", json!({}));
     assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props_of_char(5).bold, Some(false));
-    // Caret inside a word formats the word.
+    // A collapsed caret formats nothing that is already there: it sets the format the text
+    // typed next will get, and leaves the word it sits in alone. Measured against Word 2019
+    // (Windows).
     run(&mut s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": 11}}));
     run(&mut s, "format.italic", json!({}));
     let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();
-    assert_eq!(p.props_of_char(10).italic, Some(true));
-    assert_eq!(p.props_of_char(13).italic, Some(true));
-    assert_eq!(p.props_of_char(9).italic, None);
+    assert!((0..p.len()).all(|off| p.props_of_char(off).italic.is_none()), "the word is untouched");
+    assert_eq!(run(&mut s, "format.state", json!({}))["italic"], json!(true), "but the caret is italic");
+    // What is typed there takes it.
+    run(&mut s, "text.insert", json!({"text": "!"}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props_of_char(11).italic, Some(true));
+    // Moving the caret drops it and reads the character there again.
+    run(&mut s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": 1}}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["italic"], json!(false));
+}
+
+#[test]
+fn format_state_reads_the_caret_not_the_mixed_word_around_it() {
+    // A word holding more than one font or size left every readout at a collapsed caret
+    // empty, so the ribbon's Font and Size boxes went blank with the caret plainly inside
+    // one font's run. The readout follows the insertion point; a selection is still "mixed".
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Hello World"}));
+    run(&mut s, "select.text", json!({"text": "Hel"}));
+    run(&mut s, "format.font", json!({"name": "Georgia"}));
+    run(&mut s, "format.size", json!({"size": 20.0}));
+    run(&mut s, "format.bold", json!({"value": true}));
+    let state = |s: &mut Session, off: usize| {
+        run(s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": off}}));
+        run(s, "format.state", json!({}))
+    };
+    // Offsets: H0 e1 l2 l3 o4 ␠5 W6 o7 r8 l9 d10 — "Hel" is the formatted run, "Hello" the word.
+    let inside = state(&mut s, 1);
+    assert_eq!(inside["font"], json!("Georgia"), "caret inside the Georgia run");
+    assert_eq!(inside["size"], json!(20.0));
+    assert_eq!(inside["bold"], json!(true), "and inside the bold run");
+    assert_eq!(state(&mut s, 2)["font"], json!("Georgia"));
+    let after = state(&mut s, 4);
+    assert_eq!(after["font"], json!(wordcraft_doc::styles::BODY_FONT), "caret inside the body run");
+    assert_eq!(after["size"], json!(12.0));
+    assert_eq!(after["bold"], json!(false));
+    assert_eq!(state(&mut s, 7)["font"], json!(wordcraft_doc::styles::BODY_FONT), "the next word");
+    // A selection spanning the mix has no single answer: the ribbon shows blank, as Word does.
+    run(&mut s, "select.text", json!({"text": "Hello"}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["font"], json!(null));
+    assert_eq!(run(&mut s, "format.state", json!({}))["size"], json!(null));
+    // A click at the caret sets the format for the text typed next and leaves the text alone:
+    // "Hel" is bold, so the caret reads bold and a click turns that off without touching the run.
+    run(&mut s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": 1}}));
+    run(&mut s, "format.bold", json!({}));
+    let p = s.doc.para_at(&Pos::body(0, 1)).unwrap();
+    assert_eq!(p.props_of_char(1).bold, Some(true), "the bold run is still bold");
+    assert_ne!(p.props_of_char(4).bold, Some(true), "and the rest of the word is still not");
+    assert_eq!(run(&mut s, "format.state", json!({}))["bold"], json!(false), "the caret is not bold");
 }
 
 #[test]
@@ -4697,6 +4744,65 @@ fn format_font_sets_the_asian_and_latin_fonts_separately() {
     run(&mut s, "edit.undo", json!({}));
     assert_eq!(fonts(&s), before);
     assert!(s.run("format.font", &json!({})).is_err() && s.run("format.font", &json!({"eastAsia": " "})).is_err());
+}
+
+#[test]
+fn change_case_takes_the_word_at_a_collapsed_caret() {
+    // Change Case is the one character command Word *does* expand a collapsed caret for — the
+    // opposite of Bold or Font. An insertion point inside 'World' and one at 'World''s end both
+    // give 'WORLD', so the word to the left of the caret wins; at a word's start it is the word on
+    // the right (measured from Word 2019 (Windows); `Selection.Range.Case`).
+    let mut s = s();
+    // H0 e1 l2 l3 o4 ␠5 ␠6 W7 o8 r9 l10 d11 — two spaces, so there is also a spot with no word
+    // on either side of the caret.
+    run(&mut s, "text.insert", json!({"text": "Hello  World"}));
+    let caret = |s: &mut Session, off: usize| {
+        run(s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": off}}));
+    };
+    let text = |s: &Session| s.doc.para_at(&Pos::body(0, 0)).unwrap().text.clone();
+    caret(&mut s, 8);
+    run(&mut s, "format.changeCase", json!({"mode": "upper"}));
+    assert_eq!(text(&s), "Hello  WORLD", "a caret inside the word changes it");
+    caret(&mut s, 12);
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    assert_eq!(text(&s), "Hello  world", "at the word's end, the word before the caret");
+    caret(&mut s, 7);
+    run(&mut s, "format.changeCase", json!({"mode": "upper"}));
+    assert_eq!(text(&s), "Hello  WORLD", "at the word's start, the word after it");
+    caret(&mut s, 6);
+    run(&mut s, "format.changeCase", json!({"mode": "lower"}));
+    assert_eq!(text(&s), "Hello  WORLD", "between the spaces there is no word to change");
+}
+
+#[test]
+fn format_state_font_box_follows_the_script_at_the_caret() {
+    // Word's Font box shows, and sets, the font of the *script* at the insertion point: its
+    // `Selection.Font.Name` reports the East Asian font for a CJK character and the Latin one for
+    // a Latin character. Measured from Word 2019 (Windows).
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Hello 你好"}));
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "format.font", json!({"name": "Georgia", "eastAsia": "SimSun"}));
+    let script = |s: &mut Session, off: usize| {
+        run(s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": off}}));
+        run(s, "format.state", json!({}))["fontScript"].clone()
+    };
+    // H0 e1 l2 l3 o4 ␠5 你6..8 好9..11
+    assert_eq!(script(&mut s, 0), json!("latin"));
+    assert_eq!(script(&mut s, 4), json!("latin"));
+    assert_eq!(script(&mut s, 6), json!("eastAsia"), "the caret is in the CJK run");
+    assert_eq!(script(&mut s, 11), json!("eastAsia"));
+    assert_eq!(script(&mut s, 12), json!("eastAsia"), "at the end, the character before the caret");
+    // A selection goes by its first character; the two names are still reported apart.
+    run(&mut s, "select.text", json!({"text": "你好"}));
+    let st = run(&mut s, "format.state", json!({}));
+    assert_eq!(st["fontScript"], "eastAsia");
+    assert_eq!(st["font"], "Georgia");
+    assert_eq!(st["fontEastAsia"], "SimSun");
+    // Setting the font there sets the East Asian one: what the box shows is what it changes.
+    run(&mut s, "format.font", json!({"eastAsia": "SimHei"}));
+    assert_eq!(run(&mut s, "format.state", json!({}))["font"], "Georgia");
+    assert_eq!(run(&mut s, "format.state", json!({}))["fontEastAsia"], "SimHei");
 }
 
 /// A one-column table (no header row) holding `cells`, in a document whose default language
