@@ -104,6 +104,14 @@ fn click_events(app: &mut WordApp, pos: egui::Pos2, button: egui::PointerButton,
     }
 }
 
+/// Programmatic calls never open the Save prompt, so closing unsaved work must be explicit:
+/// save first, or pass `"force": true` (only a real boolean true counts) to discard it (#1268).
+fn close_refused(app: &WordApp, id: &str, params: &Value) -> Option<&'static str> {
+    let force = params.get("force").and_then(Value::as_bool) == Some(true);
+    (id == "file.close" && app.session.dirty && !force)
+        .then_some("the document has unsaved changes: save it first, or pass {\"force\": true} to discard them and close")
+}
+
 pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
@@ -112,11 +120,8 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         "engine.execute" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-            // Programmatic calls never open the Save prompt, so closing unsaved work must be
-            // explicit: save first, or pass `force` to discard it (#1268).
-            let force = params.get("force").and_then(Value::as_bool).unwrap_or(false);
-            if id == "file.close" && app.session.dirty && !force {
-                return err("the document has unsaved changes: save it first, or pass {\"force\": true} to discard them and close");
+            if let Some(e) = close_refused(app, id, &params) {
+                return err(e);
             }
             match app.execute(id, params) {
                 Ok(v) => ok(v),
@@ -248,6 +253,9 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         }
         other => {
             // Anything else: a command id.
+            if let Some(e) = close_refused(app, other, p) {
+                return err(e);
+            }
             match app.execute(other, p.clone()) {
                 Ok(v) => ok(v),
                 Err(e) => err(e),

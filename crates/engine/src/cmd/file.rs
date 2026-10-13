@@ -78,7 +78,7 @@ pub fn specs() -> Vec<CommandSpec> {
             sel_result(s)
         })
         .key("Mod+W / Mod+F4")
-        .params(r#"{"force"?: bool (control channel and MCP: close even with unsaved changes, discarding them; without it a dirty document is an error)}"#)
+        .params(r#"{"force"?: bool (desktop app's control channel and MCP bridge only: without it a document with unsaved changes is an error and stays open; with it the changes are discarded. Headless sessions never ask)}"#)
         .pure(),
         CommandSpec::new("file.properties", "Properties", "File › Info", properties)
             .params(r#"{"title"?, "subject"?, "author"?, "keywords"?, "comments"?, "category"?, "custom"?: {name: string | null (removes)}}"#),

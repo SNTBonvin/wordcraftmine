@@ -3423,6 +3423,34 @@ mod tests {
         assert!(clean.quit_requested);
     }
 
+    /// Every way to name `file.close` over the control channel is guarded (#1268).
+    #[test]
+    fn programmatic_close_guard_covers_every_form() {
+        let ctx = egui::Context::default();
+        let send = |a: &mut WordApp, method: &str, params: Value| match control::handle(a, &ctx, &ControlRequest::new(method, params).0) {
+            control::Outcome::Done(v) => v,
+            _ => json!({"ok": false, "error": "not a reply"}),
+        };
+        let refused = [
+            ("file.close", json!({})),
+            ("command", json!({"id": "file.close"})),
+            ("command", json!({"command": "file.close", "params": {"force": "yes"}})),
+            ("file.close", json!({"force": "yes"})),
+            ("file.close", json!({"force": 1})),
+        ];
+        for (method, params) in refused {
+            let mut a = typed();
+            let r = send(&mut a, method, params.clone());
+            assert_eq!(r["ok"], json!(false), "{method} {params}: {r}");
+            assert!(!a.quit_requested, "{method} {params}");
+            assert!(body_text(&a).contains(UNSAVED));
+        }
+        let mut a = typed();
+        let r = send(&mut a, "file.close", json!({"force": true}));
+        assert_eq!(r["ok"], json!(true), "{r}");
+        assert!(a.quit_requested);
+    }
+
     const MAILINGS: [&str; 3] = ["mailings.envelopes", "mailings.labels", "mailings.finish"];
 
     /// What the user gave: Envelopes and Labels without anything open their dialogs (#407).
