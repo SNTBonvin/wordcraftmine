@@ -1759,8 +1759,9 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         return;
     }
     let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
-    // An object drag follows the pointer anywhere until it's released.
-    let object_pointer = pointer.or_else(|| app.canvas.obj_drag.as_ref().and_then(|_| ui.input(|i| i.pointer.latest_pos())));
+    // An object (or crop handle) drag follows the pointer anywhere until it's released.
+    let dragging = app.canvas.obj_drag.is_some() || app.canvas.crop_drag.is_some();
+    let object_pointer = pointer.or_else(|| dragging.then(|| ui.input(|i| i.pointer.latest_pos())).flatten());
     if let Some(at) = object_pointer
         && crate::objects::pointer(app, ui, resp, rects, layout, scale, at)
     {
