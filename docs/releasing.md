@@ -1,31 +1,24 @@
-# Releasing WordCraft
+# Releasing WordCraft (this fork)
 
-The canonical recipe is [craftrules `release/playbook.md`](https://github.com/storytold/craftrules/blob/main/release/playbook.md);
-this file has the WordCraft specifics.
+This fork (`hoblin/wordcraft`) is maintained for Bondata's own use, so it releases one build: Linux
+x86_64. Upstream's workflows for macOS, Windows, FreeBSD and the rest need signing secrets the fork
+does not have and were replaced by `.github/workflows/release.yml`.
 
-1. Bump the version on `main`: `cargo xtask version set 0.2.0` (the one source of truth is
-   `[workspace.package] version`; the app shows it in `--version` and About, with the commit from
-   `WORDCRAFT_BUILD_SHA`).
-2. Merge `main` into `release` and push. `.github/workflows/release.yml` builds:
+1. Tag the commit on `main` as `v<upstream version>-bondata.<n>`, e.g. `v0.6.1-bondata.2`, and push
+   the tag. `[workspace.package] version` in `Cargo.toml` stays at the upstream version; the tag is
+   the release's version (`WORDCRAFT_VERSION`), and it names the archive.
+2. The push runs `packaging/linux/package.sh --formats tar` on `ubuntu-22.04` (glibc 2.35) with
+   the fonts from `storytold/craft-fonts` embedded, and publishes a GitHub release `WordCraft
+   v<version>` with:
 
-| Platform | Artifacts | Signing |
-|---|---|---|
-| macOS | universal `WordCraft.app` in a `.dmg`, universal CLI zip | Developer ID + notarization (`APPLE_*` secrets) |
-| Windows | x64, x86 and arm64 `.msi` + portable `.zip` | Azure Trusted Signing (`AZURE_*` secrets) |
-| Linux | x86_64 and aarch64 `.AppImage` (+ `.zsync` for AppImageUpdate), `.flatpak` bundle, `.deb`, `.rpm`, `.tar.gz`; Flathub manifest | checksums |
-| Linux riscv64 | `.tar.gz` (cross-compiled on `ubuntu-24.04`, glibc >= 2.39; CLI smoke-tested under QEMU) | checksums |
-| FreeBSD | x86_64 `.tar.gz` | checksums |
-| Web | `wordcraft-web-<version>.zip` (static site: `index.html`, wasm, glue) | none |
+| File | Contents |
+|---|---|
+| `wordcraft-<version>-linux-x86_64.tar.gz` | upstream's Linux tarball shape: `wordcraft-<version>-linux-x86_64/{bin/wordcraft,bin/wordcraft-cli,share/...}` |
+| `SHA256SUMS.txt` | `sha256sum` of every file |
 
-3. The run drafts a GitHub Release `WordCraft v<version>` with `SHA256SUMS.txt`; review and publish it.
+A consumer downloads it the way it downloaded upstream's tarball, from
+`https://github.com/hoblin/wordcraft/releases/download/v<version>/`.
 
-Signing secrets live in the repository's `release` environment (deployment branch: `release` only),
-synced from the release manager's machine (`craftrules/release/signing-setup.md`). Missing secrets
-produce unsigned builds with a warning, so forks still build.
+To release a tag that already exists (or retry a failed run): `gh workflow run release.yml -f tag=v<version>`.
 
-Local packaging: `packaging/macos/package.sh --arch universal`, `packaging/windows/package.ps1`,
-`packaging/linux/package.sh` (then `packaging/linux/flatpak-bundle.sh` for the Flatpak), `packaging/web/package.sh`.
-
-Dry run: `gh workflow run release.yml --ref <branch>` builds the unsigned jobs (version, Linux,
-Linux riscv64, Flatpak, FreeBSD, web) on any branch; the signing jobs are refused there by the `release`
-environment's branch rule, so no draft release is made.
+Local packaging: `packaging/linux/package.sh` (every format; add `--formats tar` for the tarball alone).
