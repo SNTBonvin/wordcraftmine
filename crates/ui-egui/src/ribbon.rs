@@ -428,12 +428,21 @@ pub(crate) fn language_name(tag: Option<&str>) -> String {
     }
 }
 
-/// The language at the caret (resolved through the styles), translated, for the status bar.
-pub(crate) fn caret_language(app: &WordApp) -> String {
+/// The proofing language tag at the caret, resolved through the styles.
+fn caret_lang_tag(app: &WordApp) -> Option<String> {
     let s = &app.session;
     let style = s.doc.para_at(&s.sel.focus).and_then(|p| p.props.style.clone());
-    let rc = s.doc.styles.resolve_char(style.as_deref(), &s.typing_props());
-    tl!(&language_name(rc.lang.as_deref())).to_string()
+    s.doc.styles.resolve_char(style.as_deref(), &s.typing_props()).lang
+}
+
+/// The language at the caret (resolved through the styles), translated, for the status bar.
+pub(crate) fn caret_language(app: &WordApp) -> String {
+    tl!(&language_name(caret_lang_tag(app).as_deref())).to_string()
+}
+
+/// The Hunspell dictionary the caret's language needs but doesn't have (`pl_PL`), if any (#1167).
+pub(crate) fn caret_missing_dictionary(app: &WordApp) -> Option<&'static str> {
+    wordcraft_engine::proof::missing_dictionary(caret_lang_tag(app).as_deref())
 }
 
 /// Review › Language (and the status bar's language): set the selection's proofing language, or
