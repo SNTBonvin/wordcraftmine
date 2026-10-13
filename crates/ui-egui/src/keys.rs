@@ -315,12 +315,8 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
             }
             egui::Event::Copy | egui::Event::Cut => {
                 let id = if matches!(e, egui::Event::Cut) { "edit.cut" } else { "edit.copy" };
-                if let Ok(r) = app.run(id, json!({}))
-                    && let Some(t) = r.get("text").and_then(Value::as_str)
-                    && !t.is_empty()
-                {
-                    ctx.copy_text(t.to_string());
-                }
+                // `run` puts the copied text on the system clipboard itself.
+                let _ = app.run(id, json!({}));
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => {
                 if key == Key::Escape && app.session.painter.is_some() {

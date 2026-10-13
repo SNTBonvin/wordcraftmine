@@ -2482,14 +2482,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         ui.separator();
     }
     item(ui, app, "Cut", "edit.cut", json!({}));
-    if ui.add(egui::Button::new(tl!("Copy")).shortcut_text(crate::widgets::shortcut_text(app, "edit.copy"))).clicked() {
-        if let Ok(r) = app.run("edit.copy", json!({}))
-            && let Some(t) = r.get("text").and_then(|t| t.as_str())
-        {
-            ui.ctx().copy_text(t.to_string());
-        }
-        ui.close();
-    }
+    item(ui, app, "Copy", "edit.copy", json!({}));
     item(ui, app, "Paste", "edit.paste", json!({}));
     ui.separator();
     if let Some(syn) = app.canvas.context_synonyms.clone().and_then(|v| v.as_array().cloned()).filter(|a| !a.is_empty()) {
