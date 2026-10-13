@@ -81,23 +81,24 @@ impl DesktopTheme {
 
 /// The watcher's session-bus connection, kept between polls.
 #[cfg(target_os = "linux")]
-#[derive(Default)]
 struct Bus(Option<zbus::blocking::Connection>);
 
+#[cfg(target_os = "linux")]
+impl Bus {
+    /// No connection yet: the first read opens one.
+    fn new() -> Self {
+        Bus(None)
+    }
+}
+
+/// Elsewhere there is no session bus to keep.
 #[cfg(not(target_os = "linux"))]
-#[derive(Default)]
 struct Bus;
 
+#[cfg(not(target_os = "linux"))]
 impl Bus {
     fn new() -> Self {
-        #[cfg(target_os = "linux")]
-        {
-            Self(None)
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            Self
-        }
+        Bus
     }
 }
 

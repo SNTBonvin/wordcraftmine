@@ -1,8 +1,8 @@
 # Korean interface
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (first version)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (first version)
 
-The `ko` catalog has 2,416 entries: every `(context, source)` key in the existing interface
+The `ko` catalog has 2,463 entries: every `(context, source)` key in the existing interface
 catalogs, including ribbon labels, commands, dialogs, tooltips, count templates and built-in
 style names. Missing future keys still fall back to English. English literals that have not
 been connected to the translation system remain English, as in the other languages.
@@ -80,13 +80,13 @@ Validated on Linux with Rust 1.96.0 and craft-fonts checkout
 - The headless Home ribbon, Insert ribbon and Options screenshots displayed Korean correctly.
   No live macOS IME test was performed.
 
-## Rebase validation (2026-10-12)
+## Current split validation (2026-10-13)
 
-Rebased onto upstream `ad8c264` (table drag resizing). Added the new
-`Resize Table by Dragging` label, bringing Korean coverage to 2,416 entries.
-The 264 UI tests, seven engine table-resize tests and WASM checks passed after rebase.
-The integrated Korean IME change is checked with the full `cargo xtask ci` gate;
-see [Korean IME validation](korean-ime.md) for native retests and regression coverage.
+Synced to upstream main `159b84f`; translated 47 additional catalog keys for
+2,463 entries total. This branch includes the catalog, font support and app-side
+IME regression coverage, with no vendored dependency or native winit changes.
+See [Korean IME validation](korean-ime.md) for the tested event sequences and
+the native first-key/duplicate-space fixes deferred to #862.
 
 ## Revision history
 
@@ -94,3 +94,4 @@ see [Korean IME validation](korean-ime.md) for native retests and regression cov
 |---|---|---|
 | 2026-10-12 | minor | Latest main synchronized; 30 newly introduced catalog keys translated, 2,416 total |
 | 2026-10-12 | minor | Initial Korean catalog, terminology, font requirements and validation |
+| 2026-10-13 | minor | Split from #862 without vendoring; translated 47 latest-main keys, 2,463 total |
