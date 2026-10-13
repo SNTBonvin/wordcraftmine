@@ -2083,3 +2083,63 @@
 	Table Properties…	Propriétés du tableau…
 	Search	Rechercher
 	Title Bar	Barre de titre
+# Ask Agent (Help › Agents, the selection chip and bubble)
+	Ask Agent	Demander à l’agent
+	Ask\nAgent	Demander\nà l’agent
+	Ask Agent…	Demander à l’agent…
+	Ask agent to…	Demander à l’agent de…
+	Send	Envoyer
+	Dismiss	Masquer
+	Done.	Terminé.
+	Cancelled	Annulée
+	No agent is listening right now.	Aucun agent n’écoute pour le moment.
+	No text is selected: the agent gets the caret's place.	Aucun texte n’est sélectionné : l’agent reçoit la position du curseur.
+	The agent gets the selected text ({count} characters).	L’agent reçoit le texte sélectionné ({count} caractères).
+	Ask Agent isn't available in the web app: it needs the desktop app's control channel	Demander à l’agent n’est pas disponible dans l’application web : il faut le canal de contrôle de l’application de bureau
+	Ask Agent needs the control channel: start WordCraft with `--control 7981`, then connect your agent with `wordcraft-cli mcp --connect 127.0.0.1:7981`	Demander à l’agent a besoin du canal de contrôle : lancez WordCraft avec `--control 7981`, puis connectez votre agent avec `wordcraft-cli mcp --connect 127.0.0.1:7981`
+	No agent is listening: run `wordcraft-cli mcp --connect 127.0.0.1:{port}` in your agent and ask it to wait for WordCraft requests	Aucun agent n’écoute : lancez `wordcraft-cli mcp --connect 127.0.0.1:{port}` dans votre agent et demandez-lui d’attendre les demandes de WordCraft
+	Sent to your agent…	Envoyé à votre agent…
+	Waiting for an agent…	En attente d’un agent…
+	Your agent is working…	Votre agent travaille…
+	{seconds} s	{seconds} s
+	Enter to send, Shift+Enter for a new line	Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne
+# Ask Agent quick actions
+	Sent to {agent}…	Envoyé à {agent}…
+	{agent} is working…	{agent} travaille…
+	The agent's changes are tracked: accept or reject them on the Review tab.	Les modifications de l’agent sont suivies : acceptez-les ou refusez-les dans l’onglet Révision.
+	Inserts the result after the selection	Insère le résultat après la sélection
+	Answers in the bubble; changes nothing	Répond dans la bulle, ne modifie rien
+	Replaces the selection; the change is tracked	Remplace la sélection, la modification est suivie
+	Rewrite	Réécrire
+	Concise	Concis
+	Friendly	Chaleureux
+	Confident	Assuré
+	Shorten	Raccourcir
+	Fix spelling & grammar	Corriger l’orthographe et la grammaire
+	Simplify	Simplifier
+	English	Anglais
+	French	Français
+	Spanish	Espagnol
+	German	Allemand
+	Portuguese	Portugais
+	More	Plus
+	Bulletize	Mettre en liste à puces
+	Turn into table	Transformer en tableau
+	Summarize	Résumer
+	Continue writing	Poursuivre la rédaction
+	Explain	Expliquer
+	Action items	Actions à mener
+	Apply heading styles	Appliquer les styles de titre
+	Tidy formatting	Harmoniser la mise en forme
+	Check consistency	Vérifier la cohérence
+	Follows the instruction; any changes are tracked	Suit la consigne ; toute modification est suivie
+
+# Ask Agent polish and reading levels
+	Final polish	Finition
+	Reading level	Niveau de lecture
+	General public	Grand public
+	Secondary school	Secondaire
+	Expert	Expert
+
+	Failed	Échec
+	Open request	Ouvrir la demande

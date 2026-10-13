@@ -93,8 +93,50 @@ files it was given rather than guarding against other software on the computer.
 | `render_page` | a page as PNG |
 | `parity` | feature coverage |
 | `screenshot`, `click`, `key`, `ui_inspect` | app only (`--connect`) |
+| `wait_for_request`, `reply_to_request` | Ask Agent, app only (`--connect`): see [Ask Agent](#ask-agent) |
 
 Resources: `wordcraft://document` (inspect) and `wordcraft://commands`.
+
+## Ask Agent
+
+With `--connect`, the person can hand work to the agent from the WordCraft window: they select
+text, click **Ask Agent** (the chip beside the mini toolbar, Help › Agents, the context menu, or
+Ctrl+Shift+O) and type an instruction. Two tools carry it, for any MCP client:
+
+| Tool | What it does |
+|---|---|
+| `wait_for_request` | waits up to `timeout_s` (default 30, at most 60) for the next request: `{id, instruction, action, apply, selection: {text, anchor, focus, truncated}, document: {title, saved, language}, review}`, or `{none: true}` |
+| `reply_to_request` | `{id, text, done?}`: shows `text` in the bubble under the selection; `done: false` is a progress note that keeps the request open; a request the person cancelled answers `{cancelled: true}` |
+
+The agent's loop: `wait_for_request`; at once `reply_to_request {id, text: "Rewriting…", done:
+false}`, so the person sees the agent has it; the work with `execute`, `select_text`,
+`type_text`…; `reply_to_request` with the answer; `wait_for_request` again. In Claude Code, for example: "wait for my
+WordCraft requests and handle them". While `wait_for_request` waits this server answers nothing
+else, which is why the wait is short. The chip only shows while an agent waits, for 60 s after it listened or replied, or while it works on a request taken less than 10 minutes ago, so the window
+never offers a button nobody answers. Without the app (`wordcraft-cli mcp`), both tools say how to
+start it. The control-channel side is in [Control protocol](control-protocol.md#ask-agent).
+
+The person can also pick a quick action (Shorten, Rewrite › Professional, Translate › French,
+More › Summarize…): the request then carries `action: {id, label}`, the action's instruction in
+plain words, and `apply`, where the result goes (`replace` the selection, `insertBelow`,
+`replyOnly`: answer only, edits refused, or `auto` for typed requests). While a request is open,
+the bridge marks the agent's `execute` calls with it, so what the agent changes arrives as tracked
+changes by `Agent (<MCP client name>)` for the person to accept or reject on the Review tab, even
+with Track Changes off; the person's own setting is left alone.
+
+### Pushed requests (`--channel`)
+
+`wordcraft-cli mcp --connect 127.0.0.1:7981 --channel` also pushes each request to the client as
+it arrives, as an experimental `claude/channel` event: `notifications/claude/channel` with
+`content` (the instruction, the selected text and its positions) and `meta` (`request_id`,
+`document`, `language`, `action`, `apply`). A client that supports the capability shows the event in the agent's
+session without a tool call, and the agent answers with `reply_to_request`; while the capability
+is a research preview, Claude Code loads such a server with
+`claude --dangerously-load-development-channels server:wordcraft`
+([channels reference](https://code.claude.com/docs/en/channels-reference)). A client that doesn't
+know the capability ignores the events, and the requests wait unanswered until the person cancels
+them, so the flag is off by default and `wait_for_request` stays the standard way. The events are
+listened for on a second connection to the app, so tool calls are answered meanwhile.
 
 The acceptance test `crates/mcp/src/tests.rs` writes a formatted document using MCP only.
 
@@ -176,3 +218,13 @@ the distance from the text). Missing fields are `none`, 0, no colour and 0, so a
 | `kinsoku`, `wordWrap`, `overflowPunct`, `autoSpaceDE`, `autoSpaceDN`, `snapToGrid` | bool | East Asian typography; unset = on |
 | `topLinePunct` | bool | East Asian typography; unset = off |
 | `numChange`, `fmtChange` | | Track Changes bookkeeping |
+
+### Ask Agent compatibility and ownership
+
+[Common contract](ask-agent-contract.md): keep `timeout_s`, `text`, `done`, and direct
+request results. `wait_for_request` rejects negative or incorrectly typed timeouts,
+uses integral milliseconds (floor), and caps waits at 60 seconds. A claim is tied to the
+bridge connection; sharing a display name does not grant another client ownership.
+After an ambiguous transport failure, reconnect and inspect instead of replaying edits.
+Review decisions are native human controls. The application calls no model and stores no
+model credential. Requests and drafts are kept for the current application session only.
