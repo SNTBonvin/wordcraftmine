@@ -1667,6 +1667,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         let mut j = i;
         let mut pending_tab: Option<(usize, TabStop, f32)> = None; // tab cluster, stop, x where tab started
         let mut space_w = 0.0f32; // width of the spaces so far on this line
+        // Where the text ended before the spaces in front of the current word, and the width of
+        // the spaces before those: the line as it would be without the word.
+        let mut before_word: Option<(f32, f32)> = None;
         let mut has_tab = false;
         while j < n {
             let Some(c) = pl.clusters.get(j).cloned() else { break };
@@ -1736,7 +1739,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     _ => false,
                 }
             });
-            let shrink = if shrink_spaces && !has_tab { space_w * MAX_SPACE_SHRINK } else { 0.0 };
+            let shrink = if shrink_spaces && !has_tab { space_shrink_room(space_w, before_word, right_edge) } else { 0.0 };
             let fits = absorbs || x + c.adv <= right_edge + shrink + 0.01 || c.kind == ClKind::Space || c.kind == ClKind::Marker;
             if !fits && j > c0 {
                 // Wrap: back up to the last break opportunity on this line.
@@ -1759,6 +1762,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     // No opportunity: break here (a long word).
                 }
                 break;
+            }
+            if c.kind == ClKind::Space && j > c0 && pl.clusters.get(j - 1).is_some_and(|p| p.kind != ClKind::Space) {
+                before_word = Some((x, space_w));
             }
             xs.push(x);
             x += c.adv;
@@ -2239,8 +2245,31 @@ fn row_spans(exclusions: &[Exclusion], top: f32, h: f32, lo: f32, hi: f32) -> Re
 const HYPHENATION_ZONE: f32 = wordcraft_doc::DEFAULT_HYPHENATION_ZONE;
 
 /// How much of their width the spaces of a justified line may give up to fit more text (Word
-/// 2013+, compatibility mode 15).
-const MAX_SPACE_SHRINK: f32 = 0.2;
+/// 2013+, compatibility mode 15): a quarter (measured in Word for Windows with the right indent
+/// moved in 0.1 pt steps: lines needing up to 24.8% were kept whole, none needing over 25%).
+const MAX_SPACE_SHRINK: f32 = 0.25;
+
+/// A justified line keeps a word by shrinking its spaces only while that distorts them less than
+/// leaving the word out would: shrinking counts double, so the spaces may shrink by at most half
+/// of what they would have to stretch without the word.
+const SHRINK_PER_STRETCH: f32 = 0.5;
+
+/// How far past the right edge the current word may reach on a justified line whose spaces are
+/// `space_w` wide in all: what the spaces can give up. `before_word`: where the text ended
+/// before the word (and the spaces in front of it), and the width of the spaces up to there.
+///
+/// Measured in Word for Windows (words of 5 to 40 pt after 7, 14 and 16 spaces, in Calibri at 11
+/// and 22 pt, Times New Roman, Consolas and Courier New, the overrun moved in 0.05 to 0.25 pt
+/// steps): the word stays when the overrun is at most [`MAX_SPACE_SHRINK`] of the spaces, and
+/// the share of the spaces it takes is at most [`SHRINK_PER_STRETCH`] of the share the line's
+/// other spaces would grow by to fill the line without the word.
+fn space_shrink_room(space_w: f32, before_word: Option<(f32, f32)>, right_edge: f32) -> f32 {
+    let room = space_w * MAX_SPACE_SHRINK;
+    match before_word {
+        Some((end, inner)) if inner > 0.0 => room.min(SHRINK_PER_STRETCH * (right_edge - end).max(0.0) / inner * space_w),
+        _ => room,
+    }
+}
 
 /// Take `-slack` (an overflow) out of the line's inner spaces, in proportion to their widths and
 /// never more than [`MAX_SPACE_SHRINK`] of them. Trailing spaces hang and are left alone.

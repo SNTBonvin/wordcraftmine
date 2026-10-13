@@ -2400,6 +2400,69 @@ fn justified_lines_shrink_spaces_in_word_2013_mode() {
     }
 }
 
+/// A justified line's spaces give up to a quarter of their width to keep a word: six words whose
+/// natural width overruns the line by 24% of their five spaces stay on one line, by 26% wrap.
+#[test]
+fn justified_spaces_shrink_by_up_to_a_quarter() {
+    use wordcraft_doc::props::CharProps;
+    let text = "amber basket cedar harbor ledger mirror";
+    let doc = |text: &str, align: Align, right: f32| {
+        let mut d = Document::new();
+        d.settings.compat_mode = 15;
+        let chr = CharProps { kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.align = Some(align);
+            p.indent_right = Some(right);
+        })
+        .unwrap();
+        d
+    };
+    let width = |text: &str| {
+        let l = lay(&doc(text, Align::Left, 0.0));
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    let natural = width(text);
+    let spaces = 5.0 * (width("r m") - width("rm"));
+    let lines = |share: f32| lines_of(&lay(&doc(text, Align::Justify, 468.0 - (natural - share * spaces))));
+    assert_eq!(lines(0.24), 1, "24% of the spaces is given up");
+    assert_eq!(lines(0.26), 2, "26% is too much");
+}
+
+/// A short word is kept on a justified line only while shrinking the spaces for it distorts
+/// them less than stretching them without it would (shrinking counts double). With n spaces of
+/// width s on the line and a last word w wide, the overrun x is kept while
+/// x / n <= (w + s - x) / (n - 1) / 2, that is x <= n (w + s) / (3n - 2).
+#[test]
+fn justified_spaces_shrink_no_more_than_half_of_what_they_would_stretch() {
+    use wordcraft_doc::props::CharProps;
+    let text = "amber basket cedar harbor ledger mirror a";
+    let doc = |text: &str, align: Align, right: f32| {
+        let mut d = Document::new();
+        d.settings.compat_mode = 15;
+        let chr = CharProps { kern: Some(0.0), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(text, chr))];
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.align = Some(align);
+            p.indent_right = Some(right);
+        })
+        .unwrap();
+        d
+    };
+    let width = |text: &str| {
+        let l = lay(&doc(text, Align::Left, 0.0));
+        l.caret(&Pos::body(0, text.len())).unwrap().x - l.caret(&Pos::body(0, 0)).unwrap().x
+    };
+    let (natural, word) = (width(text), width("a"));
+    let space = width("r a") - width("ra");
+    let n = 6.0;
+    let limit = n * (word + space) / (3.0 * n - 2.0);
+    assert!(limit * 1.05 < 0.25 * n * space, "the quarter-of-the-spaces limit must not be the one tested");
+    let lines = |over: f32| lines_of(&lay(&doc(text, Align::Justify, 468.0 - (natural - over))));
+    assert_eq!(lines(limit * 0.95), 1, "just inside the limit the word stays");
+    assert_eq!(lines(limit * 1.05), 2, "just past it the word wraps");
+}
+
 #[test]
 fn space_shrinking_is_only_for_justified_text() {
     let text = "We tie the spend to a pipe and to the books, so it is in an ad hoc view of all of it. ".repeat(40);
