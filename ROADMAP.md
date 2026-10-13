@@ -135,6 +135,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
+| 2026-10-12 | Gap #20 benchmark: the deterministic 505-page mixed DOCX (headings, footnotes, pictures) opens in 29.7 ms and fully lays out in 344.8 ms in release |
 | 2026-10-12 | Gap #20 benchmark: the deterministic 15,000-row × 8-column table DOCX (1,023 pages) opens in 402.6 ms and fully lays out in 2,403.5 ms in release; mixed 500-page coverage remains |
 | 2026-10-12 | Direct run-level native InkML (`w:contentPart`) now survives DOCX edits and repeated saves with its relationship, content type and bytes intact. Native InkML rendering/editing and ink nested in groups or canvases remain missing |
 | 2026-10-12 | RTF import now uses the RTF spec's defaults where a file names none (#902): no space before or after paragraphs, single line spacing, and the `\deff` default font, instead of WordCraft's Normal style; RTF files that relied on the old defaults open tighter, like in Word |

@@ -1,9 +1,10 @@
 //! Scrolling performance with a very large table (#811).
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use wordcraft_doc::table::{Cell, Table};
-use wordcraft_doc::{Block, Document, Path, StoryRef};
+use wordcraft_doc::{Block, Document, PartKind, Path, Pos, StoryRef};
 
 use crate::{Services, WordApp};
 
@@ -132,6 +133,81 @@ fn large_table_docx_open_bench() {
         layout.pages.len()
     );
     assert!(layout.pages.len() >= 1_000, "fixture must stay approximately 1,000 pages");
+}
+
+fn mixed_book_doc() -> Document {
+    let mut doc = Document::new();
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\0\x05\0\x01\xff\x89\x99=\x1d\0\0\0\0IEND\xaeB`\x82";
+    doc.media.insert("benchmark.png".into(), Arc::new(PNG.to_vec()));
+    for i in 0..13_000usize {
+        let text = if i.is_multiple_of(50) {
+            format!("Chapter {}: a measured heading", i / 50 + 1)
+        } else {
+            String::from("A measured paragraph keeps realistic prose flowing through a long document.")
+        };
+        let mut p = wordcraft_doc::Paragraph::with_text(&text, Default::default());
+        if i.is_multiple_of(50) {
+            p.props.style = Some("Heading1".into());
+        }
+        doc.body.push(wordcraft_doc::para_block(p));
+    }
+    for i in (50..13_000usize).step_by(250) {
+        let id = doc.add_part(
+            PartKind::Footnote,
+            vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(
+                "A benchmark footnote with enough text to exercise note layout.",
+                Default::default(),
+            ))],
+        );
+        doc.insert_object(
+            &Pos::body(i + 1, 8),
+            wordcraft_doc::InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Footnote, id, custom: String::new() },
+            &Default::default(),
+        )
+        .unwrap();
+    }
+    for i in (125..13_000usize).step_by(1_000) {
+        doc.insert_object(
+            &Pos::body(i + 1, 0),
+            wordcraft_doc::InlineObject::Image {
+                media: "benchmark.png".into(),
+                w: 36.0,
+                h: 24.0,
+                alt: "Benchmark picture".into(),
+                float: Default::default(),
+                crop: [0.0; 4],
+                ole: None,
+            },
+            &Default::default(),
+        )
+        .unwrap();
+    }
+    doc
+}
+
+/// `cargo test -p wordcraft-ui-egui --release mixed_book_docx_open_bench -- --ignored --nocapture`
+///
+/// A deterministic text-heavy DOCX with headings, footnotes and inline pictures. Serialization is
+/// outside the timers; this measures decode/open and the first complete pagination separately.
+#[test]
+#[ignore]
+fn mixed_book_docx_open_bench() {
+    let bytes = wordcraft_engine::io::save_bytes("mixed-book.docx", &mixed_book_doc()).unwrap();
+    let t = Instant::now();
+    let doc = wordcraft_engine::io::open_bytes("mixed-book.docx", &bytes).unwrap();
+    let open = t.elapsed();
+    let mut session = wordcraft_engine::Session::new(doc);
+    let t = Instant::now();
+    let layout = session.layout();
+    let full_layout = t.elapsed();
+    eprintln!(
+        "mixed book DOCX: {} bytes, open: {:.1} ms, full layout: {:.1} ms, {} pages",
+        bytes.len(),
+        open.as_secs_f64() * 1e3,
+        full_layout.as_secs_f64() * 1e3,
+        layout.pages.len()
+    );
+    assert!(layout.pages.len() >= 500, "fixture must stay at least 500 pages");
 }
 
 /// AutoFit measurement is an implementation detail: a warm session and a clean layout cache must
