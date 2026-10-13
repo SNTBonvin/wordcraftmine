@@ -67,6 +67,7 @@ pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
+pub mod shape_tool;
 pub mod system_clipboard;
 pub mod table_mouse;
 pub mod table_pen;
