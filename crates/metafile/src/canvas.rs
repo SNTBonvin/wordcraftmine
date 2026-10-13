@@ -439,8 +439,11 @@ impl Canvas {
 
     /// Draws logical-space ops with the current pen (`stroke`) and brush (`fill`), or appends them to
     /// the open path bracket, where fill and stroke wait for FILLPATH/STROKEPATH.
-    pub fn shape(&mut self, ops: &[Op], fill: bool, stroke: bool) {
-        let dev: Vec<Op> = ops.iter().map(|o| self.map_op(*o)).collect();
+    pub fn shape(&mut self, mut dev: Vec<Op>, fill: bool, stroke: bool) {
+        // Maps in place: the caller's vector becomes the device-space path, no second copy.
+        for op in &mut dev {
+            *op = self.map_op(*op);
+        }
         if self.in_path {
             return self.push_path_ops(dev);
         }
@@ -476,14 +479,14 @@ impl Canvas {
         if let Some(last) = pts.last() {
             self.pos = *last;
         }
-        self.shape(&ops, fill, stroke);
+        self.shape(ops, fill, stroke);
     }
 
     /// POLYBEZIER: cubic segments that start a new figure at `from`. The current point is unchanged.
     pub fn bezier(&mut self, from: P, pts: &[P]) {
         let mut ops = vec![Op::M(from)];
         ops.extend(cubics(pts));
-        self.shape(&ops, false, true);
+        self.shape(ops, false, true);
     }
 
     /// POLYBEZIERTO: cubic segments from the current point through groups of three control or end
@@ -495,7 +498,7 @@ impl Canvas {
         if let Some(last) = pts.last() {
             self.pos = *last;
         }
-        self.shape(&ops, false, true);
+        self.shape(ops, false, true);
     }
 
     pub fn poly(&mut self, pts: &[P], close: bool, fill: bool, stroke: bool) {
@@ -505,7 +508,7 @@ impl Canvas {
         if close {
             ops.push(Op::Z);
         }
-        self.shape(&ops, fill, stroke);
+        self.shape(ops, fill, stroke);
     }
 
     pub fn begin_path(&mut self) {
