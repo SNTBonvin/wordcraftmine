@@ -30,6 +30,8 @@ const MAX_FIELD_DEPTH: usize = 32;
 const MAX_STORY_DEPTH: usize = 4;
 /// Longest field code we keep (Zotero's citation codes embed item data as JSON).
 const MAX_INSTR: usize = 2 * 1024 * 1024;
+/// Longest `w:fldData` kept: opaque producer data (base64), capped like the code.
+const MAX_FIELD_DATA: usize = MAX_INSTR;
 
 /// Inherited run context (from `w:hyperlink`, `w:ins`, `w:del` wrappers).
 #[derive(Clone, Default)]
@@ -59,6 +61,8 @@ struct FieldState {
     buf: Vec<(Item, CharProps)>,
     props: CharProps,
     locked: bool,
+    /// `w:fldData` collected from the code part: opaque base64, re-saved verbatim.
+    data: Option<String>,
     /// Kept as a range field: its result flows into the document as ordinary content between
     /// `FieldStart` and `FieldEnd` markers instead of being buffered.
     range: bool,
@@ -162,6 +166,21 @@ fn clean_text(s: &str) -> String {
             c => Some(c),
         })
         .collect()
+}
+
+/// Append `s` to `buf`, never past `cap` (file-sized payloads must not balloon the model):
+/// what doesn't fit is truncated at a character boundary.
+fn push_capped(buf: &mut String, s: &str, cap: usize) {
+    if buf.len() >= cap {
+        return;
+    }
+    let room = cap - buf.len();
+    if s.len() <= room {
+        buf.push_str(s);
+        return;
+    }
+    let cut = s.char_indices().take_while(|(i, c)| i + c.len_utf8() <= room).map(|(i, _)| i).last().unwrap_or(0);
+    buf.push_str(&s[..cut]);
 }
 
 fn children_of_choice(ac: &El) -> Option<&El> {
@@ -593,7 +612,18 @@ impl Reader<'_> {
                     if f.sizes.len() < 64 {
                         f.sizes.push((f.instr.len(), props.size));
                     }
-                    f.instr.push_str(&k.text());
+                    push_capped(&mut f.instr, &k.text(), MAX_INSTR);
+                }
+            }
+            // Tolerated placement: some producers write the data as a run child instead of
+            // inside the begin marker (where the `w:fldChar` arm reads it).
+            "w:fldData" => {
+                if sc.ignored_begins == 0
+                    && let Some(f) = sc.fields.last_mut()
+                    && f.phase == Phase::Instr
+                    && !f.spilled
+                {
+                    push_capped(f.data.get_or_insert_with(String::new), &k.text(), MAX_FIELD_DATA);
                 }
             }
             "w:tab" | "w:ptab" => self.emit_text(sc, pb, "\t", props),
@@ -619,7 +649,21 @@ impl Reader<'_> {
                 }
             }
             "w:fldChar" => match k.attr("w:fldCharType") {
-                Some("begin") => self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock")),
+                Some("begin") => {
+                    self.begin_field(sc, props.clone(), String::new(), on_off_attr(k, "w:fldLock"));
+                    // The spec's placement of field data (ECMA-376 "Custom Field Data"):
+                    // nested in the begin marker. It belongs to the field just opened — when
+                    // the begin wasn't ignored (past the nesting cap), that is.
+                    if sc.ignored_begins == 0
+                        && let Some(d) = k.child("w:fldData")
+                        && let Some(f) = sc.fields.last_mut()
+                        && f.phase == Phase::Instr
+                        && !f.spilled
+                    {
+                        let text = d.text();
+                        push_capped(f.data.get_or_insert_with(String::new), &text, MAX_FIELD_DATA);
+                    }
+                }
                 Some("separate") => self.separate_field(sc, pb),
                 Some("end") => self.end_field(sc, pb),
                 _ => {}
@@ -750,7 +794,17 @@ impl Reader<'_> {
             return;
         }
         // Fields nested deeper than the cap are ignored (their content flows to the enclosing field).
-        sc.fields.push(FieldState { instr, phase: Phase::Instr, spilled: false, buf: Vec::new(), props, locked, range: false, sizes: Vec::new() });
+        sc.fields.push(FieldState {
+            instr,
+            phase: Phase::Instr,
+            spilled: false,
+            buf: Vec::new(),
+            props,
+            locked,
+            data: None,
+            range: false,
+            sizes: Vec::new(),
+        });
     }
 
     /// Whether the field below the innermost one is still collecting its code (a field nested
@@ -773,7 +827,8 @@ impl Reader<'_> {
         f.phase = Phase::Result;
         if !f.spilled && !nested_in_instr && is_range_instr(&f.instr) {
             f.range = true;
-            let (obj, props) = (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, f.props.clone());
+            let (obj, props) =
+                (InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, data: f.data.clone() }, f.props.clone());
             self.emit_obj(sc, pb, obj, &props);
         }
     }
@@ -794,7 +849,7 @@ impl Reader<'_> {
         }
         if f.phase == Phase::Instr && !nested_in_instr && is_range_instr(&f.instr) {
             // A range field with no result yet.
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, data: f.data.clone() }, &f.props);
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
             return;
         }
@@ -802,7 +857,7 @@ impl Reader<'_> {
         // picture) can't be a text result: keep the field as a range around it so the picture
         // stays in the document and is saved again. The linked source is never read.
         if !nested_in_instr && f.buf.iter().any(|(it, _)| matches!(it, Item::Obj(o) if o.frame().is_some())) {
-            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked }, &f.props);
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, data: f.data.clone() }, &f.props);
             for (it, p) in f.buf {
                 match it {
                     Item::Text(t) => self.emit_text(sc, pb, &t, &p),
@@ -843,6 +898,8 @@ impl Reader<'_> {
                 continue;
             }
             f.spilled = true;
+            // A spilled field keeps its code as an atomic `Field`, which has no `w:fldData`
+            // slot (a degenerate shape: no producer writes data on it) — the data is dropped.
             pb.push_obj(InlineObject::Field { instr: f.instr.trim().to_string(), result: String::new(), locked: f.locked, code: false }, &f.props);
             for (it, p) in f.buf.drain(..) {
                 match it {

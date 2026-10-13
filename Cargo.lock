@@ -5198,6 +5198,7 @@ dependencies = [
  "thiserror 2.0.21",
  "wordcraft-doc",
  "wordcraft-geom",
+ "wordcraft-testkit",
  "zeroize",
  "zip",
 ]
@@ -5343,6 +5344,13 @@ dependencies = [
  "wordcraft-geom",
  "wordcraft-layout",
  "wordcraft-metafile",
+]
+
+[[package]]
+name = "wordcraft-testkit"
+version = "0.6.1"
+dependencies = [
+ "zip",
 ]
 
 [[package]]
