@@ -33,6 +33,73 @@ fn open(pts: Vec<(f32, f32)>) -> ShapePath {
     ShapePath { pts, closed: false }
 }
 
+/// The internal marks of shapes whose outline alone doesn't identify them: the smiley's
+/// face and the action buttons' glyphs. These are real geometric parts (they render on
+/// the canvas, in PDF and in DOCX, and survive No Fill as stroked lines), not
+/// gallery-only decoration. Unit coordinates, open polylines.
+fn glyph_paths(kind: ShapeKind) -> Vec<ShapePath> {
+    let line = |pts: &[(f32, f32)]| open(pts.to_vec());
+    let mut paths = Vec::new();
+    match kind {
+        ShapeKind::SmileyFace => {
+            // Eyes: two short vertical strokes. Smile: a curved arc, not a straight line.
+            paths.push(line(&[(0.35, 0.35), (0.35, 0.42)]));
+            paths.push(line(&[(0.65, 0.35), (0.65, 0.42)]));
+            paths.push(open(arc_pts(0.5, 0.42, 0.22, 0.22, 0.2 * std::f32::consts::PI, 0.8 * std::f32::consts::PI, 16)));
+        }
+        ShapeKind::ActionButtonHome => {
+            paths.push(line(&[(0.3, 0.7), (0.3, 0.4), (0.5, 0.25), (0.7, 0.4), (0.7, 0.7)]));
+            paths.push(line(&[(0.42, 0.7), (0.42, 0.55), (0.58, 0.55), (0.58, 0.7)]));
+        }
+        ShapeKind::ActionButtonHelp => {
+            paths.push(line(&[(0.38, 0.32), (0.5, 0.25), (0.62, 0.32), (0.55, 0.45), (0.5, 0.55), (0.5, 0.62)]));
+            paths.push(line(&[(0.5, 0.72), (0.5, 0.75)]));
+        }
+        ShapeKind::ActionButtonInformation => {
+            paths.push(line(&[(0.5, 0.28), (0.5, 0.32)]));
+            paths.push(line(&[(0.5, 0.42), (0.5, 0.72)]));
+        }
+        ShapeKind::ActionButtonForwardNext => {
+            paths.push(line(&[(0.3, 0.3), (0.62, 0.5), (0.3, 0.7)]));
+            paths.push(line(&[(0.7, 0.3), (0.7, 0.7)]));
+        }
+        ShapeKind::ActionButtonBackPrevious => {
+            paths.push(line(&[(0.7, 0.3), (0.38, 0.5), (0.7, 0.7)]));
+            paths.push(line(&[(0.3, 0.3), (0.3, 0.7)]));
+        }
+        ShapeKind::ActionButtonEnd => {
+            paths.push(line(&[(0.3, 0.3), (0.7, 0.3), (0.7, 0.7), (0.3, 0.7)]));
+            paths.push(line(&[(0.3, 0.3), (0.3, 0.7)]));
+        }
+        ShapeKind::ActionButtonBeginning => {
+            paths.push(line(&[(0.3, 0.3), (0.7, 0.3), (0.7, 0.7), (0.3, 0.7)]));
+            paths.push(line(&[(0.7, 0.3), (0.7, 0.7)]));
+        }
+        ShapeKind::ActionButtonReturn => {
+            paths.push(line(&[(0.7, 0.3), (0.35, 0.3), (0.35, 0.7), (0.55, 0.7)]));
+            paths.push(line(&[(0.35, 0.3), (0.2, 0.45), (0.35, 0.6)]));
+        }
+        ShapeKind::ActionButtonDocument => {
+            paths.push(line(&[(0.35, 0.25), (0.6, 0.25), (0.65, 0.3), (0.65, 0.75), (0.35, 0.75), (0.35, 0.25)]));
+            paths.push(line(&[(0.42, 0.4), (0.58, 0.4)]));
+            paths.push(line(&[(0.42, 0.5), (0.58, 0.5)]));
+            paths.push(line(&[(0.42, 0.6), (0.58, 0.6)]));
+        }
+        ShapeKind::ActionButtonSound => {
+            paths.push(line(&[(0.3, 0.45), (0.42, 0.45), (0.42, 0.55), (0.3, 0.55), (0.3, 0.45)]));
+            paths.push(line(&[(0.5, 0.38), (0.6, 0.28)]));
+            paths.push(line(&[(0.5, 0.5), (0.65, 0.5)]));
+            paths.push(line(&[(0.5, 0.62), (0.6, 0.72)]));
+        }
+        ShapeKind::ActionButtonMovie => {
+            paths.push(line(&[(0.28, 0.3), (0.72, 0.3), (0.72, 0.7), (0.28, 0.7), (0.28, 0.3)]));
+            paths.push(line(&[(0.42, 0.38), (0.42, 0.62), (0.62, 0.5), (0.42, 0.38)]));
+        }
+        _ => {}
+    }
+    paths
+}
+
 /// The outline of `kind` in a `w` × `h` frame: its sub-paths in unit coordinates. `None`
 /// for shapes whose outline is their frame (rectangle, text box, freeform). `adj` is the
 /// shape's adjustment: the corner radius as a fraction of the shorter side for the
@@ -293,6 +360,9 @@ pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<Shape
         ShapeKind::ActionButtonSound => vec![closed(round_corners_per(r4(w, h, 0.1)))],
         ShapeKind::ActionButtonMovie => vec![closed(round_corners_per(r4(w, h, 0.1)))],
     };
+    // The internal marks (smiley face, action-button glyphs) are part of the shape.
+    let mut paths = paths;
+    paths.extend(glyph_paths(kind));
     Some(paths)
 }
 
@@ -964,5 +1034,39 @@ mod tests {
         let striped = geom(ShapeKind::StripedRightArrow);
         assert_eq!(striped.len(), 4);
         assert!(striped[1..].iter().all(|p| !p.closed && p.pts.len() == 2));
+    }
+
+    /// The smiley's face and the action buttons' glyphs are canonical geometry, so a
+    /// drawn shape shows its pattern — not just its outline.
+    #[test]
+    fn smiley_and_action_buttons_have_glyphs() {
+        let geom = |kind| shape_geom(kind, 100.0, 100.0, DEFAULT_ADJ).unwrap();
+        // SmileyFace: outline + 2 eyes + curved smile.
+        let smiley = geom(ShapeKind::SmileyFace);
+        assert_eq!(smiley.len(), 4, "smiley: outline + eyes + smile");
+        assert!(smiley[0].closed);
+        assert!(smiley[1..].iter().all(|p| !p.closed));
+        // The smile is a curve (more than 2 points), not a straight line.
+        assert!(smiley[3].pts.len() > 2, "the smile is a curved arc");
+        // ActionButtonHome: outline + roof + door.
+        let home = geom(ShapeKind::ActionButtonHome);
+        assert_eq!(home.len(), 3, "home button: outline + roof + door");
+        assert!(home[1..].iter().all(|p| !p.closed));
+        // Every action button with a glyph has open sub-paths past its outline.
+        for kind in [
+            ShapeKind::ActionButtonHelp,
+            ShapeKind::ActionButtonInformation,
+            ShapeKind::ActionButtonForwardNext,
+            ShapeKind::ActionButtonBackPrevious,
+            ShapeKind::ActionButtonEnd,
+            ShapeKind::ActionButtonBeginning,
+            ShapeKind::ActionButtonReturn,
+            ShapeKind::ActionButtonDocument,
+            ShapeKind::ActionButtonSound,
+            ShapeKind::ActionButtonMovie,
+        ] {
+            let g = geom(kind);
+            assert!(g.len() > 1 && g[1..].iter().all(|p| !p.closed), "{kind:?} has glyph sub-paths");
+        }
     }
 }

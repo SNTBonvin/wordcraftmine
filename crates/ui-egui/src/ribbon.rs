@@ -140,6 +140,75 @@ pub fn in_table_public(app: &WordApp) -> bool {
     app.session.sel.focus.path.cell().is_some()
 }
 
+/// The AutoSave switch (from the removed title bar): greyed out, with the reason as its
+/// tooltip, when AutoSave can't cover the document; clicking it then offers Save As
+/// where that helps.
+fn autosave_switch(ui: &mut Ui, app: &mut WordApp) {
+    let t = Tokens::get(ui.ctx());
+    let block = app.autosave_block();
+    let on = app.autosaves();
+    let label = if block.is_some() { t.text_dim.gamma_multiply(0.6) } else { t.text_dim };
+    ui.label(egui::RichText::new(tl!("AutoSave")).font(regular(11.5)).color(label));
+    let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+    let (fill, stroke, knob_fill) = match (&block, on) {
+        (Some(_), _) => (t.input.gamma_multiply(0.5), t.border.gamma_multiply(0.7), t.text_dim.gamma_multiply(0.45)),
+        (None, true) => (t.accent, t.accent, t.on_accent),
+        (None, false) => (t.input, t.border_strong, t.text_dim),
+    };
+    ui.painter().rect(r, 8.0, fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+    let knob = if on { r.max.x - 8.0 } else { r.min.x + 8.0 };
+    ui.painter().circle_filled(pos2(knob, r.center().y), 5.0, knob_fill);
+    let tip = block.as_ref().map_or_else(|| tl!("AutoSave saves every change to the file (needs a saved document)").to_string(), |b| b.reason());
+    if resp.on_hover_text(tip).clicked() {
+        match block {
+            None => {
+                let _ = app.run("file.autosave", json!({}));
+            }
+            Some(b) if b.save_as_helps() => {
+                let _ = app.save_as(crate::file_dialogs::AfterSave::AutoSave);
+            }
+            Some(b) => app.status(b.reason()),
+        }
+    }
+}
+
+/// The window controls (minimize, maximize/restore, close) drawn at the top-right corner,
+/// after the account avatar. Non-macOS only: macOS keeps the system traffic lights.
+/// Drawn in code (original glyphs: a dash, a square, an X) — never copied iconography.
+fn window_controls(ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+    for (glyph, tip, cmd) in [
+        ("min", tl!("Minimize"), egui::ViewportCommand::Minimized(true)),
+        ("max", tl!("Maximize"), egui::ViewportCommand::Maximized(!maximized)),
+        ("close", tl!("Close"), egui::ViewportCommand::Close),
+    ] {
+        let (r, resp) = ui.allocate_exact_size(vec2(30.0, 24.0), Sense::click());
+        if resp.hovered() {
+            let fill = if glyph == "close" { egui::Color32::from_rgb(0xE8, 0x11, 0x23) } else { t.hover };
+            ui.painter().rect_filled(r, 4.0, fill);
+        }
+        let ink = if resp.hovered() && glyph == "close" { egui::Color32::WHITE } else { t.text };
+        let c = r.center();
+        match glyph {
+            "min" => {
+                ui.painter().line_segment([pos2(c.x - 5.0, c.y + 1.0), pos2(c.x + 5.0, c.y + 1.0)], Stroke::new(1.5, ink));
+            }
+            "max" => {
+                let sq = Rect::from_center_size(c, vec2(10.0, 10.0));
+                ui.painter().rect_stroke(sq, 0.0, Stroke::new(1.5, ink), egui::StrokeKind::Inside);
+            }
+            _ => {
+                ui.painter().line_segment([pos2(c.x - 5.0, c.y - 5.0), pos2(c.x + 5.0, c.y + 5.0)], Stroke::new(1.5, ink));
+                ui.painter().line_segment([pos2(c.x + 5.0, c.y - 5.0), pos2(c.x - 5.0, c.y + 5.0)], Stroke::new(1.5, ink));
+            }
+        }
+        if resp.on_hover_text(tip).clicked() {
+            ui.ctx().send_viewport_cmd(cmd);
+        }
+    }
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     if app.session.view.read_mode {
@@ -189,13 +258,28 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.ui.tab = next.to_string();
         }
     }
-    // Tab strip.
+    // Tab strip: also the window's top bar now (no separate title bar). The strip is
+    // draggable in its empty areas, so the window still moves by its top edge.
     egui::Panel::top("tabs")
         .exact_size(30.0)
         .frame(egui::Frame::NONE.fill(t.tab_strip).inner_margin(egui::Margin { left: 8, right: 10, top: 0, bottom: 0 }))
         .show(ui, |ui| {
+            let strip = ui.max_rect();
+            let drag = ui.interact(strip, ui.id().with("tab_strip_drag"), Sense::click_and_drag());
+            if drag.drag_started() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if drag.double_clicked() {
+                let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+            }
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                // AutoSave + Quick Access Toolbar (from the removed title bar).
+                autosave_switch(ui, app);
+                ui.add_space(6.0);
+                crate::chrome::quick_access(ui, app);
+                ui.add_space(6.0);
                 for (tab, custom) in &tabs {
                     let (tab, custom) = (tab.as_str(), *custom);
                     let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
@@ -225,6 +309,49 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Window controls (non-macOS: macOS keeps the system traffic lights on
+                    // the left). Rightmost, after the account avatar.
+                    if !app.integrated_titlebar {
+                        window_controls(ui);
+                        ui.add_space(6.0);
+                    }
+                    // Account avatar.
+                    let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+                    ui.painter().circle_filled(r.center(), 11.0, t.accent);
+                    let initials: String = app.session.user_initials().chars().take(2).collect();
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, initials, semibold(10.5), t.on_accent);
+                    resp.on_hover_text(format!("{} — set your name in File › Options", app.session.author));
+                    ui.add_space(6.0);
+                    // Search ("Tell me").
+                    let (r, resp) = ui.allocate_exact_size(vec2(200.0, 24.0), Sense::click());
+                    ui.painter().rect(r, 6.0, if resp.hovered() { t.input } else { t.ribbon }, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+                    icons::paint(
+                        ui.painter(),
+                        Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)),
+                        "search",
+                        t.text_dim,
+                        t.accent,
+                    );
+                    let ph = tl!("Search commands and help");
+                    ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, ph, regular(11.5), t.text_dim);
+                    if resp.on_hover_text(tl!("Search")).clicked() {
+                        let _ = app.run("tools.search", json!({}));
+                    }
+                    ui.add_space(6.0);
+                    // Document name, beside search.
+                    let title = format!(
+                        "{} — {}",
+                        app.title_stem(),
+                        if app.session.dirty {
+                            tl!("Edited")
+                        } else if app.session.path.is_some() {
+                            tl!("Saved")
+                        } else {
+                            tl!("Not saved")
+                        }
+                    );
+                    ui.label(egui::RichText::new(title).font(semibold(12.0)).color(t.text));
+                    ui.add_space(6.0);
                     // Share, Editing mode, Comments.
                     let share = tl!("Share");
                     let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);

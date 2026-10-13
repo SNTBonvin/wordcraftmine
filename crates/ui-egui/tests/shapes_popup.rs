@@ -58,6 +58,7 @@ fn shapes_popup_has_no_stray_diagonal() {
             }
             _ => continue,
         };
-        assert!(x1 - x0 <= 60.0 || y1 - y0 <= 60.0, "stray diagonal spanning ({x0:.0},{y0:.0})-({x1:.0},{y1:.0}) when the Shapes popup is open");
+        // Tiles are 36px with 24px icons: nothing may span more than a tile in both dims.
+        assert!(x1 - x0 <= 40.0 || y1 - y0 <= 40.0, "stray diagonal spanning ({x0:.0},{y0:.0})-({x1:.0},{y1:.0}) when the Shapes popup is open");
     }
 }

@@ -132,14 +132,28 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
         }
         DrawMode::Lasso => lasso_pointer(app, (starts, down, released, at), rects, layout, scale),
         DrawMode::Shape(kind) => {
+            // Clamp to the page: page_at/on_page use the nearest page and do not clamp, so a
+            // drag that leaves the page (e.g. up into the ribbon) would otherwise insert a
+            // shape with out-of-bounds coordinates that renders across the whole window.
+            let clamp = |page: usize, x: f32, y: f32| -> (f32, f32) {
+                let (w, h) = layout.pages.get(page).map_or((f32::MAX, f32::MAX), |p| (p.w, p.h));
+                (x.clamp(0.0, w), y.clamp(0.0, h))
+            };
             if starts && let Some((page, x, y)) = at.and_then(|p| page_at(rects, layout, scale, p)) {
+                let (x, y) = clamp(page, x, y);
                 app.canvas.ink_ui.shape = Some(ShapeDrag { page, kind, from: [x, y], to: [x, y] });
             } else if down
                 && let Some(p) = at
                 && let Some(d) = app.canvas.ink_ui.shape.as_mut()
                 && let Some((x, y)) = on_page(rects, layout, scale, d.page, p)
             {
+                let (x, y) = clamp(d.page, x, y);
                 d.to = [x, y];
+            }
+            // A stale drag (release missed, e.g. a menu opened mid-drag) would otherwise
+            // keep painting its preview line forever: drop it once the pointer is up.
+            if !down && !released && app.canvas.ink_ui.shape.is_some() {
+                app.canvas.ink_ui.shape = None;
             }
             if released && let Some(d) = app.canvas.ink_ui.shape.take() {
                 let (x0, y0) = (d.from[0].min(d.to[0]), d.from[1].min(d.to[1]));
@@ -313,6 +327,13 @@ fn paint_shape(app: &WordApp, painter: &Painter, rects: &[Rect], layout: &DocLay
     let (x0, y0) = (d.from[0].min(d.to[0]), d.from[1].min(d.to[1]));
     let (x1, y1) = (d.from[0].max(d.to[0]), d.from[1].max(d.to[1]));
     let r = Rect::from_min_max(map([x0, y0]), map([x1, y1]));
+    // Clamp the preview to the page: a drag whose coordinates escaped the page (or a
+    // stale drag) must never paint a line across the whole window.
+    let Some(page_rect) = rects.get(d.page) else { return };
+    let r = r.intersect(*page_rect);
+    if r.is_negative() {
+        return;
+    }
     let t = crate::theme::Tokens::get(painter.ctx());
     painter.extend(egui::Shape::dashed_line(
         &[r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()],
