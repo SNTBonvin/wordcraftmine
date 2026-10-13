@@ -532,9 +532,16 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                     layout_box(ctx, story, &cell.blocks, &cpath, cw, text, depth, None);
                 // A hidden end-of-cell mark: an empty last paragraph takes no room (Word for
                 // Windows: a row of empty such cells is only its borders).
-                if cell.props.hide_mark && cell.blocks.last().and_then(|b| b.as_para()).is_some_and(|p| p.text.is_empty()) {
+                let empty_mark = cell.blocks.last().and_then(|b| b.as_para()).is_some_and(|p| p.text.is_empty());
+                // The empty paragraph a cell must end with after a nested table takes no room
+                // either (Word for Windows: the row below starts right under the nested table).
+                let after_table = cell.blocks.len().checked_sub(2).and_then(|k| cell.blocks.get(k)).is_some_and(|b| matches!(**b, Block::Table(_)));
+                if empty_mark && cell.props.hide_mark {
                     height = last_top;
                 } else {
+                    if empty_mark && after_table {
+                        height = last_top;
+                    }
                     collapsed = false;
                 }
                 for it in &mut items {

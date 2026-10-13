@@ -603,6 +603,29 @@ fn a_run_of_boxed_paragraphs_is_drawn_as_one_box() {
     assert_eq!(rules(Borders { between: line, ..boxed }, 3), (4, true), "with a border between: two more lines");
 }
 
+/// A cell that ends with a nested table must still end with a paragraph; left empty, that
+/// paragraph takes no room, so the row is as tall with it as the same cell is tall without it.
+#[test]
+fn the_empty_paragraph_after_a_nested_table_takes_no_room() {
+    let next_row_top = |mark: Option<&str>| {
+        let para = |t: &str| wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(t, Default::default()));
+        let mut d = Document::from_text("Above");
+        let mut inner = Table::new(1, 1, 100.0);
+        inner.rows[0].cells[0].blocks = vec![para("in")];
+        let mut t = Table::new(2, 1, 300.0);
+        let mut blocks = vec![para("outer"), std::sync::Arc::new(wordcraft_doc::Block::Table(inner))];
+        blocks.extend(mark.map(para));
+        t.rows[0].cells[0].blocks = blocks;
+        t.rows[1].cells[0].blocks = vec![para("below")];
+        d.insert_block(StoryRef::Body, &Path::top(1), wordcraft_doc::Block::Table(t)).unwrap();
+        let l = lay(&d);
+        l.caret(&Pos { story: StoryRef::Body, path: Path(vec![1, 1, 0, 0]), off: 0 }).unwrap().top
+    };
+    let (none, empty, text) = (next_row_top(None), next_row_top(Some("")), next_row_top(Some("x")));
+    assert!((empty - none).abs() < 0.01, "an empty mark adds nothing: {empty} vs {none}");
+    assert!(text > none + 5.0, "a paragraph with text takes its line: {text} vs {none}");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");

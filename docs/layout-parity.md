@@ -47,7 +47,7 @@ font can't match Word's metrics.
 | Tables: row heights (at least/exact), rows split across pages, header rows repeat, Can't Split | ✅ | 2026-10-06, #138 | — |
 | Tables: autofit to contents/window, fixed widths, Word 2013 edge | 🟡 | #137; #44: AutoFit Contents measures each column's narrowest and widest text and shares the width like Word, once (not live as you type); a fixed-layout table takes a column's width from its cells' preferred widths when they agree, whatever the grid says (`layout::tests::fixed_table_columns_take_their_cells_preferred_widths`); cell preferred widths in autofit tables and spans still differ | 3–5 |
 | Floating tables (`w:tblpPr`) | 🟡 | #137; one placed on the page or margin that would cover the text before it and doesn't fit below it moves to the next page (#534); overlap rules untested | 2–3 |
-| Nested tables | 🟡 | render; polish missing | 2–4 |
+| Nested tables | 🟡 | render; the empty paragraph after a nested table at the end of a cell takes no room (`layout::tests::the_empty_paragraph_after_a_nested_table_takes_no_room`); polish missing | 2–4 |
 | Floating pictures/shapes placement (relative to page/margin/column/paragraph/line/character) | ✅ | #136 | — |
 | Text wrap: square, top-and-bottom, behind, in front | ✅ | 2026-10-06 | — |
 | Text wrap: tight, through (contour, wrap polygon) | 🟡 | #354: lines follow the wrap polygon, or the outline worked out from the object (shape geometry; a picture's opaque pixels as a convex hull; otherwise the rectangle), turned and flipped with it, kept the left/right distance from text; Through also uses gaps inside the outline. Wrap side (`wrapText`: both sides, left only, right only, largest side per line) applies to square, tight and through wraps, turned objects included; picture outlines are convex; not compared page-for-page with Word | 1–2 |
@@ -84,6 +84,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | The empty paragraph a cell ends with after a nested table takes no room (measured in Word for Windows) |
 | 2026-10-13 | trivial | A run of paragraphs with the same borders is drawn as one box (no lines between unless a border between is set), and shading fills out to the borders |
 | 2026-10-12 | trivial | Fixed-layout tables take a column's width from its cells' preferred widths when they agree (measured in Word for Windows; the grid of files written by other tools is often equal shares) |
 | 2026-10-12 | trivial | Latin text forms no standard ligatures by default, as in Word (measured in Word for Windows: each Calibri tt or ti pulled the rest of its line about 0.4 pt left) |
