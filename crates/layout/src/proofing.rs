@@ -15,12 +15,54 @@ use wordcraft_doc::{Document, Paragraph, PartKind, Path, StoryRef};
 use crate::ProofOptions;
 use crate::para::{paragraph_issues, proof_runs};
 
-/// One paragraph's issues and the hash of the text they were found in. The offsets only apply
-/// to a paragraph whose text still hashes to `text_hash` ([`text_hash`]).
+/// One paragraph's issues and the text they were found in. The offsets apply as they are to a
+/// paragraph whose text still hashes to `text_hash` ([`text_hash`]); [`ParaIssues::remapped`]
+/// carries them across a small edit until the next check.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParaIssues {
     pub text_hash: u64,
+    /// The paragraph's text when checked (kept only when it has issues).
+    pub text: String,
     pub issues: Vec<wordcraft_proof::Issue>,
+}
+
+/// Longest edit (in bytes, before and after) [`ParaIssues::remapped`] carries issues across;
+/// anything bigger waits for the next check.
+const MAX_REMAPPED_EDIT: usize = 256;
+
+impl ParaIssues {
+    /// The issues moved onto `now`, the paragraph's text after an edit: those before the edited
+    /// span stay, those after it move with the text, those it touches are dropped. Nothing when
+    /// the texts differ by more than a small edit (another paragraph, a paste).
+    pub fn remapped(&self, now: &str) -> Vec<wordcraft_proof::Issue> {
+        let old = self.text.as_str();
+        let mut prefix = old.bytes().zip(now.bytes()).take_while(|(a, b)| a == b).count();
+        while !(old.is_char_boundary(prefix) && now.is_char_boundary(prefix)) {
+            prefix -= 1;
+        }
+        let room = old.len().min(now.len()) - prefix;
+        let mut suffix = old.bytes().rev().zip(now.bytes().rev()).take(room).take_while(|(a, b)| a == b).count();
+        while !(old.is_char_boundary(old.len() - suffix) && now.is_char_boundary(now.len() - suffix)) {
+            suffix -= 1;
+        }
+        let (old_end, now_end) = (old.len() - suffix, now.len() - suffix);
+        if old_end - prefix > MAX_REMAPPED_EDIT || now_end - prefix > MAX_REMAPPED_EDIT {
+            return Vec::new();
+        }
+        self.issues
+            .iter()
+            .filter_map(|i| {
+                if i.end <= prefix {
+                    Some(i.clone())
+                } else if i.start >= old_end {
+                    let moved = |off: usize| off - old_end + now_end;
+                    Some(wordcraft_proof::Issue { start: moved(i.start), end: moved(i.end), ..i.clone() })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 /// The issues of every checked paragraph that has any, by story and path.
@@ -98,7 +140,9 @@ pub fn check_document(doc: &Document, opts: &ProofOptions, cache: &mut ProofCach
                 Some((k, found)) if k == key => found,
                 _ => {
                     let runs = proof_runs(doc, p, None);
-                    Arc::new(ParaIssues { text_hash: text_hash(p), issues: paragraph_issues(p, &runs, &opts.spelling, opts.grammar) })
+                    let issues = paragraph_issues(p, &runs, &opts.spelling, opts.grammar);
+                    let text = if issues.is_empty() { String::new() } else { p.text.clone() };
+                    Arc::new(ParaIssues { text_hash: text_hash(p), text, issues })
                 }
             };
             if !found.issues.is_empty() {
@@ -183,6 +227,34 @@ mod tests {
         wordcraft_proof::add_word(word);
         assert!(spelling(&check_document(&doc, &opts, &mut cache), &doc).is_empty());
         wordcraft_proof::remove_word(word);
+    }
+
+    #[test]
+    fn issues_follow_a_small_edit() {
+        let text = "Teh brwon fox and the zxqthirdword.";
+        let doc = Document::from_text(text);
+        let checked = check_document(&doc, &ProofOptions::default(), &mut ProofCache::new());
+        let found = &checked[&(StoryRef::Body, Path::top(0))];
+        let words = |now: &str| -> Vec<String> { found.remapped(now).iter().filter_map(|i| now.get(i.start..i.end).map(str::to_string)).collect() };
+        let all = words(text);
+        assert!(all.contains(&"brwon".to_string()) && all.contains(&"zxqthirdword".to_string()), "{all:?}");
+        // Typing between two marked words: both keep their marks, the later one moves.
+        assert_eq!(words("Teh brwon quick fox and the zxqthirdword."), all);
+        // Typing at the paragraph start moves every mark.
+        assert_eq!(words("So Teh brwon fox and the zxqthirdword."), all);
+        // Typing inside a marked word drops just that mark.
+        let inside = words("Teh browon fox and the zxqthirdword.");
+        assert!(!inside.iter().any(|w| w.starts_with("br")) && inside.contains(&"zxqthirdword".to_string()), "{inside:?}");
+        // Multi-byte text before the edit keeps offsets on character boundaries.
+        let wide = ParaIssues {
+            text: "żółw brwon".into(),
+            issues: found.issues.iter().map(|i| wordcraft_proof::Issue { start: 8, end: 13, ..i.clone() }).take(1).collect(),
+            text_hash: 0,
+        };
+        let moved = wide.remapped("żółwx brwon");
+        assert_eq!("żółwx brwon".get(moved[0].start..moved[0].end), Some("brwon"));
+        // A different paragraph altogether: nothing carried over.
+        assert!(found.remapped(&"Completely different text here, much longer than any typing burst. ".repeat(8)).is_empty());
     }
 
     #[test]

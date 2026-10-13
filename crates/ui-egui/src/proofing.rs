@@ -4,8 +4,9 @@
 //! the paragraphs that changed) and computes spelling suggestions; the editor draws the result
 //! over the pages ([`Proofing::paint`]). Typing, adding a word to the dictionary or ignoring
 //! one never waits for a check, and never re-lays-out or re-renders a page. Each paragraph's
-//! issues carry the hash of the text they were found in, so marks from an earlier check keep
-//! showing on paragraphs that haven't changed and never land on text that has. The browser has no
+//! issues keep the text they were found in, so until the next check comes in, marks stay on
+//! unchanged paragraphs (found by their text when an edit moved them) and move with the text in
+//! the paragraph being typed in; only a mark the edit touches disappears. The browser has no
 //! threads: there the same check runs in the frame, still only for changed paragraphs.
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use serde_json::{Value, json};
 use wordcraft_doc::{Document, Pos};
 use wordcraft_engine::Session;
 use wordcraft_layout::display::ProofMark;
-use wordcraft_layout::proofing::{DocIssues, ProofCache, check_document, text_hash};
+use wordcraft_layout::proofing::{DocIssues, ParaIssues, ProofCache, check_document, text_hash};
 use wordcraft_layout::{DocLayout, ProofOptions};
 use wordcraft_proof::{IssueKind, ProofLang};
 
@@ -49,6 +50,9 @@ pub struct Proofing {
     asked: Option<Key>,
     ready: Option<Key>,
     issues: DocIssues,
+    /// `issues` by their paragraph's text hash: a paragraph an edit moved (Enter above it) keeps
+    /// its marks.
+    by_hash: HashMap<u64, Arc<ParaIssues>>,
     /// Bumped whenever `issues` changes: the page marks below are found again.
     generation: u64,
     /// Marks of the pages drawn so far, for a layout (held, so it is never a different one at
@@ -71,6 +75,7 @@ impl Default for Proofing {
             asked: None,
             ready: None,
             issues: DocIssues::new(),
+            by_hash: HashMap::new(),
             generation: 0,
             marks: None,
             suggest_asked: None,
@@ -128,17 +133,17 @@ impl Proofing {
     pub fn poll(&mut self, session: &Session, ctx: &egui::Context) {
         let key = key_of(session);
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some((tx, rx)) = &self.worker {
-            while let Ok(response) = rx.try_recv() {
+        {
+            let responses: Vec<Response> = self.worker.as_ref().map(|(_, rx)| rx.try_iter().collect()).unwrap_or_default();
+            for response in responses {
                 match response {
                     Response::Checked(found, issues) => {
                         self.busy = false;
                         // Marks of an earlier revision of this document still apply to the
                         // paragraphs whose text hasn't changed since; another document's never do.
                         if found.0 == key.0 && session.view.proofing {
-                            self.issues = issues;
+                            self.set_issues(issues);
                             self.ready = Some(found);
-                            self.generation = self.generation.wrapping_add(1);
                         }
                     }
                     Response::Suggested(word, lang, found) => {
@@ -150,6 +155,7 @@ impl Proofing {
                 }
             }
             if self.suggest_unsent
+                && let Some((tx, _)) = &self.worker
                 && let Some((word, lang)) = &self.suggest_asked
                 && tx.try_send(Request::Suggest(word.clone(), *lang, ctx.clone())).is_ok()
             {
@@ -158,8 +164,7 @@ impl Proofing {
         }
         if !session.view.proofing {
             if self.ready.is_some() || !self.issues.is_empty() {
-                self.issues.clear();
-                self.generation = self.generation.wrapping_add(1);
+                self.set_issues(DocIssues::new());
             }
             self.ready = None;
             self.asked = None;
@@ -180,10 +185,10 @@ impl Proofing {
             }
             #[cfg(target_arch = "wasm32")]
             {
-                self.issues = check_document(&session.doc, &key.3, &mut self.cache);
+                let issues = check_document(&session.doc, &key.3, &mut self.cache);
+                self.set_issues(issues);
                 self.asked = Some(key);
                 self.ready = Some(key);
-                self.generation = self.generation.wrapping_add(1);
             }
         }
     }
@@ -194,14 +199,30 @@ impl Proofing {
         self.ready == Some(key_of(session))
     }
 
-    /// A paragraph's issues as marks, (start, end, is grammar): none when its text changed
-    /// since it was checked.
-    fn marks_of(issues: &DocIssues, doc: &Document, story: wordcraft_doc::StoryRef, path: &wordcraft_doc::Path) -> Vec<(usize, usize, bool)> {
-        let (Some(found), Some(p)) = (issues.get(&(story, path.clone())), doc.para(story, path)) else { return Vec::new() };
-        if found.text_hash != text_hash(p) {
-            return Vec::new();
+    fn set_issues(&mut self, issues: DocIssues) {
+        self.by_hash = issues.values().map(|f| (f.text_hash, f.clone())).collect();
+        self.issues = issues;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// A paragraph's issues as marks, (start, end, is grammar), for its text now: as checked,
+    /// or found by its text when an edit moved it, or carried across the edit being typed
+    /// ([`ParaIssues::remapped`]).
+    fn marks_of(
+        issues: &DocIssues,
+        by_hash: &HashMap<u64, Arc<ParaIssues>>,
+        doc: &Document,
+        story: wordcraft_doc::StoryRef,
+        path: &wordcraft_doc::Path,
+    ) -> Vec<(usize, usize, bool)> {
+        let Some(p) = doc.para(story, path) else { return Vec::new() };
+        let hash = text_hash(p);
+        let here = issues.get(&(story, path.clone()));
+        let mark = |i: &wordcraft_proof::Issue| (i.start, i.end, i.kind == IssueKind::Grammar);
+        if let Some(found) = here.filter(|f| f.text_hash == hash).or_else(|| by_hash.get(&hash)) {
+            return found.issues.iter().map(mark).collect();
         }
-        found.issues.iter().map(|i| (i.start, i.end, i.kind == IssueKind::Grammar)).collect()
+        here.map(|f| f.remapped(&p.text).iter().map(mark).collect()).unwrap_or_default()
     }
 
     /// Draw page `index`'s marks over it: `rect` is where the page is on screen and `scale` its
@@ -228,10 +249,10 @@ impl Proofing {
             self.marks = Some((layout.clone(), generation, HashMap::new()));
         }
         let Some((_, _, pages)) = self.marks.as_mut() else { return };
-        let issues = &self.issues;
+        let (issues, by_hash) = (&self.issues, &self.by_hash);
         let marks = pages
             .entry(index)
-            .or_insert_with(|| wordcraft_layout::display::proof_marks(doc, page, &|story, path| Self::marks_of(issues, doc, story, path)));
+            .or_insert_with(|| wordcraft_layout::display::proof_marks(doc, page, &|story, path| Self::marks_of(issues, by_hash, doc, story, path)));
         let color = |grammar: bool, dim: bool| {
             let wordcraft_doc::Rgb(r, g, b) = ink(if grammar { wordcraft_doc::Rgb(0x2B, 0x57, 0xC0) } else { wordcraft_doc::Rgb(0xE0, 0x24, 0x24) });
             Color32::from_rgb(r, g, b).gamma_multiply(if dim { 0.45 } else { 1.0 })
@@ -355,15 +376,18 @@ mod tests {
         panic!("the spelling checker didn't answer");
     }
 
+    /// The words with a spelling mark, as the body's paragraphs are now.
     fn spelling(p: &Proofing, s: &Session) -> Vec<String> {
-        let mut v: Vec<String> = p
-            .issues
+        let story = wordcraft_doc::StoryRef::Body;
+        let mut v: Vec<String> = s
+            .doc
+            .para_paths(story)
             .iter()
-            .flat_map(|((story, path), _)| {
-                Proofing::marks_of(&p.issues, &s.doc, *story, path)
+            .flat_map(|path| {
+                Proofing::marks_of(&p.issues, &p.by_hash, &s.doc, story, path)
                     .into_iter()
                     .filter(|m| !m.2)
-                    .filter_map(|(a, b, _)| s.doc.para(*story, path).and_then(|q| q.text.get(a..b)).map(str::to_string))
+                    .filter_map(|(a, b, _)| s.doc.para(story, path).and_then(|q| q.text.get(a..b)).map(str::to_string))
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -382,20 +406,26 @@ mod tests {
         assert!(Arc::ptr_eq(&before, &s.layout()));
     }
 
+    /// Typing never blanks marks while the next check runs: the edited paragraph's marks move
+    /// with its text, and paragraphs an Enter moved keep theirs.
     #[test]
-    fn marks_of_changed_paragraphs_wait_for_the_next_check() {
+    fn marks_stay_while_typing_until_the_next_check() {
         let mut s = Session::new(Document::from_text("One zxqfirstmistake.\nTwo zxqsecondmistake."));
         let ctx = egui::Context::default();
         let mut p = Proofing::default();
         settle(&mut p, &s, &ctx);
-        // Type into the second paragraph: until the worker answers, the first paragraph keeps its
-        // mark and the edited one shows none (its offsets may no longer fit).
+        let both = ["zxqfirstmistake", "zxqsecondmistake"];
         s.sel = wordcraft_engine::Selection::caret(Pos::body(1, 0));
-        s.run("text.insert", &json!({"text": "x"})).unwrap();
+        s.run("text.insert", &json!({"text": "Then "})).unwrap();
         assert!(!p.is_current(&s));
-        assert_eq!(spelling(&p, &s), ["zxqfirstmistake"]);
+        assert_eq!(spelling(&p, &s), both, "before the worker answers");
         settle(&mut p, &s, &ctx);
-        assert_eq!(spelling(&p, &s), ["xTwo", "zxqfirstmistake", "zxqsecondmistake"]);
+        assert_eq!(spelling(&p, &s), both);
+        // Enter at the start of the first paragraph moves both paragraphs down a path.
+        s.sel = wordcraft_engine::Selection::caret(Pos::body(0, 0));
+        s.run("text.newParagraph", &json!({})).unwrap();
+        assert!(!p.is_current(&s));
+        assert_eq!(spelling(&p, &s), both, "moved paragraphs keep their marks");
     }
 
     #[test]
