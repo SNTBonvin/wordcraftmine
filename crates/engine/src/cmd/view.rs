@@ -84,6 +84,11 @@ pub fn specs() -> Vec<CommandSpec> {
             sel_result(s)
         })
         .pure(),
+        CommandSpec::new("view.arrangeAll", "Arrange All", "View › Window", |s, _| {
+            s.ui_requests.push(json!({"open":"arrangeAll"}));
+            sel_result(s)
+        })
+        .pure(),
         CommandSpec::new("view.split", "Split", "View › Window", |s, _| {
             s.ui_requests.push(json!({"toggle": "split"}));
             sel_result(s)

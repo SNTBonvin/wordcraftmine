@@ -10,7 +10,6 @@
 //! that leaves winit's delegate alone, behind a safe main-thread API.
 
 use fmv_macos_events::{Event, Inbox, Registration};
-use wordcraft_ui_egui::WordApp;
 
 /// Keeps the Apple-event handlers registered; hold it until the event loop returns.
 pub struct AppleEvents {
@@ -37,24 +36,6 @@ impl AppleEvents {
 /// Open the documents and act on the quit requests that arrived since the last frame. A document
 /// opens like File › Open (asking about unsaved changes first); quitting closes the window, which
 /// asks the same.
-pub fn poll(inbox: &Inbox, app: &mut WordApp, ctx: &egui::Context) {
-    for e in inbox.drain() {
-        match e {
-            Event::Open(paths) => {
-                for p in paths.iter().filter_map(|p| p.to_str()) {
-                    match app.run("file.open", serde_json::json!({"path": p})) {
-                        // Leave Backstage, as opening from the Open dialog does.
-                        Ok(_) => app.ui.backstage = false,
-                        Err(e) => {
-                            log::warn!("{p}: {e}");
-                            let e = e.to_string();
-                            let msg = wordcraft_ui_egui::tl!("Couldn't open {path}: {error}");
-                            app.status(wordcraft_ui_egui::i18n::fmt(msg, &[("path", p), ("error", &e)]));
-                        }
-                    }
-                }
-            }
-            Event::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
-        }
-    }
+pub fn poll(inbox: &Inbox) -> Vec<Event> {
+    inbox.drain()
 }

@@ -200,6 +200,10 @@ pub struct Tokens {
     pub dark: bool,
     pub title_bar: Color32,
     pub ribbon: Color32,
+    pub stage_background: Color32,
+    pub stage_header: Color32,
+    pub stage_alternate: Color32,
+    pub stage_tab: Color32,
     pub tab_strip: Color32,
     pub canvas: Color32,
     pub panel: Color32,
@@ -254,6 +258,10 @@ impl Tokens {
             dark: false,
             title_bar: Color32::from_rgb(0xF5, 0xF5, 0xF5),
             ribbon: Color32::from_rgb(0xF5, 0xF5, 0xF5),
+            stage_background: Color32::from_rgb(0xFA, 0xFA, 0xFA),
+            stage_header: Color32::from_rgb(0xE9, 0xE9, 0xE9),
+            stage_alternate: Color32::from_rgb(0xEE, 0xEE, 0xEE),
+            stage_tab: Color32::from_gray(220),
             tab_strip: Color32::from_rgb(0xF5, 0xF5, 0xF5),
             canvas: Color32::from_rgb(0xEC, 0xEC, 0xEC),
             panel: Color32::from_rgb(0xFA, 0xFA, 0xFA),
@@ -304,6 +312,10 @@ impl Tokens {
             dark: true,
             title_bar: Color32::from_rgb(0x25, 0x25, 0x25),
             ribbon: Color32::from_rgb(0x25, 0x25, 0x25),
+            stage_background: Color32::from_rgb(0x20, 0x20, 0x20),
+            stage_header: Color32::from_rgb(0x30, 0x30, 0x30),
+            stage_alternate: Color32::from_rgb(0x29, 0x2A, 0x2A),
+            stage_tab: Color32::from_gray(160),
             tab_strip: Color32::from_rgb(0x25, 0x25, 0x25),
             canvas: Color32::from_rgb(0x25, 0x25, 0x25),
             panel: Color32::from_rgb(0x26, 0x26, 0x26),
@@ -338,8 +350,8 @@ impl Tokens {
             red: Color32::from_rgb(0xEE, 0x6A, 0x6A),
             green: Color32::from_rgb(0x5B, 0xC0, 0x8A),
             orange: Color32::from_rgb(0xF0, 0xA0, 0x50),
-            chat: Color32::from_rgb(0x18, 0x18, 0x18),
-            chat_surface: Color32::from_rgb(0x30, 0x30, 0x30),
+            chat: Color32::BLACK,
+            chat_surface: Color32::from_rgb(0x20, 0x20, 0x20),
             chat_user: Color32::from_rgb(0x2B, 0x2B, 0x2B),
             chat_text: Color32::from_rgb(0xEC, 0xEC, 0xEC),
             chat_dim: Color32::from_rgb(0xAC, 0xAC, 0xAC),
@@ -448,16 +460,18 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     }
     fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
     fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
-    // Use an installed macOS interface face; never bundle platform fonts or read product assets.
+    // The installed San Francisco variable face supplies real native weights. Keep the bundled
+    // faces as fallbacks when the platform font is unavailable (headless/non-Mac builds).
     #[cfg(target_os = "macos")]
-    for (style, family) in
-        [("Regular", FontFamily::Proportional), ("Medium", FontFamily::Name("medium".into())), ("Bold", FontFamily::Name("semibold".into()))]
-    {
-        let face = wordcraft_fonts::FontDb::global().face("Helvetica Neue", style);
-        if face.family.eq_ignore_ascii_case("Helvetica Neue") && face.data().len() <= 16 * 1024 * 1024 {
+    for (style, weight, family) in [
+        ("Regular", 400.0, FontFamily::Proportional),
+        ("Medium", 500.0, FontFamily::Name("medium".into())),
+        ("Semibold", 600.0, FontFamily::Name("semibold".into())),
+    ] {
+        if let Some(bytes) = macos_ui_font() {
             let name = format!("macOS UI {style}");
-            let mut data = FontData::from_owned(face.data().to_vec());
-            data.index = face.index();
+            let mut data = FontData::from_static(bytes);
+            data.tweak.coords = egui::epaint::text::VariationCoords::new([(b"wght", weight), (b"opsz", 14.0)]);
             fonts.font_data.insert(name.clone(), Arc::new(data));
             if let Some(list) = fonts.families.get_mut(&family) {
                 list.insert(0, name);
@@ -490,6 +504,19 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     let _ = system_cjk;
     // Symbols and emoji fall back to egui's defaults (kept in the families).
     fonts
+}
+
+#[cfg(target_os = "macos")]
+fn macos_ui_font() -> Option<&'static [u8]> {
+    use std::io::Read;
+    static FONT: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
+    FONT.get_or_init(|| {
+        let file = std::fs::File::open("/System/Library/Fonts/SFNS.ttf").ok()?;
+        let mut bytes = Vec::new();
+        file.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes).ok()?;
+        (bytes.len() <= 16 * 1024 * 1024 && !FontData::from_owned(bytes.clone()).variation_axes().is_empty()).then_some(bytes)
+    })
+    .as_deref()
 }
 
 /// The installed CJK interface font for a Chinese (`hans`) or other interface, chosen once:

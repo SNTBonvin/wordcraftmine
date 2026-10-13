@@ -28,7 +28,7 @@ pub(crate) fn set_author(s: &mut Session, v: &Value) -> CmdResult {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|letter|resume|report"}"#).pure(),
+        CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|notes|calendar|letter|resume|report"}"#).pure(),
         CommandSpec::new("file.open", "Open", "File", open)
             .key("Mod+O / Mod+F12")
             .params(r#"{"path": string, "data"?: base64 (the file's bytes; `path` then only names it), "password"?: string (for a password-protected Word document)}"#)
@@ -119,6 +119,8 @@ fn new(s: &mut Session, v: &Value) -> CmdResult {
         "letter" => crate::sample::letter(),
         "resume" => crate::sample::resume(),
         "report" => crate::sample::report(),
+        "notes" => crate::sample::notes(),
+        "calendar" => crate::sample::calendar(),
         // The Normal template: the region's paper (#838), written in the editing language (the
         // templates' text is English).
         _ => {

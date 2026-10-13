@@ -144,18 +144,67 @@ fn files(root: &Path) -> Result<(Vec<String>, bool), String> {
     files.sort();
     Ok((files, truncated))
 }
-pub fn tool(folder: &str, name: &str, args: &Value) -> Result<Value, String> {
+/// Names only: listing candidates never reads their contents.
+pub fn candidates(folder: &str) -> Result<Vec<String>, String> {
+    files(&root(folder)?).map(|(files, _)| files)
+}
+pub fn validate_selection(folder: &str, allowed: &[String]) -> Result<(), String> {
+    if allowed.len() > 128 {
+        return Err("Approve at most 128 project files.".into());
+    }
+    let root = root(folder)?;
+    for path in allowed {
+        resolve(&root, path)?;
+    }
+    Ok(())
+}
+fn looks_sensitive(text: &str) -> bool {
+    text.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("-----begin") && lower.contains("private key-----") {
+            return true;
+        }
+        if line.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_').any(|word| {
+            (word.starts_with("sk-") && word.len() >= 27)
+                || (word.starts_with("ghp_") && word.len() >= 36)
+                || (word.starts_with("github_pat_") && word.len() >= 50)
+                || (word.starts_with("AKIA") && word.len() == 20)
+        }) {
+            return true;
+        }
+        if let Some((key, value)) = lower.split_once(['=', ':']) {
+            let key: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+            let value = value.trim().trim_matches(['\"', '\'', ',', ';']);
+            matches!(key.as_str(), "password" | "secret" | "clientsecret" | "apikey" | "accesstoken" | "refreshtoken" | "privatekey")
+                && value.len() >= 8
+        } else {
+            false
+        }
+    })
+}
+fn shareable_text(root: &Path, relative: &str) -> Result<String, String> {
+    let text = text(root, relative)?;
+    if looks_sensitive(&text) {
+        return Err("This file appears to contain credentials and is excluded from agent context.".into());
+    }
+    Ok(text)
+}
+pub fn tool(folder: &str, allowed: &[String], name: &str, args: &Value) -> Result<Value, String> {
     let root = root(folder)?;
     match name {
         "project_list" => {
-            let (files, truncated) = files(&root)?;
+            let (mut files, truncated) = files(&root)?;
+            files.retain(|path| allowed.contains(path));
             Ok(
                 json!({"files":files,"truncated":truncated,"supported":"UTF-8 text, Markdown, source, DOCX, RTF, ODT. PDF and binary files are not indexed."}),
             )
         }
         "project_read" => {
             let path = args.get("path").and_then(Value::as_str).ok_or("path is required")?;
-            let text = text(&root, path)?;
+            if !allowed.iter().any(|approved| approved == path) {
+                return Err("This file has not been approved in Agent settings → Project files.".into());
+            }
+            let text = shareable_text(&root, path)?;
             let start = args.get("line").and_then(Value::as_u64).unwrap_or(1).clamp(1, 500_000) as usize;
             let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(100).clamp(1, 200) as usize;
             let excerpt = super::clip(
@@ -191,7 +240,8 @@ pub fn tool(folder: &str, name: &str, args: &Value) -> Result<Value, String> {
                 .filter(|s| !s.is_empty() && s.len() <= 1000)
                 .ok_or("query of up to 1,000 bytes is required")?
                 .to_lowercase();
-            let (files, truncated) = files(&root)?;
+            let (mut files, truncated) = files(&root)?;
+            files.retain(|path| allowed.contains(path));
             let mut matches = Vec::new();
             let mut read = 0usize;
             for path in files {
@@ -199,7 +249,7 @@ pub fn tool(folder: &str, name: &str, args: &Value) -> Result<Value, String> {
                     break;
                 }
                 read = read.saturating_add(1);
-                let Ok(text) = text(&root, &path) else { continue };
+                let Ok(text) = shareable_text(&root, &path) else { continue };
                 for (line, content) in text.lines().enumerate() {
                     if content.to_lowercase().contains(&query) {
                         matches.push(json!({"path":path,"line":line.saturating_add(1),"snippet":super::clip(content,500)}));
@@ -220,30 +270,50 @@ pub fn tool(folder: &str, name: &str, args: &Value) -> Result<Value, String> {
 mod tests {
     use super::*;
     #[test]
+    fn unapproved_files_and_credentials_are_not_shared() {
+        let root = std::env::temp_dir().join(format!("wordcraft-project-privacy-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("paper.md"), "Public evidence").unwrap();
+        fs::write(root.join("config.yaml"), "api_key: pretend-sensitive-value").unwrap();
+        let folder = root.to_string_lossy();
+        assert!(tool(&folder, &[], "project_read", &json!({"path":"paper.md"})).is_err());
+        assert_eq!(tool(&folder, &[], "project_list", &json!({})).unwrap()["files"], json!([]));
+        let approved = vec!["config.yaml".into()];
+        assert!(tool(&folder, &approved, "project_read", &json!({"path":"config.yaml"})).is_err());
+        assert_eq!(tool(&folder, &approved, "project_search", &json!({"query":"pretend"})).unwrap()["matches"], json!([]));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn live_context_is_bounded_and_cannot_escape() {
         let root = std::env::temp_dir().join(format!("wordcraft-project-test-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("paper.md"), "First\nEvidence for the paper\n").unwrap();
         fs::write(root.join(".env"), "SECRET=hidden").unwrap();
         let folder = root.to_string_lossy();
-        assert_eq!(tool(&folder, "project_list", &json!({})).unwrap()["files"], json!(["paper.md"]));
-        assert!(tool(&folder, "project_read", &json!({"path":"../outside.md"})).is_err());
-        assert!(tool(&folder, "project_read", &json!({"path":".env"})).is_err());
-        assert_eq!(tool(&folder, "project_search", &json!({"query":"evidence"})).unwrap()["matches"][0]["line"], 2);
+        assert_eq!(tool(&folder, &["paper.md".into(), "source.docx".into()], "project_list", &json!({})).unwrap()["files"], json!(["paper.md"]));
+        assert!(tool(&folder, &["paper.md".into(), "source.docx".into()], "project_read", &json!({"path":"../outside.md"})).is_err());
+        assert!(tool(&folder, &["paper.md".into(), "source.docx".into()], "project_read", &json!({"path":".env"})).is_err());
+        assert_eq!(
+            tool(&folder, &["paper.md".into(), "source.docx".into()], "project_search", &json!({"query":"evidence"})).unwrap()["matches"][0]["line"],
+            2
+        );
         fs::write(root.join("paper.md"), "Changed live").unwrap();
-        let value = tool(&folder, "project_read", &json!({"path":"paper.md","limit":u64::MAX})).unwrap();
+        let value = tool(&folder, &["paper.md".into(), "source.docx".into()], "project_read", &json!({"path":"paper.md","limit":u64::MAX})).unwrap();
         assert!(value["text"].as_str().unwrap().contains("Changed live"));
         assert!(value["citationUrl"].as_str().unwrap().starts_with("#project-"));
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink("/etc/hosts", root.join("escape.txt")).unwrap();
-            assert!(tool(&folder, "project_read", &json!({"path":"escape.txt"})).is_err());
+            assert!(tool(&folder, &["paper.md".into(), "source.docx".into()], "project_read", &json!({"path":"escape.txt"})).is_err());
         }
         let doc = wordcraft_doc::Document::from_text("Formatted project evidence");
         let bytes = wordcraft_engine::io::save_bytes("source.docx", &doc).unwrap();
         fs::write(root.join("source.docx"), bytes).unwrap();
         assert!(
-            tool(&folder, "project_read", &json!({"path":"source.docx"})).unwrap()["text"].as_str().unwrap().contains("Formatted project evidence")
+            tool(&folder, &["paper.md".into(), "source.docx".into()], "project_read", &json!({"path":"source.docx"})).unwrap()["text"]
+                .as_str()
+                .unwrap()
+                .contains("Formatted project evidence")
         );
         fs::remove_dir_all(root).unwrap();
     }

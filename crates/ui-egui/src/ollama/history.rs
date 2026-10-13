@@ -30,6 +30,9 @@ pub struct Library {
     pub next_id: u64,
 }
 impl Library {
+    pub(super) fn bytes_for_windows(&mut self) -> Result<Vec<u8>, String> {
+        self.bytes()
+    }
     fn normalize(&mut self) {
         self.chats.truncate(MAX_CHATS);
         for chat in &mut self.chats {
@@ -69,6 +72,9 @@ impl Library {
     }
 }
 pub fn capture(state: &mut State, document: &str) {
+    if !state.save_history {
+        return;
+    }
     if !state.entries.iter().any(|(role, _)| role == "You") {
         return;
     }
@@ -140,6 +146,9 @@ pub fn restore(state: &mut State, id: u64) -> Result<(), String> {
     state.model = chat.model;
     state.effort = chat.effort;
     state.project_folder = chat.project;
+    state.project_files.clear();
+    state.settings.scanned_folder.clear();
+    state.cloud_consent = None;
     state.entries = chat.entries;
     state.sources = chat.sources;
     state.project_excerpts = chat.excerpts;
@@ -185,6 +194,9 @@ pub fn fork(state: &mut State, document: &str, index: usize, replacement: Option
         if text.trim().is_empty() || text.chars().count() > super::MAX_INPUT {
             return Err("Enter a message of up to 16,000 characters.".into());
         }
+    }
+    if !state.save_history {
+        return Err("Save chats locally must be enabled before creating a saved branch. Temporary messages have not been saved.".into());
     }
     if state.library.chats.len() >= MAX_CHATS {
         return Err("Chat history is full. Delete a chat before creating a branch.".into());
@@ -312,7 +324,7 @@ mod disk {
                 .map_err(|e| e.to_string())?;
             Ok(Self { tx, results, pending: None })
         }
-        pub(super) fn submit(&mut self, bytes: Vec<u8>) {
+        pub(in crate::ollama) fn submit(&mut self, bytes: Vec<u8>) {
             self.pending = Some(bytes);
         }
         pub(super) fn poll(&mut self) -> Option<Result<(), String>> {
@@ -372,7 +384,10 @@ pub(super) use disk::Store;
 pub(crate) fn initialize(app: &mut crate::WordApp, path: std::path::PathBuf, ctx: &egui::Context) {
     app.ollama.history_path = Some(path.clone());
     match disk::load(&path) {
-        Ok(library) => app.ollama.library = library,
+        Ok(library) => {
+            app.ollama.library = library;
+            app.ollama.library_epoch = 1;
+        }
         Err(e) => {
             app.ollama.history_error = e;
             return;
@@ -387,6 +402,7 @@ pub(super) fn sync(app: &mut crate::WordApp) {
     if app.ollama.history_dirty {
         let title = super::document_title(app);
         capture(&mut app.ollama, &title);
+        app.ollama.library_epoch = app.ollama.library_epoch.saturating_add(1);
         app.ollama.history_dirty = false;
         #[cfg(not(target_arch = "wasm32"))]
         if app.ollama.history_store.is_some() && !app.ollama.history_error.starts_with("Chat history is full") {
@@ -429,6 +445,7 @@ pub(crate) fn flush(state: &State) -> Result<(), String> {
         snapshot.model.clone_from(&state.model);
         snapshot.effort.clone_from(&state.effort);
         snapshot.project_folder.clone_from(&state.project_folder);
+        snapshot.save_history = state.save_history;
         if state.history_dirty {
             let title = state.library.chats.iter().find(|c| Some(c.id) == state.active_chat).map(|c| c.document.as_str()).unwrap_or("Document");
             capture(&mut snapshot, title);

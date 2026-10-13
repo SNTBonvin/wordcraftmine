@@ -1685,6 +1685,16 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "newWindow", "New\nWindow", "view.newWindow", json!({}), false);
         big(ui, app, "arrangeAll", "Arrange\nAll", "view.arrangeAll", json!({}), false);
         big(ui, app, "split", "Split", "view.split", json!({}), false);
+        if app.native_document_windows {
+            ui.menu_button("Switch Windows", |ui| {
+                for (id, title) in app.document_windows.clone() {
+                    if ui.button(title).clicked() {
+                        let _ = app.run("ui.focusDocumentWindow", json!({"id":id}));
+                        ui.close();
+                    }
+                }
+            });
+        }
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);

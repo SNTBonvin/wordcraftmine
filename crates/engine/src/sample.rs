@@ -183,6 +183,68 @@ pub fn resume() -> Document {
     d
 }
 
+/// A structured notebook with headings and action items.
+pub fn notes() -> Document {
+    let mut document = Document::new();
+    document.body = [
+        styled("Notes", "Title"),
+        para("Topic · Date · Participants"),
+        styled("Key ideas", "Heading1"),
+        para("Capture the important ideas here."),
+        styled("Decisions", "Heading1"),
+        para("Record decisions and the reasoning behind them."),
+        styled("Next steps", "Heading1"),
+        para("Action · Owner · Due date"),
+    ]
+    .into_iter()
+    .map(para_block)
+    .collect();
+    document
+}
+
+/// An original monthly calendar, generated for the current UTC month.
+pub fn calendar() -> Document {
+    calendar_at(crate::cmd::now_unix())
+}
+
+fn calendar_at(seconds: u64) -> Document {
+    let seconds = seconds.min(253_402_300_799);
+    let date = crate::cmd::iso_from_unix_secs(seconds);
+    let year = date.get(..4).and_then(|value| value.parse::<u32>().ok()).unwrap_or(2026);
+    let month = date.get(5..7).and_then(|value| value.parse::<usize>().ok()).unwrap_or(1).clamp(1, 12);
+    let day = date.get(8..10).and_then(|value| value.parse::<u64>().ok()).unwrap_or(1).clamp(1, 31);
+    let days = match month {
+        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => 29usize,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    let first = ((seconds / 86400).saturating_sub(day - 1).saturating_add(3) % 7) as usize;
+    let names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    let name = names.get(month.saturating_sub(1)).copied().unwrap_or("January");
+    let mut table = Table::new((first + days).div_ceil(7) + 1, 7, 468.0);
+    for (row_index, row) in table.rows.iter_mut().enumerate() {
+        row.props.height = Some(if row_index == 0 { 24.0 } else { 60.0 });
+        row.props.header = row_index == 0;
+        for (column, cell) in row.cells.iter_mut().enumerate() {
+            let value = if row_index == 0 {
+                ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].get(column).copied().unwrap_or("").to_string()
+            } else {
+                let slot = (row_index - 1).saturating_mul(7).saturating_add(column);
+                if slot >= first && slot < first + days { (slot - first + 1).to_string() } else { String::new() }
+            };
+            cell.blocks = vec![para_block(para(&value))];
+        }
+    }
+    let mut document = Document::new();
+    document.body = vec![
+        para_block(styled(&format!("{name} {year}"), "Title")),
+        std::sync::Arc::new(Block::Table(table)),
+        para_block(para("Notes and reminders")),
+    ];
+    document
+}
+
 /// A report with a cover heading and sections.
 pub fn report() -> Document {
     let mut d = Document::new();
@@ -210,10 +272,22 @@ mod tests {
     #[test]
     fn samples_are_valid() {
         assert_eq!(sample_document().word_count(), 361);
-        for d in [sample_document(), letter(), resume(), report()] {
+        for d in [sample_document(), letter(), resume(), report(), notes(), calendar()] {
             assert!(d.word_count() > 5);
             let l = wordcraft_layout::layout(&d, &mut wordcraft_layout::LayoutCache::new(), &Default::default());
             assert!(!l.pages.is_empty());
         }
+    }
+    #[test]
+    fn leap_month_calendar_has_all_days_and_bounded_rows() {
+        let document = calendar_at(1_706_745_600);
+        let text = document.plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(text.contains("February 2024"));
+        assert!(text.contains("29"));
+        assert!(!text.contains("30"));
+        let Block::Table(table) = document.body[1].as_ref() else { panic!("calendar table") };
+        assert!(table.rows.len() <= 7);
+        assert_eq!(table.grid.len(), 7);
+        assert!(!calendar_at(u64::MAX).body.is_empty());
     }
 }

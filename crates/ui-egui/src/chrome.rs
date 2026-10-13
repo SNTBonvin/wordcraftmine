@@ -324,7 +324,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
             // Centred title.
             let title = format!(
                 "{} — {}",
-                app.title_stem(),
+                app.display_title(),
                 if app.session.dirty {
                     tl!("Edited")
                 } else if app.session.path.is_some() {

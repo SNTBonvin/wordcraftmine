@@ -89,6 +89,8 @@ pub use file_dialogs::{FileDialogAnswer, FileDialogRequest, open_filters};
 /// Platform services injected by the host (file dialogs, file I/O).
 #[derive(Default)]
 pub struct Services {
+    /// Native file-type/custom icons supplied by the platform, decoded to a bounded thumbnail.
+    pub document_icon: Option<Box<dyn Fn(&str) -> Option<egui::ColorImage>>>,
     /// Desktop: discover configured printers on a worker.
     pub printers: Option<printing::Discover>,
     /// Desktop: submit the PDF with the chosen settings on a worker.
@@ -162,6 +164,17 @@ pub enum DefaultApp {
 /// Files delivered asynchronously.
 pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 
+#[derive(Clone, Debug)]
+pub enum WindowRequest {
+    Document { command: String, params: Value },
+    SameDocument,
+    Arrange,
+    Focus(u64),
+    Close(u64),
+    Connect(u64),
+    Quit,
+}
+
 /// UI state that persists between runs (and that agents can read and set).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -175,6 +188,8 @@ pub struct UiState {
     pub print: print_page::PrintSettings,
     pub ribbon_collapsed: bool,
     pub recent: Vec<String>,
+    /// Last successfully opened by the user, in Unix seconds. Old preferences have unknown times.
+    pub recent_opened: std::collections::BTreeMap<String, u64>,
     pub favourite_documents: Vec<String>,
     /// Symbols inserted from the Symbol dialog, most recent first (#321).
     pub recent_symbols: Vec<dialogs_insert::RecentSymbol>,
@@ -273,6 +288,7 @@ impl Default for UiState {
             print: print_page::PrintSettings::default(),
             ribbon_collapsed: false,
             recent: Vec::new(),
+            recent_opened: Default::default(),
             favourite_documents: Vec::new(),
             recent_symbols: Vec::new(),
             recent_colors: Vec::new(),
@@ -376,6 +392,12 @@ pub struct WordApp {
     pub(crate) dialog_pick: Option<String>,
     /// macOS: the window has no title bar; leave room for the traffic lights.
     pub integrated_titlebar: bool,
+    /// Set by desktop hosts that handle document windows. Headless/web clients keep replacement semantics.
+    pub native_document_windows: bool,
+    pub document_windows: Vec<(u64, String)>,
+    pub other_document_views: bool,
+    pub window_view_number: Option<usize>,
+    window_requests: Vec<WindowRequest>,
     control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
     codex_connect_requested: bool,
     codex_disconnect_requested: bool,
@@ -488,6 +510,11 @@ impl WordApp {
             status_msg: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
+            native_document_windows: false,
+            document_windows: Vec::new(),
+            other_document_views: false,
+            window_view_number: None,
+            window_requests: Vec::new(),
             control_rx: None,
             codex_connect_requested: false,
             codex_disconnect_requested: false,
@@ -668,6 +695,18 @@ impl WordApp {
     /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
     /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        if self.native_document_windows && self.other_document_views && id == "file.close" {
+            self.quit_requested = true;
+            return Ok(json!({"closeView":true}));
+        }
+        let start_window = self.ui.backstage && self.session.path.is_none() && !self.session.dirty && self.session.undo_depth() == 0;
+        if self.native_document_windows && !start_window && (id == "file.new" || (id == "file.open" && params.get("path").is_some())) {
+            if self.window_requests.len() >= 16 {
+                return Err("Too many pending document windows.".into());
+            }
+            self.window_requests.push(WindowRequest::Document { command: id.into(), params });
+            return Ok(json!({"pending":"documentWindow"}));
+        }
         // A button whose command needs input the user hasn't given yet opens its dialog (#240).
         if let Some(name) = input_dialog(id, &params)
             && widgets::enabled(self, id)
@@ -794,6 +833,12 @@ impl WordApp {
         }
         if let Ok(v) = &r {
             self.keep_web_font(id, &params, v);
+            if id == "file.open"
+                && self.session.document_id() != document
+                && let Some(path) = &self.session.path
+            {
+                self.ui.recent_opened.insert(path.to_string_lossy().into_owned(), wordcraft_engine::cmd::now_unix());
+            }
         }
         self.after_command(id);
         if let Err(e) = &r {
@@ -946,6 +991,7 @@ impl WordApp {
             self.ui.recent.insert(0, p);
             self.ui.recent.truncate(MAX_RECENT);
         }
+        self.ui.recent_opened.retain(|path, _| self.ui.recent.contains(path));
         if !self.session.status.is_empty() {
             // Engine messages are English; the catalog translates the ones it knows.
             let s = std::mem::take(&mut self.session.status);
@@ -962,6 +1008,8 @@ impl WordApp {
         }
         if let Some(what) = req.get("open").and_then(Value::as_str) {
             match what {
+                "newWindow" if self.native_document_windows => self.window_requests.push(WindowRequest::SameDocument),
+                "arrangeAll" if self.native_document_windows => self.window_requests.push(WindowRequest::Arrange),
                 "openFile" => self.open_dialog(),
                 "saveAs" => {
                     self.save_as_dialog();
@@ -984,6 +1032,17 @@ impl WordApp {
             }
         }
         if req.get("close").is_some() {
+            self.quit_requested = true;
+        }
+    }
+
+    pub fn take_window_requests(&mut self) -> Vec<WindowRequest> {
+        std::mem::take(&mut self.window_requests)
+    }
+    pub fn request_application_quit(&mut self) {
+        if self.native_document_windows {
+            self.window_requests.push(WindowRequest::Quit);
+        } else {
             self.quit_requested = true;
         }
     }
@@ -1060,7 +1119,8 @@ impl WordApp {
                 self.ollama.allow_edits = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ollama.allow_edits);
                 json!({"allowEdits": self.ollama.allow_edits})
             }
-            "ui.agentHistory"
+            "ui.agentSettings"
+            | "ui.agentHistory"
             | "ui.agentOpenChat"
             | "ui.agentDeleteChat"
             | "ui.agentClearHistory"
@@ -1084,6 +1144,34 @@ impl WordApp {
                     return Some(Err(error));
                 }
                 json!({"undone": true})
+            }
+            "ui.removeRecent" => {
+                let Some(path) = p.get("path").and_then(Value::as_str) else { return Some(Err("path required".into())) };
+                self.ui.recent.retain(|value| value != path);
+                self.ui.recent_opened.remove(path);
+                json!({"removed":true})
+            }
+            "ui.newDocumentWindow" => {
+                if !self.native_document_windows {
+                    return Some(Err("Document windows require the desktop host.".into()));
+                }
+                if self.window_requests.len() >= 16 {
+                    return Some(Err("Too many pending document windows.".into()));
+                }
+                self.window_requests.push(WindowRequest::Document { command: "file.new".into(), params: p.clone() });
+                json!({"pending":"documentWindow"})
+            }
+            "ui.focusDocumentWindow" | "ui.closeDocumentWindow" | "ui.connectDocumentWindow" => {
+                let Some(window) = p.get("id").and_then(Value::as_u64) else { return Some(Err("window id required".into())) };
+                if !self.document_windows.iter().any(|(key, _)| *key == window) {
+                    return Some(Err("That document window is no longer open.".into()));
+                }
+                self.window_requests.push(match id {
+                    "ui.closeDocumentWindow" => WindowRequest::Close(window),
+                    "ui.connectDocumentWindow" => WindowRequest::Connect(window),
+                    _ => WindowRequest::Focus(window),
+                });
+                json!({"requested":window})
             }
             "ui.favoriteDocument" => {
                 let Some(path) = s("path").filter(|v| !v.is_empty() && v.len() <= 4096) else {
@@ -1433,6 +1521,11 @@ impl WordApp {
         }
     }
 
+    pub fn display_title(&self) -> String {
+        let title = self.title_stem();
+        self.window_view_number.map(|number| format!("{title}:{number}")).unwrap_or(title)
+    }
+
     /// Terminal feedback also reaches the normal window when printing starts through control.
     pub fn poll_printing(&mut self, ctx: &egui::Context) {
         self.printing.poll(ctx);
@@ -1683,7 +1776,7 @@ impl WordApp {
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
-        let title = format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" });
+        let title = format!("{}{} - WordCraft", self.display_title(), if self.session.dirty { " •" } else { "" });
         if title != self.sent_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;
@@ -4473,5 +4566,33 @@ mod tests {
         h.state_mut().run("edit.advancedFind", json!({})).unwrap();
         h.step();
         assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"));
+    }
+}
+#[cfg(test)]
+mod native_window_tests {
+    use super::*;
+    #[test]
+    fn command_n_queues_a_window_without_discarding_writing() {
+        let mut app = WordApp::new(Session::new(wordcraft_doc::Document::from_text("Keep this document")), Services::default());
+        app.native_document_windows = true;
+        app.session.run("text.insert", &json!({"text":"Unsaved "})).unwrap();
+        let doc = app.session.doc.clone();
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::N,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }],
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |_ui| crate::keys::canvas_events(&mut app, &ctx));
+        output.textures_delta.clear();
+        assert_eq!(app.session.doc, doc);
+        assert!(app.dialog.is_none());
+        let requests = app.take_window_requests();
+        assert!(matches!(requests.first(), Some(WindowRequest::Document { command, .. }) if command == "file.new"));
     }
 }

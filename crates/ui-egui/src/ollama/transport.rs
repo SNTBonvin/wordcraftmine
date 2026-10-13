@@ -48,6 +48,7 @@ pub(super) struct Config {
     key: String,
     internet: bool,
     project_folder: String,
+    project_files: Vec<String>,
     citations: Arc<Mutex<Vec<(String, String)>>>,
     cancel: Arc<AtomicBool>,
 }
@@ -71,6 +72,7 @@ impl Config {
             key: if state.source == Source::Codex { String::new() } else { state.api_key.trim().to_string() },
             internet: state.internet,
             project_folder: state.project_folder.clone(),
+            project_files: state.project_files.clone(),
             citations: Arc::new(Mutex::new(state.sources.clone())),
             cancel: state.cancel.clone(),
         }
@@ -366,7 +368,7 @@ pub(super) fn call_tool(
         if cfg.project_folder.is_empty() {
             return Ok(json!({"ok":false,"error":"No project folder is linked. Ask the user to use Link project."}));
         }
-        let mut result = match super::project::tool(&cfg.project_folder, name, &args) {
+        let mut result = match super::project::tool(&cfg.project_folder, &cfg.project_files, name, &args) {
             Ok(value) => value,
             Err(error) => return Ok(json!({"ok":false,"error":error})),
         };

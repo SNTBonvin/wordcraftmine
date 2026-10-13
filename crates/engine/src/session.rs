@@ -680,6 +680,57 @@ impl Session {
     pub fn document_id(&self) -> u64 {
         self.document_id
     }
+    /// Another view of this document, with its own selection and layout cache.
+    pub fn fork_window(&self) -> Self {
+        let mut view = Self::new(self.doc.clone());
+        view.sync_window_document(self);
+        view.sel = self.sel.clone();
+        view.view = self.view.clone();
+        view.pending = self.pending.clone();
+        view.prefs = self.prefs.clone();
+        view.system_region = self.system_region.clone();
+        view.keymap = self.keymap.clone();
+        view.ribbon = self.ribbon.clone();
+        view.author = self.author.clone();
+        view.initials = self.initials.clone();
+        view.user_dict_path = self.user_dict_path.clone();
+        view
+    }
+
+    /// Synchronize only shared document state. Hosts call this between window callbacks, never
+    /// concurrently with a command. Undo stacks share immutable snapshots; view state stays local.
+    pub fn sync_window_document(&mut self, source: &Self) -> bool {
+        if self.rev == source.rev
+            && self.document_id == source.document_id
+            && self.dirty == source.dirty
+            && self.path == source.path
+            && self.history.len() == source.history.len()
+            && self.redo.len() == source.redo.len()
+        {
+            return false;
+        }
+        self.doc = source.doc.clone();
+        self.path.clone_from(&source.path);
+        self.dirty = source.dirty;
+        self.document_id = source.document_id;
+        self.rev = source.rev;
+        self.history.clone_from(&source.history);
+        self.redo.clone_from(&source.redo);
+        self.undo_evicted = source.undo_evicted;
+        self.typing_open = false;
+        self.join_next = false;
+        self.password.clone_from(&source.password);
+        self.originals.clone_from(&source.originals);
+        self.last_command.clone_from(&source.last_command);
+        self.versions.clone_from(&source.versions);
+        self.macros.clone_from(&source.macros);
+        self.building_blocks.clone_from(&source.building_blocks);
+        self.bib_style.clone_from(&source.bib_style);
+        self.autosave = source.autosave;
+        self.clamp_selection();
+        self.relayout();
+        true
+    }
     pub fn touch(&mut self) {
         self.rev = self.rev.wrapping_add(1);
         self.dirty = true;

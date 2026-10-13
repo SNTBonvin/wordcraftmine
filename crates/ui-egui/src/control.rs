@@ -51,6 +51,8 @@ pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
         "view": app.session.view,
         "dialog": app.dialog.as_ref().map(|d| serde_json::to_value(d).unwrap_or_default()),
         "window": [r.width(), r.height()],
+        "documentWindows":app.document_windows,
+        "viewNumber":app.window_view_number,
         "canvasRect": app.canvas.canvas_rect.map(|c| [c.left(), c.top(), c.width(), c.height()]),
         "pages": app.canvas.page_rects.iter().map(|r| [r.left(), r.top(), r.width(), r.height()]).collect::<Vec<_>>(),
         "scale": app.canvas.scale,
@@ -240,7 +242,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             ok(json!({}))
         }
         "app.quit" => {
-            app.quit_requested = true;
+            app.request_application_quit();
             ok(json!({}))
         }
         other => {

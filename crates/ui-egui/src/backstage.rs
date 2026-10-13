@@ -150,6 +150,17 @@ fn show_mac(app: &mut WordApp, ui: &mut Ui) {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
         ui.painter().text(r.center(), Align2::CENTER_CENTER, "WordCraft", medium(14.0), t.text);
+        let search_id = egui::Id::new("mac_document_search");
+        let mut search = ctx.data(|data| data.get_temp::<String>(search_id)).unwrap_or_default();
+        if ui
+            .put(
+                Rect::from_min_size(pos2(r.max.x - 196.0, r.min.y + 9.0), vec2(180.0, 26.0)),
+                egui::TextEdit::singleline(&mut search).hint_text("Search").frame(egui::Frame::NONE),
+            )
+            .changed()
+        {
+            ctx.data_mut(|data| data.insert_temp(search_id, search));
+        }
         let back = Rect::from_center_size(pos2(r.min.x + crate::chrome::MAC_CONTENT_LEFT + 16.0, r.center().y), vec2(28.0, 28.0));
         icons::paint(ui.painter(), back.shrink(5.0), "chevronLeft", t.icon, t.accent);
         if ui.interact(back, ui.id().with("stage_back"), Sense::click()).on_hover_text("Return to document").clicked() {
@@ -162,15 +173,30 @@ fn show_mac(app: &mut WordApp, ui: &mut Ui) {
         .resizable(false)
         .frame(egui::Frame::NONE.fill(t.title_bar).inner_margin(egui::Margin::symmetric(8, 16)))
         .show(ui, |ui| {
+            let author = if app.ui.author.is_empty() { "Local profile" } else { app.ui.author.as_str() };
+            let (profile, response) = ui.allocate_exact_size(vec2(70.0, 76.0), Sense::hover());
+            let centre = pos2(profile.center().x, profile.min.y + 22.0);
+            ui.painter().circle_filled(centre, 19.0, t.accent);
+            let initial = app.ui.author.chars().next().filter(|character| !character.is_whitespace()).unwrap_or('W').to_uppercase().to_string();
+            ui.painter().text(centre, Align2::CENTER_CENTER, initial, medium(18.0), t.on_accent);
+            row_text(ui, author, pos2(profile.min.x, profile.min.y + 49.0), profile.width(), regular(10.5), t.text_dim);
+            response.on_hover_text(author);
             for (page, label, icon) in
-                [("home", "Home", "home"), ("new", "New", "newChat"), ("recent", "Recents", "history"), ("open", "Open", "folderOutline")]
+                [("home", "Home", "home"), ("new", "New", "newCircle"), ("recent", "Recents", "history"), ("open", "Open", "folderOutline")]
             {
                 let (r, response) = ui.allocate_exact_size(vec2(70.0, 70.0), Sense::click());
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                 if app.ui.backstage_page == page || response.hovered() {
                     ui.painter().rect_filled(r.shrink(2.0), 9.0, t.hover);
                 }
-                icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.min.y + 25.0), vec2(28.0, 28.0)), icon, t.icon, t.accent);
+                let icon = if page == "home" && app.ui.backstage_page == page { "homeFilled" } else { icon };
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(pos2(r.center().x, r.min.y + 25.0), vec2(28.0, 28.0)),
+                    icon,
+                    t.icon,
+                    if icon == "homeFilled" { t.hover } else { t.accent },
+                );
                 ui.painter().text(pos2(r.center().x, r.min.y + 52.0), Align2::CENTER_CENTER, tl!(label), regular(12.0), t.text);
                 if response.clicked() {
                     app.ui.backstage_page = page.into();
@@ -210,7 +236,8 @@ fn show_mac(app: &mut WordApp, ui: &mut Ui) {
                     && ui
                         .add_enabled(
                             selected.is_some(),
-                            egui::Button::new(egui::RichText::new(if is_new { "Create" } else { "Open" }).color(t.on_accent)).fill(t.accent),
+                            egui::Button::new(egui::RichText::new(if is_new { "Create" } else { "Open" }).color(stage_ink(&t)))
+                                .fill(stage_accent(&t)),
                         )
                         .clicked()
                     && let Some(value) = selected
@@ -227,7 +254,7 @@ fn show_mac(app: &mut WordApp, ui: &mut Ui) {
                 }
             });
         });
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(28, 18))).show(ui, |ui| {
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.stage_background).inner_margin(egui::Margin::symmetric(28, 18))).show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.set_width(ui.available_width());
             match app.ui.backstage_page.as_str() {
@@ -294,19 +321,21 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
     ui.vertical(|ui| {
         // The label sits right under the thumbnail whatever row gap the gallery uses.
         ui.spacing_mut().item_spacing.y = 0.0;
-        ui.set_width(150.0);
-        let (r, resp) = ui.allocate_exact_size(vec2(150.0, 194.0), Sense::click());
+        let size = if app.integrated_titlebar { vec2(112.0, 148.0) } else { vec2(150.0, 194.0) };
+        ui.set_width(size.x);
+        let (r, resp) = ui.allocate_exact_size(size, Sense::click());
         let selected =
             app.integrated_titlebar && ui.ctx().data(|d| d.get_temp::<String>(egui::Id::new("mac_selected_template"))).as_deref() == Some(template);
         ui.painter().rect(
             r,
             if app.integrated_titlebar { 9.0 } else { 2.0 },
             egui::Color32::WHITE,
-            Stroke::new(if selected { 2.0 } else { 0.75 }, if selected || resp.hovered() { t.accent } else { t.border }),
+            Stroke::new(if selected { 2.0 } else { 0.75 }, if selected || resp.hovered() { stage_accent(&t) } else { t.border }),
             egui::StrokeKind::Inside,
         );
         let ppp = ui.ctx().pixels_per_point();
-        let key = format!("tpl:{template}:{ppp}");
+        let month = if template == "calendar" { wordcraft_engine::cmd::now_iso().get(..7).unwrap_or_default().to_string() } else { String::new() };
+        let key = format!("tpl:{template}:{ppp}:{}:{month}", size.x);
         let region = app.session.region();
         let tex = ui.ctx().data(|d| d.get_temp::<egui::TextureHandle>(egui::Id::new(&key))).or_else(|| {
             let mut s = wordcraft_engine::Session::new(wordcraft_doc::Document::new());
@@ -315,7 +344,7 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
             let _ = s.run("file.new", &json!({"template": template}));
             let l = s.export_layout();
             let page = l.pages.first()?;
-            let img = wordcraft_render::render_page(&s.doc, page, 150.0 / page.w * ppp, &crate::canvas::screen_render_options());
+            let img = wordcraft_render::render_page(&s.doc, page, size.x / page.w * ppp, &crate::canvas::screen_render_options());
             let px = img.to_straight();
             let h = ui.ctx().load_texture(
                 &key,
@@ -328,7 +357,13 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
         if let Some(h) = tex {
             egui::Image::new((h.id(), r.size())).corner_radius(if app.integrated_titlebar { 8 } else { 1 }).paint_at(ui, r.shrink(2.0));
         }
-        ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5))).wrap());
+        if selected {
+            egui::Frame::NONE.fill(stage_accent(&t)).corner_radius(5).inner_margin(egui::Margin::symmetric(4, 1)).show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5)).color(stage_ink(&t))).wrap());
+            });
+        } else {
+            ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5))).wrap());
+        }
         if app.integrated_titlebar && resp.clicked() {
             ui.ctx().data_mut(|d| {
                 d.insert_temp(egui::Id::new("mac_selected_template"), template.to_string());
@@ -344,8 +379,15 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
 }
 
 /// The built-in templates in gallery order: display label and the `file.new` template id.
-const TEMPLATES: [(&str, &str); 5] =
-    [("Blank document", "blank"), ("Studio handbook (sample)", "sample"), ("Letter", "letter"), ("Résumé", "resume"), ("Report", "report")];
+const TEMPLATES: [(&str, &str); 7] = [
+    ("Blank document", "blank"),
+    ("Studio handbook (sample)", "sample"),
+    ("Take notes", "notes"),
+    ("Calendar", "calendar"),
+    ("Letter", "letter"),
+    ("Résumé", "resume"),
+    ("Report", "report"),
+];
 
 /// How many templates Home shows before "More templates" (the rest are on New).
 const HOME_TEMPLATES: usize = 4;
@@ -376,7 +418,7 @@ fn home_page(app: &mut WordApp, ui: &mut Ui) {
     );
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = vec2(18.0, 0.0);
-        for (label, template) in TEMPLATES.into_iter().take(HOME_TEMPLATES) {
+        for (label, template) in TEMPLATES.into_iter().filter(|(_, id)| !matches!(*id, "notes" | "calendar")).take(HOME_TEMPLATES) {
             template_tile(ui, app, label, template);
         }
     });
@@ -419,36 +461,128 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
     let mut favourites = ui.ctx().data(|d| d.get_temp::<bool>(filter_id)).unwrap_or(false);
     if app.integrated_titlebar {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut favourites, false, "Recents");
-            ui.selectable_value(&mut favourites, true, "Favourites");
+            for (value, label) in [(false, "Recents"), (true, "Favourites")] {
+                let active = favourites == value;
+                if ui
+                    .add(
+                        egui::Button::new(egui::RichText::new(label).font(semibold(14.0)).color(if active {
+                            egui::Color32::BLACK
+                        } else {
+                            t.text_dim
+                        }))
+                        .fill(if active { t.stage_tab } else { egui::Color32::TRANSPARENT })
+                        .stroke(Stroke::NONE)
+                        .corner_radius(6)
+                        .min_size(vec2(96.0, 30.0)),
+                    )
+                    .clicked()
+                {
+                    favourites = value;
+                }
+            }
         });
         ui.ctx().data_mut(|d| d.insert_temp(filter_id, favourites));
     } else {
         ui.label(egui::RichText::new(tl!("Recent")).font(semibold(16.0)));
     }
+    let query = ui.ctx().data(|data| data.get_temp::<String>(egui::Id::new("mac_document_search"))).unwrap_or_default().to_lowercase();
+    let sort_id = egui::Id::new("recent_sort_newest");
+    let mut newest = ui.ctx().data(|data| data.get_temp::<bool>(sort_id)).unwrap_or(true);
     if app.integrated_titlebar {
         ui.add_space(8.0);
-        egui::Frame::NONE.fill(t.hover).inner_margin(egui::Margin::symmetric(12, 6)).show(ui, |ui| {
-            ui.set_min_width((ui.available_width() - 24.0).max(0.0));
-            ui.label(egui::RichText::new("Name").font(medium(11.5)));
+        let (header, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+        ui.painter().rect_filled(header, 0.0, t.stage_header);
+        row_text(ui, "Name", pos2(header.min.x + 44.0, header.min.y + 7.0), header.width() - 240.0, medium(12.0), t.text);
+        let sort = ui.put(
+            Rect::from_min_size(pos2(header.max.x - 174.0, header.min.y + 3.0), vec2(168.0, 24.0)),
+            egui::Button::new(egui::RichText::new("Last opened by you  ▾").font(semibold(12.0))).frame(false),
+        );
+        egui::Popup::menu(&sort).show(|ui| {
+            ui.selectable_value(&mut newest, true, "Newest first");
+            ui.selectable_value(&mut newest, false, "Oldest first");
         });
+        ui.ctx().data_mut(|data| data.insert_temp(sort_id, newest));
     }
     ui.add_space(6.0);
-    let paths = if app.integrated_titlebar && favourites { app.ui.favourite_documents.clone() } else { app.ui.recent.clone() };
+    let mut paths = if app.integrated_titlebar && favourites { app.ui.favourite_documents.clone() } else { app.ui.recent.clone() };
+    paths.retain(|path| query.is_empty() || path.to_lowercase().contains(&query));
+    paths.sort_by(|left, right| {
+        let comparison = app.ui.recent_opened.get(left).copied().unwrap_or(0).cmp(&app.ui.recent_opened.get(right).copied().unwrap_or(0));
+        if newest { comparison.reverse() } else { comparison }
+    });
     if paths.is_empty() {
         ui.label(egui::RichText::new(tl!("Documents you open will show up here.")).color(t.text_dim));
     }
-    for p in paths.into_iter().take(app.ui.recent_shown()) {
-        let name = std::path::Path::new(&p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(p.clone());
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), if app.integrated_titlebar { 48.0 } else { 40.0 }), Sense::click());
+    let mut icon_budget = true;
+    for (index, p) in paths.into_iter().take(app.ui.recent_shown()).enumerate() {
+        let name = std::path::Path::new(&p).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or(p.clone());
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), if app.integrated_titlebar { 56.0 } else { 40.0 }), Sense::click());
         let selected = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::new("mac_selected_recent"))).as_deref() == Some(&p);
-        if selected || resp.hovered() {
-            ui.painter().rect_filled(r, 7.0, if selected { t.checked } else { t.hover });
+        if selected || resp.hovered() || (app.integrated_titlebar && index % 2 == 1) {
+            ui.painter().rect_filled(
+                r,
+                7.0,
+                if selected {
+                    let accent = stage_accent(&t);
+                    if t.dark { egui::Color32::from_rgb(accent.r() / 4 * 3, accent.g() / 4 * 3, accent.b() / 4 * 3) } else { accent }
+                } else if resp.hovered() {
+                    t.hover
+                } else {
+                    t.stage_alternate
+                },
+            );
         }
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(22.0, 22.0)), "printLayout", t.icon, t.accent);
-        row_text(ui, &name, pos2(r.min.x + 40.0, r.min.y + 5.0), r.width() - 82.0, medium(13.0), t.text);
-        row_text(ui, &p, pos2(r.min.x + 40.0, r.min.y + 25.0), r.width() - 82.0, regular(11.0), t.text_dim);
-        let star_rect = Rect::from_center_size(pos2(r.max.x - 20.0, r.center().y), vec2(28.0, 28.0));
+        let icon_key = egui::Id::new(("native-document-icon", &p));
+        let cached = ui.ctx().data(|data| data.get_temp::<Option<egui::TextureHandle>>(icon_key));
+        let texture = match cached {
+            Some(texture) => texture,
+            None if icon_budget => {
+                icon_budget = false;
+                let texture = app
+                    .services
+                    .document_icon
+                    .as_ref()
+                    .and_then(|hook| hook(&p))
+                    .map(|image| ui.ctx().load_texture(format!("document-icon-{p}"), image, egui::TextureOptions::LINEAR));
+                ui.ctx().data_mut(|data| data.insert_temp(icon_key, texture.clone()));
+                ui.ctx().request_repaint();
+                texture
+            }
+            None => None,
+        };
+        let icon_rect = Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(28.0, 32.0));
+        if let Some(texture) = texture {
+            ui.painter().image(texture.id(), icon_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), egui::Color32::WHITE);
+        } else {
+            icons::paint(ui.painter(), icon_rect, "printLayout", t.accent, t.accent);
+        }
+        let text_width = if app.integrated_titlebar { r.width() - 284.0 } else { r.width() - 82.0 };
+        let foreground = if selected { stage_ink(&t) } else { t.text };
+        let secondary = if selected {
+            stage_ink(&t).gamma_multiply(0.8)
+        } else if t.dark {
+            t.text_dim.gamma_multiply(0.75)
+        } else {
+            t.text_dim
+        };
+        row_text(ui, &name, pos2(r.min.x + 44.0, r.min.y + 9.0), text_width, regular(14.0), foreground);
+        let breadcrumb = std::path::Path::new(&p)
+            .parent()
+            .map(|parent| parent.components().map(|part| part.as_os_str().to_string_lossy()).collect::<Vec<_>>().join(" › "))
+            .unwrap_or_default();
+        row_text(ui, &breadcrumb, pos2(r.min.x + 44.0, r.min.y + 31.0), text_width, regular(11.5), secondary);
+        let time_rect = Rect::from_min_size(pos2(r.max.x - 150.0, r.min.y), vec2(144.0, r.height()));
+        if app.integrated_titlebar {
+            let timestamp = app.ui.recent_opened.get(&p).copied().unwrap_or(0);
+            ui.painter().text(
+                pos2(time_rect.min.x + 8.0, time_rect.center().y),
+                Align2::LEFT_CENTER,
+                opened_label(timestamp, wordcraft_engine::cmd::now_unix()),
+                regular(13.0),
+                foreground,
+            );
+        }
+        let star_rect = Rect::from_center_size(pos2(r.max.x - 206.0, r.center().y), vec2(28.0, 28.0));
         let star = ui.interact(star_rect, ui.id().with(("favourite", &p)), Sense::click());
         if app.integrated_titlebar {
             let fav = app.ui.favourite_documents.contains(&p);
@@ -457,23 +591,106 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
                 Align2::CENTER_CENTER,
                 if fav { "★" } else { "☆" },
                 regular(18.0),
-                if fav { t.accent } else { t.text_dim },
+                if selected {
+                    foreground
+                } else if fav {
+                    t.accent
+                } else {
+                    t.text_dim
+                },
             );
             if star.on_hover_text(if fav { "Remove favourite" } else { "Add favourite" }).clicked() {
                 let _ = app.run("ui.favoriteDocument", json!({"path":p}));
             }
+            let more_rect = Rect::from_center_size(pos2(r.max.x - 172.0, r.center().y), vec2(28.0, 28.0));
+            let more = ui.put(more_rect, egui::Button::new(egui::RichText::new("•••").color(foreground)).frame(false));
+            egui::Popup::menu(&more).show(|ui| {
+                if ui.button("Open").clicked() {
+                    let _ = app.run("file.open", json!({"path":p}));
+                    ui.close();
+                }
+                if ui.button("Copy path").clicked() {
+                    ui.ctx().copy_text(p.clone());
+                    ui.close();
+                }
+                if ui.button("Remove from Recent").clicked() {
+                    let _ = app.run("ui.removeRecent", json!({"path":p}));
+                    ui.close();
+                }
+            });
         }
-        if app.integrated_titlebar && resp.clicked() && !star_rect.contains(ui.input(|i| i.pointer.interact_pos()).unwrap_or_default()) {
+        let row_action = !app.integrated_titlebar || ui.input(|i| i.pointer.interact_pos()).is_some_and(|point| point.x < r.max.x - 226.0);
+        if app.integrated_titlebar && resp.clicked() && row_action {
             ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("mac_selected_recent"), p.clone()));
         }
-        if ((resp.double_clicked() && !star_rect.contains(ui.input(|i| i.pointer.interact_pos()).unwrap_or_default()))
-            || (!app.integrated_titlebar && resp.clicked()))
-            && app.run("file.open", json!({"path": p})).is_ok()
+        if ((resp.double_clicked() && row_action) || (!app.integrated_titlebar && resp.clicked())) && app.run("file.open", json!({"path": p})).is_ok()
         {
             app.ui.backstage = false;
             app.canvas.want_focus = true;
         }
+        resp.on_hover_text(&p);
+        // Positioned row actions must not move the next row above this row's bottom edge.
+        ui.advance_cursor_after_rect(r);
     }
+}
+
+pub(crate) fn stage_accent(tokens: &Tokens) -> egui::Color32 {
+    #[cfg(target_os = "macos")]
+    {
+        static COLOUR: std::sync::OnceLock<Option<egui::Color32>> = std::sync::OnceLock::new();
+        if let Some(colour) = COLOUR.get_or_init(|| {
+            let output = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleAccentColor"]).output().ok()?;
+            if !output.status.success() {
+                return None;
+            }
+            let value = std::str::from_utf8(&output.stdout).ok()?.trim().parse::<i32>().ok()?;
+            let rgb = match value {
+                -1 => [142, 142, 147],
+                0 => [255, 69, 58],
+                1 => [255, 159, 10],
+                2 => [255, 214, 10],
+                3 => [48, 209, 88],
+                4 => [10, 132, 255],
+                5 => [191, 90, 242],
+                6 => [255, 55, 155],
+                _ => return None,
+            };
+            Some(egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]))
+        }) {
+            return *colour;
+        }
+    }
+    tokens.accent
+}
+
+fn stage_ink(tokens: &Tokens) -> egui::Color32 {
+    if stage_accent(tokens) == tokens.accent { tokens.on_accent } else { egui::Color32::WHITE }
+}
+
+fn opened_label(timestamp: u64, now: u64) -> String {
+    if timestamp == 0 {
+        return "—".into();
+    }
+    let elapsed = now.saturating_sub(timestamp);
+    if elapsed < 60 {
+        return "Just now".into();
+    }
+    if elapsed < 3600 {
+        return format!("{}m ago", elapsed / 60);
+    }
+    if elapsed < 86400 {
+        return format!("{}h ago", elapsed / 3600);
+    }
+    let date = wordcraft_engine::cmd::iso_from_unix_secs(timestamp.min(253_402_300_799));
+    let month = date
+        .get(5..7)
+        .and_then(|value| value.parse::<usize>().ok())
+        .and_then(|value| ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].get(value.saturating_sub(1)))
+        .copied()
+        .unwrap_or("");
+    let day = date.get(8..10).and_then(|value| value.parse::<u32>().ok()).unwrap_or(1);
+    let current = wordcraft_engine::cmd::iso_from_unix_secs(now.min(253_402_300_799));
+    if date.get(..4) != current.get(..4) { format!("{day} {month} {}", date.get(..4).unwrap_or("")) } else { format!("{day} {month}") }
 }
 
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
@@ -603,7 +820,7 @@ mod tests {
     #[test]
     fn template_search_matches_labels_case_insensitively() {
         let ids = |q: &str| matching_templates(q).into_iter().map(|(_, id)| id).collect::<Vec<_>>();
-        assert_eq!(ids(""), ["blank", "sample", "letter", "resume", "report"]);
+        assert_eq!(ids(""), ["blank", "sample", "notes", "calendar", "letter", "resume", "report"]);
         assert_eq!(ids("  LETTER "), ["letter"]);
         assert_eq!(ids("re"), ["resume", "report"]);
         assert_eq!(ids("résumé"), ["resume"]);
@@ -813,6 +1030,27 @@ mod tests {
 mod mac_stage_tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+    #[test]
+    fn opening_times_persist_and_edits_do_not_change_them() {
+        let file = std::env::temp_dir().join(format!("wordcraft-recent-time-{}.txt", std::process::id()));
+        std::fs::write(&file, "Synthetic document").unwrap();
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        app.execute("file.open", json!({"path":file})).unwrap();
+        let path = app.session.path.as_ref().unwrap().to_string_lossy().into_owned();
+        let opened = app.ui.recent_opened[&path];
+        assert!(opened > 0);
+        app.execute("text.insert", json!({"text":"Edit"})).unwrap();
+        assert_eq!(app.ui.recent_opened[&path], opened);
+        let bytes = serde_json::to_vec(&app.prefs()).unwrap();
+        assert_eq!(crate::UiState::from_json(&bytes).unwrap().recent_opened[&path], opened);
+        app.execute("ui.removeRecent", json!({"path":path})).unwrap();
+        assert!(app.ui.recent_opened.is_empty());
+        assert!(file.exists());
+        std::fs::remove_file(file).unwrap();
+        assert_eq!(opened_label(0, opened), "—");
+        assert_eq!(opened_label(opened - 6 * 60, opened), "6m ago");
+        assert_eq!(opened_label(u64::MAX, opened), "Just now");
+    }
     #[test]
     fn mac_start_screen_navigation_and_default_create_work() {
         for width in [640.0, 1440.0] {
