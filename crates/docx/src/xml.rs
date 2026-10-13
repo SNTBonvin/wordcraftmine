@@ -38,6 +38,8 @@ pub const NAMESPACES: &[(&str, &str)] = &[
     ("v", "urn:schemas-microsoft-com:vml"),
     ("o", "urn:schemas-microsoft-com:office:office"),
     ("w10", "urn:schemas-microsoft-com:office:word"),
+    // Extended charts (`cx:chart`): kept verbatim for the next save (#997).
+    ("cx", "http://schemas.microsoft.com/office/drawing/2014/chartex"),
 ];
 
 /// The `a:ext` URI under which a drawing is marked decorative ([MS-ODRAWXML]), and the

@@ -906,6 +906,56 @@ fn graphics(d: &Document) -> Vec<InlineObject> {
     paras(d).iter().flat_map(|p| p.objects.iter()).filter(|o| matches!(o, InlineObject::Graphic { .. })).cloned().collect()
 }
 
+const CX_PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really a png";
+
+/// A document with an extended (`cx:chart`) drawing: the chart Choice plus a picture Fallback.
+fn cx_docx() -> Vec<u8> {
+    let body = r#"<w:p><w:r><mc:AlternateContent><mc:Choice Requires="cx"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="2743200" cy="1371600"/><wp:docPr id="3" name="Chart 3"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2014/chartex"><cx:chart xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId7"/></cx:chart></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="2743200" cy="1371600"/><wp:docPr id="3" name="Chart 3"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="3" name="Chart 3"/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2743200" cy="1371600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></a:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Fallback></mc:AlternateContent></w:r></w:p>"#;
+    let chart_rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Worksheet.xlsx"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors1.xml"/></Relationships>"#;
+    let types = format!(
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="xlsx" ContentType="{CT_XLSX}"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/charts/chart1.xml" ContentType="{CT_CHART}"/><Override PartName="/word/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/></Types>"#
+    );
+    let r = rels(&[("rId7", "chart", "charts/chart1.xml"), ("rId9", "image", "media/fallback.png")]);
+    let doc = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W_NS}><w:body>{body}</w:body></w:document>"#);
+    zip(&[
+        ("_rels/.rels", ROOT_RELS.as_bytes()),
+        ("word/document.xml", doc.as_bytes()),
+        ("word/_rels/document.xml.rels", r.as_bytes()),
+        ("[Content_Types].xml", types.as_bytes()),
+        ("word/charts/chart1.xml", CHART_XML.as_bytes()),
+        ("word/charts/_rels/chart1.xml.rels", chart_rels.as_bytes()),
+        ("word/charts/colors1.xml", COLORS_XML.as_bytes()),
+        ("word/embeddings/Microsoft_Excel_Worksheet.xlsx", WORKBOOK.as_bytes()),
+        ("word/media/fallback.png", CX_PNG),
+    ])
+}
+
+#[test]
+fn extended_chart_round_trips_with_its_parts() {
+    // #997: the `cx:chart` Choice shows its fallback picture but keeps the chart data.
+    let d = wordcraft_docx::read(&cx_docx()).unwrap();
+    let g = graphics(&d);
+    let [wordcraft_doc::InlineObject::Graphic { graphic, .. }] = g.as_slice() else { panic!("{g:?}") };
+    assert!(graphic.source.is_some(), "the chart markup is kept");
+    assert!(graphic.items.iter().any(|i| matches!(i, wordcraft_doc::graphic::GraphicItem::Image { .. })), "the fallback shows");
+    let out = wordcraft_docx::write(&d).unwrap();
+    let files = unzip(&out);
+    let body = text(&files, "word/document.xml");
+    assert!(body.contains("2014/chartex"), "the extended chart is written back");
+    assert!(body.contains("Fallback"), "with its fallback picture");
+    let ids = attr_values(&body, "c:chart", "r:id");
+    assert_eq!(ids.len(), 1, "{body}");
+    assert_eq!(check_chart(&files, &ids[0]), "word/charts/chart1.xml");
+    assert!(files.keys().any(|k| k.starts_with("word/media/")), "fallback picture kept");
+    // Read back: still drawn from the fallback, and a second save still carries the data.
+    let back = wordcraft_docx::read(&out).unwrap();
+    let g = graphics(&back);
+    assert_eq!(g.len(), 1);
+    let again = unzip(&wordcraft_docx::write(&back).unwrap());
+    let ids = attr_values(&text(&again, "word/document.xml"), "c:chart", "r:id");
+    check_chart(&again, &ids[0]);
+}
+
 #[test]
 fn chart_round_trips_with_its_parts() {
     let d = wordcraft_docx::read(&chart_docx()).unwrap();

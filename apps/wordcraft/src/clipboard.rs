@@ -50,6 +50,15 @@ pub fn text() -> Option<String> {
     open()?.get_text().ok()
 }
 
+/// Write a copied picture as image data (#375). A failure is logged, never fatal.
+pub fn set_image(width: u32, height: u32, rgba: Vec<u8>) {
+    let Some(mut clipboard) = open() else { return };
+    let image = arboard::ImageData { width: width as usize, height: height as usize, bytes: rgba.into() };
+    if let Err(e) = clipboard.set_image(image) {
+        log::warn!("clipboard: {e}");
+    }
+}
+
 /// Write text and its HTML rendering to the system clipboard (Copy/Cut, #1243). A failure is
 /// logged, never fatal: the text copy already went through egui.
 pub fn set(text: &str, html: &str) {

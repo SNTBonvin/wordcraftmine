@@ -677,6 +677,8 @@ impl Reader<'_> {
             "mc:AlternateContent" => {
                 if let Some(o) = self.read_ink_alternate(sc, k, rels) {
                     self.emit_obj(sc, pb, o, props);
+                } else if let Some(o) = self.read_opaque_alternate(sc, k, rels) {
+                    self.emit_obj(sc, pb, o, props);
                 } else if let Some(c) = children_of_choice(k) {
                     for x in c.els() {
                         self.read_run_child(sc, pb, x, props, rels, note, depth + 1);
@@ -996,6 +998,35 @@ impl Reader<'_> {
             }
         }
         Some(object)
+    }
+
+    /// An AlternateContent whose Choice is a drawing WordCraft doesn't model (extended charts
+    /// like `cx:chart`, #997): the fallback picture shows, and the whole Choice rides along for
+    /// the next save, chart data and workbook included. `None` when the Choice is understood
+    /// (the normal path takes it) or has no drawing, or the fallback has no picture.
+    fn read_opaque_alternate(&mut self, sc: &mut StoryCtx, ac: &El, rels: &Rels) -> Option<InlineObject> {
+        // Keep in sync with `children_of_choice`: understood requirements take the normal path.
+        const KNOWN: &[&str] = &["wps", "wpg", "wpc", "wpi", "w14", "w15", "wp14", "a14", "w16se", "w16cid", "w16", "w16cex", "w16sdtdh", "v"];
+        let choice = ac.child("mc:Choice")?;
+        if choice.attr("Requires").unwrap_or("").split_whitespace().all(|r| KNOWN.contains(&r)) {
+            return None;
+        }
+        choice.child("w:drawing")?;
+        let fallback = ac.child("mc:Fallback")?;
+        let fb_drawing = fallback.child("w:drawing")?;
+        let InlineObject::Image { media, w, h, alt, float, .. } = self.read_drawing(sc, fb_drawing, rels)? else { return None };
+        let kept =
+            El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback.clone())] };
+        let source = self.keep_embedded(&kept, rels, &[])?;
+        let graphic = Arc::new(Graphic {
+            kind: GraphicKind::Chart,
+            items: vec![GraphicItem::Image { rect: [0.0, 0.0, w, h], media }],
+            w,
+            h,
+            source: Some(source),
+            ..Default::default()
+        });
+        Some(InlineObject::Graphic { w, h, alt, float, graphic })
     }
 
     /// The chart or SmartArt diagram in an `a:graphicData`, as items in points from its top-left

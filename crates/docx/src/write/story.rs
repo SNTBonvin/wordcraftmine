@@ -538,7 +538,7 @@ impl Writer<'_> {
                 if ink {
                     Self::ink_transform(&mut root, (graphic.w, graphic.h), (*gw, *gh), float, 0);
                 }
-                let alternate = (ink && root.name == "mc:AlternateContent").then_some(&root);
+                let alternate = (root.name == "mc:AlternateContent").then_some(&root);
                 let fallback = alternate.and_then(|e| e.child("mc:Fallback"));
                 let native = alternate.and_then(|e| e.child("mc:Choice")).and_then(|e| e.find("a:graphic"));
                 if alternate.is_some() && native.is_none() {
@@ -548,8 +548,15 @@ impl Writer<'_> {
                 w.open("w:r", &[]);
                 self.rpr(w, props);
                 if fallback.is_some() {
+                    // Ink normalizes its Choice to `wpi`; anything else keeps the requirements
+                    // its choice stated (#997).
+                    let requires = if ink {
+                        "wpi"
+                    } else {
+                        alternate.and_then(|e| e.child("mc:Choice")).and_then(|e| e.attr("Requires")).unwrap_or("wpi")
+                    };
                     w.open("mc:AlternateContent", &[]);
-                    w.open("mc:Choice", &[("Requires", "wpi")]);
+                    w.open("mc:Choice", &[("Requires", requires)]);
                 }
                 w.open("w:drawing", &[]);
                 let docpr = self.next_docpr();
