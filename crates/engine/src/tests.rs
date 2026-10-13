@@ -5051,10 +5051,6 @@ fn find_replace_and_go_to_open_like_word() {
     assert!(s.run("edit.goto", &json!({"pageBy": i64::MIN})).is_ok(), "hostile numbers never panic");
 }
 
-/// #802: Insert › Picture takes Windows Metafiles (and EMF) at their own frame size, stored under
-/// their own extension so a save writes them as WMF/EMF parts.
-#[cfg(not(target_arch = "wasm32"))]
-#[test]
 /// Typing after `insert.picture` must not delete the picture (#965): the caret lands after
 /// it, collapsed, instead of selecting it.
 #[cfg(not(target_arch = "wasm32"))]
@@ -5075,10 +5071,14 @@ fn typing_after_insert_picture_keeps_the_picture() {
     let mut media = 0;
     s.doc.objects_in_reading_order(&mut |o| media += matches!(o, wordcraft_doc::InlineObject::Image { .. }) as usize);
     assert_eq!(media, 1, "the picture survives typing");
-    assert_eq!(s.doc.plain_text(StoryRef::Body).replace("\n", "\n"), "x\ncap".replace("\n", "\n"));
+    assert_eq!(s.doc.plain_text(StoryRef::Body), "x\ncap");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #802: Insert › Picture takes Windows Metafiles (and EMF) at their own frame size, stored under
+/// their own extension so a save writes them as WMF/EMF parts.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
 fn insert_picture_takes_a_windows_metafile() {
     use wordcraft_doc::para::InlineObject;
     // One WMF record: size in words, function, parameters.

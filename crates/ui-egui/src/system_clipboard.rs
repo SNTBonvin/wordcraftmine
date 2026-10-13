@@ -207,10 +207,7 @@ mod tests {
         use std::rc::Rc;
         let written: Rc<RefCell<Vec<(u32, u32, Vec<u8>)>>> = Rc::default();
         let rec = written.clone();
-        let mut a = app(Services {
-            clipboard_write_image: Some(Box::new(move |w, h, px| rec.borrow_mut().push((w, h, px)))),
-            ..Default::default()
-        });
+        let mut a = app(Services { clipboard_write_image: Some(Box::new(move |w, h, px| rec.borrow_mut().push((w, h, px)))), ..Default::default() });
         let mut png = Vec::new();
         image::RgbaImage::from_pixel(8, 4, image::Rgba([10, 80, 160, 255]))
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)

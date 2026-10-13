@@ -68,10 +68,8 @@ pub fn paste_options(app: &mut WordApp, ctx: &egui::Context) {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 for (label, id) in [("Keep Source", "edit.paste"), ("Merge", "edit.pasteMerge"), ("Text Only", "edit.pasteText")] {
-                    if ui.small_button(crate::i18n::t(label)).clicked() {
-                        if app.run("edit.undo", json!({})).is_ok() {
-                            let _ = app.run(id, json!({}));
-                        }
+                    if ui.small_button(crate::i18n::t(label)).clicked() && app.run("edit.undo", json!({})).is_ok() {
+                        let _ = app.run(id, json!({}));
                     }
                 }
             });

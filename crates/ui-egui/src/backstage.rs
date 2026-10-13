@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn template_search_matches_labels_case_insensitively() {
         let ids = |q: &str| matching_templates(q).into_iter().map(|(_, id)| id).collect::<Vec<_>>();
-        assert_eq!(ids(""), ["blank", "sample", "letter", "resume", "report"]);
+        assert_eq!(ids(""), ["blank", "sample", "letter", "resume", "report", "mla", "apa"]);
         assert_eq!(ids("  LETTER "), ["letter"]);
         assert_eq!(ids("re"), ["resume", "report"]);
         assert_eq!(ids("résumé"), ["resume"]);

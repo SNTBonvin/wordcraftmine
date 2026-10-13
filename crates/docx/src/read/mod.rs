@@ -85,6 +85,8 @@ pub(crate) struct Reader<'p> {
     /// was kept while reading (those not glued to are dropped at the end).
     pub glued: HashSet<u32>,
     pub shape_ids: bool,
+    /// Whether we've seen a VML shape fallback and need to keep its AlternateContent on save.
+    vml_shape_keep: bool,
     /// The main document part's name.
     main: String,
     /// The package's content types, read when first needed.
@@ -152,6 +154,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         graphic_budget: MAX_GRAPHIC_WORK,
         glued: HashSet::new(),
         shape_ids: false,
+        vml_shape_keep: false,
         main: main.clone(),
         content_types: None,
         embedded: EmbeddedManifest::default(),
@@ -159,6 +162,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
     r.pc.minor_font = r.doc.settings.minor_font.clone();
+
     let part = |t: &str| rels.by_type(t).filter(|x| !x.external).map(|x| x.target.clone());
 
     // The font table and the fonts embedded through it ride along as opaque parts.
@@ -300,6 +304,14 @@ pub(crate) struct MoveCtx {
 }
 
 impl Reader<'_> {
+    pub fn has_vml_shape_keep(&self) -> bool {
+        self.vml_shape_keep
+    }
+
+    pub fn set_vml_shape_keep(&mut self, v: bool) {
+        self.vml_shape_keep = v;
+    }
+
     /// A `w:moveFromRangeStart/End` or `w:moveToRangeStart/End`.
     pub fn move_range(&mut self, e: &El) {
         let (side, start) = match e.name.as_str() {
@@ -1068,6 +1080,10 @@ impl Reader<'_> {
                 }
                 "w:zoom" => {
                     s.zoom = k.attr("w:percent").and_then(|v| v.parse::<u32>().ok()).map(|z| z.clamp(10, 500));
+                }
+                "w:displayBackgroundShape" => {
+                    // Page background (color or image) is present; page_color is set by the color attribute
+                    // We don't track the background image here; it's kept in extra_xml for round-trip.
                 }
                 "w:drawingGridHorizontalSpacing" | "w:drawingGridVerticalSpacing" => {
                     if let Some(v) = tw(k, "w:val").filter(|v| *v > 0.0) {

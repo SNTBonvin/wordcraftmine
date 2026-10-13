@@ -680,6 +680,8 @@ impl Reader<'_> {
                     self.emit_obj(sc, pb, o, props);
                 } else if let Some(o) = self.read_opaque_alternate(sc, k, rels) {
                     self.emit_obj(sc, pb, o, props);
+                } else if let Some(o) = self.read_shape_alternate(sc, k, rels) {
+                    self.emit_obj(sc, pb, o, props);
                 } else if let Some(c) = children_of_choice(k) {
                     for x in c.els() {
                         self.read_run_child(sc, pb, x, props, rels, note, depth + 1);
@@ -806,7 +808,6 @@ impl Reader<'_> {
             return;
         }
         if f.phase == Phase::Instr && !nested_in_instr && is_range_instr(&f.instr) {
-            // A range field with no result yet.
             self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
             return;
@@ -814,7 +815,7 @@ impl Reader<'_> {
         // A cached result with tracked revisions in it (an edited SUM subtotal, a formula
         // whose result changed, #1037): the result is ordinary content between range markers
         // so Accept/Reject All see the revisions, as pandoc does.
-        if !nested_in_instr && f.buf.iter().any(|(_, p)| p.del.is_some() || p.ins.is_some()) {
+        if !nested_in_instr && f.buf.iter().any(|(_, p)| (p.del.is_some() && p.del != f.props.del) || (p.ins.is_some() && p.ins != f.props.ins)) {
             self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
             for (it, p) in f.buf {
                 match it {
@@ -852,6 +853,8 @@ impl Reader<'_> {
             None => (f.instr.trim().to_string(), result),
         };
         let obj = InlineObject::Field { instr, result, locked: f.locked, code: false };
+        // If this field is nested inside another field's instruction, append the result
+        // to the parent's instruction text instead of emitting a separate object.
         if let Some(parent) = sc.fields.last_mut()
             && !parent.spilled
             && parent.phase == Phase::Instr
@@ -870,7 +873,15 @@ impl Reader<'_> {
                 continue;
             }
             f.spilled = true;
-            pb.push_obj(InlineObject::Field { instr: f.instr.trim().to_string(), result: String::new(), locked: f.locked, code: false }, &f.props);
+            let result = f
+                .buf
+                .iter()
+                .map(|(it, _)| match it {
+                    Item::Text(t) => t.to_string(),
+                    Item::Obj(o) => o.plain_text().to_string(),
+                })
+                .collect::<String>();
+            pb.push_obj(InlineObject::Field { instr: f.instr.trim().to_string(), result, locked: f.locked, code: false }, &f.props);
             for (it, p) in f.buf.drain(..) {
                 match it {
                     Item::Text(t) => pb.push_text(&t, &p),
@@ -1051,6 +1062,31 @@ impl Reader<'_> {
             ..Default::default()
         });
         Some(InlineObject::Graphic { w, h, alt, float, graphic })
+    }
+
+    /// A shape (or shape group) whose native markup is a `wps:wsp`/`wpg:wgp` drawing, with a
+    /// VML fallback: the model keeps what it can draw, and the whole AlternateContent rides
+    /// along so a save writes the shapes back for other apps (#886). `None` when the Choice
+    /// holds no drawing WordCraft reads, or the fallback has none.
+    fn read_shape_alternate(&mut self, sc: &mut StoryCtx, ac: &El, rels: &Rels) -> Option<InlineObject> {
+        let choice = children_of_choice(ac)?;
+        let drawing = choice.child("w:drawing")?;
+        // The fallback keeps the shape for apps without the new namespaces; the model needs no
+        // VML, so only its presence is recorded (through `keep`).
+        let fallback = ac.child("mc:Fallback");
+        if fallback.is_some_and(|f| f.child("w:drawing").is_some_and(|d| d.find("v:shape").is_some())) && !self.has_vml_shape_keep() {
+            self.set_vml_shape_keep(true);
+        }
+        let mut object = self.read_drawing(sc, drawing, rels)?;
+        let kept = El { name: "mc:AlternateContent".into(), attrs: Vec::new(), kids: vec![Node::El(choice.clone()), Node::El(fallback?.clone())] };
+        let source = self.keep_embedded(&kept, rels, &[]);
+        // Only drawing objects carry source markup; anything else keeps reading as before.
+        if let Some(src) = source
+            && let Some(set) = object.source_slot_mut()
+        {
+            *set = Some(src);
+        }
+        Some(object)
     }
 
     /// The chart or SmartArt diagram in an `a:graphicData`, as items in points from its top-left

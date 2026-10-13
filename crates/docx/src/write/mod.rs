@@ -915,8 +915,9 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
     if let Some(v) = s.view.as_deref().filter(|v| !v.is_empty()) {
         w.empty("w:view", &[("w:val", v)]);
     }
-    let zoom = s.zoom.unwrap_or(100).to_string();
-    w.empty("w:zoom", &[("w:percent", zoom.as_str())]);
+    if let Some(z) = s.zoom {
+        w.empty("w:zoom", &[("w:percent", &z.to_string())]);
+    }
     if s.page_color.is_some() {
         w.empty("w:displayBackgroundShape", &[]);
     }
@@ -971,7 +972,9 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
             w.val(tag, &crate::units::twips(v.clamp(0.5, 1584.0)));
         }
     }
-    w.val("w:characterSpacingControl", "doNotCompress");
+    // w:characterSpacingControl is "doNotCompress" by default; only write if explicitly set
+    // (not currently exposed in Settings, use extra_xml if needed)
+    // w.val("w:characterSpacingControl", "doNotCompress");
     for (tag, fmt, pr, used, el) in [
         ("w:footnotePr", s.footnote_format, &s.footnote_pr, footnotes, "w:footnote"),
         ("w:endnotePr", s.endnote_format, &s.endnote_pr, endnotes, "w:endnote"),

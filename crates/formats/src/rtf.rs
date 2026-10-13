@@ -1829,20 +1829,20 @@ pub fn import(bytes: &[u8]) -> Result<Document, String> {
     }
     // The Normal style definition's font, size and spacing become the style's (#1264).
     let (font, size, sa, sb) = normal;
-    if font.is_some() || size.is_some() || sa.is_some() || sb.is_some() {
-        if let Some(st) = doc.styles.get_mut("Normal") {
-            if let Some(f) = font.filter(|f| !f.trim().is_empty()) {
-                st.chr.font = Some(f);
-            }
-            if size.is_some() {
-                st.chr.size = size;
-            }
-            if sa.is_some() {
-                st.para.space_after = sa;
-            }
-            if sb.is_some() {
-                st.para.space_before = sb;
-            }
+    if (font.is_some() || size.is_some() || sa.is_some() || sb.is_some())
+        && let Some(st) = doc.styles.get_mut("Normal")
+    {
+        if let Some(f) = font.filter(|f| !f.trim().is_empty()) {
+            st.chr.font = Some(f);
+        }
+        if size.is_some() {
+            st.chr.size = size;
+        }
+        if sa.is_some() {
+            st.para.space_after = sa;
+        }
+        if sb.is_some() {
+            st.para.space_before = sb;
         }
     }
     Ok(doc)
