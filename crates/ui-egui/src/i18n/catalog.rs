@@ -133,6 +133,8 @@ impl Catalog {
     }
 
     /// Entries translated (contexts count separately): the coverage floor of #1189.
+    /// Test-only: production code looks keys up instead of counting them.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.plain.len() + self.contextual.len()
     }

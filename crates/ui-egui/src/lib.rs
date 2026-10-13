@@ -130,6 +130,8 @@ pub struct Services {
     /// Desktop: write text and its HTML rendering to the system clipboard (Copy/Cut, #1243).
     /// `None` keeps the text-only copy through egui.
     pub clipboard_write: Option<Box<dyn Fn(&str, &str)>>,
+    /// Desktop: write a copied picture as image data (Copy/Cut, #375). `None` copies text only.
+    pub clipboard_write_image: Option<Box<dyn Fn(u32, u32, Vec<u8>)>>,
     /// Desktop: the HTML on the system clipboard — another program's formatted copy (a Word
     /// document, a web page) — if any. Paste keeps its formatting (#687); see [`system_clipboard`].
     pub clipboard_html: Option<Box<dyn Fn() -> Option<String>>>,

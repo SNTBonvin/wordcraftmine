@@ -333,7 +333,8 @@ fn dictionaries(app: &mut WordApp, ui: &mut Ui) {
         }
     };
     for lang in missing.iter().take(4) {
-        ui.label(egui::RichText::new(tl!("No dictionary for {lang}: those runs won't be spell-checked.")).small());
+        let text = crate::i18n::fmt(tl!("No dictionary for {lang}: those runs won't be spell-checked."), &[("lang", lang)]);
+        ui.label(egui::RichText::new(text).small());
     }
 }
 

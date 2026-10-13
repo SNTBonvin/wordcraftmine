@@ -2688,7 +2688,7 @@ mod tests {
         // #1065: a middle press starts autoscrolling, another (or primary, or Escape) stops it.
         use egui::{Event, PointerButton};
         let mods = egui::Modifiers::default();
-        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("one\ntwo\nthree")), crate::Services::default());
+        let a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("one\ntwo\nthree")), crate::Services::default());
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();
