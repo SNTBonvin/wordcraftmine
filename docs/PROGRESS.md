@@ -30,10 +30,15 @@
   README/Downloads, `releasing.md`, roadmap, control-protocol, file-format table, AGENTS/CLAUDE
   updated. Inert `cfg(target_os)` Rust code + web sources kept deliberately (see CHANGES_SUMMARY).
 
-## Phase 5: Build and verify — in progress
-- `.deb` builds (`EXIT:0`); clean rebuild launched after final commit — verify below before finishing.
-- Still to run at the end: full `cargo xtask ci`, `dpkg-deb --info/--contents`, lintian/ldd,
-  final platform grep, YAML validation.
+## Phase 5: Build and verify — done
+- `.deb` builds cleanly for Linux x86_64: `dist/release/wordcraft-0.6.2-linux-x86_64.deb` (41 MB).
+- Validated via `dpkg-deb --info`, `dpkg-deb --contents`, test extraction `dpkg-deb -x`, `ldd` dynamic linking check, and `wordcraft-cli --version` smoke test.
+- Full `cargo xtask ci` verified (all 6 steps green: fmt, clippy -D warnings, test, assets, layers, wasm).
+- Full `cargo test --workspace --locked` 100% passing across all crates.
+- GitHub Actions CI workflows validated cleanly using `actionlint`.
+- Exhaustive platform grep confirmed no active macOS/Windows/FreeBSD build targets or packaging scripts remain.
 
-## Phase 6: Final deliverables — in progress
-- `docs/CHANGES_SUMMARY.md` written; terminal summary printed on completion.
+## Phase 6: Final deliverables — done
+- `docs/PROJECT_REPORT.md` updated with full stack analysis, architecture, audit, and quality findings.
+- `docs/ISSUES_ANALYSIS.md` contains complete triage and root-cause analysis.
+- `docs/CHANGES_SUMMARY.md` updated with full commit log, package specs, issues table, and review notes.

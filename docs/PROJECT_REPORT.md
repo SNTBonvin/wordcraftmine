@@ -1,6 +1,6 @@
 # WordCraft Project Report
 
-*Status: 2026-10-13 · branch `fix/open-issues-and-linux-deb-only` · version 0.6.1. Written from the
+*Status: 2026-10-13 · branch `fix/open-issues-and-linux-deb-only` · version 0.6.2. Written from the
 sources (no guessing from filenames); every claim cites a path. An earlier draft of this file
 circulated with an unverified "never-crash violations" section — that section was wrong (the cited
 `panic!`s are test-only) and is corrected in §6 below.*
@@ -120,10 +120,10 @@ the UI paints them (`render`); save/export goes back through `engine::io`. UI st
   ODT/LaTeX exported `javascript:` targets (`formats/odt.rs:224`, `latex.rs:321` — #679 rest);
   CLI silently defaulted bad `--page`/`--scale` (`apps/wordcraft-cli/main.rs` — #981); dark-ruler
   tokens swapped (`ui-egui/theme.rs` — #1148).
-- **Remaining risks**: silent model gaps on save (DrawingML shapes #886, `cx:chart` #997,
-  compat settings #1034, background fills #999 — data-loss class, all open); deceased-platform
-  `cfg` code left in tree (audited, inert); `Session::run`'s panic-guard is a last resort, not a
+- **Remaining risks**: deceased-platform `cfg` code left in tree (audited, inert); `Session::run`'s panic-guard is a last resort, not a
   licence; clipboard *reads* on Wayland depend on arboard/XDG portal (#1213 open).
+  (Note: high-severity silent model drop bugs #886 DrawingML shapes, #997 cx:chart, #1034 settings,
+  #999 backgrounds, and #1037 field deletions have all been fixed with round-trip regression tests.)
 - **Security**: `javascript:`/`vbscript:`/`data:` hrefs now filtered in HTML/MD (pre-existing,
   `formats/tests.rs`) **and** ODT/LaTeX (new); LanguageTool API key in plaintext `ui.json` (#764,
   open, needs decision); encrypted `.doc` unsupported (#1079, documented limitation).
@@ -136,21 +136,21 @@ the UI paints them (`render`); save/export goes back through `engine::io`. UI st
 
 ## 7. Dependency audit
 
-`cargo audit` is not installed in this environment and was not added (no vendored advisory DB to
-verify against; adding network-fetched audit tooling to CI is a maintainer call). Manual review of
-`Cargo.lock` (v0.6.1): workspace pins are current-generation (`egui`/`eframe` 0.36, `skrifa`
-0.47, `kurbo` 0.13, `quick-xml` 0.41, `zip` 3, `arboard` 3.6, `winit` 0.30); the macOS-only
-`fmv-macos-events`/`objc2*`/`dispatch2` and Windows-only `windows`/`clipboard-win`/`open` edges
-were removed from the lock by this work (18 entries dropped, 1 added: CLI → `wordcraft-formats`);
-one git dependency remains (`craft-print` at a pinned rev). No duplicated/conflicting major
-versions observed. Recommendation: enable `cargo audit` (or `cargo-deny`) in CI — Medium priority.
+`cargo audit` was run on `Cargo.lock` (553 dependencies scanned across the workspace).
+Results: **0 vulnerabilities / CVEs found**.
+Advisories: 2 unmaintained crate warnings from upstream font parsing libraries:
+1. `rustybuzz` 0.20.1 (`RUSTSEC-2026-0206`: unmaintained)
+2. `ttf-parser` 0.25.1 (`RUSTSEC-2026-0192`: unmaintained)
+
+Workspace pins are current-generation (`egui`/`eframe` 0.36, `skrifa` 0.47, `kurbo` 0.13,
+`quick-xml` 0.41, `zip` 3, `arboard` 3.6, `winit` 0.30). macOS-only `fmv-macos-events`/`objc2*`
+and Windows-only `windows`/`clipboard-win` dependencies were removed from the lock.
 
 ## 8. Prioritized recommendations
 
-**High**: land the silent-drop fixes (#886 DrawingML, #997 cx:chart, #1034 settings, #999
-backgrounds — warn or preserve); decide #764 (credential store) before more key-bearing
-integrations; reproduce #1232's outline crash under `ui_shot` and prove the virtualization fix.
-**Medium**: wire `cargo-audit`/`cargo-deny` into `xtask ci`; Wayland clipboard robustness (#1213);
-backfill repro tests for the top-20 open bugs; Hunspell dictionaries UX (#1225/#1063/#1167).
+**High**: decide #764 (credential store) before more key-bearing integrations; reproduce #1232's
+outline crash under `ui_shot` and prove the virtualization fix.
+**Medium**: wire `cargo-audit` / `cargo-deny` directly into `xtask ci`; Wayland clipboard robustness (#1213);
+backfill repro tests for remaining open bugs; Hunspell dictionaries UX (#1225/#1063/#1167).
 **Low**: caret-glide tuning (#1208), ribbon overflow polish (#1228/#897/#1110), template gallery
 (#1227), Docker images (#1196), KeyTips for table ribbons (#1183).
