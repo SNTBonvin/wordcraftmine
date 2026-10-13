@@ -29,6 +29,7 @@
 pub mod affix;
 pub mod bg;
 pub mod dict;
+pub mod es;
 pub mod hunspell;
 pub mod hyphen;
 pub mod lang;
@@ -499,6 +500,7 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang, opts: &Option
     let message = match lang {
         ProofLang::Pl => "Możliwy błąd pisowni",
         ProofLang::Pt => "Possível erro de ortografia",
+        ProofLang::Es => "Posible error de ortografía",
         _ => "Possible spelling mistake",
     };
     Some(Issue { start: a, end: b, kind: IssueKind::Spelling, message: message.into(), suggestions: Vec::new(), lang })
@@ -515,6 +517,7 @@ pub fn is_correct_in_with(word: &str, lang: ProofLang, opts: &Options) -> bool {
         ProofLang::En => is_correct_with(word, opts),
         ProofLang::Pl => accepted_by_options(word, opts) || pl::is_correct(word),
         ProofLang::Pt => accepted_by_options(word, opts) || pt::is_correct(word),
+        ProofLang::Es => accepted_by_options(word, opts) || es::is_correct(word),
         ProofLang::Bg | ProofLang::Other => true,
     }
 }
@@ -525,6 +528,7 @@ pub fn suggest_in(word: &str, max: usize, lang: ProofLang) -> Vec<String> {
         ProofLang::En => suggest(word, max),
         ProofLang::Pl => pl::suggest(word, max),
         ProofLang::Pt => pt::suggest(word, max),
+        ProofLang::Es => es::suggest(word, max),
         ProofLang::Bg | ProofLang::Other => Vec::new(),
     }
 }
@@ -537,6 +541,7 @@ pub fn check_grammar_in(text: &str, lang: ProofLang) -> Vec<Issue> {
         ProofLang::En => check_grammar(text),
         ProofLang::Pl => pl::grammar::check(text),
         ProofLang::Pt => pt::grammar::check(text),
+        ProofLang::Es => es::grammar::check(text),
         ProofLang::Bg | ProofLang::Other => Vec::new(),
     }
 }
@@ -925,7 +930,7 @@ mod tests {
         for l in [None, Some(""), Some("  "), Some("en"), Some("en-US"), Some("en-GB"), Some("EN-us"), Some("en_US")] {
             assert!(has_dictionary(l), "{l:?}");
         }
-        for l in [Some("lt-LT"), Some("fr-FR"), Some("de"), Some("uk"), Some("es"), Some("-US"), Some("e")] {
+        for l in [Some("lt-LT"), Some("fr-FR"), Some("de"), Some("uk"), Some("-US"), Some("e")] {
             assert!(!has_dictionary(l), "{l:?}");
         }
         // The gate follows the dictionaries, not English: every proofed language is proofed.
