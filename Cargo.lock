@@ -5348,6 +5348,8 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "toml",
+ "unicode-bidi",
+ "unicode-bidi-mirroring",
  "wordcraft-doc",
  "wordcraft-engine",
  "wordcraft-fonts",

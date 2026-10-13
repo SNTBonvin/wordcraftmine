@@ -167,36 +167,38 @@ pub fn popup(app: &mut WordApp, ctx: &egui::Context) {
         .order(egui::Order::Foreground)
         .fixed_pos(pos2(anchor.max.x - 180.0, anchor.max.y + 2.0));
     let shown = area.show(ctx, |ui| {
-        egui::Frame::popup(ui.style()).fill(t.menu).show(ui, |ui| {
-            ui.set_min_width(180.0);
-            match &r.control.kind {
-                ControlKind::ComboBox { items, .. } | ControlKind::DropDown { items, .. } => {
-                    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                        for (i, item) in items.iter().enumerate() {
-                            if ui.selectable_label(false, &item.display).clicked() {
-                                let _ = app.run("developer.chooseItem", json!({"at": at_json, "index": i}));
-                                close = true;
+        crate::rtl::root(ui, |ui| {
+            egui::Frame::popup(ui.style()).fill(t.menu).show(ui, |ui| {
+                ui.set_min_width(180.0);
+                match &r.control.kind {
+                    ControlKind::ComboBox { items, .. } | ControlKind::DropDown { items, .. } => {
+                        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                            for (i, item) in items.iter().enumerate() {
+                                if ui.selectable_label(false, &item.display).clicked() {
+                                    let _ = app.run("developer.chooseItem", json!({"at": at_json, "index": i}));
+                                    close = true;
+                                }
                             }
+                        });
+                    }
+                    ControlKind::Date { .. } => {
+                        if let Some(pop) = app.controls.popup.as_mut()
+                            && let Some(day) = calendar(ui, &t, &mut pop.month)
+                        {
+                            let (y, m) = pop.month;
+                            let _ = app.run("developer.setDate", json!({"at": at_json, "date": format!("{y:04}-{m:02}-{day:02}")}));
+                            close = true;
                         }
-                    });
-                }
-                ControlKind::Date { .. } => {
-                    if let Some(pop) = app.controls.popup.as_mut()
-                        && let Some(day) = calendar(ui, &t, &mut pop.month)
-                    {
-                        let (y, m) = pop.month;
-                        let _ = app.run("developer.setDate", json!({"at": at_json, "date": format!("{y:04}-{m:02}-{day:02}")}));
-                        close = true;
+                        if ui.button(tl!("Today")).clicked() {
+                            let (y, m, d) = today();
+                            let _ = app.run("developer.setDate", json!({"at": at_json, "date": format!("{y:04}-{m:02}-{d:02}")}));
+                            close = true;
+                        }
                     }
-                    if ui.button(tl!("Today")).clicked() {
-                        let (y, m, d) = today();
-                        let _ = app.run("developer.setDate", json!({"at": at_json, "date": format!("{y:04}-{m:02}-{d:02}")}));
-                        close = true;
-                    }
+                    _ => close = true,
                 }
-                _ => close = true,
-            }
-        });
+            });
+        })
     });
     let outside = ctx.input(|i| i.pointer.any_pressed())
         && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|p| !shown.response.rect.contains(p) && !anchor.contains(p));
@@ -223,7 +225,7 @@ fn calendar(ui: &mut Ui, t: &Tokens, month: &mut (i64, u32)) -> Option<u32> {
     // 1970-01-01 was a Thursday: Monday-first column of the 1st.
     let lead = (first + 3).rem_euclid(7) as u32;
     let days = wordcraft_engine::cmd::controls::days_in_month(y, m);
-    egui::Grid::new("cc_calendar").spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("cc_calendar").spacing(vec2(2.0, 2.0)), |ui| {
         for cell in 0..(lead + days) {
             if cell < lead {
                 ui.label("");

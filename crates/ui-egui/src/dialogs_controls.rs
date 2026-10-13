@@ -113,7 +113,7 @@ impl ControlForm {
 /// Draws the dialog; returns true to close it.
 pub fn body(app: &mut WordApp, ui: &mut Ui, f: &mut ControlForm) -> bool {
     ui.set_width(420.0);
-    egui::Grid::new("cc_props").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("cc_props").num_columns(2).spacing([10.0, 6.0]), |ui| {
         ui.label(tl!("Title"));
         ui.add(egui::TextEdit::singleline(&mut f.title).desired_width(280.0));
         ui.end_row();
@@ -127,12 +127,12 @@ pub fn body(app: &mut WordApp, ui: &mut Ui, f: &mut ControlForm) -> bool {
         }
     });
     ui.add_space(6.0);
-    ui.checkbox(&mut f.lock_delete, tl!("Can't be deleted"));
-    ui.checkbox(&mut f.lock_edit, tl!("Contents can't be edited"));
-    ui.checkbox(&mut f.temporary, tl!("Remove the control once edited"));
+    crate::rtl::checkbox(ui, &mut f.lock_delete, tl!("Can't be deleted"));
+    crate::rtl::checkbox(ui, &mut f.lock_edit, tl!("Contents can't be edited"));
+    crate::rtl::checkbox(ui, &mut f.temporary, tl!("Remove the control once edited"));
     match f.kind.as_str() {
         "plainText" => {
-            ui.checkbox(&mut f.multi_line, tl!("Allow line breaks"));
+            crate::rtl::checkbox(ui, &mut f.multi_line, tl!("Allow line breaks"));
         }
         "comboBox" | "dropDown" => entries(ui, f),
         "date" => {
@@ -182,7 +182,7 @@ fn entries(ui: &mut Ui, f: &mut ControlForm) {
     ui.add_space(6.0);
     ui.label(egui::RichText::new(tl!("List entries")).font(semibold(12.0)));
     let mut remove = None;
-    egui::Grid::new("cc_entries").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("cc_entries").num_columns(3).spacing([6.0, 4.0]), |ui| {
         ui.label(egui::RichText::new(tl!("Display text")).small());
         ui.label(egui::RichText::new(tl!("Value")).small());
         ui.end_row();

@@ -29,6 +29,9 @@ pub struct Catalog {
     plain: HashMap<String, String>,
     /// (context, English source) → translation, for the few entries that need one.
     contextual: HashMap<(String, String), String>,
+    /// Display-only RTL labels; logical translations remain in `plain`.
+    visual_rtl: HashMap<String, String>,
+    logical_rtl: HashMap<String, String>,
 }
 
 fn unescape(text: &str) -> Result<String, String> {
@@ -130,6 +133,22 @@ impl Catalog {
 
     pub fn plain(&self, s: &str) -> Option<&str> {
         self.plain.get(s).map(String::as_str)
+    }
+
+    /// Prepare display strings once, leaving the catalog's logical translations intact for
+    /// document previews, matching, formatting and accessibility metadata.
+    pub fn prepare_rtl(&mut self) {
+        self.visual_rtl = self.plain.iter().map(|(key, value)| (key.clone(), crate::ui_bidi::template(value))).collect();
+        self.logical_rtl =
+            self.plain.iter().filter_map(|(key, value)| self.visual_rtl.get(key).map(|shown| (shown.clone(), value.clone()))).collect();
+    }
+
+    pub fn logical_display<'a>(&'a self, text: &'a str) -> &'a str {
+        self.logical_rtl.get(text).map(String::as_str).unwrap_or(text)
+    }
+
+    pub fn visual(&self, s: &str) -> Option<&str> {
+        self.visual_rtl.get(s).map(String::as_str).or_else(|| self.plain(s))
     }
 
     /// The entry for `s` in `context`, else the plain one.

@@ -66,6 +66,7 @@ pub mod print_page;
 pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
+mod rtl;
 pub mod scroll;
 pub mod system_clipboard;
 pub mod table_mouse;
@@ -73,6 +74,7 @@ pub mod table_pen;
 pub mod table_resize;
 pub mod table_ruler;
 pub mod theme;
+mod ui_bidi;
 pub mod widgets;
 pub mod window_geometry;
 pub mod wordart_menus;
@@ -1067,7 +1069,12 @@ impl WordApp {
                 // `auto` (follow the system) or a language code; anything else is an error.
                 if let Some(v) = s("value") {
                     match i18n::normalize_pref(v) {
-                        Some(code) => self.ui.language = code.to_string(),
+                        Some(code) => {
+                            if self.ui.language != code {
+                                self.ui.language = code.to_string();
+                                self.styled = false;
+                            }
+                        }
                         None => {
                             let codes: Vec<&str> = i18n::Lang::all().map(i18n::Lang::code).collect();
                             return Some(Err(format!("unknown language `{v}`; use auto or one of {}", codes.join(", "))));
@@ -1398,7 +1405,8 @@ impl WordApp {
         }
         // The open above may have changed the file name the caption draws.
         self.ensure_caption_fonts();
-        self.install_ui_fonts(ctx, lang);
+        // A control request can also change the interface language this frame.
+        self.install_ui_fonts(ctx, i18n::Lang::from_pref(&self.ui.language));
         self.report_dirty();
     }
 
@@ -1407,7 +1415,13 @@ impl WordApp {
     fn install_ui_fonts(&mut self, ctx: &egui::Context, lang: i18n::Lang) {
         let system_cjk = self.fonts_system_cjk || self.want_system_cjk || lang.uses_cjk();
         if !self.styled || lang.prefers_hans() != self.fonts_hans || system_cjk != self.fonts_system_cjk {
-            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &self.canvas.ime_faces);
+            let mut faces = self.canvas.ime_faces.clone();
+            if lang.is_rtl() {
+                faces.extend(theme::faces_for_preedit(lang.name(), &faces, theme::caption_char_covered, |c| {
+                    wordcraft_fonts::FontDb::global().fallback_for(c, 0)
+                }));
+            }
+            theme::install_fonts_extra(ctx, lang.prefers_hans(), system_cjk, &faces);
             self.fonts_hans = lang.prefers_hans();
             self.fonts_system_cjk = system_cjk;
             // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
@@ -1797,6 +1811,8 @@ pub fn now_ms() -> f64 {
 
 #[cfg(test)]
 mod tests_perf;
+#[cfg(test)]
+mod tests_rtl;
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (the Font list no longer keeps every previewed font in memory, #848; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (native RTL scrolling, logical search/navigation and remaining bidi editor limits; previously trivial: font preview memory, #848; previously major: first ranked gaps) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -8,6 +8,8 @@ The work list. One entry per shortfall, ranked by how much it stops a Word user 
 (**B** = blocks beta). Each says what's missing, the evidence, who it hurts, an Opus 5.5 agent
 wall-clock estimate, and which parity document tracks it. Agents: pick from the top, check open PRs
 first (`gh pr list`), and update this file and the parity doc when a gap closes.
+
+RTL interface audit: Info columns/forms and plain search fields inherit direction; same-label ribbon spacing is mirrored. Ribbon scrolling now uses native egui ScrollArea with finite RTL content width; template search uses logical text and breadcrumbs follow reading order. Shared direction-aware containers and controls now cover nested columns, popups, choice markers and combo captions/arrows. English and a synthetic RTL catalog exercise interface surfaces without changing the document. Language catalogs remain separate; native window decorations and egui's full bidi text-field editing/line wrapping are still open.
 
 Native save reliability: synthetic cases on macOS reproduced loss through the predictable temporary-file name. Saves now use owned, exclusively created siblings, synchronize before replacement and clean up on failure; originals survive pre-replacement errors. This narrows save-path reliability under gap #3; the listed field failures and broader stability work remain open. See [save-path guarantees](file-format-parity.md#native-save-path-guarantees).
 
@@ -25,7 +27,7 @@ Native save reliability: synthetic cases on macOS reproduced loss through the pr
 | 8 | **Proofing covers English, Polish and Portuguese only**; no dictionaries, grammar or hyphenation for the other ~47 languages Word proofs (text in them is left unmarked) | | `crates/proof`: English, Polish and Portuguese (pt-BR via the installed VERO dictionary, 2026-10-12), a language per run (2026-10-10); Word ships 120 proofing tools; issues #25, #40, #100 | Every writer outside English, Polish and Portuguese | 20–40 | [localization-parity.md](localization-parity.md) |
 | 9 | **Password-protected files** can't be opened or saved | | #55; `docbin` detects and refuses RC4/XOR | Corporate and legal users | 6–10 | [file-format-parity.md](file-format-parity.md) |
 | 10 | **Objects**: no group (#267 open), text in a freely rotated text box (free rotation and flips landed, #332; text direction, alignment and linked text boxes landed, #369; contour wrap and wrap side landed, #354), shape effects, WordArt 3-D effects and connector routing around shapes (WordArt effects and warps and glued connectors landed, #416), dragging members inside a Drawing Canvas (the canvas landed, #344) | | [parity-checklist.md](parity-checklist.md) (Shape Format 6/6, Layout › Group) | Newsletters, flyers, reports with diagrams | 20–30 | [target-app-parity.md](target-app-parity.md) |
-| 11 | **Interface languages**: 7 of the 12 key languages missing (hi, ar, fr, id, ko, vi, pt-PT); no mirrored RTL interface; ~5% of strings still English in the translated catalogs | | [localization-parity.md](localization-parity.md) | Most of the world's writers | 50–80 | [localization-parity.md](localization-parity.md) |
+| 11 | **Interface languages**: hi, ar, id, ko, vi and pt-PT are missing; UI mirroring is prepared for RTL catalogs, but no RTL catalog ships in this branch and a ruler/control audit remains; ~5% of strings still English in the translated catalogs | | [localization-parity.md](localization-parity.md) | Most of the world's writers | 50–80 | [localization-parity.md](localization-parity.md) |
 | 12 | **Draw tab / ink**: pens, pencil, highlighter, eraser, Select and Hide Ink landed (#307); Lasso Select, Add Pen, Ink to Shape and Ink Replay landed (#395); missing: Ink to Math, arrows in Ink to Shape, pressure, rendering/editing Word's own ink (drawing-level `w14:contentPart`/InkML now preserved on DOCX save) | | [parity-checklist.md](parity-checklist.md) (Draw 9/11) | Pen and tablet users | 4–8 | [hardware-parity.md](hardware-parity.md) |
 | 13 | **Charts and SmartArt editing** (editing charts and SmartArt from Word, more chart types and formatting) | | `insert.chart` and Chart Design basics landed (#409): WordCraft's own charts are editable; charts from Word stay read-only (no embedded-workbook editing), no combo/3D/radar/stock charts, axis or series formatting; Insert › SmartArt landed (#497) for graphics WordCraft makes | Reports and business documents | 35–55 | [target-app-parity.md](target-app-parity.md) |
 | 14 | **`.doc` can't be written; Word 6/95 files refused** | | `crates/docbin` is read-only | Users exchanging files with old Word or legacy systems | 25–40 | [file-format-parity.md](file-format-parity.md) |
@@ -73,6 +75,9 @@ The same gaps grouped the way the parity documents are, for agents working in on
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | RTL spacing follow-up: mirrored intrinsic ribbon widths/dividers, reading-order Info columns/forms and shared plain-text field alignment; identical-label geometry regressions |
+| 2026-10-13 | minor | RTL follow-up: native egui ribbon scrolling, logical template search and breadcrumbs, explicit direction metadata. No catalog added |
+| 2026-10-13 | minor | #11: prepared ribbon, Backstage, Options, pane and dialog mirroring for RTL catalogs; still needs a shipped catalog and ruler/control audit |
 | 2026-10-11 | trivial | Table column and row markers on the rulers landed (#700): the ruler's column markers are off the UI/UX gaps |
 | 2026-10-11 | trivial | UI/UX gaps: the table context menu landed, its items following the selection as in Word (Delete Cells, Rows, Columns or Table, Merge and Split Cells, Distribute, AutoFit, Text Direction, Insert Caption…, Table Properties…); objects' menus and Border Styles remain |
 | 2026-10-11 | trivial | Tables: ordinary drags, Shift+arrows and Shift+click over cells select a rectangle of whole cells (into or out of a table, whole rows); removed from the UI/UX gaps |

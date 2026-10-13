@@ -130,7 +130,8 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
     let flag = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
     let align = app.session.doc.para_at(&app.session.sel.focus).map(|p| app.session.doc.styles.resolve_para(&p.props).align).unwrap_or_default();
     let row = |ui: &mut egui::Ui, app: &mut WordApp, add: &dyn Fn(&mut egui::Ui, &mut WordApp)| {
-        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), ROW_H), Layout::left_to_right(Align::Center), |ui| {
+        let layout = if crate::i18n::current().is_rtl() { Layout::right_to_left(Align::Center) } else { Layout::left_to_right(Align::Center) };
+        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), ROW_H), layout, |ui| {
             ui.set_min_height(ROW_H);
             add(ui, app);
         });
@@ -198,7 +199,7 @@ fn sep(ui: &mut egui::Ui, t: &Tokens) {
 
 /// Highlight colour grid, matching the ribbon's.
 fn highlight_menu(ui: &mut egui::Ui, app: &mut WordApp) {
-    egui::Grid::new("mini_hl").spacing(Vec2::new(3.0, 3.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("mini_hl").spacing(Vec2::new(3.0, 3.0)), |ui| {
         for (i, h) in wordcraft_doc::props::Highlight::ALL.iter().enumerate().skip(1) {
             let Some(c) = h.rgb() else { continue };
             let (r, resp) = ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());

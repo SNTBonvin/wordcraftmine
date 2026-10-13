@@ -1,6 +1,6 @@
 # WordCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (`proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (`proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft is built today (origin/main `40c5d51`). The longer design notes in
 `plan/architecture.md` are gitignored and local to the original author's machine; this file is the
@@ -60,9 +60,45 @@ winit or rfd.
 - GitHub Actions on PRs: packaging lint, and FreeBSD / Windows ARM64 when build files change;
   release builds on pushes to `release`.
 
+## Interface reading direction
+
+`ui-egui::rtl` centralizes interface direction. Wrap panel, window and popup bodies with
+`rtl::root`, then use `rtl::column` for nested columns; egui's native `vertical` resets alignment.
+Horizontal rows inherit the parent. `rtl::columns` preserves reading order where native
+columns reset it. `rtl::singleline` aligns plain interface text and search hints without
+reordering stored text; numeric/code editors retain their own rules. `rtl::form_field`
+places a two-column form label before its value in reading order.
+Use the shared combo, checkbox/radio and menu wrappers;
+LTR delegates to the original egui operation. Custom-painted controls place their icon at the
+reading start and their arrow at the opposite edge. New catalogs declare their reading direction in `LangInfo::rtl`; changing a display name
+does not change layout.
+
+Grids keep semantic columns in an LTR island aligned at the reading edge (egui cannot lay out a
+Grid under an RTL parent). Data grids, equations and document geometry must not be blindly
+reversed. Document paragraph direction controls its ruler and layout independently of UI direction.
+
+`ui_bidi` arranges display labels with UAX #9 while egui shapes logical script stretches.
+Catalogs retain logical translations (`tr`/preview contexts); formatting resolves templates before
+arranging display text. Use `logical_fmt` for generated document values. Do not feed display-order
+strings into document layout, persisted values or editable text. egui's editable fields and line
+wrapping still need upstream bidi support; this is not a replacement document text engine.
+
+Ribbon groups cache their actual mirrored intrinsic width and execute their content once;
+the group column must use the same reading edge as its content, or minimum-width expansion
+adds blank space. Group dividers use the trailing cursor edge in each direction.
+
+The ribbon uses egui `ScrollArea` for clipping, scrolling and bounds. A measured finite
+row width anchors RTL groups; vertical wheel input follows reading order. Horizontal
+touchpad input keeps its physical direction. Do not implement a second scroll engine.
+
+Local screenshots can be generated with `WORDCRAFT_RTL_AUDIT_DIR` and the
+`tests_rtl::local_direction_screenshots` test. The synthetic catalog is compiled only for tests.
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | RTL spacing follow-up: mirrored intrinsic ribbon widths/dividers, reading-order Info columns/forms and shared plain-text field alignment; identical-label geometry regressions |
+| 2026-10-13 | minor | Shared interface direction helpers, native ribbon scrolling and explicit direction metadata |
 | 2026-10-10 | minor | `proof`: proofing languages (English, Polish), affix engine, Polish patterns; layout and engine route each run by its language |
 | 2026-10-10 | major | First committed architecture doc, from the crates' sources and `AGENTS.md` |

@@ -1313,7 +1313,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     } else {
         None
     };
-    let menu = egui::Popup::menu(&resp).open_memory(open);
+    let menu = crate::rtl::menu(&resp).open_memory(open);
     let menu = match app.canvas.context_menu_at {
         Some(p) => menu.at_position(p),
         None => menu.at_pointer_fixed(),
@@ -2493,7 +2493,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paste", "edit.paste", json!({}));
     ui.separator();
     if let Some(syn) = app.canvas.context_synonyms.clone().and_then(|v| v.as_array().cloned()).filter(|a| !a.is_empty()) {
-        ui.menu_button(tl!("Synonyms"), |ui| {
+        crate::rtl::menu_button(ui, tl!("Synonyms"), |ui| {
             for w in syn.iter().filter_map(|x| x.as_str()) {
                 if ui.button(w).clicked() {
                     let _ = app.run("select.word", json!({}));
@@ -2533,13 +2533,13 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         item(ui, app, "Size and Crop…", "ui.tab", json!({"tab": "Picture Format"}));
     }
     if object {
-        ui.menu_button(tl!("Wrap Text"), |ui| crate::ribbon::wrap_text_items(ui, app));
+        crate::rtl::menu_button(ui, tl!("Wrap Text"), |ui| crate::ribbon::wrap_text_items(ui, app));
     }
     if app.session.sel.focus.path.cell().is_some() {
         // The table's items follow what is selected, as in Word (2019, Windows).
         let pick = table_pick(&app.session);
         ui.separator();
-        ui.menu_button(tl!("Insert"), |ui| {
+        crate::rtl::menu_button(ui, tl!("Insert"), |ui| {
             item(ui, app, "Insert Columns to the Left", "table.insertColumnLeft", json!({}));
             item(ui, app, "Insert Columns to the Right", "table.insertColumnRight", json!({}));
             item(ui, app, "Insert Rows Above", "table.insertRowAbove", json!({}));
@@ -2562,7 +2562,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             item(ui, app, "Distribute Columns", "table.distributeColumns", json!({}));
         }
         if pick == TablePick::Table {
-            ui.menu_button(tl!("AutoFit"), |ui| {
+            crate::rtl::menu_button(ui, tl!("AutoFit"), |ui| {
                 item(ui, app, "AutoFit Contents", "table.autofit", json!({"mode": "contents"}));
                 item(ui, app, "AutoFit Window", "table.autofit", json!({"mode": "window"}));
                 item(ui, app, "Fixed Column Width", "table.autofit", json!({"mode": "fixed"}));

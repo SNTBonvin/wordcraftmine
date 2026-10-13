@@ -11,95 +11,115 @@ use crate::theme::{Tokens, regular, semibold};
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    let rtl = crate::i18n::current().is_rtl();
     // SmartArt Design › Text Pane, while a SmartArt graphic WordCraft can edit is selected.
     if app.session.view.smart_art_pane && wordcraft_engine::cmd::smart_art::selected_smart_art(&app.session).is_some() {
-        egui::Panel::left("smart_art_pane")
+        (if rtl { egui::Panel::right("smart_art_pane") } else { egui::Panel::left("smart_art_pane") })
             .default_size(250.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
             .show(ui, |ui| {
-                if header(ui, "Text Pane") {
-                    let _ = app.run("smartArt.textPane", json!({"value": false}));
-                    return;
-                }
-                crate::dialogs_smart_art::text_pane(app, ui);
+                crate::rtl::root(ui, |ui| {
+                    if header(ui, "Text Pane") {
+                        let _ = app.run("smartArt.textPane", json!({"value": false}));
+                        return;
+                    }
+                    crate::dialogs_smart_art::text_pane(app, ui);
+                })
             });
     }
     if app.session.view.nav_pane {
-        egui::Panel::left("nav_pane")
+        (if rtl { egui::Panel::right("nav_pane") } else { egui::Panel::left("nav_pane") })
             .default_size(260.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| nav(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| nav(app, ui)));
     }
     if app.session.view.clipboard_pane {
-        egui::Panel::left("clipboard_pane")
+        (if rtl { egui::Panel::right("clipboard_pane") } else { egui::Panel::left("clipboard_pane") })
             .default_size(250.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| clipboard(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| clipboard(app, ui)));
     }
     if app.session.view.styles_pane {
-        egui::Panel::right("styles_pane")
+        (if rtl { egui::Panel::left("styles_pane") } else { egui::Panel::right("styles_pane") })
             .default_size(250.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| styles(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| styles(app, ui)));
     }
     if app.session.view.style_inspector {
-        egui::Panel::right("style_inspector")
+        (if rtl { egui::Panel::left("style_inspector") } else { egui::Panel::right("style_inspector") })
             .default_size(240.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| inspector(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| inspector(app, ui)));
     }
     if app.session.view.accessibility_pane {
-        egui::Panel::right("accessibility_pane")
+        (if rtl { egui::Panel::left("accessibility_pane") } else { egui::Panel::right("accessibility_pane") })
             .default_size(280.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| crate::a11y_pane::accessibility(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| crate::a11y_pane::accessibility(app, ui)));
     }
     if app.session.view.alt_text_pane {
-        egui::Panel::right("alt_text_pane")
+        (if rtl { egui::Panel::left("alt_text_pane") } else { egui::Panel::right("alt_text_pane") })
             .default_size(260.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| crate::a11y_pane::alt_text(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| crate::a11y_pane::alt_text(app, ui)));
     }
     if app.restrict.open {
-        egui::Panel::right("restrict_pane")
+        (if rtl { egui::Panel::left("restrict_pane") } else { egui::Panel::right("restrict_pane") })
             .default_size(270.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
             .show(ui, |ui| {
-                if header(ui, "Restrict Editing") {
-                    app.restrict.open = false;
-                    return;
-                }
-                crate::dialogs_review::restrict_pane(app, ui);
+                crate::rtl::root(ui, |ui| {
+                    if header(ui, "Restrict Editing") {
+                        app.restrict.open = false;
+                        return;
+                    }
+                    crate::dialogs_review::restrict_pane(app, ui);
+                })
             });
     }
     if app.session.view.comments_pane {
-        egui::Panel::right("comments_pane")
+        (if rtl { egui::Panel::left("comments_pane") } else { egui::Panel::right("comments_pane") })
             .default_size(290.0)
             .resizable(true)
             .frame(egui::Frame::NONE.fill(t.panel).inner_margin(10).stroke(Stroke::new(1.0, t.border)))
-            .show(ui, |ui| comments(app, ui));
+            .show(ui, |ui| crate::rtl::root(ui, |ui| comments(app, ui)));
     }
 }
 
 pub(crate) fn header(ui: &mut Ui, title: &str) -> bool {
     let mut close = false;
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Drawn, not the "✕" character: the interface fonts have no glyph for it.
-            if crate::widgets::icon_button(ui, "close", tl!("Close")).clicked() {
-                close = true;
-            }
-        });
-    });
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), 24.0),
+        if crate::i18n::current().is_rtl() {
+            egui::Layout::right_to_left(egui::Align::Center)
+        } else {
+            egui::Layout::left_to_right(egui::Align::Center)
+        },
+        |ui| {
+            ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
+            ui.with_layout(
+                if crate::i18n::current().is_rtl() {
+                    egui::Layout::left_to_right(egui::Align::Center)
+                } else {
+                    egui::Layout::right_to_left(egui::Align::Center)
+                },
+                |ui| {
+                    // Drawn, not the "✕" character: the interface fonts have no glyph for it.
+                    if crate::widgets::icon_button(ui, "close", tl!("Close")).clicked() {
+                        close = true;
+                    }
+                },
+            );
+        },
+    );
     ui.add_space(4.0);
     close
 }
@@ -117,7 +137,7 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
     if let Some(t) = &picked {
         q = t.clone();
     }
-    let mut out = egui::TextEdit::singleline(&mut q).hint_text(tl!("Search document")).desired_width(f32::INFINITY).show(ui);
+    let mut out = crate::rtl::singleline(&mut q).hint_text(tl!("Search document")).desired_width(f32::INFINITY).show(ui);
     let r = out.response.clone();
     if focus {
         // Focused with its text selected, so typing replaces it.
@@ -135,13 +155,21 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
         }
     }
     ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        for (k, l) in [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")] {
-            if ui.selectable_label(app.ui.nav_tab == k, tl!(l)).clicked() {
-                app.ui.nav_tab = k.into();
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), 28.0),
+        if crate::i18n::current().is_rtl() {
+            egui::Layout::right_to_left(egui::Align::Center)
+        } else {
+            egui::Layout::left_to_right(egui::Align::Center)
+        },
+        |ui| {
+            for (k, l) in [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")] {
+                if ui.selectable_label(app.ui.nav_tab == k, tl!(l)).clicked() {
+                    app.ui.nav_tab = k.into();
+                }
             }
-        }
-    });
+        },
+    );
     ui.separator();
     egui::ScrollArea::vertical().show(ui, |ui| match app.ui.nav_tab.as_str() {
         "pages" => {
@@ -283,7 +311,7 @@ fn styles(app: &mut WordApp, ui: &mut Ui) {
         .doc
         .styles
         .get(&cur)
-        .map(crate::i18n::style_name)
+        .map(crate::i18n::logical_style_name)
         .unwrap_or_else(|| st.get("styleName").and_then(Value::as_str).unwrap_or("").to_string());
     ui.label(egui::RichText::new(crate::i18n::fmt(tl!("Current style: {style}"), &[("style", &current_name)])).small());
     ui.horizontal(|ui| {
@@ -325,7 +353,7 @@ fn styles(app: &mut WordApp, ui: &mut Ui) {
                     let _ = app.run("para.style", json!({"style": id}));
                     app.canvas.want_focus = true;
                 }
-                r.context_menu(|ui| {
+                crate::rtl::context_menu(&r).show(|ui| {
                     if ui.button(tl!("Modify…")).clicked() {
                         app.dialog = crate::dialogs::Dialog::modify_style(app, &id);
                         ui.close();
@@ -608,6 +636,11 @@ pub(crate) fn describe_props(list: &[Value]) -> Vec<String> {
 
 /// "Bold", "Not Italic", "Font: Arial", "Size: 14 pt"…
 fn describe(prop: &str, v: &Value) -> String {
+    let text = describe_logical(prop, v);
+    crate::ui_bidi::display(&text, crate::i18n::current().is_rtl().then(unicode_bidi::Level::rtl))
+}
+
+fn describe_logical(prop: &str, v: &Value) -> String {
     let label = match prop {
         "font" => "Font",
         "size" => "Size",
@@ -656,8 +689,8 @@ fn describe(prop: &str, v: &Value) -> String {
         "lang" => "Language",
         other => other,
     };
-    let label = tl!(label);
-    let pt = |x: f64| crate::i18n::fmt(tl!("{n} pt"), &[("n", &trim_num(x))]);
+    let label = crate::i18n::tr(crate::i18n::current(), label);
+    let pt = |x: f64| crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "{n} pt"), &[("n", &trim_num(x))]);
     let hex = |c: &Value| -> Option<String> {
         let a = c.as_array()?;
         let ch = |i: usize| a.get(i).and_then(Value::as_u64).unwrap_or(0).min(255);
@@ -665,34 +698,37 @@ fn describe(prop: &str, v: &Value) -> String {
     };
     let value = match (prop, v) {
         (_, Value::Bool(true)) => return label.to_string(),
-        (_, Value::Bool(false)) => return crate::i18n::fmt(tl!("Not {name}"), &[("name", label)]),
+        (_, Value::Bool(false)) => return crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "Not {name}"), &[("name", label)]),
         ("scale", Value::Number(n)) => format!("{}%", trim_num(n.as_f64().unwrap_or(100.0))),
         ("outlineLevel", Value::Number(n)) => match n.as_u64().unwrap_or(9) {
-            l @ 0..=8 => crate::i18n::fmt(tl!("Level {n}"), &[("n", &(l + 1).to_string())]),
-            _ => tl!("Body Text").to_string(),
+            l @ 0..=8 => crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "Level {n}"), &[("n", &(l + 1).to_string())]),
+            _ => crate::i18n::tr(crate::i18n::current(), "Body Text").to_string(),
         },
-        ("dropCap", Value::Number(n)) => crate::i18n::fmt(tl!("{n} lines"), &[("n", &n.to_string())]),
+        ("dropCap", Value::Number(n)) => crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "{n} lines"), &[("n", &n.to_string())]),
         (_, Value::Number(n)) => pt(n.as_f64().unwrap_or(0.0)),
-        ("align", Value::String(s)) => tl!(match s.as_str() {
-            "center" => "Centered",
-            "right" => "Right",
-            "justify" => "Justified",
-            "distribute" => "Distributed",
-            _ => "Left",
-        })
+        ("align", Value::String(s)) => crate::i18n::tr(
+            crate::i18n::current(),
+            match s.as_str() {
+                "center" => "Centered",
+                "right" => "Right",
+                "justify" => "Justified",
+                "distribute" => "Distributed",
+                _ => "Left",
+            },
+        )
         .to_string(),
-        ("color", Value::String(_)) => tl!("Automatic").to_string(),
+        ("color", Value::String(_)) => crate::i18n::tr(crate::i18n::current(), "Automatic").to_string(),
         ("color", Value::Object(o)) => o.get("Rgb").and_then(hex).unwrap_or_default(),
         (_, Value::Array(_)) if prop != "tabs" => hex(v).unwrap_or_default(),
         ("lineSpacing", Value::Object(o)) => {
             let x = o.get("value").and_then(Value::as_f64).unwrap_or(1.0);
             match o.get("rule").and_then(Value::as_str) {
-                Some("atLeast") => crate::i18n::fmt(tl!("At least {n}"), &[("n", &pt(x))]),
-                Some("exactly") => crate::i18n::fmt(tl!("Exactly {n}"), &[("n", &pt(x))]),
-                _ => crate::i18n::fmt(tl!("{n} lines"), &[("n", &trim_num(x))]),
+                Some("atLeast") => crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "At least {n}"), &[("n", &pt(x))]),
+                Some("exactly") => crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "Exactly {n}"), &[("n", &pt(x))]),
+                _ => crate::i18n::logical_fmt(crate::i18n::tr(crate::i18n::current(), "{n} lines"), &[("n", &trim_num(x))]),
             }
         }
-        (_, Value::String(s)) => tl!(&camel_words(s)).to_string(),
+        (_, Value::String(s)) => crate::i18n::tr(crate::i18n::current(), &camel_words(s)).to_string(),
         _ => return label.to_string(),
     };
     format!("{label}: {value}")

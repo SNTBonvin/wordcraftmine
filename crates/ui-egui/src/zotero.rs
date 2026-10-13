@@ -231,16 +231,18 @@ pub fn show_alert(app: &mut WordApp, ctx: &egui::Context) {
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -40.0))
         .show(ctx, |ui| {
-            ui.set_max_width(460.0);
-            ui.label(a.text.trim_end());
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                for (label, v) in buttons {
-                    if ui.button(tl!(label)).clicked() {
-                        picked = Some(*v);
+            crate::rtl::root(ui, |ui| {
+                ui.set_max_width(460.0);
+                ui.label(a.text.trim_end());
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    for (label, v) in buttons {
+                        if ui.button(tl!(label)).clicked() {
+                            picked = Some(*v);
+                        }
                     }
-                }
-            });
+                });
+            })
         });
     if let Some(v) = picked {
         let _ = answer(app, v);

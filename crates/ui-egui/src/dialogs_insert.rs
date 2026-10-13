@@ -289,37 +289,36 @@ impl ColumnsForm {
 
 /// A preset tile: a small page with its columns.
 fn preset_tile(ui: &mut Ui, label: &str, widths: &[f32], on: bool, t: &Tokens) -> bool {
-    let resp = ui
-        .vertical(|ui| {
-            let (r, resp) = ui.allocate_exact_size(vec2(44.0, 52.0), Sense::click());
-            let fill = if on {
-                t.checked
-            } else if resp.hovered() {
-                t.hover
-            } else {
-                Color32::TRANSPARENT
-            };
-            ui.painter().rect(r, 3.0, fill, Stroke::new(1.0, if on { t.accent } else { t.border }), egui::StrokeKind::Inside);
-            let page = Rect::from_min_size(r.min + vec2(9.0, 7.0), vec2(26.0, 38.0));
-            ui.painter().rect(page, 0.0, t.input, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
-            let inner = page.shrink(4.0);
-            let gap = 3.5;
-            let total: f32 = widths.iter().sum::<f32>().max(1.0);
-            let avail = inner.width() - gap * (widths.len() as f32 - 1.0);
-            let mut x = inner.min.x;
-            for w in widths {
-                let cw = avail * w / total;
-                let mut y = inner.min.y;
-                while y + 1.5 <= inner.max.y {
-                    ui.painter().line_segment([pos2(x, y), pos2(x + cw, y)], Stroke::new(1.0, t.text_dim));
-                    y += 3.0;
-                }
-                x += cw + gap;
+    let resp = crate::rtl::column(ui, |ui| {
+        let (r, resp) = ui.allocate_exact_size(vec2(44.0, 52.0), Sense::click());
+        let fill = if on {
+            t.checked
+        } else if resp.hovered() {
+            t.hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect(r, 3.0, fill, Stroke::new(1.0, if on { t.accent } else { t.border }), egui::StrokeKind::Inside);
+        let page = Rect::from_min_size(r.min + vec2(9.0, 7.0), vec2(26.0, 38.0));
+        ui.painter().rect(page, 0.0, t.input, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
+        let inner = page.shrink(4.0);
+        let gap = 3.5;
+        let total: f32 = widths.iter().sum::<f32>().max(1.0);
+        let avail = inner.width() - gap * (widths.len() as f32 - 1.0);
+        let mut x = inner.min.x;
+        for w in widths {
+            let cw = avail * w / total;
+            let mut y = inner.min.y;
+            while y + 1.5 <= inner.max.y {
+                ui.painter().line_segment([pos2(x, y), pos2(x + cw, y)], Stroke::new(1.0, t.text_dim));
+                y += 3.0;
             }
-            ui.label(egui::RichText::new(tl!(label)).small());
-            resp
-        })
-        .inner;
+            x += cw + gap;
+        }
+        ui.label(egui::RichText::new(tl!(label)).small());
+        resp
+    })
+    .inner;
     resp.clicked()
 }
 
@@ -378,15 +377,15 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
             f.set_count(n);
         }
         ui.add_space(16.0);
-        ui.checkbox(&mut f.separator, tl!("Line between"));
+        crate::rtl::checkbox(ui, &mut f.separator, tl!("Line between"));
     });
     ui.add_space(6.0);
     ui.label(egui::RichText::new(tl!("Width and spacing")).font(semibold(12.5)));
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             let mut changed = None;
             egui::ScrollArea::vertical().id_salt("columns_widths").max_height(130.0).show(ui, |ui| {
-                egui::Grid::new("columns_grid").num_columns(3).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+                crate::rtl::grid(ui, egui::Grid::new("columns_grid").num_columns(3).spacing(vec2(12.0, 4.0)), |ui| {
                     ui.label(tl!("Col #:"));
                     ui.label(tl!("Width:"));
                     ui.label(tl!("Spacing:"));
@@ -426,7 +425,7 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
             }
         });
         ui.add_space(8.0);
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.label(tl!("Preview"));
             columns_preview(ui, f, &t);
         });
@@ -439,7 +438,7 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
             options.insert(0, ("section", "This section"));
         }
         let shown = options.iter().find(|(k, _)| *k == f.apply).map(|(_, l)| *l).unwrap_or("This section");
-        egui::ComboBox::from_id_salt("columns_apply").selected_text(tl!(shown)).width(180.0).show_ui(ui, |ui| {
+        crate::rtl::ComboBox::from_id_salt("columns_apply").selected_text(tl!(shown)).width(180.0).show_ui(ui, |ui| {
             for (k, l) in &options {
                 ui.selectable_value(&mut f.apply, (*k).to_string(), tl!(l));
             }
@@ -763,7 +762,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
             ui.label(tl!("Subset:"));
             let current = f.selected.and_then(subset_of).unwrap_or("");
             let mut chosen = None;
-            egui::ComboBox::from_id_salt("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
+            crate::rtl::ComboBox::from_id_salt("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
                 for (name, a, b) in SUBSETS {
                     let i = f.chars.partition_point(|c| (*c as u32) < *a);
                     if f.chars.get(i).is_some_and(|c| (*c as u32) <= *b) && ui.selectable_label(*name == current, *name).clicked() {
@@ -877,7 +876,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
 fn special_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm, insert: &mut Option<(Value, String, String)>, t: &Tokens) -> bool {
     let mut double = false;
     egui::ScrollArea::vertical().id_salt("special_chars").max_height(CELL * GRID_ROWS as f32 + 60.0).auto_shrink([false, false]).show(ui, |ui| {
-        egui::Grid::new("special_grid").num_columns(3).striped(true).spacing(vec2(14.0, 4.0)).show(ui, |ui| {
+        crate::rtl::grid(ui, egui::Grid::new("special_grid").num_columns(3).striped(true).spacing(vec2(14.0, 4.0)), |ui| {
             ui.label(egui::RichText::new(tl!("Character")).font(semibold(12.0)));
             ui.label("");
             ui.label(egui::RichText::new(tl!("Shortcut key:")).font(semibold(12.0)));
@@ -1118,12 +1117,12 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
     ui.set_width(620.0);
     ui.horizontal_top(|ui| {
         // Left: category and field names.
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.set_width(200.0);
             ui.label(egui::RichText::new(tl!("Pick a field from the list")).font(semibold(12.5)));
             ui.label(tl!("Categories:"));
             let shown = tl!(f.category.as_str()).to_string();
-            egui::ComboBox::from_id_salt("field_category").selected_text(shown).width(190.0).show_ui(ui, |ui| {
+            crate::rtl::ComboBox::from_id_salt("field_category").selected_text(shown).width(190.0).show_ui(ui, |ui| {
                 for c in FIELD_CATEGORIES {
                     ui.selectable_value(&mut f.category, (*c).to_string(), tl!(c));
                 }
@@ -1145,7 +1144,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
         });
         ui.add_space(14.0);
         // Right: the field's options, or its code.
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Field properties")).font(semibold(12.5)));
             if let Some((_, _, desc)) = FIELDS.iter().find(|(n, _, _)| *n == f.name) {
                 ui.label(egui::RichText::new(format!("{} {}", tl!("Description:"), tl!(desc))).small().color(t.text_dim));
@@ -1158,7 +1157,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
             } else {
                 field_options(ui, f, &t);
                 ui.add_space(4.0);
-                ui.checkbox(&mut f.preserve, tl!("Preserve formatting during updates"));
+                crate::rtl::checkbox(ui, &mut f.preserve, tl!("Preserve formatting during updates"));
             }
         });
     });
@@ -1207,14 +1206,14 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
             }
             ui.label(tl!("Format:"));
             let shown = NUMBER_FORMATS.iter().find(|(v, _)| *v == f.number_format).map(|(_, l)| *l).unwrap_or("(none)");
-            egui::ComboBox::from_id_salt("field_number").selected_text(if shown == "(none)" { tl!(shown) } else { shown }).width(200.0).show_ui(
-                ui,
-                |ui| {
+            crate::rtl::ComboBox::from_id_salt("field_number")
+                .selected_text(if shown == "(none)" { tl!(shown) } else { shown })
+                .width(200.0)
+                .show_ui(ui, |ui| {
                     for (v, l) in NUMBER_FORMATS {
                         ui.selectable_value(&mut f.number_format, (*v).to_string(), if *l == "(none)" { tl!(l) } else { l });
                     }
-                },
-            );
+                });
         }
         FieldKind::Bookmark => {
             ui.label(tl!("Bookmark name:"));
@@ -1222,7 +1221,7 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
                 ui.add(egui::TextEdit::singleline(&mut f.target).desired_width(200.0));
                 ui.label(egui::RichText::new(tl!("The document has no bookmarks yet.")).small().color(t.text_dim));
             } else {
-                egui::ComboBox::from_id_salt("field_bookmark").selected_text(f.target.clone()).width(200.0).show_ui(ui, |ui| {
+                crate::rtl::ComboBox::from_id_salt("field_bookmark").selected_text(f.target.clone()).width(200.0).show_ui(ui, |ui| {
                     for b in &f.bookmarks {
                         ui.selectable_value(&mut f.target, b.clone(), b);
                     }
