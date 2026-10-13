@@ -541,6 +541,35 @@ fn paragraph_borders_take_their_distance_and_width() {
     assert!(near(&m, [0.0, 4.75, 4.75 + 8.5, 9.5 + 8.5]), "{m:?}");
 }
 
+/// Widow/orphan control never splits a three-line paragraph: with room for two of its lines at
+/// the bottom of a page, leaving the third alone on the next page is a widow and taking one
+/// along an orphan, so the paragraph starts the next page. A four-line one splits two and two.
+#[test]
+fn a_three_line_paragraph_is_never_split() {
+    use wordcraft_doc::props::{LineSpacing, ParaProps};
+    // 20 pt lines, no spacing: the 648 pt body holds 32. After 30 one-line paragraphs two fit.
+    let pages_of_last = |lines: usize| {
+        let props =
+            ParaProps { line_spacing: Some(LineSpacing::Exactly(20.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+        let mut d = Document::new();
+        let mut body: Vec<_> = (0..30).map(|_| wordcraft_doc::Paragraph::with_text("line", Default::default())).collect();
+        body.push(wordcraft_doc::Paragraph::with_text(&vec!["line"; lines].join("\n"), Default::default()));
+        d.body = body
+            .into_iter()
+            .map(|mut p| {
+                p.props = props.clone();
+                wordcraft_doc::para_block(p)
+            })
+            .collect();
+        let l = lay(&d);
+        let len = lines * 5 - 1;
+        (l.caret(&Pos::body(30, 0)).unwrap().page, l.caret(&Pos::body(30, len)).unwrap().page)
+    };
+    assert_eq!(pages_of_last(2), (0, 0), "two lines fit");
+    assert_eq!(pages_of_last(3), (1, 1), "three lines move whole");
+    assert_eq!(pages_of_last(4), (0, 1), "four lines split two and two");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");

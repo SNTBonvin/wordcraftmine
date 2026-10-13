@@ -2911,6 +2911,10 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 l1 = l0; // orphan: move the first line to the next page
             } else if n - l1 == 1 && l1 - l0 >= 3 {
                 l1 -= 1; // widow: take one more line along
+            } else if n - l1 == 1 && l1 - l0 == 2 && l0 == 0 && !pb.at_top() {
+                // A three-line paragraph with room for two: taking a line along would leave
+                // the first one alone, so the whole paragraph moves (Word).
+                l1 = l0;
             }
         }
         // A row (text both sides of a floating object) stays together.

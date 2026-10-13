@@ -33,6 +33,8 @@ font can't match Word's metrics.
 | Automatic (HTML-style) paragraph spacing (`w:beforeAutospacing`, `w:afterAutospacing`) | ✅ | Measured in Word for Windows: 14 pt at any size, none at the top of the document or a cell or after a cell's last paragraph, the larger of two neighbouring spaces. `layout::tests::automatic_paragraph_spacing_like_word`, `…_drops_at_cell_edges` | — |
 | Widow/orphan control, keep with next, keep lines together, page break before | ✅ | `lib.rs` keep_next/keep_lines; a line holding only a page break stays at the bottom of a full page instead of leaving a blank page (#534) | — |
 | Tabs (left, center, right, decimal, bar), leaders | 🟡 | Bar tabs untested; a decimal tab aligns the point at the end of a line too (`layout::tests::decimal_tab_aligns_the_point_at_the_end_of_a_line`) | 1–2 |
+| Widow/orphan control, keep with next, keep lines together, page break before | ✅ | `lib.rs` keep_next/keep_lines; a line holding only a page break stays at the bottom of a full page instead of leaving a blank page (#534); a three-line paragraph is never split (`layout::tests::a_three_line_paragraph_is_never_split`) | — |
+| Tabs (left, center, right, decimal, bar), leaders | 🟡 | Bar tabs untested | 1–2 |
 | Hyphenation (automatic, zone from the document, words in capitals, soft hyphens, consecutive limit, Manual Hyphenation, #407) | 🟡 | English patterns only; other languages hyphenate wrongly or not at all | in localization |
 | Drop caps | ✅ | 2026-10-06 | — |
 | Columns, column breaks, separators, balancing | ✅ | Columns balance on a section's last page when the next section starts continuous (also at the document end, which Word only balances when the document ends with a continuous break); not after next-page/even/odd breaks or on a page with a column break; keep-together, keep-with-next, widow/orphan control and unsplittable rows can leave them slightly uneven (#350) | — |
@@ -88,6 +90,7 @@ font can't match Word's metrics.
 | 2026-10-12 | trivial | A decimal tab puts the decimal point at the stop when its text ends the line (it was right-aligned there); measured in Word for Windows |
 | 2026-10-12 | trivial | Justified lines shrink their spaces by up to a quarter of their width, not a fifth, and only while that distorts them less than half as much as stretching them without the word would (measured in Word for Windows) |
 | 2026-10-12 | trivial | Paragraph borders take room above and below the text (distance plus width, a double line three widths), and a run of paragraphs with the same borders is spaced as one box (measured in Word for Windows) |
+| 2026-10-12 | trivial | Widow/orphan control moves a three-line paragraph whole when only two of its lines fit, instead of leaving its last line alone on the next page (measured in Word for Windows) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |
