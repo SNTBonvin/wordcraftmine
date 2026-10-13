@@ -340,6 +340,12 @@ fn adopt(s: &mut Session, src: Document) -> Fragment {
     }
     for b in &mut blocks {
         each_para(b, 0, &mut |p| {
+            // Pasted section breaks keep their page, but their header and footer ids are the
+            // imported document's: they link to the previous section's instead, as in Word.
+            if let Some(sec) = p.section.as_deref_mut() {
+                sec.headers = Default::default();
+                sec.footers = Default::default();
+            }
             if let Some(n) = p.props.numbering.as_mut()
                 && n.num != 0
             {

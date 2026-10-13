@@ -669,7 +669,9 @@ impl SecFmt {
             bottom: p.bottom.or(doc.bottom),
             header: p.header.or(doc.header),
             footer: p.footer.or(doc.footer),
-            landscape: p.landscape || doc.landscape,
+            // A section that gives its own page size or orientation has its own orientation;
+            // the document's `\landscape` only applies to sections that give neither.
+            landscape: if p.w.is_some() || p.h.is_some() || p.landscape { p.landscape } else { doc.landscape },
         };
         let mut s = page.section();
         s.start = self.start;
@@ -843,9 +845,16 @@ impl Reader {
         use wordcraft_doc::section::{NumFormat, SectionStart};
         let on = p != Some(0);
         let pv = p.unwrap_or(0);
-        let mut sec = self.sec.clone();
+        // Inside a header or footer the word is read into a scratch copy and dropped.
+        let mut scratch;
+        let sec = if self.hf.is_some() {
+            scratch = self.sec.clone();
+            &mut scratch
+        } else {
+            &mut self.sec
+        };
         match w {
-            "sectd" => sec = SecFmt::default(),
+            "sectd" => *sec = SecFmt::default(),
             "titlepg" => sec.title_page = on,
             "pgwsxn" => sec.page.w = Some(pv),
             "pghsxn" => sec.page.h = Some(pv),
@@ -873,9 +882,6 @@ impl Reader {
             "pgnucltr" => sec.pgn_fmt = NumFormat::UpperLetter,
             "pgnlcltr" => sec.pgn_fmt = NumFormat::LowerLetter,
             _ => return false,
-        }
-        if self.hf.is_none() {
-            self.sec = sec;
         }
         true
     }
@@ -1833,7 +1839,8 @@ fn parse_full(bytes: &[u8]) -> Result<Parsed, String> {
         r.meta.created = format!("{y:04}-{:02}-{:02}T{:02}:{:02}:00Z", mo.clamp(1, 12), d.clamp(1, 31), h.min(23), mi.min(59));
     }
     let mut blocks = std::mem::take(&mut r.body);
-    // A file that ends with `\sect` ends its last section there: no empty one follows.
+    // A file that ends with `\sect` ends its last section there: no empty one follows, and
+    // header or footer groups after that `\sect` (a section without text) are dropped.
     let mut last_section = r.sec.props(&r.page);
     let mut headers_footers = std::mem::take(&mut r.section_parts);
     if let Some(FBlock::Para(p)) = blocks.last_mut()
@@ -2296,6 +2303,12 @@ mod tests {
         assert_eq!(body_text(secs[1].0 - 1), "<table>");
         assert_eq!(body_text(secs[2].0), "Third");
         assert_eq!(body_text(secs[3].0), "Fourth");
+        // A landscape document default doesn't turn a section that gives its own portrait page.
+        let d = import(br"{\rtf1\ansi\paperw16838\paperh11906\landscape\sectd a\sect\sectd\pgwsxn11906\pghsxn16838 b\par}").unwrap();
+        let secs = d.sections();
+        assert_eq!(secs.len(), 2);
+        assert!(secs[0].1.landscape && secs[0].1.page_w > secs[0].1.page_h, "{:?}", secs[0].1);
+        assert!(!secs[1].1.landscape && secs[1].1.page_w < secs[1].1.page_h, "{:?}", secs[1].1);
     }
 
     #[test]
@@ -2313,7 +2326,9 @@ mod tests {
         rtf.push(b'}');
         let d = import(&rtf).unwrap();
         let secs = d.sections();
-        assert!(secs.len() <= MAX_SECTIONS, "{}", secs.len());
+        assert_eq!(secs.len(), MAX_SECTIONS);
+        // Each section keeps its own header and footer; the ones past the cap replace the last's.
+        assert!(d.parts.len() <= 2 * MAX_SECTIONS, "{}", d.parts.len());
         assert!(secs.iter().all(|(_, s)| s.columns.count <= 45 && s.columns.space >= 0.0 && s.page_num_start == Some(0)));
     }
 

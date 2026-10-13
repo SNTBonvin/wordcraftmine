@@ -912,6 +912,29 @@ fn paste_special_lists_formats_and_pastes_text_without_formatting() {
 }
 
 #[test]
+fn pasted_rtf_sections_link_their_headers_to_the_previous() {
+    // #1378: the RTF's own header part ids mean nothing in this document; a pasted section
+    // break keeps its page but links its headers and footers to the previous section.
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    let note = s.doc.add_part(wordcraft_doc::PartKind::Footnote, Vec::new());
+    let _comment = s.doc.add_part(wordcraft_doc::PartKind::Comment, Vec::new());
+    run(&mut s, "caret.docEnd", json!({}));
+    let rtf = r"{\rtf1\ansi\sectd\lndscpsxn{\header Head\par}{\footer Foot\par}{\headerf First\par} a\par\sect\sectd{\header Two\par} b\par}";
+    run(&mut s, "edit.pasteSpecial", json!({"as": "rtf", "rtf": rtf}));
+    let secs = s.doc.sections();
+    assert_eq!(secs.len(), 2, "the pasted section break is kept");
+    assert!(secs[0].1.landscape, "with its page settings");
+    for (_, sp) in &secs {
+        for (set, kind) in [(sp.headers, wordcraft_doc::PartKind::Header), (sp.footers, wordcraft_doc::PartKind::Footer)] {
+            for id in [set.default, set.first, set.even].into_iter().flatten() {
+                assert_eq!(s.doc.parts.get(&id).map(|p| p.kind), Some(kind), "section refers to part {id} (footnote is {note})");
+            }
+        }
+    }
+}
+
+#[test]
 fn paste_special_html_and_rtf_keep_bold() {
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "x"}));
