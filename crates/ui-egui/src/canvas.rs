@@ -1148,8 +1148,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let y1 = y0 + c.height * scale;
             let since = crate::now_ms() - app.canvas.caret_visible_since;
             let on = ((since / 530.0) as u64).is_multiple_of(2);
-            // The caret contrasts with what lies under it, like Word's inverted caret (#299).
-            let caret_color = caret_color_at(app, &layout, c.page, c.x + c.width / 2.0, c.top + c.height / 2.0, view, dim_body);
+            // The caret contrasts with what lies under it, like Word's inverted caret (#299):
+            // worked out only when something is drawn in it.
+            let caret_color = |app: &mut WordApp| caret_color_at(app, &layout, c.page, c.x + c.width / 2.0, c.top + c.height / 2.0, view, dim_body);
             let bar = if c.width > 0.0 {
                 // Turned text (a table cell's text direction): the caret lies across the page.
                 [pos2(x, y0.round() + 0.5), pos2(x + c.width * scale, y0.round() + 0.5)]
@@ -1160,7 +1161,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let shown = app.session.sel.is_collapsed() && focused;
             let look = crate::caret_glide::look(app, ui, content_origin, &geo, bar, shown, since, on);
             if shown && look.opacity > 0.0 {
-                painter.line_segment(look.bar, Stroke::new(1.5, caret_color.gamma_multiply(look.opacity)));
+                painter.line_segment(look.bar, Stroke::new(1.5, caret_color(app).gamma_multiply(look.opacity)));
             }
             if focused {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(530 - (since as u64 % 530)));
@@ -1187,6 +1188,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     crate::theme::install_fonts_extra(ui.ctx(), app.fonts_hans, app.fonts_system_cjk, &app.canvas.ime_faces);
                     ui.ctx().request_repaint();
                 }
+                let caret_color = caret_color(app);
                 let g = painter.text(pos2(x, y1), egui::Align2::LEFT_BOTTOM, &app.canvas.ime_preedit, regular(c.height * scale * 0.8), caret_color);
                 painter.line_segment([pos2(g.min.x, g.max.y), pos2(g.max.x, g.max.y)], Stroke::new(1.0, caret_color));
             }
@@ -2765,6 +2767,24 @@ mod tests {
         assert_eq!(at(&mut a, 2), Color32::WHITE, "inside a black highlight");
         assert_eq!(at(&mut a, 9), Color32::BLACK, "past it");
         assert_eq!(at(&mut a, 2), Color32::WHITE, "again, from the cache");
+    }
+
+    /// #299: the caret's colour is worked out only when the caret is drawn: with text selected
+    /// there is no caret, so the page's draw list isn't built for it.
+    #[test]
+    fn caret_colour_is_not_worked_out_while_the_caret_is_hidden() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("Hello WordCraft")), Default::default());
+        a.run("select.text", json!({"text": "Hello"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        assert!(h.state().canvas.caret_bg.is_none(), "no caret, no colour lookup");
     }
 
     /// #167: dragging a ruler's margin edge sets that margin, snapped, never negative, and

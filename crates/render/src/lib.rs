@@ -453,7 +453,15 @@ fn blend_backgrounds(items: &[Draw], p: wordcraft_geom::Point, opts: &RenderOpti
     for it in items {
         let (color, alpha) = match it {
             Draw::Fill { rect, color, alpha } if rect.contains(p) => (*color, *alpha),
-            Draw::Shape { rect, kind, fill: Some(fill), .. } if *kind != ShapeKind::Line && rect.contains(p) => (*fill, 1.0),
+            // The shape's own outline (an ellipse's corners are not inside it). Shape fills are
+            // drawn opaque (the model has no fill transparency), so they cover what's beneath.
+            Draw::Shape { rect, kind, fill: Some(fill), .. } if *kind != ShapeKind::Line && rect.contains(p) && {
+                let r = kurbo::Rect::new(rect.x as f64, rect.y as f64, rect.right() as f64, rect.bottom() as f64);
+                kurbo::Shape::contains(&shape_path(*kind, r), kurbo::Point::new(p.x as f64, p.y as f64))
+            } =>
+            {
+                (*fill, 1.0)
+            }
             Draw::Clip { rect, items } if rect.contains(p) => {
                 blend_backgrounds(items, p, opts, bg, depth + 1);
                 continue;
@@ -1013,6 +1021,29 @@ mod tests {
         assert_eq!(background_at(&d, &page, &light, x, y), Rgb::BLACK, "inside the highlight");
         let (page, x, y) = mid(&d, 9);
         assert_eq!(background_at(&d, &page, &light, x, y), Rgb::WHITE, "past the highlight");
+    }
+
+    /// #299: a filled shape colours the caret's background only inside its outline: an
+    /// ellipse's corner shows what lies beneath, its centre the fill.
+    #[test]
+    fn background_follows_a_shapes_outline_not_its_box() {
+        let opts = RenderOptions::default();
+        let ellipse = Draw::Shape {
+            rect: wordcraft_geom::Rect::new(100.0, 100.0, 200.0, 100.0),
+            kind: ShapeKind::Ellipse,
+            fill: Some(Rgb::BLACK),
+            stroke: None,
+            stroke_width: 0.0,
+            effects: Default::default(),
+        };
+        let at = |x: f32, y: f32| {
+            let mut bg = [255.0; 3];
+            blend_backgrounds(std::slice::from_ref(&ellipse), wordcraft_geom::Point::new(x, y), &opts, &mut bg, 0);
+            bg
+        };
+        assert_eq!(at(200.0, 150.0), [0.0; 3], "the centre is the fill");
+        assert_eq!(at(103.0, 103.0), [255.0; 3], "the box's corner is outside the ellipse");
+        assert_eq!(at(350.0, 150.0), [255.0; 3], "outside the box");
     }
 
     #[test]
