@@ -819,6 +819,17 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
             small(ui, app, "smartArt", Some("SmartArt"), "SmartArt", "insert.smartArt", json!({}), false);
             small(ui, app, "chart", Some("Chart"), "Chart", "insert.chart", json!({}), false);
         });
+        stack(ui, |ui| {
+            small(ui, app, "onlinePicture", Some("Online Pictures"), "Online Pictures", "insert.onlinePicture", json!({}), false);
+            small(ui, app, "screenshot", Some("Screenshot"), "Screenshot", "insert.screenshot", json!({}), false);
+            small(ui, app, "model3d", Some("3D Models"), "3D Models", "insert.model3d", json!({}), false);
+        });
+    });
+    group(ui, "Media", None, app, |ui, app| {
+        big(ui, app, "video", "Online\nVideo", "insert.video", json!({}), false);
+    });
+    group(ui, "Add-ins", None, app, |ui, app| {
+        big(ui, app, "addins", "Get\nAdd-ins", "addins.get", json!({}), false);
     });
     group(ui, "Links", None, app, |ui, app| {
         stack(ui, |ui| {
@@ -912,6 +923,7 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
             ui.separator();
             mi(ui, app, "More Symbols…", "ui.dialog", json!({"name": "symbol"}));
         });
+        small(ui, app, "inkEquation", Some("Ink Equation"), "Ink Equation", "insert.inkEquation", json!({}), false);
     });
 }
 
@@ -969,7 +981,8 @@ fn draw(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Convert", None, app, |ui, app| {
         let on = app.session.view.draw.ink_to_shape;
         big_toggle(ui, app, "inkToShape", "Ink to\nShape", "draw.inkToShape", on);
-        big(ui, app, "inkToMath", "Ink to\nMath", "draw.inkToMath", json!({}), false);
+        let on = app.session.view.draw.ink_to_math;
+        big_toggle(ui, app, "inkToMath", "Ink to\nMath", "draw.inkToMath", on);
     });
     group(ui, "Insert", None, app, |ui, app| {
         big(ui, app, "canvas", "Drawing\nCanvas", "insert.canvas", json!({}), false);

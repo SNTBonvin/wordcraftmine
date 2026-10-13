@@ -15,6 +15,7 @@
 	(no suggestions)	(sem sugestões)
 	1.5 Line Spacing	Espaçamento de 1,5 linha
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Um processador de texto gratuito e de código aberto, escrito do zero em Rust.\nFaz parte dos Crafting Apps da equipe ArtCraft.
+	3D Models	3D Models
 	About	Sobre
 	About WordCraft	Sobre o WordCraft
 	Accept	Aceitar
@@ -30,6 +31,7 @@
 	Add space between Asian text and numbers	Adicionar espaço entre texto asiático e números
 	Add tab stop at:	Adicionar tabulação em:
 	Add Text	Adicionar texto
+	Add-ins	Add-ins
 	Add to Dictionary	Adicionar ao dicionário
 	Add to Style Gallery	Adicionar à galeria de estilos
 	Address Block	Bloco de endereço
@@ -114,6 +116,7 @@
 	List Definition	Definição da lista
 	Mark grammar errors as you type	Marcar erros gramaticais enquanto você digita
 	Measurement units:	Unidades de medida:
+	Media	Media
 	Millimeters	Milímetros
 	New comments and tracked changes are recorded under this name and these initials.	Novos comentários e alterações controladas são registrados com este nome e estas iniciais.
 	New word	Nova palavra
@@ -123,6 +126,9 @@
 	Number alignment:	Alinhamento do número:
 	Number format	Formato do número
 	Number style for this level:	Estilo de número deste nível:
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	Borda externa
 	Overtype	Sobrescrever
 	Overtype (typing replaces the characters after the caret)	Sobrescrever (o que você digita substitui os caracteres após o cursor)
@@ -162,6 +168,7 @@
 	Border Painter	Pincel de bordas
 	Border\nPainter	Pincel\nde bordas
 	Borders	Bordas
+	Screenshot	Screenshot
 	Search	Pesquisar
 	Show the mini toolbar when text is selected	Mostrar a minibarra de ferramentas ao selecionar texto
 	Spaces	Espaços
@@ -424,6 +431,8 @@
 	Formatting at Selection	Formatação na seleção
 	Formula	Fórmula
 	General	Geral
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Ir para
 	Go to	Ir para
 	Go To (⌘⌥G)	Ir para (⌘⌥G)
@@ -1933,7 +1942,10 @@
 	Recolor Selected Ink	Mudar a cor da tinta selecionada
 	Add Pen	Adicionar caneta
 	Remove Pen	Remover caneta
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Tinta para forma
+	Convert to Math	Convert to Math
 	Convert to Shapes	Converter em formas
 	Ink Replay	Reproduzir tinta
 	Add\nPen	Adicionar\ncaneta

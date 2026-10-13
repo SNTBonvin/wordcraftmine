@@ -13,6 +13,7 @@
 	(no suggestions)	(aucune suggestion)
 	1.5 Line Spacing	Interligne 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Un traitement de texte gratuit et open source, écrit de zéro en Rust.\nPartie de la suite Crafting Apps de l’équipe ArtCraft.
+	3D Models	3D Models
 	About	À propos
 	About WordCraft	À propos de WordCraft
 	Accept	Accepter
@@ -28,6 +29,7 @@
 	Add space between Asian text and numbers	Ajouter un espace entre le texte asiatique et les chiffres
 	Add tab stop at:	Ajouter un taquet de tabulation à :
 	Add Text	Ajouter du texte
+	Add-ins	Add-ins
 	Add to Dictionary	Ajouter au dictionnaire
 	Add to Style Gallery	Ajouter à la galerie de styles
 	Address Block	Bloc d’adresse
@@ -95,11 +97,15 @@
 	Legal style numbering	Numérotation de style juridique
 	Link level to style:	Lier le niveau au style :
 	List Definition	Définition de liste
+	Media	Media
 	Mirror indents	Retraits en miroir
 	Nothing	Rien
 	Number alignment:	Alignement des numéros :
 	Number format	Format des numéros
 	Number style for this level:	Style de numéros pour ce niveau :
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	Bordure extérieure
 	Overtype	Refrappe
 	Outside:	Extérieur :
@@ -127,6 +133,7 @@
 	Border Painter	Pinceau de bordure
 	Border\nPainter	Pinceau\nde bordure
 	Borders	Bordures
+	Screenshot	Screenshot
 	Tab stop position:	Position du taquet de tabulation :
 	Default tab stops:	Taquets de tabulation par défaut :
 	Tab stops to be cleared:	Taquets de tabulation à supprimer :
@@ -379,6 +386,8 @@
 	Formatting at Selection	Mise en forme de la sélection
 	Formula	Formule
 	General	Général
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Atteindre
 	Go to	Atteindre
 	Go To (⌘⌥G)	Atteindre (⌘⌥G)
@@ -1753,7 +1762,10 @@
 	Recolor Selected Ink	Recolorer l’encre sélectionnée
 	Add Pen	Ajouter un stylo
 	Remove Pen	Supprimer le stylo
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Convertir l’encre en forme
+	Convert to Math	Convert to Math
 	Convert to Shapes	Convertir en formes
 	Ink Replay	Rejouer l’encre
 	Add\nPen	Ajouter\nun stylo

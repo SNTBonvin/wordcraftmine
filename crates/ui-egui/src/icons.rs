@@ -442,6 +442,15 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rect(2.5, 5.0, 14.0, 15.0, c);
             pen.fill(&[(14.0, 10.0), (18.0, 6.5), (18.0, 13.5)], a);
         }
+        "model3d" => {
+            // An isometric cube: front and back squares joined at the corners.
+            pen.rect(3.0, 8.0, 11.0, 16.0, c);
+            pen.rect(8.0, 3.0, 16.0, 11.0, c);
+            pen.line_c(&[(3.0, 8.0), (8.0, 3.0)], a);
+            pen.line_c(&[(11.0, 8.0), (16.0, 3.0)], a);
+            pen.line_c(&[(3.0, 16.0), (8.0, 11.0)], a);
+            pen.line_c(&[(11.0, 16.0), (16.0, 11.0)], a);
+        }
         "link" => {
             pen.closed(
                 &[(3.0, 10.0), (7.0, 6.0), (9.5, 6.0), (9.5, 8.0), (7.5, 8.0), (5.0, 10.5), (7.5, 13.0), (9.5, 13.0), (9.5, 15.0), (7.0, 15.0)],
@@ -549,6 +558,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fcircle(10.0, 10.0, 3.5, a);
         }
         "equation" => pen.text(10.0, 10.0, 17.0, "π", a, false),
+        "inkEquation" => {
+            // A handwritten equation: π with a pen stroke beneath it.
+            pen.text(10.0, 8.0, 12.0, "π", a, false);
+            pen.line_c(&[(4.0, 16.0), (9.0, 13.5), (13.0, 16.5), (17.0, 14.0)], c);
+        }
         "symbol" => pen.text(10.0, 10.0, 17.0, "Ω", c, false),
         // Draw
         "pen" => {

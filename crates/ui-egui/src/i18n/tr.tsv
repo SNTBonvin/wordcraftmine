@@ -16,6 +16,7 @@
 	1.5 Line Spacing	1,5 Satır Aralığı
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Rust ile sıfırdan yazılmış ücretsiz, açık kaynak bir kelime işlemci.\nArtCraft ekibinin Crafting Apps ailesinin bir parçası.
 	AaBbCcDd	AaBbCcÇç
+	3D Models	3D Models
 	About	Hakkında
 	About WordCraft	WordCraft Hakkında
 	Accept	Kabul Et
@@ -27,6 +28,7 @@
 	Add a Table	Tablo Ekle
 	Add Space Before Paragraph	Paragraf Öncesine Boşluk Ekle
 	Add Text	Metin Ekle
+	Add-ins	Add-ins
 	Add to Dictionary	Sözlüğe Ekle
 	Add to Style Gallery	Stil Galerisine Ekle
 	Address Block	Adres Bloğu
@@ -189,6 +191,11 @@
 	Delete Style	Stili Sil
 	Delete Table	Tabloyu Sil
 	Design	Tasarım
+	Media	Media
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
+	Screenshot	Screenshot
 	development build	geliştirme derlemesi
 	Diagonal	Çapraz
 	Diamond	Eşkenar Dörtgen
@@ -289,6 +296,8 @@
 	Formatting at Selection	Seçimdeki Biçimlendirme
 	Formula	Formül
 	General	Genel
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Git
 	Go to	Git
 	Go To (⌘⌥G)	Git (⌘⌥G)
@@ -1984,7 +1993,10 @@ preview	Title	Örnek
 	Recolor Selected Ink	Seçili Mürekkebi Yeniden Renklendir
 	Add Pen	Kalem Ekle
 	Remove Pen	Kalemi Kaldır
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Mürekkepten Şekle
+	Convert to Math	Convert to Math
 	Convert to Shapes	Şekillere Dönüştür
 	Ink Replay	Mürekkep Yeniden Oynatma
 	Add\nPen	Kalem\nEkle

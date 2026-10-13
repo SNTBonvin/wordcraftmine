@@ -141,6 +141,8 @@ pub struct DrawState {
     pub pens: Vec<CustomPen>,
     /// Ink to Shape is on: strokes drawn from now on that look like a shape become that shape.
     pub ink_to_shape: bool,
+    /// Ink to Math is on: strokes drawn from now on that look like math become an equation.
+    pub ink_to_math: bool,
     #[serde(skip)]
     pub lasso: Option<LassoSelection>,
     /// Ink Replay is showing (the app plays the strokes back and turns this off when done).
@@ -157,6 +159,7 @@ impl Default for DrawState {
             highlighter: PenSettings::of(InkTool::Highlighter),
             pens: Vec::new(),
             ink_to_shape: false,
+            ink_to_math: false,
             lasso: None,
             replay: false,
         }
@@ -251,6 +254,22 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"value"?: bool}  (no value: convert the lasso-selected strokes, or turn Ink to Shape on or off)"#)
         .pure(),
         CommandSpec::new("draw.convertInk", "Convert to Shapes", "Draw › Convert", convert_selection),
+        CommandSpec::new("draw.inkToMath", "Ink to Math", "Draw › Convert", |s, v| {
+            if let Some(on) = p::bool(v, "value") {
+                s.view.draw.ink_to_math = on;
+                return Ok(json!({"value": on}));
+            }
+            // With strokes lasso-selected it converts them; otherwise it turns the mode on or off.
+            let ink_selected = lasso_selection(s).is_some_and(|l| l.items.iter().any(|pos| s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)).and_then(InlineObject::ink).is_some()));
+            if ink_selected {
+                return s.run("draw.convertInkToMath", &json!({}));
+            }
+            s.view.draw.ink_to_math = !s.view.draw.ink_to_math;
+            Ok(json!({"value": s.view.draw.ink_to_math}))
+        })
+        .params(r#"{"value"?: bool}  (no value: convert the lasso-selected strokes, or turn Ink to Math on or off)"#)
+        .pure(),
+        CommandSpec::new("draw.convertInkToMath", "Convert to Math", "Draw › Convert", super::ink_math::convert_selected_ink),
         CommandSpec::new("draw.replay", "Ink Replay", "Draw › Replay", replay)
             .params(r#"{"value"?: bool}  (starts or stops Ink Replay; returns the strokes in the order they were drawn)"#)
             .pure(),
@@ -391,7 +410,7 @@ fn erase(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 /// Delete the object at `pos`, keeping the text selection on the same text.
-fn delete_object(s: &mut Session, pos: &Pos) -> Result<(), CmdError> {
+pub(crate) fn delete_object(s: &mut Session, pos: &Pos) -> Result<(), CmdError> {
     let len = OBJ.len_utf8();
     s.doc.delete_range(pos, &Pos { off: pos.off + len, ..pos.clone() })?;
     for at in [&mut s.sel.anchor, &mut s.sel.focus] {
@@ -463,7 +482,13 @@ fn stroke(s: &mut Session, v: &Value) -> CmdResult {
     let at = place(s, &layout, obj, page, (fx, fy), first[1])?;
     // Ink to Shape: a stroke that looks like a shape becomes it (in the same undo step).
     let shape = if s.view.draw.ink_to_shape && tool != InkTool::Highlighter { convert_at(s, &at)? } else { None };
-    Ok(json!({"pos": pos_json(&at), "page": page, "rect": [fx, fy, fw, fh], "shape": shape}))
+    // Ink to Math: a stroke that looks like math becomes an equation instead.
+    let math = if shape.is_none() && s.view.draw.ink_to_math && tool != InkTool::Highlighter {
+        super::ink_math::try_convert_stroke_at(s, &at)?
+    } else {
+        None
+    };
+    Ok(json!({"pos": pos_json(&at), "page": page, "rect": [fx, fy, fw, fh], "shape": shape, "math": math}))
 }
 
 /// Insert floating `obj` with its top-left at `(x, y)` on `page`, anchored to the body paragraph
@@ -511,7 +536,7 @@ pub fn lasso_selection(s: &Session) -> Option<&LassoSelection> {
 }
 
 /// Keep `sel` selected after the mutating command running now (which bumps the revision once).
-fn keep_lasso(s: &mut Session, sel: LassoSelection) {
+pub(crate) fn keep_lasso(s: &mut Session, sel: LassoSelection) {
     s.view.draw.lasso = Some(LassoSelection { rev: s.rev().wrapping_add(1), ..sel });
 }
 
@@ -580,7 +605,7 @@ fn lasso(s: &mut Session, v: &Value) -> CmdResult {
     Ok(json!({"page": page, "count": selected.len(), "selected": selected}))
 }
 
-fn lasso_required(s: &Session) -> Result<LassoSelection, CmdError> {
+pub(crate) fn lasso_required(s: &Session) -> Result<LassoSelection, CmdError> {
     lasso_selection(s).cloned().ok_or_else(|| CmdError::Failed("nothing is selected with the lasso".into()))
 }
 

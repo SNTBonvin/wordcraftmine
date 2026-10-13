@@ -18,6 +18,7 @@
 	(no suggestions)	(brak propozycji)
 	1.5 Line Spacing	Interlinia 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Darmowy edytor tekstu o otwartym kodzie, napisany od podstaw w języku Rust.\nCzęść rodziny Crafting Apps zespołu ArtCraft.
+	3D Models	3D Models
 	About	Informacje
 	About WordCraft	O programie WordCraft
 	Accept	Zaakceptuj
@@ -27,6 +28,7 @@
 	Add	Dodaj
 	Add Space Before Paragraph	Dodaj odstęp przed akapitem
 	Add Text	Dodaj tekst
+	Add-ins	Add-ins
 	Add a Table	Dodaj tabelę
 	Add a comment	Dodaj komentarz
 	Add to Dictionary	Dodaj do słownika
@@ -286,6 +288,8 @@
 	Formatting at Selection	Formatowanie zaznaczenia
 	Formula	Formuła
 	General	Ogólne
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Przejdź do
 	Go To (⌘⌥G)	Przejdź do (⌘⌥G)
 	Go To…	Przejdź do…
@@ -414,6 +418,7 @@
 	Match Fields	Dopasuj pola
 	Match case	Uwzględniaj wielkość liter
 	Matrix	Macierz
+	Media	Media
 	Merge	Scal
 	Merge Cells	Scal komórki
 	Merge Formatting	Scal formatowanie
@@ -471,6 +476,9 @@
 	Office 2003 Default	Domyślny pakietu Office 2003
 	One	Jedna
 	One Page	Jedna strona
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Open	Otwórz
 	OpenDocument Text (*.odt)	Tekst OpenDocument (*.odt)
 	Optional Hyphen	Łącznik opcjonalny
@@ -619,6 +627,7 @@
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Zapisz kopię w innym formacie. Drukowanie odbywa się przez plik PDF, który można wydrukować w dowolnej przeglądarce.
 	Save as Template	Zapisz jako szablon
 	Saved	Zapisany
+	Screenshot	Screenshot
 	Search Commands	Wyszukaj polecenia
 	Search commands and help	Wyszukaj polecenia i pomoc
 	Search document	Przeszukaj dokument
@@ -1516,6 +1525,7 @@
 	Conference	Konferencja
 	Conference paper	Referat konferencyjny
 	Container Title	Tytuł całości
+	Convert to Math	Convert to Math
 	Convert to Shapes	Konwertuj na kształty
 	Count by:	Co ile:
 	Create Source	Utwórz źródło
@@ -1562,6 +1572,8 @@
 	Include page numbers	Dołącz numery stron
 	Indented	Z wcięciem
 	Ink Replay	Odtwarzanie pisma odręcznego
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Pismo odręczne na kształt
 	Institution	Instytucja
 	Ionosphere	Jonosfera

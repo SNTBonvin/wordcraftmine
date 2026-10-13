@@ -18,6 +18,7 @@
 	(no suggestions)	(nessun suggerimento)
 	1.5 Line Spacing	Interlinea 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Un elaboratore di testi gratuito e open source, scritto da zero in Rust.\nFa parte delle Crafting Apps del team ArtCraft.
+	3D Models	3D Models
 	About	Informazioni
 	About WordCraft	Informazioni su WordCraft
 	Accept	Accetta
@@ -31,6 +32,7 @@
 	Add space between Asian text and numbers	Aggiungi spazio tra testo asiatico e numeri
 	Add tab stop at:	Aggiungi tabulazione a:
 	Add Text	Aggiungi testo
+	Add-ins	Add-ins
 	Add a Table	Aggiungi una tabella
 	Add a comment	Aggiungi un commento
 	Add to Dictionary	Aggiungi al dizionario
@@ -93,10 +95,14 @@
 	Legal style numbering	Numerazione stile legale
 	Link level to style:	Collega livello allo stile:
 	List Definition	Definizione elenco
+	Media	Media
 	Nothing	Niente
 	Number alignment:	Allineamento numero:
 	Number format	Formato numero
 	Number style for this level:	Stile numero per questo livello:
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	Bordo esterno
 	Restart list after:	Riavvia elenco dopo:
 	Right border	Bordo destro
@@ -126,6 +132,7 @@
 	Border Painter	Copia bordi
 	Border\nPainter	Copia\nbordi
 	Borders	Bordi
+	Screenshot	Screenshot
 	Tab stop position:	Posizione tabulazione:
 	Default tab stops:	Tabulazioni predefinite:
 	Tab stops to be cleared:	Tabulazioni da cancellare:
@@ -361,6 +368,8 @@
 	Formatting at Selection	Formattazione nella selezione
 	Formula	Formula
 	General	Generale
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Vai a
 	Go To (⌘⌥G)	Vai a (⌘⌥G)
 	Go To…	Vai a…
@@ -1937,7 +1946,10 @@
 	Recolor Selected Ink	Ricolora input penna selezionato
 	Add Pen	Aggiungi penna
 	Remove Pen	Rimuovi penna
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Input penna in forma
+	Convert to Math	Convert to Math
 	Convert to Shapes	Converti in forme
 	Ink Replay	Riproduci input penna
 	Add\nPen	Aggiungi\npenna

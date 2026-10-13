@@ -12,6 +12,7 @@
 	(no suggestions)	(soovitused puuduvad)
 	1.5 Line Spacing	Reavahe 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Tasuta avatud lähtekoodiga tekstitöötlusprogramm, mis on kirjutatud Rustis.\nArtCrafti meeskonna Crafting Appsi osa.
+	3D Models	3D Models
 	About	Teave
 	About WordCraft	WordCrafti teave
 	Accept	Nõustu
@@ -21,6 +22,7 @@
 	Add	Lisa
 	Add Space Before Paragraph	Lisa lõigu ette vahe
 	Add Text	Lisa tekst
+	Add-ins	Add-ins
 	Add a Table	Lisa tabel
 	Add a comment	Lisa kommentaar
 	Add to Dictionary	Lisa sõnastikku
@@ -296,6 +298,8 @@
 	Formatting exceptions	Vormindamise erandid
 	Formula	Valem
 	General	Üldine
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Mine
 	Go To (⌘⌥G)	Mine (⌘⌥G)
 	Go To…	Mine…
@@ -424,6 +428,7 @@
 	Link to Previous	Seo eelmisega
 	Links	Lingid
 	Location: {path}	Asukoht: {path}
+	Media	Media
 	Mirror indents	Peegelda taanded
 	MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.	MIT OR Apache-2.0. Autoriõigus (c) 2026 ArtCrafti meeskond ja WordCrafti kaasautorid.
 	Macros	Makrod
@@ -503,6 +508,9 @@
 	Office 2003 Default	Office 2003 vaikevalik
 	One	Üks
 	One Page	Üks leht
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Open	Ava
 	OpenDocument Text (*.odt)	OpenDocumenti tekst (*.odt)
 	Optional Hyphen	Valikuline poolitusmärk
@@ -664,6 +672,7 @@
 	Save as Template	Salvesta mallina
 	Save documents	Dokumentide salvestamine
 	Saved	Salvestatud
+	Screenshot	Screenshot
 	Search	Otsi
 	Search Commands	Otsi käske
 	Search commands and help	Otsi käske ja abi
@@ -1924,7 +1933,10 @@
 	Recolor Selected Ink	Muuda valitud tindi värvi
 	Add Pen	Lisa pliiats
 	Remove Pen	Eemalda pliiats
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Käsikiri kujundiks
+	Convert to Math	Convert to Math
 	Convert to Shapes	Teisenda kujunditeks
 	Ink Replay	Esita käsikiri
 	Add\nPen	Lisa\npliiats

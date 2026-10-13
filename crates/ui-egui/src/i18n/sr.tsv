@@ -21,6 +21,7 @@
 	1.5 Line Spacing	Проређеност 1,5
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Бесплатан, отворени обрађивач текста написан од нуле у Rust-у.\nДео Crafting Apps пакета тима ArtCraft.
 	A password is required to open this document.	За отварање овог документа потребна је лозинка.
+	3D Models	3D Models
 	About	О програму
 	About WordCraft	О WordCraft-у
 	Accept	Прихвати
@@ -36,6 +37,7 @@
 	Add space between Asian text and numbers	Додај размак између азијског текста и бројева
 	Add tab stop at:	Додај табулатор на:
 	Add Text	Додај текст
+	Add-ins	Add-ins
 	Add to Dictionary	Додај у речник
 	Add to Style Gallery	Додај у галерију стилова
 	Address Block	Блок адресе
@@ -143,6 +145,7 @@
 	List Definition	Дефиниција листе
 	Mark grammar errors as you type	Означавај граматичке грешке током куцања
 	Measurement units:	Јединице мере:
+	Media	Media
 	Millimeters	Милиметри
 	New comments and tracked changes are recorded under this name and these initials.	Нови коментари и праћене измене бележе се под овим именом и иницијалима.
 	New word	Нова реч
@@ -152,6 +155,9 @@
 	Number alignment:	Поравнање броја:
 	Number format	Формат броја
 	Number style for this level:	Стил броја за овај ниво:
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	Спољна ивица
 	In Default apps, choose WordCraft for the document types you want it to open.	У подразумеваним апликацијама изаберите WordCraft за врсте докумената које желите да отвара.
 	Make WordCraft the default for Word documents…	Постави WordCraft као подразумевану апликацију за Word документе…
@@ -208,6 +214,7 @@
 	Preview	Преглед
 	Remove Password	Уклони лозинку
 	Save documents	Чување докумената
+	Screenshot	Screenshot
 	Search	Претрага
 	Shadow, glow and soft edges	Сенка, сјај и меке ивице
 	Shape Effects	Ефекти облика
@@ -475,6 +482,8 @@
 	Formatting at Selection	Форматирање на избору
 	Formula	Формула
 	General	Опште
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Иди на
 	Go to	Иди на
 	Go To (⌘⌥G)	Иди на (⌘⌥G)
@@ -1935,7 +1944,10 @@
 	Recolor Selected Ink	Промени боју изабраног рукописа
 	Add Pen	Додај перо
 	Remove Pen	Уклони перо
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Рукопис у облик
+	Convert to Math	Convert to Math
 	Convert to Shapes	Претвори у облике
 	Ink Replay	Рукопис реприза
 	Add\nPen	Додај\nперо
