@@ -281,3 +281,40 @@ fn live_research_retrieves_sources_without_editing() {
     assert!(app.ollama.sources.iter().any(|(_, url)| url == "https://docs.ollama.com/cloud"), "{:?}", app.ollama.sources);
     assert!(app.ollama.sources.len() > 1, "search and fetch both return sources");
 }
+
+#[test]
+#[ignore = "requires a running local model; checks grounding on the full sample document"]
+fn live_document_title_is_grounded_in_actual_document() {
+    let ctx = egui::Context::default();
+    let mut app = WordApp::new(Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+    app.ollama.model = std::env::var("WORDCRAFT_TEST_OLLAMA_MODEL").expect("test model");
+    app.ollama.api_key.clear();
+    if std::env::var("WORDCRAFT_TEST_BACKEND").as_deref() == Ok("llamacpp") {
+        app.ollama.source = Source::LlamaCpp;
+    }
+    app.ollama.input = "Read this document and tell me its title in one short sentence. Do not edit it.".into();
+    send(&mut app, &ctx);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    while app.ollama.busy && std::time::Instant::now() < deadline {
+        poll(&mut app, &ctx);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!app.ollama.busy);
+    assert_eq!(app.ollama.status, "Ready.", "{:?}", app.ollama.entries);
+    let answer = app.ollama.entries.iter().rev().find(|(role, _)| role == "Assistant").expect("assistant reply");
+    assert!(answer.1.contains("The Open Studio Handbook"), "{}", answer.1);
+    assert!(!app.session.dirty);
+    assert!(!can_undo(&app));
+}
+
+#[test]
+fn document_metadata_is_editable_and_undoable_without_file_io() {
+    let mut app = app();
+    let original = app.session.doc.core.title.clone();
+    app.ollama.allow_edits = true;
+    execute(&mut app, "file.properties", json!({"title":"A precise title"})).unwrap();
+    assert_eq!(document_title(&app), "A precise title");
+    undo(&mut app).unwrap();
+    assert_eq!(app.session.doc.core.title, original);
+    assert!(execute(&mut app, "file.save", json!({"path":"/tmp/forbidden.docx"})).is_err());
+}

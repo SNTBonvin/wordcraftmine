@@ -27,8 +27,12 @@ WordCraft reads the available models from Ollama; it does not download model wei
 
 ## Document tools and editing
 
+Every message starts with an automatic snapshot of the actual document title, selected text,
+editing permission and body preview; fresh tool reads supersede it. This prevents a skipped read
+from leaving a small model with no document context. Local Ollama uses a 16k context window.
+
 The assistant can discover WordCraft commands and their parameters, inspect the current document,
-then execute commands for text, formatting, lists, tables, pictures, equations, references,
+then execute commands for document properties, text, formatting, lists, tables, pictures, equations, references,
 comments, and layout. Requests and streaming replies run on background workers. Document tools
 return to the UI thread so edits appear in the open document immediately.
 
@@ -88,7 +92,8 @@ Protocol references: [Ollama cloud](https://docs.ollama.com/cloud),
 `cargo xtask ci` passed formatting, Clippy, workspace tests, asset attribution, layering and
 all required WASM checks. Live synthetic-document tests passed with Qwen 3.5 4B through both
 Ollama and direct llama.cpp, and Gemma 4 31B through Ollama Cloud: append, read-only rejection
-and undo. Direct llama.cpp also completed live public search/fetch with retrieved source links
+and undo. A stricter live test checked the exact sample-document title after automatic
+context grounding was added. Direct llama.cpp also completed live public search/fetch with retrieved source links
 and no document edits. Headless screenshots confirmed the ribbon, right task pane and Backstage
 spacing; no Microsoft assets were used.
 

@@ -63,6 +63,7 @@ pub struct State {
     pub sources: Vec<(String, String)>,
     entries: Vec<(String, String)>,
     history: Vec<Value>,
+    context: Value,
     events: Option<Receiver<Event>>,
     cancel: Arc<AtomicBool>,
     document: Option<u64>,
@@ -90,6 +91,7 @@ impl Default for State {
             sources: Vec::new(),
             entries: Vec::new(),
             history: Vec::new(),
+            context: Value::Null,
             events: None,
             cancel: Arc::new(AtomicBool::new(false)),
             document: None,
@@ -201,7 +203,9 @@ fn allowed(id: &str, args: &Value) -> bool {
         id,
         "edit.find" | "edit.replace" | "edit.cut" | "edit.copy" | "edit.paste" | "edit.pasteText" | "edit.pasteMerge" | "edit.selectAll"
     );
-    (safe_prefix || safe_edit) && !matches!(id, "insert.textFromFile" | "review.restrict" | "review.readAloud") && !external_params(args, 0)
+    (safe_prefix || safe_edit || id == "file.properties")
+        && !matches!(id, "insert.textFromFile" | "review.restrict" | "review.readAloud")
+        && !external_params(args, 0)
 }
 
 fn external_params(v: &Value, depth: usize) -> bool {
@@ -243,6 +247,10 @@ pub fn undo(app: &mut WordApp) -> Result<(), String> {
     Ok(())
 }
 
+fn document_title(app: &WordApp) -> String {
+    if app.session.doc.core.title.trim().is_empty() { app.title_stem() } else { app.session.doc.core.title.clone() }
+}
+
 fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, String> {
     if app.ollama.cancel.load(Ordering::SeqCst) {
         return Err("Request cancelled.".into());
@@ -258,8 +266,10 @@ fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, S
             let offset = args.get("offset").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).unwrap_or(0).min(text.chars().count());
             let limit = args.get("limit").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).unwrap_or(12_000).clamp(1, 24_000);
             let chunk: String = text.chars().skip(offset).take(limit).collect();
-            Ok(json!({"text": chunk, "offset": offset, "totalCharacters": text.chars().count(), "selection": app.session.sel,
-                "allowEdits": app.ollama.allow_edits, "revision": app.session.rev()}))
+            Ok(
+                json!({"text": chunk, "offset": offset, "totalCharacters": text.chars().count(), "title":document_title(app), "selection": app.session.sel,
+                "allowEdits": app.ollama.allow_edits, "revision": app.session.rev()}),
+            )
         }
         "find_commands" => {
             let query = args.get("query").and_then(Value::as_str).unwrap_or("").to_lowercase();
@@ -450,7 +460,10 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.history.clear();
     }
     app.ollama.document = Some(app.session.document_id());
-    app.ollama.turn_revision = None;
+    app.ollama.turn_revision = Some(app.session.rev());
+    app.ollama.context = json!({"title":document_title(app),"documentId":app.session.document_id(),"revision":app.session.rev(),
+        "textPreview":clip(&app.session.doc.plain_text(wordcraft_doc::StoryRef::Body),12_000),
+        "selectedText":clip(&app.session.selected_text(),2000),"selection":app.session.sel,"allowEdits":app.ollama.allow_edits});
     app.ollama.cancel = Arc::new(AtomicBool::new(false));
     app.ollama.history.push(json!({"role":"user","content":input}));
     app.ollama.entry("You", input);
@@ -516,7 +529,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ui.small("The key stays in memory for this app session. Cloud uses signed-in Ollama when no key is entered. Web search works with or without a key.");
                 ui.hyperlink_to("Get an API key", "https://ollama.com/settings/keys");
                 if app.ollama.source == Source::Cloud {
-                    ui.small("Cloud prompts include document content requested by the AI. Your Ollama account usage limits apply.");
+                    ui.small("Cloud chat includes a snapshot of this document. Your Ollama account usage limits apply.");
                 }
             });
         });
