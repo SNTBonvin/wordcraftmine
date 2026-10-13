@@ -2149,6 +2149,10 @@ fn hostile_vml_paths_stay_finite() {
                 r#"<w:p><w:r><w:pict><v:shape style="width:1e30pt;height:-4pt" coordsize="{size}" coordorigin="{origin}" path="{path}" strokecolor="black"/></w:pict></w:r></w:p>"#
             );
             let d = read_body(&body);
+            // A path with formulas isn't drawn (they aren't evaluated).
+            if path.contains('@') {
+                assert!(paras(&d)[0].objects.iter().all(|o| !matches!(o, InlineObject::Shape { freeform: Some(_), .. })), "{path}");
+            }
             for o in &paras(&d)[0].objects {
                 if let InlineObject::Shape { w, h, freeform: Some(f), .. } = o {
                     assert!(w.is_finite() && h.is_finite() && f.alpha.is_finite(), "{path}");

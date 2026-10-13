@@ -100,8 +100,12 @@ const VML_TWO: [&str; 11] = ["nf", "ns", "ae", "al", "at", "ar", "wa", "wr", "qx
 /// relative), `l`/`r` line, `c`/`v` cubic Bézier (flattened), `x` close, `e` end, `nf`/`ns` no
 /// fill / no outline; arcs (`at`, `ar`, `wa`, `wr`) and quadrants (`qx`, `qy`) are drawn straight
 /// to their end, `qb` straight to its last point, and ellipses (`ae`, `al`) are skipped. An empty
-/// parameter is 0, and so is a formula reference (`@n`). `None` when the path has no points.
+/// parameter is 0. `None` when the path has no points, or uses formulas (`@n`, from `v:formulas`,
+/// which aren't evaluated): such a shape isn't drawn rather than drawn wrong.
 pub fn vml_path(path: &str, coordsize: Option<&str>, coordorigin: Option<&str>, w: f32, h: f32) -> Option<VmlPath> {
+    if path.contains('@') {
+        return None;
+    }
     let pair = |v: Option<&str>| -> Option<(f64, f64)> {
         let v = v?;
         let (a, b) = v.split_once(',').unwrap_or((v, ""));
@@ -227,8 +231,8 @@ impl Draw {
 
 /// The commands of a VML path with their parameters: a command is a letter (or one of
 /// [`VML_TWO`]) followed by numbers separated by commas or spaces. An empty parameter (nothing
-/// before a comma) is 0, and so is a formula reference (`@n`); fractions are dropped. Anything
-/// else is skipped.
+/// before a comma) is 0, and so is a formula reference (`@n`, not expected here: see
+/// [`vml_path`]); fractions are dropped. Anything else is skipped.
 fn vml_commands(path: &str) -> Vec<(String, Vec<f64>)> {
     let mut out: Vec<(String, Vec<f64>)> = Vec::new();
     let mut chars = path.chars().take(MAX_VML_PATH).peekable();
