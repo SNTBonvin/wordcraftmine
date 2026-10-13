@@ -701,7 +701,7 @@ pub fn math_class(c: char) -> MClass {
     }
 }
 
-/// Merge adjacent runs with the same formatting; recurse into structures.
+/// Merge adjacent runs with the same formatting; recurse into every structure.
 pub fn merge_runs(a: Arg) -> Arg {
     let mut out: Arg = Vec::with_capacity(a.len());
     for n in a {
@@ -722,17 +722,7 @@ pub fn merge_runs(a: Arg) -> Arg {
                 }
                 MNode::Run(r)
             }
-            MNode::Frac { kind, num, den } => MNode::Frac { kind, num: merge_runs(num), den: merge_runs(den) },
-            MNode::Script { kind, base, sub, sup } => MNode::Script { kind, base: merge_runs(base), sub: merge_runs(sub), sup: merge_runs(sup) },
-            MNode::Rad { deg, deg_hide, e } => MNode::Rad { deg: merge_runs(deg), deg_hide, e: merge_runs(e) },
-            MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e } => {
-                MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub: merge_runs(sub), sup: merge_runs(sup), e: merge_runs(e) }
-            }
-            MNode::Delim { beg, end, sep, grow, shp_match, elems } => {
-                MNode::Delim { beg, end, sep, grow, shp_match, elems: elems.into_iter().map(merge_runs).collect() }
-            }
-            MNode::Func { name, e } => MNode::Func { name: merge_runs(name), e: merge_runs(e) },
-            other => other,
+            other => crate::math_linear::map_args(other, &merge_runs),
         };
         out.push(n);
     }
@@ -873,6 +863,7 @@ mod tests {
         }
     }
 
+    //T1
     /// Deepest nesting of `a` (a leaf counts 1), without recursion.
     fn depth_of(a: &[MNode]) -> usize {
         let mut best = 0;
@@ -925,6 +916,7 @@ mod tests {
         assert!(matches!(&n[0], MNode::Nary { e, .. } if matches!(e.first(), Some(MNode::Nary { .. }))), "{n:#?}");
     }
 
+    //T2
     #[test]
     fn latex_text_escapes_what_latex_reads_as_markup() {
         for text in ["a}b\\c", "{x}", "50% of #1", "a_b&c$d~e^f", "\\", "\\alpha", "\\{"] {
@@ -934,6 +926,23 @@ mod tests {
         }
         let n = vec![MNode::Run(MRun::new("a\\b"))];
         assert_eq!(crate::math_latex::parse_latex(&crate::math_latex::to_latex(&n)), n);
+    }
+
+    //T3
+    #[test]
+    fn latex_runs_merge_inside_every_structure() {
+        use crate::math_latex::parse_latex;
+        for (tex, lin) in [(r"\overline{ab}", "¯(ab)"), (r"\underline{ab}", "▁(ab)"), (r"\boxed{ab}", "▭(ab)"), (r"\phantom{ab}", "⟡(ab)")] {
+            assert_eq!(parse_latex(tex), parse_linear(lin), "{tex}");
+        }
+        let n = parse_latex(r"\begin{matrix}a b&c d\\e f&g\end{matrix}");
+        let MNode::Matrix { rows, .. } = &n[0] else { panic!("{n:#?}") };
+        assert!(rows.iter().flatten().all(|c| c.len() == 1), "{rows:#?}");
+        let n = parse_latex(r"\hat{ab}\underbrace{ab}\underset{ab}{cd}");
+        let runs = |a: &Arg| a.iter().filter(|n| matches!(n, MNode::Run(_))).count();
+        assert!(matches!(&n[0], MNode::Acc { e, .. } if runs(e) == 1), "{n:#?}");
+        assert!(matches!(&n[1], MNode::GroupChr { e, .. } if runs(e) == 1), "{n:#?}");
+        assert!(matches!(&n[2], MNode::Lim { e, lim, .. } if runs(e) == 1 && runs(lim) == 1), "{n:#?}");
     }
 
     #[test]
