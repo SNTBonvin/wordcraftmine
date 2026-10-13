@@ -476,6 +476,64 @@ fn long_strings_are_clamped() {
 }
 
 #[test]
+fn the_full_en_us_set_resolves_common_term_references() {
+    let s = parse(
+        whole(
+            r#"<citation><layout>
+        <text term="in" prefix=" " suffix=": "/>
+        <text term="chapter"/>
+        <text term="opus" form="short"/>
+        <text term="circa" form="short"/>
+        <text term="long-ordinal-03"/>
+        <label variable="verse" form="short"/>
+      </layout></citation>"#,
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(s.locale_terms.text("in", Form::Long, false), Some("in"));
+    assert_eq!(s.locale_terms.text("opus", Form::Short, true), Some("opp."));
+    assert_eq!(s.locale_terms.text("circa", Form::Short, false), Some("c."));
+    assert_eq!(s.locale_terms.text("long-ordinal-03", Form::Long, false), Some("third"));
+    assert_eq!(s.locale_terms.text("verse", Form::Short, true), Some("vv."));
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+}
+
+#[test]
+fn unresolvable_term_references_warn() {
+    // One unknown term, however often it appears: exactly one warning.
+    let s = parse(
+        whole(r#"<citation><layout><text term="in"/><text term="gibberish-term"/><text term="gibberish-term"/></layout></citation>"#).as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(s.warned().len(), 1, "{:?}", s.warned());
+    warned_contains(&s, "gibberish-term");
+    // References inside macros and branches are checked too.
+    let s = parse(
+        whole(
+            r#"<macro name="m"><text term="made-up-in-macro"/></macro><citation><layout><choose><if variable="page"><text macro="m"/></if><else><text term="also-made-up"/></else></choose></layout></citation>"#,
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    warned_contains(&s, "made-up-in-macro");
+    warned_contains(&s, "also-made-up");
+    // An unknown label variable warns as well.
+    let s = parse(whole(r#"<citation><layout><label variable="gibberish-label"/></layout></citation>"#).as_bytes()).unwrap();
+    warned_contains(&s, "gibberish-label");
+    // A style's en-US override can define a term the defaults lack, resolving the reference.
+    let s = parse(
+        whole(
+            r#"<locale xml:lang="en-US"><terms><term name="custom-word">Custom</term></terms></locale><citation><layout><text term="custom-word"/></layout></citation>"#,
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(s.locale_terms.text("custom-word", Form::Long, false), Some("Custom"));
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+}
+
+#[test]
 fn pristine_minimal_style_has_no_warnings() {
     let s = parse(br#"<style version="1.0"><citation><layout><text variable="title"/></layout></citation></style>"#).unwrap();
     assert_eq!(s.title, "");

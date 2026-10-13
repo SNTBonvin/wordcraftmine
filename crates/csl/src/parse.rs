@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::model::*;
 use crate::terms::TermSet;
 use crate::xml::{self, El};
-use crate::{referenced_macros, walk_elements};
+use crate::{for_each_element, referenced_macros, walk_elements};
 
 /// A style file may not be larger than this.
 pub(crate) const MAX_STYLE_BYTES: usize = 2 << 20; // 2 MiB
@@ -97,6 +97,7 @@ pub fn parse(bytes: &[u8]) -> Result<Style, String> {
         None => None,
     };
     resolve_macros(&mut macros, &mut citation, &mut bibliography, &mut w);
+    check_term_references(&citation, &bibliography, &macros, &terms, &mut w);
 
     Ok(Style { id, title, locale_terms: terms, macros, citation, bibliography, warnings: w.into_vec() })
 }
@@ -662,4 +663,49 @@ fn resolve_macros(macros: &mut BTreeMap<String, Vec<Element>>, citation: &mut La
 /// Macro references of a layout tree (its body plus branch/else/substitute descendants).
 fn collect_tree_refs(layout: &Layout, out: &mut Vec<String>) {
     referenced_macros(&layout.elements, out);
+}
+
+/// Term references the merged en-US term set (defaults plus the style's overrides) can't
+/// resolve would render empty: surface them instead. `<text term="…">` and
+/// `<label variable="…">` both draw on terms; a names' own `<label>` (no variable) labels
+/// the names' role and is checked by the renderer's variables, not here.
+fn check_term_references(
+    citation: &Layout,
+    bibliography: &Option<Bibliography>,
+    macros: &BTreeMap<String, Vec<Element>>,
+    terms: &TermSet,
+    w: &mut Warnings,
+) {
+    let mut term_refs: Vec<(String, Option<Form>)> = Vec::new();
+    let mut label_refs: Vec<(String, Option<Form>)> = Vec::new();
+    let mut collect = |els: &[Element]| {
+        for_each_element(els, &mut |e| match e {
+            Element::Text(t) => {
+                if let TextSource::Term(name) = &t.source {
+                    term_refs.push((name.clone(), t.form));
+                }
+            }
+            Element::Label(l) if !l.variable.is_empty() => {
+                label_refs.push((l.variable.clone(), l.form));
+            }
+            _ => {}
+        });
+    };
+    collect(&citation.elements);
+    if let Some(b) = bibliography {
+        collect(&b.layout.elements);
+    }
+    for body in macros.values() {
+        collect(body);
+    }
+    for (name, form) in &term_refs {
+        if terms.get(name, form.unwrap_or(Form::Long)).is_none() {
+            w.push(format!("term '{name}' is not in the en-US locale (or the style's overrides); it renders empty"));
+        }
+    }
+    for (name, form) in &label_refs {
+        if terms.get(name, form.unwrap_or(Form::Long)).is_none() {
+            w.push(format!("label variable '{name}' is not in the en-US locale (or the style's overrides); it renders empty"));
+        }
+    }
 }

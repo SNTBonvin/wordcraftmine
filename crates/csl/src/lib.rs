@@ -60,30 +60,37 @@ pub(crate) fn walk_elements(els: &mut [ModelElement], f: &mut impl FnMut(&mut Mo
     }
 }
 
-/// The macro names referenced by a rendering tree (used to bound expansion).
-pub(crate) fn referenced_macros(els: &[ModelElement], out: &mut Vec<String>) {
+/// Walk every element of a rendering tree, read-only (used to inspect references).
+pub(crate) fn for_each_element(els: &[ModelElement], f: &mut impl FnMut(&ModelElement)) {
     for e in els {
-        if let ModelElement::Text(t) = e
-            && let TextSource::Macro(m) = &t.source
-        {
-            out.push(m.clone());
-        }
+        f(e);
         match e {
-            ModelElement::Group(g) => referenced_macros(&g.elements, out),
+            ModelElement::Group(g) => for_each_element(&g.elements, f),
             ModelElement::Choose(c) => {
                 for b in &c.branches {
-                    referenced_macros(&b.layout.elements, out);
+                    for_each_element(&b.layout.elements, f);
                 }
                 if let Some(e) = &c.else_branch {
-                    referenced_macros(&e.elements, out);
+                    for_each_element(&e.elements, f);
                 }
             }
             ModelElement::Names(n) => {
                 if let Some(s) = &n.substitute {
-                    referenced_macros(s, out);
+                    for_each_element(s, f);
                 }
             }
             _ => {}
         }
     }
+}
+
+/// The macro names referenced by a rendering tree (used to bound expansion).
+pub(crate) fn referenced_macros(els: &[ModelElement], out: &mut Vec<String>) {
+    for_each_element(els, &mut |e| {
+        if let ModelElement::Text(t) = e
+            && let TextSource::Macro(m) = &t.source
+        {
+            out.push(m.clone());
+        }
+    });
 }
