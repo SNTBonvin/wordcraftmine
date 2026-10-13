@@ -156,7 +156,7 @@
 	Alt text	Alternativni tekst
 	Alt:	Alt:
 	Alt\nText	Alternativni\ntekst
-	Angle Brackets	Lomljene zagrade
+	Angle Brackets	Šiljaste zagrade
 	Angle Brackets with Separator	Lomljene zagrade s razdjelnikom
 	Angle Brackets with Two Separators	Lomljene zagrade s dva razdjelnika
 	Animate the caret (it glides and fades)	Animiraj kursor (klizi i blijedi)
@@ -332,7 +332,7 @@
 	Categories:	Kategorije:
 	Category	Kategorija
 	Category {n}	Kategorija {n}
-	Ceiling	Strop
+	Ceiling	Gornje cijelo
 	Cell	Ćelija
 	Cell Margins	Margine ćelije
 	Cell Size	Veličina ćelije
@@ -389,7 +389,7 @@
 	Chart Design	Dizajn grafikona
 	Chart Layouts	Rasporedi grafikona
 	Chart Title	Naslov grafikona
-	Check	Provjeri
+	Check	Kvačica
 	Check Accessibility	Provjeri pristupačnost
 	Check Box Content Control	Kontrola sadržaja s potvrdnim okvirom
 	Check Compatibility	Provjeri kompatibilnost
@@ -685,10 +685,10 @@
 	Documents	Dokumenti
 	Documents you open will show up here.	Ovdje će se prikazati dokumenti koje ste nedavno otvorili.
 	Don't Save	Ne spremaj
-	Don't add space between paragraphs of the same style	Ne dodaj razmak između odlomaka istog stila
+	Don't add space between paragraphs of the same style	Ne dodavati razmak između odlomaka istog stila
 	Don't capitalize after:	Ne piši velikim slovom nakon:
 	Don't hyphenate	Ne rastavljaj riječi
-	Don't read Zotero, Mendeley or EndNote citations and bibliographies	Ne čitaj Zotero, Mendeley ili EndNote citate i bibliografije
+	Don't read Zotero, Mendeley or EndNote citations and bibliographies	Zanemari citate i bibliografije iz programa Zotero, Mendeley ili EndNote
 	Dot	Točka
 	Dot dash	Točka crtica
 	Dot-dash	Točka-crtica
@@ -878,7 +878,7 @@
 	Fixed Column Width	Fiksna širina stupca
 	Flip Horizontal	Okreni vodoravno
 	Flip Vertical	Okreni okomito
-	Floor	Pod
+	Floor	Donje cijelo
 	Focus	Fokus
 	Follow number with:	Iza broja slijedi:
 	Font	Font
@@ -960,7 +960,7 @@
 	HTML Format	HTML format
 	Hanging Indent	Viseća uvlaka
 	Harvard (Anglia)	Harvard (Anglia)
-	Hat	Kapica
+	Hat	Cirkumfleks
 	Header	Zaglavlje
 	Header & Footer	Zaglavlje i podnožje
 	Header Row	Redak zaglavlja
@@ -1254,7 +1254,7 @@ template	Letter	Pismo
 	Line spacing	Razmak redaka
 	Line spacing:	Razmak redaka:
 	Linear	Linearno
-	Linear Fraction	Linearni razlomak
+	Linear Fraction	Jednolinijski razlomak
 	Lines	Crte
 	Lines +/−	Retci +/−
 	Lines added	Dodani retci
@@ -1330,7 +1330,7 @@ template	Letter	Pismo
 	Matrix	Matrica
 	Maximum	Maksimum
 	Maximum Example	Primjer maksimuma
-	Measured By	Mjereno prema
+	Measured By	Mjereno s
 	Measurement units:	Mjerne jedinice:
 	Merge	Spoji
 	Merge Cells	Spoji ćelije
@@ -1481,7 +1481,7 @@ template	Letter	Pismo
 	Number of the page the field sits on	Broj stranice na kojoj se nalazi polje
 	Number of the section the field sits in	Broj odjeljka u kojem se nalazi polje
 	Number style for this level:	Stil brojeva za ovu razinu:
-	Number the equation; the number sits at the right margin (or type # then the number)	Numeriraj jednadžbu; broj se nalazi na desnoj margini (ili upišite # pa broj)
+	Number the equation; the number sits at the right margin (or type # then the number)	Numerirajte jednadžbu; broj se nalazi na desnoj margini (ili upišite # pa broj)
 	Numbering	Numeriranje
 	Numbering:	Numeriranje:
 	Numbering…	Numeriranje…
@@ -1515,7 +1515,7 @@ template	Letter	Pismo
 	One line per item. Enter adds an item.	Jedan redak po stavci. Enter dodaje stavku.
 	One-sided	Jednostrano
 	Only allow this kind of editing:	Dopusti samo ovu vrstu uređivanja:
-	Only comments can be added, except in regions marked editable.	Mogu se dodavati samo komentari, osim u područjima označenima kao uredivima.
+	Only comments can be added, except in regions marked editable.	Mogu se dodavati samo komentari, osim u područjima označenima kao urediva.
 	Only form fields can be filled in.	Mogu se ispunjavati samo polja obrasca.
 	Only the allowed styles can be applied.	Mogu se primijeniti samo dopušteni stilovi.
 	Only web (http, https) and email (mailto) links can be followed	Mogu se otvarati samo web-poveznice (http, https) i poveznice e-pošte (mailto)
@@ -1676,7 +1676,7 @@ template	Letter	Pismo
 	Print	Ispis
 	Print Layout	Izgled ispisa
 	Print Markup	Ispis oznaka
-	Print failed: the printing worker stopped.	Ispis nije uspio: radnik ispisa se zaustavio.
+	Print failed: the printing worker stopped.	Ispis nije uspio: proces ispisa se zaustavio.
 	Print failed: {error}	Ispis nije uspio: {error}
 	Print job submitted.	Zadatak ispisa je poslan.
 	Print job submitted: {receipt}	Zadatak ispisa je poslan: {receipt}
@@ -2003,7 +2003,7 @@ template	Letter	Pismo
 	Show the mini toolbar when text is selected	Prikaži malu alatnu traku kad je tekst odabran
 	Show/Hide ¶	Prikaži/sakrij ¶
 	Show\nComments	Prikaži\nkomentare
-	Showing the first {count} items.	Prikazane su prve stavke (najviše {count}).
+	Showing the first {count} items.	Prikazuje se prvih {count} stavki.
 	Shows a tree: each item below the item it belongs to.	Prikazuje stablo: svaka stavka nalazi se ispod stavke kojoj pripada.
 	Shows items around a central idea: the first item is the centre.	Prikazuje stavke oko središnje ideje: prva stavka je središte.
 	Shows items of equal weight as blocks in rows.	Prikazuje stavke jednake težine kao blokove u retcima.
@@ -2096,13 +2096,13 @@ template	Letter	Pismo
 	Square	Kvadrat
 	Square Root	Kvadratni korijen
 	Square Root with Degree	Kvadratni korijen sa stupnjem
-	Square Union	Kvadratna unija
+	Square Union	Uglata unija
 	Stack Object	Složeni objekt
 	Stack Object (Three)	Složeni objekt (tri)
 	Stacked	Složeno
 	Stacked Bar	Složena traka
 	Stacked Column	Složeni stupac
-	Stacked Fraction	Složeni razlomak
+	Stacked Fraction	Okomiti razlomak
 	Stacked, no bar	Složeno, bez crte
 	Standard	Standardno
 	Standard Colors	Standardne boje
@@ -2243,7 +2243,7 @@ template	Letter	Pismo
 	The clipboard is empty.	Međuspremnik je prazan.
 	The date it is today	Današnji datum
 	The document has no bookmarks yet.	Dokument još nema knjižnih oznaka.
-	The document is read only, except for regions marked editable.	Dokument je samo za čitanje, osim područja označenih kao uredivih.
+	The document is read only, except for regions marked editable.	Dokument je samo za čitanje, osim područja označenih kao urediva.
 	The document will be saved with a password. Save it to protect it.	Dokument će biti spremljen s lozinkom. Spremite ga da biste ga zaštitili.
 	The new style takes the formatting of the current paragraph.	Novi stil preuzima oblikovanje trenutačnog odlomka.
 	The password is optional; without it anyone can stop the protection.	Lozinka nije obavezna; bez nje svatko može zaustaviti zaštitu.
@@ -2334,7 +2334,7 @@ preview	Title	Naslov
 	Type a command, e.g. "insert table"	Upišite naredbu, npr. „umetni tablicu”
 	Type at least one recipient.	Upišite barem jednog primatelja.
 	Type equations in LaTeX	Upisuj jednadžbe u formatu LaTeX
-	Type equations in the linear format (UnicodeMath)	Upisuj jednadžbe u linearnom formatu (UnicodeMath)
+	Type equations in the linear format (UnicodeMath)	Upisujte jednadžbe u linearnom formatu (UnicodeMath)
 	Type in Equation	Upisivanje u jednadžbi
 	Type normal (non-math) text in the equation	Upiši običan (nematematički) tekst u jednadžbu
 	Type the categories down the side and a column of values per series.	Upišite kategorije niz stranu i po jedan stupac vrijednosti za svaki niz.
@@ -2388,7 +2388,7 @@ preview	Title	Naslov
 	Use "an" before a vowel sound	Koristi „an” ispred samoglasničkog glasa
 	Use an Existing List…	Koristi postojeći popis…
 	Use system setting	Koristi postavku sustava
-	Use the Insert key to switch overtype on and off	Koristi tipku Insert za uključivanje i isključivanje prepisivanja
+	Use the Insert key to switch overtype on and off	Koristite tipku Umetni (Insert) za uključivanje i isključivanje prepisivanja
 	Use wildcards	Koristi zamjenske znakove
 	User Name	Korisničko ime
 	User name:	Korisničko ime:
@@ -2467,7 +2467,7 @@ preview	Title	Naslov
 	Write a reply	Napišite odgovor
 	Year	Godina
 	Yes	Da
-	Yields	Daje
+	Yields	Rezultira
 	Your changes will be lost if you don't save them.	Vaše promjene bit će izgubljene ako ih ne spremite.
 	Your system doesn't report an animation setting, so animation effects stay on.	Vaš sustav ne javlja postavku animacije pa animacijski efekti ostaju uključeni.
 	Your system has animation effects turned off.	Vaš sustav ima isključene animacijske efekte.
@@ -2498,7 +2498,7 @@ preview	Title	Naslov
 	this item is already at the top level	ova je stavka već na najvišoj razini
 	x bar	x s crtom
 	{cols}×{rows} Table	Tablica {cols}×{rows}
-	{contributors} contributors · {commits} commits	Doprinositelji: {contributors} · commitovi: {commits}
+	{contributors} contributors · {commits} commits	Doprinositelji: {contributors} · promjene: {commits}
 	{count} items highlighted	Istaknute stavke: {count}
 	{count} of {total} pages will print	Stranice za ispis: {count} od {total}
 	{group} settings	Postavke: {group}
