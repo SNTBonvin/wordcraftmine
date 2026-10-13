@@ -47,9 +47,14 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.header", "Header", "Insert › Header & Footer", |s, v| header_footer(s, v, true)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|title"}"#),
         CommandSpec::new("insert.footer", "Footer", "Insert › Header & Footer", |s, v| header_footer(s, v, false)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|pageNumber"}"#),
         CommandSpec::new("insert.pageNumber", "Page Number", "Insert › Header & Footer", page_number).params(r#"{"position"?: "top|bottom|current", "align"?: "left|center|right", "format"?: "x of y"}"#),
-        CommandSpec::new("insert.editHeader", "Edit Header", "Insert › Header & Footer › Header", |s, _| edit_hf(s, true)).pure(),
-        CommandSpec::new("insert.editFooter", "Edit Footer", "Insert › Header & Footer › Footer", |s, _| edit_hf(s, false)).pure(),
+        CommandSpec::new("insert.editHeader", "Edit Header", "Insert › Header & Footer › Header", |s, v| edit_hf(s, v, true))
+            .params(r#"{"page"?: number (0-based: the header that page shows, created if it has none)}"#)
+            .pure(),
+        CommandSpec::new("insert.editFooter", "Edit Footer", "Insert › Header & Footer › Footer", |s, v| edit_hf(s, v, false))
+            .params(r#"{"page"?: number (0-based: the footer that page shows, created if it has none)}"#)
+            .pure(),
         CommandSpec::new("insert.closeHeader", "Close Header and Footer", "Header & Footer", |s, _| {
+            drop_new_empty_headers(s);
             s.sel = Selection::caret(s.doc.start_of(StoryRef::Body));
             sel_result(s)
         })
@@ -445,11 +450,80 @@ fn header_footer(s: &mut Session, v: &Value, header: bool) -> CmdResult {
     Ok(json!({"story": id}))
 }
 
-fn edit_hf(s: &mut Session, header: bool) -> CmdResult {
-    let id = hf_part(s, header);
+fn edit_hf(s: &mut Session, v: &Value, header: bool) -> CmdResult {
+    let id = match p::u64(v, "page") {
+        Some(page) => page_hf_part(s, usize::try_from(page).unwrap_or(usize::MAX), header)?,
+        None => hf_part(s, header),
+    };
     s.touch();
     s.sel = Selection::caret(s.doc.end_of(StoryRef::Part(id)));
     Ok(json!({"story": id}))
+}
+
+/// The header (or footer) page `page` shows; when it shows none, a new empty one in that page's
+/// section, in the slot the page uses (first page, even page or the default), as Word creates on
+/// a double-click in the empty header area (#960).
+fn page_hf_part(s: &mut Session, page: usize, header: bool) -> Result<u32, CmdError> {
+    let layout = s.layout();
+    let pg = layout.pages.get(page).ok_or_else(|| CmdError::Params(format!("no page {page}")))?;
+    let shown = if header { pg.header_story } else { pg.footer_story };
+    if let Some(id) = shown.filter(|id| s.doc.parts.contains_key(id)) {
+        s.page_hint = page;
+        return Ok(id);
+    }
+    let (section, slot) = (pg.section, pg.hf_slot);
+    let block = s.doc.sections().get(section).map(|(end, _)| *end).unwrap_or(usize::MAX);
+    let style = if header { "Header" } else { "Footer" };
+    let id = s.doc.add_part(if header { PartKind::Header } else { PartKind::Footer }, vec![para_block(Paragraph::new().styled(style))]);
+    let sect = s.doc.section_mut(block);
+    let set = if header { &mut sect.headers } else { &mut sect.footers };
+    match slot {
+        wordcraft_layout::HfSlot::First => set.first = Some(id),
+        wordcraft_layout::HfSlot::Even => set.even = Some(id),
+        wordcraft_layout::HfSlot::Default => set.default = Some(id),
+    }
+    s.new_header_parts.push(id);
+    s.page_hint = page;
+    Ok(id)
+}
+
+/// Takes away the headers/footers [`page_hf_part`] created that are still empty (one empty
+/// paragraph): leaving one unwritten leaves the document as it was, and saves no empty part.
+fn drop_new_empty_headers(s: &mut Session) {
+    let ids = std::mem::take(&mut s.new_header_parts);
+    let empty = |s: &Session, id: u32| {
+        s.doc.parts.get(&id).is_some_and(|part| {
+            matches!(part.kind, PartKind::Header | PartKind::Footer)
+                && part.blocks.len() == 1
+                && part.blocks.first().is_some_and(|b| matches!(&**b, Block::Para(p) if p.text.is_empty() && p.objects.is_empty()))
+        })
+    };
+    let gone: Vec<u32> = ids.into_iter().filter(|id| empty(s, *id)).collect();
+    if gone.is_empty() {
+        return;
+    }
+    let clear = |set: &mut wordcraft_doc::section::HeaderSet| {
+        for slot in [&mut set.default, &mut set.first, &mut set.even] {
+            if slot.is_some_and(|id| gone.contains(&id)) {
+                *slot = None;
+            }
+        }
+    };
+    clear(&mut s.doc.last_section.headers);
+    clear(&mut s.doc.last_section.footers);
+    for path in s.doc.para_paths(StoryRef::Body) {
+        if s.doc.para(StoryRef::Body, &path).is_some_and(|p| p.section.is_some())
+            && let Ok(p) = s.doc.para_mut(StoryRef::Body, &path)
+            && let Some(sec) = p.section.as_mut()
+        {
+            clear(&mut sec.headers);
+            clear(&mut sec.footers);
+        }
+    }
+    for id in gone {
+        s.doc.parts.remove(&id);
+    }
+    s.touch();
 }
 
 fn page_number(s: &mut Session, v: &Value) -> CmdResult {
@@ -648,6 +722,50 @@ fn cover_page(s: &mut Session, v: &Value) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #960: editing the header of a page that has none creates the one that page shows (first
+    /// page, even page or default); typing goes into it, and closing an unwritten one takes it
+    /// away again so the saved file stays as it was.
+    #[test]
+    fn edit_header_on_a_page_creates_its_slot() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("text.insert", &json!({"text": "One"})).unwrap();
+        s.run("insert.pageBreak", &json!({})).unwrap();
+        s.run("text.insert", &json!({"text": "Two"})).unwrap();
+        assert_eq!(s.layout().pages.len(), 2);
+        // Plain document: the default header, then closing it unwritten leaves no header.
+        let r = s.run("insert.editHeader", &json!({"page": 1})).unwrap();
+        let id = r["story"].as_u64().unwrap() as u32;
+        assert_eq!(s.sel.focus.story, StoryRef::Part(id));
+        assert_eq!(s.doc.last_section.headers.default, Some(id));
+        s.run("insert.closeHeader", &json!({})).unwrap();
+        assert_eq!(s.doc.last_section.headers, Default::default());
+        assert!(!s.doc.parts.contains_key(&id));
+        let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+        assert!(back.parts.values().all(|p| !matches!(p.kind, PartKind::Header | PartKind::Footer)), "no empty header saved");
+        // Written footer stays.
+        let r = s.run("insert.editFooter", &json!({"page": 0})).unwrap();
+        let foot = r["story"].as_u64().unwrap() as u32;
+        s.run("text.insert", &json!({"text": "Foot"})).unwrap();
+        s.run("insert.closeHeader", &json!({})).unwrap();
+        assert_eq!(s.doc.last_section.footers.default, Some(foot));
+        assert_eq!(s.layout().pages[1].footer_story, Some(foot));
+        // Different first page: page 0's header is the first-page one, page 1's the default.
+        s.run("layout.differentFirstPage", &json!({"value": true})).unwrap();
+        let first = s.run("insert.editHeader", &json!({"page": 0})).unwrap()["story"].as_u64().unwrap() as u32;
+        s.run("text.insert", &json!({"text": "Cover"})).unwrap();
+        assert_eq!(s.doc.last_section.headers.first, Some(first));
+        assert_eq!(s.doc.last_section.headers.default, None);
+        // Odd & even: page 1 (page number 2) gets the even header.
+        s.run("layout.differentOddEven", &json!({"value": true})).unwrap();
+        let even = s.run("insert.editHeader", &json!({"page": 1})).unwrap()["story"].as_u64().unwrap() as u32;
+        s.run("text.insert", &json!({"text": "Even"})).unwrap();
+        assert_eq!(s.doc.last_section.headers.even, Some(even));
+        // A page that shows a header edits that one; a junk page is an error, not a panic.
+        assert_eq!(s.run("insert.editHeader", &json!({"page": 0})).unwrap()["story"].as_u64(), Some(first as u64));
+        assert!(s.run("insert.editHeader", &json!({"page": 99})).is_err());
+        assert!(s.run("insert.editHeader", &json!({"page": u64::MAX})).is_err());
+    }
 
     #[test]
     fn base64_round_trip() {
