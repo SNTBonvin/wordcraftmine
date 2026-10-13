@@ -673,6 +673,11 @@ fn goto(s: &mut Session, v: &Value) -> CmdResult {
         return sel_result(s);
     }
     if let Some(name) = p::str(v, "bookmark") {
+        // Word's built-in bookmark: the top of the document.
+        if name == "_top" {
+            s.sel = Selection::caret(Pos::body(0, 0));
+            return sel_result(s);
+        }
         let bm = s.doc.bookmarks().into_iter().find(|(n, _)| n == name).ok_or_else(|| CmdError::Failed(format!("no bookmark `{name}`")))?;
         s.sel = Selection::caret(bm.1);
         return sel_result(s);
