@@ -1122,6 +1122,8 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             }
         });
         menu_button(ui, app, "margins", Some("Margins"), "Margins", true, "layout.margins", |ui, app| {
+            // Mirrored margins come from the document as well as from the preset (#1181).
+            let mirrored = app.session.doc.settings.mirror_margins;
             for (l, k) in [
                 ("Normal  1\" all", "normal"),
                 ("Narrow  0.5\" all", "narrow"),
@@ -1130,7 +1132,7 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
                 ("Mirrored", "mirrored"),
                 ("Office 2003 Default", "office2003"),
             ] {
-                mi(ui, app, l, "layout.margins", json!({"preset": k}));
+                mi_check(ui, app, l, mirrored && k == "mirrored", "layout.margins", json!({"preset": k}));
             }
             mi(ui, app, "Custom Margins…", "ui.dialog", json!({"name": "pageSetup"}));
         });
