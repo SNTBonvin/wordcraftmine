@@ -16,6 +16,7 @@
 	(no suggestions)	（无建议）
 	1.5 Line Spacing	1.5 倍行距
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	一款用 Rust 从零编写的免费开源文字处理软件。\n属于 ArtCraft 团队的 Crafting Apps 系列。
+	3D Models	3D Models
 	About	关于
 	About WordCraft	关于 WordCraft
 	Accept	接受
@@ -31,6 +32,7 @@
 	Add space between Asian text and numbers	在亚洲文字与数字之间添加间距
 	Add tab stop at:	制表位添加位置：
 	Add Text	添加文字
+	Add-ins	Add-ins
 	Add to Dictionary	添加到词典
 	Add to Style Gallery	添加到样式库
 	Address Block	地址块
@@ -127,6 +129,7 @@
 	List Definition	列表定义
 	Mark grammar errors as you type	键入时标记语法错误
 	Measurement units:	度量单位：
+	Media	Media
 	Millimeters	毫米
 	Mirror indents	对称缩进
 	More templates →	更多模板 →
@@ -138,6 +141,9 @@
 	Number alignment:	编号对齐方式：
 	Number format	编号格式
 	Number style for this level:	此级别的编号样式：
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	外侧框线
 	Make WordCraft the default for Word documents…	将 WordCraft 设为 Word 文档的默认应用…
 	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	今后用 WordCraft 打开 .docx、.doc、.rtf、.odt 文件和 Word 模板。
@@ -167,6 +173,7 @@
 	Right (vertical)	右对齐（竖排）
 	Ruby text:	拼音文字：
 	Save documents	保存文档
+	Screenshot	Screenshot
 	Search	搜索
 	Search for templates	搜索模板
 	Show all revisions inline	以嵌入方式显示所有修订
@@ -435,6 +442,8 @@
 	Formatting at Selection	选定内容的格式
 	Formula	公式
 	General	常规
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	定位
 	Go to	转到
 	Go To (⌘⌥G)	定位 (⌘⌥G)
@@ -1933,7 +1942,10 @@
 	Recolor Selected Ink	更改所选墨迹颜色
 	Add Pen	添加笔
 	Remove Pen	删除笔
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	墨迹转形状
+	Convert to Math	Convert to Math
 	Convert to Shapes	转换为形状
 	Ink Replay	墨迹重播
 	Add\nPen	添加笔

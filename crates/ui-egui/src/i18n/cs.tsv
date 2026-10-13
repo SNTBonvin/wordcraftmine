@@ -27,6 +27,7 @@
 	A numbered sequence (figures, tables…)	Číslovaná posloupnost (obrázky, tabulky…)
 	A password is required to open this document.	K otevření tohoto dokumentu je vyžadováno heslo.
 	A table of contents	Obsah
+	3D Models	3D Models
 	About	O aplikaci
 	About WordCraft	O aplikaci WordCraft
 	Accent	Diakritika
@@ -45,6 +46,7 @@
 	Add space between Asian text and numbers	Přidávat mezery mezi asijským textem a čísly
 	Add tab stop at:	Přidat zarážku tabulátoru na:
 	Add Text	Přidat text
+	Add-ins	Add-ins
 	Add to Dictionary	Přidat do slovníku
 	Add to Style Gallery	Přidat do galerie stylů
 	Add/Edit\nBibliography	Přidat/upravit\nbibliografii
@@ -301,6 +303,11 @@
 	Deletions:	Odstranění:
 	Description:	Popis:
 	Design	Návrh
+	Media	Media
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
+	Screenshot	Screenshot
 	development build	vývojové sestavení
 	Diagonal	Diagonální
 	Diamond	Kosočtverec
@@ -465,6 +472,8 @@
 	getartcraft.com/apps/wordcraft	getartcraft.com/apps/wordcraft
 	Glow	Záře
 	Glow Colors	Barvy záře
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Přejít na
 	Go to	Přejít na
 	Go To (⌘⌥G)	Přejít na (⌘⌥G)
@@ -1608,7 +1617,10 @@
 	Recolor Selected Ink	Přebarvit vybraný rukopis
 	Add Pen	Přidat pero
 	Remove Pen	Odebrat pero
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Rukopis na tvar
+	Convert to Math	Convert to Math
 	Convert to Shapes	Převést na tvary
 	Ink Replay	Přehrát rukopis
 	Add\nPen	Přidat\npero

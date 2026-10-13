@@ -3752,6 +3752,98 @@ fn insert_icon_places_a_picture_of_the_requested_size_that_saves_and_recolours()
     assert!(s.run("picture.iconColor", &json!({})).is_err());
 }
 
+#[test]
+fn online_placeholders_insert_pictures_and_ink_becomes_math() {
+    use wordcraft_doc::para::InlineObject;
+    const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    // Online media: bytes are real pictures, URLs are labelled placeholders.
+    let mut s = s();
+    let r = run(&mut s, "insert.onlinePicture", json!({"data": PNG_1X1}));
+    assert_eq!(r["placeholder"], false);
+    let r = run(&mut s, "insert.onlinePicture", json!({"url": "https://example.com/a.png"}));
+    assert_eq!((r["placeholder"].clone(), r["url"].clone()), (json!(true), json!("https://example.com/a.png")));
+    let Some((_, InlineObject::Image { alt, .. })) = crate::cmd::objects::selected(&s) else { panic!("no picture") };
+    assert!(alt.contains("example.com"), "{alt}");
+    assert!(s.run("insert.onlinePicture", &json!({"url": "a\u{0}b"})).is_err(), "control characters");
+    assert!(s.run("insert.onlinePicture", &json!({"url": "   "})).is_err(), "blank");
+    run(&mut s, "insert.onlinePicture", json!({}));
+    assert_eq!(s.ui_requests.last(), Some(&json!({"open": "insertPicture"})));
+
+    let r = run(&mut s, "insert.screenshot", json!({"data": PNG_1X1}));
+    assert!(r["media"].is_string());
+    assert!(s.run("insert.screenshot", &json!({})).is_err(), "capture needs data");
+    assert!(s.run("insert.screenshot", &json!({"source": "camera"})).is_err());
+
+    let r = run(&mut s, "insert.video", json!({"url": "https://example.com/v.mp4"}));
+    assert_eq!((r["placeholder"].clone(), r["url"].clone()), (json!(true), json!("https://example.com/v.mp4")));
+    let r = run(&mut s, "insert.video", json!({"poster": PNG_1X1, "url": "https://example.com/v.mp4"}));
+    assert_eq!(r["placeholder"], false);
+    assert!(s.run("insert.video", &json!({})).is_err());
+
+    assert!(s.run("insert.model3d", &json!({})).is_err(), "needs a path");
+    // The path is recorded (and gated under automation roots), never opened.
+    let r = run(&mut s, "insert.model3d", json!({"path": "models/thing.glb"}));
+    assert_eq!((r["placeholder"].clone(), r["path"].clone()), (json!(true), json!("models/thing.glb")));
+    assert!(s.run("insert.model3d", &json!({"path": "m.glb", "format": "exe"})).is_err());
+
+    let r = run(&mut s, "addins.get", json!({"query": "editor"}));
+    assert_eq!(r["addins"], json!([]));
+
+    // Ink to Math, on a document with text to anchor to.
+    let mut t = Session::new(wordcraft_doc::Document::new());
+    run(&mut t, "document.setText", json!({"text": "Solve it.\nShow working."}));
+    let equations = |t: &Session| {
+        t.doc
+            .body
+            .iter()
+            .filter_map(|b| b.as_para())
+            .flat_map(|p| p.objects.iter())
+            .filter_map(|o| match o {
+                InlineObject::Equation { linear, .. } => Some(linear.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let ink_count = |t: &Session| t.doc.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).filter(|o| o.ink().is_some()).count();
+    // A lone 7 converts as it is drawn once Ink to Math is on.
+    run(&mut t, "draw.inkToMath", json!({"value": true}));
+    assert!(t.view.draw.ink_to_math);
+    let r = run(&mut t, "draw.stroke", json!({"page": 0, "points": [[100, 60], [180, 60], [130, 140]], "width": 2}));
+    assert_eq!(r["math"], "7");
+    assert_eq!(equations(&t), vec!["7".to_string()]);
+    assert_eq!(ink_count(&t), 0);
+    run(&mut t, "draw.inkToMath", json!({"value": false}));
+
+    // A two-stroke plus converts from the lasso as one equation.
+    run(&mut t, "draw.stroke", json!({"page": 0, "points": [[150, 50], [150, 150]], "width": 2}));
+    run(&mut t, "draw.stroke", json!({"page": 0, "points": [[100, 100], [200, 100]], "width": 2}));
+    let r = run(&mut t, "draw.lasso", json!({"page": 0, "points": [[90, 40], [210, 40], [210, 160], [90, 160]]}));
+    assert_eq!(r["count"], 2);
+    let r = run(&mut t, "draw.convertInkToMath", json!({}));
+    assert_eq!(r["linear"], "+");
+    assert_eq!(ink_count(&t), 0);
+    assert!(equations(&t).iter().any(|l| l == "+"));
+
+    // Given text wins over recognition, consuming the ink at its anchor.
+    run(&mut t, "draw.stroke", json!({"page": 0, "points": [[300, 300], [340, 300]], "width": 2}));
+    run(&mut t, "draw.lasso", json!({"page": 0, "points": [[290, 290], [350, 290], [350, 310], [290, 310]]}));
+    run(&mut t, "insert.inkEquation", json!({"linear": "x+2", "edit": false}));
+    assert_eq!(ink_count(&t), 0);
+    assert!(equations(&t).iter().any(|l| l == "x+2"));
+
+    // Scribbles stay ink with a clear error.
+    run(&mut t, "draw.stroke", json!({"page": 0, "points": [[300, 400], [320, 440], [340, 400], [360, 440]], "width": 2}));
+    run(&mut t, "draw.lasso", json!({"page": 0, "points": [[290, 390], [370, 390], [370, 450], [290, 450]]}));
+    assert!(t.run("insert.inkEquation", &json!({})).is_err());
+    assert_eq!(ink_count(&t), 1);
+
+    // With neither text nor ink, an empty equation opens like insert.equation.
+    run(&mut t, "draw.lasso", json!({"clear": true}));
+    run(&mut t, "insert.inkEquation", json!({}));
+    assert!(t.math.is_some());
+}
+
 /// Print Markup (#589): `file.printMarkup` or a command's `markup` puts the comments into PDFs
 /// (balloons beside the scaled page) and at the end of HTML, Markdown and text copies.
 #[test]

@@ -17,6 +17,7 @@
 	1.5 Line Spacing	Полуторный интервал
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Бесплатный текстовый процессор с открытым исходным кодом, написанный с нуля на Rust.\nВходит в Crafting Apps от команды ArtCraft.
 	AaBbCcDd	АаБбВвГг
+	3D Models	3D Models
 	About	О программе
 	About WordCraft	О WordCraft
 	Accept	Принять
@@ -28,6 +29,7 @@
 	Add a Table	Добавить таблицу
 	Add Space Before Paragraph	Добавить интервал перед абзацем
 	Add Text	Добавить текст
+	Add-ins	Add-ins
 	Add to Dictionary	Добавить в словарь
 	Add to Style Gallery	Добавить в коллекцию стилей
 	Address Block	Блок адреса
@@ -189,6 +191,11 @@
 	Delete Style	Удалить стиль
 	Delete Table	Удалить таблицу
 	Design	Дизайн
+	Media	Media
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
+	Screenshot	Screenshot
 	Search	Поиск
 	Title Bar	Строка заголовка
 	development build	сборка для разработки
@@ -291,6 +298,8 @@
 	Formatting at Selection	Форматирование выделенного фрагмента
 	Formula	Формула
 	General	Общие
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Перейти
 	Go to	Перейти
 	Go To (⌘⌥G)	Перейти (⌘⌥G)
@@ -1982,7 +1991,10 @@ preview	Title	Пример
 	Recolor Selected Ink	Перекрасить выделенные штрихи
 	Add Pen	Добавить перо
 	Remove Pen	Удалить перо
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Рукописный ввод в фигуры
+	Convert to Math	Convert to Math
 	Convert to Shapes	Преобразовать в фигуры
 	Ink Replay	Воспроизведение рукописного ввода
 	Add\nPen	Добавить\nперо

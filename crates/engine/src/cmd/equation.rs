@@ -25,6 +25,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.equation", "Equation", "Insert › Symbols", insert)
             .key("Alt+=")
             .params(r#"{"linear"?: string, "latex"?: string, "builtin"?: "pythagoras|area|quadratic|binomial|expansion|euler|derivative|taylor|gaussian|fourier|trig1|trig2|normal|bayes", "display"?: bool, "edit"?: bool (default true)}"#),
+        CommandSpec::new("insert.inkEquation", "Ink Equation", "Insert › Symbols", ink_equation).params(
+            r#"{"linear"?: string, "latex"?: string, "display"?: bool, "edit"?: bool}  (with ink lasso-selected: text converts it at its anchor, else converts the strokes; without either, an empty equation)"#,
+        ),
         CommandSpec::new("equation.edit", "Edit Equation", "Equation", edit)
             .pure()
             .when(near_equation)
@@ -163,7 +166,27 @@ fn insert(s: &mut Session, v: &Value) -> CmdResult {
     insert_nodes_as_equation(s, nodes, v)
 }
 
-fn insert_nodes_as_equation(s: &mut Session, nodes: Arg, v: &Value) -> CmdResult {
+/// Ink Equation: handwritten strokes become an equation. Given `linear` or
+/// `latex`, that text converts the lasso-selected ink at its anchor (or
+/// inserts plainly with no ink selected). Without text, the selected strokes
+/// are recognised (digits and operators); with neither text nor ink, an empty
+/// equation opens for editing, like `insert.equation`.
+fn ink_equation(s: &mut Session, v: &Value) -> CmdResult {
+    if let Some(nodes) = nodes_from(v) {
+        if super::draw::lasso_selection(s).is_some() {
+            // Given text wins: the ink is consumed, the text goes where it was.
+            let at = super::ink_math::take_selected_ink(s)?;
+            s.sel = Selection::caret(at);
+        }
+        return insert_nodes_as_equation(s, nodes, v);
+    }
+    if super::draw::lasso_selection(s).is_some() {
+        return super::ink_math::convert_selected_ink(s, v);
+    }
+    insert(s, v)
+}
+
+pub(crate) fn insert_nodes_as_equation(s: &mut Session, nodes: Arg, v: &Value) -> CmdResult {
     s.math = None;
     let props = s.typing_props();
     let at = delete_selection(s)?;

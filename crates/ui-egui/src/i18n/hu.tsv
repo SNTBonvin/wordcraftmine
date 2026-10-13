@@ -19,6 +19,7 @@
 	1.5 Line Spacing	1,5-es sorköz
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Ingyenes, nyílt forráskódú szövegszerkesztő, az alapoktól Rustban írva.\nA Crafting Apps családba tartozik, az ArtCraft csapatától.
 	AaBbCcDd	AaÁáBbCc
+	3D Models	3D Models
 	About	Névjegy
 	About WordCraft	A WordCraft névjegye
 	Accept	Elfogadás
@@ -30,6 +31,7 @@
 	Add a Table	Táblázat hozzáadása
 	Add Space Before Paragraph	Térköz a bekezdés előtt
 	Add Text	Szöveg hozzáadása
+	Add-ins	Add-ins
 	Add to Dictionary	Felvétel a szótárba
 	Add to Style Gallery	Felvétel a stílusgalériába
 	Address Block	Címblokk
@@ -191,6 +193,11 @@
 	Delete Style	Stílus törlése
 	Delete Table	Táblázat törlése
 	Design	Tervezés
+	Media	Media
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
+	Screenshot	Screenshot
 	development build	fejlesztői kiadás
 	Diagonal	Átlós
 	Diamond	Rombusz
@@ -291,6 +298,8 @@
 	Formatting at Selection	A kijelölés formázása
 	Formula	Képlet
 	General	Általános
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	Ugrás
 	Go to	Ugrás
 	Go To (⌘⌥G)	Ugrás (⌘⌥G)
@@ -2115,7 +2124,10 @@
 	Recolor Selected Ink	Kijelölt tinta átszínezése
 	Add Pen	Toll hozzáadása
 	Remove Pen	Toll eltávolítása
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	Tintából alakzat
+	Convert to Math	Convert to Math
 	Convert to Shapes	Átalakítás alakzattá
 	Ink Replay	Tinta visszajátszása
 	Add\nPen	Toll\nhozzáadása

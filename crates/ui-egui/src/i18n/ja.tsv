@@ -4,6 +4,7 @@
 	(no suggestions)	（候補なし）
 	1.5 Line Spacing	1.5 行
 	A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team.	Rust でゼロから書かれた、無料のオープンソース ワープロです。\nArtCraft チームの Crafting Apps のひとつです。
+	3D Models	3D Models
 	About	情報
 	About WordCraft	WordCraft について
 	Accept	承諾
@@ -19,6 +20,7 @@
 	Add space between Asian text and numbers	アジア文字と数字の間隔を空ける
 	Add tab stop at:	タブ位置を追加:
 	Add Text	テキストの追加
+	Add-ins	Add-ins
 	Add to Dictionary	辞書に追加
 	Add to Style Gallery	スタイル ギャラリーに追加
 	Address Block	住所ブロック
@@ -115,6 +117,7 @@
 	List Definition	リストの定義
 	Mark grammar errors as you type	入力中に文法の誤りに印を付ける
 	Measurement units:	単位:
+	Media	Media
 	Millimeters	ミリメートル
 	Mirror indents	左右対称のインデント
 	More templates →	その他のテンプレート →
@@ -126,6 +129,9 @@
 	Number alignment:	番号の配置:
 	Number format	番号書式
 	Number style for this level:	このレベルの番号の種類:
+	Online Pictures	Online Pictures
+	Online Video	Online Video
+	Online\nVideo	Online\nVideo
 	Outside border	外側の罫線
 	Make WordCraft the default for Word documents…	WordCraft を Word 文書の既定のアプリにする…
 	Opens .docx, .doc, .rtf and .odt files and Word templates with WordCraft from now on.	今後、.docx、.doc、.rtf、.odt ファイルと Word テンプレートを WordCraft で開きます。
@@ -155,6 +161,7 @@
 	Right (vertical)	右 (縦書き)
 	Ruby text:	ルビ文字:
 	Save documents	ドキュメントの保存
+	Screenshot	Screenshot
 	Search	検索
 	Search for templates	テンプレートを検索
 	Show all revisions inline	すべての変更履歴を本文中に表示
@@ -423,6 +430,8 @@
 	Formatting at Selection	選択範囲の書式
 	Formula	計算式
 	General	全般
+	Get Add-ins	Get Add-ins
+	Get\nAdd-ins	Get\nAdd-ins
 	Go To	ジャンプ
 	Go to	移動
 	Go To (⌘⌥G)	ジャンプ (⌘⌥G)
@@ -1921,7 +1930,10 @@
 	Recolor Selected Ink	選択したインクの色を変更
 	Add Pen	ペンの追加
 	Remove Pen	ペンの削除
+	Ink Equation	Ink Equation
+	Ink to Math	Ink to Math
 	Ink to Shape	インクを図形に変換
+	Convert to Math	Convert to Math
 	Convert to Shapes	図形に変換
 	Ink Replay	インクの再生
 	Add\nPen	ペンの\n追加
