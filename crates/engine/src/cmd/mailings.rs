@@ -47,7 +47,7 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"kind": "letters|emails|envelopes|labels|directory|normal"}"#)
         .pure(),
         CommandSpec::new("mailings.recipients", "Select Recipients", "Mailings › Start Mail Merge", recipients)
-            .params(r#"{"csv"?: string, "path"?: string (.csv/.tsv/.txt, or a .xlsx/.xlsm/.ods workbook), "data"?: base64 (a file's bytes, as for path), "sheet"?: name | number (1 = first; a workbook with several sheets and no sheet answers {"sheets": [...], "chooseSheet": true} and loads nothing), "headers"?: bool (default true: the first non-blank row names the fields; false: fields are Column 1…N), "rows"?: [{field: value}] | [[value]], "fields"?: [string] (column order; required with array rows)}"#)
+            .params(r#"{"csv"?: string, "path"?: string (.csv/.tsv/.txt, or a .xlsx/.xlsm/.ods workbook; legacy .xls is refused with guidance), "data"?: base64 (a file's bytes, as for path), "sheet"?: name | number (1 = first; a workbook with several sheets and no sheet answers {"sheets": [...], "chooseSheet": true} and loads nothing), "headers"?: bool (default true: the first non-blank row names the fields; false: fields are Column 1…N), "rows"?: [{field: value}] | [[value]], "fields"?: [string] (column order; required with array rows)}"#)
             .pure(),
         CommandSpec::new("mailings.editRecipients", "Edit Recipient List", "Mailings › Start Mail Merge", |s, v| {
             if v.get("rows").and_then(Value::as_array).is_some() {
@@ -299,6 +299,18 @@ fn recipients(s: &mut Session, v: &Value) -> CmdResult {
                 sheet = json!(chosen);
                 rows
             } else {
+                // A legacy Excel 97-2003 workbook (.xls) or any other binary read as text
+                // would come out garbled (#778): refuse with a way forward instead.
+                if ext.as_deref() == Some("xls") || is_cfb(&bytes) {
+                    return Err(CmdError::Params(
+                        "Excel 97-2003 workbooks (.xls) aren't supported: save the list as .xlsx, .ods or .csv and load that instead".into(),
+                    ));
+                }
+                if !wordcraft_formats::txt::is_text(&bytes) {
+                    return Err(CmdError::Params(
+                        "couldn't be read as a recipient list: not text or a supported workbook (.csv, .xlsx, .ods)".into(),
+                    ));
+                }
                 parse_csv(&crate::io::decode_text(&bytes))
             }
         };
@@ -318,6 +330,11 @@ fn recipients(s: &mut Session, v: &Value) -> CmdResult {
 /// A file's extension, lower case.
 fn extension(path: &str) -> Option<String> {
     std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase())
+}
+
+/// An OLE compound document (legacy Office formats such as Excel 97-2003 .xls), by magic.
+fn is_cfb(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
 }
 
 fn read_file(path: &str) -> Result<Vec<u8>, CmdError> {
@@ -1054,6 +1071,23 @@ fn labels(s: &mut Session, v: &Value) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_recipient_lists_are_refused_with_a_way_forward() {
+        // #778: a legacy .xls (or any binary) read as text came out garbled; now it errors.
+        use crate::Session;
+        let data = |bytes: &[u8]| super::super::insert::base64_encode(bytes);
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        let xls: Vec<u8> = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 1, 2, 3];
+        let e = s.run("mailings.recipients", &serde_json::json!({"data": data(&xls), "path": "list.xls"})).unwrap_err();
+        assert!(e.to_string().contains(".xls"), "{e}");
+        let bin: Vec<u8> = (0u8..=255).collect();
+        let e = s.run("mailings.recipients", &serde_json::json!({"data": data(&bin), "path": "list.csv"})).unwrap_err();
+        assert!(e.to_string().contains("recipient list"), "{e}");
+        // Plain CSV still loads.
+        s.run("mailings.recipients", &serde_json::json!({"csv": "Name\nAda"})).unwrap();
+        assert_eq!(s.merge.rows.len(), 1);
+    }
 
     #[test]
     fn csv_parsing() {

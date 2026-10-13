@@ -370,6 +370,7 @@ pub enum Dialog {
         fields: Vec<String>,
         rows: Vec<Vec<String>>,
         message: String,
+        filter: String,
     },
     /// Mailings › Select Recipients › Use an Existing List… picked a workbook with several sheets
     /// (#334): which sheet holds the recipients, and whether its first row names the fields.
@@ -1140,11 +1141,11 @@ impl Dialog {
             "recipientList" | "newRecipientList" => {
                 let m = &app.session.merge;
                 if name == "recipientList" && !m.headers.is_empty() {
-                    Dialog::RecipientList { fields: m.headers.clone(), rows: m.rows.clone(), message: String::new() }
+                    Dialog::RecipientList { fields: m.headers.clone(), rows: m.rows.clone(), message: String::new(), filter: String::new() }
                 } else {
                     let fields: Vec<String> = NEW_LIST_FIELDS.iter().map(|f| f.to_string()).collect();
                     let rows = vec![vec![String::new(); fields.len()]];
-                    Dialog::RecipientList { fields, rows, message: String::new() }
+                    Dialog::RecipientList { fields, rows, message: String::new(), filter: String::new() }
                 }
             }
             "insertMergeField" => {
@@ -2384,7 +2385,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let _ = app.run("ui.saveChanges", json!({"answer": answer}));
             true
         }
-        Dialog::RecipientList { fields, rows, message } => recipient_list(app, ui, fields, rows, message),
+        Dialog::RecipientList { fields, rows, message, filter } => recipient_list(app, ui, fields, rows, message, filter),
         Dialog::InsertMergeField { fields, field } => {
             if fields.is_empty() {
                 ui.label(egui::RichText::new(tl!("Select recipients first to choose from their fields.")).small().weak());
@@ -2656,7 +2657,14 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
 }
 
 /// The Recipient List dialog's body: a file button, the editable table, OK/Cancel. True to close.
-fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows: &mut Vec<Vec<String>>, message: &mut String) -> bool {
+fn recipient_list(
+    app: &mut WordApp,
+    ui: &mut Ui,
+    fields: &mut Vec<String>,
+    rows: &mut Vec<Vec<String>>,
+    message: &mut String,
+    filter: &mut String,
+) -> bool {
     const CELL_W: f32 = 120.0;
     const X_W: f32 = 18.0;
     const ROW_H: f32 = 24.0;
@@ -2670,7 +2678,13 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
         let _ = app.run("ui.openRecipientList", json!({}));
         return true;
     }
+    // Find-as-you-type over every cell (#778); OK still writes every row.
+    ui.add(egui::TextEdit::singleline(filter).hint_text(tl!("Filter")).desired_width(200.0));
     ui.add_space(6.0);
+    let needle = filter.trim().to_lowercase();
+    // Displayed row order maps back to `rows`, so removing a filtered row removes the right one.
+    let shown: Vec<usize> =
+        rows.iter().enumerate().filter(|(_, r)| needle.is_empty() || r.iter().any(|c| c.to_lowercase().contains(&needle))).map(|(i, _)| i).collect();
     let mut remove_field = None;
     let can_remove = fields.len() > 1;
     let mut remove_row = None;
@@ -2688,8 +2702,9 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
                 }
             });
             ui.separator();
-            egui::ScrollArea::vertical().id_salt("recipients_v").max_height(260.0).show_rows(ui, ROW_H, rows.len(), |ui, range| {
-                for r in range {
+            egui::ScrollArea::vertical().id_salt("recipients_v").max_height(260.0).show_rows(ui, ROW_H, shown.len(), |ui, range| {
+                for d in range {
+                    let Some(&r) = shown.get(d) else { continue };
                     let Some(row) = rows.get_mut(r) else { continue };
                     ui.horizontal(|ui| {
                         for c in row.iter_mut() {
