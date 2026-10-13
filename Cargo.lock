@@ -5133,6 +5133,7 @@ name = "wordcraft-cli"
 version = "0.6.1"
 dependencies = [
  "serde_json",
+ "wordcraft-control-key",
  "wordcraft-doc",
  "wordcraft-engine",
  "wordcraft-mcp",
@@ -5213,6 +5214,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "wordcraft-csl",
  "wordcraft-doc",
  "wordcraft-docbin",
  "wordcraft-docx",

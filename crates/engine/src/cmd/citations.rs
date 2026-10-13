@@ -3,6 +3,8 @@
 //! of authorities, footnote options.
 
 use serde_json::{Value, json};
+use std::cmp::Ordering;
+use wordcraft_csl::{Element as CslElement, Position, SortDirection, SortKey as CslSortKey, TextSource};
 use wordcraft_doc::collate::{SortKey, heading_letter, sort_key};
 use wordcraft_doc::para::InlineObject;
 use wordcraft_doc::props::{CharProps, TabAlign, TabLeader, TabStop};
@@ -287,6 +289,136 @@ pub fn style(name: &str) -> &'static CiteStyle {
     find_style(name).unwrap_or(&STYLES[0])
 }
 
+/// One CSL style loaded in the session: the parsed style and the `.csl` file it came from
+/// (its name in the styles folder, which `references.cslStyles` installs and removes).
+#[derive(Clone, Debug)]
+pub struct CslStyleEntry {
+    /// File name inside the styles folder (`ieee.csl`).
+    pub file: String,
+    pub style: wordcraft_csl::Style,
+}
+
+impl CslStyleEntry {
+    /// What the style is called: the CSL `<info><id>`, or the file's stem when the file has
+    /// none — the `<id>` of `csl:<id>`, and the id `references.cslStyles` lists and removes.
+    pub fn id(&self) -> &str {
+        if self.style.id.is_empty() { self.file.rsplit_once('.').map_or(&self.file, |(stem, _)| stem) } else { &self.style.id }
+    }
+}
+
+/// The style a session's citations render with: one of the twelve built-ins, or a CSL style
+/// the user installed. Carries the behaviors the citation machinery consumes — in-text cite
+/// text, bibliography entries and their order, the bibliography's title, whether cites are
+/// numbered — so no caller has to know which kind it holds.
+pub enum StyleRef<'a> {
+    Built(&'static CiteStyle),
+    Csl(&'a wordcraft_csl::Style),
+}
+
+impl StyleRef<'_> {
+    /// Numbered styles cite `[1]`/`(1)` and list entries without a hanging indent; a CSL
+    /// style is numbered when its citation layout cites `citation-number`.
+    fn numbered(&self) -> bool {
+        match self {
+            StyleRef::Built(st) => st.numbered(),
+            StyleRef::Csl(st) => csl_numbered(st),
+        }
+    }
+
+    /// The bibliography's default heading; CSL styles don't name theirs, so they fall back
+    /// to ours.
+    fn bib_title(&self) -> String {
+        match self {
+            StyleRef::Built(st) => st.bib_title.to_string(),
+            StyleRef::Csl(st) => st.bib_title().unwrap_or("Bibliography").to_string(),
+        }
+    }
+
+    /// One in-text citation: `n` is the source's number in numbered styles, `position` the
+    /// first/subsequent/ibid state CSL's choose branches test (built-ins ignore it).
+    fn cite(&self, src: &Source, position: Position, n: usize, pages: &str) -> String {
+        match self {
+            StyleRef::Built(st) => built_cite(st, src, n, pages),
+            StyleRef::Csl(st) => st.cite(src, position, n, pages),
+        }
+    }
+
+    /// Bibliography entries (text, hanging indent) in the style's own order.
+    fn bib_entries(&self, doc: &Document, lang: Option<String>) -> Vec<(String, bool)> {
+        let hanging = !self.numbered();
+        let order = bib_order(doc, self, lang);
+        match self {
+            StyleRef::Built(st) => order
+                .into_iter()
+                .enumerate()
+                .filter_map(|(k, i)| doc.sources.get(i).map(|x| (built_entry(st, x, k.saturating_add(1)), hanging)))
+                .collect(),
+            // `entries` renders them in the order it sorted (numbering numeric styles from
+            // it) — the same order `bib_order` decided on.
+            StyleRef::Csl(st) => {
+                let items: Vec<Source> = order.into_iter().filter_map(|i| doc.sources.get(i).cloned()).collect();
+                st.entries(&items).into_iter().map(|(text, _)| (text, hanging)).collect()
+            }
+        }
+    }
+}
+
+/// The session's CSL style called `name`: `csl:<id>`, the bare id, or its title (any case).
+fn find_csl_entry<'a>(s: &'a Session, name: &str) -> Option<&'a CslStyleEntry> {
+    let n = name.trim();
+    let id = n.strip_prefix("csl:").unwrap_or(n);
+    s.csl_styles.iter().find(|e| e.id().eq_ignore_ascii_case(id) || (!e.style.title.is_empty() && e.style.title.eq_ignore_ascii_case(n)))
+}
+
+/// The session's CSL style with this id (what a stored `csl:<id>` names).
+fn csl_entry_by_id<'a>(s: &'a Session, id: &str) -> Option<&'a CslStyleEntry> {
+    s.csl_styles.iter().find(|e| e.id().eq_ignore_ascii_case(id.trim()))
+}
+
+/// The session's style: a built-in by name or alias (as ever), then the installed CSL
+/// styles. A `csl:` style that is no longer installed is a parameter error naming it —
+/// never a silent APA fallback; any other unknown name stays APA, as it always was.
+fn session_style(s: &Session) -> Result<StyleRef<'_>, CmdError> {
+    if let Some(st) = find_style(&s.bib_style) {
+        return Ok(StyleRef::Built(st));
+    }
+    if let Some(id) = s.bib_style.strip_prefix("csl:") {
+        return csl_entry_by_id(s, id)
+            .map(|e| StyleRef::Csl(&e.style))
+            .ok_or_else(|| CmdError::Params(format!("CSL style {id} is not installed; re-add it in References ▸ Style")));
+    }
+    Ok(StyleRef::Built(&STYLES[0]))
+}
+
+/// Does the style's citation layout cite by number (`citation-number`), directly or through
+/// a macro? Macro chains are bounded at parse time; `seen` keeps the walk cheap anyway.
+fn csl_numbered(style: &wordcraft_csl::Style) -> bool {
+    fn uses_number(el: &CslElement, style: &wordcraft_csl::Style, seen: &mut Vec<String>) -> bool {
+        match el {
+            CslElement::Text(t) => match &t.source {
+                TextSource::Variable(v) => v.eq_ignore_ascii_case("citation-number"),
+                TextSource::Macro(m) => {
+                    if seen.iter().any(|x| x == m) {
+                        return false;
+                    }
+                    seen.push(m.clone());
+                    style.macros.get(m).is_some_and(|els| els.iter().any(|e| uses_number(e, style, seen)))
+                }
+                _ => false,
+            },
+            CslElement::Number(n) => n.variable.eq_ignore_ascii_case("citation-number"),
+            CslElement::Group(g) => g.elements.iter().any(|e| uses_number(e, style, seen)),
+            CslElement::Choose(c) => {
+                c.branches.iter().any(|b| b.layout.elements.iter().any(|e| uses_number(e, style, seen)))
+                    || c.else_branch.as_ref().is_some_and(|e| e.elements.iter().any(|x| uses_number(x, style, seen)))
+            }
+            CslElement::Names(n) => n.substitute.as_ref().is_some_and(|els| els.iter().any(|e| uses_number(e, style, seen))),
+            CslElement::Date(_) | CslElement::Label(_) => false,
+        }
+    }
+    style.citation.elements.iter().any(|e| uses_number(e, style, &mut Vec::new()))
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("references.sources", "Manage Sources", "References › Citations & Bibliography", sources)
@@ -294,23 +426,42 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("references.importSources", "Import Sources Library", "References › Citations & Bibliography", import_sources).params(
             r#"{"path": string, "format"?: "bibtex|ris|csl-json|auto" (default: the extension, else the content)} → {"added": n, "updated": n, "skipped": [{"tag"?, "reason"}], "total": n} (entries the file held)"#,
         ),
+        CommandSpec::new("references.cslStyles", "Citation Styles (CSL)", "References › Citations & Bibliography", csl_styles).params(
+            r#"{} → {"styles": [{"id", "title", "file"}]}; {"add": path} → {"id", "warnings": […]} (the file is copied into the styles folder; one that doesn't parse is a parameter error); {"remove": id} → {"removed": true}"#,
+        ),
         CommandSpec::new("references.citation", "Insert Citation", "References › Citations & Bibliography", citation).params(r#"{"tag"?: string, "source"?: Source (added if new), "pages"?: string}"#),
         CommandSpec::new("references.citationStyle", "Style", "References › Citations & Bibliography", |s, v| {
-            let st = p::str(v, "style").unwrap_or("APA");
-            let st = find_style(st).ok_or_else(|| {
-                CmdError::Params(format!("style must be one of {:?}", STYLES.iter().map(|x| x.name).collect::<Vec<_>>()))
-            })?;
-            s.bib_style = st.name.to_string();
+            let asked = p::str(v, "style").unwrap_or("APA");
+            // A built-in (our name, or Word's style-sheet name), then the installed CSL
+            // styles (`csl:<id>` or the style's title); a `csl:` style that is gone says so
+            // rather than falling back, and any other unknown name is the usual list.
+            let stored = if let Some(st) = find_style(asked) {
+                st.name.to_string()
+            } else if let Some(id) = find_csl_entry(s, asked).map(|e| e.id().to_string()) {
+                format!("csl:{id}")
+            } else if let Some(id) = asked.trim().strip_prefix("csl:") {
+                return Err(CmdError::Params(format!("CSL style {id} is not installed; re-add it in References ▸ Style")));
+            } else {
+                return Err(CmdError::Params(format!(
+                    "style must be one of {:?}, or a Citation Styles (CSL) style",
+                    STYLES.iter().map(|x| x.name).collect::<Vec<_>>()
+                )));
+            };
+            s.bib_style = stored.clone();
             // Recorded in the document too, so a save keeps it.
-            s.doc.settings.bib_style = Some(st.name.to_string());
+            s.doc.settings.bib_style = Some(stored);
             update_citations(s)?;
             Ok(json!({"style": s.bib_style}))
         })
         .params(
-            r#"{"style": "APA|Chicago|GB/T 7714|GOST (name sort)|GOST (title sort)|Harvard (Anglia)|IEEE|ISO 690 (author-date)|ISO 690 (numerical)|MLA|SIST02|Turabian" (Word's style names work too)}"#,
+            r#"{"style": "APA|Chicago|GB/T 7714|GOST (name sort)|GOST (title sort)|Harvard (Anglia)|IEEE|ISO 690 (author-date)|ISO 690 (numerical)|MLA|SIST02|Turabian" (Word's style names work too), or a CSL style: "csl:<id>" or its title}"#,
         ),
         CommandSpec::new("references.bibliography", "Bibliography", "References › Citations & Bibliography", |s, v| {
-            let title = p::str(v, "title").unwrap_or(style(&s.bib_style).bib_title).to_string();
+            let title = match p::str(v, "title") {
+                Some(t) => t.to_string(),
+                // The style's own heading; CSL styles don't name theirs, so "Bibliography".
+                None => session_style(s)?.bib_title(),
+            };
             generated_list(s, "BIBLIOGRAPHY", &title)?;
             sel_result(s)
         })
@@ -461,9 +612,13 @@ fn render(template: &str, field: &dyn Fn(&str) -> String) -> String {
     out
 }
 
-/// In-text citation for a style; `n` is the source's number in numbered styles.
+/// In-text citation for a style name; `n` is the source's number in numbered styles.
 pub fn cite(src: &Source, style_name: &str, n: usize, pages: &str) -> String {
-    let st = style(style_name);
+    built_cite(style(style_name), src, n, pages)
+}
+
+/// In-text citation for one of our styles; `n` is the source's number in numbered styles.
+fn built_cite(st: &CiteStyle, src: &Source, n: usize, pages: &str) -> String {
     let au = authors(&src.author);
     let lasts: Vec<&str> = au.iter().map(|a| a.0.as_str()).collect();
     let who = match lasts.as_slice() {
@@ -497,9 +652,13 @@ fn gb_type(src: &Source) -> String {
     if src.url.is_empty() { code.into() } else { format!("{code}/OL") }
 }
 
-/// Bibliography entry for a style; `n` is the source's number in numbered styles.
+/// Bibliography entry for a style name; `n` is the source's number in numbered styles.
 pub fn entry(src: &Source, style_name: &str, n: usize) -> String {
-    let st = style(style_name);
+    built_entry(style(style_name), src, n)
+}
+
+/// Bibliography entry for one of our styles; `n` is the source's number in numbered styles.
+fn built_entry(st: &CiteStyle, src: &Source, n: usize) -> String {
     let au = authors(&src.author);
     let field = |key: &str| -> String {
         match key {
@@ -695,6 +854,68 @@ fn import_sources(s: &mut Session, v: &Value) -> CmdResult {
     Ok(json!({"added": added, "updated": updated, "skipped": skipped, "total": total}))
 }
 
+/// The styles folder `add`/`remove` work in: the one the host wired up, or a parameter
+/// error naming what's missing (the web build has none).
+fn csl_dir(s: &Session) -> Result<std::path::PathBuf, CmdError> {
+    s.csl_styles_dir.clone().ok_or_else(|| CmdError::Params("no CSL styles folder: this session keeps the built-in styles".into()))
+}
+
+/// References ▸ Citation Styles (CSL): list the installed styles, add one by copying its
+/// file into the styles folder, remove one by id. Adding a style that is already installed
+/// (same id or file) replaces it.
+fn csl_styles(s: &mut Session, v: &Value) -> CmdResult {
+    if let Some(path) = p::str(v, "add") {
+        return csl_add(s, path);
+    }
+    if let Some(id) = p::str(v, "remove") {
+        return csl_remove(s, id);
+    }
+    Ok(json!({"styles": s.csl_styles.iter().map(|e| json!({"id": e.id(), "title": e.style.title, "file": e.file})).collect::<Vec<_>>()}))
+}
+
+/// Read `path`, check it parses, and install it under its own file name.
+fn csl_add(s: &mut Session, path: &str) -> CmdResult {
+    let dir = csl_dir(s)?;
+    // Refused by size before it is read in; the 1 KiB margin lets the parser's own message
+    // govern files between the caps, as `references.importSources` does. The parser's cap
+    // is 2 MiB.
+    let cap = 2 << 20;
+    let bytes = crate::io::read_file_capped(path, cap as u64 + 1024, "CSL style").map_err(|e| CmdError::Params(e.to_string()))?;
+    let style = wordcraft_csl::parse(&bytes).map_err(CmdError::Params)?;
+    // Only the file's own name — never a path — and never empty (the path is hostile input).
+    let file =
+        std::path::Path::new(path).file_name().and_then(|n| n.to_str()).map(str::trim).filter(|n| !n.is_empty()).unwrap_or("style.csl").to_string();
+    crate::io::create_dir(&dir).map_err(CmdError::Params)?;
+    // `write_file`'s error already names the target path.
+    crate::io::write_file(&dir.join(&file).to_string_lossy(), &bytes).map_err(CmdError::Params)?;
+    let entry = CslStyleEntry { file, style };
+    let id = entry.id().to_string();
+    let warnings = entry.style.warned().to_vec();
+    // Replace the style it is (same id, or the same file re-added), else append.
+    match s.csl_styles.iter().position(|e| e.id().eq_ignore_ascii_case(&id) || e.file == entry.file) {
+        Some(i) => {
+            if let Some(x) = s.csl_styles.get_mut(i) {
+                *x = entry;
+            }
+        }
+        None => s.csl_styles.push(entry),
+    }
+    Ok(json!({"id": id, "warnings": warnings}))
+}
+
+/// Take the style `id` out of the folder and the session; the file goes first, so a session
+/// that fails to remove it keeps the style.
+fn csl_remove(s: &mut Session, id: &str) -> CmdResult {
+    let dir = csl_dir(s)?;
+    let i =
+        s.csl_styles.iter().position(|e| e.id().eq_ignore_ascii_case(id.trim())).ok_or_else(|| CmdError::Params(format!("no CSL style `{id}`")))?;
+    let file = s.csl_styles.get(i).map(|e| e.file.clone()).unwrap_or_default();
+    // `delete_file`'s error already names the file's path.
+    crate::io::delete_file(&dir.join(&file)).map_err(CmdError::Params)?;
+    s.csl_styles.remove(i);
+    Ok(json!({"removed": true}))
+}
+
 fn citation(s: &mut Session, v: &Value) -> CmdResult {
     if v.get("source").is_some() {
         sources(s, &json!({"add": v.get("source")}))?;
@@ -708,15 +929,23 @@ fn citation(s: &mut Session, v: &Value) -> CmdResult {
     };
     let src = s.doc.sources.iter().find(|x| x.tag == tag).cloned().ok_or_else(|| CmdError::Params(format!("no source `{tag}`")))?;
     let pages = p::str(v, "pages").unwrap_or("").to_string();
-    let st = style(&s.bib_style);
-    let n = number_of(&s.doc, &bib_order(&s.doc, st, super::default_lang(s)), &tag);
+    // The style, the number and the first result are settled before anything is deleted or
+    // inserted: a missing CSL style is an error that changes nothing.
+    let (result, refresh) = {
+        let st = session_style(s)?;
+        let order = bib_order(&s.doc, &st, super::default_lang(s));
+        let n = number_of(&s.doc, &order, &tag);
+        // Inserted as a first citation; the refresh below sets the positions (CSL) straight.
+        (st.cite(&src, Position::First, n, &pages), st.numbered() || matches!(st, StyleRef::Csl(_)))
+    };
     let props = s.typing_props();
     let at = delete_selection(s)?;
     let instr = if pages.is_empty() { format!("CITATION {tag}") } else { format!("CITATION {tag} \\p {pages}") };
-    let end = s.doc.insert_object(&at, InlineObject::Field { instr, result: cite(&src, st.name, n, &pages), locked: false, code: false }, &props)?;
+    let end = s.doc.insert_object(&at, InlineObject::Field { instr, result, locked: false, code: false }, &props)?;
     s.sel = Selection::caret(end);
-    // A new citation can renumber the others (numbered styles count in order of first citation).
-    if st.numbered() {
+    // A new citation can renumber the others (numbered styles count in order of first
+    // citation) and moves the CSL positions of the citations around it.
+    if refresh {
         refresh_citations(s)?;
     }
     Ok(json!({"tag": tag}))
@@ -756,12 +985,17 @@ fn author_key(src: &Source) -> String {
 }
 
 /// Indices into `doc.sources` in bibliography order: the cited sources (every source while
-/// nothing is cited), sorted or in order of first citation as the style asks.
-fn bib_order(doc: &Document, st: &CiteStyle, lang: Option<String>) -> Vec<usize> {
+/// nothing is cited), sorted or in order of first citation as the style asks. A CSL style
+/// orders by its bibliography's `<sort>` keys — first-cited when it sorts nothing.
+fn bib_order(doc: &Document, st: &StyleRef, lang: Option<String>) -> Vec<usize> {
+    let b = match st {
+        StyleRef::Built(b) => b,
+        StyleRef::Csl(style) => return csl_order(doc, style),
+    };
     let cited = cited_tags(doc);
     let mut idx: Vec<usize> = if cited.is_empty() {
         (0..doc.sources.len()).collect()
-    } else if st.order == Order::Cited {
+    } else if b.order == Order::Cited {
         cited.iter().filter_map(|t| doc.sources.iter().position(|x| &x.tag == t)).collect()
     } else {
         let cited: std::collections::HashSet<&str> = cited.iter().map(String::as_str).collect();
@@ -771,12 +1005,51 @@ fn bib_order(doc: &Document, st: &CiteStyle, lang: Option<String>) -> Vec<usize>
     let key = |i: &usize, by_title: bool| {
         sort_key(&doc.sources.get(*i).map(|x| if by_title { x.title.clone() } else { author_key(x) }).unwrap_or_default(), lang.as_deref())
     };
-    match st.order {
+    match b.order {
         Order::Author => idx.sort_by_cached_key(|i| key(i, false)),
         Order::Title => idx.sort_by_cached_key(|i| key(i, true)),
         Order::Cited => {}
     }
     idx
+}
+
+/// Indices into `doc.sources` of the cited sources, in the CSL style's bibliography order:
+/// the order `Style::entries` gives — its sort keys, first-cited when it sorts nothing
+/// (every source while nothing is cited) — so citation numbers and entries agree.
+fn csl_order(doc: &Document, style: &wordcraft_csl::Style) -> Vec<usize> {
+    let cited = cited_tags(doc);
+    let idx: Vec<usize> = if cited.is_empty() {
+        (0..doc.sources.len()).collect()
+    } else {
+        cited.iter().filter_map(|t| doc.sources.iter().position(|x| &x.tag == t)).collect()
+    };
+    let Some(bib) = style.bibliography.as_ref() else { return idx };
+    // Each source's sort keys — exactly the keys `entries` computes for it — then the same
+    // stable comparison it orders the entries by.
+    let mut keyed: Vec<(usize, Vec<String>)> = idx
+        .into_iter()
+        .map(|i| {
+            let keys = doc.sources.get(i).and_then(|x| style.entries(std::slice::from_ref(x)).into_iter().next().map(|(_, k)| k)).unwrap_or_default();
+            (i, keys)
+        })
+        .collect();
+    keyed.sort_by(|a, b| compare_csl_keys(&a.1, &b.1, &bib.sort));
+    keyed.into_iter().map(|(i, _)| i).collect()
+}
+
+/// The comparison `wordcraft_csl` orders bibliography entries by (its `compare_keys`),
+/// mirrored here so citation numbers match the entries' order; ties keep the caller's order.
+fn compare_csl_keys(a: &[String], b: &[String], sort: &[CslSortKey]) -> Ordering {
+    for (i, key) in sort.iter().enumerate() {
+        let ord = a.get(i).map_or("", String::as_str).cmp(b.get(i).map_or("", String::as_str));
+        if ord != Ordering::Equal {
+            return match key.direction {
+                SortDirection::Ascending => ord,
+                SortDirection::Descending => ord.reverse(),
+            };
+        }
+    }
+    Ordering::Equal
 }
 
 /// A source's number in a numbered style: its place in the bibliography order.
@@ -792,26 +1065,44 @@ pub fn update_citations(s: &mut Session) -> Result<(), CmdError> {
 
 /// Refresh the results of the CITATION fields in the body.
 fn refresh_citations(s: &mut Session) -> Result<(), CmdError> {
-    let st = style(&s.bib_style);
-    let order = bib_order(&s.doc, st, super::default_lang(s));
-    for path in s.doc.para_paths(StoryRef::Body) {
-        let Some(p) = s.doc.para(StoryRef::Body, &path) else { continue };
-        let updates: Vec<(usize, String)> = p
-            .objects
-            .iter()
-            .enumerate()
-            .filter_map(|(k, o)| match o {
-                InlineObject::Field { instr, .. } => {
+    // Gathered against the document as it stands, then applied, so the style borrow ends
+    // before a paragraph is touched. A missing CSL style errors before anything changes.
+    let updates: Vec<(Path, Vec<(usize, String)>)> = {
+        let st = session_style(s)?;
+        let order = bib_order(&s.doc, &st, super::default_lang(s));
+        // CSL positions: a citation is the first of its source, a later one, or directly
+        // follows the same source's citation (ibid).
+        let mut seen = std::collections::HashSet::new();
+        let mut prev: Option<String> = None;
+        let mut all = Vec::new();
+        for path in s.doc.para_paths(StoryRef::Body) {
+            let Some(p) = s.doc.para(StoryRef::Body, &path) else { continue };
+            let updates: Vec<(usize, String)> = p
+                .objects
+                .iter()
+                .enumerate()
+                .filter_map(|(k, o)| {
+                    let InlineObject::Field { instr, .. } = o else { return None };
                     let (tag, pages) = citation_field(instr)?;
+                    let position = if prev.as_deref() == Some(tag) {
+                        Position::Ibid
+                    } else if seen.insert(tag.to_string()) {
+                        Position::First
+                    } else {
+                        Position::Subsequent
+                    };
+                    prev = Some(tag.to_string());
                     let src = s.doc.sources.iter().find(|x| x.tag == tag)?;
-                    Some((k, cite(src, st.name, number_of(&s.doc, &order, tag), pages)))
-                }
-                _ => None,
-            })
-            .collect();
-        if updates.is_empty() {
-            continue;
+                    Some((k, st.cite(src, position, number_of(&s.doc, &order, tag), pages)))
+                })
+                .collect();
+            if !updates.is_empty() {
+                all.push((path, updates));
+            }
         }
+        all
+    };
+    for (path, updates) in updates {
         let para = s.doc.para_mut(StoryRef::Body, &path)?;
         for (k, r) in updates {
             if let Some(InlineObject::Field { result, .. }) = para.objects.get_mut(k) {
@@ -879,11 +1170,16 @@ pub fn update_generated(s: &mut Session) -> Result<(), CmdError> {
             i += 1;
             continue;
         }
+        // A bibliography under a CSL style that is no longer installed is an error before
+        // the old entries are removed.
+        if kind.starts_with("BIBLIOGRAPHY") {
+            session_style(s)?;
+        }
         // Remove old entries.
         while s.doc.body.get(i + 1).and_then(|b| b.as_para()).is_some_and(|p| p.props.style.as_deref() == Some(ENTRY_STYLE)) {
             s.doc.remove_block(StoryRef::Body, &Path::top(i + 1))?;
         }
-        let lines = entries_for(s, &kind);
+        let lines = entries_for(s, &kind)?;
         let width = super::page::sect(s).text_width();
         for (k, (text, hanging)) in lines.into_iter().enumerate() {
             let mut para = Paragraph::with_text(&text, CharProps::default()).styled(ENTRY_STYLE);
@@ -907,15 +1203,12 @@ fn page_of(s: &mut Session, pos: &Pos) -> u32 {
     l.caret(pos).and_then(|c| l.pages.get(c.page)).map(|p| p.number).unwrap_or(1)
 }
 
-/// Entry lines (text, hanging indent) for a generated list.
-fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
+/// Entry lines (text, hanging indent) for a generated list. A bibliography under a CSL
+/// style that is no longer installed is an error, never APA entries.
+fn entries_for(s: &mut Session, kind: &str) -> Result<Vec<(String, bool)>, CmdError> {
     if kind.starts_with("BIBLIOGRAPHY") {
-        let st = style(&s.bib_style);
-        return bib_order(&s.doc, st, super::default_lang(s))
-            .into_iter()
-            .enumerate()
-            .filter_map(|(k, i)| s.doc.sources.get(i).map(|x| (entry(x, st.name, k.saturating_add(1)), !st.numbered())))
-            .collect();
+        let st = session_style(s)?;
+        return Ok(st.bib_entries(&s.doc, super::default_lang(s)));
     }
     // Collect marks with positions.
     let mut marks: Vec<(String, Pos)> = Vec::new();
@@ -969,7 +1262,7 @@ fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
         }
     }
     if kind.starts_with("TOC \\c") {
-        return with_pages.into_iter().map(|(t, p)| (format!("{t}\t{p}"), false)).collect();
+        return Ok(with_pages.into_iter().map(|(t, p)| (format!("{t}\t{p}"), false)).collect());
     }
     // Index / TOA: group by entry, sort, list pages.
     let lang = super::default_lang(s);
@@ -993,7 +1286,7 @@ fn entries_for(s: &mut Session, kind: &str) -> Vec<(String, bool)> {
         let list = pages.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ");
         out.push(if kind.starts_with("INDEX") { (format!("{e}, {list}"), true) } else { (format!("{e}\t{list}"), false) });
     }
-    out
+    Ok(out)
 }
 
 fn cross_ref(s: &mut Session, v: &Value) -> CmdResult {
@@ -1551,6 +1844,152 @@ mod tests {
             crate::catalog::entries()
                 .iter()
                 .any(|(tab, group, _, id)| { *tab == "References" && *group == "Citations" && *id == "references.importSources" })
+        );
+    }
+
+    // --- CSL styles (#1058) ---
+
+    /// A numeric test style: cites `[n]`, the bibliography sorted by title with the number
+    /// in front — written for these tests (our own file, like every asset here).
+    const CSL_NUMERIC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/csl" version="1.0">
+  <info><id>http://wordcraft.test/numeric</id><title>WordCraft Test Numeric</title></info>
+  <citation><layout prefix="[" suffix="]"><text variable="citation-number"/></layout></citation>
+  <bibliography>
+    <sort><key variable="title"/></sort>
+    <layout><text variable="citation-number" prefix="[" suffix="] "/><text variable="title"/></layout>
+  </bibliography>
+</style>
+"#;
+
+    /// A session wired to a fresh styles folder `wordcraft-csl-<label>-<pid>/styles`.
+    fn csl_session(label: &str) -> (Session, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("wordcraft-csl-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.set_csl_styles_dir(dir.clone());
+        (s, dir)
+    }
+
+    fn csl_cleanup(label: &str) {
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("wordcraft-csl-{label}-{}", std::process::id())));
+    }
+
+    #[test]
+    fn csl_styles_add_list_and_remove() {
+        let (mut s, dir) = csl_session("manage");
+        // Nothing installed: the built-ins don't need installing.
+        let r = s.run("references.cslStyles", &json!({})).unwrap();
+        assert_eq!(r["styles"], json!([]), "{r}");
+        // A style file anywhere is copied into the styles folder.
+        let src = lib_file("cslman", "numeric.csl", CSL_NUMERIC.as_bytes());
+        let r = s.run("references.cslStyles", &json!({"add": src})).unwrap();
+        assert_eq!(r["id"], json!("http://wordcraft.test/numeric"), "{r}");
+        assert_eq!(r["warnings"], json!([]), "{r}");
+        assert!(dir.join("numeric.csl").is_file(), "copied into {}", dir.display());
+        let r = s.run("references.cslStyles", &json!({})).unwrap();
+        assert_eq!(r["styles"], json!([{"id": "http://wordcraft.test/numeric", "title": "WordCraft Test Numeric", "file": "numeric.csl"}]), "{r}");
+        // A file that doesn't parse is a parameter error, and nothing is installed.
+        let bad = lib_file("cslman", "bad.csl", b"not xml at all");
+        assert!(matches!(s.run("references.cslStyles", &json!({"add": bad})), Err(CmdError::Params(_))));
+        assert_eq!(s.run("references.cslStyles", &json!({})).unwrap()["styles"].as_array().unwrap().len(), 1);
+        // Remove takes the id, and takes the file with it.
+        let r = s.run("references.cslStyles", &json!({"remove": "http://wordcraft.test/numeric"})).unwrap();
+        assert_eq!(r, json!({"removed": true}), "{r}");
+        assert!(!dir.join("numeric.csl").exists(), "the file is removed too");
+        assert_eq!(s.run("references.cslStyles", &json!({})).unwrap()["styles"], json!([]));
+        // Removing a style that isn't there is a parameter error.
+        assert!(matches!(s.run("references.cslStyles", &json!({"remove": "nope"})), Err(CmdError::Params(_))));
+        lib_cleanup("cslman");
+        csl_cleanup("manage");
+    }
+
+    #[test]
+    fn csl_style_cites_and_lists() {
+        let (mut s, _dir) = csl_session("use");
+        let src = lib_file("csluse", "numeric.csl", CSL_NUMERIC.as_bytes());
+        s.run("references.cslStyles", &json!({"add": src})).unwrap();
+        // Chosen by title, recorded as `csl:<id>` — in the session and the document.
+        s.run("references.citationStyle", &json!({"style": "wordcraft test numeric"})).unwrap();
+        assert_eq!(s.bib_style, "csl:http://wordcraft.test/numeric");
+        assert_eq!(s.doc.settings.bib_style.as_deref(), Some("csl:http://wordcraft.test/numeric"));
+        // Two sources cited out of title order: the numbers follow the style's own sort.
+        two_sources(&mut s, "Shared Spaces");
+        s.run("references.citation", &json!({"tag": "A"})).unwrap();
+        s.run("references.citation", &json!({"tag": "B"})).unwrap();
+        let t = s.doc.plain_text(StoryRef::Body);
+        assert!(t.contains("[2][1]"), "Kilns and Clay sorts before Shared Spaces: {t}");
+        s.run("text.newParagraph", &json!({})).unwrap();
+        s.run("references.bibliography", &json!({})).unwrap();
+        let t = s.doc.plain_text(StoryRef::Body);
+        assert!(t.contains("[1] Kilns and Clay\n[2] Shared Spaces"), "{t}");
+        assert!(t.contains("Bibliography"), "CSL styles don't title their bibliography; our fallback: {t}");
+        // Update under the style refreshes it; nothing falls back to APA.
+        s.run("references.updateFields", &json!({})).unwrap();
+        let t = s.doc.plain_text(StoryRef::Body);
+        assert!(t.contains("[2][1]") && t.contains("[1] Kilns and Clay\n[2] Shared Spaces"), "{t}");
+        lib_cleanup("csluse");
+        csl_cleanup("use");
+    }
+
+    #[test]
+    fn missing_csl_style_is_an_error_never_a_silent_fallback() {
+        let (mut s, _dir) = csl_session("missing");
+        let src = lib_file("cslmiss", "numeric.csl", CSL_NUMERIC.as_bytes());
+        s.run("references.cslStyles", &json!({"add": src})).unwrap();
+        two_sources(&mut s, "Shared Spaces");
+        s.run("references.citation", &json!({"tag": "A"})).unwrap();
+        s.run("references.citationStyle", &json!({"style": "csl:http://wordcraft.test/numeric"})).unwrap();
+        let before = s.doc.plain_text(StoryRef::Body);
+        // Uninstalling the style leaves the document asking for it.
+        s.run("references.cslStyles", &json!({"remove": "http://wordcraft.test/numeric"})).unwrap();
+        let err = s.run("references.updateFields", &json!({})).unwrap_err().to_string();
+        assert!(err.contains("http://wordcraft.test/numeric is not installed; re-add it"), "{err}");
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before, "existing field results stay untouched");
+        // Choosing a style that isn't installed is the same error, and keeps the current one.
+        let err = s.run("references.citationStyle", &json!({"style": "csl:ghost"})).unwrap_err().to_string();
+        assert!(err.contains("ghost is not installed"), "{err}");
+        assert_eq!(s.bib_style, "csl:http://wordcraft.test/numeric");
+        lib_cleanup("cslmiss");
+        csl_cleanup("missing");
+    }
+
+    #[test]
+    fn csl_style_choice_survives_docx_save_and_reopen() {
+        let (mut s, dir) = csl_session("round");
+        let src = lib_file("cslround", "numeric.csl", CSL_NUMERIC.as_bytes());
+        s.run("references.cslStyles", &json!({"add": src})).unwrap();
+        s.run("references.citation", &json!({"source": {"author": "Rivera, Alex", "title": "Shared Spaces", "year": "2021"}})).unwrap();
+        s.run("references.citationStyle", &json!({"style": "csl:http://wordcraft.test/numeric"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("[1]"), "{}", s.doc.plain_text(StoryRef::Body));
+        // `csl:<id>` round-trips through the document untouched.
+        let bytes = wordcraft_docx::write(&s.doc).expect("docx write");
+        let doc = wordcraft_docx::read(&bytes).expect("docx read");
+        assert_eq!(doc.settings.bib_style.as_deref(), Some("csl:http://wordcraft.test/numeric"));
+        let mut reopened = Session::new(doc);
+        assert_eq!(reopened.bib_style, "csl:http://wordcraft.test/numeric");
+        // Reopened where the style isn't installed, the update names it; once it is, the
+        // citation renders through the style again.
+        let err = reopened.run("references.updateFields", &json!({})).unwrap_err().to_string();
+        assert!(err.contains("is not installed"), "{err}");
+        reopened.set_csl_styles_dir(dir.clone());
+        reopened.run("references.updateFields", &json!({})).unwrap();
+        assert!(reopened.doc.plain_text(StoryRef::Body).contains("[1]"), "{}", reopened.doc.plain_text(StoryRef::Body));
+        lib_cleanup("cslround");
+        csl_cleanup("round");
+    }
+
+    #[test]
+    fn csl_styles_is_listed_in_engine_commands() {
+        let listed = crate::cmd::registry().describe();
+        let me = listed.as_array().unwrap().iter().find(|c| c["id"] == "references.cslStyles").unwrap();
+        assert_eq!(me["label"], "Citation Styles (CSL)");
+        assert_eq!(me["location"], "References › Citations & Bibliography");
+        assert!(
+            crate::catalog::entries()
+                .iter()
+                .any(|(tab, group, _, id)| { *tab == "References" && *group == "Citations" && *id == "references.cslStyles" })
         );
     }
 }

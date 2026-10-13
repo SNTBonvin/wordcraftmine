@@ -421,6 +421,41 @@ pub fn write_file(path: &str, _bytes: &[u8]) -> Result<(), String> {
     Err(format!("{path}: files are saved through the browser on the web"))
 }
 
+/// Delete the file at `path`, inside the automation write root when there is one.
+pub fn delete_file(path: &std::path::Path) -> Result<(), String> {
+    crate::file_access::check_write(&path.to_string_lossy())?;
+    std::fs::remove_file(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Make sure `dir` exists (the styles folder before the first style is copied into it).
+pub fn create_dir(dir: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+/// The files whose name ends in `ext` (any case) inside `dir`, in file name order — the
+/// CSL styles folder ([`crate::Session::set_csl_styles_dir`], #1058). A folder that doesn't
+/// exist yet (nothing installed) holds none; an unreadable file is left out.
+pub fn read_dir_files(dir: &std::path::Path, ext: &str) -> Vec<(String, Vec<u8>)> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.to_ascii_lowercase().ends_with(ext))
+        .collect();
+    names.sort();
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        if let Ok(b) = std::fs::read(dir.join(&name)) {
+            out.push((name, b));
+        }
+    }
+    out
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn open_path_with(path: &std::path::Path, _password: Option<&str>) -> Result<(Document, bool), String> {
     Err(format!("{}: files are opened through the browser on the web", path.display()))

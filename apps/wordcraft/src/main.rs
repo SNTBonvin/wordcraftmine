@@ -135,6 +135,11 @@ fn user_dict_path() -> Option<std::path::PathBuf> {
     wordcraft_control_key::settings_dir().map(|b| b.join(wordcraft_engine::Session::USER_DICT_FILE))
 }
 
+/// `styles/` in the settings folder: the CSL styles the user installed (#1058).
+fn csl_styles_dir() -> Option<std::path::PathBuf> {
+    wordcraft_control_key::settings_dir().map(|b| b.join(wordcraft_engine::Session::CSL_STYLES_DIR))
+}
+
 fn load_user_dictionary(app: &mut WordApp) {
     if !prefs_enabled() {
         return;
@@ -142,6 +147,17 @@ fn load_user_dictionary(app: &mut WordApp) {
     if let Some(p) = user_dict_path() {
         wordcraft_proof::load_user_dictionary(&p);
         app.session.user_dict_path = Some(p);
+    }
+}
+
+/// The CSL styles in the settings folder, loaded into the session at startup (#1058); a
+/// folder that doesn't exist yet simply holds none.
+fn load_csl_styles(app: &mut WordApp) {
+    if !prefs_enabled() {
+        return;
+    }
+    if let Some(dir) = csl_styles_dir() {
+        app.session.set_csl_styles_dir(dir);
     }
 }
 
@@ -320,6 +336,7 @@ fn main() -> eframe::Result {
             let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
             load_user_dictionary(&mut app);
+            load_csl_styles(&mut app);
             // A region chosen in File › Options replaces the system's for the first blank
             // document too (#838).
             if !sample && app.session.prefs.region.is_some() {

@@ -1911,6 +1911,42 @@ fn hostile_params_never_panic() {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+    // `references.cslStyles` reads and deletes files, so the junk above (no string `add`/
+    // `remove`) can't reach them: hostile paths and ids are parameter errors, never panics —
+    // wired to a styles folder or not.
+    {
+        let dir = std::env::temp_dir().join(format!("wordcraft-csl-hostile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("broken.csl"), b"<style").unwrap();
+        let mut s = Session::new(crate::sample::sample_document());
+        s.set_csl_styles_dir(dir.clone());
+        for bad in [
+            json!({}),
+            json!({"add": 5, "remove": 5}),
+            json!({"add": "", "remove": ""}),
+            json!({"add": dir.to_string_lossy()}),
+            json!({"add": dir.join("missing.csl").to_string_lossy()}),
+            json!({"add": dir.join("broken.csl").to_string_lossy()}),
+            json!({"remove": "not-an-id"}),
+            json!({"add": null, "remove": []}),
+        ] {
+            let _ = s.run("references.cslStyles", &bad);
+            s.clamp_selection();
+            let _ = s.layout();
+        }
+        // A session without a styles folder (web, tests) refuses add/remove without crashing.
+        let mut bare = Session::new(crate::sample::sample_document());
+        let _ = bare.run("references.cslStyles", &json!({"add": dir.join("broken.csl").to_string_lossy()}));
+        let _ = bare.run("references.cslStyles", &json!({"remove": "x"}));
+        // A CSL style that is no longer installed names itself; never a panic, never APA.
+        bare.bib_style = "csl:ghost".into();
+        let _ = bare.run("references.updateFields", &json!({}));
+        let _ = bare.run("references.citationStyle", &json!({"style": "csl:ghost"}));
+        let _ = bare.run("references.citation", &json!({"tag": "x"}));
+        let _ = bare.run("references.bibliography", &json!({}));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[test]

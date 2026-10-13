@@ -45,9 +45,19 @@ USAGE:
 
 fn open(path: &str) -> Result<Session, String> {
     let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
-    let mut s = Session::new(doc);
+    let mut s = new_session(doc);
     s.path = Some(path.into());
     Ok(s)
+}
+
+/// A session with the user's CSL styles loaded from `<settings>/styles`, wired up the way
+/// the app does it; without the folder (or on a machine without one) the built-ins stay.
+fn new_session(doc: wordcraft_doc::Document) -> Session {
+    let mut s = Session::new(doc);
+    if let Some(dir) = wordcraft_control_key::settings_dir() {
+        s.set_csl_styles_dir(dir.join(Session::CSL_STYLES_DIR));
+    }
+    s
 }
 
 /// `--author NAME`: the author recorded on tracked changes and comments (`file.setAuthor`).
@@ -223,11 +233,11 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let mut s = match (arg_value(&rest, "--file"), arg_value(&rest, "--template")) {
                 (Some(f), _) => open(&f)?,
                 (None, Some(t)) => {
-                    let mut s = Session::new(wordcraft_doc::Document::new());
+                    let mut s = new_session(wordcraft_doc::Document::new());
                     s.run("file.new", &json!({"template": t})).map_err(|e| e.to_string())?;
                     s
                 }
-                _ => Session::new(wordcraft_doc::Document::new()),
+                _ => new_session(wordcraft_doc::Document::new()),
             };
             if let Some(name) = arg_value(&rest, "--author") {
                 set_author(&mut s, &name)?;
