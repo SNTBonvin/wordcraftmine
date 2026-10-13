@@ -1054,7 +1054,7 @@ impl FontDb {
     /// family with only some of its styles (which would resolve, and be cached as, the wrong
     /// face). Faces already present (same family and style) are skipped. Returns how many were
     /// added.
-    pub fn add_fonts(&self, files: Vec<Vec<u8>>) -> usize {
+    fn add_fonts(&self, files: Vec<Vec<u8>>) -> usize {
         let mut new = Vec::new();
         for bytes in files {
             let data = Arc::new(bytes);

@@ -115,7 +115,7 @@ pub fn open_bytes_with(name: &str, bytes: &[u8], password: Option<&str>) -> Resu
 fn load_embedded_fonts(doc: &Document) {
     let files: Vec<Vec<u8>> = wordcraft_docx::embedded_fonts(doc).iter().filter_map(|f| wordcraft_fonts::decode_font_file(f).ok()).collect();
     if !files.is_empty() {
-        wordcraft_fonts::FontDb::global().add_fonts(files);
+        wordcraft_fonts::FontDb::global().add_document_fonts(files);
     }
 }
 
