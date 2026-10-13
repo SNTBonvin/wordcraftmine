@@ -148,6 +148,10 @@ pub fn restore(state: &mut State, id: u64) -> Result<(), String> {
     state.project_folder = chat.project;
     state.project_files.clear();
     state.settings.scanned_folder.clear();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        state.settings.scan = None;
+    }
     state.cloud_consent = None;
     state.entries = chat.entries;
     state.sources = chat.sources;

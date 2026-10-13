@@ -281,7 +281,7 @@ pub(super) fn tools(internet: bool) -> Vec<Value> {
         tool(
             "project_search",
             "Search text in the linked project. Bounded literal search; use project_read for full evidence and citations.",
-            json!({"query":{"type":"string"}}),
+            json!({"query":{"type":"string"},"path":{"type":"string","description":"Optional folder or file path substring to narrow the search"}}),
             &["query"],
         ),
         tool(
@@ -368,10 +368,11 @@ pub(super) fn call_tool(
         if cfg.project_folder.is_empty() {
             return Ok(json!({"ok":false,"error":"No project folder is linked. Ask the user to use Link project."}));
         }
-        let mut result = match super::project::tool(&cfg.project_folder, &cfg.project_files, name, &args) {
-            Ok(value) => value,
-            Err(error) => return Ok(json!({"ok":false,"error":error})),
-        };
+        let mut result =
+            match super::project::tool_cancellable(&cfg.project_folder, &cfg.project_files, name, &args, &|| cfg.cancel.load(Ordering::SeqCst)) {
+                Ok(value) => value,
+                Err(error) => return Ok(json!({"ok":false,"error":error})),
+            };
         cfg.check()?;
         if name == "project_read" {
             result["citation"] = json!(cfg.citation(

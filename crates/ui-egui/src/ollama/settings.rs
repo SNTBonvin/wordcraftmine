@@ -28,8 +28,64 @@ pub(super) struct State {
     pub tab: Tab,
     pub files: Vec<String>,
     pub scanned_folder: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub scan: Option<Scan>,
     filter: String,
     error: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) struct Scan {
+    approve_all: bool,
+    rx: std::sync::mpsc::Receiver<Result<Vec<String>, String>>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for Scan {
+    fn drop(&mut self) {
+        self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn scan_project(app: &mut WordApp, approve_all: bool) -> Result<(), String> {
+    let folder = app.ollama.project_folder.clone();
+    let ctx = app.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_cancel = cancel.clone();
+    std::thread::Builder::new()
+        .name("wordcraft-project-index".into())
+        .spawn(move || {
+            let _ = tx.send(super::project::candidates_cancellable(&folder, &|| worker_cancel.load(std::sync::atomic::Ordering::SeqCst)));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    app.ollama.settings.scanned_folder.clone_from(&app.ollama.project_folder);
+    app.ollama.settings.scan = Some(Scan { approve_all, rx, cancel });
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn poll_scan(app: &mut WordApp, ctx: &egui::Context) {
+    let Some(scan) = app.ollama.settings.scan.take() else { return };
+    match scan.rx.try_recv() {
+        Ok(Ok(files)) => {
+            if scan.approve_all {
+                app.ollama.project_files.clone_from(&files);
+            }
+            app.ollama.settings.files = files;
+            app.ollama.settings.error.clear();
+        }
+        Ok(Err(error)) => app.ollama.settings.error = error,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => app.ollama.settings.error = "Project indexing stopped. Refresh to retry.".into(),
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
+            app.ollama.settings.scan = Some(scan);
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
 }
 
 fn toggle(ui: &mut Ui, value: &mut bool, label: &str) -> bool {
@@ -194,7 +250,7 @@ fn permissions(app: &mut WordApp, ui: &mut Ui) {
 fn project(app: &mut WordApp, ui: &mut Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        ui.add(egui::Label::new("Only checked files are available to the model. This selection is cleared when you reopen the app, change folders or restore a saved chat.").wrap());
+        ui.add(egui::Label::new("Linking a folder selects all eligible files. The model searches them as needed; file contents are not loaded into the chat all at once. Uncheck files to exclude them.").wrap());
         ui.horizontal(|ui| {
             if ui.button("Choose folder…").clicked() {
                 let _ = command(app, "ui.agentProject", &json!({}));
@@ -209,46 +265,58 @@ fn project(app: &mut WordApp, ui: &mut Ui) {
         ui.add(egui::Label::new(&app.ollama.project_folder).wrap());
         if app.ollama.settings.scanned_folder != app.ollama.project_folder || ui.button("Refresh file list").clicked() {
             app.ollama.settings.scanned_folder.clone_from(&app.ollama.project_folder);
-            match super::project::candidates(&app.ollama.project_folder) {
-                Ok(files) => {
-                    app.ollama.settings.files = files;
-                    app.ollama.settings.error.clear();
-                }
-                Err(error) => app.ollama.settings.error = error,
+            if let Err(error) = scan_project(app, false) {
+                app.ollama.settings.error = error;
             }
         }
-        ui.small(format!("{} files approved · maximum 128", app.ollama.project_files.len()));
+        if app.ollama.settings.scan.is_some() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.small("Indexing project files…");
+            });
+        }
+        ui.small(format!("{} of {} files selected", app.ollama.project_files.len(), app.ollama.settings.files.len()));
         ui.add(egui::TextEdit::singleline(&mut app.ollama.settings.filter).hint_text("Search files").desired_width(ui.available_width()));
-        if ui.button("Revoke all file access").clicked() {
-            super::revoke_project_context(app);
-            app.ollama.project_files.clear();
-        }
-        let filter = app.ollama.settings.filter.to_lowercase();
-        let files = app.ollama.settings.files.clone();
-        ui.small("Showing up to 256 matching files. Search to find other files.");
-        for path in files.iter().filter(|path| path.to_lowercase().contains(&filter)).take(256) {
-            let mut selected = app.ollama.project_files.contains(path);
-            if ui.checkbox(&mut selected, path).changed() {
-                let mut approved = app.ollama.project_files.clone();
-                if selected {
-                    approved.push(path.clone());
-                } else {
-                    approved.retain(|entry| entry != path);
+        ui.add_enabled_ui(app.ollama.settings.scan.is_none(), |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Select all").clicked() {
+                    app.ollama.stop();
+                    app.ollama.project_files.clone_from(&app.ollama.settings.files);
                 }
-                match super::project::validate_selection(&app.ollama.project_folder, &approved) {
-                    Ok(()) => {
-                        if selected {
-                            app.ollama.stop();
-                        } else {
-                            super::revoke_project_context(app);
-                        }
-                        app.ollama.project_files = approved;
-                        app.ollama.settings.error.clear();
+                if ui.button("Deselect all").clicked() {
+                    super::revoke_project_context(app);
+                    app.ollama.project_files.clear();
+                }
+            });
+        });
+        let filter = app.ollama.settings.filter.to_lowercase();
+        let files: Vec<_> = app.ollama.settings.files.iter().filter(|path| path.to_lowercase().contains(&filter)).cloned().collect();
+        egui::ScrollArea::vertical().id_salt("project_file_selection").max_height(240.0).show_rows(ui, 22.0, files.len(), |ui, rows| {
+            for index in rows {
+                let Some(path) = files.get(index) else { continue };
+                let mut selected = app.ollama.project_files.contains(path);
+                if ui.add_enabled(app.ollama.settings.scan.is_none(), egui::Checkbox::new(&mut selected, path)).changed() {
+                    let mut approved = app.ollama.project_files.clone();
+                    if selected {
+                        approved.push(path.clone());
+                    } else {
+                        approved.retain(|entry| entry != path);
                     }
-                    Err(error) => app.ollama.settings.error = error,
+                    match super::project::validate_selection(&app.ollama.project_folder, if selected { std::slice::from_ref(path) } else { &[] }) {
+                        Ok(()) => {
+                            if selected {
+                                app.ollama.stop();
+                            } else {
+                                super::revoke_project_context(app);
+                            }
+                            app.ollama.project_files = approved;
+                            app.ollama.settings.error.clear();
+                        }
+                        Err(error) => app.ollama.settings.error = error,
+                    }
                 }
             }
-        }
+        });
         if !app.ollama.settings.error.is_empty() {
             ui.colored_label(Tokens::get(ui.ctx()).red, &app.ollama.settings.error);
         }

@@ -252,6 +252,11 @@ impl State {
         self.project_folder = clip(&p.project_folder, 4096);
         self.save_history = p.save_history;
         self.project_files.clear();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.settings.scan = None;
+            self.settings.scanned_folder.clear();
+        }
         self.cloud_consent = None;
         self.allow_edits = false;
         self.models.clear();
@@ -263,8 +268,16 @@ impl State {
         self.busy = false;
         // Keep completed exchanges only. Never replay abandoned tool calls.
         self.history.clear();
-        self.live_response.clear();
+        self.keep_interrupted_response();
         self.status = "Stopped. Completed changes remain available in Undo.".into();
+    }
+    fn keep_interrupted_response(&mut self) {
+        let partial = std::mem::take(&mut self.live_response);
+        if !partial.is_empty() {
+            self.entry("Assistant (interrupted)", partial);
+        }
+        self.thinking.clear();
+        self.phase.clear();
     }
     fn entry(&mut self, role: &str, text: String) {
         if self.entries.len() >= MAX_MESSAGES {
@@ -472,6 +485,16 @@ fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, S
 }
 
 pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if !app.ollama.project_folder.is_empty()
+            && app.ollama.settings.scanned_folder != app.ollama.project_folder
+            && let Err(error) = settings::scan_project(app, true)
+        {
+            app.ollama.status = error;
+        }
+        settings::poll_scan(app, ctx);
+    }
     history::sync(app);
     if app.ollama.document.is_some_and(|d| d != app.session.document_id()) {
         app.ollama.stop();
@@ -496,9 +519,13 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
             Ok(event) => event,
             Err(std::sync::mpsc::TryRecvError::Empty) => break,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                let interrupted = app.ollama.busy;
                 app.ollama.busy = false;
-                if app.ollama.status == "Working…" {
+                if interrupted {
+                    app.ollama.keep_interrupted_response();
+                    app.ollama.history.clear();
                     app.ollama.status = "Connection closed before a reply.".into();
+                    app.ollama.entry("Error", app.ollama.status.clone());
                 }
                 break;
             }
@@ -570,13 +597,15 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
             }
             Event::Finished(result) => {
                 app.ollama.busy = false;
-                app.ollama.live_response.clear();
                 match result {
                     Ok(history) => {
+                        app.ollama.live_response.clear();
+                        app.ollama.phase.clear();
                         app.ollama.history = history;
                         app.ollama.status = "Ready.".into();
                     }
                     Err(error) => {
+                        app.ollama.keep_interrupted_response();
                         app.ollama.status = error.clone();
                         app.ollama.entry("Error", error);
                         app.ollama.history.clear();
@@ -633,6 +662,10 @@ fn uses_cloud(state: &State) -> bool {
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
     let input = app.ollama.input.trim().to_string();
+    if app.ollama.settings.scan.is_some() {
+        app.ollama.status = "Project files are still indexing. Please send again when indexing finishes.".into();
+        return;
+    }
     if app.ollama.edit_message.is_some() {
         app.ollama.status = "Save or cancel the message edit first.".into();
         return;
@@ -652,14 +685,13 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.status = "Select a model first.".into();
         return;
     }
+    if uses_cloud(&app.ollama) && app.ollama.cloud_consent != Some(app.ollama.source) {
+        app.ollama.open = true;
+        app.ollama.status = "Allow cloud sharing in chat to send this message. Your draft has been kept.".into();
+        return;
+    }
     if app.ollama.history.len() > MAX_MESSAGES {
         app.ollama.history.clear();
-    }
-    if uses_cloud(&app.ollama) && app.ollama.cloud_consent != Some(app.ollama.source) {
-        app.ollama.settings.open = true;
-        app.ollama.settings.tab = settings::Tab::Permissions;
-        app.ollama.status = "Enable cloud context sharing in Agent settings before sending document text or images.".into();
-        return;
     }
     app.ollama.review.begin_turn();
     app.ollama.phase = "Thinking".into();
@@ -687,6 +719,25 @@ fn source_name(source: Source) -> &'static str {
         Source::Cloud => "Ollama Cloud",
         Source::LlamaCpp => "llama.cpp",
     }
+}
+
+/// Consent is granted only by a visible click, never by an agent/control command.
+fn cloud_sharing_prompt(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    if !uses_cloud(&app.ollama) || app.ollama.cloud_consent == Some(app.ollama.source) {
+        return;
+    }
+    egui::Frame::NONE.fill(t.chat_surface).corner_radius(12).inner_margin(12).show(ui, |ui| {
+        ui.label(RichText::new("Cloud sharing is off").font(crate::theme::medium(13.0)));
+        let recipient = if app.ollama.source == Source::Codex { "OpenAI" } else { "your model provider" };
+        ui.add(egui::Label::new(format!("Sending shares messages, this document, approved project passages and attached images with {recipient}. Allow for this session and provider?" )).wrap());
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui.add_enabled(!app.ollama.busy, egui::Button::new("Allow cloud sharing and send")).clicked() {
+            app.ollama.cloud_consent = Some(app.ollama.source);
+            let ctx = ui.ctx().clone();
+            send(app, &ctx);
+        }
+    });
+    ui.add_space(8.0);
 }
 
 fn effort_label(effort: &str) -> &str {
@@ -742,6 +793,9 @@ fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_com
             });
         });
     } else {
+        if role == "Assistant (interrupted)" {
+            ui.small(RichText::new("Response interrupted · partial answer").color(t.chat_dim));
+        }
         markdown::show(ui, cache, text);
     }
 }
@@ -790,6 +844,7 @@ fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
         if app.ollama.source == Source::Local {
             ui.label("Ollama address");
             if ui.text_edit_singleline(&mut app.ollama.endpoint).changed() {
+                app.ollama.cloud_consent = None;
                 app.ollama.history.clear();
                 app.ollama.models.clear();
             }
@@ -797,6 +852,7 @@ fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
         if app.ollama.source == Source::LlamaCpp {
             ui.label("llama.cpp address");
             if ui.text_edit_singleline(&mut app.ollama.llama_endpoint).changed() {
+                app.ollama.cloud_consent = None;
                 app.ollama.history.clear();
                 app.ollama.models.clear();
             }
@@ -1042,35 +1098,42 @@ fn project_indicator(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Project folder".into());
-    egui::Frame::NONE.fill(t.chat_surface).corner_radius(12).inner_margin(10).show(ui, |ui| {
-        ui.set_width(ui.available_width());
+    egui::Frame::NONE.stroke(Stroke::new(0.6, t.border)).corner_radius(8).inner_margin(8).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            let width = (ui.available_width() - 105.0).max(40.0);
-            ui.add_sized(
-                egui::vec2(width, 20.0),
-                egui::Label::new(
-                    RichText::new(if linked { format!("Project · {name}") } else { "No project linked".into() }).font(crate::theme::medium(12.0)),
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+            crate::icons::paint(ui.painter(), rect, "folderOutline", t.chat_dim, t.chat_dim);
+            let width = (ui.available_width() - 68.0).max(40.0);
+            ui.allocate_ui_with_layout(egui::vec2(width, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_width(width);
+                ui.add(
+                    egui::Label::new(RichText::new(if linked { name.as_str() } else { "No project linked" }).font(crate::theme::medium(12.0)))
+                        .truncate(),
                 )
-                .truncate(),
-            )
-            .on_hover_text(if linked {
-                app.ollama.project_folder.as_str()
-            } else {
-                "Link a folder and approve individual files to provide project context."
+                .on_hover_text(if linked { app.ollama.project_folder.as_str() } else { "Link a folder to provide project context." });
             });
-            if ui.add(egui::Button::new(if linked { "Manage project" } else { "Link project" }).frame(false)).clicked() {
+            if ui.add(egui::Button::new(if linked { "Manage" } else { "Link" }).frame(false)).clicked() {
                 app.ollama.settings.open = true;
                 app.ollama.settings.tab = settings::Tab::Project;
             }
         });
         if linked {
             let count = app.ollama.project_files.len();
-            let status = if count == 0 {
-                "Linked · no files approved — choose files to enable context".into()
+            #[cfg(not(target_arch = "wasm32"))]
+            let indexing = app.ollama.settings.scan.is_some();
+            #[cfg(target_arch = "wasm32")]
+            let indexing = false;
+            let status = if indexing {
+                "Indexing files…".into()
+            } else if count == 0 {
+                "No files selected".into()
             } else {
-                format!("Linked · {count} approved {} · read-only context", if count == 1 { "file" } else { "files" })
+                format!("{count} {} available · read only", if count == 1 { "file" } else { "files" })
             };
-            ui.add(egui::Label::new(RichText::new(status).size(11.0).color(t.chat_dim)).wrap());
+            ui.horizontal(|ui| {
+                ui.add_space(26.0);
+                ui.add(egui::Label::new(RichText::new(status).size(10.5).color(t.chat_dim)).truncate());
+            });
         }
     });
 }
@@ -1185,6 +1248,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 );
             });
             project_indicator(app, ui, &t);
+            cloud_sharing_prompt(app, ui, &t);
             ui.add_space(4.0);
             ui.separator();
             let extra = if app.ollama.models.is_empty() && !app.ollama.busy { 30.0 } else { 0.0 }
@@ -1602,14 +1666,15 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
     history::sync(app);
     match id {
         "ui.agentSettings" => {
-            app.ollama.settings.open = p.get("value").and_then(Value::as_bool).unwrap_or(true);
-            app.ollama.settings.tab = match p.get("tab").and_then(Value::as_str).unwrap_or("general") {
+            let tab = match p.get("tab").and_then(Value::as_str).unwrap_or("general") {
                 "general" => settings::Tab::General,
                 "permissions" => settings::Tab::Permissions,
                 "project" => settings::Tab::Project,
                 "data" => settings::Tab::Data,
                 _ => return Err("Unknown settings section.".into()),
             };
+            app.ollama.settings.tab = tab;
+            app.ollama.settings.open = p.get("value").and_then(Value::as_bool).unwrap_or(true);
             app.ollama.open = true;
         }
         "ui.agentBranchChat" | "ui.agentEditMessage" => {
@@ -1702,6 +1767,10 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.project_files.clear();
                 app.ollama.settings.files.clear();
                 app.ollama.settings.scanned_folder.clear();
+                app.ollama.settings.scan = None;
+                if !app.ollama.project_folder.is_empty() {
+                    settings::scan_project(app, true)?;
+                }
                 app.ollama.settings.open = true;
                 app.ollama.settings.tab = settings::Tab::Project;
                 // Revocation clears prior retrieved content from the conversation sent to providers.
@@ -1797,6 +1866,22 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             if app.ollama.busy {
                 return Err("Stop the current request before changing connection settings.".into());
             }
+            // Validate the entire request before mutating live connection state.
+            for (name, max) in [("endpoint", 2000), ("llamaEndpoint", 2000), ("model", 256), ("effort", 64), ("apiKey", 2000)] {
+                if p.get(name).and_then(Value::as_str).is_some_and(|text| text.len() > max) {
+                    return Err(format!("{name} is too long"));
+                }
+            }
+            if p.get("endpoint").and_then(Value::as_str).is_some_and(|text| text != app.ollama.endpoint)
+                || p.get("llamaEndpoint").and_then(Value::as_str).is_some_and(|text| text != app.ollama.llama_endpoint)
+            {
+                // Source remains Local when a user switches between Ollama servers.
+                // Consent for one server must not carry over to the new recipient.
+                if p.get("source").and_then(Value::as_str).is_some_and(|source| !matches!(source, "local" | "cloud" | "llamacpp" | "codex")) {
+                    return Err("source must be local, cloud, llamacpp or codex".into());
+                }
+                app.ollama.cloud_consent = None;
+            }
             if let Some(source) = p.get("source").and_then(Value::as_str) {
                 let old = app.ollama.source;
                 app.ollama.source = match source {
@@ -1837,14 +1922,14 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
         }
         #[cfg(not(target_arch = "wasm32"))]
         "ui.ollamaSend" => {
+            if app.ollama.busy {
+                return Err("A request is already running".into());
+            }
             if let Some(text) = p.get("text").and_then(Value::as_str) {
                 if text.chars().count() > MAX_INPUT {
                     return Err("Message is too long".into());
                 }
                 app.ollama.input = text.into();
-            }
-            if app.ollama.busy {
-                return Err("A request is already running".into());
             }
             let ctx = app.ctx.clone().ok_or("The app is not ready yet")?;
             send(app, &ctx);

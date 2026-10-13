@@ -6,7 +6,6 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 const MAX_FILE: u64 = 2 * 1024 * 1024;
-const MAX_ENTRIES: usize = 4000;
 
 pub fn root(path: &str) -> Result<PathBuf, String> {
     if path.len() > 4096 || path.is_empty() {
@@ -102,17 +101,22 @@ fn text(root: &Path, relative: &str) -> Result<String, String> {
         Ok(text)
     }
 }
-fn files(root: &Path) -> Result<(Vec<String>, bool), String> {
-    let mut stack = vec![(root.to_path_buf(), 0usize)];
+fn files(root: &Path, cancelled: &dyn Fn() -> bool) -> Result<(Vec<String>, bool), String> {
+    let mut stack = vec![root.to_path_buf()];
     let mut files = Vec::new();
-    let mut scanned = 0usize;
     let mut truncated = false;
-    while let Some((dir, depth)) = stack.pop() {
-        for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
-            scanned = scanned.saturating_add(1);
-            if scanned > MAX_ENTRIES {
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if dir == root => return Err(error.to_string()),
+            Err(_) => {
                 truncated = true;
-                break;
+                continue;
+            }
+        };
+        for entry in entries {
+            if cancelled() {
+                return Err("Project operation cancelled.".into());
             }
             let Ok(entry) = entry else { continue };
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -125,11 +129,7 @@ fn files(root: &Path) -> Result<(Vec<String>, bool), String> {
             }
             let path = entry.path();
             if kind.is_dir() {
-                if depth < 8 {
-                    stack.push((path, depth.saturating_add(1)));
-                } else {
-                    truncated = true;
-                }
+                stack.push(path);
             } else if kind.is_file()
                 && supported(&path)
                 && let Ok(relative) = path.strip_prefix(root)
@@ -137,21 +137,19 @@ fn files(root: &Path) -> Result<(Vec<String>, bool), String> {
                 files.push(relative.to_string_lossy().replace('\\', "/"));
             }
         }
-        if scanned > MAX_ENTRIES {
-            break;
-        }
     }
     files.sort();
     Ok((files, truncated))
 }
 /// Names only: listing candidates never reads their contents.
+#[cfg(test)]
 pub fn candidates(folder: &str) -> Result<Vec<String>, String> {
-    files(&root(folder)?).map(|(files, _)| files)
+    candidates_cancellable(folder, &|| false)
+}
+pub fn candidates_cancellable(folder: &str, cancelled: &dyn Fn() -> bool) -> Result<Vec<String>, String> {
+    files(&root(folder)?, cancelled).map(|(files, _)| files)
 }
 pub fn validate_selection(folder: &str, allowed: &[String]) -> Result<(), String> {
-    if allowed.len() > 128 {
-        return Err("Approve at most 128 project files.".into());
-    }
     let root = root(folder)?;
     for path in allowed {
         resolve(&root, path)?;
@@ -189,11 +187,19 @@ fn shareable_text(root: &Path, relative: &str) -> Result<String, String> {
     }
     Ok(text)
 }
+#[cfg(test)]
 pub fn tool(folder: &str, allowed: &[String], name: &str, args: &Value) -> Result<Value, String> {
+    tool_cancellable(folder, allowed, name, args, &|| false)
+}
+pub fn tool_cancellable(folder: &str, allowed: &[String], name: &str, args: &Value, cancelled: &dyn Fn() -> bool) -> Result<Value, String> {
+    if cancelled() {
+        return Err("Project operation cancelled.".into());
+    }
     let root = root(folder)?;
     match name {
         "project_list" => {
-            let (mut files, truncated) = files(&root)?;
+            let (mut files, truncated) = files(&root, cancelled)?;
+            let allowed: std::collections::HashSet<_> = allowed.iter().collect();
             files.retain(|path| allowed.contains(path));
             Ok(
                 json!({"files":files,"truncated":truncated,"supported":"UTF-8 text, Markdown, source, DOCX, RTF, ODT. PDF and binary files are not indexed."}),
@@ -240,12 +246,20 @@ pub fn tool(folder: &str, allowed: &[String], name: &str, args: &Value) -> Resul
                 .filter(|s| !s.is_empty() && s.len() <= 1000)
                 .ok_or("query of up to 1,000 bytes is required")?
                 .to_lowercase();
-            let (mut files, truncated) = files(&root)?;
+            let (mut files, truncated) = files(&root, cancelled)?;
+            let allowed: std::collections::HashSet<_> = allowed.iter().collect();
             files.retain(|path| allowed.contains(path));
+            if let Some(filter) = args.get("path").and_then(Value::as_str) {
+                let filter = filter.to_lowercase();
+                files.retain(|path| path.to_lowercase().contains(&filter));
+            }
             let mut matches = Vec::new();
             let mut read = 0usize;
             for path in files {
-                if read >= 128 || matches.len() >= 30 {
+                if cancelled() {
+                    return Err("Project operation cancelled.".into());
+                }
+                if matches.len() >= 30 {
                     break;
                 }
                 read = read.saturating_add(1);
@@ -260,7 +274,7 @@ pub fn tool(folder: &str, allowed: &[String], name: &str, args: &Value) -> Resul
                 }
             }
             Ok(
-                json!({"matches":matches,"bounded":true,"scanTruncated":truncated,"filesScanned":read,"note":"Use project_read on matching files before citing claims. Search scans up to 128 files, 30 matches."}),
+                json!({"matches":matches,"bounded":true,"scanTruncated":truncated,"filesScanned":read,"note":"Use project_read on matching files before citing claims. Search covers all selected files; returns up to 30 matches. Narrow with path to search a particular folder or file."}),
             )
         }
         _ => Err("Unknown project tool.".into()),
@@ -316,5 +330,42 @@ mod tests {
                 .contains("Formatted project evidence")
         );
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod unlimited_tests {
+    use super::*;
+    #[test]
+    fn approval_and_search_reach_files_beyond_old_scan_and_depth_limits() {
+        let root = std::env::temp_dir().join(format!("wordcraft-project-unlimited-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        for i in 0..4100 {
+            fs::write(root.join(format!("{i:05}.md")), "ordinary text").unwrap();
+        }
+        let deep = root.join("a/b/c/d/e/f/g/h/i/j");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("last.md"), "needle beyond the old limits").unwrap();
+        let folder = root.to_string_lossy();
+        let allowed = candidates(&folder).unwrap();
+        assert_eq!(allowed.len(), 4101);
+        validate_selection(&folder, &allowed).unwrap();
+        let result = tool(&folder, &allowed, "project_search", &json!({"query":"needle"})).unwrap();
+        assert_eq!(result["matches"][0]["path"], "a/b/c/d/e/f/g/h/i/j/last.md");
+        assert_eq!(result["filesScanned"], 4101);
+        let narrowed = tool(&folder, &allowed, "project_search", &json!({"query":"needle","path":"a/b/"})).unwrap();
+        assert_eq!(narrowed["filesScanned"], 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    #[test]
+    fn cancelled_indexing_and_search_stop_before_scanning() {
+        let root = std::env::temp_dir();
+        assert!(candidates_cancellable(&root.to_string_lossy(), &|| true).is_err());
+        assert!(tool_cancellable(&root.to_string_lossy(), &[], "project_search", &json!({"query":"hello"}), &|| true).is_err());
     }
 }

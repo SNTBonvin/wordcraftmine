@@ -955,7 +955,9 @@ fn cloud_document_context_requires_visible_session_consent() {
         assert!(app.ollama.context.is_null());
         assert!(app.ollama.history.is_empty());
         assert_eq!(app.ollama.input, "Summarize this document");
-        assert!(app.ollama.settings.open);
+        assert!(!app.ollama.settings.open);
+        assert!(app.ollama.open);
+        assert!(app.ollama.status.starts_with("Allow cloud sharing in chat"));
     }
 }
 #[test]
@@ -1009,6 +1011,7 @@ fn render_agent_settings_visual_qa() {
         if name == "linked-project" {
             harness.state_mut().ollama.project_folder = "/tmp/Research paper".into();
             harness.state_mut().ollama.project_files = vec!["paper.md".into(), "notes.md".into()];
+            harness.state_mut().ollama.settings.scanned_folder = "/tmp/Research paper".into();
         } else {
             harness.state_mut().ollama.project_folder.clear();
             harness.state_mut().ollama.project_files.clear();
@@ -1055,7 +1058,7 @@ fn settings_cloud_switch_grants_and_revokes_the_live_permission() {
 }
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn settings_project_checks_are_the_only_file_approval_path_and_revocation_clears_context() {
+fn settings_individual_file_selection_and_revocation_clear_context() {
     use egui_kittest::kittest::Queryable;
     let folder = std::env::temp_dir().join(format!("wordcraft-project-ui-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
@@ -1063,6 +1066,8 @@ fn settings_project_checks_are_the_only_file_approval_path_and_revocation_clears
     let mut app = app();
     app.ollama.open = true;
     app.ollama.project_folder = folder.to_string_lossy().into_owned();
+    app.ollama.settings.scanned_folder = app.ollama.project_folder.clone();
+    app.ollama.settings.files = vec!["paper.md".into()];
     app.ollama.settings.open = true;
     app.ollama.settings.tab = settings::Tab::Project;
     let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(
@@ -1109,8 +1114,8 @@ fn image_only_send_button_reaches_cloud_permission_gate_without_sending() {
     harness.run_steps(8);
     harness.get_by_role_and_label(egui::accesskit::Role::Button, "↑").click();
     harness.run_steps(4);
-    assert!(harness.state().ollama.settings.open);
-    assert!(harness.state().ollama.status.starts_with("Enable cloud context sharing"));
+    assert!(!harness.state().ollama.settings.open);
+    assert!(harness.state().ollama.status.starts_with("Allow cloud sharing in chat"));
     assert!(!harness.state().ollama.busy);
     assert!(harness.state().ollama.context.is_null());
 }
@@ -1143,14 +1148,160 @@ fn project_indicator_distinguishes_linked_folder_from_approved_context() {
     harness.run_steps(6);
     assert!(harness.query_by_label("No project linked").is_some());
     harness.state_mut().ollama.project_folder = "/tmp/Research paper".into();
+    harness.state_mut().ollama.settings.scanned_folder = "/tmp/Research paper".into();
     harness.run_steps(4);
-    assert!(harness.query_by_label("Project · Research paper").is_some());
-    assert!(harness.query_by_label("Linked · no files approved — choose files to enable context").is_some());
+    assert!(harness.query_by_label("Research paper").is_some());
+    assert!(harness.query_by_label("No files selected").is_some());
     harness.state_mut().ollama.project_files = vec!["paper.md".into()];
     harness.run_steps(4);
-    assert!(harness.query_by_label("Linked · 1 approved file · read-only context").is_some());
-    harness.get_by_role_and_label(egui::accesskit::Role::Button, "Manage project").click();
+    assert!(harness.query_by_label("1 file available · read only").is_some());
+    harness.get_by_role_and_label(egui::accesskit::Role::Button, "Manage").click();
     harness.run_steps(4);
     assert!(harness.state().ollama.settings.open);
     assert!(harness.state().ollama.settings.tab == settings::Tab::Project);
+}
+
+#[test]
+fn invalid_settings_and_busy_send_leave_existing_state_unchanged() {
+    let mut app = app();
+    app.ollama.cloud_consent = Some(Source::Local);
+    let endpoint = app.ollama.endpoint.clone();
+    assert!(command(&mut app, "ui.ollamaSettings", &json!({"source":"codex","endpoint":"http://localhost:1234","model":"x".repeat(257)})).is_err());
+    assert_eq!(app.ollama.source, Source::Local);
+    assert_eq!(app.ollama.endpoint, endpoint);
+    assert_eq!(app.ollama.cloud_consent, Some(Source::Local));
+    assert!(command(&mut app, "ui.agentSettings", &json!({"tab":"invalid"})).is_err());
+    assert!(!app.ollama.settings.open);
+    app.ollama.input = "Keep my draft".into();
+    app.ollama.busy = true;
+    assert!(command(&mut app, "ui.ollamaSend", &json!({"text":"Overwrite"})).is_err());
+    assert_eq!(app.ollama.input, "Keep my draft");
+    app.ollama.busy = false;
+    command(&mut app, "ui.ollamaSettings", &json!({"endpoint":"http://localhost:1234"})).unwrap();
+    assert!(app.ollama.cloud_consent.is_none());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn cloud_send_and_enter_keep_draft_in_chat_without_opening_settings() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = app();
+    app.ollama.open = true;
+    app.ollama.source = Source::Codex;
+    app.ollama.model = "offline-test-model".into();
+    app.ollama.models = vec![app.ollama.model.clone()];
+    app.ollama.input = "Keep this question".into();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "↑").click();
+    h.run_steps(3);
+    assert!(!h.state().ollama.settings.open);
+    assert_eq!(h.state().ollama.input, "Keep this question");
+    assert!(h.state().ollama.cloud_consent.is_none());
+    h.state().ctx.as_ref().unwrap().memory_mut(|m| m.request_focus(egui::Id::new("agent_composer")));
+    h.run_steps(2);
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(3);
+    assert!(!h.state().ollama.settings.open);
+    assert!(!h.state().ollama.busy);
+    assert!(h.state().ollama.history.is_empty());
+    assert_eq!(h.state().ollama.input, "Keep this question");
+    // Keep this test offline: validation rejects the turn after the visible consent click.
+    h.state_mut().ollama.model.clear();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Allow cloud sharing and send").click();
+    h.run_steps(3);
+    assert_eq!(h.state().ollama.cloud_consent, Some(Source::Codex));
+    assert_eq!(h.state().ollama.status, "Select a model first.");
+    assert!(!h.state().ollama.settings.open);
+    assert_eq!(h.state().ollama.input, "Keep this question");
+}
+
+#[test]
+fn disconnect_error_and_stop_preserve_partial_answer_and_release_busy_state() {
+    for mode in ["disconnect", "error", "stop"] {
+        let mut app = app();
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.ollama.events = Some(rx);
+        app.ollama.busy = true;
+        app.ollama.status = "Working…".into();
+        app.ollama.live_response = "Useful partial answer".into();
+        app.ollama.phase = "Thinking".into();
+        match mode {
+            "error" => {
+                tx.send(Event::Finished(Err("Synthetic connection failure".into()))).unwrap();
+            }
+            "stop" => app.ollama.stop(),
+            _ => {}
+        }
+        drop(tx);
+        poll(&mut app, &egui::Context::default());
+        assert!(!app.ollama.busy);
+        assert!(app.ollama.events.is_none());
+        assert!(app.ollama.phase.is_empty());
+        assert!(app.ollama.live_response.is_empty());
+        assert!(app.ollama.entries.iter().any(|(role, content)| role == "Assistant (interrupted)" && content == "Useful partial answer"));
+        assert_eq!(text(&app), "Original");
+        let entries = app.ollama.entries.clone();
+        poll(&mut app, &egui::Context::default());
+        assert_eq!(app.ollama.entries, entries);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn linking_project_selects_all_files_and_bulk_buttons_change_the_whole_selection() {
+    use egui_kittest::kittest::Queryable;
+    let folder = std::env::temp_dir().join(format!("wordcraft-project-default-all-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    for i in 0..140 {
+        std::fs::write(folder.join(format!("paper-{i:03}.md")), "Evidence").unwrap();
+    }
+    std::fs::write(folder.join(".env"), "SECRET=hidden").unwrap();
+    let mut app = app();
+    app.ollama.open = true;
+    command(&mut app, "ui.agentProject", &json!({"path":folder})).unwrap();
+    let ctx = egui::Context::default();
+    for _ in 0..200 {
+        poll(&mut app, &ctx);
+        if app.ollama.settings.scan.is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(app.ollama.settings.scan.is_none());
+    assert_eq!(app.ollama.project_files.len(), 140);
+    assert!(!app.ollama.project_files.iter().any(|path| path == ".env"));
+    app.ollama.context = json!({"retrieved":"Evidence"});
+    app.ollama.entries = vec![("You".into(), "Evidence".into())];
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Deselect all").click();
+    h.run_steps(3);
+    assert!(h.state().ollama.project_files.is_empty());
+    assert!(h.state().ollama.context.is_null());
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Select all").click();
+    h.run_steps(3);
+    assert_eq!(h.state().ollama.project_files.len(), 140);
+    std::fs::remove_dir_all(folder).unwrap();
 }

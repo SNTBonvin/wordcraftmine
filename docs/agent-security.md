@@ -3,7 +3,7 @@
 > **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (explicit agent permissions and file approvals)
 
 Agent chat → **••• → Settings** separates Models & connection, Permissions, Project files and
-Data controls. The chat composer retains model/reasoning selection, attachments and Stop. A project card on the
+Data controls. The chat composer retains model/reasoning selection, attachments and Stop. A compact project row on the
 chat screen shows the linked folder, approved-file count and a Manage project shortcut. A linked
 folder with no approved files is explicitly marked as having no enabled file context.
 The layout was observed in ChatGPT in Opera; artwork remains original and no website assets are bundled.
@@ -15,8 +15,10 @@ The layout was observed in ChatGPT in Opera; artwork remains original and no web
   save/open files, run macros, change protection or invoke shell tools.
 - Codex, Ollama Cloud and model names identifying cloud use require the human to enable **Share
   context with cloud models** before any chat request includes document text or images. Consent is
-  in memory, bound to the provider, and cleared on application launch, provider changes and saved
-  chat restoration. It cannot be granted through control commands or model tools.
+  in memory, bound to the provider, and cleared on application launch, provider/server changes and saved
+  chat restoration. It cannot be granted through control commands or model tools. Sending without
+  consent preserves the draft and shows an inline **Allow cloud sharing and send** control; it never
+  opens Settings automatically. Settings remains an explicit way to revoke or grant sharing.
 - Local servers may themselves delegate requests to cloud services. WordCraft cannot determine
   how an arbitrary local daemon routes or retains data. The settings explain this boundary.
 - Web access is separate. Turning it off cancels the active worker. Search queries go to Bing;
@@ -26,11 +28,16 @@ The layout was observed in ChatGPT in Opera; artwork remains original and no web
 
 ## Linked projects
 
-Choosing a folder grants **no file contents** to the model. The user checks individual files in
-Settings → Project files; at most 128 can be approved. Listing/search/retrieval only sees approved
-files. Approval stays in memory and is cleared on launch, folder changes and saved-chat restoration.
-New files never become approved automatically. Revoking a file or all access cancels active work
+Linking a folder selects **all eligible files by default**, indexed on a background worker. There
+is no approval-count, directory-depth or total-entry cutoff. Settings → Project files provides
+Select all / Deselect all and individual exclusions; the file list renders visible rows without
+a total-row limit. Refresh discovers new files; Select all includes them. Listing/search/retrieval
+only sees selected files. Selections and exclusions stay in memory; linking/reopening a project or restoring a chat
+indexes and selects eligible files again. Cloud-sharing consent remains separate. Revoking a file or all access cancels active work
 and starts fresh live context; existing saved chat messages are retained until explicitly deleted.
+
+Search can narrow by folder/file path and scans selected files beyond the former 128-file limit.
+Results remain limited to 30 matches per request, and individual reads remain bounded.
 
 Hidden entries, common credential filenames and private-key extensions are excluded. Reads are
 bounded and reject traversal, symbolic links and resolved paths outside the root. Credential-content
@@ -78,4 +85,6 @@ personal build is ad-hoc signed.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Newly linked projects select all eligible files; unlimited selection, background indexing, bulk controls and compact project indicator |
+| 2026-10-13 | minor | Inline cloud consent keeps Send in chat; atomic connection validation, busy-send draft protection and interrupted-response preservation |
 | 2026-10-13 | minor | Explicit agent Settings, cloud consent, file approvals, temporary history and recurring dependency audit |

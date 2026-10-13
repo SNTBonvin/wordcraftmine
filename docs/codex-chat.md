@@ -96,8 +96,10 @@ Codex and Ollama Cloud; project tools never write to the folder or change the op
 `project_list`, `project_search` and `project_read` read files live, so external changes are
 picked up on subsequent requests. Supported content includes UTF-8 text, Markdown, source,
 CSV/JSON, DOCX, RTF and ODT. PDF and other binary files are not indexed. Formatted-document
-line numbers refer to extracted text. Scans are bounded to 4,000 entries and eight directory
-levels; search reads up to 128 files and returns 30 matches. Files are limited to 2 MiB, and
+line numbers refer to extracted text. All eligible files are selected when a folder is linked or reopened. Background indexing has no
+file-count or directory-depth cutoff. Select all / Deselect all and individual file controls are
+available in Project settings. Search covers selected files and returns up to 30 matches; an
+optional path filter narrows it to a folder or file. Files are limited to 2 MiB, and
 read passages to 200 lines / 16,000 characters. Hidden entries, common build directories,
 credential/key files and symbolic links are excluded. Absolute paths and parent traversal
 are rejected. Search results explicitly describe their scan limits.

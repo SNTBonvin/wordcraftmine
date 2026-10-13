@@ -72,3 +72,6 @@ sync_github_name = false
 real_name = "Manuel Carmona"
 display_name = "manucarcor"
 [people.odedigo]
+
+[people.pwimero]
+sync_github_name = true
