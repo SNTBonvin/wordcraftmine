@@ -920,7 +920,7 @@ fn pasted_rtf_sections_link_their_headers_to_the_previous() {
     let note = s.doc.add_part(wordcraft_doc::PartKind::Footnote, Vec::new());
     let _comment = s.doc.add_part(wordcraft_doc::PartKind::Comment, Vec::new());
     run(&mut s, "caret.docEnd", json!({}));
-    let rtf = r"{\rtf1\ansi\sectd\lndscpsxn{\header Head\par}{\footer Foot\par}{\headerf First\par} a\par\sect\sectd{\header Two\par} b\par}";
+    let rtf = r"{\rtf1\ansi\sectd\lndscpsxn\titlepg{\header Head\par}{\footer Foot\par}{\headerf First\par} a\par\sect\sectd{\header Two\par} b\par}";
     run(&mut s, "edit.pasteSpecial", json!({"as": "rtf", "rtf": rtf}));
     let secs = s.doc.sections();
     assert_eq!(secs.len(), 2, "the pasted section break is kept");
@@ -932,6 +932,41 @@ fn pasted_rtf_sections_link_their_headers_to_the_previous() {
             }
         }
     }
+    assert_unlinked(&s);
+}
+
+/// Every section break in the body has no headers, footers or first-page setting of its own.
+fn assert_unlinked(s: &Session) {
+    for (i, sp) in s.doc.sections() {
+        assert_eq!((sp.headers, sp.footers, sp.title_page), Default::default(), "section ending at block {i}");
+    }
+}
+
+#[test]
+fn text_from_file_unlinks_inserted_sections_headers() {
+    // #1378: Insert › Text from File brings the file's section breaks with their pages, but
+    // the file's header and footer ids are its own: they link to the previous section's.
+    let dir = std::env::temp_dir().join(format!("wordcraft-text-from-file-sections-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let rtf = r"{\rtf1\ansi\sectd\lndscpsxn\titlepg{\header Head\par}{\footer Foot\par}{\headerf First\par} a\par\sect\sectd{\header Two\par} b\par}";
+    let rtf_path = dir.join("sections.rtf");
+    std::fs::write(&rtf_path, rtf).unwrap();
+    // The same document as DOCX.
+    let docx_path = dir.join("sections.docx");
+    let src = crate::io::open_bytes("sections.rtf", rtf.as_bytes()).unwrap();
+    std::fs::write(&docx_path, crate::io::save_bytes("sections.docx", &src).unwrap()).unwrap();
+    for path in [&rtf_path, &docx_path] {
+        let mut s = s();
+        run(&mut s, "document.setText", json!({"text": "x"}));
+        s.doc.add_part(wordcraft_doc::PartKind::Footnote, Vec::new());
+        run(&mut s, "caret.docEnd", json!({}));
+        run(&mut s, "insert.textFromFile", json!({"path": path.to_str().unwrap()}));
+        let secs = s.doc.sections();
+        assert!(secs.len() >= 2, "{path:?}: the inserted section break is kept");
+        assert!(secs[0].1.landscape, "{path:?}: with its page settings");
+        assert_unlinked(&s);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
