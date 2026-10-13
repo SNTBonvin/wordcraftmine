@@ -1514,7 +1514,7 @@ fn theme_styled_connectors_and_callout_boxes_keep_their_paint() {
     assert_eq!(shape(1), (ShapeKind::TextBox, Some(theme[1]), Some(Rgb(0, 0, 0)), 0.5, false, true));
     assert_eq!(shape(2), (ShapeKind::Rectangle, Some(theme[4]), Some(theme[4]), 1.0, false, false));
     assert_eq!(shape(3), (ShapeKind::ElbowConnector, None, Some(theme[5]), 0.5, false, false));
-    assert_eq!(shape(4).0, ShapeKind::RoundedRectangle);
+    assert_eq!(shape(4).0, ShapeKind::WedgeRoundRectCallout);
     // The themed outline and the arrowhead survive saving.
     let again = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
     assert!(matches!(&paras(&again)[0].objects[0], InlineObject::Shape { stroke, extra, .. } if *stroke == Some(theme[7]) && extra.arrow_end));

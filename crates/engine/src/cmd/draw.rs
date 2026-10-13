@@ -39,6 +39,9 @@ pub enum DrawMode {
     Eraser,
     /// Dragging draws ink with this pen.
     Pen(InkTool),
+    /// Dragging draws this shape (picked in Insert › Shapes): the drag is the shape's frame.
+    /// One shot: after the shape is drawn, the mode goes back to Select.
+    Shape(ShapeKind),
 }
 
 impl DrawMode {
@@ -141,6 +144,9 @@ pub struct DrawState {
     pub pens: Vec<CustomPen>,
     /// Ink to Shape is on: strokes drawn from now on that look like a shape become that shape.
     pub ink_to_shape: bool,
+    /// Arrowheads the shape tool puts on lines and connectors (start, end), from the gallery's
+    /// arrow-connector items.
+    pub shape_arrow: (bool, bool),
     #[serde(skip)]
     pub lasso: Option<LassoSelection>,
     /// Ink Replay is showing (the app plays the strokes back and turns this off when done).
@@ -157,6 +163,7 @@ impl Default for DrawState {
             highlighter: PenSettings::of(InkTool::Highlighter),
             pens: Vec::new(),
             ink_to_shape: false,
+            shape_arrow: (false, false),
             lasso: None,
             replay: false,
         }
@@ -199,6 +206,22 @@ pub fn specs() -> Vec<CommandSpec> {
             state(s)
         })
         .pure(),
+        CommandSpec::new("draw.shapeTool", "Shape", "Draw › Tools", |s, v| {
+            let kind: ShapeKind = serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
+            s.view.draw.shape_arrow = match p::str(v, "arrow") {
+                Some("end") => (false, true),
+                Some("start") => (true, false),
+                Some("both") => (true, true),
+                Some("none") | None => (false, false),
+                Some(x) => return Err(CmdError::Params(format!("`arrow`: none, start, end or both, not `{x}`"))),
+            };
+            s.view.draw.mode = DrawMode::Shape(kind);
+            state(s)
+        })
+        .params(r#"{"kind": "any shape kind (see ShapeKind), "arrow"?: "none"|"start"|"end"|"both" (lines and connectors)}  (arms the shape tool: dragging on the canvas draws that shape)"#)
+        .pure(),
+        CommandSpec::new("draw.shape", "Draw Shape", "Draw › Tools", draw_shape)
+            .params(r#"{"kind": "any shape kind (see ShapeKind), "page"?: n, "x": pt, "y": pt, "width"?: pt, "height"?: pt}  (draws the shape in that frame on that page, in front of the text, and selects it)"#),
         CommandSpec::new("draw.lasso", "Lasso Select", "Draw › Tools", lasso)
             .params(r#"{"page"?: n, "points"?: [[x, y], …], "clear"?: bool}  (no points: use the lasso; points: select the ink inside that loop; clear: drop the selection)"#)
             .pure(),
@@ -267,6 +290,62 @@ const PEN_PARAMS: &str = r#"{"color"?: "RRGGBB", "width"?: pt}"#;
 
 fn state(s: &Session) -> CmdResult {
     serde_json::to_value(&s.view.draw).map_err(|e| CmdError::Failed(e.to_string()))
+}
+
+/// Draw a shape in the dragged frame, as the shape tool does: insert it inline at the anchor
+/// paragraph for (page, y), move it to the frame (which floats it), then put it in front of
+/// the text (Word's default for drawn shapes) and select it. One shot: the tool goes back to
+/// Select, and the whole draw is one undo step.
+fn draw_shape(s: &mut Session, v: &Value) -> CmdResult {
+    use crate::Selection;
+    let kind: ShapeKind =
+        serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
+    let page = p::u64(v, "page").unwrap_or(0);
+    let (x, y) = (p::f32(v, "x").unwrap_or(0.0), p::f32(v, "y").unwrap_or(0.0));
+    let (w, h) = (
+        p::f32(v, "width").unwrap_or(108.0).clamp(4.0, 2000.0),
+        p::f32(v, "height").unwrap_or(72.0).clamp(if kind.is_connector() { 0.0 } else { 1.0 }, 2000.0),
+    );
+    let page_idx = usize::try_from(page).unwrap_or(usize::MAX);
+    let layout = s.layout();
+    let story = StoryRef::Body;
+    let anchor = super::objects::anchor_paragraph(&layout, page_idx, y, story)
+        .map(|path| Pos { story, path, off: 0 })
+        .or_else(|| super::objects::nearest_line(&layout, page_idx, y, story))
+        .ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?;
+    let fill = if kind.is_open() { None } else { Some(Rgb(0x15, 0x60, 0x82)) };
+    // Arrowheads on lines and connectors (the tool's setting, or the param's).
+    let (arrow_start, arrow_end) = match p::str(v, "arrow") {
+        Some("end") => (false, true),
+        Some("start") => (true, false),
+        Some("both") => (true, true),
+        Some("none") | None => s.view.draw.shape_arrow,
+        Some(x) => return Err(CmdError::Params(format!("`arrow`: none, start, end or both, not `{x}`"))),
+    };
+    let extra = wordcraft_doc::connector::ShapeExtra { arrow_start, arrow_end, ..Default::default() };
+    let float = Float { wrap: Wrap::Inline, ..Default::default() };
+    let obj = InlineObject::Shape {
+        kind,
+        w,
+        h,
+        fill,
+        stroke: Some(Rgb(0x0E, 0x40, 0x5A)),
+        stroke_width: 1.0,
+        float,
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra,
+    };
+    let props = s.typing_props();
+    // `insert_object` returns the position after the object; the object itself is at `anchor`.
+    s.doc.insert_object(&anchor, obj, &props)?;
+    s.touch();
+    let at = super::objects::move_object(s, anchor, Some(page), x, y, (w, h), false)?;
+    super::objects::edit_float(s, &at, |f| f.wrap = Wrap::InFrontOfText)?;
+    s.sel = Selection { anchor: at.clone(), focus: Pos { off: at.off + OBJ.len_utf8(), ..at } };
+    s.view.draw.mode = DrawMode::Select;
+    super::sel_result(s)
 }
 
 /// Pick up a pen, optionally changing its colour and thickness.
@@ -990,6 +1069,27 @@ mod tests {
         assert_eq!(s.run("draw.replay", &json!({})).unwrap()["replaying"], false);
         // Nothing to replay without ink.
         assert!(session().run("draw.replay", &json!({})).is_err());
+    }
+
+    /// The shape tool: picking a kind arms it, and dragging draws that shape, floating in
+    /// front of the text at the dragged frame, in one undo step; the tool then goes back to
+    /// Select. Nothing is inserted on a click (the tool draws on drag only).
+    #[test]
+    fn the_shape_tool_draws_a_floating_shape_at_the_dragged_frame() {
+        let mut s = session();
+        s.run("draw.shapeTool", &json!({"kind": "star"})).unwrap();
+        assert_eq!(s.view.draw.mode, super::DrawMode::Shape(ShapeKind::Star));
+        let r = s.run("draw.shape", &json!({"kind": "star", "page": 0, "x": 100, "y": 90, "width": 120, "height": 80})).unwrap();
+        assert_eq!(s.view.draw.mode, super::DrawMode::Select, "one-shot: the tool goes back to Select");
+        let objs: Vec<_> = s.doc.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).collect();
+        let [InlineObject::Shape { kind, w, h, float, .. }] = objs.as_slice() else { panic!("one shape: {objs:?}") };
+        assert_eq!((*kind, *w, *h, float.wrap), (ShapeKind::Star, 120.0, 80.0, Wrap::InFrontOfText));
+        // Laid out where it was drawn.
+        let at: wordcraft_doc::Pos = serde_json::from_value(r["anchor"].clone()).unwrap();
+        let hit = s.layout().object(&at, 0).unwrap();
+        assert!((hit.rect.x - 100.0).abs() < 0.01 && (hit.rect.y - 90.0).abs() < 0.01, "{:?}", hit.rect);
+        s.run("edit.undo", &json!({})).unwrap();
+        assert!(s.doc.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).next().is_none());
     }
 
     #[test]

@@ -49,6 +49,40 @@ fn typed(keys: &str) -> Session {
     s
 }
 
+/// Typing with a shape selected goes into the shape (the shape stays, the text is its
+/// text); a line, which holds no text, keeps the replace behaviour (typing deletes it).
+#[test]
+fn typing_with_a_shape_selected_goes_into_the_shape() {
+    {
+        let mut s = s();
+        typ(&mut s, "Body");
+        run(&mut s, "insert.shape", json!({"kind": "rectangle"}));
+        run(&mut s, "select.objects", json!({"index": 0}));
+        typ(&mut s, "Hi");
+        let objs: Vec<_> = s.doc.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).collect();
+        assert_eq!(objs.len(), 1, "the shape stays");
+        let story = match &objs[0] {
+            wordcraft_doc::para::InlineObject::Shape { story: Some(id), .. } => *id,
+            o => panic!("shape with a story: {o:?}"),
+        };
+        let text = s
+            .doc
+            .parts
+            .get(&story)
+            .map(|p| p.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
+        assert_eq!(text, "Hi");
+        assert!(paras(&s).iter().any(|(t, _, _)| t.starts_with("Body")), "body text unchanged: {:?}", paras(&s));
+    }
+    // A line holds no text: typing with it selected replaces it.
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "line"}));
+    run(&mut s, "select.objects", json!({"index": 0}));
+    typ(&mut s, "Hi");
+    assert!(s.doc.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).next().is_none(), "the line is gone");
+    assert_eq!(paras(&s), vec![para("Hi", None)]);
+}
+
 #[test]
 fn enter_twice_after_a_list_item_ends_the_list() {
     let s = typed("* item\n\ntext");

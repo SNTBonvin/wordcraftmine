@@ -750,12 +750,13 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             ctx.set_stroke(kurbo::Stroke::new(w as f64).with_caps(kurbo::Cap::Round).with_join(kurbo::Join::Round));
             ctx.stroke_path(&path);
         }
-        Draw::Shape { rect, kind, fill, stroke, stroke_width, effects } => {
+        Draw::Shape { rect, kind, fill, stroke, stroke_width, effects, adj } => {
             let r = kurbo::Rect::new(rect.x as f64, rect.y as f64, rect.right() as f64, rect.bottom() as f64);
-            let path = shape_path(*kind, r);
+            let path = shape_path(*kind, r, *adj);
             ctx.set_transform(view);
             let fx = effects.sanitized();
-            let can_fill = *kind != ShapeKind::Line && fill.is_some();
+            // Open shapes (lines, connectors, brackets, braces, arcs) are stroked, never filled.
+            let can_fill = !kind.is_open() && fill.is_some();
             if !fx.is_empty() && (can_fill || stroke.is_some()) {
                 let sw = if stroke_width.is_finite() { stroke_width.clamp(0.25, 200.0) as f64 } else { 0.75 };
                 // The shape's silhouette grown by `g` points and moved by `d`, in the current paint.
@@ -765,11 +766,11 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
                         let grow = g + if stroke.is_some() { sw / 2.0 } else { 0.0 };
                         let rr = r.inflate(grow, grow) + d;
                         if rr.width() > 0.0 && rr.height() > 0.0 {
-                            ctx.fill_path(&shape_path(*kind, rr));
+                            ctx.fill_path(&shape_path(*kind, rr, *adj));
                         }
                     } else if sw + 2.0 * g > 0.05 {
                         ctx.set_stroke(kurbo::Stroke::new(sw + 2.0 * g));
-                        ctx.stroke_path(&shape_path(*kind, r + d));
+                        ctx.stroke_path(&shape_path(*kind, r + d, *adj));
                     }
                 };
                 if let Some(sh) = fx.shadow {
@@ -793,7 +794,7 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
                     let rr = r.inflate(g as f64, g as f64);
                     if rr.width() > 0.0 && rr.height() > 0.0 {
                         ctx.set_paint(color(opts.ink(*f), a));
-                        ctx.fill_path(&shape_path(*kind, rr));
+                        ctx.fill_path(&shape_path(*kind, rr, *adj));
                     }
                 }
                 return;
@@ -860,8 +861,9 @@ fn ink_path(pts: &[(f32, f32)]) -> Option<BezPath> {
     Some(p)
 }
 
-/// Outline of a basic shape in a rectangle.
-pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
+/// Outline of a basic shape in a rectangle. `adj` is the corner radius as a fraction of the
+/// shorter side, for the round/snip family (`DEFAULT_ADJ` when the shape stores none).
+pub fn shape_path(kind: ShapeKind, r: kurbo::Rect, adj: f32) -> BezPath {
     let (cx, cy) = (r.center().x, r.center().y);
     let poly = |pts: &[(f64, f64)]| {
         let mut p = BezPath::new();
@@ -878,7 +880,7 @@ pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
     match kind {
         // A freeform is drawn from its own paths; without them, its frame.
         ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => r.to_path(0.1),
-        ShapeKind::RoundedRectangle => kurbo::RoundedRect::from_rect(r, r.width().min(r.height()) * 0.16).to_path(0.1),
+        ShapeKind::RoundedRectangle => kurbo::RoundedRect::from_rect(r, r.width().min(r.height()) * adj.clamp(0.0, 0.5) as f64).to_path(0.1),
         ShapeKind::Ellipse => kurbo::Ellipse::from_rect(r).to_path(0.1),
         ShapeKind::Triangle => poly(&[(cx, r.y0), (r.x1, r.y1), (r.x0, r.y1)]),
         ShapeKind::Diamond => poly(&[(cx, r.y0), (r.x1, cy), (cx, r.y1), (r.x0, cy)]),
@@ -926,6 +928,29 @@ pub fn shape_path(kind: ShapeKind, r: kurbo::Rect) -> BezPath {
             p.curve_to((cx + w * 0.1, r.y0 + h * 0.75), (r.x1, r.y0 + h * 0.6), (r.x1, r.y0 + h * 0.3));
             p.curve_to((r.x1, r.y0), (cx, r.y0), (cx, r.y0 + h * 0.3));
             p.close_path();
+            p
+        }
+        // Everything else takes its outline from the shared geometry, as one path with a
+        // sub-path per outline piece (open pieces are left open, so they stroke only).
+        _ => {
+            let mut p = BezPath::new();
+            let w = r.width() as f32;
+            let h = r.height() as f32;
+            if let Some(paths) = wordcraft_doc::shape_geom::shape_geom(kind, w, h, adj) {
+                for path in paths {
+                    for (i, (x, y)) in path.pts.iter().enumerate() {
+                        let pt = (r.x0 + *x as f64 * r.width(), r.y0 + *y as f64 * r.height());
+                        if i == 0 {
+                            p.move_to(pt);
+                        } else {
+                            p.line_to(pt);
+                        }
+                    }
+                    if path.closed {
+                        p.close_path();
+                    }
+                }
+            }
             p
         }
     }
@@ -1258,7 +1283,7 @@ mod tests {
     fn shapes_have_paths() {
         let r = kurbo::Rect::new(0.0, 0.0, 10.0, 10.0);
         for k in [ShapeKind::Rectangle, ShapeKind::Ellipse, ShapeKind::Star, ShapeKind::Heart, ShapeKind::Arrow, ShapeKind::Line] {
-            assert!(!shape_path(k, r).elements().is_empty());
+            assert!(!shape_path(k, r, wordcraft_doc::shape_geom::DEFAULT_ADJ).elements().is_empty());
         }
     }
 
@@ -1266,7 +1291,7 @@ mod tests {
     /// files flip it for the other diagonal), not bottom-left to top-right.
     #[test]
     fn a_line_runs_from_top_left_to_bottom_right() {
-        let p = shape_path(ShapeKind::Line, kurbo::Rect::new(10.0, 20.0, 30.0, 60.0));
+        let p = shape_path(ShapeKind::Line, kurbo::Rect::new(10.0, 20.0, 30.0, 60.0), wordcraft_doc::shape_geom::DEFAULT_ADJ);
         assert_eq!(p.elements(), &[kurbo::PathEl::MoveTo((10.0, 20.0).into()), kurbo::PathEl::LineTo((30.0, 60.0).into())]);
     }
 }

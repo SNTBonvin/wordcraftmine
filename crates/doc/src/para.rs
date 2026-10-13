@@ -298,6 +298,610 @@ pub enum ShapeKind {
     StraightConnector,
     ElbowConnector,
     CurvedConnector,
+    // --- Lines (DrawingML presets) ---
+    /// A diagonal line from bottom-left to top-right (`lineInv`).
+    LineInv,
+    BentConnector2,
+    BentConnector4,
+    BentConnector5,
+    CurvedConnector2,
+    CurvedConnector4,
+    CurvedConnector5,
+    // --- Rectangles ---
+    Round1Rect,
+    Round2SameRect,
+    Round2DiagRect,
+    Snip1Rect,
+    Snip2SameRect,
+    Snip2DiagRect,
+    SnipRoundRect,
+    Plaque,
+    // --- Basic shapes ---
+    RightTriangle,
+    Parallelogram,
+    Trapezoid,
+    NonIsoscelesTrapezoid,
+    Pentagon,
+    Hexagon,
+    Heptagon,
+    Octagon,
+    Decagon,
+    Dodecagon,
+    Teardrop,
+    HomePlate,
+    Chevron,
+    Pie,
+    PieWedge,
+    BlockArc,
+    Donut,
+    NoSmoking,
+    Frame,
+    HalfFrame,
+    Corner,
+    DiagStripe,
+    Cross,
+    Plus,
+    Cloud,
+    FoldedCorner,
+    SmileyFace,
+    LightningBolt,
+    Sun,
+    Moon,
+    Arc,
+    Chord,
+    Can,
+    Cube,
+    Bevel,
+    Funnel,
+    Gear6,
+    Gear9,
+    Ribbon,
+    Ribbon2,
+    EllipseRibbon,
+    EllipseRibbon2,
+    VerticalScroll,
+    HorizontalScroll,
+    Wave,
+    DoubleWave,
+    SquareTabs,
+    ChartPlus,
+    ChartStar,
+    ChartX,
+    LeftBracket,
+    RightBracket,
+    LeftBracePair,
+    RightBracePair,
+    LeftBrace,
+    RightBrace,
+    BracketPair,
+    BracePair,
+    // --- Block arrows ---
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    LeftRightArrow,
+    UpDownArrow,
+    QuadArrow,
+    CornerArrows,
+    SplitArrow,
+    UturnArrow,
+    CircularArrow,
+    StripedRightArrow,
+    NotchedRightArrow,
+    BentUpArrow,
+    BentArrow,
+    LeftRightCircularArrow,
+    SwooshArrow,
+    LeftCircularArrow,
+    RightCircularArrow,
+    // --- Stars and banners ---
+    Star4,
+    Star6,
+    Star7,
+    Star8,
+    Star10,
+    Star12,
+    Star16,
+    Star24,
+    Star32,
+    // --- Flowchart ---
+    FlowChartProcess,
+    FlowChartDecision,
+    FlowChartInputOutput,
+    FlowChartPredefinedProcess,
+    FlowChartInternalStorage,
+    FlowChartDocument,
+    FlowChartMultidocument,
+    FlowChartTerminator,
+    FlowChartPreparation,
+    FlowChartManualInput,
+    FlowChartManualOperation,
+    FlowChartConnector,
+    FlowChartPunchedCard,
+    FlowChartPunchedTape,
+    FlowChartSummingJunction,
+    FlowChartOr,
+    FlowChartCollate,
+    FlowChartSort,
+    FlowChartExtract,
+    FlowChartMerge,
+    FlowChartOfflineStorage,
+    FlowChartOnlineStorage,
+    FlowChartMagneticTape,
+    FlowChartMagneticDisk,
+    FlowChartMagneticDrum,
+    FlowChartDisplay,
+    FlowChartDelay,
+    FlowChartAlternateProcess,
+    FlowChartOffpageConnector,
+    // --- Callouts ---
+    Callout1,
+    Callout2,
+    Callout3,
+    AccentCallout1,
+    AccentCallout2,
+    AccentCallout3,
+    BorderCallout1,
+    BorderCallout2,
+    BorderCallout3,
+    AccentBorderCallout1,
+    AccentBorderCallout2,
+    AccentBorderCallout3,
+    WedgeRectCallout,
+    WedgeRoundRectCallout,
+    WedgeEllipseCallout,
+    CloudCallout,
+    // --- Action buttons ---
+    ActionButtonBlank,
+    ActionButtonHome,
+    ActionButtonHelp,
+    ActionButtonInformation,
+    ActionButtonForwardNext,
+    ActionButtonBackPrevious,
+    ActionButtonEnd,
+    ActionButtonBeginning,
+    ActionButtonReturn,
+    ActionButtonDocument,
+    ActionButtonSound,
+    ActionButtonMovie,
+}
+
+/// The Shapes gallery group a [`ShapeKind`] sits in (Word's gallery categories). Text boxes
+/// and freeforms are not gallery shapes and have no group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShapeCategory {
+    Lines,
+    Rectangles,
+    BasicShapes,
+    BlockArrows,
+    Flowchart,
+    StarsAndBanners,
+    Callouts,
+    ActionButtons,
+}
+
+impl ShapeCategory {
+    /// The gallery heading.
+    pub fn label(self) -> &'static str {
+        match self {
+            ShapeCategory::Lines => "Lines",
+            ShapeCategory::Rectangles => "Rectangles",
+            ShapeCategory::BasicShapes => "Basic Shapes",
+            ShapeCategory::BlockArrows => "Block Arrows",
+            ShapeCategory::Flowchart => "Flowchart",
+            ShapeCategory::StarsAndBanners => "Stars and Banners",
+            ShapeCategory::Callouts => "Callouts",
+            ShapeCategory::ActionButtons => "Action Buttons",
+        }
+    }
+
+    /// The gallery groups in display order.
+    pub const ALL: [ShapeCategory; 8] = [
+        ShapeCategory::Lines,
+        ShapeCategory::Rectangles,
+        ShapeCategory::BasicShapes,
+        ShapeCategory::BlockArrows,
+        ShapeCategory::Flowchart,
+        ShapeCategory::StarsAndBanners,
+        ShapeCategory::Callouts,
+        ShapeCategory::ActionButtons,
+    ];
+}
+
+impl ShapeKind {
+    /// Every shape kind: the preset geometries plus the two non-preset kinds (text box,
+    /// freeform). Gallery code filters with [`ShapeKind::category`].
+    pub const ALL: &[ShapeKind] = &[
+        ShapeKind::Rectangle,
+        ShapeKind::RoundedRectangle,
+        ShapeKind::Ellipse,
+        ShapeKind::Triangle,
+        ShapeKind::Diamond,
+        ShapeKind::Line,
+        ShapeKind::Arrow,
+        ShapeKind::Star,
+        ShapeKind::Heart,
+        ShapeKind::TextBox,
+        ShapeKind::Freeform,
+        ShapeKind::StraightConnector,
+        ShapeKind::ElbowConnector,
+        ShapeKind::CurvedConnector,
+        ShapeKind::LineInv,
+        ShapeKind::BentConnector2,
+        ShapeKind::BentConnector4,
+        ShapeKind::BentConnector5,
+        ShapeKind::CurvedConnector2,
+        ShapeKind::CurvedConnector4,
+        ShapeKind::CurvedConnector5,
+        ShapeKind::Round1Rect,
+        ShapeKind::Round2SameRect,
+        ShapeKind::Round2DiagRect,
+        ShapeKind::Snip1Rect,
+        ShapeKind::Snip2SameRect,
+        ShapeKind::Snip2DiagRect,
+        ShapeKind::SnipRoundRect,
+        ShapeKind::Plaque,
+        ShapeKind::RightTriangle,
+        ShapeKind::Parallelogram,
+        ShapeKind::Trapezoid,
+        ShapeKind::NonIsoscelesTrapezoid,
+        ShapeKind::Pentagon,
+        ShapeKind::Hexagon,
+        ShapeKind::Heptagon,
+        ShapeKind::Octagon,
+        ShapeKind::Decagon,
+        ShapeKind::Dodecagon,
+        ShapeKind::Teardrop,
+        ShapeKind::HomePlate,
+        ShapeKind::Chevron,
+        ShapeKind::Pie,
+        ShapeKind::PieWedge,
+        ShapeKind::BlockArc,
+        ShapeKind::Donut,
+        ShapeKind::NoSmoking,
+        ShapeKind::Frame,
+        ShapeKind::HalfFrame,
+        ShapeKind::Corner,
+        ShapeKind::DiagStripe,
+        ShapeKind::Cross,
+        ShapeKind::Plus,
+        ShapeKind::Cloud,
+        ShapeKind::FoldedCorner,
+        ShapeKind::SmileyFace,
+        ShapeKind::LightningBolt,
+        ShapeKind::Sun,
+        ShapeKind::Moon,
+        ShapeKind::Arc,
+        ShapeKind::Chord,
+        ShapeKind::Can,
+        ShapeKind::Cube,
+        ShapeKind::Bevel,
+        ShapeKind::Funnel,
+        ShapeKind::Gear6,
+        ShapeKind::Gear9,
+        ShapeKind::Ribbon,
+        ShapeKind::Ribbon2,
+        ShapeKind::EllipseRibbon,
+        ShapeKind::EllipseRibbon2,
+        ShapeKind::VerticalScroll,
+        ShapeKind::HorizontalScroll,
+        ShapeKind::Wave,
+        ShapeKind::DoubleWave,
+        ShapeKind::SquareTabs,
+        ShapeKind::ChartPlus,
+        ShapeKind::ChartStar,
+        ShapeKind::ChartX,
+        ShapeKind::LeftBracket,
+        ShapeKind::RightBracket,
+        ShapeKind::LeftBracePair,
+        ShapeKind::RightBracePair,
+        ShapeKind::LeftBrace,
+        ShapeKind::RightBrace,
+        ShapeKind::BracketPair,
+        ShapeKind::BracePair,
+        ShapeKind::LeftArrow,
+        ShapeKind::UpArrow,
+        ShapeKind::DownArrow,
+        ShapeKind::LeftRightArrow,
+        ShapeKind::UpDownArrow,
+        ShapeKind::QuadArrow,
+        ShapeKind::CornerArrows,
+        ShapeKind::SplitArrow,
+        ShapeKind::UturnArrow,
+        ShapeKind::CircularArrow,
+        ShapeKind::StripedRightArrow,
+        ShapeKind::NotchedRightArrow,
+        ShapeKind::BentUpArrow,
+        ShapeKind::BentArrow,
+        ShapeKind::LeftRightCircularArrow,
+        ShapeKind::SwooshArrow,
+        ShapeKind::LeftCircularArrow,
+        ShapeKind::RightCircularArrow,
+        ShapeKind::Star4,
+        ShapeKind::Star6,
+        ShapeKind::Star7,
+        ShapeKind::Star8,
+        ShapeKind::Star10,
+        ShapeKind::Star12,
+        ShapeKind::Star16,
+        ShapeKind::Star24,
+        ShapeKind::Star32,
+        ShapeKind::FlowChartProcess,
+        ShapeKind::FlowChartDecision,
+        ShapeKind::FlowChartInputOutput,
+        ShapeKind::FlowChartPredefinedProcess,
+        ShapeKind::FlowChartInternalStorage,
+        ShapeKind::FlowChartDocument,
+        ShapeKind::FlowChartMultidocument,
+        ShapeKind::FlowChartTerminator,
+        ShapeKind::FlowChartPreparation,
+        ShapeKind::FlowChartManualInput,
+        ShapeKind::FlowChartManualOperation,
+        ShapeKind::FlowChartConnector,
+        ShapeKind::FlowChartPunchedCard,
+        ShapeKind::FlowChartPunchedTape,
+        ShapeKind::FlowChartSummingJunction,
+        ShapeKind::FlowChartOr,
+        ShapeKind::FlowChartCollate,
+        ShapeKind::FlowChartSort,
+        ShapeKind::FlowChartExtract,
+        ShapeKind::FlowChartMerge,
+        ShapeKind::FlowChartOfflineStorage,
+        ShapeKind::FlowChartOnlineStorage,
+        ShapeKind::FlowChartMagneticTape,
+        ShapeKind::FlowChartMagneticDisk,
+        ShapeKind::FlowChartMagneticDrum,
+        ShapeKind::FlowChartDisplay,
+        ShapeKind::FlowChartDelay,
+        ShapeKind::FlowChartAlternateProcess,
+        ShapeKind::FlowChartOffpageConnector,
+        ShapeKind::Callout1,
+        ShapeKind::Callout2,
+        ShapeKind::Callout3,
+        ShapeKind::AccentCallout1,
+        ShapeKind::AccentCallout2,
+        ShapeKind::AccentCallout3,
+        ShapeKind::BorderCallout1,
+        ShapeKind::BorderCallout2,
+        ShapeKind::BorderCallout3,
+        ShapeKind::AccentBorderCallout1,
+        ShapeKind::AccentBorderCallout2,
+        ShapeKind::AccentBorderCallout3,
+        ShapeKind::WedgeRectCallout,
+        ShapeKind::WedgeRoundRectCallout,
+        ShapeKind::WedgeEllipseCallout,
+        ShapeKind::CloudCallout,
+        ShapeKind::ActionButtonBlank,
+        ShapeKind::ActionButtonHome,
+        ShapeKind::ActionButtonHelp,
+        ShapeKind::ActionButtonInformation,
+        ShapeKind::ActionButtonForwardNext,
+        ShapeKind::ActionButtonBackPrevious,
+        ShapeKind::ActionButtonEnd,
+        ShapeKind::ActionButtonBeginning,
+        ShapeKind::ActionButtonReturn,
+        ShapeKind::ActionButtonDocument,
+        ShapeKind::ActionButtonSound,
+        ShapeKind::ActionButtonMovie,
+    ];
+
+    /// The DrawingML preset geometry (`a:prstGeom/@prst`, ECMA-376 §20.1.10.56) and the
+    /// gallery name and group. Text boxes and freeforms are not presets.
+    fn info(self) -> (&'static str, &'static str, Option<ShapeCategory>) {
+        use ShapeCategory as C;
+        match self {
+            ShapeKind::Rectangle => ("rect", "Rectangle", Some(C::Rectangles)),
+            ShapeKind::RoundedRectangle => ("roundRect", "Rounded Rectangle", Some(C::Rectangles)),
+            ShapeKind::Ellipse => ("ellipse", "Oval", Some(C::BasicShapes)),
+            ShapeKind::Triangle => ("triangle", "Isosceles Triangle", Some(C::BasicShapes)),
+            ShapeKind::Diamond => ("diamond", "Diamond", Some(C::BasicShapes)),
+            ShapeKind::Line => ("line", "Line", Some(C::Lines)),
+            ShapeKind::Arrow => ("rightArrow", "Right Arrow", Some(C::BlockArrows)),
+            ShapeKind::Star => ("star5", "5-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Heart => ("heart", "Heart", Some(C::BasicShapes)),
+            ShapeKind::TextBox => ("", "Text Box", None),
+            ShapeKind::Freeform => ("", "Freeform", None),
+            ShapeKind::StraightConnector => ("straightConnector1", "Straight Connector", Some(C::Lines)),
+            ShapeKind::ElbowConnector => ("bentConnector3", "Elbow Connector", Some(C::Lines)),
+            ShapeKind::CurvedConnector => ("curvedConnector3", "Curved Connector", Some(C::Lines)),
+            ShapeKind::LineInv => ("lineInv", "Line Inverse", Some(C::Lines)),
+            ShapeKind::BentConnector2 => ("bentConnector2", "Elbow Connector 2", Some(C::Lines)),
+            ShapeKind::BentConnector4 => ("bentConnector4", "Elbow Connector 4", Some(C::Lines)),
+            ShapeKind::BentConnector5 => ("bentConnector5", "Elbow Connector 5", Some(C::Lines)),
+            ShapeKind::CurvedConnector2 => ("curvedConnector2", "Curved Connector 2", Some(C::Lines)),
+            ShapeKind::CurvedConnector4 => ("curvedConnector4", "Curved Connector 4", Some(C::Lines)),
+            ShapeKind::CurvedConnector5 => ("curvedConnector5", "Curved Connector 5", Some(C::Lines)),
+            ShapeKind::Round1Rect => ("round1Rect", "Round Single Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Round2SameRect => ("round2SameRect", "Round Same Side Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Round2DiagRect => ("round2DiagRect", "Round Diagonal Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Snip1Rect => ("snip1Rect", "Snip Single Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Snip2SameRect => ("snip2SameRect", "Snip Same Side Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Snip2DiagRect => ("snip2DiagRect", "Snip Diagonal Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::SnipRoundRect => ("snipRoundRect", "Snip and Round Single Corner Rectangle", Some(C::Rectangles)),
+            ShapeKind::Plaque => ("plaque", "Plaque", Some(C::Rectangles)),
+            ShapeKind::RightTriangle => ("rtTriangle", "Right Triangle", Some(C::BasicShapes)),
+            ShapeKind::Parallelogram => ("parallelogram", "Parallelogram", Some(C::BasicShapes)),
+            ShapeKind::Trapezoid => ("trapezoid", "Trapezoid", Some(C::BasicShapes)),
+            ShapeKind::NonIsoscelesTrapezoid => ("nonIsoscelesTrapezoid", "Non-isosceles Trapezoid", Some(C::BasicShapes)),
+            ShapeKind::Pentagon => ("pentagon", "Pentagon", Some(C::BasicShapes)),
+            ShapeKind::Hexagon => ("hexagon", "Hexagon", Some(C::BasicShapes)),
+            ShapeKind::Heptagon => ("heptagon", "Heptagon", Some(C::BasicShapes)),
+            ShapeKind::Octagon => ("octagon", "Octagon", Some(C::BasicShapes)),
+            ShapeKind::Decagon => ("decagon", "Decagon", Some(C::BasicShapes)),
+            ShapeKind::Dodecagon => ("dodecagon", "Dodecagon", Some(C::BasicShapes)),
+            ShapeKind::Teardrop => ("teardrop", "Teardrop", Some(C::BasicShapes)),
+            ShapeKind::HomePlate => ("homePlate", "Pentagon (Home Plate)", Some(C::BasicShapes)),
+            ShapeKind::Chevron => ("chevron", "Chevron", Some(C::BasicShapes)),
+            ShapeKind::Pie => ("pie", "Pie", Some(C::BasicShapes)),
+            ShapeKind::PieWedge => ("pieWedge", "Pie Wedge", Some(C::BasicShapes)),
+            ShapeKind::BlockArc => ("blockArc", "Block Arc", Some(C::BasicShapes)),
+            ShapeKind::Donut => ("donut", "Donut", Some(C::BasicShapes)),
+            ShapeKind::NoSmoking => ("noSmoking", "No Smoking", Some(C::BasicShapes)),
+            ShapeKind::Frame => ("frame", "Frame", Some(C::BasicShapes)),
+            ShapeKind::HalfFrame => ("halfFrame", "Half Frame", Some(C::BasicShapes)),
+            ShapeKind::Corner => ("corner", "Corner", Some(C::BasicShapes)),
+            ShapeKind::DiagStripe => ("diagStripe", "Diagonal Stripe", Some(C::BasicShapes)),
+            ShapeKind::Cross => ("cross", "Cross", Some(C::BasicShapes)),
+            ShapeKind::Plus => ("plus", "Plus", Some(C::BasicShapes)),
+            ShapeKind::Cloud => ("cloud", "Cloud", Some(C::BasicShapes)),
+            ShapeKind::FoldedCorner => ("foldedCorner", "Folded Corner", Some(C::BasicShapes)),
+            ShapeKind::SmileyFace => ("smileyFace", "Smiley Face", Some(C::BasicShapes)),
+            ShapeKind::LightningBolt => ("lightningBolt", "Lightning Bolt", Some(C::BasicShapes)),
+            ShapeKind::Sun => ("sun", "Sun", Some(C::BasicShapes)),
+            ShapeKind::Moon => ("moon", "Moon", Some(C::BasicShapes)),
+            ShapeKind::Arc => ("arc", "Arc", Some(C::BasicShapes)),
+            ShapeKind::Chord => ("chord", "Chord", Some(C::BasicShapes)),
+            ShapeKind::Can => ("can", "Can", Some(C::BasicShapes)),
+            ShapeKind::Cube => ("cube", "Cube", Some(C::BasicShapes)),
+            ShapeKind::Bevel => ("bevel", "Bevel", Some(C::BasicShapes)),
+            ShapeKind::Funnel => ("funnel", "Funnel", Some(C::BasicShapes)),
+            ShapeKind::Gear6 => ("gear6", "Gear 6", Some(C::BasicShapes)),
+            ShapeKind::Gear9 => ("gear9", "Gear 9", Some(C::BasicShapes)),
+            ShapeKind::Ribbon => ("ribbon", "Ribbon", Some(C::BasicShapes)),
+            ShapeKind::Ribbon2 => ("ribbon2", "Ribbon 2", Some(C::BasicShapes)),
+            ShapeKind::EllipseRibbon => ("ellipseRibbon", "Ellipse Ribbon", Some(C::BasicShapes)),
+            ShapeKind::EllipseRibbon2 => ("ellipseRibbon2", "Ellipse Ribbon 2", Some(C::BasicShapes)),
+            ShapeKind::VerticalScroll => ("verticalScroll", "Vertical Scroll", Some(C::BasicShapes)),
+            ShapeKind::HorizontalScroll => ("horizontalScroll", "Horizontal Scroll", Some(C::BasicShapes)),
+            ShapeKind::Wave => ("wave", "Wave", Some(C::BasicShapes)),
+            ShapeKind::DoubleWave => ("doubleWave", "Double Wave", Some(C::BasicShapes)),
+            ShapeKind::SquareTabs => ("squareTabs", "Square Tabs", Some(C::BasicShapes)),
+            ShapeKind::ChartPlus => ("chartPlus", "Chart Plus", Some(C::BasicShapes)),
+            ShapeKind::ChartStar => ("chartStar", "Chart Star", Some(C::BasicShapes)),
+            ShapeKind::ChartX => ("chartX", "Chart X", Some(C::BasicShapes)),
+            ShapeKind::LeftBracket => ("leftBracket", "Left Bracket", Some(C::BasicShapes)),
+            ShapeKind::RightBracket => ("rightBracket", "Right Bracket", Some(C::BasicShapes)),
+            ShapeKind::LeftBracePair => ("leftBracePair", "Left Brace Pair", Some(C::BasicShapes)),
+            ShapeKind::RightBracePair => ("rightBracePair", "Right Brace Pair", Some(C::BasicShapes)),
+            ShapeKind::LeftBrace => ("leftBrace", "Left Brace", Some(C::BasicShapes)),
+            ShapeKind::RightBrace => ("rightBrace", "Right Brace", Some(C::BasicShapes)),
+            ShapeKind::BracketPair => ("bracketPair", "Bracket Pair", Some(C::BasicShapes)),
+            ShapeKind::BracePair => ("bracePair", "Brace Pair", Some(C::BasicShapes)),
+            ShapeKind::LeftArrow => ("leftArrow", "Left Arrow", Some(C::BlockArrows)),
+            ShapeKind::UpArrow => ("upArrow", "Up Arrow", Some(C::BlockArrows)),
+            ShapeKind::DownArrow => ("downArrow", "Down Arrow", Some(C::BlockArrows)),
+            ShapeKind::LeftRightArrow => ("leftRightArrow", "Left-Right Arrow", Some(C::BlockArrows)),
+            ShapeKind::UpDownArrow => ("upDownArrow", "Up-Down Arrow", Some(C::BlockArrows)),
+            ShapeKind::QuadArrow => ("quadArrow", "Quad Arrow", Some(C::BlockArrows)),
+            ShapeKind::CornerArrows => ("cornerArrows", "Corner Arrows", Some(C::BlockArrows)),
+            ShapeKind::SplitArrow => ("splitArrow", "Split Arrow", Some(C::BlockArrows)),
+            ShapeKind::UturnArrow => ("uturnArrow", "U-Turn Arrow", Some(C::BlockArrows)),
+            ShapeKind::CircularArrow => ("circularArrow", "Circular Arrow", Some(C::BlockArrows)),
+            ShapeKind::StripedRightArrow => ("stripedRightArrow", "Striped Right Arrow", Some(C::BlockArrows)),
+            ShapeKind::NotchedRightArrow => ("notchedRightArrow", "Notched Right Arrow", Some(C::BlockArrows)),
+            ShapeKind::BentUpArrow => ("bentUpArrow", "Bent-Up Arrow", Some(C::BlockArrows)),
+            ShapeKind::BentArrow => ("bentArrow", "Bent Arrow", Some(C::BlockArrows)),
+            ShapeKind::LeftRightCircularArrow => ("leftRightCircularArrow", "Left-Right Circular Arrow", Some(C::BlockArrows)),
+            ShapeKind::SwooshArrow => ("swooshArrow", "Swoosh Arrow", Some(C::BlockArrows)),
+            ShapeKind::LeftCircularArrow => ("leftCircularArrow", "Left Circular Arrow", Some(C::BlockArrows)),
+            ShapeKind::RightCircularArrow => ("rightCircularArrow", "Right Circular Arrow", Some(C::BlockArrows)),
+            ShapeKind::Star4 => ("star4", "4-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star6 => ("star6", "6-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star7 => ("star7", "7-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star8 => ("star8", "8-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star10 => ("star10", "10-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star12 => ("star12", "12-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star16 => ("star16", "16-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star24 => ("star24", "24-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::Star32 => ("star32", "32-Point Star", Some(C::StarsAndBanners)),
+            ShapeKind::FlowChartProcess => ("flowChartProcess", "Flowchart: Process", Some(C::Flowchart)),
+            ShapeKind::FlowChartDecision => ("flowChartDecision", "Flowchart: Decision", Some(C::Flowchart)),
+            ShapeKind::FlowChartInputOutput => ("flowChartInputOutput", "Flowchart: Data", Some(C::Flowchart)),
+            ShapeKind::FlowChartPredefinedProcess => ("flowChartPredefinedProcess", "Flowchart: Predefined Process", Some(C::Flowchart)),
+            ShapeKind::FlowChartInternalStorage => ("flowChartInternalStorage", "Flowchart: Internal Storage", Some(C::Flowchart)),
+            ShapeKind::FlowChartDocument => ("flowChartDocument", "Flowchart: Document", Some(C::Flowchart)),
+            ShapeKind::FlowChartMultidocument => ("flowChartMultidocument", "Flowchart: Multidocument", Some(C::Flowchart)),
+            ShapeKind::FlowChartTerminator => ("flowChartTerminator", "Flowchart: Terminator", Some(C::Flowchart)),
+            ShapeKind::FlowChartPreparation => ("flowChartPreparation", "Flowchart: Preparation", Some(C::Flowchart)),
+            ShapeKind::FlowChartManualInput => ("flowChartManualInput", "Flowchart: Manual Input", Some(C::Flowchart)),
+            ShapeKind::FlowChartManualOperation => ("flowChartManualOperation", "Flowchart: Manual Operation", Some(C::Flowchart)),
+            ShapeKind::FlowChartConnector => ("flowChartConnector", "Flowchart: Connector", Some(C::Flowchart)),
+            ShapeKind::FlowChartPunchedCard => ("flowChartPunchedCard", "Flowchart: Punched Card", Some(C::Flowchart)),
+            ShapeKind::FlowChartPunchedTape => ("flowChartPunchedTape", "Flowchart: Punched Tape", Some(C::Flowchart)),
+            ShapeKind::FlowChartSummingJunction => ("flowChartSummingJunction", "Flowchart: Summing Junction", Some(C::Flowchart)),
+            ShapeKind::FlowChartOr => ("flowChartOr", "Flowchart: Or", Some(C::Flowchart)),
+            ShapeKind::FlowChartCollate => ("flowChartCollate", "Flowchart: Collate", Some(C::Flowchart)),
+            ShapeKind::FlowChartSort => ("flowChartSort", "Flowchart: Sort", Some(C::Flowchart)),
+            ShapeKind::FlowChartExtract => ("flowChartExtract", "Flowchart: Extract", Some(C::Flowchart)),
+            ShapeKind::FlowChartMerge => ("flowChartMerge", "Flowchart: Merge", Some(C::Flowchart)),
+            ShapeKind::FlowChartOfflineStorage => ("flowChartOfflineStorage", "Flowchart: Offline Storage", Some(C::Flowchart)),
+            ShapeKind::FlowChartOnlineStorage => ("flowChartOnlineStorage", "Flowchart: Online Storage", Some(C::Flowchart)),
+            ShapeKind::FlowChartMagneticTape => ("flowChartMagneticTape", "Flowchart: Magnetic Tape", Some(C::Flowchart)),
+            ShapeKind::FlowChartMagneticDisk => ("flowChartMagneticDisk", "Flowchart: Magnetic Disk", Some(C::Flowchart)),
+            ShapeKind::FlowChartMagneticDrum => ("flowChartMagneticDrum", "Flowchart: Magnetic Drum", Some(C::Flowchart)),
+            ShapeKind::FlowChartDisplay => ("flowChartDisplay", "Flowchart: Display", Some(C::Flowchart)),
+            ShapeKind::FlowChartDelay => ("flowChartDelay", "Flowchart: Delay", Some(C::Flowchart)),
+            ShapeKind::FlowChartAlternateProcess => ("flowChartAlternateProcess", "Flowchart: Alternate Process", Some(C::Flowchart)),
+            ShapeKind::FlowChartOffpageConnector => ("flowChartOffpageConnector", "Flowchart: Off-Page Connector", Some(C::Flowchart)),
+            ShapeKind::Callout1 => ("callout1", "Callout 1", Some(C::Callouts)),
+            ShapeKind::Callout2 => ("callout2", "Callout 2", Some(C::Callouts)),
+            ShapeKind::Callout3 => ("callout3", "Callout 3", Some(C::Callouts)),
+            ShapeKind::AccentCallout1 => ("accentCallout1", "Accent Callout 1", Some(C::Callouts)),
+            ShapeKind::AccentCallout2 => ("accentCallout2", "Accent Callout 2", Some(C::Callouts)),
+            ShapeKind::AccentCallout3 => ("accentCallout3", "Accent Callout 3", Some(C::Callouts)),
+            ShapeKind::BorderCallout1 => ("borderCallout1", "Border Callout 1", Some(C::Callouts)),
+            ShapeKind::BorderCallout2 => ("borderCallout2", "Border Callout 2", Some(C::Callouts)),
+            ShapeKind::BorderCallout3 => ("borderCallout3", "Border Callout 3", Some(C::Callouts)),
+            ShapeKind::AccentBorderCallout1 => ("accentBorderCallout1", "Accent Border Callout 1", Some(C::Callouts)),
+            ShapeKind::AccentBorderCallout2 => ("accentBorderCallout2", "Accent Border Callout 2", Some(C::Callouts)),
+            ShapeKind::AccentBorderCallout3 => ("accentBorderCallout3", "Accent Border Callout 3", Some(C::Callouts)),
+            ShapeKind::WedgeRectCallout => ("wedgeRectCallout", "Rectangular Callout", Some(C::Callouts)),
+            ShapeKind::WedgeRoundRectCallout => ("wedgeRoundRectCallout", "Rounded Rectangular Callout", Some(C::Callouts)),
+            ShapeKind::WedgeEllipseCallout => ("wedgeEllipseCallout", "Oval Callout", Some(C::Callouts)),
+            ShapeKind::CloudCallout => ("cloudCallout", "Cloud Callout", Some(C::Callouts)),
+            ShapeKind::ActionButtonBlank => ("actionButtonBlank", "Action Button: Blank", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonHome => ("actionButtonHome", "Action Button: Home", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonHelp => ("actionButtonHelp", "Action Button: Help", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonInformation => ("actionButtonInformation", "Action Button: Information", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonForwardNext => ("actionButtonForwardNext", "Action Button: Forward or Next", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonBackPrevious => ("actionButtonBackPrevious", "Action Button: Back or Previous", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonEnd => ("actionButtonEnd", "Action Button: End", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonBeginning => ("actionButtonBeginning", "Action Button: Beginning", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonReturn => ("actionButtonReturn", "Action Button: Return", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonDocument => ("actionButtonDocument", "Action Button: Document", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonSound => ("actionButtonSound", "Action Button: Sound", Some(C::ActionButtons)),
+            ShapeKind::ActionButtonMovie => ("actionButtonMovie", "Action Button: Movie", Some(C::ActionButtons)),
+        }
+    }
+
+    /// The DrawingML preset geometry (`a:prstGeom/@prst`); empty for the non-preset kinds.
+    pub fn preset(self) -> &'static str {
+        self.info().0
+    }
+
+    /// The gallery name.
+    pub fn display_name(self) -> &'static str {
+        self.info().1
+    }
+
+    /// The gallery group, if the kind is a gallery shape.
+    pub fn category(self) -> Option<ShapeCategory> {
+        self.info().2
+    }
+
+    /// Whether the kind uses the corner-radius adjustment (`extra.adj`): the round/snip
+    /// family. Other shapes store no adjustment.
+    pub fn uses_adj(self) -> bool {
+        matches!(
+            self,
+            ShapeKind::RoundedRectangle
+                | ShapeKind::Round1Rect
+                | ShapeKind::Round2SameRect
+                | ShapeKind::Round2DiagRect
+                | ShapeKind::Snip1Rect
+                | ShapeKind::Snip2SameRect
+                | ShapeKind::Snip2DiagRect
+                | ShapeKind::SnipRoundRect
+                | ShapeKind::Plaque
+        )
+    }
+
+    /// The kind for a DrawingML preset geometry. Unknown presets read as a rectangle, as
+    /// before (callouts and flowchart boxes used to map to their nearest shape; they now keep
+    /// their own kind).
+    pub fn from_preset(prst: &str) -> ShapeKind {
+        Self::ALL.iter().copied().find(|k| k.preset() == prst).unwrap_or(ShapeKind::Rectangle)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -1367,6 +1971,54 @@ mod tests {
             assert_eq!(p.text_without(&dropped), naive(&dropped), "{dropped:?} of {text:?}");
         }
         assert_eq!(p.text_without(std::slice::from_ref(&(1..3))), "a7b€c");
+    }
+
+    /// The full preset-geometry set: every kind with a preset has a distinct DrawingML preset
+    /// that reads back to it, and an unknown preset reads as a rectangle (as before). Text
+    /// boxes and freeforms have no preset.
+    #[test]
+    fn every_shape_kind_has_a_distinct_preset_and_round_trips() {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for kind in ShapeKind::ALL {
+            let preset = kind.preset();
+            assert!(!kind.display_name().is_empty(), "{kind:?}");
+            if preset.is_empty() {
+                assert!(matches!(kind, ShapeKind::TextBox | ShapeKind::Freeform), "{kind:?}");
+                continue;
+            }
+            assert!(seen.insert(preset), "duplicate preset {preset} for {kind:?}");
+            assert_eq!(ShapeKind::from_preset(preset), *kind, "{preset}");
+        }
+        assert_eq!(ShapeKind::from_preset("notARealPreset"), ShapeKind::Rectangle);
+    }
+
+    /// The gallery lists every kind with a category; every gallery shape has geometry that
+    /// stays in its frame. Rectangles, text boxes and freeforms take their frame (no geometry).
+    #[test]
+    fn every_gallery_shape_has_a_category_and_geometry() {
+        for kind in ShapeKind::ALL {
+            match kind {
+                ShapeKind::TextBox | ShapeKind::Freeform => {
+                    assert_eq!(kind.category(), None, "{kind:?}");
+                    assert!(crate::shape_geom::shape_geom(*kind, 100.0, 50.0, crate::shape_geom::DEFAULT_ADJ).is_none(), "{kind:?}");
+                }
+                ShapeKind::Rectangle => {
+                    assert_eq!(kind.category(), Some(ShapeCategory::Rectangles));
+                    assert!(crate::shape_geom::shape_geom(*kind, 100.0, 50.0, crate::shape_geom::DEFAULT_ADJ).is_none(), "{kind:?}");
+                }
+                _ => {
+                    assert!(kind.category().is_some(), "{kind:?}");
+                    let paths = crate::shape_geom::shape_geom(*kind, 100.0, 50.0, crate::shape_geom::DEFAULT_ADJ)
+                        .unwrap_or_else(|| panic!("{kind:?} has no geometry"));
+                    assert!(!paths.is_empty() && paths.iter().all(|p| !p.pts.is_empty()), "{kind:?}");
+                    assert!(
+                        paths.iter().all(|p| p.pts.iter().all(|(x, y)| (0.0..=1.0).contains(x) && (0.0..=1.0).contains(y))),
+                        "{kind:?} stays in the frame"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -48,11 +48,20 @@ struct ReplayStroke {
     dur: f32,
 }
 
+/// A shape being drawn: its page, kind, and the drag's start and current points (page points).
+pub struct ShapeDrag {
+    page: usize,
+    kind: wordcraft_doc::para::ShapeKind,
+    from: [f32; 2],
+    to: [f32; 2],
+}
+
 /// The Draw tab's pointer state beyond the pens (kept on the canvas).
 #[derive(Default)]
 pub struct InkUi {
     pub(crate) lasso: Option<LassoDrag>,
     pub(crate) replay: Option<Replay>,
+    pub(crate) shape: Option<ShapeDrag>,
 }
 
 /// Smallest move that adds a point to a live stroke, screen points.
@@ -76,6 +85,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
     if mode == DrawMode::Select {
         app.canvas.ink = None;
         app.canvas.erasing = None;
+        app.canvas.ink_ui.shape = None;
         return false;
     }
     let (pressed, down, released, at) =
@@ -121,6 +131,26 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
             }
         }
         DrawMode::Lasso => lasso_pointer(app, (starts, down, released, at), rects, layout, scale),
+        DrawMode::Shape(kind) => {
+            if starts && let Some((page, x, y)) = at.and_then(|p| page_at(rects, layout, scale, p)) {
+                app.canvas.ink_ui.shape = Some(ShapeDrag { page, kind, from: [x, y], to: [x, y] });
+            } else if down
+                && let Some(p) = at
+                && let Some(d) = app.canvas.ink_ui.shape.as_mut()
+                && let Some((x, y)) = on_page(rects, layout, scale, d.page, p)
+            {
+                d.to = [x, y];
+            }
+            if released && let Some(d) = app.canvas.ink_ui.shape.take() {
+                let (x0, y0) = (d.from[0].min(d.to[0]), d.from[1].min(d.to[1]));
+                let (w, h) = ((d.to[0] - d.from[0]).abs(), (d.to[1] - d.from[1]).abs());
+                // A click without a drag draws nothing: shapes are never inserted on click.
+                if w.max(h) >= 4.0 {
+                    let serde = serde_json::to_value(d.kind).unwrap_or(json!("rectangle"));
+                    let _ = app.run("draw.shape", json!({"kind": serde, "page": d.page, "x": x0, "y": y0, "width": w, "height": h}));
+                }
+            }
+        }
         DrawMode::Select => {}
     }
     true
@@ -223,10 +253,12 @@ fn screen_ink(dark: bool, c: wordcraft_doc::Rgb, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
 
-/// The live stroke, the lasso and its selection, and the replayed ink, drawn over the pages.
+/// The live stroke, the lasso and its selection, the replayed ink, and the shape being drawn,
+/// drawn over the pages.
 pub fn paint(app: &WordApp, painter: &Painter, rects: &[Rect], layout: &DocLayout, scale: f32) {
     paint_replay(app, painter, rects, layout, scale);
     paint_lasso(app, painter, rects, layout, scale);
+    paint_shape(app, painter, rects, layout, scale);
     let Some(d) = &app.canvas.ink else { return };
     let Some(map) = to_screen(rects, layout, scale, d.page) else { return };
     let s = page_scale(rects, layout, scale, d.page).unwrap_or(scale);
@@ -265,13 +297,30 @@ fn paint_lasso(app: &WordApp, painter: &Painter, rects: &[Rect], layout: &DocLay
     painter.extend(dash(&[sr.left_top(), sr.right_top(), sr.right_bottom(), sr.left_bottom(), sr.left_top()]));
 }
 
-/// The pointer over the page while a pen, the eraser or the lasso is in use.
+/// The pointer over the page while a pen, the eraser, the lasso or the shape tool is in use.
 pub fn cursor(app: &WordApp) -> Option<egui::CursorIcon> {
     match app.session.view.draw.mode {
         DrawMode::Select => None,
         DrawMode::Lasso if matches!(app.canvas.ink_ui.lasso, Some(LassoDrag::Move { .. })) => Some(egui::CursorIcon::Grabbing),
-        DrawMode::Eraser | DrawMode::Pen(_) | DrawMode::Lasso => Some(egui::CursorIcon::Crosshair),
+        DrawMode::Eraser | DrawMode::Pen(_) | DrawMode::Lasso | DrawMode::Shape(_) => Some(egui::CursorIcon::Crosshair),
     }
+}
+
+/// The shape being drawn: its dashed frame and the shape's outline inside it.
+fn paint_shape(app: &WordApp, painter: &Painter, rects: &[Rect], layout: &DocLayout, scale: f32) {
+    let Some(d) = &app.canvas.ink_ui.shape else { return };
+    let Some(map) = to_screen(rects, layout, scale, d.page) else { return };
+    let (x0, y0) = (d.from[0].min(d.to[0]), d.from[1].min(d.to[1]));
+    let (x1, y1) = (d.from[0].max(d.to[0]), d.from[1].max(d.to[1]));
+    let r = Rect::from_min_max(map([x0, y0]), map([x1, y1]));
+    let t = crate::theme::Tokens::get(painter.ctx());
+    painter.extend(egui::Shape::dashed_line(
+        &[r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()],
+        Stroke::new(1.0, t.accent),
+        4.0,
+        3.0,
+    ));
+    crate::shapes_gallery::shape_icon(painter, r, d.kind, t.input, t.text_dim);
 }
 
 // --- Ink Replay ----------------------------------------------------------------------------

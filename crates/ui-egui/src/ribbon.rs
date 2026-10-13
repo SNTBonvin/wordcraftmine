@@ -787,32 +787,7 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Illustrations", None, app, |ui, app| {
         big(ui, app, "picture", "Pictures", "insert.picture", json!({}), false);
         menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, "insert.shape", |ui, app| {
-            for (l, k) in [
-                ("Rectangle", "rectangle"),
-                ("Rounded Rectangle", "roundedRectangle"),
-                ("Oval", "ellipse"),
-                ("Triangle", "triangle"),
-                ("Diamond", "diamond"),
-                ("Line", "line"),
-                ("Arrow", "arrow"),
-                ("Star", "star"),
-                ("Heart", "heart"),
-            ] {
-                mi(ui, app, l, "insert.shape", json!({"kind": k}));
-            }
-            ui.separator();
-            mi(ui, app, "New Drawing Canvas", "insert.canvas", json!({}));
-            // Connectors: glue their ends to shapes by dragging them (shape.connect).
-            for (l, k, arrow) in [
-                ("Straight Connector", "straightConnector", "none"),
-                ("Straight Arrow Connector", "straightConnector", "end"),
-                ("Elbow Connector", "elbowConnector", "none"),
-                ("Elbow Arrow Connector", "elbowConnector", "end"),
-                ("Curved Connector", "curvedConnector", "none"),
-                ("Curved Arrow Connector", "curvedConnector", "end"),
-            ] {
-                mi(ui, app, l, "insert.shape", json!({"kind": k, "arrow": arrow}));
-            }
+            crate::shapes_gallery::shapes_menu(ui, app);
         });
         stack(ui, |ui| {
             small(ui, app, "icons", Some("Icons"), "Icons", "insert.icon", json!({}), false);
