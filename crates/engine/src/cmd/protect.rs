@@ -261,7 +261,7 @@ pub(crate) fn outside_unchanged(before: &Document, after: &Document, author: &st
 }
 
 /// One piece of protected content: text with its formatting, or a paragraph mark's formatting.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum Piece {
     Text(String, CharProps),
     Object(Option<InlineObject>),
@@ -479,6 +479,117 @@ mod tests {
         assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
     }
 
+    /// A content-locked control stays frozen in forms mode, next to a fillable one: its content
+    /// takes no entries or deletion, while the fillable control's interior takes typing. (The
+    /// locks are set before Restrict Editing: once no control is fillable, protection refuses
+    /// every command outright, `developer.properties` included.)
+    #[test]
+    fn content_locked_control_stays_frozen_in_forms_mode() {
+        let mut s = Session::new(Document::from_text("Fill me [combo here] now."));
+        select(&mut s, "combo here");
+        s.run("developer.comboBox", &json!({"tag": "deg", "items": ["BSc", "MSc"]})).unwrap();
+        select(&mut s, "now");
+        s.run("developer.richText", &json!({"tag": "free"})).unwrap();
+        s.run("developer.properties", &json!({"control": "deg", "lockEdit": true, "lockDelete": true})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // The content-locked control's own content is frozen: refused.
+        assert!(s.run("developer.chooseItem", &json!({"control": "deg", "value": "MSc"})).is_err());
+        // Deleting a lockDelete control is still refused under forms mode.
+        assert!(s.run("developer.removeControl", &json!({"control": "deg"})).is_err());
+        // Typing in the fillable control next to it: allowed.
+        select(&mut s, "now");
+        s.run("text.insert", &json!({"text": "today"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("today"));
+        // Text right next to the controls, inside no fillable control: refused, unchanged.
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "Fill me");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
+    /// Locks nest: innermost wins. A locked control inside a fillable one keeps its own content
+    /// frozen while the control around it stays fillable. (Typing into the locked control is
+    /// already refused by the control rules; the protection walk is what refuses formatting.)
+    #[test]
+    fn forms_mode_nested_locks_innermost_wins() {
+        let mut s = Session::new(Document::from_text("Alpha Beta."));
+        select(&mut s, "Alpha Beta.");
+        s.run("developer.richText", &json!({"tag": "outer"})).unwrap();
+        select(&mut s, "Beta");
+        s.run("developer.plainText", &json!({"tag": "inner"})).unwrap();
+        s.run("developer.properties", &json!({"control": "inner", "lockEdit": true})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // The walk: the fillable control's content is a hole, the locked one's is protected.
+        let texts: Vec<String> = outside(&s.doc, &HoleMode::Controls)
+            .into_iter()
+            .map(|p| match p {
+                Piece::Text(t, _) => t,
+                _ => String::new(),
+            })
+            .collect();
+        assert!(texts.iter().any(|t| t.contains("Beta")), "the locked control's content is protected");
+        assert!(!texts.iter().any(|t| t.contains("Alpha")), "the fillable control's content is a hole");
+        // Formatting the fillable control's content: allowed.
+        select(&mut s, "Alpha");
+        s.run("format.bold", &json!({})).unwrap();
+        // Formatting and typing the inner locked control's content: refused, unchanged.
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "Beta");
+        assert!(s.run("format.bold", &json!({})).is_err());
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
+    /// Filling in forms: typing into an empty control's interior is allowed, typing outside any
+    /// control is refused and leaves the document as it was.
+    #[test]
+    fn forms_mode_fills_an_empty_control() {
+        let mut s = Session::new(Document::from_text("Intro.\nMiddle.\nTail."));
+        select(&mut s, "Middle.");
+        s.run("developer.richText", &json!({"tag": "free"})).unwrap();
+        // An empty plain-text control at the caret (it shows its placeholder).
+        let end = s.doc.end_of(StoryRef::Body);
+        s.sel = Selection::caret(end);
+        s.run("developer.plainText", &json!({"tag": "name"})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // Typing into the empty control's interior: allowed.
+        let at = s.doc.control_ranges(StoryRef::Body).iter().find(|r| r.control.tag == "name").map(|r| r.content_start()).unwrap();
+        s.sel = Selection::caret(at);
+        s.run("text.insert", &json!({"text": "Ada"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("Ada"));
+        // Typing in the rich-text control's content: allowed; outside: refused, unchanged.
+        select(&mut s, "Middle");
+        s.run("text.insert", &json!({"text": "!"})).unwrap();
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "Intro");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
+    /// A control inside a table cell is a hole: filling it by tag works, and the cell next to
+    /// it — outside any control — stays locked. (Controls wrapped around whole rows or cells,
+    /// whose markers aren't the cell paragraph's text, are not holes; a limit for now.)
+    #[test]
+    fn forms_mode_fills_a_control_in_a_table_cell() {
+        let mut s = Session::new(Document::from_text("Form."));
+        s.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
+        // The caret is in the first cell: give both cells text, then a drop-down in the second.
+        s.run("text.insert", &json!({"text": "Size"})).unwrap();
+        s.run("text.tab", &json!({})).unwrap();
+        s.run("text.insert", &json!({"text": "Choice"})).unwrap();
+        select(&mut s, "Choice");
+        s.run("developer.dropDown", &json!({"tag": "size", "items": ["S", "M"]})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // Filling the cell's drop-down by tag: allowed.
+        s.run("developer.chooseItem", &json!({"control": "size", "value": "M"})).unwrap();
+        assert!(s.doc.plain_text(StoryRef::Body).contains("M"));
+        // Typing in the neighbouring cell, outside the control: refused, unchanged.
+        let before = s.doc.plain_text(StoryRef::Body);
+        select(&mut s, "Size");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+    }
+
     /// Malformed control markers — an orphan end, starts nested past the walk's depth cap that
     /// never close — keep forms mode conservative: no panic or loop, locked text stays locked.
     #[test]
@@ -511,6 +622,18 @@ mod tests {
         select(&mut s, "End");
         assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
         assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+        // An orphan end mid-paragraph: the text after it, in the same paragraph, stays locked.
+        let mid = Pos { story: StoryRef::Body, path: paths[0].clone(), off: 4 };
+        s.doc.insert_object(&mid, InlineObject::ControlEnd, &props).unwrap();
+        select(&mut s, "ed.");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        assert_eq!(s.doc.plain_text(StoryRef::Body), before);
+        // The walk compares the changed character: the pieces of the malformed document and of a
+        // clone with one character added outside any control differ.
+        let mut changed = s.doc.clone();
+        let at = Pos { story: StoryRef::Body, path: paths[0].clone(), off: 0 };
+        changed.insert_text(&at, "x", &CharProps::default()).unwrap();
+        assert_ne!(outside(&s.doc, &HoleMode::Controls), outside(&changed, &HoleMode::Controls));
     }
 
     #[test]
