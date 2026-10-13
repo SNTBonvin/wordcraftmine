@@ -51,6 +51,7 @@ font can't match Word's metrics.
 | Text wrap: tight, through (contour, wrap polygon) | 🟡 | #354: lines follow the wrap polygon, or the outline worked out from the object (shape geometry; a picture's opaque pixels as a convex hull; otherwise the rectangle), turned and flipped with it, kept the left/right distance from text; Through also uses gaps inside the outline. Wrap side (`wrapText`: both sides, left only, right only, largest side per line) applies to square, tight and through wraps, turned objects included; picture outlines are convex; not compared page-for-page with Word | 1–2 |
 | Text boxes, overflow, linked text boxes | ✅ | #46; linked text boxes (#369): the text runs on through each box in turn at that box's line length, overflow past the last box hidden; Align Text top / middle / bottom; the box's own internal margins, and a box set to Resize shape to fit text shows all its text (#743) | — |
 | Rotated objects and text | 🟡 | #332: pictures, shapes, charts and groups drawn turned and flipped about their centre (screen and PDF); square wrap and inline lines keep clear of the rotated bounds; hit testing on the turned shape. Text in a rotated text box stays upright | 2–3 |
+| Paragraph borders and shading | 🟡 | Borders take their distance and width above and below the text; a run of paragraphs with the same borders and indents is spaced as one box, with room for a border between (`layout::tests::paragraph_borders_take_their_distance_and_width`). Each paragraph of such a run still draws its own top and bottom lines; shading doesn't fill the border's distance above and below | 2–3 |
 | Page borders (from page edge or text), page colour, watermark | ✅ | | — |
 | Line numbers (restart per page/section, count by) | ✅ | | — |
 | Vertical page alignment | ✅ | | — |
@@ -86,6 +87,7 @@ font can't match Word's metrics.
 | 2026-10-12 | trivial | Exact line spacing puts the baseline four-fifths of the way down the line, whatever the font and size (measured in Word for Windows) |
 | 2026-10-12 | trivial | A decimal tab puts the decimal point at the stop when its text ends the line (it was right-aligned there); measured in Word for Windows |
 | 2026-10-12 | trivial | Justified lines shrink their spaces by up to a quarter of their width, not a fifth, and only while that distorts them less than half as much as stretching them without the word would (measured in Word for Windows) |
+| 2026-10-12 | trivial | Paragraph borders take room above and below the text (distance plus width, a double line three widths), and a run of paragraphs with the same borders is spaced as one box (measured in Word for Windows) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |

@@ -499,6 +499,48 @@ fn decimal_tab_aligns_the_point_at_the_end_of_a_line() {
     assert!((at("Lantern\t2475", "Lantern\t2475".len()) - 472.0).abs() < 0.01);
 }
 
+/// Paragraph borders take room: a border stands its distance from the text and takes its own
+/// width (a double line three widths), above the first line or below the last. Paragraphs with
+/// the same borders share one box (top border on the first only, bottom on the last only), and
+/// a border between them takes its distance on both sides plus its width.
+#[test]
+fn paragraph_borders_take_their_distance_and_width() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let line = |style, width, space| Some(Border { style, width, color: None, space });
+    // Tops of four paragraphs; `borders[i]` goes on paragraph i.
+    let tops = |borders: [Option<Borders>; 4]| -> Vec<f32> {
+        let mut d = Document::from_text("one\ntwo\nthree\nfour");
+        for (i, b) in borders.into_iter().enumerate() {
+            d.format_paragraphs(&Pos::body(i, 0), &Pos::body(i, 0), &|p| p.borders = b).unwrap();
+        }
+        let l = lay(&d);
+        (0..4).map(|i| l.caret(&Pos::body(i, 0)).unwrap().top).collect()
+    };
+    let plain = tops([None; 4]);
+    let moved = |b: [Option<Borders>; 4]| -> Vec<f32> { tops(b).iter().zip(&plain).map(|(a, p)| a - p).collect() };
+    let near = |got: &[f32], want: [f32; 4]| got.iter().zip(want).all(|(g, w)| (g - w).abs() < 0.01);
+
+    // Bottom border 2.25 pt, 6 pt from the text: what follows moves down 6 + 2.25.
+    let bottom = Borders { bottom: line(BorderStyle::Single, 2.25, 6.0), ..Default::default() };
+    let m = moved([None, Some(bottom), None, None]);
+    assert!(near(&m, [0.0, 0.0, 8.25, 8.25]), "{m:?}");
+    // A double line 0.75 pt wide, 1 pt away: 1 + 3 x 0.75.
+    let double = Borders { bottom: line(BorderStyle::Double, 0.75, 1.0), ..Default::default() };
+    let m = moved([None, Some(double), None, None]);
+    assert!(near(&m, [0.0, 0.0, 3.25, 3.25]), "{m:?}");
+    // Top and bottom, 0.75 pt, 4 pt away: the paragraph itself moves down 4.75, the rest 9.5.
+    let both = Borders { top: line(BorderStyle::Single, 0.75, 4.0), bottom: line(BorderStyle::Single, 0.75, 4.0), ..Default::default() };
+    let m = moved([None, Some(both), None, None]);
+    assert!(near(&m, [0.0, 4.75, 9.5, 9.5]), "{m:?}");
+    // The same box on paragraphs two and three is one box: one top, one bottom.
+    let m = moved([None, Some(both), Some(both), None]);
+    assert!(near(&m, [0.0, 4.75, 4.75, 9.5]), "{m:?}");
+    // With a border between (0.5 pt, 4 pt away) the second of them moves down 4 + 0.5 + 4 more.
+    let between = Borders { between: line(BorderStyle::Single, 0.5, 4.0), ..both };
+    let m = moved([None, Some(between), Some(between), None]);
+    assert!(near(&m, [0.0, 4.75, 4.75 + 8.5, 9.5 + 8.5]), "{m:?}");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");
