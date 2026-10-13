@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use vello_cpu::kurbo::{Affine, Point, Rect, Shape};
+use vello_cpu::kurbo::{self, Affine, Point, Rect, Shape};
 use vello_cpu::peniko;
 use vello_cpu::{Pixmap, RenderContext};
 use wordcraft_fonts::FontFace;
@@ -92,18 +92,29 @@ fn build(face: &FontFace, gid: u32, ppem: u32) -> Option<Drawable> {
     }
 }
 
-/// Decode a bitmap glyph's PNG, refusing one larger than the strike says (a hostile PNG could claim
-/// a small glyph box and decode to a huge image).
+/// Decode a bitmap glyph's PNG, which must be exactly the `w`×`h` its strike claims (at most
+/// [`MAX_BITMAP_SIDE`](wordcraft_fonts::color::MAX_BITMAP_SIDE) a side): a hostile font could claim
+/// a small glyph and hand over a huge image, so the size is read from the header before decoding.
 fn decode_png(png: &[u8], w: u32, h: u32) -> Option<Pixmap> {
-    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
-    let mut limits = image::Limits::default();
     let side = wordcraft_fonts::color::MAX_BITMAP_SIDE;
-    limits.max_image_width = Some(side.max(w));
-    limits.max_image_height = Some(side.max(h));
-    limits.max_alloc = Some(side as u64 * side as u64 * 4 * 2);
-    reader.limits(limits);
-    let img = reader.decode().ok()?.to_rgba8();
+    if w == 0 || h == 0 || w > side || h > side {
+        return None;
+    }
+    let reader = || image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
+    if reader().into_dimensions().ok()? != (w, h) {
+        return None;
+    }
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(w);
+    limits.max_image_height = Some(h);
+    limits.max_alloc = Some(w as u64 * h as u64 * 4 * 2 + 64 * 1024);
+    let mut r = reader();
+    r.limits(limits);
+    let img = r.decode().ok()?.to_rgba8();
     let (iw, ih) = img.dimensions();
+    if (iw, ih) != (w, h) {
+        return None;
+    }
     crate::premul_pixmap(iw, ih, img.as_raw())
 }
 
@@ -127,7 +138,7 @@ fn bgra_pixmap(bgra: &[u8], w: u32, h: u32) -> Option<Pixmap> {
 /// Draw a colour glyph. `at` maps font units (y down, pen at the origin) to device pixels; `fg` is
 /// the run's text colour for the font's "text colour" entries; `alpha` fades the whole glyph.
 pub(crate) fn draw(ctx: &mut RenderContext, d: &Drawable, at: Affine, upem: f64, fg: peniko::Color, alpha: f32) {
-    if at.determinant().abs() < 1e-12 || !at.as_coeffs().iter().all(|v| v.is_finite()) {
+    if !usable(at) {
         return;
     }
     let alpha = if alpha.is_finite() { alpha.clamp(0.0, 1.0) } else { 1.0 };
@@ -171,8 +182,15 @@ fn draw_ops(ctx: &mut RenderContext, ops: &[ColorOp], root: Affine, upem: f64, f
                 }
             }
             ColorOp::PushClip(path) => {
-                ctx.set_transform(cur);
-                ctx.push_clip_layer(path);
+                // A degenerate or non-finite transform clips everything away: push an empty clip so
+                // the matching pop still has a layer to close.
+                if usable(cur) {
+                    ctx.set_transform(cur);
+                    ctx.push_clip_layer(path);
+                } else {
+                    ctx.set_transform(root);
+                    ctx.push_clip_layer(&kurbo::BezPath::new());
+                }
                 open += 1;
             }
             ColorOp::PushLayer(mode) => {
@@ -195,7 +213,7 @@ fn draw_ops(ctx: &mut RenderContext, ops: &[ColorOp], root: Affine, upem: f64, f
 
 /// Fill `area` (in root space) with `paint` defined in `cur` space.
 fn fill(ctx: &mut RenderContext, paint: &ColorPaint, cur: Affine, root: Affine, area: Rect, fg: peniko::Color) {
-    if cur.determinant().abs() < 1e-12 || !cur.as_coeffs().iter().all(|v| v.is_finite()) {
+    if !usable(cur) {
         return;
     }
     let region = (cur.inverse() * root) * area.to_path(0.1);
@@ -251,6 +269,11 @@ fn fill(ctx: &mut RenderContext, paint: &ColorPaint, cur: Affine, root: Affine, 
             ctx.fill_path(&region);
         }
     }
+}
+
+/// Can a transform be drawn under (finite and invertible)?
+fn usable(t: Affine) -> bool {
+    t.as_coeffs().iter().all(|v| v.is_finite()) && t.determinant().abs() >= 1e-12
 }
 
 fn finite(v: &[f64]) -> bool {
@@ -327,7 +350,7 @@ mod tests {
         crate::Rendered { width: 40, height: 40, pixels }
     }
 
-    fn square() -> vello_cpu::kurbo::BezPath {
+    fn square() -> kurbo::BezPath {
         Rect::new(0.0, 0.0, 1000.0, 1000.0).to_path(0.1)
     }
 
@@ -367,6 +390,15 @@ mod tests {
             ColorOp::Fill(ColorPaint::Sweep { c0: c, start_angle: 0.0, end_angle: 0.0, stops: stops.clone(), extend: Extend::Pad }),
             ColorOp::Fill(ColorPaint::Sweep { c0: c, start_angle: 0.0, end_angle: 0.0, stops, extend: Extend::Repeat }),
             ColorOp::Fill(ColorPaint::Linear { p0: c, p1: c, stops: vec![], extend: Extend::Pad }),
+            ColorOp::PushTransform(Affine::new([f64::NAN; 6])),
+            ColorOp::PushClip(square()),
+            ColorOp::Fill(ColorPaint::Solid(GlyphColor::Rgba([255, 0, 0, 255]))),
+            ColorOp::PopClip,
+            ColorOp::PopTransform,
+            ColorOp::PushTransform(Affine::scale(0.0)),
+            ColorOp::PushClip(square()),
+            ColorOp::PopClip,
+            ColorOp::PopTransform,
             ColorOp::PushClip(square()),
         ];
         let _ = render(&hostile);
@@ -378,5 +410,25 @@ mod tests {
         assert_eq!(pm.width(), 2);
         assert!(bgra_pixmap(&[1, 2, 3], 1, 1).is_none());
         assert!(decode_png(b"not a png", 4, 4).is_none());
+    }
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = vec![];
+        image::RgbaImage::from_pixel(w, h, image::Rgba([200, 0, 0, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    /// A bitmap glyph's PNG must be the size its strike claims: a bigger one is refused before it is
+    /// decoded, so a hostile font can't claim a tiny glyph and make us decode a huge image.
+    #[test]
+    fn bitmap_png_larger_than_its_claimed_size_is_refused() {
+        assert_eq!(decode_png(&png(4, 4), 4, 4).map(|p| (p.width(), p.height())), Some((4, 4)));
+        assert!(decode_png(&png(8, 8), 4, 4).is_none(), "wider and taller than claimed");
+        assert!(decode_png(&png(8, 4), 4, 4).is_none(), "wider than claimed");
+        assert!(decode_png(&png(2, 2), 4, 4).is_none(), "a different size than claimed");
+        let side = wordcraft_fonts::color::MAX_BITMAP_SIDE;
+        assert!(decode_png(&png(4, 4), side + 1, 4).is_none(), "past the cap");
     }
 }

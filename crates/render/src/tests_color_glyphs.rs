@@ -17,6 +17,19 @@ fn colourful(p: [u8; 4]) -> bool {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn emoji_are_drawn_in_colour() {
+    emoji_in_colour(&RenderOptions::default());
+}
+
+/// A dark page (View › Switch Modes) doesn't invert the emoji: they keep the font's colours, the
+/// same as pictures. Skips like [`emoji_are_drawn_in_colour`].
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn emoji_keep_their_colours_on_a_dark_page() {
+    emoji_in_colour(&RenderOptions { dark: true, ..Default::default() });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn emoji_in_colour(opts: &RenderOptions) {
     let has_colour_font = FontDb::global().fallback_for('🧠', u32::MAX).is_some_and(|f| COLOR_EMOJI.contains(&f.family.as_str()));
     if !has_colour_font {
         eprintln!("skipped: no colour emoji font installed");
@@ -26,7 +39,7 @@ fn emoji_are_drawn_in_colour() {
     let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
     let page = &l.pages[0];
     let scale = 2.0;
-    let img = render_page(&d, page, scale, &RenderOptions::default());
+    let img = render_page(&d, page, scale, opts);
     let mut boxes = vec![];
     for it in page_display(&d, page, &DisplayOptions::default()) {
         if let Draw::Glyphs { face, size, glyphs, .. } = it

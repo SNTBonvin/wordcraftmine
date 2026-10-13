@@ -16,6 +16,7 @@ use wordcraft_layout::display::{DisplayOptions, Draw, Stroke, page_display};
 use wordcraft_layout::wordart::ArtPaint;
 use wordcraft_metafile::{Item, Picture, PlacedItem, Seg};
 
+mod color_glyph;
 pub mod icon_lib;
 
 /// Worker threads for rasterising (0 on the web, where there are no threads).
@@ -1411,6 +1412,5 @@ mod tests {
 
 #[cfg(test)]
 mod cache_tests;
-mod color_glyph;
 #[cfg(test)]
 mod tests_color_glyphs;
