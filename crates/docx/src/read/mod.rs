@@ -979,6 +979,33 @@ impl Reader<'_> {
         lv
     }
 
+    /// Most raw bytes of unrecognized settings.xml elements kept for the next save (#1034).
+    const MAX_EXTRA_XML: usize = 65536;
+
+    /// Keep an unrecognized settings element verbatim when it only uses the settings
+    /// namespaces (`w:`, `m:`); anything exotic is left out rather than rewritten broken.
+    fn keep_setting(s: &mut wordcraft_doc::Settings, k: &El) {
+        fn prefixed(name: &str) -> Option<&str> {
+            let (p, _) = name.split_once(':')?;
+            Some(p)
+        }
+        // Check the serialized form, children included.
+        let xml = k.to_xml();
+        let exotic = xml.split('<').skip(1).filter_map(|t| t.split([' ', '>', '/', '?']).next()).any(|t| {
+            !t.is_empty() && !t.starts_with('?') && !t.starts_with('!') && prefixed(t).is_none_or(|p| p != "w" && p != "m")
+        });
+        if exotic {
+            log::warn!("docx: settings <{}> uses namespaces WordCraft does not carry; left out", k.name);
+            return;
+        }
+        let used: usize = s.extra_xml.iter().map(|x| x.len()).sum();
+        if used + xml.len() <= Self::MAX_EXTRA_XML {
+            s.extra_xml.push(xml);
+        } else {
+            log::warn!("docx: too many unrecognized settings; the rest are left out");
+        }
+    }
+
     fn read_settings(&mut self, path: &str) -> Result<(), DocxError> {
         let Some(root) = self.xml(path)? else { return Ok(()) };
         let rels = self.pkg.rels(path);
@@ -1005,6 +1032,12 @@ impl Reader<'_> {
                         .and_then(|c| c.attr("w:val"));
                     if let Some(m) = mode.and_then(u32_of) {
                         s.compat_mode = m.clamp(11, 99);
+                    }
+                    // Every other compatibility setting rides along verbatim (#1034).
+                    for c in k.children("w:compatSetting") {
+                        if c.attr("w:name") != Some("compatibilityMode") {
+                            Self::keep_setting(s, c);
+                        }
                     }
                 }
                 "w:trackRevisions" => s.track_changes = on_off(k),
@@ -1057,7 +1090,7 @@ impl Reader<'_> {
                     s.endnote_pr = props::note_pr(k, false);
                 }
                 "w:documentProtection" => read_protection(k, s),
-                _ => {}
+                _ => Self::keep_setting(s, k),
             }
         }
         Ok(())

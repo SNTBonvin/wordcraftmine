@@ -968,11 +968,15 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
         w.close(tag);
     }
     w.open("w:compat", &[]);
-    let mode = doc.settings.compat_mode.clamp(11, 15).to_string();
+    let mode = doc.settings.compat_mode.clamp(11, 99).to_string();
     w.empty("w:compatSetting", &[("w:name", "compatibilityMode"), ("w:uri", "http://schemas.microsoft.com/office/word"), ("w:val", &mode)]);
     w.close("w:compat");
     if let Some(m) = &s.math {
         math::math_pr(&mut w, m);
+    }
+        // Settings the model does not represent ride along verbatim (#1034).
+    for x in &doc.settings.extra_xml {
+        w.raw(x);
     }
     w.close("w:settings");
     w.into_bytes()

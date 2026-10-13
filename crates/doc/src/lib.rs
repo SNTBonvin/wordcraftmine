@@ -479,6 +479,10 @@ pub struct Settings {
     /// records one (OOXML's `b:Sources/@StyleName`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bib_style: Option<String>,
+    /// settings.xml elements the model doesn't represent, kept verbatim for the next save
+    /// (#1034): other compatibility settings, rsids and anything unknown. Capped on read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_xml: Vec<String>,
     /// The template the document is attached to (Tools › Templates and Add-ins): the target of
     /// `w:attachedTemplate`'s relationship, a path or `file:` URL as the file gives it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -564,6 +568,7 @@ impl Default for Settings {
             bib_style: None,
             attached_template: None,
             link_styles: false,
+            extra_xml: Vec::new(),
         }
     }
 }

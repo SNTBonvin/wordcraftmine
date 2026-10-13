@@ -575,6 +575,18 @@ fn notes_round_trip() {
     assert_eq!(r.settings.endnote_format, NumFormat::UpperRoman);
 }
 
+/// #1034: a compatibility mode past 15 and unrecognized settings survive a save instead of
+/// being silently dropped.
+#[test]
+fn compat_and_unknown_settings_ride_along() {
+    let mut d = Document::new();
+    d.settings.compat_mode = 16;
+    d.settings.extra_xml.push("<w:doNotShowRevisions/>".into());
+    let r = rt(&d);
+    assert_eq!(r.settings.compat_mode, 16);
+    assert!(r.settings.extra_xml.iter().any(|x| x.contains("doNotShowRevisions")), "{:?}", r.settings.extra_xml);
+}
+
 /// #385: footnote and endnote options round-trip for the document (settings) and per section
 /// (`w:sectPr`), in schema order: `w:footnotePr` and `w:endnotePr` before `w:type`.
 #[test]
