@@ -969,6 +969,21 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
     if let Some(m) = &s.math {
         math::math_pr(&mut w, m);
     }
+    if let Some(tfl) = &s.theme_font_lang {
+        let mut a: Vec<(&str, &str)> = Vec::new();
+        if let Some(v) = &tfl.val {
+            a.push(("w:val", v));
+        }
+        if let Some(ea) = &tfl.east_asia {
+            a.push(("w:eastAsia", ea));
+        }
+        if let Some(b) = &tfl.bidi {
+            a.push(("w:bidi", b));
+        }
+        if !a.is_empty() {
+            w.empty("w:themeFontLang", &a);
+        }
+    }
     w.close("w:settings");
     w.into_bytes()
 }
@@ -1050,6 +1065,7 @@ fn core_xml(doc: &Document) -> Vec<u8> {
         ("dc:description", &c.description),
         ("cp:lastModifiedBy", &c.last_modified_by),
         ("cp:category", &c.category),
+        ("dc:language", &c.language),
     ] {
         if !v.is_empty() {
             w.leaf(tag, &[], v);

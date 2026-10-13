@@ -662,3 +662,40 @@ fn exported_links_keep_only_safe_targets() {
         assert!(!md.contains(&format!("[{text}](")), "md: {md}");
     }
 }
+
+#[test]
+fn language_preservation_across_formats() {
+    let mut d = Document::new();
+    d.styles.default_chr.lang = Some("es-MX".into());
+    d.core.language = "es-MX".into();
+    let mut p = Paragraph::with_text("Texto en español mexicano y ", CharProps::default());
+    let end = p.len();
+    p.insert_text(end, "English phrase", &CharProps { lang: Some("en-US".into()), ..Default::default() }).unwrap();
+    d.body = vec![para_block(p)];
+
+    // 1. RTF
+    let rtf_bytes = export("rtf", &d).unwrap().unwrap();
+    let rtf_str = String::from_utf8_lossy(&rtf_bytes);
+    assert!(rtf_str.contains("\\deflang2058"), "{rtf_str}");
+    assert!(rtf_str.contains("\\lang1033"), "{rtf_str}");
+    let rtf_doc = import("rtf", &rtf_bytes).unwrap().unwrap();
+    assert_eq!(rtf_doc.styles.default_chr.lang.as_deref(), Some("es-MX"));
+    let rtf_p = rtf_doc.body[0].as_para().unwrap();
+    assert!(rtf_p.runs.iter().any(|r| r.props.lang.as_deref() == Some("en-US")));
+
+    // 2. ODT
+    let odt_bytes = export("odt", &d).unwrap().unwrap();
+    let odt_doc = import("odt", &odt_bytes).unwrap().unwrap();
+    assert_eq!(odt_doc.styles.default_chr.lang.as_deref(), Some("es-MX"));
+    assert_eq!(odt_doc.core.language.as_str(), "es-MX");
+    let odt_p = odt_doc.body[0].as_para().unwrap();
+    assert!(odt_p.runs.iter().any(|r| r.props.lang.as_deref() == Some("en-US")));
+
+    // 3. HTML
+    let html_bytes = export("html", &d).unwrap().unwrap();
+    let html_str = String::from_utf8_lossy(&html_bytes);
+    assert!(html_str.contains("<html lang=\"es-MX\">"), "{html_str}");
+    assert!(html_str.contains("lang=\"en-US\""), "{html_str}");
+    let html_doc = import("html", &html_bytes).unwrap().unwrap();
+    assert_eq!(html_doc.styles.default_chr.lang.as_deref(), Some("es-MX"));
+}

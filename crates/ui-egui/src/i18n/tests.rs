@@ -36,6 +36,10 @@ fn system_locales_map_to_languages() {
     assert_eq!(lang_from_tag("de_AT.UTF-8"), Some(lang("de")));
     assert_eq!(lang_from_tag("de-CH"), Some(lang("de")));
     assert_eq!(lang_from_tag("DE_de.UTF-8@euro"), Some(lang("de")));
+    assert_eq!(lang_from_tag("es"), Some(lang("es")));
+    assert_eq!(lang_from_tag("es-ES"), Some(lang("es")));
+    assert_eq!(lang_from_tag("es-MX"), Some(lang("es-mx")));
+    assert_eq!(lang_from_tag("es_MX.UTF-8"), Some(lang("es-mx")));
 }
 
 /// A language tag no catalog will ever have: `qaa`–`qtz` are reserved for local use (ISO 639-2),
@@ -647,6 +651,7 @@ fn estonian_covers_the_interface_catalog_and_keeps_count_labels_neutral() {
     // Estonian carries the interface catalog; Spanish and Turkish add the equation gallery and
     // built-in style names on top.
     assert!(keys(et.0.source).is_subset(&keys(lang("es").0.source)));
+    assert!(keys(et.0.source).is_subset(&keys(lang("es-mx").0.source)));
     assert!(keys(et.0.source).is_subset(&keys(lang("tr").0.source)));
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(et.0.source)));
     assert_eq!(tr(et, "Home"), "Avaleht");
@@ -705,6 +710,7 @@ fn turkish_covers_the_entire_existing_interface_catalog_and_preserves_templates(
     // Full parity with the Russian catalog: covers all UI strings, styles, math gallery, and presets.
     assert_eq!(keys(lang("tr").0.source), keys(lang("ru").0.source));
     assert!(keys(lang("es").0.source).is_subset(&keys(lang("tr").0.source)));
+    assert!(keys(lang("es-mx").0.source).is_subset(&keys(lang("tr").0.source)));
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("tr").0.source)));
     let tr = lang("tr");
     for (source, expected) in [
@@ -790,6 +796,7 @@ fn hungarian_covers_the_entire_existing_interface_catalog() {
     // sizes and watermarks included.
     assert!(keys(lang("hu").0.source).is_superset(&keys(lang("ru").0.source)));
     assert!(keys(lang("hu").0.source).is_superset(&keys(lang("es").0.source)));
+    assert!(keys(lang("hu").0.source).is_superset(&keys(lang("es-mx").0.source)));
     let hu = lang("hu");
     for (source, expected) in [
         ("Home", "Kezdőlap"),
@@ -1004,7 +1011,7 @@ fn a_polish_interface_writes_new_documents_in_polish() {
 #[test]
 fn the_editing_languages_are_the_ones_wordcraft_can_proof() {
     let with: Vec<(&str, &str)> = Lang::all().filter_map(|l| l.editing_lang().map(|e| (l.code(), e))).collect();
-    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL")]);
+    assert_eq!(with, [("es", "es-ES"), ("es-mx", "es-MX"), ("pt-br", "pt-BR"), ("pl", "pl-PL")]);
 }
 
 #[test]
@@ -1083,7 +1090,7 @@ fn italian_covers_the_entire_existing_interface_catalog_and_keeps_count_labels_n
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let it = lang("it");
-    for other in ["es", "tr", "et", "zh-hans"] {
+    for other in ["es", "es-mx", "tr", "et", "zh-hans"] {
         assert!(keys(lang(other).0.source).is_subset(&keys(it.0.source)), "{other} has keys Italian lacks");
     }
     assert_eq!(tr(it, "Good morning"), "Buongiorno");
@@ -1141,6 +1148,7 @@ fn bulgarian_covers_the_entire_existing_interface_catalog() {
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     // Every key the interface looks up (Spanish carries them all), and no catalog errors.
     assert!(keys(lang("bg").0.source).is_superset(&keys(lang("es").0.source)));
+    assert!(keys(lang("bg").0.source).is_superset(&keys(lang("es-mx").0.source)));
     assert!(parse_entries(lang("bg").0.source).1.is_empty());
     let bg = lang("bg");
     for (source, expected) in [
@@ -1190,4 +1198,66 @@ fn bundled_interface_fonts_cover_bulgarian_without_system_fallbacks() {
         }
     }
     assert!(!lang("bg").uses_cjk());
+}
+
+#[test]
+fn mexican_spanish_locales_and_saved_preference_work_without_changing_the_document() {
+    let es_mx = lang("es-mx");
+    let es = lang("es");
+    for tag in ["es-MX", "es_MX.UTF-8", "ES-mx", "es-Latn-MX", "es_MX.UTF-8@euro"] {
+        assert_eq!(lang_from_tag(tag), Some(es_mx), "{tag}");
+    }
+    for tag in ["es", "es-ES", "es_ES.UTF-8", "es-419"] {
+        assert_eq!(lang_from_tag(tag), Some(es), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "es-MX", "en-US"]), Some(es_mx));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "ES-MX"})).unwrap();
+    assert_eq!(result["effective"], "es-mx");
+    assert_eq!(app.ui.language, "es-mx");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "es-mx" && l["name"] == "Español (México)"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), es_mx);
+    assert_eq!(es_mx.name(), "Español (México)");
+    assert_eq!(es_mx.editing_lang(), Some("es-MX"));
+}
+
+#[test]
+fn mexican_spanish_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    assert_eq!(keys(lang("es-mx").0.source), keys(lang("es").0.source));
+    assert!(keys(lang("es-mx").0.source).is_superset(&keys(lang("zh-hans").0.source)));
+    assert!(parse_entries(lang("es-mx").0.source).1.is_empty());
+    let es_mx = lang("es-mx");
+    let es = lang("es");
+    assert_eq!(tr(es_mx, "Home"), "Inicio");
+    assert_eq!(tr(es_mx, "Save"), "Guardar");
+    assert_eq!(tr(es_mx, "Add"), "Agregar");
+    assert_eq!(tr(es_mx, "Add to Dictionary"), "Agregar al diccionario");
+    // Mexican decimal point (1.5) vs Spain decimal comma (1,5).
+    assert_eq!(tr(es_mx, "1.5 Line Spacing"), "Interlineado 1.5");
+    assert_eq!(tr(es, "1.5 Line Spacing"), "Interlineado 1,5");
+    assert_eq!(tr(es_mx, "unknown future label"), "unknown future label");
+}
+
+#[test]
+fn bundled_interface_fonts_cover_mexican_spanish_without_system_fallbacks() {
+    let db = wordcraft_fonts::FontDb::with_font_dirs(Vec::new());
+    let (entries, errors) = parse_entries(lang("es-mx").0.source);
+    assert!(errors.is_empty());
+    let extra = "ÁáÉéÍíÓóÚúÜüÑñ¡¿«»";
+    let chars: std::collections::HashSet<char> =
+        entries.iter().flat_map(|e| e.translation.chars()).filter(|c| ('\u{00C0}'..='\u{017F}').contains(c)).chain(extra.chars()).collect();
+    for (family, style) in [("Inter", "Regular"), ("Inter", "Medium"), ("Inter", "SemiBold"), ("JetBrains Mono", "Regular")] {
+        let face = db.face(family, style);
+        assert_eq!(face.family, family, "must use the bundled interface face");
+        for ch in &chars {
+            assert_ne!(face.glyph_for(*ch), 0, "{family} {style} lacks {ch}");
+        }
+    }
+    assert!(!lang("es-mx").uses_cjk());
 }

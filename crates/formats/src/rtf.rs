@@ -83,10 +83,131 @@ impl Tables {
     }
 }
 
+/// Map a BCP 47 language tag to its Windows LCID for RTF `\deflang` and `\lang`.
+pub fn bcp47_to_lcid(tag: &str) -> u32 {
+    let lower = tag.trim().replace('_', "-").to_ascii_lowercase();
+    match lower.as_str() {
+        "es-mx" => 2058,
+        "es" | "es-es" => 1034,
+        "en" | "en-us" => 1033,
+        "en-gb" => 2057,
+        "en-ca" => 4105,
+        "en-au" => 3081,
+        "en-in" => 16393,
+        "pt-br" => 1046,
+        "pt" | "pt-pt" => 2070,
+        "fr" | "fr-fr" => 1036,
+        "fr-ca" => 3084,
+        "de" | "de-de" => 1031,
+        "de-at" => 3079,
+        "de-ch" => 2055,
+        "it" | "it-it" => 1040,
+        "pl" | "pl-pl" => 1045,
+        "ru" | "ru-ru" => 1049,
+        "tr" | "tr-tr" => 1055,
+        "cs" | "cs-cz" => 1029,
+        "hu" | "hu-hu" => 1038,
+        "bg" | "bg-bg" => 1026,
+        "uk" | "uk-ua" => 1058,
+        "ja" | "ja-jp" => 1041,
+        "zh-cn" | "zh-hans" | "zh-hans-cn" => 2052,
+        "zh-tw" | "zh-hant" | "zh-hant-tw" => 1028,
+        "sr" | "sr-cyrl" | "sr-cyrl-rs" => 3098,
+        "sr-latn" | "sr-latn-rs" => 2074,
+        "et" | "et-ee" => 1061,
+        "nl" | "nl-nl" => 1043,
+        "da" | "da-dk" => 1030,
+        "sv" | "sv-se" => 1053,
+        "nb" | "no" | "nb-no" => 1044,
+        "nn" | "nn-no" => 2068,
+        "fi" | "fi-fi" => 1035,
+        "el" | "el-gr" => 1032,
+        "he" | "he-il" => 1037,
+        "ar" | "ar-sa" => 1025,
+        "ko" | "ko-kr" => 1042,
+        _ => match lower.split('-').next().unwrap_or("") {
+            "es" => 1034,
+            "en" => 1033,
+            "pt" => 1046,
+            "fr" => 1036,
+            "de" => 1031,
+            "it" => 1040,
+            "pl" => 1045,
+            "ru" => 1049,
+            "tr" => 1055,
+            "cs" => 1029,
+            "hu" => 1038,
+            "bg" => 1026,
+            "uk" => 1058,
+            "ja" => 1041,
+            "zh" => 2052,
+            "sr" => 3098,
+            "et" => 1061,
+            "nl" => 1043,
+            "da" => 1030,
+            "sv" => 1053,
+            "nb" | "no" => 1044,
+            "nn" => 2068,
+            "fi" => 1035,
+            "el" => 1032,
+            "he" => 1037,
+            "ar" => 1025,
+            "ko" => 1042,
+            _ => 1033,
+        },
+    }
+}
+
+/// Map a Windows LCID to its canonical BCP 47 language tag.
+pub fn lcid_to_bcp47(lcid: u32) -> Option<&'static str> {
+    Some(match lcid {
+        2058 => "es-MX",
+        1034 | 3082 => "es-ES",
+        1033 => "en-US",
+        2057 => "en-GB",
+        4105 => "en-CA",
+        3081 => "en-AU",
+        16393 => "en-IN",
+        1046 => "pt-BR",
+        2070 => "pt-PT",
+        1036 => "fr-FR",
+        3084 => "fr-CA",
+        1031 => "de-DE",
+        3079 => "de-AT",
+        2055 => "de-CH",
+        1040 => "it-IT",
+        1045 => "pl-PL",
+        1049 => "ru-RU",
+        1055 => "tr-TR",
+        1029 => "cs-CZ",
+        1038 => "hu-HU",
+        1026 => "bg-BG",
+        1058 => "uk-UA",
+        1041 => "ja-JP",
+        2052 => "zh-CN",
+        1028 => "zh-TW",
+        3098 | 7194 | 10266 => "sr-Cyrl-RS",
+        2074 | 6170 | 9242 => "sr-Latn-RS",
+        1061 => "et-EE",
+        1043 => "nl-NL",
+        1030 => "da-DK",
+        1053 => "sv-SE",
+        1044 => "nb-NO",
+        2068 => "nn-NO",
+        1035 => "fi-FI",
+        1032 => "el-GR",
+        1037 => "he-IL",
+        1025 => "ar-SA",
+        1042 => "ko-KR",
+        _ => return None,
+    })
+}
+
 struct Writer {
     t: Tables,
     /// List definitions: per list, the ordered flag per level.
     lists: Vec<[bool; 9]>,
+    default_lang: Option<String>,
 }
 
 const HEAD_SIZES: [f32; 6] = [20.0, 16.0, 14.0, 12.0, 12.0, 11.0];
@@ -139,6 +260,11 @@ impl Writer {
         if let Some(c) = f.background {
             let i = self.t.color(c);
             ctl.push_str(&format!("\\chcbpat{i}"));
+        }
+        if let Some(l) = &f.lang
+            && Some(l.as_str()) != self.default_lang.as_deref()
+        {
+            ctl.push_str(&format!("\\lang{}", bcp47_to_lcid(l)));
         }
         let body = if ctl.is_empty() { esc(t) } else { format!("{{{ctl} {}}}", esc(t)) };
         match &f.link {
@@ -399,14 +525,15 @@ fn rtf_date(s: &str) -> Option<String> {
 pub fn export(doc: &Document) -> String {
     let flow = model::from_doc(doc);
     let base_font = doc.styles.default_chr.font.clone().unwrap_or_else(|| wordcraft_doc::styles::BODY_FONT.to_string());
-    let mut w = Writer { t: Tables { fonts: vec![base_font], colors: Vec::new() }, lists: Vec::new() };
+    let mut w = Writer { t: Tables { fonts: vec![base_font], colors: Vec::new() }, lists: Vec::new(), default_lang: flow.meta.lang.clone() };
     let mut body = String::new();
     w.blocks(&flow.blocks, false, "\\par", &mut body, 0);
     export_with(&flow.meta, &w, &body, &doc.last_section)
 }
 
 fn export_with(m: &Meta, w: &Writer, body: &str, sec: &wordcraft_doc::SectionProps) -> String {
-    let mut out = String::from("{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033\\uc1\n{\\fonttbl");
+    let deflang = m.lang.as_deref().map(bcp47_to_lcid).unwrap_or(1033);
+    let mut out = format!("{{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang{deflang}\\uc1\n{{\\fonttbl");
     for (i, f) in w.t.fonts.iter().enumerate() {
         let fam = if model::is_mono(f) { "\\fmodern" } else { "\\fswiss" };
         out.push_str(&format!("{{\\f{i}{fam}\\fcharset0 {};}}", esc(f)));
@@ -1381,6 +1508,18 @@ impl Reader {
             "ansicpg" => {
                 if pv > 0 && wordcraft_doc::encoding::SINGLE_BYTE_CODE_PAGES.contains(&(pv as u16)) {
                     self.ansicpg = pv as u16;
+                }
+            }
+            "deflang" => {
+                if let Some(tag) = lcid_to_bcp47(pv.max(0) as u32) {
+                    self.meta.lang = Some(tag.to_string());
+                }
+            }
+            "lang" => {
+                if pv == 1024 {
+                    self.st.fmt.lang = None;
+                } else if let Some(tag) = lcid_to_bcp47(pv.max(0) as u32) {
+                    self.st.fmt.lang = if self.meta.lang.as_deref() == Some(tag) { None } else { Some(tag.to_string()) };
                 }
             }
             "deff" => self.deff = pv,

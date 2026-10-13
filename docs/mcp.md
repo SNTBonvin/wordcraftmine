@@ -134,6 +134,7 @@ refused, so check the spelling. Lengths are points; `[r, g, b]` is a colour as t
 | `kern` | number | kern fonts at or above this size, points; 0 = off |
 | `textEffects` | object | WordArt `fill`, `outline`, `shadow`, `glow`, `reflection` (see `crates/doc/src/wordart.rs`) |
 | `lang` | string | BCP 47 language tag (proofing) |
+| `langEastAsia` | string | BCP 47 language of East Asian text (`w:lang/@w:eastAsia`, e.g. `zh-CN`) |
 | `rtl` | bool | right-to-left run |
 | `cs` | bool | format the whole run with the complex-script properties |
 | `fontCs`, `fontEa` | string | complex-script font; East Asian font |

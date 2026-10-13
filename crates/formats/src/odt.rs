@@ -111,6 +111,15 @@ fn text_props(f: &Fmt) -> String {
     } else if let Some(fam) = &f.font {
         p.push_str(&format!(" fo:font-family=\"'{}'\"", x(&fam.replace('\'', ""))));
     }
+    if let Some(l) = &f.lang {
+        let mut parts = l.split(['-', '_']);
+        if let Some(lang) = parts.next().filter(|s| !s.is_empty()) {
+            p.push_str(&format!(" fo:language=\"{}\"", x(lang)));
+        }
+        if let Some(country) = parts.next().filter(|s| !s.is_empty()) {
+            p.push_str(&format!(" fo:country=\"{}\"", x(country)));
+        }
+    }
     p
 }
 
@@ -478,10 +487,20 @@ impl Writer {
     }
 }
 
-fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str) -> String {
+fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str, default_lang: Option<&str>) -> String {
     let mut s = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles {NS}><office:styles>");
+    let mut lang_attrs = String::new();
+    if let Some(l) = default_lang {
+        let mut parts = l.split(['-', '_']);
+        if let Some(lang) = parts.next().filter(|s| !s.is_empty()) {
+            lang_attrs.push_str(&format!(" fo:language=\"{}\"", x(lang)));
+        }
+        if let Some(country) = parts.next().filter(|s| !s.is_empty()) {
+            lang_attrs.push_str(&format!(" fo:country=\"{}\"", x(country)));
+        }
+    }
     s.push_str(&format!(
-        "<style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:margin-bottom=\"8pt\"/><style:text-properties fo:font-family=\"'{}'\" fo:font-size=\"12pt\"/></style:default-style>",
+        "<style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:margin-bottom=\"8pt\"/><style:text-properties fo:font-family=\"'{}'\" fo:font-size=\"12pt\"{lang_attrs}/></style:default-style>",
         x(body_font)
     ));
     s.push_str("<style:style style:name=\"Standard\" style:family=\"paragraph\" style:class=\"text\"/>");
@@ -533,6 +552,9 @@ fn meta_xml(m: &Meta) -> String {
     if !m.created.is_empty() {
         s.push_str(&format!("<meta:creation-date>{}</meta:creation-date>", x(m.created.trim_end_matches('Z'))));
     }
+    if let Some(l) = m.lang.as_deref().filter(|l| !l.is_empty()) {
+        s.push_str(&format!("<dc:language>{}</dc:language>", x(l)));
+    }
     s.push_str("</office:meta></office:document-meta>\n");
     s
 }
@@ -548,7 +570,7 @@ pub fn export(doc: &Document) -> Result<Vec<u8>, String> {
         w.automatic_styles()
     );
     let body_font = doc.styles.default_chr.font.clone().unwrap_or_else(|| wordcraft_doc::styles::BODY_FONT.to_string());
-    let styles = styles_xml(&doc.last_section, &body_font);
+    let styles = styles_xml(&doc.last_section, &body_font, flow.meta.lang.as_deref());
     let meta = meta_xml(&flow.meta);
     let mut manifest = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.3\">\n<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"1.3\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>\n",
@@ -598,6 +620,7 @@ struct FmtDelta {
     size: Option<f32>,
     font: Option<String>,
     code: Option<bool>,
+    lang: Option<String>,
 }
 
 impl FmtDelta {
@@ -617,6 +640,9 @@ impl FmtDelta {
         }
         if let Some(fam) = &self.font {
             f.font = Some(fam.clone());
+        }
+        if let Some(l) = &self.lang {
+            f.lang = Some(l.clone());
         }
     }
 }
@@ -785,6 +811,13 @@ impl Styles {
                             } else if !fam.is_empty() {
                                 d.font = Some(fam);
                             }
+                        }
+                        if let Some(l) = get(&a, "fo:language").filter(|s| !s.is_empty()) {
+                            let tag = match get(&a, "fo:country").filter(|s| !s.is_empty()) {
+                                Some(c) => format!("{l}-{c}"),
+                                None => l.to_string(),
+                            };
+                            d.lang = Some(tag);
                         }
                     }
                 }
@@ -1317,6 +1350,7 @@ fn read_meta(xml: &[u8]) -> Meta {
             Some("dc:creator") if m.author.is_empty() => m.author.push_str(&t),
             Some("meta:keyword") => keywords.push(t),
             Some("meta:creation-date") => m.created.push_str(&t),
+            Some("dc:language") => m.lang = Some(t.trim().to_string()).filter(|l| !l.is_empty()),
             _ => {}
         },
     });

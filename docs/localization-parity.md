@@ -1,12 +1,12 @@
 # Localization parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Mexican Spanish es-mx interface catalog and Spanish es/es-MX proofing: spelling, suggestions, grammar, syllable hyphenation; dimension ~28% → ~29%; previously trivial: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Turkish interface catalog completed, 2,325 entries, #774; previously minor: Hungarian interface added; previously trivial: sorting and table numbers follow the text's language, #836, #837; previously minor: Polish interface; Polish proofing — spelling, grammar, hyphenation — and a proofing language per run; previously minor: Turkish interface added; previously major: first version; catalogs measured from `crates/ui-egui/src/i18n`, Word's languages from its bundle listing) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Interface languages, script support and proofing per language. How translation works (catalog
 format, adding a language, clean-room rule): `crates/ui-egui/src/i18n/mod.rs`.
 
-**Dimension: ~28% (estimated; 27% before Portuguese proofing, 25% before Polish and per-run proofing languages), 70–115 h to full
-for the twelve key languages** plus ~45 h for the other ~17 languages Word ships, plus
+**Dimension: ~29% (estimated; 28% after Portuguese proofing, 27% before Portuguese proofing, 25% before Polish and per-run proofing languages), 65–105 h to full
+for the twelve key languages** plus ~40 h for the other ~16 languages Word ships, plus
 native-speaker review (human).
 
 ## What Word ships (measured by listing the bundle)
@@ -19,17 +19,18 @@ native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **19 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+- **20 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `es-mx`, `pt-br`,
   Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,057–2,454 entries
   each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
+  `es-MX`, `es_MX.UTF-8` and `es-Latn-MX` system locales pick Mexican Spanish automatically, and new documents with `es-mx` or `es` interfaces write `es-MX` or `es-ES` documents.
   `pl`, `pl-PL` and `pl_PL.UTF-8` system locales pick Polish automatically.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
   catalog covers **661 (98%)**. Some newer dialog and pane strings (Equation tab tooltips, Zotero,
   Read Aloud, Backstage greetings) aren't wrapped in `tl!` yet, so they show in English in every
   language: the true share of visible strings is **~93–95%** (estimated).
 - Pending PRs: Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20).
-- **Proofing: English, Polish and Portuguese**, chosen per run from its language (`w:lang`, resolved through
+- **Proofing: English, Polish, Portuguese and Spanish**, chosen per run from its language (`w:lang`, resolved through
   the styles; Review › Language and the status bar set it). Languages without proofing tools get
   no spelling or grammar marks (as in Word without the language's tools) instead of being flagged
   as English. Detail in [Proofing per language](#proofing-per-language).
@@ -46,7 +47,7 @@ shared items below.
 |---|---|---|---|---|---|---|---|
 | English | en | source (100%) | ✅ | Latin ✅ | yes | **full** | 0 |
 | Simplified Chinese (Mandarin) | zh-hans | 929 entries; 98% of extracted, ~95% of visible | most; newer panes English | CJK ✅, IME ✅; Windows UI font fixed (#248); interface font chain covers every catalog character, installed CJK font after the embedded ones when it doesn't, PingFang found on macOS 12 (#486); font list by Chinese names (宋体, 微软雅黑, #505); no vertical text | no | partial | 3–5 |
-| Spanish | es | ~930; 98% / ~95% | most | Latin ✅ | no | partial | 1–2 |
+| Spanish | es, es-mx | 2,410 entries each; 98% / ~95% | most; built-in styles and math gallery translated; Mexican Spanish catalog (es-mx) with decimal point | Latin ✅ | no | partial | 1 h |
 | Hindi | hi | 0 | ❌ | Devanagari shaping via HarfRust, untested; no hyphenation | no | none | 4–6 |
 | Arabic | ar | 0 | ❌ | shaping, joining, lam-alef, bidi ✅ (#207); no kashida; **no mirrored UI** | no | none | 6–8 |
 | French | fr | 2,033 entries | most; newer dialogs partly English | Latin ✅ | no | partial | 1–2 |
@@ -84,6 +85,7 @@ documents in Polish (`pl-PL`).
 | English (`en`, any region; text with no language) | Moby word list (public domain, ~160k words) with inflection rules | edit distance | repeated word, `a`/`an`, sentence capital, space before punctuation, double space | Moby dictionary, our Liang patterns, heuristic |
 | Polish (`pl`) | The Hunspell `pl_PL` dictionary installed on the system (OS package, Homebrew, LibreOffice, or the `WORDCRAFT_DICTIONARIES` folder; not bundled, so no Polish spelling marks without it), read at runtime by a Hunspell-style affix engine (`crates/proof/src/affix.rs`); names capitalized, compounds part by part, `Kennedy'ego` | missing diacritics first (`zolw` → `żółw`), the dictionary's confusion table (`żeka` → `rzeka`, `chuśtawka` → `huśtawka`), missing space (`napewno` → `na pewno`), one typo, then a stem scan within two typos | Polish messages: repeated word, space before punctuation, double space, sentence capital (knows `np.`, `r.`, initials, ordinals, dialogue dashes), missing comma before `że`/`który`/`ponieważ`/`gdyż`/`aby`/`żeby`/`jeśli`/`jeżeli`/`gdyby`/`lecz` (not after `mimo`, `chyba`, `tak`, prepositions…), `we`/`ze` (`we wtorek`, `ze szkoły`), doubled punctuation | TeX Polish patterns (Kołodziejska, Jackowski, Ryćko; MIT option) with their 20 exception words; a Polish syllable heuristic for letters outside the alphabet |
 | Portuguese (`pt`, any region) | The Hunspell `pt_BR` dictionary installed on the system — VERO and its derivatives (same places as Polish; not bundled, LGPL/MPL), read at runtime by the same affix engine, which reads its `FLAG UTF-8`, 106 flags, continuation classes and `FORBIDDENWORD` spellings; names capitalized, compounds part by part (`guarda-roupa`, `ex-marido`) | missing accents first (`coraçao` → `coração`, `saude` → `saúde`), the dictionary's confusion table (`seje` → `seja`, `excessão` → `exceção`), missing space (`nãoé` → `não é`), one typo, then an accent-folding stem scan | Portuguese messages: repeated word (the emphatic doubles are allowed), space before punctuation, double space, sentence capital (knows `etc.`, `pág.`, `Dr.`, initials, ordinals, dialogue dashes), doubled punctuation; no comma rule — `que` opens a clause only sometimes | TeX Portuguese patterns (Rezende, Almeida, Araujo, Benevides; BSD 3-clause) with their 2 exception words |
+| Spanish (`es`, `es-MX`, `es-ES`, any region) | The Hunspell `es_MX`, `es_ES` or `es` dictionary installed on the system (same locations as Polish and Portuguese; not bundled), read at runtime by the affix engine; capitalized stems are names (`México`), hyphenated compounds checked part by part | missing accents first (`cancion` → `canción`, `mexico` → `México`), confusion table (`decicion` → `decisión`), missing space (`porfavor` → `por favor`), one typo, accent-folding stem scan | Spanish messages: repeated word (emphatic doubles allowed: `sí sí`, `no no`, `ya ya`), space before punctuation, double space, sentence capital (knows `etc.`, `pág.`, `Dr.`, `Sr.`, `Lic.`, initials, ordinals, dialogue dashes, inverted `¿` and `¡`), doubled punctuation | Pure-code Spanish syllable rules in `crates/proof/src/es/hyphen.rs` (strong/weak vowels, hiatus, diphthongs, onset clusters; no external asset files needed) |
 | Any other | — (no marks) | — | — | the English patterns, as before |
 
 Measured with the SJP.PL dictionary: every one of the ~4.5 million forms an independent expansion of its affix file
@@ -158,6 +160,7 @@ WordCraft keeps 2,54 cm).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Mexican Spanish (`es-mx`) interface catalog (2,410 entries, Mexican decimal point conventions), `es-mx`/`es` editing languages, and Spanish proofing: spelling from installed Hunspell `es_MX`/`es_ES` dictionaries, accent-first suggestions, Spanish grammar rules, and pure-code Spanish syllable hyphenation; dimension ~28% → ~29% |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
 | 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |

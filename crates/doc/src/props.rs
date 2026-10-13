@@ -317,6 +317,9 @@ pub struct CharProps {
     /// BCP 47 language tag (proofing).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
+    /// East Asian language tag (OOXML `w:lang/@w:eastAsia`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lang_east_asia: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub no_proof: Option<bool>,
     /// Right-to-left run (OOXML `w:rtl`): its characters are complex script and read right to left.
@@ -412,8 +415,8 @@ impl CharProps {
     /// overlaid on `base`.
     pub fn minus(mut self, base: &CharProps) -> CharProps {
         drop_same_fields!(self, base; style, font, size, bold, italic, underline, underline_color, strike, double_strike, color, highlight,
-            shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, no_proof, rtl,
-            cs, font_cs, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del);
+            shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, lang_east_asia, no_proof, rtl,
+            cs, font_cs, font_ea, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del);
         self
     }
 
@@ -423,7 +426,7 @@ impl CharProps {
     /// format both scripts must set both values explicitly.
     pub fn overlay(&mut self, patch: &CharProps) {
         overlay_fields!(self, patch; style, font, size, bold, italic, underline, underline_color, strike, double_strike, color, highlight,
-            shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, no_proof, rtl,
+            shading, border, vert_align, caps, small_caps, hidden, spacing, scale, position, kern, outline, shadow, emboss, engrave, lang, lang_east_asia, no_proof, rtl,
             cs, font_cs, font_ea, size_cs, bold_cs, italic_cs, lang_bidi, link, ins, del, fmt_change);
         if let Some(p) = &patch.text_effects {
             self.text_effects.get_or_insert_with(Default::default).overlay(p);

@@ -852,6 +852,11 @@ impl<'r> Builder<'r> {
             "title" => {
                 self.title = Some(String::new());
             }
+            "html" | "body" => {
+                if let Some(l) = attr(attrs, "lang").or_else(|| attr(attrs, "xml:lang")).map(str::trim).filter(|l| !l.is_empty()) {
+                    self.meta.lang = Some(l.to_string());
+                }
+            }
             "meta" => {
                 let n = attr(attrs, "name").unwrap_or("").to_ascii_lowercase();
                 let c = attr(attrs, "content").unwrap_or("").to_string();
@@ -1021,6 +1026,11 @@ impl<'r> Builder<'r> {
         }
         if name == "center" {
             align = Some(Align::Center);
+        }
+        if !matches!(name, "html" | "body")
+            && let Some(l) = attr(attrs, "lang").or_else(|| attr(attrs, "xml:lang")).map(str::trim).filter(|l| !l.is_empty())
+        {
+            fmt.lang = if self.meta.lang.as_deref() == Some(l) { None } else { Some(l.to_string()) };
         }
         if let Some(st) = attr(attrs, "style") {
             apply_style(st, &mut fmt, &mut align, &mut preserve, &mut page_break);
@@ -1246,8 +1256,10 @@ pub fn inlines_html(inlines: &[Inline]) -> String {
                 if let Some(fam) = &f.font {
                     css.push(format!("font-family:'{}'", esc(&fam.replace('\'', ""))));
                 }
-                if !css.is_empty() {
-                    open.push_str(&format!("<span style=\"{}\">", css.join(";")));
+                if !css.is_empty() || f.lang.is_some() {
+                    let lang_attr = f.lang.as_deref().map(|l| format!(" lang=\"{}\"", esc(l))).unwrap_or_default();
+                    let style_attr = if css.is_empty() { String::new() } else { format!(" style=\"{}\"", css.join(";")) };
+                    open.push_str(&format!("<span{lang_attr}{style_attr}>"));
                     close.push("</span>");
                 }
                 o.push_str(&open);

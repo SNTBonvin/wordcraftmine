@@ -37,6 +37,8 @@ pub struct Fmt {
     pub font: Option<String>,
     /// Background (highlight / shading).
     pub background: Option<Rgb>,
+    /// BCP 47 language tag (`es-MX`, `en-US`…).
+    pub lang: Option<String>,
 }
 
 /// An embedded picture.
@@ -289,6 +291,7 @@ pub struct Meta {
     pub keywords: String,
     pub description: String,
     pub created: String,
+    pub lang: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -341,6 +344,7 @@ pub fn char_props(f: &Fmt) -> CharProps {
         size: f.size.filter(|s| s.is_finite() && *s >= 1.0 && *s <= 1638.0),
         font: if f.code { Some(MONO_FONT.to_string()) } else { f.font.clone().filter(|s| !s.is_empty()) },
         shading: f.background,
+        lang: f.lang.clone().filter(|l| !l.is_empty()),
         ..Default::default()
     }
 }
@@ -612,6 +616,10 @@ pub fn to_doc_in(flow: &Flow, section: wordcraft_doc::SectionProps) -> Document 
     doc.core.keywords = m.keywords.clone();
     doc.core.description = m.description.clone();
     doc.core.created = m.created.clone();
+    if let Some(lang) = m.lang.as_deref().filter(|l| !l.is_empty()) {
+        doc.styles.default_chr.lang = Some(lang.to_string());
+        doc.core.language = lang.to_string();
+    }
     doc.ensure_nonempty();
     doc
 }
@@ -687,6 +695,7 @@ fn fmt_of(doc: &Document, cp: &CharProps, in_code: bool) -> Fmt {
         size: e.size,
         font: if code || in_code { None } else { e.font.clone() },
         background: e.highlight.and_then(|h| h.rgb()).or(e.shading),
+        lang: e.lang.clone(),
     }
 }
 
@@ -895,6 +904,7 @@ pub fn from_doc(doc: &Document) -> Flow {
             keywords: c.keywords.clone(),
             description: c.description.clone(),
             created: c.created.clone(),
+            lang: if !c.language.is_empty() { Some(c.language.clone()) } else { doc.styles.default_chr.lang.clone() },
         },
     }
 }
