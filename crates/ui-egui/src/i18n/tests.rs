@@ -1004,7 +1004,7 @@ fn a_polish_interface_writes_new_documents_in_polish() {
 #[test]
 fn the_editing_languages_are_the_ones_wordcraft_can_proof() {
     let with: Vec<(&str, &str)> = Lang::all().filter_map(|l| l.editing_lang().map(|e| (l.code(), e))).collect();
-    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL")]);
+    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL"), ("nb", "nb-NO"), ("nn", "nn-NO")]);
 }
 
 #[test]
@@ -1190,4 +1190,47 @@ fn bundled_interface_fonts_cover_bulgarian_without_system_fallbacks() {
         }
     }
     assert!(!lang("bg").uses_cjk());
+}
+
+#[test]
+fn norwegian_locales_catalogs_and_startup_languages() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| (e.context, e.source)).collect::<HashSet<_>>();
+    for (code, tag, home, save) in [("nb", "nb-NO", "Hjem", "Lagre"), ("nn", "nn-NO", "Heim", "Lagre")] {
+        let l = lang(code);
+        for locale in [code.to_string(), tag.to_string(), format!("{}.UTF-8", tag.replace('-', "_"))] {
+            assert_eq!(lang_from_tag(&locale), Some(l), "{locale}");
+        }
+        assert_eq!(keys(l.0.source), keys(lang("pl").0.source), "complete current catalog");
+        assert_eq!(tr(l, "Home"), home);
+        assert_eq!(tr(l, "Save"), save);
+        assert_eq!(tr(l, "Norwegian (Nynorsk)"), "Norsk nynorsk");
+        let region = wordcraft_engine::Region::from_tag(tag);
+        assert_eq!(region.paper().0, "A4");
+        assert_eq!(region.units(), wordcraft_geom::Unit::Centimeters);
+        assert_eq!(region.decimal(), ',');
+        let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.session.system_region = region;
+        let ctx = egui::Context::default();
+        app.run("ui.language", serde_json::json!({"value": code})).unwrap();
+        ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+        assert_eq!(app.session.editing_lang.as_deref(), Some(tag));
+        assert_eq!(app.session.doc.styles.default_chr.lang.as_deref(), Some(tag));
+        assert!(!app.session.dirty && !app.session.can_undo());
+        app.session.run("text.insert", &serde_json::json!({"text": "Norsk tekst."})).unwrap();
+        app.run("ui.language", serde_json::json!({"value": "en"})).unwrap();
+        ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+        assert_eq!(app.session.doc.styles.default_chr.lang.as_deref(), Some(tag), "existing content retains language");
+        app.run("ui.language", serde_json::json!({"value": code})).unwrap();
+        ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+        app.execute("file.new", serde_json::json!({})).unwrap();
+        assert!((app.session.doc.last_section.page_w - 595.28).abs() < 0.01);
+        assert!((app.session.doc.last_section.page_h - 841.89).abs() < 0.01);
+        assert_eq!(app.session.doc.styles.default_chr.lang.as_deref(), Some(tag));
+        app.execute("file.new", serde_json::json!({"template": "letter"})).unwrap();
+        assert_eq!(app.session.doc.styles.default_chr.lang.as_deref(), Some("en-US"), "English template content retains language");
+    }
+    assert_eq!(lang_from_tag("no_NO.UTF-8"), Some(lang("nb")));
+    assert_eq!(lang_from_tag("no-nn"), Some(lang("nn")));
+    set_current(Lang::EN);
 }
