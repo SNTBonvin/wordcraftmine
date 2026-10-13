@@ -51,7 +51,7 @@ font can't match Word's metrics.
 | Rotated objects and text | 🟡 | #332: pictures, shapes, charts and groups drawn turned and flipped about their centre (screen and PDF); square wrap and inline lines keep clear of the rotated bounds; hit testing on the turned shape. Text in a rotated text box stays upright | 2–3 |
 | Page borders (from page edge or text), page colour, watermark | ✅ | | — |
 | Line numbers (restart per page/section, count by) | ✅ | | — |
-| Vertical page alignment | ✅ | Top, Center, Bottom and Justified (#1320): justified shares each page's spare room equally between its paragraphs and tables, first line on the top margin and last on the bottom one (above the footnotes), the last page and a page ending in a manual page break too; a page with one block stays at the top. Multi-column justified pages stay at the top (not compared with Word) | — |
+| Vertical page alignment | ✅ | Top, Center, Bottom and Justified (#1320): justified shares each page's spare room equally between its paragraphs and tables, first line on the top margin and last on the bottom one (above the footnotes), the last page and a page ending in a manual page break too; a page with one block stays at the top; the last paragraph's space after stays inside the justified height (Word for Mac, user-checked). A section's last page takes its own section's alignment (it took the next section's before). Multi-column justified pages stay at the top (not compared with Word) | — |
 | Gutter, mirror margins, book fold, 2 pages per sheet | 🟡 | gutter and mirror margins (even pages put the inside margin and gutter on the right, #452; page-relative floats move with the text); book fold missing | 2–3 |
 | Document grid (`w:docGrid`, lines per page, characters per line) | ❌ | East Asian documents paginate differently without it | 4–6 |
 | Vertical text (`tbRl`) in sections and text boxes; cell text direction | ✅ | cell text direction (#245); text-box text direction (#369); vertical sections (`tbRl`/`btLr`, #491): the page's text area turned, lines top to bottom stacking right to left, ideographs, kana and Hangul upright, Latin on its side, caret and clicks through the turn. Missing: OpenType `vert` alternates (punctuation is moved, not substituted), arrow keys along vertical lines, upright pictures take turned room | 2–4 |
@@ -79,7 +79,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | trivial | Justified vertical page alignment (#1320): the page's spare room goes equally between its blocks |
+| 2026-10-13 | trivial | Justified vertical page alignment (#1320): the page's spare room goes equally between its blocks; a section's last page takes its own section's vertical alignment, not the next one's |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |

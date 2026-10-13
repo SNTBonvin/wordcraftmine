@@ -1258,6 +1258,9 @@ struct PageBuilder<'a> {
     /// index counted after the items behind the text (justified vertical alignment spreads the
     /// blocks apart there).
     block_marks: Vec<usize>,
+    /// The vertical alignment of the section the current page started in: a page finished when
+    /// the next section starts is aligned as its own section asks, not the next one.
+    page_valign: wordcraft_doc::section::PageVAlign,
     /// The document's own footnote separators, laid out for the section's text width.
     seps: NoteSeps,
     /// Per page: how many items were inserted at the front of its list (behind the text), so a
@@ -1608,6 +1611,8 @@ impl PageBuilder<'_> {
         }
         let behind = self.behind.last().copied().unwrap_or(0);
         let first = self.page_items_start;
+        // The room is measured below the last paragraph's space after: Word for Mac 16.113.4 keeps
+        // it inside the justified height (72 pt after leaves the last line 72 pt above the margin).
         let space = (self.orig_bottom - self.notes_h() - self.y).max(0.0);
         let Some(pg) = self.pages.last_mut() else { return };
         let front = pg.items.len().saturating_sub(behind);
@@ -1620,7 +1625,7 @@ impl PageBuilder<'_> {
         }
         let gap = space / cuts.len() as f32;
         for (i, it) in pg.items.iter_mut().enumerate().skip(behind.saturating_add(first)) {
-            let k = cuts.partition_point(|&c| c <= i - behind);
+            let k = cuts.partition_point(|&c| c <= i.saturating_sub(behind));
             if k > 0 {
                 it.translate(0.0, gap * k as f32);
             }
@@ -1629,7 +1634,7 @@ impl PageBuilder<'_> {
     /// Section vertical alignment: move the page's body down (centre/bottom), or spread its
     /// blocks out (justified).
     fn apply_valign(&mut self) {
-        let k = match self.sect.valign {
+        let k = match self.page_valign {
             wordcraft_doc::section::PageVAlign::Top => return,
             wordcraft_doc::section::PageVAlign::Justify => return self.justify_page(),
             wordcraft_doc::section::PageVAlign::Center => 0.5,
@@ -1680,6 +1685,7 @@ impl PageBuilder<'_> {
         }
         self.page_items_start = decor.len();
         self.block_marks.clear();
+        self.page_valign = s.valign;
         self.pages.push(Page { w, h, section: self.sect_idx, number: self.number, body, first_block, items: decor, ..Default::default() });
         self.behind.push(0);
         self.col = 0;
@@ -1886,6 +1892,7 @@ fn layout_pass(
         line_no: 0,
         page_items_start: 0,
         block_marks: Vec::new(),
+        page_valign: wordcraft_doc::section::PageVAlign::Top,
         seps: NoteSeps::default(),
         behind: Vec::new(),
         max_y: 0.0,
