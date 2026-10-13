@@ -249,9 +249,10 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
 
 /// File › Open: the shared places panel (storytold/craft-libs#49). Recent lists the documents
 /// opened lately; This computer lists folders and documents right here, starting from the home
-/// folder; Browse shows the system's dialog. Remote storage adds one place per account; there is
-/// none yet.
+/// folder, through craft-ui's `LocalFolder`; Browse shows the system's dialog. Remote storage adds
+/// one place per account; there is none yet.
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
+    use craft_ui::places::local::{LocalFolder, LocalLabels, LocalOutcome};
     use craft_ui::places::{
         Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesIcon, PlacesLabels, PlacesNotice, PlacesPanel, PlacesStyle,
     };
@@ -279,23 +280,6 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
         places.push(Place { kind: PlaceKind::Local, label: tl!("This computer"), detail: None });
     }
 
-    // What the chosen place shows: (the path it opens or moves to, name, detail, is a folder).
-    let dir = app.file_browser.page_dir.clone();
-    let mut rows: Vec<(std::path::PathBuf, String, String, bool)> = Vec::new();
-    let mut failed = None;
-    match (&dir, &app.file_browser.page_listing) {
-        (Some(_), Some(Ok(listing))) => rows.extend(listing.entries.iter().map(|e| (e.path.clone(), e.name.clone(), String::new(), e.dir))),
-        (Some(_), Some(Err(why))) => failed = Some(*why),
-        (Some(_), None) => {}
-        (None, _) => rows.extend(app.ui.recent.iter().take(app.ui.recent_shown()).map(|p| {
-            let path = std::path::Path::new(p);
-            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
-            let folder = path.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
-            (path.to_path_buf(), name, folder, false)
-        })),
-    }
-    let entries: Vec<PlaceEntry<'_>> =
-        rows.iter().map(|(_, name, detail, folder)| PlaceEntry { name, folder: *folder, detail, attention: false, remote: false }).collect();
     // A folder the system keeps closed (macOS guards Documents, Desktop and Downloads) still opens
     // through Browse: a document the user picks there is theirs to open. macOS asks once whether
     // the app may read such a folder, and stays silent after a No.
@@ -305,64 +289,78 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     } else {
         no_access.to_string()
     };
-    let notice = |icon, title, body, action| PlacesContent::Notice(PlacesNotice { icon, title, body, action });
-    let content = match (failed, entries.is_empty(), dir.is_some()) {
-        (Some(std::io::ErrorKind::PermissionDenied), ..) => {
-            notice(PlacesIcon::Locked, tl!("No access to this folder"), &denied, Some(tl!("Browse…")))
-        }
-        (Some(std::io::ErrorKind::NotFound), ..) => {
-            notice(PlacesIcon::Folder, tl!("This folder is no longer there."), tl!("It may have been moved or deleted."), None)
-        }
-        (Some(_), ..) => notice(PlacesIcon::Folder, tl!("This folder can't be read."), "", None),
-        (None, true, true) => notice(PlacesIcon::Folder, tl!("This folder is empty."), "", None),
-        (None, true, false) => notice(PlacesIcon::Recent, tl!("Documents you open will show up here."), "", None),
-        (None, false, _) => PlacesContent::Entries(&entries),
+    let words = LocalLabels {
+        empty: tl!("This folder is empty."),
+        no_access: tl!("No access to this folder"),
+        no_access_detail: &denied,
+        browse: tl!("Browse…"),
+        gone: tl!("This folder is no longer there."),
+        gone_detail: tl!("It may have been moved or deleted."),
+        unreadable: tl!("This folder can't be read."),
     };
 
-    // The way back up: This computer (the home folder), then each folder of the path.
-    let mut steps: Vec<(String, std::path::PathBuf)> = Vec::new();
-    match &dir {
-        Some(dir) => {
-            steps.push((tl!("This computer").to_string(), crate::file_browser::home().unwrap_or_else(|| dir.clone())));
-            let mut at = std::path::PathBuf::new();
-            for part in dir.components() {
-                at.push(part);
-                if let std::path::Component::Normal(name) = part {
-                    steps.push((name.to_string_lossy().to_string(), at.clone()));
+    // This computer is showing a folder: the shared helper lists it and says what a choice means.
+    if let Some(folder) = app.file_browser.page.as_mut() {
+        let entries = folder.entries();
+        let crumbs = folder.crumbs(tl!("This computer"));
+        let crumbs: Vec<&str> = crumbs.iter().map(String::as_str).collect();
+        let action = PlacesPanel::new(&places, Some(1), folder.content(&entries, words), &style, labels).crumbs(&crumbs).show(ui).action;
+        match action {
+            Some(PlacesAction::Select(0)) => app.file_browser.page = None,
+            Some(action) => match folder.act(action) {
+                LocalOutcome::Open(path) => {
+                    let _ = app.run("file.open", json!({"path": path.to_string_lossy()}));
+                    app.ui.backstage = false;
+                    app.canvas.want_focus = true;
                 }
-            }
+                LocalOutcome::Browse => {
+                    let _ = app.run("ui.openFileDialog", json!({}));
+                }
+                LocalOutcome::Stay => {}
+            },
+            None => {}
         }
-        None => steps.push((tl!("Recent").to_string(), std::path::PathBuf::new())),
+        return;
     }
-    let crumbs: Vec<&str> = steps.iter().map(|(label, _)| label.as_str()).collect();
 
-    let selected = usize::from(dir.is_some());
-    match PlacesPanel::new(&places, Some(selected), content, &style, labels).crumbs(&crumbs).show(ui).action {
-        Some(PlacesAction::Select(0)) => app.file_browser.leave_page_dir(),
-        Some(PlacesAction::Select(_)) => {
-            if let Some(start) = dir.or_else(crate::file_browser::home) {
-                app.file_browser.show_page_dir(start);
-            }
-        }
-        Some(PlacesAction::Crumb(i)) => {
-            if let (true, Some((_, to))) = (app.file_browser.page_dir.is_some(), steps.get(i)) {
-                app.file_browser.show_page_dir(to.clone());
-            }
-        }
-        Some(PlacesAction::Activate(i)) => match rows.get(i) {
-            Some((path, _, _, true)) => app.file_browser.show_page_dir(path.clone()),
-            Some((path, ..)) => {
-                let _ = app.run("file.open", json!({"path": path.to_string_lossy()}));
+    // Recent: the documents opened lately, each with its folder.
+    let recent: Vec<(String, String, String)> = app
+        .ui
+        .recent
+        .iter()
+        .take(app.ui.recent_shown())
+        .map(|p| {
+            let path = std::path::Path::new(p);
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+            let folder = path.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+            (p.clone(), name, folder)
+        })
+        .collect();
+    let entries: Vec<PlaceEntry<'_>> =
+        recent.iter().map(|(_, name, folder)| PlaceEntry { name, folder: false, detail: folder, attention: false, remote: false }).collect();
+    let content = if entries.is_empty() {
+        PlacesContent::Notice(PlacesNotice { icon: PlacesIcon::Recent, title: tl!("Documents you open will show up here."), body: "", action: None })
+    } else {
+        PlacesContent::Entries(&entries)
+    };
+    let crumbs = [tl!("Recent")];
+    match PlacesPanel::new(&places, Some(0), content, &style, labels).crumbs(&crumbs).show(ui).action {
+        Some(PlacesAction::Activate(i)) => {
+            if let Some((path, ..)) = recent.get(i) {
+                let _ = app.run("file.open", json!({"path": path}));
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
-            None => {}
-        },
-        // The notice's button is Browse, offered where the folder itself stays closed.
-        Some(PlacesAction::Browse | PlacesAction::Notice) => {
+        }
+        Some(PlacesAction::Select(1)) => {
+            if let Some(home) = LocalFolder::home() {
+                app.file_browser.show_page_dir(home);
+            }
+        }
+        Some(PlacesAction::Browse) => {
             let _ = app.run("ui.openFileDialog", json!({}));
         }
-        Some(PlacesAction::AddPlace) | None => {}
+        _ => {}
     }
 }
 
@@ -588,12 +586,12 @@ mod tests {
         assert!(h.query_by_label("Add a place").is_none(), "there is no remote storage to add yet");
         h.get_by_label("This computer").click();
         h.run_steps(4);
-        assert!(h.state().file_browser.page_dir.is_some(), "This computer lists a folder in the page");
+        assert!(h.state().file_browser.page.is_some(), "This computer lists a folder in the page");
         assert!(!h.state().file_dialog_open(), "and opens no dialog, unlike Browse");
         assert!(h.query_by_label("Handbook.docx, /home/ada/Documents").is_none(), "the recent documents made way for the folder");
         h.get_by_label("Recent").click();
         h.run_steps(4);
-        assert!(h.state().file_browser.page_dir.is_none() && h.query_by_label("Handbook.docx, /home/ada/Documents").is_some(), "Recent comes back");
+        assert!(h.state().file_browser.page.is_none() && h.query_by_label("Handbook.docx, /home/ada/Documents").is_some(), "Recent comes back");
     }
 
     /// The File page's column (storytold/craft-libs#53): Back is a labelled first row, every page
@@ -641,7 +639,7 @@ mod tests {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
         a.run("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
         a.file_browser.show_page_dir(std::env::temp_dir().join("wordcraft-no-such-folder-for-the-open-page"));
-        assert_eq!(a.file_browser.page_listing.as_ref().and_then(|l| l.as_ref().err()), Some(&std::io::ErrorKind::NotFound));
+        assert_eq!(a.file_browser.page.as_ref().and_then(|folder| folder.failed()), Some(std::io::ErrorKind::NotFound));
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();

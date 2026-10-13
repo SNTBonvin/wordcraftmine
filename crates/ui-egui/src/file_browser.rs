@@ -27,25 +27,14 @@ pub(crate) struct State {
     pub(crate) open: Option<Box<FileBrowser>>,
     last_dir: Option<PathBuf>,
     /// The folder File › Open is showing under This computer; `None` while Recent is chosen.
-    pub(crate) page_dir: Option<PathBuf>,
-    /// That folder's documents and subfolders, read once when the page moved there.
-    pub(crate) page_listing: Option<Result<Listing, std::io::ErrorKind>>,
+    pub(crate) page: Option<craft_ui::places::local::LocalFolder>,
 }
 
 impl State {
-    /// File › Open › This computer: show `dir`. The folder is read here, once, and not again on
-    /// every frame; like the browser, it lists names and never reads a file.
+    /// File › Open › This computer: show `dir`, with the documents WordCraft opens.
     pub(crate) fn show_page_dir(&mut self, dir: PathBuf) {
-        let exts: Vec<String> = open_filters("document").first().map(|(_, exts)| exts.iter().map(|e| (*e).to_string()).collect()).unwrap_or_default();
-        // Why it failed, not the system's own wording: the page says it in the interface language.
-        self.page_listing = Some(list_dir(&dir, &exts, MAX_LISTED).map_err(|e| e.kind()));
-        self.page_dir = Some(dir);
-    }
-
-    /// File › Open › Recent: leave the folder listing.
-    pub(crate) fn leave_page_dir(&mut self) {
-        self.page_dir = None;
-        self.page_listing = None;
+        let kinds = open_filters("document").first().map(|(_, kinds)| *kinds).unwrap_or(&["*"]);
+        self.page = Some(craft_ui::places::local::LocalFolder::open(dir, kinds));
     }
 }
 
