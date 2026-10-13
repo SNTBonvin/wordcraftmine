@@ -640,6 +640,28 @@ fn code_spans_and_links_around_backticks_read_as_before() {
     assert_eq!(p.text(), "`e a ` b then ``` and c x ] y p ` q ``f");
 }
 
+/// A `[` nothing closes, bracketed text that is not a link and links themselves used up the bracket
+/// scans' budget as if each had read the rest of the text: later links in the paragraph were plain
+/// text.
+#[test]
+fn brackets_do_not_turn_later_links_into_text() {
+    let links = |md: &str| {
+        let flow = crate::markdown::parse(md);
+        let FBlock::Para(p) = &flow.blocks[0] else { panic!("{:?}", flow.blocks) };
+        let mut urls: Vec<String> = p.inlines.iter().filter_map(|i| if let model::Inline::Text(_, f) = i { f.link.clone() } else { None }).collect();
+        urls.dedup();
+        urls
+    };
+    // An interval nothing closes, before a link.
+    assert_eq!(links("Intervals [0, 1) and [docs](http://x.org)"), ["http://x.org"]);
+    // References early in a long paragraph, a link at its end.
+    let refs = (1..=12).map(|n| format!("[{n}]")).collect::<Vec<_>>().join(" ");
+    assert_eq!(links(&format!("{refs} {}[docs](http://x.org)", "word ".repeat(4000))), ["http://x.org"]);
+    // Many links through one paragraph.
+    let urls: Vec<String> = (0..60).map(|n| format!("http://x.org/{n}")).collect();
+    assert_eq!(links(&urls.iter().map(|u| format!("[link]({u}) {}", "word ".repeat(20))).collect::<String>()), urls);
+}
+
 /// The bounded scans must not change how ordinary links, images, tags and entities read.
 #[test]
 fn bounded_scans_keep_ordinary_markdown_and_entities() {

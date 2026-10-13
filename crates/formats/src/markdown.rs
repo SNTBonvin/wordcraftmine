@@ -545,10 +545,11 @@ fn push_text(nodes: &mut Vec<Node>, s: &str, f: &Fmt) {
 }
 
 /// The closing `]` matching the `[` at byte `open` (escapes and code spans respected). Gives up
-/// after looking `max` bytes ahead.
-fn matching_bracket(s: &str, open: usize, max: usize, ticks: &Backticks) -> Option<usize> {
+/// after looking `max` bytes ahead. Records in `known` every bracket pair it passes, and every `[`
+/// still open at the end of the text: a scan from one of those would take the same path.
+fn matching_bracket(s: &str, open: usize, max: usize, ticks: &Backticks, known: &mut HashMap<usize, Option<usize>>) -> Option<usize> {
     let b = s.as_bytes();
-    let mut depth = 0usize;
+    let mut opens: Vec<usize> = Vec::new();
     let mut i = open;
     while let Some(&c) = b.get(i) {
         if i - open > max {
@@ -564,16 +565,21 @@ fn matching_bracket(s: &str, open: usize, max: usize, ticks: &Backticks) -> Opti
                     i += n - 1;
                 }
             }
-            b'[' => depth += 1,
+            b'[' => opens.push(i),
             b']' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
+                if let Some(o) = opens.pop() {
+                    known.insert(o, Some(i));
+                }
+                if opens.is_empty() {
                     return Some(i);
                 }
             }
             _ => {}
         }
         i += 1;
+    }
+    for o in opens {
+        known.insert(o, None);
     }
     None
 }
@@ -706,9 +712,11 @@ fn tokenize(s: &str, base: &Fmt, depth: usize) -> Vec<Node> {
     let mut nodes: Vec<Node> = Vec::new();
     // Bytes the link and image scans below may look ahead in total. Each unmatched `[` or `![(`
     // would otherwise rescan the rest of the text, which is quadratic on hostile input; once the
-    // budget is gone, further brackets are plain text.
+    // budget is gone, further brackets are plain text. A scan pays for what it reads; brackets an
+    // earlier scan passed are looked up in `known` instead.
     let mut scan_budget = s.len().saturating_mul(8).saturating_add(8192);
     let ticks = Backticks::new(s);
+    let mut known: HashMap<usize, Option<usize>> = HashMap::new();
     let b = s.as_bytes();
     let mut i = 0usize;
     let mut text_start = 0usize;
@@ -780,13 +788,21 @@ fn tokenize(s: &str, base: &Fmt, depth: usize) -> Vec<Node> {
             b'!' | b'[' if depth < MAX_NEST => {
                 let img = c == b'!';
                 let open = if img { i + 1 } else { i };
-                let parsed = if b.get(open) == Some(&b'[') && scan_budget > 0 {
-                    let found = matching_bracket(s, open, scan_budget, &ticks);
-                    scan_budget = scan_budget.saturating_sub(found.map_or(scan_budget, |close| close - open));
-                    found.and_then(|close| {
+                let parsed = if b.get(open) == Some(&b'[') {
+                    let found = match known.get(&open).copied() {
+                        Some(found) => found,
+                        None if scan_budget > 0 => {
+                            let found = matching_bracket(s, open, scan_budget, &ticks, &mut known);
+                            scan_budget = scan_budget.saturating_sub(found.unwrap_or(s.len()).saturating_sub(open));
+                            found
+                        }
+                        None => None,
+                    };
+                    found.filter(|close| b.get(close + 1) == Some(&b'(') && scan_budget > 0).and_then(|close| {
                         // A destination that does not parse may have been read to the end of the text.
-                        scan_budget = scan_budget.saturating_sub(s.len().saturating_sub(close));
-                        let (dest, end) = link_dest(s, close + 1)?;
+                        let dest = link_dest(s, close + 1);
+                        scan_budget = scan_budget.saturating_sub(dest.as_ref().map_or(s.len(), |d| d.1).saturating_sub(close));
+                        let (dest, end) = dest?;
                         Some((s.get(open + 1..close)?.to_string(), dest, end))
                     })
                 } else {
