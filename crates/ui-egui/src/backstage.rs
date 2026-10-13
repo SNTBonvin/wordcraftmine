@@ -170,7 +170,7 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
         if let Some(h) = tex {
             ui.painter().image(h.id(), r.shrink(1.0), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), egui::Color32::WHITE);
         }
-        ui.label(egui::RichText::new(tl!(label)).font(regular(12.5)));
+        ui.label(egui::RichText::new(crate::i18n::tc("template", label)).font(regular(12.5)));
         if resp.clicked() {
             let _ = app.run("file.new", json!({"template": template}));
             app.ui.backstage = false;
@@ -192,7 +192,9 @@ fn matching_templates(query: &str) -> Vec<(&'static str, &'static str)> {
     let q = query.trim().to_lowercase();
     TEMPLATES
         .into_iter()
-        .filter(|(label, id)| q.is_empty() || id.contains(&q) || label.to_lowercase().contains(&q) || tl!(label).to_lowercase().contains(&q))
+        .filter(|(label, id)| {
+            q.is_empty() || id.contains(&q) || label.to_lowercase().contains(&q) || crate::i18n::tc("template", label).to_lowercase().contains(&q)
+        })
         .collect()
 }
 
