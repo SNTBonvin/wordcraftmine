@@ -238,10 +238,15 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                 app.canvas.alt_code_echo = None;
             }
             egui::Event::Text(_) if std::mem::take(&mut app.canvas.swallow_text) => continue,
-            egui::Event::Text(t) if app.canvas.alt_code_echo.as_ref() == Some(t) => {
-                app.canvas.alt_code_echo = None;
-                continue;
+            egui::Event::Text(t) => {
+                if let Some(echo) = app.canvas.alt_code_echo.take()
+                    && alt_code_echoed(app, &echo, t)
+                {
+                    continue;
+                }
             }
+            // Focus elsewhere (another window) ends an Alt code unfinished.
+            egui::Event::WindowFocused(false) => app.canvas.alt_code.clear(),
             _ => {}
         }
         if alt_codes && app.session.math.is_none() && alt_code_event(app, &e) {
@@ -422,7 +427,12 @@ fn alt_code_digit(key: Key) -> Option<char> {
 fn alt_code_event(app: &mut WordApp, e: &egui::Event) -> bool {
     let alt_only = |m: &Modifiers| m.alt && !m.ctrl && !m.shift && !m.command && !m.mac_cmd;
     match e {
-        egui::Event::Key { key, pressed: true, modifiers, .. } if alt_only(modifiers) => match alt_code_digit(*key) {
+        egui::Event::Key { key, pressed: true, repeat, modifiers, .. } if alt_only(modifiers) => match alt_code_digit(*key) {
+            // A held digit's auto-repeat adds nothing (as on Windows).
+            Some(_) if *repeat => {
+                app.canvas.swallow_text = true;
+                true
+            }
             Some(d) => {
                 // Codes beyond seven digits name nothing; stop collecting rather than grow.
                 if app.canvas.alt_code.len() < 8 {
@@ -454,6 +464,18 @@ fn alt_code_event(app: &mut WordApp, e: &egui::Event) -> bool {
     }
 }
 
+/// What an Alt code typed, for the platform's own composed character that may follow.
+#[derive(Clone, Debug)]
+pub(crate) struct AltCodeEcho {
+    /// The character typed.
+    typed: String,
+    /// The system composes Alt codes itself (Windows): whatever it sends is the code's character.
+    system_composes: bool,
+    /// The code named a byte of the system's code pages (1–255), so the system's character wins
+    /// over ours: it knows the code pages (DBCS ones too) better than our locale guess.
+    byte_code: bool,
+}
+
 /// Alt released: type the collected code's character, if any.
 fn finish_alt_code(app: &mut WordApp) {
     let code = std::mem::take(&mut app.canvas.alt_code);
@@ -461,9 +483,45 @@ fn finish_alt_code(app: &mut WordApp) {
         return;
     }
     crate::objects::enter_text_box(app);
-    if let Ok(r) = app.run("text.typeCode", json!({"code": code})) {
-        app.canvas.alt_code_echo = r.get("char").and_then(Value::as_str).map(String::from);
+    let system_composes = cfg!(target_os = "windows");
+    let mut params = json!({"code": code});
+    if system_composes {
+        // Windows: the code pages of the system locale (Polish 1250/852, Russian 1251/866…).
+        let (ansi, oem) = wordcraft_engine::cmd::text::system_code_pages();
+        params = json!({"code": code, "ansi": ansi, "oem": oem});
+        // The system's composed character comes as text after the digits' swallowed text.
+        app.canvas.swallow_text = false;
     }
+    if let Ok(r) = app.run("text.typeCode", params) {
+        let byte_code = code.trim_start_matches('0').parse::<u32>().is_ok_and(|v| v <= 255);
+        app.canvas.alt_code_echo = r.get("char").and_then(Value::as_str).map(|c| AltCodeEcho { typed: c.to_string(), system_composes, byte_code });
+    }
+}
+
+/// Text arriving right after an Alt code typed `echo` (no key pressed between): whether it was
+/// the platform's composed character and is handled. The same character isn't typed twice. On
+/// Windows the text is always the composed character: for a code up to 255 it replaces ours (the
+/// system knows its code pages), above 255 ours stays (Windows reduces it to a byte; Word types
+/// the Unicode character).
+fn alt_code_echoed(app: &mut WordApp, echo: &AltCodeEcho, text: &str) -> bool {
+    if echo.typed == text {
+        return true;
+    }
+    if !echo.system_composes {
+        return false;
+    }
+    if echo.byte_code && text.chars().count() == 1 {
+        let s = &app.session;
+        let f = s.sel.focus.clone();
+        let start = f.off.checked_sub(echo.typed.len());
+        let ours =
+            start.filter(|_| s.sel.is_collapsed()).filter(|st| s.doc.para_at(&f).and_then(|p| p.text.get(*st..f.off)) == Some(echo.typed.as_str()));
+        if let Some(start) = ours {
+            app.session.sel = wordcraft_engine::Selection { anchor: wordcraft_doc::Pos { off: start, ..f.clone() }, focus: f };
+            let _ = app.run("text.insert", json!({"text": text}));
+        }
+    }
+    true
 }
 
 /// Whether a key runs its shortcut with the canvas unfocused (after a ribbon click, say): Mod and
@@ -579,13 +637,82 @@ mod tests {
         assert_eq!(doc_text(&a).trim_end(), "éé");
         // Without the leading zero: the system locale's OEM code page (233 is Θ in 437, Ú in 850).
         frame(&mut a, vec![egui::Event::ModifiersChanged(alt), key(Key::AltLeft, true, alt)]);
-        frame(&mut a, vec![key(Key::Num2, true, alt), key(Key::Num3, true, alt), key(Key::Num3, true, alt)]);
+        for k in [Key::Num2, Key::Num3, Key::Num3] {
+            frame(&mut a, vec![key(k, true, alt), key(k, false, alt)]);
+        }
         frame(&mut a, vec![key(Key::AltLeft, false, alt), egui::Event::ModifiersChanged(Modifiers::NONE)]);
-        let oem = wordcraft_engine::cmd::text::alt_code_char("233", wordcraft_engine::cmd::text::system_oem_code_page());
+        let pages = wordcraft_engine::cmd::text::system_code_pages();
+        let oem = wordcraft_engine::cmd::text::alt_code_char(
+            "233",
+            1252,
+            if cfg!(target_os = "windows") { pages.1 } else { wordcraft_engine::cmd::text::system_oem_code_page() },
+        );
         assert_eq!(doc_text(&a).trim_end(), format!("éé{}", oem.unwrap_or('?')));
         // A bare Alt tap still opens keytips.
         frame(&mut a, vec![egui::Event::ModifiersChanged(alt), key(Key::AltLeft, true, alt)]);
         frame(&mut a, vec![key(Key::AltLeft, false, alt), egui::Event::ModifiersChanged(Modifiers::NONE)]);
         assert_eq!(a.ui.keytips, crate::keytips::Phase::Tabs);
+    }
+
+    fn alt_frame_app() -> (egui::Context, WordApp) {
+        let a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        (egui::Context::default(), a)
+    }
+
+    fn alt_frame(ctx: &egui::Context, a: &mut WordApp, events: Vec<egui::Event>) {
+        ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| canvas_events(a, ui.ctx())).drop_without_applying_deltas();
+    }
+
+    fn alt_key(key: Key, pressed: bool, repeat: bool) -> egui::Event {
+        egui::Event::Key { key, physical_key: Some(key), pressed, repeat, modifiers: Modifiers { alt: true, ..Default::default() } }
+    }
+
+    /// Holding a digit with Alt adds it once: its auto-repeat presses don't (#961).
+    #[test]
+    fn alt_code_ignores_auto_repeat() {
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        let (ctx, mut a) = alt_frame_app();
+        alt_frame(&ctx, &mut a, vec![alt_key(Key::Num6, true, false), alt_key(Key::Num6, true, true), alt_key(Key::Num6, true, true)]);
+        alt_frame(&ctx, &mut a, vec![alt_key(Key::Num5, true, false)]);
+        assert_eq!(a.canvas.alt_code, "65");
+        alt_frame(&ctx, &mut a, vec![egui::Event::ModifiersChanged(Modifiers::NONE)]);
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim_end(), "A");
+    }
+
+    /// Switching to another window mid-code drops the digits: releasing Alt later types nothing.
+    #[test]
+    fn alt_code_is_dropped_when_the_window_loses_focus() {
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        let (ctx, mut a) = alt_frame_app();
+        alt_frame(&ctx, &mut a, vec![alt_key(Key::Num6, true, false), alt_key(Key::Num5, true, false)]);
+        alt_frame(&ctx, &mut a, vec![egui::Event::WindowFocused(false)]);
+        assert_eq!(a.canvas.alt_code, "");
+        alt_frame(&ctx, &mut a, vec![egui::Event::WindowFocused(true), egui::Event::ModifiersChanged(Modifiers::NONE)]);
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim_end(), "");
+    }
+
+    /// Windows composes Alt codes with the system's code pages: for a code up to 255 its
+    /// character replaces ours (Polish Alt+0185 is ą, not ¹); above 255 Windows reduces the code
+    /// to a byte, so ours stays and its text isn't typed (#961).
+    #[test]
+    fn system_composed_alt_code_character_wins_up_to_255() {
+        let (ctx, mut a) = alt_frame_app();
+        let text = |a: &WordApp| a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim_end().to_string();
+        let _ = a.run("text.typeCode", json!({"code": "0185", "ansi": 1252}));
+        a.canvas.alt_code_echo = Some(AltCodeEcho { typed: "¹".into(), system_composes: true, byte_code: true });
+        alt_frame(&ctx, &mut a, vec![egui::Event::Text("ą".into())]);
+        assert_eq!(text(&a), "ą");
+        let _ = a.run("text.typeCode", json!({"code": "8364"}));
+        a.canvas.alt_code_echo = Some(AltCodeEcho { typed: "€".into(), system_composes: true, byte_code: false });
+        alt_frame(&ctx, &mut a, vec![egui::Event::Text("|".into())]);
+        assert_eq!(text(&a), "ą€");
+        // Elsewhere a different text after the code is ordinary typing.
+        a.canvas.alt_code_echo = Some(AltCodeEcho { typed: "€".into(), system_composes: false, byte_code: false });
+        alt_frame(&ctx, &mut a, vec![egui::Event::Text("x".into())]);
+        assert_eq!(text(&a), "ą€x");
     }
 }

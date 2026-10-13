@@ -667,7 +667,7 @@ fn alt_x_toggles_between_a_character_and_its_code() {
 #[test]
 fn alt_numpad_codes_map_like_word_on_windows() {
     use crate::cmd::text::{alt_code_char, oem_code_page};
-    let c = |code| alt_code_char(code, 437);
+    let c = |code| alt_code_char(code, 1252, 437);
     // Leading 0: Windows-1252.
     assert_eq!(c("0233"), Some('é'));
     assert_eq!(c("0128"), Some('€'));
@@ -678,10 +678,10 @@ fn alt_numpad_codes_map_like_word_on_windows() {
     // No leading 0: the OEM code page (437 here, 850 in Western Europe).
     assert_eq!(c("233"), Some('Θ'));
     // The issue said 233 → é in 850; the CP850 mapping file has Ú at 0xE9 (é is 130 in both).
-    assert_eq!(alt_code_char("233", 850), Some('Ú'));
-    assert_eq!(alt_code_char("130", 850), Some('é'));
+    assert_eq!(alt_code_char("233", 1252, 850), Some('Ú'));
+    assert_eq!(alt_code_char("130", 1252, 850), Some('é'));
     assert_eq!(c("130"), Some('é'));
-    assert_eq!(alt_code_char("155", 850), Some('ø'));
+    assert_eq!(alt_code_char("155", 1252, 850), Some('ø'));
     assert_eq!(c("155"), Some('¢'));
     assert_eq!(c("65"), Some('A'));
     assert_eq!(c("1"), Some('☺'));
@@ -701,7 +701,37 @@ fn alt_numpad_codes_map_like_word_on_windows() {
     assert_eq!(oem_code_page(Some("en_GB.UTF-8")), 850);
     assert_eq!(oem_code_page(Some("fr-FR")), 850);
     assert_eq!(oem_code_page(Some("de")), 850);
-    assert_eq!(oem_code_page(Some("ru-RU")), 437);
+    assert_eq!(oem_code_page(Some("ru-RU")), 437, "only 437/850 without the shell's code pages");
+}
+
+#[test]
+fn alt_numpad_codes_follow_the_system_code_pages() {
+    use crate::cmd::text::{alt_code_char, windows_code_pages};
+    // Polish (1250/852): Alt+0185 and Alt+165 are both ą, not ¹ / Ñ.
+    assert_eq!(alt_code_char("0185", 1250, 852), Some('ą'));
+    assert_eq!(alt_code_char("165", 1250, 852), Some('ą'));
+    assert_eq!(alt_code_char("0185", 1252, 437), Some('¹'));
+    // Russian (1251/866), Greek (1253/737), Turkish (1254/857).
+    assert_eq!(alt_code_char("0207", 1251, 866), Some('П'));
+    assert_eq!(alt_code_char("143", 1251, 866), Some('П'));
+    assert_eq!(alt_code_char("0193", 1253, 737), Some('Α'));
+    assert_eq!(alt_code_char("128", 1253, 737), Some('Α'));
+    assert_eq!(alt_code_char("0253", 1254, 857), Some('ı'));
+    assert_eq!(alt_code_char("141", 1254, 857), Some('ı'));
+    // Above 255 the code page doesn't matter.
+    assert_eq!(alt_code_char("8364", 1251, 866), Some('€'));
+    // A byte the code page leaves unassigned types nothing.
+    assert_eq!(alt_code_char("213", 1254, 857), None);
+    assert_eq!(alt_code_char("0219", 874, 437), None);
+    assert_eq!(windows_code_pages(None), (1252, 437));
+    assert_eq!(windows_code_pages(Some("en-US")), (1252, 437));
+    assert_eq!(windows_code_pages(Some("de-DE")), (1252, 850));
+    assert_eq!(windows_code_pages(Some("pl-PL")), (1250, 852));
+    assert_eq!(windows_code_pages(Some("sr-Latn-RS")), (1250, 852));
+    assert_eq!(windows_code_pages(Some("ru_RU.UTF-8")), (1251, 866));
+    assert_eq!(windows_code_pages(Some("el-GR")), (1253, 737));
+    assert_eq!(windows_code_pages(Some("tr-TR")), (1254, 857));
+    assert_eq!(windows_code_pages(Some("ja-JP")), (1252, 437));
 }
 
 #[test]
@@ -719,8 +749,15 @@ fn alt_numpad_code_types_one_character() {
     run(&mut s, "edit.undo", json!({}));
     assert_eq!(raw(&s), ["Café Θ "], "one undo step per code");
     assert!(s.run("text.typeCode", &json!({"code": "0"})).is_err());
-    assert!(s.run("text.typeCode", &json!({"code": "65", "oem": 866})).is_err());
+    assert!(s.run("text.typeCode", &json!({"code": "65", "oem": 855})).is_err());
+    assert!(s.run("text.typeCode", &json!({"code": "065", "ansi": 932})).is_err());
+    assert!(s.run("text.typeCode", &json!({"code": "065", "ansi": 70000})).is_err());
     assert_eq!(raw(&s), ["Café Θ "]);
+    // The system's code pages: Polish Alt+0185 and Alt+165 both type ą.
+    run(&mut s, "text.typeCode", json!({"code": "0185", "ansi": 1250, "oem": 852}));
+    run(&mut s, "text.typeCode", json!({"code": "165", "ansi": 1250, "oem": 852}));
+    run(&mut s, "text.typeCode", json!({"code": "143", "oem": 866}));
+    assert_eq!(raw(&s), ["Café Θ ąąП"]);
 }
 
 #[test]
