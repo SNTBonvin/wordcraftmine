@@ -550,6 +550,9 @@ fn built_in_style_names_are_translated_for_display_and_user_styles_are_not() {
     // A style the author made keeps its name, even when it matches a built-in one.
     let mine = wordcraft_doc::Style { name: "Normal".into(), builtin: false, ..Default::default() };
     assert_eq!(style_name(&mine), "Normal");
+    // An Arabic name comes in the words' display order: egui lays words out left to right.
+    let arabic = wordcraft_doc::Style { name: "عنوان الفصل".into(), builtin: false, ..Default::default() };
+    assert_eq!(style_name(&arabic), "الفصل عنوان");
     // A built-in name without a translation stays English.
     assert_eq!(builtin_style_name("Some Future Style"), "Some Future Style");
     assert_eq!(builtin_style_name("Heading x"), "Heading x");

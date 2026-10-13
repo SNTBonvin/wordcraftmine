@@ -444,10 +444,10 @@ fn autocorrect_tab(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) {
         egui::Grid::new("ac_list_grid").num_columns(2).spacing(vec2(8.0, 1.0)).striped(true).show(ui, |ui| {
             for (a, b, _) in list.iter().filter(|(a, _, _)| typed.is_empty() || a.to_lowercase().starts_with(&typed)).take(500) {
                 let selected = f.from == *a;
-                if ui.add_sized(vec2(110.0, 16.0), egui::Button::selectable(selected, a.as_str())).clicked() {
+                if ui.add_sized(vec2(110.0, 16.0), egui::Button::selectable(selected, crate::rtl_text::visual(a))).clicked() {
                     picked = Some((a.clone(), b.clone()));
                 }
-                ui.label(b.as_str());
+                ui.label(crate::rtl_text::visual(b));
                 ui.end_row();
             }
         });
@@ -484,7 +484,7 @@ fn exceptions(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) {
         let mut picked = None;
         egui::ScrollArea::vertical().id_salt("ac_exceptions").max_height(90.0).auto_shrink([false, true]).show(ui, |ui| {
             for e in &list {
-                if ui.add(egui::Button::selectable(f.exception == *e, e.as_str())).clicked() {
+                if ui.add(egui::Button::selectable(f.exception == *e, crate::rtl_text::visual(e))).clicked() {
                     picked = Some(e.clone());
                 }
             }
@@ -608,7 +608,10 @@ fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
         egui::ScrollArea::vertical().id_salt("restrict_styles").max_height(160.0).show(ui, |ui| {
             for (id, name) in &styles {
                 let mut on = allowed.contains(id);
-                if ui.checkbox(&mut on, tl!(name.as_str())).changed() {
+                // Custom (untranslated) names go in visual order; catalog strings stay as they are.
+                let shown = tl!(name.as_str());
+                let shown = if shown == name.as_str() { crate::rtl_text::visual(shown) } else { std::borrow::Cow::Borrowed(shown) };
+                if ui.checkbox(&mut on, shown).changed() {
                     if on {
                         allowed.push(id.clone());
                     } else {

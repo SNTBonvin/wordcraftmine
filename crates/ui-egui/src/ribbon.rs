@@ -861,7 +861,7 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
             menu_button(ui, app, "quickParts", Some("Quick Parts"), "Quick Parts", false, "insert.quickParts", |ui, app| {
                 let parts: Vec<String> = app.session.building_blocks.keys().cloned().collect();
                 for name in parts {
-                    if ui.button(&name).clicked() {
+                    if ui.button(crate::rtl_text::visual(&name)).clicked() {
                         let _ = app.run("insert.quickParts", json!({"insert": name}));
                         ui.close();
                     }
@@ -1349,7 +1349,7 @@ fn references(app: &mut WordApp, ui: &mut Ui) {
             let sources: Vec<(String, String)> =
                 app.session.doc.sources.iter().map(|s| (s.tag.clone(), format!("{} — {}", s.author, s.title))).collect();
             for (tag, label) in sources {
-                mi_text(ui, app, &label, "references.citation", json!({"tag": tag}));
+                mi_text(ui, app, &crate::rtl_text::visual(&label), "references.citation", json!({"tag": tag}));
             }
             if !app.session.doc.sources.is_empty() {
                 ui.separator();

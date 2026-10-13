@@ -341,13 +341,15 @@ fn manual_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ManualForm) -> bool {
         ui.spacing_mut().item_spacing.x = 0.0;
         let mut from = 0;
         for pt in f.points.clone() {
-            ui.label(egui::RichText::new(f.word.chars().skip(from).take(pt.saturating_sub(from)).collect::<String>()).size(16.0));
+            ui.label(
+                egui::RichText::new(crate::rtl_text::visual(&f.word.chars().skip(from).take(pt.saturating_sub(from)).collect::<String>())).size(16.0),
+            );
             if ui.selectable_label(f.choice == pt, egui::RichText::new("-").size(16.0)).clicked() {
                 f.choice = pt;
             }
             from = pt;
         }
-        ui.label(egui::RichText::new(f.word.chars().skip(from).collect::<String>()).size(16.0));
+        ui.label(egui::RichText::new(crate::rtl_text::visual(&f.word.chars().skip(from).collect::<String>())).size(16.0));
     });
     ui.add_space(8.0);
     let mut close = false;

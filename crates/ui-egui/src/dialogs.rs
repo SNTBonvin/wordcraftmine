@@ -1947,7 +1947,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.text_edit_singleline(name);
             let marks = app.session.doc.bookmarks();
             for (n, _) in &marks {
-                if ui.selectable_label(false, n).clicked() {
+                if ui.selectable_label(false, crate::rtl_text::visual(n)).clicked() {
                     let _ = app.run("edit.goto", json!({"bookmark": n}));
                 }
             }
@@ -2041,7 +2041,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             ];
             egui::Grid::new("phonetic").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
                 ui.label(tl!("Base text:"));
-                ui.label(egui::RichText::new(base.as_str()).strong());
+                ui.label(egui::RichText::new(crate::rtl_text::visual(base)).strong());
                 ui.end_row();
                 ui.label(tl!("Ruby text:"));
                 ui.text_edit_singleline(ruby);
@@ -2157,9 +2157,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.text_edit_singleline(name);
                 ui.end_row();
                 ui.label(tl!("Style based on:"));
-                egui::ComboBox::from_id_salt("tstyle_base").width(200.0).selected_text(base_name).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("tstyle_base").width(200.0).selected_text(crate::rtl_text::visual(&base_name)).show_ui(ui, |ui| {
                     for (sid, sname) in &styles {
-                        if ui.selectable_label(sid == based_on, sname).clicked() && sid != based_on {
+                        if ui.selectable_label(sid == based_on, crate::rtl_text::visual(sname)).clicked() && sid != based_on {
                             *based_on = sid.clone();
                             rebased = true;
                         }
@@ -2346,7 +2346,10 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             ok || cancel
         }
         Dialog::SaveChanges { name, .. } => {
-            ui.label(egui::RichText::new(crate::i18n::fmt(tl!("Do you want to save changes to {name}?"), &[("name", name)])).font(semibold(15.0)));
+            ui.label(
+                egui::RichText::new(crate::i18n::fmt(tl!("Do you want to save changes to {name}?"), &[("name", &crate::rtl_text::visual(name))]))
+                    .font(semibold(15.0)),
+            );
             ui.label(tl!("Your changes will be lost if you don't save them."));
             ui.add_space(8.0);
             let buttons = ui.horizontal(|ui| {
@@ -2392,7 +2395,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.label(tl!("Fields:"));
                 egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                     for f in fields.iter() {
-                        let resp = ui.selectable_label(field == f, f);
+                        let resp = ui.selectable_label(field == f, crate::rtl_text::visual(f));
                         if resp.clicked() {
                             field.clone_from(f);
                         }
@@ -2411,7 +2414,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             cancel
         }
         Dialog::Password { name, params, password, message } => {
-            ui.label(crate::i18n::fmt(tl!("{name} is protected with a password."), &[("name", name)]));
+            ui.label(crate::i18n::fmt(tl!("{name} is protected with a password."), &[("name", &crate::rtl_text::visual(name))]));
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(tl!("Password:"));
@@ -2529,7 +2532,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.set_min_width(300.0);
                 egui::ScrollArea::vertical().id_salt("select_table").max_height(220.0).show(ui, |ui| {
                     for (i, name) in sheets.iter().enumerate() {
-                        let r = ui.selectable_label(*selected == i, name.as_str());
+                        let r = ui.selectable_label(*selected == i, crate::rtl_text::visual(name));
                         if r.clicked() || r.double_clicked() {
                             *selected = i;
                         }
@@ -2589,9 +2592,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 if fields.is_empty() {
                     ui.text_edit_singleline(field);
                 } else {
-                    egui::ComboBox::from_id_salt("merge_rule_field").selected_text(field.as_str()).width(200.0).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt("merge_rule_field").selected_text(crate::rtl_text::visual(field)).width(200.0).show_ui(ui, |ui| {
                         for f in fields.iter() {
-                            ui.selectable_value(field, f.clone(), f);
+                            ui.selectable_value(field, f.clone(), crate::rtl_text::visual(f));
                         }
                     });
                 }
@@ -2626,7 +2629,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     for (part, key) in ADDRESS_PARTS {
                         ui.label(tl!(part));
                         match address.get(key).and_then(Value::as_str) {
-                            Some(f) => ui.label(egui::RichText::new(f).strong()),
+                            Some(f) => ui.label(egui::RichText::new(crate::rtl_text::visual(f)).strong()),
                             None => ui.label(egui::RichText::new(tl!("(not matched)")).weak()),
                         };
                         ui.end_row();
@@ -2903,7 +2906,7 @@ fn manage_styles(app: &mut WordApp, ui: &mut Ui, alphabetical: &mut bool, select
                     _ => "¶",
                 };
                 let hidden = st.get("hidden").and_then(Value::as_bool).unwrap_or(false);
-                let mut name = egui::RichText::new(format!("{glyph}  {}", str_of(st, "name")));
+                let mut name = egui::RichText::new(format!("{glyph}  {}", crate::rtl_text::visual(&str_of(st, "name"))));
                 if hidden {
                     name = name.weak();
                 }
@@ -2940,7 +2943,7 @@ fn manage_styles(app: &mut WordApp, ui: &mut Ui, alphabetical: &mut bool, select
     ui.add_space(6.0);
     crate::previews::style_preview(app, ui, selected, &ty, vec2(388.0, if ty == "table" { 64.0 } else { 40.0 }));
     ui.add_space(4.0);
-    ui.add(egui::Label::new(egui::RichText::new(describe(&cur)).small()).wrap());
+    ui.add(egui::Label::new(egui::RichText::new(crate::rtl_text::visual(&describe(&cur))).small()).wrap());
     ui.add_space(6.0);
     let builtin = cur.get("builtIn").and_then(Value::as_bool).unwrap_or(true);
     if ty != "table" {
@@ -3102,9 +3105,9 @@ fn goto_body(app: &mut WordApp, ui: &mut Ui, what: &mut GoToWhat, target: &mut S
             }
             GoToWhat::Bookmark => {
                 ui.label(tl!("Enter bookmark name:"));
-                egui::ComboBox::from_id_salt("goto_bookmark").width(220.0).selected_text(target.as_str()).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("goto_bookmark").width(220.0).selected_text(crate::rtl_text::visual(target)).show_ui(ui, |ui| {
                     for b in &bookmarks {
-                        ui.selectable_value(target, b.clone(), b.as_str());
+                        ui.selectable_value(target, b.clone(), crate::rtl_text::visual(b));
                     }
                 });
                 if bookmarks.is_empty() {

@@ -291,7 +291,7 @@ impl CaptionForm {
 fn caption_ui(app: &mut WordApp, ui: &mut Ui, f: &mut CaptionForm) -> Next {
     ui.label(tl!("Caption:"));
     ui.horizontal(|ui| {
-        ui.label(f.preview());
+        ui.label(crate::rtl_text::visual(&f.preview()));
         ui.add(egui::TextEdit::singleline(&mut f.text).desired_width(220.0).hint_text(tl!("Caption text")));
     });
     ui.add_space(6.0);
@@ -363,7 +363,7 @@ fn numbering_ui(ui: &mut Ui, f: &mut CaptionForm, was: &CaptionForm) -> Next {
         });
     });
     ui.add_space(4.0);
-    ui.label(crate::i18n::fmt(tl!("Example: {sample}"), &[("sample", &f.preview())]));
+    ui.label(crate::i18n::fmt(tl!("Example: {sample}"), &[("sample", &crate::rtl_text::visual(&f.preview()))]));
     let (ok, cancel) = buttons(ui, tl!("OK"));
     if ok {
         return go(RefsDialog::Caption(f.clone()));
@@ -559,9 +559,9 @@ fn mark_ui(app: &mut WordApp, ui: &mut Ui, f: &mut MarkForm) -> Next {
         });
         ui.add_enabled_ui(f.option == "range", |ui| {
             let opts: Vec<(String, &str)> = f.bookmarks.iter().map(|b| (b.clone(), b.as_str())).collect();
-            egui::ComboBox::from_id_salt("xe_bm").selected_text(f.bookmark.clone()).width(140.0).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("xe_bm").selected_text(crate::rtl_text::visual(&f.bookmark)).width(140.0).show_ui(ui, |ui| {
                 for (v, l) in &opts {
-                    ui.selectable_value(&mut f.bookmark, v.clone(), *l);
+                    ui.selectable_value(&mut f.bookmark, v.clone(), crate::rtl_text::visual(l));
                 }
             });
         });
@@ -739,7 +739,7 @@ fn toc_options_ui(_app: &mut WordApp, ui: &mut Ui, f: &mut TocForm, was: &TocFor
     egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
         egui::Grid::new("toc_styles").num_columns(2).spacing(vec2(10.0, 3.0)).show(ui, |ui| {
             for (name, level) in f.style_levels.iter_mut() {
-                ui.label(name.as_str());
+                ui.label(crate::rtl_text::visual(name));
                 ui.add(egui::DragValue::new(level).range(0..=9).custom_formatter(|v, _| if v < 0.5 { String::new() } else { format!("{v:.0}") }));
                 ui.end_row();
             }
@@ -773,7 +773,7 @@ fn toc_styles_ui(app: &mut WordApp, ui: &mut Ui, f: &mut TocForm, level: &mut u8
     egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
         for l in 1..=9u8 {
             let name = app.session.doc.styles.get(&format!("TOC{l}")).map(|s| s.name.clone()).unwrap_or_else(|| format!("TOC {l}"));
-            ui.selectable_value(level, l, name);
+            ui.selectable_value(level, l, crate::rtl_text::visual(&name));
         }
     });
     ui.add_space(6.0);
@@ -992,7 +992,7 @@ fn sources_ui(app: &mut WordApp, ui: &mut Ui, selected: &mut Option<usize>) -> N
                 ui.label(egui::RichText::new(tl!("No sources yet.")).color(t.text_dim));
             }
             for (i, l) in list.iter().enumerate() {
-                if ui.selectable_label(*selected == Some(i), l).clicked() {
+                if ui.selectable_label(*selected == Some(i), crate::rtl_text::visual(l)).clicked() {
                     *selected = Some(i);
                 }
             }

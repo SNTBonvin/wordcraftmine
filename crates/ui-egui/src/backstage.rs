@@ -4,7 +4,7 @@ use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::json;
 
 use crate::theme::{APP_COLOR, Tokens, medium, regular, semibold};
-use crate::{WordApp, icons};
+use crate::{WordApp, icons, rtl_text};
 
 const PAGES: [(&str, &str); 9] = [
     ("home", "Home"),
@@ -263,8 +263,10 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
             ui.painter().rect_filled(r, 4.0, t.hover);
         }
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(22.0, 22.0)), "printLayout", t.icon, t.accent);
-        ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 13.0), Align2::LEFT_CENTER, &name, medium(13.0), t.text);
-        ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 29.0), Align2::LEFT_CENTER, &p, regular(11.0), t.text_dim);
+        // An Arabic or Hebrew name in visual word order: egui shapes each word but lays them out left to right.
+        let (name, path) = (rtl_text::visual(&name), rtl_text::visual_path(&p));
+        ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 13.0), Align2::LEFT_CENTER, name, medium(13.0), t.text);
+        ui.painter().text(pos2(r.min.x + 40.0, r.min.y + 29.0), Align2::LEFT_CENTER, path, regular(11.0), t.text_dim);
         if resp.clicked() {
             let _ = app.run("file.open", json!({"path": p}));
             app.ui.backstage = false;
@@ -361,7 +363,7 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
             ui.label(format!("{}: {}", tl!(l), info.get(k).map(|v| v.to_string()).unwrap_or_default()));
         }
         let path = info.get("path").and_then(|v| v.as_str()).unwrap_or(tl!("Not saved yet"));
-        ui.label(crate::i18n::fmt(tl!("Location: {path}"), &[("path", path)]));
+        ui.label(crate::i18n::fmt(tl!("Location: {path}"), &[("path", &rtl_text::visual_path(path))]));
     });
 }
 
