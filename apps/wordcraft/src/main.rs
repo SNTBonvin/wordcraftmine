@@ -19,6 +19,8 @@ mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
 mod logging;
+#[cfg(target_os = "macos")]
+mod menu;
 mod print;
 mod region;
 
@@ -37,12 +39,16 @@ struct App(
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
+    // The native menu bar, kept for the app's life so the menus stay on `NSApp` (#255).
+    #[cfg(target_os = "macos")] menu::AppMenu,
 );
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.4, &mut self.0, ctx);
+        #[cfg(target_os = "macos")]
+        self.5.poll(&mut self.0);
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -236,6 +242,11 @@ fn main() -> eframe::Result {
     // First, so the panic hook and every start-up warning are recorded (`logging`).
     let logger = logging::install();
     logging::install_panic_hook();
+    // The dev binary is `wordcraft`, which macOS would show as the app-menu title; name it
+    // WordCraft before the event loop and its menu exist (the packaged app's `CFBundleName`
+    // covers release).
+    #[cfg(target_os = "macos")]
+    menu::name_process();
     let mut control_port: Option<u16> = std::env::var("WORDCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut files = Vec::new();
     let mut sample = false;
@@ -354,6 +365,8 @@ fn main() -> eframe::Result {
                 dialogs,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                menu::AppMenu::install(),
             )))
         }),
     )
