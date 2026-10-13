@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Fixes for known WordCraft problems, and how to report a new one.
 order: 40
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Find your symptom below.

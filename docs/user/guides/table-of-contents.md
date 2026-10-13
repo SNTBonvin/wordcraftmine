@@ -2,7 +2,7 @@
 title: Add a table of contents
 description: Insert an automatic table of contents in WordCraft from your heading styles, and update it after edits.
 order: 40
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Put the caret where the table should go. Open **References**, click **Table of Contents** and pick an automatic table. WordCraft builds it from your headings.
@@ -14,7 +14,8 @@ Put the caret where the table should go. Open **References**, click **Table of C
 3. Click the **References** tab.
 4. In the **Table of Contents** group, click **Table of Contents** and choose:
    - **Automatic Table 1 (3 levels)**, or
-   - **Automatic Table 2 (2 levels)**, which adds the title "Table of Contents".
+   - **Automatic Table 2 (2 levels)**, which adds the title "Table of Contents", or
+   - **Custom Table of Contents…** to set the table up in a dialog.
 
 ## Update the table
 

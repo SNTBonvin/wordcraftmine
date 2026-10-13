@@ -2,15 +2,15 @@
 title: Can WordCraft open my Word files?
 description: WordCraft opens and saves .docx, opens older .doc files, and reads and writes several other formats.
 order: 10
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Yes. WordCraft opens and saves .docx, the format Microsoft Word uses. Documents saved in WordCraft open in Word.
 
 ## Formats
 
-- **Open and save:** .docx, plus .odt, .rtf, .html, .md, .tex and .txt.
-- **Open only:** Word 97-2003 .doc files. WordCraft has no .doc writer, so save as .docx.
+- **Open and save:** .docx, Word XML Document (.xml), plus .odt, .rtf, .html, .md, .tex and .txt.
+- **Open only:** Word 97-2003 .doc files and Word 2003 XML files. WordCraft has no .doc writer, so save as .docx.
 - **Export only:** PDF and page images (.png). See [Export to PDF and other formats](../guides/export-to-pdf.md).
 
 ## Limits

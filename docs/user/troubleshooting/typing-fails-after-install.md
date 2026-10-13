@@ -2,7 +2,7 @@
 title: Typing does nothing after the installer
 description: If WordCraft shows no text or caret when launched from the Windows installer, close it and start it from the Start menu.
 order: 10
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Close WordCraft and start it again from the Start menu. Typing works there.

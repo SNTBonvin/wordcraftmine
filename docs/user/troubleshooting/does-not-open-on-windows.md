@@ -1,11 +1,11 @@
 ---
 title: WordCraft does not open on Windows
-description: Start WordCraft with a different graphics backend if it flashes and quits, or quits with "Parent device is lost" in the log.
+description: Update to WordCraft 0.6.1 or newer, then try a different graphics backend if WordCraft still flashes and quits at start.
 order: 20
-verified: 0.5.0
+verified: 0.6.1
 ---
 
-Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulkan` in PowerShell. This avoids two known graphics-driver problems: a missing shader compiler file (`dxcompiler.dll`) on DirectX 12, and an AMD driver crash in OpenGL. On Intel graphics, use `gl` instead.
+Install the [latest release](https://github.com/storytold/wordcraft/releases/latest). WordCraft 0.6.1 fixed the most common cause, a crash with "Parent device is lost" in the log. If WordCraft still quits at start, start it with another graphics backend by setting `WGPU_BACKEND` in PowerShell.
 
 ## Symptoms
 
@@ -14,8 +14,9 @@ Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulk
 
 ## Fix
 
-1. Open PowerShell in the folder that contains `wordcraft.exe`.
-2. Run these commands:
+1. Check the version you have: the downloaded file name contains it. If it is older than 0.6.1, install the [latest release](https://github.com/storytold/wordcraft/releases/latest) and start WordCraft again.
+2. If it still quits, open PowerShell in the folder that contains `wordcraft.exe`.
+3. Run these commands:
 
         $env:WGPU_BACKEND = "vulkan"
         & .\wordcraft.exe
@@ -25,11 +26,13 @@ Start WordCraft with another graphics backend by setting `WGPU_BACKEND` to `vulk
 
 **Intel graphics (UHD, Iris):** use `gl` in place of `vulkan` in the first line. Intel's Vulkan driver (`igvk64.dll`) can crash WordCraft at start ([issue 170](https://github.com/storytold/wordcraft/issues/170)).
 
-If this works, use the same steps each time you start WordCraft. On AMD graphics do not use `gl`: it can bring back the `atio6axx.dll` crash.
+If this works, use the same steps each time you start WordCraft. On AMD graphics do not use `gl`: it can crash AMD's `atio6axx.dll` driver.
 
 ## Why this happens
 
-WordCraft 0.5.0 compiles its DirectX 12 shaders with DXC but does not ship `dxcompiler.dll` and `dxil.dll`, so on some PCs the graphics device is lost before the first frame and the log ends with `Parent device is lost` ([issue 603](https://github.com/storytold/wordcraft/issues/603)). A fix that uses FXC, the compiler built into Windows, was merged after 0.5.0 and is not in a release yet. The default leaves OpenGL out because creating it can crash AMD's `atio6axx.dll` before the window appears.
+WordCraft 0.5.0 compiled its DirectX 12 shaders with DXC but did not ship `dxcompiler.dll` and `dxil.dll`. On some PCs the graphics device was lost before the first frame and the log ended with `Parent device is lost` ([issue 603](https://github.com/storytold/wordcraft/issues/603)). Since 0.6.1, WordCraft uses FXC, the shader compiler built into Windows, so it needs no extra files.
+
+By default WordCraft uses DirectX 12 and leaves OpenGL out, because creating OpenGL can crash AMD's `atio6axx.dll` before the window appears. The 32-bit (`windows-x86`) build is the exception: it always uses OpenGL, because DirectX 12 fails to start there.
 
 ## Slow on an older PC
 

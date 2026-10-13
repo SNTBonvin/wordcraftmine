@@ -1,7 +1,7 @@
 ---
 title: WordCraft
 description: WordCraft is a free, open-source word processor with a Word-style ribbon that reads and writes .docx files.
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 WordCraft is a free, open-source word processor. It has the Word workflow you already know: ribbon tabs, styles, tables, track changes, references and mail merge. It opens and saves .docx files and is an alternative to Microsoft Word.

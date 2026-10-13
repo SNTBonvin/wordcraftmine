@@ -2,7 +2,7 @@
 title: Track changes and comments
 description: Turn on Track Changes in WordCraft, add comments, and accept or reject edits.
 order: 30
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Open the **Review** tab and click **Track Changes**. Your edits are then marked, and you or a reviewer can accept or reject each one.

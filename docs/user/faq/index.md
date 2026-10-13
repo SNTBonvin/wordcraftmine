@@ -2,7 +2,7 @@
 title: FAQ
 description: Short answers about WordCraft file formats, price and supported systems.
 order: 50
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 - [Can WordCraft open my Word files?](can-wordcraft-open-word-files.md)

@@ -2,7 +2,7 @@
 title: Is WordCraft free?
 description: WordCraft is free and open source under the MIT or Apache-2.0 license.
 order: 20
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Yes. WordCraft is free, open-source software. You can use, share and change it under the MIT or Apache-2.0 license, at your option.

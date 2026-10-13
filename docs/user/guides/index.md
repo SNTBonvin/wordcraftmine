@@ -2,7 +2,7 @@
 title: Guides
 description: Step-by-step guides for the most common WordCraft tasks.
 order: 30
-verified: 0.5.0
+verified: 0.6.1
 ---
 
 Pick the task you want to do.
