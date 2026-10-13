@@ -22,6 +22,7 @@ mod markdown;
 
 const MAX_INPUT: usize = 16_000;
 const MAX_MESSAGES: usize = 96;
+const MAX_AGENT_IMAGES: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +97,11 @@ pub struct State {
     rename_chat: Option<(u64, String)>,
     edit_message: Option<(usize, String)>,
     branch_from: Option<u64>,
+    /// Paths explicitly attached by the user to the current agent conversation.
+    images: Vec<std::path::PathBuf>,
+    /// One-frame capability set only by the visible attachment button; prevents remote commands
+    /// from opening a file picker or attaching arbitrary paths.
+    image_picker_intent: bool,
     #[cfg(not(target_arch = "wasm32"))]
     history_path: Option<std::path::PathBuf>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -152,6 +158,8 @@ impl Default for State {
             rename_chat: None,
             edit_message: None,
             branch_from: None,
+            images: Vec::new(),
+            image_picker_intent: false,
             #[cfg(not(target_arch = "wasm32"))]
             history_path: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -590,7 +598,11 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.status = "Save or cancel the message edit first.".into();
         return;
     }
-    if input.is_empty() || app.ollama.busy {
+    if (input.is_empty() && app.ollama.images.is_empty()) || app.ollama.busy {
+        return;
+    }
+    if !app.ollama.images.is_empty() && app.ollama.source != Source::Codex {
+        app.ollama.status = "Image attachments currently work with Codex. Choose Codex or remove the images.".into();
         return;
     }
     if input.chars().count() > MAX_INPUT {
@@ -613,8 +625,9 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
         "textPreview":clip(&app.session.doc.plain_text(wordcraft_doc::StoryRef::Body),12_000),
         "selectedText":clip(&app.session.selected_text(),2000),"selection":app.session.sel,"allowEdits":app.ollama.allow_edits,"linkedProject":if app.ollama.project_folder.is_empty() { Value::Null } else { json!({"name":std::path::Path::new(&app.ollama.project_folder).file_name().map(|n| n.to_string_lossy().into_owned()),"tools":["project_list","project_search","project_read"]}) }});
     app.ollama.cancel = Arc::new(AtomicBool::new(false));
-    app.ollama.history.push(json!({"role":"user","content":input}));
-    app.ollama.entry("You", input);
+    let visible_input = if input.is_empty() { "Describe the attached image(s).".to_string() } else { input };
+    app.ollama.history.push(json!({"role":"user","content":visible_input}));
+    app.ollama.entry("You", visible_input);
     app.ollama.input.clear();
     app.ollama.busy = true;
     app.ollama.status = "Working…".into();
@@ -1283,6 +1296,24 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
             ui.add_space(10.0);
             egui::Frame::NONE.fill(t.chat_surface).stroke(Stroke::new(0.6, t.border)).corner_radius(24).inner_margin(14).show(ui, |ui| {
+                if !app.ollama.images.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.small(RichText::new("Images · included with Codex turns").color(t.chat_dim));
+                        let mut remove = None;
+                        for (index, path) in app.ollama.images.iter().enumerate() {
+                            let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_else(|| "Image".into());
+                            if ui.small_button(format!("{name} ×")).on_hover_text("Remove image from this chat").clicked() {
+                                remove = Some(index);
+                            }
+                        }
+                        if let Some(index) = remove {
+                            app.ollama.images.remove(index);
+                            app.ollama.history_dirty = true;
+                            app.ollama.status = "Image removed from this chat.".into();
+                        }
+                    });
+                    ui.add_space(4.0);
+                }
                 let response = ui.add(
                     egui::TextEdit::multiline(&mut app.ollama.input)
                         .id(egui::Id::new("agent_composer"))
@@ -1299,6 +1330,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.menu_button(RichText::new("+").size(23.0), |ui| {
+                        let can_add_image = app.ollama.source == Source::Codex && app.ollama.images.len() < MAX_AGENT_IMAGES;
+                        if ui
+                            .add_enabled(can_add_image, egui::Button::new("Attach image…"))
+                            .on_hover_text("Attach up to four PNG, JPEG, GIF, WebP or BMP images (20 MiB each) to Codex chat.")
+                            .clicked()
+                        {
+                            app.ollama.image_picker_intent = true;
+                            if let Err(error) = command(app, "ui.agentPickImage", &json!({})) {
+                                app.ollama.status = error;
+                            }
+                            ui.close();
+                        }
                         if ui.button("Link project folder…").clicked() {
                             let _ = command(app, "ui.agentProject", &json!({}));
                             ui.close();
@@ -1316,7 +1359,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         let send_button = ui
                             .add_enabled(
                                 app.ollama.busy
-                                    || (app.ollama.edit_message.is_none() && !app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty()),
+                                    || (app.ollama.edit_message.is_none()
+                                        && !app.ollama.model.is_empty()
+                                        && (!app.ollama.input.trim().is_empty() || !app.ollama.images.is_empty())),
                                 egui::Button::new(RichText::new(if app.ollama.busy { "■" } else { "↑" }).size(20.0).color(t.chat_send_text))
                                     .fill(t.chat_send)
                                     .corner_radius(255)
@@ -1413,13 +1458,14 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         ("ui.agentBranchChat", "Branch chat here",r#"{"index":number}"#),
         ("ui.agentEditMessage", "Edit message in new branch",r#"{"index":number,"text":string,"send"?:bool}"#),
         ("ui.agentProject", "Link project folder", r#"{"path"?:string}"#),
+        ("ui.agentPickImage", "Attach image to Codex chat", "{}"),
         ("ui.agentDismissChanges", "Dismiss AI highlighting", "{}"),
         ("ui.agentShowChange", "Show AI change in document", r#"{"index"?:number}"#),
     ]
     .into_iter()
     .map(|(id, label, params)| {
         json!({"id":id,"label":label,"location":if id == "ui.favoriteDocument" { "File" } else { "Agents" },"params":params,
-        "enabled":(id == "ui.favoriteDocument" || !cfg!(target_arch="wasm32")) && (id!="ui.ollamaUndo" || can_undo(app))})
+        "enabled":(id == "ui.favoriteDocument" || !cfg!(target_arch="wasm32")) && (id!="ui.ollamaUndo" || can_undo(app)) && id!="ui.agentPickImage"})
     })
     .collect()
 }
@@ -1449,6 +1495,16 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             }
         }
         "ui.agentHistory" => app.ollama.history_open = p.get("value").and_then(Value::as_bool).unwrap_or(!app.ollama.history_open),
+        #[cfg(not(target_arch = "wasm32"))]
+        "ui.agentPickImage" => {
+            if !std::mem::take(&mut app.ollama.image_picker_intent) {
+                return Err("Choose Attach image from the agent chat to open the image picker.".into());
+            }
+            if app.ollama.source != Source::Codex {
+                return Err("Image attachments currently work with Codex.".into());
+            }
+            let _ = app.ask_file(crate::FileDialogRequest::Open { purpose: "picture".into() }, crate::file_dialogs::AfterPick::AgentImage);
+        }
         "ui.agentOpenChat" => {
             history::restore(&mut app.ollama, p.get("id").and_then(Value::as_u64).ok_or("id required")?)?;
             app.ollama.open = true;
@@ -1461,6 +1517,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             if app.ollama.active_chat == Some(id) {
                 app.ollama.stop();
                 app.ollama.entries.clear();
+                app.ollama.images.clear();
                 app.ollama.sources.clear();
                 app.ollama.project_excerpts.clear();
                 app.ollama.active_chat = None;
@@ -1477,6 +1534,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             app.ollama.history_error.clear();
             app.ollama.stop();
             app.ollama.entries.clear();
+            app.ollama.images.clear();
             app.ollama.sources.clear();
             app.ollama.project_excerpts.clear();
             app.ollama.thinking.clear();
@@ -1582,6 +1640,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             app.ollama.stop();
             app.ollama.history.clear();
             app.ollama.entries.clear();
+            app.ollama.images.clear();
             app.ollama.markdown = Default::default();
             app.ollama.thinking.clear();
             app.ollama.sources.clear();
@@ -1648,6 +1707,34 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
     }
     history::sync(app);
     Ok(inspect(app))
+}
+
+pub(crate) fn attach_image(app: &mut WordApp, path: String) -> Result<Value, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if app.ollama.source != Source::Codex {
+            return Err("Image attachments currently work with Codex.".into());
+        }
+        if app.ollama.images.len() >= MAX_AGENT_IMAGES {
+            return Err(format!("Attach up to {MAX_AGENT_IMAGES} images to a chat."));
+        }
+        let picked = std::path::PathBuf::from(path);
+        let _ = codex::image_inputs(std::slice::from_ref(&picked))?;
+        let canonical = picked.canonicalize().map_err(|_| "Image is missing or cannot be opened.".to_string())?;
+        if app.ollama.images.contains(&canonical) {
+            return Err("That image is already attached to this chat.".into());
+        }
+        let name = canonical.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Image".into());
+        app.ollama.images.push(canonical);
+        app.ollama.status = format!("Attached {name}.");
+        app.ollama.history_dirty = true;
+        Ok(json!({"attached":true,"count":app.ollama.images.len()}))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (app, path);
+        Err("Image attachments require the desktop app.".into())
+    }
 }
 
 /// A typed writing skill for small models: validate first, apply one editing command, then

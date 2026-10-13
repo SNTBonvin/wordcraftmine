@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Mac document stage, fixed icon stroke weight and editable chat branches; ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Ollama task pane provides draft/rewrite/summarize through document commands; assistant gap narrowed; previously trivial: the Font list no longer keeps every previewed font in memory, #848; table column and row markers on the rulers, #700; table borders and resize handle drag on the page, #217; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Codex chats now support local image attachments without a turn deadline; Mac document stage, fixed icon stroke weight and editable chat branches; ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Ollama task pane provides draft/rewrite/summarize through document commands; assistant gap narrowed; previously trivial: the Font list no longer keeps every previewed font in memory, #848; table column and row markers on the rulers, #700; table borders and resize handle drag on the page, #217; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -72,6 +72,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 ## Revision history
 
 | 2026-10-13 | minor | In-app Ollama chat lands with document/web tools, editing control and AI undo; #25 narrows to inline suggestions, chat persistence and model management |
+| 2026-10-13 | minor | Codex chat accepts validated local image attachments, preserves chat branches, and lets long turns run until completion or user cancellation |
 
 | Date | Change | Summary |
 |---|---|---|

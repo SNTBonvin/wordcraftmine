@@ -53,6 +53,8 @@ pub(crate) enum AfterPick {
     /// Open the picked document.
     OpenDocument,
     ProjectFolder,
+    /// Attach a selected raster image to the in-app Codex conversation.
+    AgentImage,
     /// Insert the picked picture, or replace the pending Change Picture target.
     Picture,
     /// Save the document there, then carry on.
@@ -196,6 +198,17 @@ impl WordApp {
     /// Do what the dialog was for with the picked path (`None`: the user cancelled).
     pub(crate) fn finish_pick(&mut self, after: AfterPick, picked: Option<String>) -> Result<Value, String> {
         match after {
+            AfterPick::AgentImage => {
+                let Some(path) = picked else { return Ok(json!({"cancelled":true})) };
+                match crate::ollama::attach_image(self, path) {
+                    Ok(result) => Ok(result),
+                    Err(error) => {
+                        self.ollama.open = true;
+                        self.ollama.status = error.clone();
+                        Err(error)
+                    }
+                }
+            }
             AfterPick::ProjectFolder => {
                 let Some(path) = picked else { return Ok(json!({"cancelled":true})) };
                 crate::ollama::command(self, "ui.agentProject", &json!({"path":path}))

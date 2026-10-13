@@ -19,6 +19,9 @@ pub struct Conversation {
     pub entries: Vec<(String, String)>,
     pub sources: Vec<(String, String)>,
     pub excerpts: Vec<(String, String)>,
+    /// User-selected local images stay associated with this private local conversation.
+    #[serde(default)]
+    pub images: Vec<String>,
 }
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -39,6 +42,8 @@ impl Library {
             chat.sources.truncate(96);
             chat.sources.retain(|(_, url)| url.starts_with("https://") || url.starts_with("http://") || url.starts_with("#project-"));
             chat.excerpts.truncate(96);
+            chat.images.retain(|path| path.len() <= 4096 && std::path::Path::new(path).is_absolute());
+            chat.images.truncate(super::MAX_AGENT_IMAGES);
             for (role, text) in &mut chat.entries {
                 *role = clip(role, 32);
                 *text = clip(text, 24_000);
@@ -113,6 +118,7 @@ pub fn capture(state: &mut State, document: &str) {
             entries: state.entries.clone(),
             sources: state.sources.clone(),
             excerpts: state.project_excerpts.clone(),
+            images: state.images.iter().map(|path| path.to_string_lossy().into_owned()).collect(),
         },
     );
     if let Err(error) = state.library.bytes() {
@@ -137,6 +143,7 @@ pub fn restore(state: &mut State, id: u64) -> Result<(), String> {
     state.entries = chat.entries;
     state.sources = chat.sources;
     state.project_excerpts = chat.excerpts;
+    state.images = chat.images.into_iter().map(std::path::PathBuf::from).collect();
     // A fresh live document snapshot is added by send. Old tool/action history is never replayed.
     state.history = state
         .entries
@@ -193,6 +200,7 @@ pub fn fork(state: &mut State, document: &str, index: usize, replacement: Option
     draft.model.clone_from(&state.model);
     draft.effort.clone_from(&state.effort);
     draft.project_folder.clone_from(&state.project_folder);
+    draft.images.clone_from(&state.images);
     draft.entries = state.entries.iter().take(index.saturating_add(1)).cloned().collect();
     if let Some(text) = replacement
         && let Some((_, prompt)) = draft.entries.last_mut()

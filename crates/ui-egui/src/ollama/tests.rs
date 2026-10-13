@@ -388,6 +388,44 @@ fn live_codex_subscription_document_tools() {
     assert_eq!(text(&app), "Original");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+#[ignore = "Uses the signed-in Codex subscription and a generated image in /tmp"]
+fn live_codex_image_attachment() {
+    let mut app = app();
+    app.ollama.source = Source::Codex;
+    app.ollama.internet = false;
+    let ctx = egui::Context::default();
+    app.ctx = Some(ctx.clone());
+    refresh(&mut app, &ctx);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    while app.ollama.busy && std::time::Instant::now() < deadline {
+        poll(&mut app, &ctx);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(!app.ollama.busy, "{}", app.ollama.status);
+    assert!(app.ollama.signed_in && !app.ollama.models.is_empty(), "Codex sign-in or model discovery failed: {}", app.ollama.status);
+    app.ollama.model = app.ollama.models.first().cloned().unwrap_or_default();
+    let folder = std::env::temp_dir().join(format!("wordcraft-codex-vision-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("red-square.png");
+    image::ImageBuffer::from_pixel(48, 48, image::Rgb([255u8, 0, 0])).save_with_format(&path, image::ImageFormat::Png).unwrap();
+    app.ollama.images.push(path.clone());
+    app.ollama.input = "What is the main color in the attached image? Reply with just the color.".into();
+    send(&mut app, &ctx);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    while app.ollama.busy && std::time::Instant::now() < deadline {
+        poll(&mut app, &ctx);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(!app.ollama.busy, "{}", app.ollama.status);
+    let response =
+        app.ollama.entries.iter().rev().find(|(role, _)| role == "Assistant").map(|(_, text)| text.to_ascii_lowercase()).unwrap_or_default();
+    assert!(response.contains("red"), "Codex did not identify the synthetic red image: {response:?} / {}", app.ollama.status);
+    assert_eq!(text(&app), "Original");
+    std::fs::remove_dir_all(folder).unwrap();
+}
+
 #[test]
 fn ai_changes_are_highlighted_and_verified_rollback_leaves_no_ghost_diff() {
     let mut app = app();
@@ -771,6 +809,9 @@ fn closing_before_repaint_saves_the_latest_visible_question() {
 #[test]
 fn editing_and_branching_keep_original_messages_and_document() {
     let mut app = app();
+    app.ollama.source = Source::Codex;
+    app.ollama.model = "codex-test-model".into();
+    app.ollama.images.push(std::path::PathBuf::from("/tmp/codex-chat-image.png"));
     app.ollama.entry("You", "First question".into());
     app.ollama.entry("Assistant", "First answer".into());
     app.ollama.entry("Activity", "A tool ran".into());
@@ -789,6 +830,7 @@ fn editing_and_branching_keep_original_messages_and_document() {
     assert_eq!(app.ollama.entries.len(), 2);
     assert!(!app.ollama.allow_edits);
     assert_eq!(app.ollama.history.len(), 2);
+    assert_eq!(app.ollama.images, vec![std::path::PathBuf::from("/tmp/codex-chat-image.png")]);
     assert!(app.ollama.history.iter().all(|v| v["role"] != "tool"));
     command(&mut app, "ui.agentOpenChat", &json!({"id":original})).unwrap();
     command(&mut app, "ui.agentEditMessage", &json!({"index":0,"text":"Revised é question", "send":false})).unwrap();
@@ -801,6 +843,22 @@ fn editing_and_branching_keep_original_messages_and_document() {
     let bytes = serde_json::to_vec(&app.ollama.library).unwrap();
     let loaded: history::Library = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(loaded.chats.first().unwrap().parent, Some(original));
+}
+
+#[test]
+fn invalid_codex_image_attachment_is_visible_and_does_not_touch_the_document() {
+    let mut app = app();
+    app.ollama.source = Source::Codex;
+    let before = text(&app);
+    let folder = std::env::temp_dir().join(format!("wordcraft-invalid-agent-image-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("broken.png");
+    std::fs::write(&path, b"not an image").unwrap();
+    assert!(app.finish_pick(crate::file_dialogs::AfterPick::AgentImage, Some(path.to_string_lossy().into_owned())).is_err());
+    assert!(app.ollama.status.contains("damaged") || app.ollama.status.contains("unrecognized"));
+    assert!(app.ollama.images.is_empty());
+    assert_eq!(text(&app), before);
+    std::fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # Codex chat in WordCraft
 
-> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (message editing and saved branches; local chat history, redesigned composer and softer document review visuals)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (Codex image attachments and stop-controlled long-running turns)
 
 Open **Agents → Codex Chat**, or choose **Codex** in the Agent chat provider menu.
 WordCraft starts the installed `codex app-server` over private stdin/stdout and uses its managed
@@ -34,8 +34,9 @@ control independently of in-app Codex chat.
 Each turn uses an ephemeral Codex thread with the completed conversational text and a fresh
 live document snapshot. WordCraft keeps completed visible conversations in local chat history,
 including citations and retrieved project passages. Stop kills the child app-server and abandons unfinished messages;
-completed document changes remain undoable. Requests, event queues, response sizes and action
-counts are bounded. Browser sign-in and model turns time out after five minutes.
+completed document changes remain undoable. The app does not impose a wall-clock timeout on Codex
+turns; Stop remains available while a turn runs. Requests, event queues, response sizes and action
+counts are bounded. Provider or protocol failures return an error in the chat pane.
 
 ## Edit messages and branch conversations
 
@@ -52,7 +53,7 @@ Branches start with document editing off. They do not revert or repeat previous 
 use the document's Undo controls for that. Old tool calls are never replayed. Stop an active
 response before editing or branching. Invalid indices, empty/oversized edits and full storage
 return errors without replacing the original conversation. Provider failures leave the new
-question visible and the original chat intact. The same controls work with Ollama.
+question visible and the original chat intact. These controls work with Codex and Ollama.
 
 ## Chat history and deletion
 
@@ -74,7 +75,9 @@ Prepared files are synchronized before atomic replacement, with owner-only permi
 failed writes preserve the original. Shutdown flushes the latest visible exchange, including a
 question entered just before the next repaint. Damaged files are preserved and an error is shown;
 explicit **Delete all history** can reset an unreadable store. Provider API keys and account tokens
-are excluded. `WORDCRAFT_NO_PREFS` runs retain chats only for the current process.
+are excluded. User-selected image file paths are saved with the local conversation; image bytes
+are not copied into WordCraft history. If an attached file is moved or deleted, the chat reports
+that it must be attached again. `WORDCRAFT_NO_PREFS` runs retain chats only for the current process.
 
 Storage is bounded to 50 conversations and 4 MiB; when full, an error asks you to delete chats
 rather than silently removing older conversations. Each conversation keeps the pane's latest
@@ -121,6 +124,12 @@ The chat pane uses native CommonMark/GFM rendering for headings, emphasis, lists
 blockquotes, tables and fenced code, with text selection and Copy. Image fetching and HTML
 execution are disabled. Wide tables scroll inside their own block; long prose wraps without expanding the chat pane. The composer stays at the bottom; model and thinking choices sit
 inside its bottom toolbar. Connection/account details are in the header's **•••** menu.
+
+Use **+ → Attach image** in Codex chat to attach up to four local PNG, JPEG, GIF, WebP or BMP
+images (20 MiB and 80 megapixels each). Images stay in that conversation until removed and are
+sent as app-server local image inputs with each turn. The app validates the file, format, size and
+dimensions when attached and again before sending. Unsupported, damaged or unavailable files
+produce a visible error. Ollama image input is not currently supported by this control.
 
 **Thinking** is populated from each Codex model's `supportedReasoningEfforts`. Auto explicitly
 uses that model's catalog default; other choices are validated and passed as `turn/start.effort`
@@ -182,6 +191,7 @@ the purple working-page animation and the composer staying anchored while stream
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Codex turns no longer have a five-minute wall-clock cutoff; bounded local image attachments, persisted chat paths and visible file-validation errors |
 | 2026-10-13 | minor | Rounded composer, inline model/thinking menu, local history with search/rename/delete, shutdown persistence and softer document diffs |
 | 2026-10-13 | minor | Linked local folders, live read/search tools for Codex and Ollama Cloud, numbered claim/source citations, per-reply published thinking summaries, contained Markdown tables and title-bar clearance |
 | 2026-10-13 | minor | Cleaner anchored chat pane, native Markdown, transient word/formatting diffs, reduced-motion-aware document feedback and catalog-driven thinking controls |
