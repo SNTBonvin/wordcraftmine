@@ -1321,6 +1321,35 @@ impl Reader<'_> {
                 extra: Default::default(),
             });
         }
+        // A freeform: its `path`, in its `coordsize` space; a `v:fill` with no opacity
+        // or `nf` in the path leaves it unfilled. Not WordArt (`v:textpath`).
+        if shape.local() == "shape"
+            && shape.child("v:textpath").is_none()
+            && let Some(path) = shape.attr("path")
+            && let Some(vp) = super::freeform::vml_path(path, shape.attr("coordsize"), shape.attr("coordorigin"), w, h)
+        {
+            let opacity = |el: &str| shape.child(el).and_then(|e| e.attr("opacity")).and_then(vml_fraction).unwrap_or(1.0);
+            let fill = fill.filter(|_| !vp.no_fill && opacity("v:fill") > 0.0);
+            let stroke = stroke.filter(|_| !vp.no_stroke);
+            if stroke.is_none() && fill.is_none() {
+                return None;
+            }
+            let mut f = vp.freeform;
+            f.alpha = opacity("v:stroke");
+            return Some(InlineObject::Shape {
+                kind: ShapeKind::Freeform,
+                w,
+                h,
+                fill,
+                stroke,
+                stroke_width,
+                float,
+                story: None,
+                freeform: Some(Arc::new(f)),
+                effects: Default::default(),
+                extra: Default::default(),
+            });
+        }
         let kind = match shape.local() {
             "line" => ShapeKind::Line,
             "rect" => ShapeKind::Rectangle,
@@ -1580,6 +1609,20 @@ fn wrap_polygon(e: &El) -> Option<wordcraft_doc::wrap::WrapPolygon> {
         return None;
     }
     wordcraft_doc::wrap::WrapPolygon::new(edited, pts)
+}
+
+/// A VML fraction (opacity), 0–1: a decimal (`0.5`), a percentage (`50%`) or 65536ths with an
+/// `f` suffix (`32768f`).
+fn vml_fraction(v: &str) -> Option<f32> {
+    let v = v.trim();
+    let f = if let Some(fd) = v.strip_suffix('f') {
+        fd.trim().parse::<f32>().ok()? / 65_536.0
+    } else if let Some(pc) = v.strip_suffix('%') {
+        pc.trim().parse::<f32>().ok()? / 100.0
+    } else {
+        v.parse::<f32>().ok()?
+    };
+    f.is_finite().then(|| f.clamp(0.0, 1.0))
 }
 
 /// The value of property `key` in a VML `style` attribute (CSS declarations; the last one wins).
