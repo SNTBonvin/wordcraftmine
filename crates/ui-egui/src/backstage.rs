@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::theme::{APP_COLOR, Tokens, medium, regular, semibold};
 use crate::{WordApp, icons};
 
-const PAGES: [(&str, &str); 9] = [
+const PAGES: [(&str, &str); 10] = [
     ("home", "Home"),
     ("new", "New"),
     ("open", "Open"),
@@ -15,6 +15,7 @@ const PAGES: [(&str, &str); 9] = [
     ("saveAs", "Save As"),
     ("print", "Print"),
     ("export", "Export"),
+    ("close", "Close"),
     ("options", "Options"),
 ];
 
@@ -92,6 +93,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         }
                         "saveAs" => {
                             app.ui.backstage_page = "saveAs".into();
+                        }
+                        // Close is an action, not a page (#1124): it asks about unsaved
+                        // changes like Mod+W and leaves Backstage either way.
+                        "close" => {
+                            app.ui.backstage = false;
+                            app.canvas.want_focus = true;
+                            let _ = app.run("file.close", json!({}));
                         }
                         _ => app.ui.backstage_page = id.into(),
                     }
@@ -509,6 +517,27 @@ mod tests {
         h.run_steps(4);
         assert!(h.query_by_label("Browse…").is_some(), "Save As has Browse button");
         assert!(h.query_by_label("Recent").is_none(), "Save As has no list that opens documents");
+    }
+
+    #[test]
+    fn backstage_close_leaves_and_closes() {
+        // #1124: the Close item after Export runs file.close and leaves Backstage.
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        let app = h.state();
+        assert!(!app.ui.backstage, "Close leaves Backstage");
+        assert!(app.quit_requested, "a clean document closes");
     }
 
     #[test]
