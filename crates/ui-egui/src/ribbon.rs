@@ -196,13 +196,74 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                for (tab, custom) in &tabs {
-                    let (tab, custom) = (tab.as_str(), *custom);
+                let gap = ui.spacing().item_spacing.x;
+                // Share, Editing and Comments share the row from the right; measure them with the
+                // code that draws them below, so the tabs can stop short of them (#897).
+                let track = app.session.doc.settings.track_changes;
+                let editing = if track { tl!("Reviewing") } else { tl!("Editing") };
+                let cluster_w = right_cluster_width(ui, t, editing);
+                let avail = ui.available_width();
+                // Each tab's width, measured as the strip below draws it.
+                let widths: Vec<f32> = tabs
+                    .iter()
+                    .map(|(tab, custom)| {
+                        ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown_name(tab, *custom).to_owned(), medium(12.5), t.text).size().x) + 18.0
+                    })
+                    .collect();
+                // Which tabs stay on the strip (#897): File and the active tab always stay;
+                // walking left to right, once the next tab would not fit left of the right
+                // cluster the rest go into the overflow menu. Two passes: first without the '>>'
+                // button — a strip where every tab fits (English at 1280) keeps today's exact
+                // layout — then with the button's width reserved. An active tab past the break is
+                // pinned to the strip's end (as browsers pin the active tab), dropping the
+                // prefix's last tabs into the menu until it fits.
+                const OVERFLOW_W: f32 = 26.0;
+                // A tab may run into the cluster's outer button padding (Comments' left padding,
+                // where nothing is drawn) without buying an overflow menu: English at 1280 with a
+                // table clears the cluster by a hair, and its strip must keep today's exact look.
+                let slack = ui.spacing().button_padding.x;
+                let active_index = tabs.iter().position(|(tab, _)| app.ui.tab == *tab && !app.ui.backstage);
+                let mut keep = tabs.len();
+                let mut pinned = None;
+                for reserve_button in [false, true] {
+                    let room = (avail - cluster_w + slack - if reserve_button { OVERFLOW_W } else { 0.0 }).max(0.0);
+                    let mut x = 0.0;
+                    keep = tabs.len();
+                    pinned = None;
+                    for (i, w) in widths.iter().enumerate() {
+                        if x + *w > room && i != 0 && Some(i) != active_index {
+                            keep = i;
+                            break;
+                        }
+                        x += *w + gap;
+                    }
+                    if let Some(a) = active_index
+                        && a >= keep
+                    {
+                        let mut end = keep;
+                        let mut tail = x;
+                        while tail + gap + widths[a] > room && end > 1 {
+                            end -= 1;
+                            tail -= widths[end] + gap;
+                        }
+                        keep = end;
+                        pinned = Some(a);
+                    }
+                    if keep == tabs.len() {
+                        break;
+                    }
+                }
+                let mut order: Vec<usize> = (0..keep).collect();
+                if let Some(a) = pinned {
+                    order.push(a);
+                }
+                for &i in &order {
+                    let (tab, custom) = (tabs[i].0.as_str(), tabs[i].1);
                     let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
-                    // A custom tab's name is the user's own text: shown as typed.
-                    let shown = if custom { tab } else { tl!(tab) };
-                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
+                    let shown = shown_name(tab, custom);
+                    let w = widths[i];
                     let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), shown));
                     if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
                         crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
                     }
@@ -224,6 +285,35 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     }
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
                 }
+                if keep < tabs.len() {
+                    // The tabs that don't fit (#897), behind a '>>' button just left of the right
+                    // cluster. Mouse-first: its rows carry no keytips (the strip tabs' Alt
+                    // shortcuts are unchanged, and Search Commands reaches every command).
+                    let row = ui.max_rect();
+                    let rect = Rect::from_min_max(
+                        pos2(row.right() - cluster_w - OVERFLOW_W, row.top() + 3.0),
+                        pos2(row.right() - cluster_w, row.bottom() - 3.0),
+                    );
+                    let resp = ui.allocate_rect(rect, Sense::click()).on_hover_text(tl!("More tabs"));
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
+                    }
+                    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "»", semibold(12.5), t.text);
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!("More tabs")));
+                    egui::Popup::menu(&resp).show(|ui| {
+                        for (i, (tab, custom)) in tabs.iter().enumerate() {
+                            if i < keep || pinned == Some(i) {
+                                continue;
+                            }
+                            let (tab, custom) = (tab.as_str(), *custom);
+                            let active = app.ui.tab == tab && !app.ui.backstage;
+                            if ui.selectable_label(active, shown_name(tab, custom)).clicked() {
+                                let _ = app.run("ui.tab", json!({"tab": tab}));
+                                ui.close();
+                            }
+                        }
+                    });
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Share, Editing mode, Comments.
                     let share = tl!("Share");
@@ -242,9 +332,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
                     }
                     ui.add_space(6.0);
-                    let track = app.session.doc.settings.track_changes;
-                    let mode =
-                        crate::widgets::icon_text_menu_button(ui, "pencil", if track { tl!("Reviewing") } else { tl!("Editing") }, regular(12.0));
+                    let mode = crate::widgets::icon_text_menu_button(ui, "pencil", editing, regular(12.0));
                     egui::Popup::menu(&mode).show(|ui| {
                         if ui.selectable_label(!track, tl!(tl!("Editing — edit the document directly"))).clicked() {
                             let _ = app.run("review.trackChanges", json!({"value": false}));
@@ -338,6 +426,29 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 state.store(ui.ctx(), scroll.id);
             }
         });
+}
+
+/// A tab's name as the strip and the overflow menu show it: a custom tab's name is the user's own
+/// text (Customize Ribbon, #379), the rest are translated.
+fn shown_name(tab: &str, custom: bool) -> &str {
+    if custom { tab } else { tl!(tab) }
+}
+
+/// The width of the tab strip's right cluster — Share, the Editing menu, Comments — and its gaps,
+/// measured with the same code that draws it: the Share pill's own measure and the
+/// `icon_text_button_with` formula for the two icon text buttons. The tabs
+/// stop short of this instead of running underneath the cluster (#897).
+fn right_cluster_width(ui: &Ui, t: Tokens, editing: &str) -> f32 {
+    let pad = ui.spacing().button_padding;
+    let gap = ui.spacing().item_spacing.x;
+    let text_w = |s: &str, f: egui::FontId| ui.ctx().fonts_mut(|fonts| fonts.layout_no_wrap(s.to_owned(), f, t.text).size().x);
+    // Share: its text plus icon and insets, never narrower than 74.
+    let share = (text_w(tl!("Share"), medium(12.0)) + 36.0).max(74.0);
+    // An icon text button: padding, a 16 icon, a 4 gap, the text, and for a menu the drop-down
+    // marker.
+    let icon_text =
+        |s: &str, marker: bool| pad.x + 16.0 + 4.0 + text_w(s, regular(12.0)) + if marker { crate::widgets::DROPDOWN + 4.0 } else { 0.0 } + pad.x;
+    share + gap + 6.0 + icon_text(editing, true) + gap + 4.0 + icon_text(tl!("Comments"), false)
 }
 
 /// Custom groups (Customize Ribbon, #379): up to three commands as large buttons, more as small
@@ -2564,5 +2675,53 @@ mod tests {
         assert_eq!(resolve_tab("Picture Format", &["Home"]), "Home");
         assert_eq!(resolve_tab("Table Design", &["Home"]), "Home");
         assert_eq!(resolve_tab("Home", &["Home"]), "Home");
+    }
+
+    /// #897: tabs that don't fit go behind a '>>' overflow menu instead of being drawn underneath
+    /// Share/Editing/Comments, where clicks never reached them. Polish, with a table's two
+    /// contextual tabs, cannot fit every tab at 1280 pt; in English everything fits, so no button
+    /// shows. The menu's rows are mouse-first: they carry no keytips.
+    #[test]
+    fn tabs_that_do_not_fit_go_behind_an_overflow_menu() {
+        use egui_kittest::kittest::Queryable;
+        for (language, fits) in [("pl", false), ("en", true)] {
+            let mut app = crate::WordApp::new(Session::new(wordcraft_doc::Document::new()), Default::default());
+            // The caret ends in the table, so the two contextual tabs join the strip.
+            app.run("insert.table", json!({"rows": 3, "cols": 3})).unwrap();
+            app.run("ui.language", json!({"value": language})).unwrap();
+            let mut h = egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(
+                |ui, app: &mut WordApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
+            h.run_steps(6);
+            let lang = crate::i18n::Lang::from_pref(language);
+            let more = crate::i18n::tr(lang, "More tabs");
+            assert_eq!(h.query_by_label(more).is_some(), !fits, "{language}: the '>>' button");
+            if !fits {
+                // The menu lists the tabs that left the strip, translated, and choosing one shows
+                // it — pinned to the strip's end, since the active tab always stays on the strip.
+                h.get_by_label(more).click();
+                h.run_steps(2);
+                let table = crate::i18n::tr(lang, "Table Layout");
+                assert!(h.query_by_label(table).is_some(), "{language}: the menu lists {table}");
+                h.get_by_label(table).click();
+                h.run_steps(2);
+                assert_eq!(h.state().ui.tab, "Table Layout", "{language}: the row switched tabs");
+                assert!(h.query_by_label(table).is_some(), "{language}: the active tab is pinned to the strip");
+                assert!(h.query_by_label(more).is_some(), "{language}: the tabs still past the break keep the button");
+                // The pinned tab has left the menu: it is on the strip only.
+                h.get_by_label(more).click();
+                h.run_steps(2);
+                assert_eq!(
+                    h.query_all(egui_kittest::kittest::By::new().label(table)).count(),
+                    1,
+                    "{language}: the pinned tab is on the strip, not in the menu"
+                );
+            }
+        }
     }
 }
