@@ -75,6 +75,7 @@
 	AutoSave failed: {error}. Save the document to turn AutoSave back on.	AutoSpeichern fehlgeschlagen: {error}. Speichern Sie das Dokument, um AutoSpeichern wieder zu aktivieren.
 	Balloons	Sprechblasen
 	Bottom Margin	Unterer Rand
+	Citation Styles (CSL)	Zitierstile (CSL)
 	Click a border between two cells to merge them. Esc stops.	Klicken Sie auf eine Rahmenlinie zwischen zwei Zellen, um sie zu verbinden. Esc beendet.
 	Bullet	Aufzählungszeichen
 	By author	Nach Autor
@@ -92,6 +93,8 @@
 	Enter formatting for number:	Formatierung für die Nummer eingeben:
 	Follow number with:	Der Nummer folgt:
 	Formatting	Formatierung
+	Import Sources Library	Quellenbibliothek importieren
+	Import…	Importieren…
 	Include level number from:	Ebenennummer übernehmen aus:
 	Ink	Freihand
 	Insertions and Deletions	Einfügungen und Löschungen
@@ -200,6 +203,7 @@
 	Check Spelling as You Type	Rechtschreibung während der Eingabe prüfen
 	Check\nAccessibility	Barrierefreiheit\nprüfen
 	Citation Style	Zitierstil
+	Citation Style (CSL styles: docs/csl-styles.md)	Zitierstil (CSL-Stile: docs/csl-styles.md)
 	Citations & Bibliography	Zitate und Literaturverzeichnis
 	Clear	Löschen
 	Clear All Formatting	Alle Formatierungen löschen
@@ -773,6 +777,8 @@
 	Style based on:	Basiert auf:
 	Style Set	Formatvorlagensatz
 	Style: {style}	Formatvorlage: {style}
+	Style {style} added	Stil {style} wurde hinzugefügt
+	Style {style} added, with warnings: {warnings}	Stil {style} wurde hinzugefügt, mit Warnungen: {warnings}
 	Styles	Formatvorlagen
 	Styles Pane	Formatvorlagenbereich
 	Subscript	Tiefgestellt
@@ -1710,6 +1716,8 @@
 	Word document	Word-Dokument
 	All files	Alle Dateien
 	Recipient lists	Empfängerlisten
+	Source libraries	Quellenbibliotheken
+	CSL styles	CSL-Stile
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Das Dateidialogfeld des Systems ist nicht verfügbar, daher zeigt WordCraft ein eigenes an. Für das Systemdialogfeld installieren Sie ein Dateiauswahl-Portal (etwa xdg-desktop-portal-gtk) oder zenity.
 	Up one level	Eine Ebene höher
 	Home folder	Persönlicher Ordner
@@ -1804,6 +1812,7 @@
 	Above the item	Über dem Element
 	Accessed on	Abgerufen am
 	Add New Source…	Neue Quelle hinzufügen…
+	Add style from file…	Stil aus Datei hinzufügen…
 	Add the chapter number	Kapitelnummer einbeziehen
 	Atmosphere	Atmosphäre
 	Below the item	Unter dem Element
@@ -1896,6 +1905,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	{n} Einträge markiert.
+	{added} added, {updated} updated	{added} hinzugefügt, {updated} aktualisiert
 	Lasso Select	Lasso-Auswahl
 	Move Selected Ink	Ausgewählte Freihandeingabe verschieben
 	Delete Selected Ink	Ausgewählte Freihandeingabe löschen

@@ -77,6 +77,7 @@
 	Bullet	Punto elenco
 	By author	Per autore
 	Changed lines:	Righe modificate:
+	Citation Styles (CSL)	Stili di citazione (CSL)
 	Click level to modify:	Fai clic sul livello da modificare:
 	Color only	Solo colore
 	Define New Multilevel List	Definisci nuovo elenco a più livelli
@@ -85,6 +86,8 @@
 	Enter formatting for number:	Formato del numero:
 	Follow number with:	Dopo il numero:
 	Formatting	Formattazione
+	Import Sources Library	Importa raccolta fonti
+	Import…	Importa…
 	Include level number from:	Includi numero di livello da:
 	Ink	Penna
 	Insertions and Deletions	Inserimenti ed eliminazioni
@@ -186,6 +189,7 @@
 	Check for Errors	Controllo errori
 	Check\nAccessibility	Verifica\naccessibilità
 	Citation Style	Stile citazione
+	Citation Style (CSL styles: docs/csl-styles.md)	Stile citazione (stili CSL: docs/csl-styles.md)
 	Citations & Bibliography	Citazioni e bibliografia
 	Clear	Cancella
 	Clear All	Cancella tutto
@@ -788,6 +792,8 @@
 	Style Set	Set di stili
 	Style based on:	Stile basato su:
 	Style: {style}	Stile: {style}
+	Style {style} added	Stile {style} aggiunto
+	Style {style} added, with warnings: {warnings}	Stile {style} aggiunto, con avvisi: {warnings}
 	Styles	Stili
 	Styles Pane	Riquadro Stili
 	Subscript	Pedice
@@ -1839,6 +1845,7 @@
 	Above the item	Sopra l'elemento
 	Accessed on	Consultato il
 	Add New Source…	Aggiungi nuova fonte…
+	Add style from file…	Aggiungi stile da file…
 	Add the chapter number	Aggiungi il numero di capitolo
 	Atmosphere	Atmosfera
 	Below the item	Sotto l'elemento
@@ -1931,6 +1938,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Voci segnate: {n}.
+	{added} added, {updated} updated	{added} aggiunte, {updated} aggiornate
 	Lasso Select	Selezione con lazo
 	Move Selected Ink	Sposta input penna selezionato
 	Delete Selected Ink	Elimina input penna selezionato
@@ -2326,6 +2334,8 @@
 	Radical with Degree	Radicale con indice
 	Radicals	Radicali
 	Recipient lists	Elenchi destinatari
+	Source libraries	Raccolte di fonti
+	CSL styles	Stili CSL
 	Resize Table by Dragging	Ridimensiona la tabella trascinando
 	Select Column	Seleziona colonna
 	Select Table Cells by Clicking	Seleziona celle della tabella con un clic

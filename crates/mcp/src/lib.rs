@@ -64,7 +64,12 @@ impl Headless {
 
 impl Default for Headless {
     fn default() -> Self {
-        Headless { session: Session::new(wordcraft_doc::Document::new()), roots: None }
+        let mut session = Session::new(wordcraft_doc::Document::new());
+        // The CSL styles the user installed, loaded the way the app loads them (#1058).
+        if let Some(dir) = wordcraft_control_key::settings_dir() {
+            session.set_csl_styles_dir(dir.join(Session::CSL_STYLES_DIR));
+        }
+        Headless { session, roots: None }
     }
 }
 

@@ -81,6 +81,7 @@
 	Bottom Margin	下边距
 	Centimeters	厘米
 	Check spelling as you type	键入时检查拼写
+	Citation Styles (CSL)	引文样式 (CSL)
 	Click a border between two cells to merge them. Esc stops.	单击两个单元格之间的边框以合并它们。按 Esc 结束。
 	Bullet	项目符号
 	By author	按作者
@@ -106,6 +107,8 @@
 	Ignore web and file addresses	忽略网址和文件路径
 	Ignore words in capitals	忽略全部大写的单词
 	Ignore words with numbers	忽略包含数字的单词
+	Import Sources Library	导入源库
+	Import…	导入…
 	Inches	英寸
 	Formatting exceptions	格式例外
 	Include level number from:	包含的级别编号来自：
@@ -264,6 +267,7 @@
 	Check Spelling as You Type	键入时检查拼写
 	Check\nAccessibility	检查辅助功能
 	Citation Style	引文样式
+	Citation Style (CSL styles: docs/csl-styles.md)	引文样式（CSL 样式：docs/csl-styles.md）
 	Citations & Bibliography	引文与参考文献
 	Clear	清除
 	Clear All Formatting	清除所有格式
@@ -854,6 +858,8 @@
 	Style based on:	样式基于：
 	Style Set	样式集
 	Style: {style}	样式：{style}
+	Style {style} added	已添加样式 {style}
+	Style {style} added, with warnings: {warnings}	已添加样式 {style}，警告：{warnings}
 	Styles	样式
 	Styles Pane	样式窗格
 	Subscript	下标
@@ -1741,6 +1747,8 @@
 	Word document	Word 文档
 	All files	所有文件
 	Recipient lists	收件人列表
+	Source libraries	源库
+	CSL styles	CSL 样式
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	系统文件对话框不可用，因此 WordCraft 显示自己的对话框。要使用系统对话框，请安装文件选择器门户（例如 xdg-desktop-portal-gtk）或 zenity。
 	Up one level	向上一级
 	Home folder	主文件夹
@@ -1835,6 +1843,7 @@
 	Above the item	项目上方
 	Accessed on	访问日期
 	Add New Source…	添加新源…
+	Add style from file…	从文件添加样式…
 	Add the chapter number	添加章节编号
 	Atmosphere	大气
 	Below the item	项目下方
@@ -1927,6 +1936,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	已标记 {n} 个条目。
+	{added} added, {updated} updated	已添加 {added} 个，已更新 {updated} 个
 	Lasso Select	套索选择
 	Move Selected Ink	移动所选墨迹
 	Delete Selected Ink	删除所选墨迹

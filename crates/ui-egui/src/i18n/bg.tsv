@@ -79,6 +79,7 @@
 	Bullet	Водещ символ
 	By author	По автор
 	Changed lines:	Променени редове:
+	Citation Styles (CSL)	Стилове за цитиране (CSL)
 	Click level to modify:	Щракнете върху ниво за промяна:
 	Color only	Само цвят
 	Define New Multilevel List	Дефиниране на нов многостепенен списък
@@ -87,6 +88,8 @@
 	Enter formatting for number:	Въведете форматиране за номера:
 	Follow number with:	След номера:
 	Formatting	Форматиране
+	Import Sources Library	Импортиране на библиотека с източници
+	Import…	Импортиране…
 	Include level number from:	Включване на номер на ниво от:
 	Ink	Мастило
 	Insertions and Deletions	Вмъквания и изтривания
@@ -189,6 +192,7 @@
 	Check for Errors	Проверка за грешки
 	Check\nAccessibility	Проверка на\nдостъпността
 	Citation Style	Стил на цитиране
+	Citation Style (CSL styles: docs/csl-styles.md)	Стил на цитиране (стилове CSL: docs/csl-styles.md)
 	Citations & Bibliography	Цитати и библиография
 	Clear	Изчистване
 	Clear All	Изчистване на всичко
@@ -806,6 +810,8 @@
 	Style Set	Набор от стилове
 	Style based on:	Стил, базиран на:
 	Style: {style}	Стил: {style}
+	Style {style} added	Стилът {style} е добавен
+	Style {style} added, with warnings: {warnings}	Стилът {style} е добавен, с предупреждения: {warnings}
 	Styles	Стилове
 	Styles Pane	Панел със стилове
 	Subscript	Долен индекс
@@ -1545,6 +1551,7 @@
 	Above the item	Над елемента
 	Accessed on	Дата на достъп
 	Add New Source…	Добавяне на нов източник…
+	Add style from file…	Добавяне на стил от файл…
 	Add the chapter number	Добавяне на номера на главата
 	Atmosphere	Атмосфера
 	Below the item	Под елемента
@@ -1637,6 +1644,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Маркирани записи: {n}.
+	{added} added, {updated} updated	Добавени: {added}, обновени: {updated}
 	Lasso Select	Избор с ласо
 	Move Selected Ink	Преместване на избраното мастило
 	Delete Selected Ink	Изтриване на избраното мастило
@@ -2383,6 +2391,8 @@
 	Word document	Документ на Word
 	All files	Всички файлове
 	Recipient lists	Списъци с получатели
+	Source libraries	Библиотеки с източници
+	CSL styles	Стилове CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Системният диалогов прозорец за файлове не е наличен, затова WordCraft показва своя. За да получите системния, инсталирайте портал за избор на файлове (например xdg-desktop-portal-gtk) или zenity.
 	Up one level	Едно ниво нагоре
 	Home folder	Домашна папка

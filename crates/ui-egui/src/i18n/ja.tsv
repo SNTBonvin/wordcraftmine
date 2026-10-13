@@ -69,6 +69,7 @@
 	Bottom Margin	下余白
 	Centimeters	センチメートル
 	Check spelling as you type	入力中にスペル チェックを行う
+	Citation Styles (CSL)	引用スタイル (CSL)
 	Click a border between two cells to merge them. Esc stops.	2 つのセルの間の境界線をクリックすると結合します。Esc で終了します。
 	Bullet	行頭文字
 	By author	校閲者別
@@ -94,6 +95,8 @@
 	Ignore web and file addresses	Web アドレスとファイル パスを無視する
 	Ignore words in capitals	すべて大文字の単語を無視する
 	Ignore words with numbers	数字を含む単語を無視する
+	Import Sources Library	資料文献ライブラリのインポート
+	Import…	インポート…
 	Inches	インチ
 	Formatting exceptions	書式の例外
 	Include level number from:	含めるレベルの番号:
@@ -252,6 +255,7 @@
 	Check Spelling as You Type	入力時にスペル チェックを行う
 	Check\nAccessibility	アクセシビリティ チェック
 	Citation Style	引用文献のスタイル
+	Citation Style (CSL styles: docs/csl-styles.md)	引用文献のスタイル（CSL スタイル: docs/csl-styles.md）
 	Citations & Bibliography	引用文献と文献目録
 	Clear	クリア
 	Clear All Formatting	すべての書式をクリア
@@ -842,6 +846,8 @@
 	Style based on:	基準にするスタイル:
 	Style Set	スタイル セット
 	Style: {style}	スタイル: {style}
+	Style {style} added	スタイル {style} を追加しました
+	Style {style} added, with warnings: {warnings}	スタイル {style} を追加しました（警告: {warnings}）
 	Styles	スタイル
 	Styles Pane	スタイル ウィンドウ
 	Subscript	下付き
@@ -1729,6 +1735,8 @@
 	Word document	Word 文書
 	All files	すべてのファイル
 	Recipient lists	宛先リスト
+	Source libraries	資料文献ライブラリ
+	CSL styles	CSL スタイル
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	システムのファイル ダイアログを利用できないため、WordCraft 独自のダイアログを表示しています。システムのダイアログを使うには、ファイル選択ポータル (xdg-desktop-portal-gtk など) または zenity をインストールしてください。
 	Up one level	1 つ上のフォルダー
 	Home folder	ホーム フォルダー
@@ -1823,6 +1831,7 @@
 	Above the item	項目の上
 	Accessed on	アクセス日
 	Add New Source…	新しい資料文献の追加…
+	Add style from file…	ファイルからスタイルを追加…
 	Add the chapter number	章番号を付ける
 	Atmosphere	大気
 	Below the item	項目の下
@@ -1915,6 +1924,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	{n} 件の項目を登録しました。
+	{added} added, {updated} updated	{added} 件を追加、{updated} 件を更新しました
 	Lasso Select	なげなわ選択
 	Move Selected Ink	選択したインクを移動
 	Delete Selected Ink	選択したインクを削除

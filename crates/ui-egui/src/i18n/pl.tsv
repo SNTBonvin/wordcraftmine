@@ -123,6 +123,8 @@
 	Check for Errors	Wyszukaj błędy
 	Check\nAccessibility	Sprawdź ułatwienia\ndostępu
 	Citation Style	Styl cytowania
+	Citation Style (CSL styles: docs/csl-styles.md)	Styl cytowania (style CSL: docs/csl-styles.md)
+	Citation Styles (CSL)	Style cytowań (CSL)
 	Citations & Bibliography	Cytaty i bibliografia
 	Clear	Wyczyść
 	Clear All	Wyczyść wszystko
@@ -322,6 +324,8 @@
 	Immersive	Czytanie immersyjne
 	Immersive Reader	Czytnik immersyjny
 	Immersive\nReader	Czytnik\nimmersyjny
+	Import Sources Library	Importuj bibliotekę źródeł
+	Import…	Importuj…
 	Increase Font Size	Zwiększ rozmiar czcionki
 	Increase Indent	Zwiększ wcięcie
 	Indent	Wcięcie
@@ -1305,6 +1309,8 @@
 	Studio	Studio
 	Style:	Styl:
 	Style: {style}	Styl: {style}
+	Style {style} added	Dodano styl {style}
+	Style {style} added, with warnings: {warnings}	Dodano styl {style}, z ostrzeżeniami: {warnings}
 	Subset:	Podzbiór:
 	Sum	Suma
 	Tab character	Znak tabulacji
@@ -1487,6 +1493,7 @@
 	Accessed on	Data dostępu
 	Accessibility Pane	Okienko ułatwień dostępu
 	Add New Source…	Dodaj nowe źródło…
+	Add style from file…	Dodaj styl z pliku…
 	Add Pen	Dodaj pióro
 	Add line numbering	Dodaj numerowanie wierszy
 	Add the chapter number	Dodaj numer rozdziału
@@ -1668,6 +1675,7 @@
 	i, ii, iii, …	i, ii, iii, …
 	{language} is now the document's default language.	{language} to teraz domyślny język dokumentu.
 	{n} entries marked.	Oznaczone pozycje: {n}.
+	{added} added, {updated} updated	Dodano: {added}, zaktualizowano: {updated}
 	0 or More Characters	0 lub więcej znaków
 	1. Formatting restrictions	1. Ograniczenia formatowania
 	2. Editing restrictions	2. Ograniczenia edycji
@@ -1931,6 +1939,8 @@
 	Recent Colors	Ostatnio używane kolory
 	Recent documents to show:	Liczba ostatnich dokumentów do pokazania:
 	Recipient lists	Listy adresatów
+	Source libraries	Biblioteki źródeł
+	CSL styles	Style CSL
 	Red:	Czerwony:
 	Reflection	Odbicie
 	Regular expressions	Wyrażenia regularne

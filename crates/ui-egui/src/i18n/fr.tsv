@@ -77,6 +77,7 @@
 	Bullet	Puce
 	By author	Par auteur
 	Changed lines:	Lignes modifiées :
+	Citation Styles (CSL)	Styles de citation (CSL)
 	Click level to modify:	Cliquez sur le niveau à modifier :
 	Color only	Couleur uniquement
 	Define New Multilevel List	Définir une nouvelle liste à plusieurs niveaux
@@ -86,6 +87,8 @@
 	Follow number with:	Faire suivre le numéro de :
 	Formatting	Mise en forme
 	Formatting exceptions	Exceptions de mise en forme
+	Import Sources Library	Importer une bibliothèque de sources
+	Import…	Importer…
 	Include level number from:	Inclure le numéro de niveau de :
 	Ink	Encre
 	Insertions and Deletions	Insertions et suppressions
@@ -187,6 +190,7 @@
 	Check Spelling as You Type	Vérifier l’orthographe pendant la saisie
 	Check\nAccessibility	Vérifier\nl’accessibilité
 	Citation Style	Style de citation
+	Citation Style (CSL styles: docs/csl-styles.md)	Style de citation (styles CSL : docs/csl-styles.md)
 	Citations & Bibliography	Citations et bibliographie
 	Clear	Effacer
 	Clear All	Effacer tout
@@ -808,6 +812,8 @@
 	Style Inspector	Inspecteur de styles
 	Style Set	Jeu de styles
 	Style: {style}	Style : {style}
+	Style {style} added	Style {style} ajouté
+	Style {style} added, with warnings: {warnings}	Style {style} ajouté, avec des avertissements : {warnings}
 	Styles	Styles
 	Styles Pane	Volet Styles
 	Subscript	Indice
@@ -1655,6 +1661,7 @@
 	Above the item	Au-dessus de l’élément
 	Accessed on	Consulté le
 	Add New Source…	Ajouter une nouvelle source…
+	Add style from file…	Ajouter un style à partir d'un fichier…
 	Add the chapter number	Ajouter le numéro de chapitre
 	Atmosphere	Atmosphère
 	Below the item	En dessous de l’élément
@@ -1747,6 +1754,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	{n} entrées sélectionnées.
+	{added} added, {updated} updated	{added} ajoutées, {updated} mises à jour
 	Lasso Select	Sélection au lasso
 	Move Selected Ink	Déplacer l’encre sélectionnée
 	Delete Selected Ink	Supprimer l’encre sélectionnée
@@ -1936,6 +1944,8 @@
 	Word document	Document Word
 	All files	Tous les fichiers
 	Recipient lists	Listes de destinataires
+	Source libraries	Bibliothèques de sources
+	CSL styles	Styles CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	La boîte de dialogue de fichiers du système n’est pas disponible, WordCraft affiche donc la sienne. Pour utiliser celle du système, installez un portail de sélection de fichiers (comme xdg-desktop-portal-gtk) ou zenity.
 	Up one level	Dossier parent
 	Home folder	Dossier personnel

@@ -124,6 +124,8 @@
 	Check Spelling as You Type	Yazarken Yazımı Denetle
 	Check\nAccessibility	Erişilebilirliği\nDenetle
 	Citation Style	Atıf Stili
+	Citation Style (CSL styles: docs/csl-styles.md)	Atıf Stili (CSL stilleri: docs/csl-styles.md)
+	Citation Styles (CSL)	Alıntı Stilleri (CSL)
 	Citations & Bibliography	Atıflar ve Kaynakça
 	Clear	Temizle
 	Clear All Formatting	Tüm Biçimlendirmeyi Temizle
@@ -325,6 +327,8 @@
 	Immersive	Odaklı
 	Immersive Reader	Odaklı Okuyucu
 	Immersive\nReader	Odaklı\nOkuyucu
+	Import Sources Library	Kaynak Kitaplığını İçe Aktar
+	Import…	İçe Aktar…
 	Increase Font Size	Yazı Tipi Boyutunu Büyüt
 	Increase Indent	Girintiyi Artır
 	Indent	Girinti
@@ -712,6 +716,8 @@
 	Style based on:	Temel alınan stil:
 	Style Set	Stil Kümesi
 	Style: {style}	Stil: {style}
+	Style {style} added	{style} stili eklendi
+	Style {style} added, with warnings: {warnings}	{style} stili eklendi, uyarılarla: {warnings}
 	Styles	Stiller
 	Styles Pane	Stiller Bölmesi
 	Subject	Konu
@@ -1888,6 +1894,7 @@ preview	Title	Örnek
 	Above the item	Öğenin üstünde
 	Accessed on	Erişim tarihi
 	Add New Source…	Yeni Kaynak Ekle…
+	Add style from file…	Dosyadan stil ekle…
 	Add the chapter number	Bölüm numarasını ekle
 	Atmosphere	Atmosfer
 	Below the item	Öğenin altında
@@ -1978,6 +1985,7 @@ preview	Title	Örnek
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	{n} girdi işaretlendi.
+	{added} added, {updated} updated	{added} eklendi, {updated} güncellendi
 	Lasso Select	Kement Seçimi
 	Move Selected Ink	Seçili Mürekkebi Taşı
 	Delete Selected Ink	Seçili Mürekkebi Sil
@@ -2173,6 +2181,8 @@ preview	Title	Örnek
 	Word document	Word belgesi
 	All files	Tüm dosyalar
 	Recipient lists	Alıcı listeleri
+	Source libraries	Kaynak kitaplıkları
+	CSL styles	CSL stilleri
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Sistemin dosya iletişim kutusu kullanılamadığı için WordCraft kendi iletişim kutusunu gösteriyor. Sistem iletişim kutusunu kullanmak için bir dosya seçici portalı (örneğin xdg-desktop-portal-gtk) ya da zenity yükleyin.
 	Up one level	Bir düzey yukarı
 	Home folder	Ana klasör
