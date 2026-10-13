@@ -799,8 +799,12 @@ fn table_without_style_stays_borderless() {
 fn headers_and_page_fields() {
     let mut d = Document::from_text(&"para\n".repeat(120));
     let mut hp = wordcraft_doc::Paragraph::new();
-    hp.insert_object(0, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
-        .unwrap();
+    hp.insert_object(
+        0,
+        InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, dirty: false, code: false },
+        &Default::default(),
+    )
+    .unwrap();
     let id = d.add_part(wordcraft_doc::PartKind::Footer, vec![wordcraft_doc::para_block(hp)]);
     d.last_section.footers.default = Some(id);
     let l = lay(&d);
@@ -3686,7 +3690,7 @@ fn enclosed_characters_draw_a_shape_around_the_text() {
         let e = Enclosure { shape, style, text: "A".into() };
         d.insert_object(
             &Pos::body(0, 2),
-            InlineObject::Field { instr: e.instr(), result: "A".into(), locked: false, code: false },
+            InlineObject::Field { instr: e.instr(), result: "A".into(), locked: false, dirty: false, code: false },
             &Default::default(),
         )
         .unwrap();
@@ -3722,7 +3726,7 @@ fn enclosed_characters_draw_a_shape_around_the_text() {
     let mut d = Document::from_text("x");
     d.insert_object(
         &Pos::body(0, 1),
-        InlineObject::Field { instr: "eq \\o(=,/)".into(), result: String::new(), locked: false, code: false },
+        InlineObject::Field { instr: "eq \\o(=,/)".into(), result: String::new(), locked: false, dirty: false, code: false },
         &Default::default(),
     )
     .unwrap();
@@ -4176,7 +4180,7 @@ fn unproofed_languages_and_no_proof_runs_are_not_marked() {
 #[test]
 fn body_page_totals_count_every_page() {
     let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
-    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: "9".into(), locked: false, code: false };
+    let field = |instr: &str| InlineObject::Field { instr: instr.into(), result: "9".into(), locked: false, dirty: false, code: false };
     for i in 0..3 {
         let p = d.para_mut(StoryRef::Body, &Path::top(i)).unwrap();
         p.props.page_break_before = Some(i > 0);
@@ -4268,7 +4272,7 @@ fn east_asian_text_takes_the_asian_font_and_latin_text_the_latin_font() {
 /// the body lay out a second time; one in the body still does.
 #[test]
 fn footer_page_total_needs_one_body_pass() {
-    let field = || InlineObject::Field { instr: "NUMPAGES".into(), result: "9".into(), locked: false, code: false };
+    let field = || InlineObject::Field { instr: "NUMPAGES".into(), result: "9".into(), locked: false, dirty: false, code: false };
     let mut d = Document::from_text("Body-1\nBody-2\nBody-3");
     for i in 1..3 {
         d.para_mut(StoryRef::Body, &Path::top(i)).unwrap().props.page_break_before = Some(true);
