@@ -244,6 +244,12 @@ fn main() -> eframe::Result {
         match a.as_str() {
             "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
             "--sample" => sample = true,
+            "--help" | "-h" => {
+                println!(
+                    "wordcraft — WordCraft word processor\n\nUSAGE:\n  wordcraft [OPTIONS] [FILE...]\n\nOPTIONS:\n  --sample         open with the sample document\n  --control PORT   expose the control channel on 127.0.0.1:PORT (see docs/control-protocol.md)\n  --version          print the version and exit\n  --help, -h         print this help and exit"
+                );
+                return Ok(());
+            }
             "--version" => {
                 println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_sha());
                 return Ok(());

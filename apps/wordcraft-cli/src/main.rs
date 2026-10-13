@@ -84,6 +84,50 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
     Ok(())
 }
 
+/// Every value given for a repeatable `--flag value` option on the command line.
+fn flag_values(args: &[String], name: &str) -> Vec<Option<String>> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == name {
+            out.push(args.get(i + 1).filter(|v| !v.starts_with("--")).cloned());
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Parse `--page N` / `--scale S` for `render` and `run --save out.png` (#981): a malformed,
+/// missing, duplicated or out-of-range value is an error, never a silent default.
+fn page_scale(command: &str, args: &[String]) -> Result<(u64, f64), String> {
+    let once = |name: &str| -> Result<Option<String>, String> {
+        let vals = flag_values(args, name);
+        if vals.len() > 1 {
+            return Err(format!("{command}: {name} given {} times", vals.len()));
+        }
+        match vals.into_iter().next() {
+            None => Ok(None),
+            Some(None) => Err(format!("{command}: {name} needs a value")),
+            Some(Some(v)) => Ok(Some(v)),
+        }
+    };
+    let page = match once("--page")? {
+        None => 1,
+        Some(p) => p.parse::<u64>().ok().filter(|n| *n >= 1).ok_or_else(|| format!("{command}: --page needs a positive integer (got {p})"))?,
+    };
+    let scale = match once("--scale")? {
+        None => 2.0,
+        Some(p) => p
+            .parse::<f64>()
+            .ok()
+            .filter(|k| k.is_finite() && *k > 0.0)
+            .ok_or_else(|| format!("{command}: --scale needs a positive number (got {p})"))?,
+    };
+    Ok((page, scale))
+}
+
 /// Take `--automation-read-root` / `--automation-write-root` (each `--flag DIR` or `--flag=DIR`,
 /// once) out of `args`, and open the roots, which must be existing folders. Returns the arguments
 /// that are left. A malformed root flag is an error, never a root silently left out.
@@ -176,6 +220,10 @@ fn write_stdout(write: impl FnOnce(&mut std::io::StdoutLock<'static>) -> std::io
 fn run(args: &[String]) -> Result<(), Failure> {
     let cmd = args.first().map(String::as_str).unwrap_or("");
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
+    // `--help` (or `-h`) after a subcommand prints usage instead of running it (#968).
+    if rest.iter().any(|a| a == "--help" || a == "-h") {
+        return write_stdout(|o| write!(o, "{USAGE}"));
+    }
     let pos = |i: usize| rest.iter().filter(|a| !a.starts_with("--")).nth(i).cloned().ok_or_else(|| format!("missing argument\n\n{USAGE}"));
     match cmd {
         "convert" => {
@@ -201,7 +249,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
         "text" => {
             validate_options("text", &rest, NO_OPTIONS)?;
             let s = open(&pos(0)?)?;
-            write_stdout(|o| writeln!(o, "{}", s.doc.plain_text(wordcraft_doc::StoryRef::Body)))
+            // The same text `convert … .txt` writes: list labels and the text with every
+            // tracked change accepted, not deleted text inline (#866, #1080).
+            let out = String::from_utf8_lossy(&wordcraft_formats::txt::export(&s.doc)).replace("\r\n", "\n");
+            write_stdout(|o| writeln!(o, "{out}"))
         }
         "inspect" => {
             validate_options("inspect", &rest, NO_OPTIONS)?;
@@ -213,8 +264,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             validate_options("render", &rest, RENDER_OPTIONS)?;
             let (i, o) = (pos(0)?, pos(1)?);
             let mut s = open(&i)?;
-            let page = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()).unwrap_or(1);
-            let scale = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()).unwrap_or(2.0);
+            let (page, scale) = page_scale("render", &rest)?;
             let r = s.run("file.exportPng", &json!({"path": o, "page": page, "scale": scale})).map_err(|e| e.to_string())?;
             write_stdout(|o| writeln!(o, "{r}"))
         }
@@ -252,10 +302,11 @@ fn run(args: &[String]) -> Result<(), Failure> {
             if let Some(out) = arg_value(&rest, "--save") {
                 let r = if out.to_ascii_lowercase().ends_with(".png") {
                     let mut v = json!({"path": out});
-                    if let Some(n) = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()) {
+                    let (n, k) = page_scale("run", &rest)?;
+                    if rest.iter().any(|a| a == "--page") {
                         v["page"] = json!(n);
                     }
-                    if let Some(k) = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()) {
+                    if rest.iter().any(|a| a == "--scale") {
                         v["scale"] = json!(k);
                     }
                     s.run("file.exportPng", &v)
@@ -457,6 +508,39 @@ mod tests {
         assert_eq!(run(&args(&["info", "missing.docx", "--passwrod", "x"])), Err("info: unknown option --passwrod".into()));
         assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])), Err("render: unknown option --sclae".into()));
         assert_eq!(run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])), Err("zotero: unknown option --prot".into()));
+    }
+
+    #[test]
+    fn render_rejects_bad_page_and_scale_instead_of_silent_defaults() {
+        // #981: malformed, missing, duplicated and out-of-range values are errors.
+        assert_eq!(page_scale("render", &args(&["a.docx", "b.png"])), Ok((1, 2.0)));
+        assert_eq!(page_scale("render", &args(&["a.docx", "b.png", "--page", "2", "--scale", "1.5"])), Ok((2, 1.5)));
+        for bad in [
+            &["a.docx", "b.png", "--page", "banana"][..],
+            &["a.docx", "b.png", "--page"],
+            &["a.docx", "b.png", "--page", "-1"],
+            &["a.docx", "b.png", "--page", "0"],
+        ] {
+            assert!(page_scale("render", &args(bad)).is_err(), "{bad:?}");
+        }
+        for bad in [
+            &["a.docx", "b.png", "--scale", "banana"][..],
+            &["a.docx", "b.png", "--scale"],
+            &["a.docx", "b.png", "--scale", "0"],
+            &["a.docx", "b.png", "--scale", "-2"],
+            &["a.docx", "b.png", "--scale", "nan"],
+        ] {
+            assert!(page_scale("render", &args(bad)).is_err(), "{bad:?}");
+        }
+        assert!(page_scale("render", &args(&["a.docx", "b.png", "--page", "1", "--page", "2"])).is_err());
+        assert!(page_scale("render", &args(&["a.docx", "b.png", "--scale", "1", "--scale", "2"])).is_err());
+    }
+
+    #[test]
+    fn help_after_a_subcommand_prints_usage() {
+        // #968: `commands --help` prints usage instead of erroring on an unknown option.
+        assert!(run(&args(&["commands", "--help"])).is_ok());
+        assert!(run(&args(&["render", "a.docx", "b.png", "-h"])).is_ok());
     }
 
     #[test]

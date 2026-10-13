@@ -5135,6 +5135,7 @@ dependencies = [
  "serde_json",
  "wordcraft-doc",
  "wordcraft-engine",
+ "wordcraft-formats",
  "wordcraft-mcp",
  "wordcraft-render",
  "wordcraft-zotero",
