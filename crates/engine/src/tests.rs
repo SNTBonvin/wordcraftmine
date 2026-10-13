@@ -5006,3 +5006,21 @@ fn insert_picture_takes_a_windows_metafile() {
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn outline_aliases_add_one_undo_step() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "one"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "two"}));
+    for id in ["outline.promote", "outline.demote", "outline.moveUp", "outline.moveDown"] {
+        let (doc, sel, depth) = (s.doc.clone(), s.sel.clone(), s.undo_depth());
+        run(&mut s, id, json!({}));
+        assert_ne!(s.doc, doc, "{id} changed nothing");
+        assert_eq!(s.undo_depth(), depth + 1, "{id}");
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(s.doc, doc, "{id}: one undo restores the document");
+        assert_eq!(s.sel, sel, "{id}: one undo restores the selection");
+        run(&mut s, "edit.redo", json!({}));
+    }
+}
