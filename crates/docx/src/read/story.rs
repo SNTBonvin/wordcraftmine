@@ -811,6 +811,20 @@ impl Reader<'_> {
             self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
             return;
         }
+        // A cached result with tracked revisions in it (an edited SUM subtotal, a formula
+        // whose result changed, #1037): the result is ordinary content between range markers
+        // so Accept/Reject All see the revisions, as pandoc does.
+        if !nested_in_instr && f.buf.iter().any(|(_, p)| p.del.is_some() || p.ins.is_some()) {
+            self.emit_obj(sc, pb, InlineObject::FieldStart { instr: f.instr.trim().to_string(), locked: f.locked, dirty: f.dirty }, &f.props);
+            for (it, p) in f.buf {
+                match it {
+                    Item::Text(t) => pb.push_text(&t, &p),
+                    Item::Obj(o) => pb.push_obj(*o, &p),
+                }
+            }
+            self.emit_obj(sc, pb, InlineObject::FieldEnd, &f.props);
+            return;
+        }
         // A cached result holding a picture, chart or shape (`INCLUDEPICTURE`'s embedded
         // picture) can't be a text result: keep the field as a range around it so the picture
         // stays in the document and is saved again. The linked source is never read.

@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use serde_json::json;
 use wordcraft_doc::props::BorderStyle;
 use wordcraft_doc::{Pos, StoryRef};
@@ -2327,6 +2329,33 @@ fn html_pictures_load_relative_to_the_file() {
     assert_eq!(doc.media.len(), 1);
     let text = doc.plain_text(StoryRef::Body);
     assert!(!text.contains("Logo") && text.contains('T') && text.contains("Web"), "{text:?}");
+}
+
+/// The document the #1037 test opens: a tracked deletion inside a field result.
+fn field_del_doc() -> wordcraft_doc::Document {
+    const DOC: &str = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =SUM(ABOVE) </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="1" w:author="T"><w:r><w:delText>$150.00</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="3" w:author="T"><w:r><w:t>$140.00</w:t></w:r></w:ins></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> =2+3 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:del w:id="4" w:author="T"><w:r><w:delText>5</w:delText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r><w:ins w:id="5" w:author="T"><w:r><w:t>five</w:t></w:r></w:ins></w:p>"#;
+    let root = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{DOC}</w:body></w:document>"#
+    );
+    let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, bytes) in [("_rels/.rels", root.as_bytes()), ("word/document.xml", doc.as_bytes())] {
+        zw.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        zw.write_all(bytes).unwrap();
+    }
+    let bytes = zw.finish().unwrap().into_inner();
+    wordcraft_docx::read(&bytes).unwrap()
+}
+
+/// #1037: Accept All drops a tracked deletion inside a field result instead of leaving
+/// the stale result text behind (`$$140.00`).
+#[test]
+fn tracked_deletion_in_a_field_result_is_resolved() {
+    let bytes = wordcraft_docx::write(&field_del_doc()).unwrap();
+    let mut s = Session::new(crate::io::open_bytes("t.docx", &bytes).unwrap());
+    assert_eq!(s.doc.final_text(StoryRef::Body).replace('\n', " "), "$140.00 five");
+    run(&mut s, "review.acceptAll", json!({}));
+    assert_eq!(text(&s).replace('\n', " "), "$140.00 five", "{:?}", text(&s));
 }
 
 /// `design.setDefault` persists the Normal style for new documents (#1264).

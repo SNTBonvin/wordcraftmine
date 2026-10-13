@@ -181,7 +181,7 @@ mod tests {
         let c = CharProps::default();
         d.para_mut(StoryRef::Body, &Path::top(2))
             .unwrap()
-            .insert_object(0, InlineObject::FieldStart { instr: "ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY".into(), locked: false }, &c)
+            .insert_object(0, InlineObject::FieldStart { instr: "ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY".into(), locked: false, dirty: false }, &c)
             .unwrap();
         let p3 = d.para_mut(StoryRef::Body, &Path::top(3)).unwrap();
         let end = p3.len();
