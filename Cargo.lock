@@ -5145,6 +5145,13 @@ name = "wordcraft-control-key"
 version = "0.6.1"
 
 [[package]]
+name = "wordcraft-csl"
+version = "0.6.1"
+dependencies = [
+ "quick-xml",
+]
+
+[[package]]
 name = "wordcraft-doc"
 version = "0.6.1"
 dependencies = [

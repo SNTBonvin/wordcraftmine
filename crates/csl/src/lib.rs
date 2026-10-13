@@ -1,0 +1,89 @@
+//! CSL 1.0.2 style files, parsed for citation rendering.
+//!
+//! The Citation Style Language (docs.citationstyles.org — a public spec) is the XML format
+//! Zotero/Mendeley styles are written in. This crate reads a style file into the [`Style`]
+//! model: the subset of CSL 1.0.2 that WordCraft's renderer draws on (text, numbers, dates,
+//! names, labels, groups and conditionals), with the en-US locale terms from the spec's
+//! appendix.
+//!
+//! Parsing is lenient the way the format demands forward-compatibility (unknown elements
+//! and attributes are ignored) but honest about the subset's edges: constructs that would
+//! silently change rendered output — collapsing, disambiguation, formatting attributes,
+//! non-en-US locales, name/date options the model doesn't carry — load with a
+//! human-readable entry in [`Style::warned`]. Hostile input never panics or hangs: files are
+//! capped at 2 MiB, XML nesting at 64 elements, macro expansion at 32 levels (references
+//! beyond are dropped with a warning), and real XML errors are `Err(String)`.
+//!
+//! Layer L2: this crate stays a pure parser — rendering the model against a document is the
+//! engine's job.
+
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
+mod model;
+mod parse;
+mod terms;
+mod xml;
+
+#[cfg(test)]
+mod tests;
+
+pub use model::{
+    AndStyle, Bibliography, Branch, Choose, Condition, Date, DatePart, DatePartName, Element, Form, Group, Label, Layout, Match, NameAsSortOrder,
+    NameOptions, Names, Number, Plural, Position, SortDirection, SortField, SortKey, Style, Text, TextSource,
+};
+pub use parse::parse;
+pub use terms::{Term, TermSet};
+
+use crate::model::Element as ModelElement;
+
+/// Walk every element of a rendering tree, mutably (used to cut macro references).
+pub(crate) fn walk_elements(els: &mut [ModelElement], f: &mut impl FnMut(&mut ModelElement)) {
+    for e in els.iter_mut() {
+        f(e);
+        match e {
+            ModelElement::Group(g) => walk_elements(&mut g.elements, f),
+            ModelElement::Choose(c) => {
+                for b in &mut c.branches {
+                    walk_elements(&mut b.layout.elements, f);
+                }
+                if let Some(e) = &mut c.else_branch {
+                    walk_elements(&mut e.elements, f);
+                }
+            }
+            ModelElement::Names(n) => {
+                if let Some(s) = &mut n.substitute {
+                    walk_elements(s, f);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The macro names referenced by a rendering tree (used to bound expansion).
+pub(crate) fn referenced_macros(els: &[ModelElement], out: &mut Vec<String>) {
+    for e in els {
+        if let ModelElement::Text(t) = e
+            && let TextSource::Macro(m) = &t.source
+        {
+            out.push(m.clone());
+        }
+        match e {
+            ModelElement::Group(g) => referenced_macros(&g.elements, out),
+            ModelElement::Choose(c) => {
+                for b in &c.branches {
+                    referenced_macros(&b.layout.elements, out);
+                }
+                if let Some(e) = &c.else_branch {
+                    referenced_macros(&e.elements, out);
+                }
+            }
+            ModelElement::Names(n) => {
+                if let Some(s) = &n.substitute {
+                    referenced_macros(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
