@@ -9,6 +9,12 @@ publish = false
 [lints]
 workspace = true
 
+# The library is the embeddable editor (`WordcraftEmbed`, built with wasm-bindgen); the binary
+# is the full app (built with trunk).
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
 [[bin]]
 name = "wordcraft-web"
 path = "src/main.rs"

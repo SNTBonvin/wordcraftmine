@@ -444,6 +444,26 @@ pub struct Session {
     edit_marks: Vec<Pos>,
     /// How many Go Back presses since the last edit (which place comes next).
     go_back_step: usize,
+    /// The document can't be changed: [`Session::run`] refuses every command that would change
+    /// it (`CommandSpec::mutates`); selecting, moving the caret, the view and saving still work.
+    /// A host that shows a file it can't keep everything of sets it (the web embed's
+    /// `setReadOnly`). Not part of the document or its history.
+    pub read_only: bool,
+}
+
+/// What a command that doesn't say it changes the document puts back if it does in a read-only
+/// session ([`Session::read_only`]).
+struct ReadOnlyGuard {
+    rev: u64,
+    document_id: u64,
+    dirty: bool,
+    doc: Document,
+    sel: Selection,
+    pending: Option<CharProps>,
+    history: Vec<Arc<Undo>>,
+    redo: Vec<Arc<Undo>>,
+    column: Option<ColumnBlock>,
+    password: Option<crate::io::Password>,
 }
 
 /// The number of edit locations Go Back cycles through (Word: four).
@@ -618,6 +638,7 @@ impl Session {
             widened: None,
             edit_marks: Vec::new(),
             go_back_step: 0,
+            read_only: false,
         }
     }
 
@@ -1055,6 +1076,8 @@ impl Session {
             // Go Back's places, like the caret history: not part of the document.
             edit_marks: _,
             go_back_step: _,
+            // A host setting, like the file path: not an edit.
+            read_only: _,
         } = self;
         let head = if history.len() + SNAPSHOT_HEAD > MAX_UNDO { history.iter().take(SNAPSHOT_HEAD).cloned().collect() } else { Vec::new() };
         EditSnapshot {
@@ -1123,6 +1146,9 @@ impl Session {
         if let Some(why) = (spec.enabled)(self) {
             return Err(CmdError::Disabled(format!("{id}: {why}")));
         }
+        if spec.mutates && self.read_only {
+            return Err(CmdError::Disabled(format!("{id}: the document is read-only")));
+        }
         // Restrict Editing: refused outright, or allowed as long as it only edits the exceptions.
         let guard = if spec.mutates { crate::cmd::protect::check_before(self, id, params)? } else { false };
         if spec.mutates && self.doc.settings.protection.as_deref() == Some("trackedChanges") {
@@ -1188,6 +1214,21 @@ impl Session {
             self.pending_move = None;
         }
         let sel_before = self.sel.clone();
+        // Read-only: some commands that aren't `mutates` still change the document (Undo and Redo
+        // put an older one back). One that does is taken back and refused; replacing the document
+        // (Open, New) isn't changing it.
+        let read_only_guard = (self.read_only && !spec.mutates).then(|| ReadOnlyGuard {
+            rev: self.rev,
+            document_id: self.document_id,
+            dirty: self.dirty,
+            doc: self.doc.clone(),
+            sel: self.sel.clone(),
+            pending: self.pending.clone(),
+            history: self.history.clone(),
+            redo: self.redo.clone(),
+            column: self.column.clone(),
+            password: self.password.clone(),
+        });
         let run = spec.run;
         let mutates = spec.mutates;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cmd::column::dispatch(self, id, mutates, run, params)));
@@ -1198,6 +1239,22 @@ impl Session {
                 Err(CmdError::Failed(format!("{id} panicked: {msg}")))
             }
         };
+        if let Some(g) = read_only_guard
+            && self.document_id == g.document_id
+            && (self.rev != g.rev || (self.dirty && !g.dirty))
+        {
+            self.doc = g.doc;
+            self.sel = g.sel;
+            self.pending = g.pending;
+            self.history = g.history;
+            self.redo = g.redo;
+            self.column = g.column;
+            self.password = g.password;
+            // Forward, never back: caches keyed by the revision must not see an old number again.
+            self.touch();
+            self.dirty = g.dirty;
+            result = Err(CmdError::Disabled(format!("{id}: the document is read-only")));
+        }
         // Restrict Editing: outside the exceptions nothing may change.
         if result.is_ok()
             && guard
