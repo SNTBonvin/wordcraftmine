@@ -1865,6 +1865,8 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         // The tallest picture on the line (it sits on the baseline).
         let mut obj_asc = 0.0f32;
         let mut any = false;
+        // Whether anything but pictures (text, an equation) sets the line's height.
+        let mut text = false;
         let dropped = pl.drop_cap.map_or(0, |d| d.0);
         for (k, c) in pl.clusters.get(c0..c1).into_iter().flatten().enumerate() {
             // Spaces and tabs never make a line taller, whatever their size: Word sizes a line by
@@ -1879,6 +1881,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                 let (a, d) = if matches!(c.kind, ClKind::Object(_)) && c.obj_h > 0.0 {
                     if pl.maths.iter().any(|(k, _)| c.kind == ClKind::Object(*k)) {
                         // An equation is text: its ascent and descent count like the text's.
+                        text = true;
                         (c.obj_h, c.obj_d)
                     } else {
                         obj_asc = obj_asc.max(c.obj_h);
@@ -1886,6 +1889,7 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
                     }
                 } else {
                     // `obj_h` is set on text clusters only under ruby text, which the line grows to fit.
+                    text = true;
                     ((st.ascent + st.shift.max(0.0)).max(c.obj_h + st.shift), st.descent + (-st.shift).max(0.0))
                 };
                 asc = asc.max(a);
@@ -1909,22 +1913,29 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
         }
         // Line spacing scales the text's height, never a picture's: a line is at least as tall
         // as its tallest picture plus the descent below the baseline.
-        // shortcut: Word leaves less than a full descent below a line of only pictures (0.5pt to
-        // 1.9pt in docxide-pdf's header fixtures case121/case123, where the descent is 3.3pt), and
-        // no rule tried so far (none, only the text's descent) matched both; it needs Word probes.
         let natural = asc + desc;
         let pictures = if obj_asc > asc { obj_asc + desc } else { 0.0 };
+        // A line of only pictures has no descent below them: it is as tall as the tallest, and
+        // multiple spacing adds its share of the font's line below (measured in Word for Windows:
+        // a 72 pt picture alone on a line of Calibri 11 and 22, Times New Roman and Arial took
+        // 72 pt at single spacing and 72 pt + (m - 1) x the font's line at 1.08, 1.5 and 2).
+        let picture_line = match rp.line_spacing {
+            LineSpacing::Multiple(m) if !text && obj_asc > asc && grid.is_none() => Some(obj_asc + (m - 1.0).max(0.0) * natural),
+            _ => None,
+        };
         // Document grid: the line takes whole line pitches, its text centred in them.
         let (height, centred) = match (rp.line_spacing, grid) {
             (LineSpacing::Multiple(m), Some(g)) => ((g.snap_height(natural) * m).max(g.snap_height(pictures)), true),
             (LineSpacing::AtLeast(v), Some(g)) => (g.snap_height(natural.max(pictures)).max(v), true),
-            (LineSpacing::Multiple(m), None) => ((natural * m).max(pictures), false),
+            (LineSpacing::Multiple(m), None) => (picture_line.unwrap_or((natural * m).max(pictures)), false),
             (LineSpacing::AtLeast(v), None) => (natural.max(pictures).max(v), false),
             (LineSpacing::Exactly(v), _) => (v, false),
         };
         let baseline = if centred {
             let up = asc.max(obj_asc);
             top + ((height - up - desc) / 2.0).max(0.0) + up
+        } else if picture_line.is_some() {
+            top + obj_asc
         } else {
             top + baseline_offset(rp.line_spacing, asc, height, desc).max(obj_asc.min(height - desc))
         };

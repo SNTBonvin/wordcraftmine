@@ -2388,10 +2388,32 @@ fn line_spacing_does_not_scale_pictures() {
     let l = lay(&d);
     let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
     let line = &para.lines[0];
-    let desc = para.styles[0].descent;
-    // Word: the picture plus the font's descent, not (picture + descent) x 1.15.
-    assert!((line.height - (144.0 + desc)).abs() < 0.01, "line {} for a 144pt picture (descent {desc})", line.height);
+    let font_line = para.styles[0].ascent + para.styles[0].descent;
+    // Word: the picture, and below it the 0.15 of the font's line that the spacing adds; not
+    // (picture + descent) x 1.15, and no descent under a line of only a picture.
+    assert!((line.height - (144.0 + 0.15 * font_line)).abs() < 0.01, "line {} for a 144pt picture (font line {font_line})", line.height);
     assert!((line.baseline - line.top - 144.0).abs() < 0.01, "the picture stands on the baseline");
+}
+
+/// A line of only a picture is as tall as the picture at single spacing, and with text beside
+/// the picture it keeps the text's descent below the baseline.
+#[test]
+fn a_line_of_only_a_picture_is_as_tall_as_the_picture() {
+    use wordcraft_doc::props::LineSpacing;
+    let line = |text: &str| {
+        let mut d = Document::from_text(text);
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(LineSpacing::Multiple(1.0));
+            p.insert_object(0, picture(72.0, 72.0, Default::default()), &Default::default()).unwrap();
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        (para.lines[0].height, para.styles[0].descent)
+    };
+    let (alone, _) = line("");
+    assert!((alone - 72.0).abs() < 0.01, "{alone}");
+    let (with_text, desc) = line("text");
+    assert!((with_text - (72.0 + desc)).abs() < 0.01, "{with_text}");
 }
 
 #[test]
