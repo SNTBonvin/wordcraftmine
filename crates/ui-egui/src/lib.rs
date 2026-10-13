@@ -3097,7 +3097,7 @@ mod tests {
         assert_eq!(prompt(&a), Some("saveChanges"));
         let asked = a.dialog.clone();
         for command in [
-            json!({"command": "file.open", "params": {"path": path.to_string_lossy()}}),
+            json!({"command": "file.open", "params": {"path": path.to_string_lossy(), "force": true}}),
             json!({"command": "text.insert", "params": {"text": "Edited "}}),
         ] {
             let (req, _reply) = ControlRequest::new("engine.execute", command);
@@ -3410,12 +3410,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Scripts and agents (control channel, MCP bridge) are never asked anything.
+    /// Scripts and agents (control channel, MCP bridge) are never asked anything: discarding
+    /// unsaved work is an error without `"force": true` (#1268), never a prompt.
     #[test]
     fn programmatic_commands_never_prompt() {
         let ctx = egui::Context::default();
         let mut a = typed();
         let (req, _reply) = ControlRequest::new("engine.execute", json!({"command": "file.new"}));
+        let outcome = control::handle(&mut a, &ctx, &req);
+        let refused = matches!(&outcome, control::Outcome::Done(v) if v.get("error").and_then(|e| e.as_str()).is_some_and(|e| e.contains("unsaved")));
+        assert!(refused, "discarding without force is an error");
+        assert_eq!(prompt(&a), None);
+        assert!(body_text(&a).contains(UNSAVED), "nothing was discarded");
+        let (req, _reply) = ControlRequest::new("engine.execute", json!({"command": "file.new", "params": {"force": true}}));
         control::handle(&mut a, &ctx, &req);
         assert_eq!(prompt(&a), None);
         assert!(!body_text(&a).contains(UNSAVED));
@@ -3526,7 +3533,8 @@ mod tests {
         }
     }
 
-    /// Scripts and agents (control channel, MCP bridge) replace the document without a question.
+    /// Scripts and agents (control channel, MCP bridge) replace the document without a
+    /// question once they pass `"force": true` (#1268); without it the call is an error.
     #[test]
     fn programmatic_mailings_never_prompt() {
         let ctx = egui::Context::default();
@@ -3535,6 +3543,13 @@ mod tests {
             a.execute("mailings.recipients", json!({"csv": "Name\nAda"})).unwrap();
             let document = a.session.document_id();
             let (req, _reply) = ControlRequest::new("engine.execute", json!({"command": id}));
+            let outcome = control::handle(&mut a, &ctx, &req);
+            let refused =
+                matches!(&outcome, control::Outcome::Done(v) if v.get("error").and_then(|e| e.as_str()).is_some_and(|e| e.contains("unsaved")));
+            assert!(refused, "{id}: discarding without force is an error");
+            assert_eq!(prompt(&a), None, "{id}");
+            assert_eq!(a.session.document_id(), document, "{id}: nothing was discarded");
+            let (req, _reply) = ControlRequest::new("engine.execute", json!({"command": id, "params": {"force": true}}));
             control::handle(&mut a, &ctx, &req);
             assert_eq!(prompt(&a), None, "{id}");
             assert_ne!(a.session.document_id(), document, "{id}");
@@ -3550,7 +3565,7 @@ mod tests {
         for id in MAILINGS {
             let mut a = typed();
             a.execute("mailings.recipients", json!({"csv": "Name\nAda"})).unwrap();
-            a.execute(id, json!({})).unwrap();
+            a.execute(id, json!({"force": true})).unwrap();
             let result = body_text(&a);
             let b = a.session.document_id();
             assert!(a.session.dirty, "{id}: the result is unsaved");
