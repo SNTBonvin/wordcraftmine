@@ -427,6 +427,21 @@ fn styles_without_qformat_get_the_default_gallery() {
     }
 }
 
+/// A custom style called "Title" is not the built-in one: it stays out of the gallery, and the
+/// built-in Title is not added over its name.
+#[test]
+fn custom_style_named_like_a_quick_builtin_is_not_quick() {
+    let styles = format!(
+        r#"<w:styles {W_NS}>
+ <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+ <w:style w:type="paragraph" w:customStyle="1" w:styleId="MyTitle"><w:name w:val="Title"/></w:style>
+</w:styles>"#
+    );
+    let ids = gallery_ids(&styles);
+    assert!(ids.iter().any(|i| i == "Normal"), "{ids:?}");
+    assert!(!ids.iter().any(|i| i == "MyTitle" || i == "Title"), "{ids:?}");
+}
+
 /// A file that uses `w:qFormat` (Word's own) keeps exactly the gallery it says.
 #[test]
 fn styles_with_qformat_keep_their_gallery() {

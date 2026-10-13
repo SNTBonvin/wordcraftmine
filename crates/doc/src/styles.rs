@@ -654,6 +654,7 @@ mod tests {
         assert_eq!(s.get("Heading1").and_then(|x| x.priority), b.get("Heading1").and_then(|x| x.priority));
         assert!(!s.get("Heading3").is_some_and(|x| x.quick), "custom style untouched");
         assert!(s.get("Subtitle").is_none(), "a style with that name exists: not duplicated");
+        assert!(s.get("Custom1").is_some_and(|x| x.quick), "found by name only, built in: quick");
         assert_eq!(s.get("Custom1").and_then(|x| x.para.space_after), Some(99.0));
     }
 
