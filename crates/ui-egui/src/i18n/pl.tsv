@@ -929,6 +929,13 @@
 	Or save a copy in another format:	Albo zapisz kopię w innym formacie:
 	Opening print dialog…	Otwieranie okna drukowania…
 	Print failed: {error}	Drukowanie nie powiodło się: {error}
+	Finding printers…	Wyszukiwanie drukarek…
+	No printers found. Configure a system printer or export a PDF.	Nie znaleziono drukarek. Skonfiguruj drukarkę systemową lub wyeksportuj plik PDF.
+	Printer discovery failed.	Nie udało się wyszukać drukarek.
+	Submitting print job…	Wysyłanie zadania drukowania…
+	Print job submitted.	Zadanie drukowania zostało wysłane.
+	Print job submitted: {receipt}	Zadanie drukowania zostało wysłane: {receipt}
+	Print failed: the printing worker stopped.	Drukowanie nie powiodło się: proces drukowania został zatrzymany.
 	Couldn't open {path}: {error}	Nie udało się otworzyć {path}: {error}
 	Column Selection	Zaznaczanie kolumnowe
 	New Table Style	Nowy styl tabeli
@@ -1757,6 +1764,9 @@
 	Clustered Column	Kolumnowy grupowany
 	Collapse	Zwiń
 	Collate copies	Sortuj kopie
+	Printer	Drukarka
+	Select a printer	Wybierz drukarkę
+	Refresh printers	Odśwież listę drukarek
 	Color model:	Model kolorów:
 	Colorful	Kolorowy
 	Colors:	Kolory:
@@ -1773,6 +1783,12 @@
 	Contents can't be edited	Nie można edytować zawartości
 	Controls	Formanty
 	Copies	Kopie
+	Two-sided printing	Drukowanie dwustronne
+	Printer default	Domyślne ustawienie drukarki
+	One-sided	Drukowanie jednostronne
+	Two-sided: long edge	Dwustronnie: przewracanie wzdłuż długiej krawędzi
+	Two-sided: short edge	Dwustronnie: przewracanie wzdłuż krótkiej krawędzi
+	Grayscale	Skala szarości
 	Copy Styles	Kopiuj style
 	Create Graphic	Utwórz grafikę
 	Current	Bieżący

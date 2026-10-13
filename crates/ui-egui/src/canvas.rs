@@ -1190,7 +1190,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 );
                 if !new.is_empty() {
                     app.canvas.ime_faces.extend(new);
-                    crate::theme::install_fonts_extra(ui.ctx(), app.fonts_hans, app.fonts_system_cjk, &app.canvas.ime_faces);
+                    crate::theme::install_fonts_language_extra(
+                        ui.ctx(),
+                        app.fonts_hans,
+                        app.fonts_korean,
+                        app.fonts_system_cjk,
+                        &app.canvas.ime_faces,
+                    );
                     ui.ctx().request_repaint();
                 }
                 let g = painter.text(pos2(x, y1), egui::Align2::LEFT_BOTTOM, &app.canvas.ime_preedit, regular(c.height * scale * 0.8), caret_color);
