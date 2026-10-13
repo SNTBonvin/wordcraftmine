@@ -52,6 +52,7 @@
 	Apply Character Style	Zastosuj styl znaku
 	Apply Style	Zastosuj styl
 	Arrange	Rozmieszczanie
+	Arrange All	Arrange All
 	Arrange\nAll	Rozmieść\nwszystkie
 	Arrow	Strzałka
 	Artistic Effects	Efekty artystyczne
@@ -669,6 +670,8 @@
 	Show/Hide ¶	Pokaż/ukryj ¶
 	Show\nComments	Pokaż\nkomentarze
 	Shrink Font 1 Point	Pomniejsz czcionkę o 1 punkt
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Obok siebie
 	Side\nto Side	Obok\nsiebie
 	Signature Line	Wiersz podpisu
@@ -711,8 +714,12 @@
 	Superscript	Indeks górny
 	Switch Modes	Przełącz tryb
 	Switch\nModes	Przełącz\ntryb
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Symbol
 	Symbols	Symbole
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Synonimy
 	Tab	Tab
 	Table	Tabela
@@ -788,6 +795,7 @@
 	Vertical Alignment	Wyrównanie w pionie
 	View	Widok
 	View Gridlines	Pokaż linie siatki
+	View Side by Side	View Side by Side
 	View State	Stan widoku
 	Views	Widoki
 	Voice	Głos

@@ -54,6 +54,7 @@
 	Apply Character Style	Karakterstílus alkalmazása
 	Apply Style	Stílus alkalmazása
 	Arrange	Elhelyezés
+	Arrange All	Arrange All
 	Arrange\nAll	Ablakok\nrendezése
 	Arrow	Nyíl
 	Artistic Effects	Művészi effektusok
@@ -669,6 +670,8 @@
 	Show/Hide ¶	Megjelenítés/elrejtés ¶
 	Show\nComments	Megjegyzések\nmegjelenítése
 	Shrink Font 1 Point	Betűméret csökkentése 1 ponttal
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Egymás mellett
 	Side\nto Side	Egymás\nmellett
 	Signature Line	Aláírássor
@@ -717,8 +720,12 @@
 	Superscript	Felső index
 	Switch Modes	Módváltás
 	Switch\nModes	Módváltás
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Szimbólum
 	Symbols	Szimbólumok
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Szinonimák
 	Tab	Tabulátor
 	Table	Táblázat
@@ -796,6 +803,7 @@
 	Vertical Alignment	Függőleges igazítás
 	View	Nézet
 	View Gridlines	Rácsvonalak megjelenítése
+	View Side by Side	View Side by Side
 	View State	Nézet állapota
 	Views	Nézetek
 	Voice	Hang

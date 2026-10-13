@@ -45,6 +45,7 @@
 	Apply Style	スタイルを適用
 	Apply Styles	スタイルを選んで適用
 	Arrange	配置
+	Arrange All	Arrange All
 	Arrange\nAll	整列
 	Arrow	矢印
 	Artistic Effects	アート効果
@@ -803,6 +804,8 @@
 	Show/Hide ¶	編集記号の表示/非表示 ¶
 	Show\nComments	コメントの表示
 	Shrink Font 1 Point	フォントを 1 ポイント縮小
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	左右に並べる
 	Side\nto Side	左右に並べる
 	Signature Line	署名欄
@@ -848,8 +851,12 @@
 	Superscript	上付き
 	Switch Modes	モードの切り替え
 	Switch\nModes	モードの切り替え
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	記号と特殊文字
 	Symbols	記号と特殊文字
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	類義語
 	Tab	タブ
 	Tab character	タブ文字
@@ -933,6 +940,7 @@
 	Vertical Alignment	垂直方向の配置
 	View	表示
 	View Gridlines	グリッド線の表示
+	View Side by Side	View Side by Side
 	View State	表示の状態
 	Views	表示
 	Voice	音声

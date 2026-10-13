@@ -56,6 +56,7 @@
 	Apply Style	Formatvorlage anwenden
 	Apply Styles	Formatvorlagen anwenden
 	Arrange	Anordnen
+	Arrange All	Arrange All
 	Arrange\nAll	Alle\nanordnen
 	Arrow	Pfeil
 	Artistic Effects	Künstlerische Effekte
@@ -735,6 +736,8 @@
 	Show/Hide ¶	¶ ein-/ausblenden
 	Show\nComments	Kommentare\neinblenden
 	Shrink Font 1 Point	Schrift um 1 Punkt verkleinern
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Seite an Seite
 	Side\nto Side	Seite\nan Seite
 	Signature Line	Signaturzeile
@@ -779,8 +782,12 @@
 	Superscript	Hochgestellt
 	Switch Modes	Modus wechseln
 	Switch\nModes	Modus\nwechseln
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Symbol
 	Symbols	Symbole
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Synonyme
 	Tab	Tab
 	Tab character	Tabulatorzeichen
@@ -864,6 +871,7 @@
 	Vertical Alignment	Vertikale Ausrichtung
 	View	Ansicht
 	View Gridlines	Rasterlinien anzeigen
+	View Side by Side	View Side by Side
 	View State	Ansichtszustand
 	Views	Ansichten
 	Voice	Stimme

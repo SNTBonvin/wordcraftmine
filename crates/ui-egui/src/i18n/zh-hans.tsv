@@ -57,6 +57,7 @@
 	Apply Style	应用样式
 	Apply Styles	选择并应用样式
 	Arrange	排列
+	Arrange All	Arrange All
 	Arrange\nAll	全部重排
 	Arrow	箭头
 	Artistic Effects	艺术效果
@@ -815,6 +816,8 @@
 	Show/Hide ¶	显示/隐藏 ¶
 	Show\nComments	显示批注
 	Shrink Font 1 Point	字号减小 1 磅
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	并排
 	Side\nto Side	并排
 	Signature Line	签名行
@@ -860,8 +863,12 @@
 	Superscript	上标
 	Switch Modes	切换模式
 	Switch\nModes	切换模式
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	符号
 	Symbols	符号
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	同义词
 	Tab	制表符
 	Tab character	制表符
@@ -945,6 +952,7 @@
 	Vertical Alignment	垂直对齐方式
 	View	视图
 	View Gridlines	查看网格线
+	View Side by Side	View Side by Side
 	View State	视图状态
 	Views	视图
 	Voice	语音

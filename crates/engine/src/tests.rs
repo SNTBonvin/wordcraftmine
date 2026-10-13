@@ -2970,6 +2970,63 @@ fn navigation_pane_opens_without_changing_view_mode() {
 }
 
 #[test]
+fn view_window_tiling() {
+    // View › Window (#27): New Window, Split, Side by Side, Synchronous Scrolling,
+    // Arrange All and Switch Windows tile one document in-window (screen only).
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "window tiling leaves the document alone"}));
+    let before = text(&s);
+    // A second window becomes visible as side-by-side panes of the same document.
+    let r = run(&mut s, "view.newWindow", json!({}));
+    assert_eq!(r["windows"], 2);
+    assert_eq!(r["active"], 1);
+    assert!(s.view.side_by_side);
+    assert_eq!(text(&s), before);
+    // Split toggles and takes a ratio as percent or fraction; junk keeps the default.
+    run(&mut s, "view.split", json!({"value": true, "ratio": 30}));
+    assert!(s.view.split && (s.view.split_ratio - 0.3).abs() < 1e-6);
+    run(&mut s, "view.split", json!({"ratio": 0.7}));
+    assert!(s.view.split && (s.view.split_ratio - 0.7).abs() < 1e-6);
+    assert!(s.run("view.split", &json!({"ratio": 500})).is_err());
+    assert!(s.run("view.split", &json!({"ratio": "half"})).is_ok());
+    run(&mut s, "view.split", json!({}));
+    assert!(s.view.split);
+    run(&mut s, "view.split", json!({"value": false}));
+    assert!(!s.view.split);
+    // Leaving Side by Side also leaves synchronous scrolling.
+    run(&mut s, "view.sideBySide", json!({"value": true}));
+    run(&mut s, "view.syncScroll", json!({"value": true}));
+    assert!(s.view.sync_scroll);
+    run(&mut s, "view.sideBySide", json!({"value": false}));
+    assert!(!s.view.side_by_side && !s.view.sync_scroll);
+    // Synchronous scrolling needs Side by Side first, like Word's greyed-out button.
+    assert!(s.run("view.syncScroll", &json!({"value": true})).is_err());
+    // Arrange All tiles what is open and remembers the direction.
+    let r = run(&mut s, "view.arrangeAll", json!({"tiling": "horizontal"}));
+    assert_eq!(r["tiling"], "horizontal");
+    assert!(s.view.side_by_side);
+    assert!(s.run("view.arrangeAll", &json!({"tiling": "diagonal"})).is_err());
+    // Switch Windows cycles the open windows and bounds-checks its index.
+    run(&mut s, "view.switchWindows", json!({}));
+    assert_eq!(s.view.active_window, 0);
+    run(&mut s, "view.switchWindows", json!({"previous": true}));
+    assert_eq!(s.view.active_window, 1);
+    run(&mut s, "view.switchWindows", json!({"index": 0}));
+    assert_eq!(s.view.active_window, 0);
+    assert!(s.run("view.switchWindows", &json!({"index": 7})).is_err());
+    assert!(s.run("view.switchWindows", &json!({"index": -1})).is_err());
+    // One window: switching is disabled, like Word's menu with a single document.
+    let mut one = Session::new(wordcraft_doc::Document::new());
+    assert!(one.run("view.switchWindows", &json!({})).is_err());
+    assert!(one.run("view.syncScroll", &json!({"value": true})).is_err());
+    // The state agents read carries the tiling (and the document is untouched).
+    let state = run(&mut s, "view.state", json!({}));
+    assert_eq!(state["windowCount"], 2);
+    assert_eq!(state["activeWindow"], 0);
+    assert_eq!(text(&s), before);
+}
+
+#[test]
 fn reading_mode_reflows_per_viewport_without_changing_document_or_export() {
     let mut s = s();
     run(&mut s, "text.insert", json!({"text": "A long paragraph for reading. ".repeat(200)}));

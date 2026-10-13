@@ -51,6 +51,7 @@
 	Apply Character Style	Karakter Stili Uygula
 	Apply Style	Stil Uygula
 	Arrange	Yerleştir
+	Arrange All	Arrange All
 	Arrange\nAll	Tümünü\nYerleştir
 	Arrow	Ok
 	Artistic Effects	Sanatsal Efektler
@@ -675,6 +676,8 @@
 	Show/Hide ¶	Göster/Gizle ¶
 	Show\nComments	Yorumları\nGöster
 	Shrink Font 1 Point	Yazı Tipini 1 Punto Küçült
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Yan Yana
 	Side\nto Side	Yan\nYana
 	Signature Line	İmza Satırı
@@ -722,8 +725,12 @@
 	Superscript	Üst Simge
 	Switch Modes	Mod Değiştir
 	Switch\nModes	Mod\nDeğiştir
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Sembol
 	Symbols	Semboller
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Eş Anlamlılar
 	Tab	Sekme
 	Table	Tablo
@@ -810,6 +817,7 @@ preview	Title	Örnek
 	Vertical Alignment	Dikey Hizalama
 	View	Görünüm
 	View Gridlines	Kılavuz Çizgilerini Göster
+	View Side by Side	View Side by Side
 	View State	Görünüm Durumu
 	Views	Görünümler
 	Voice	Ses

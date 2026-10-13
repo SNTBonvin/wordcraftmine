@@ -60,6 +60,7 @@
 	Apply Character Style	Applica stile carattere
 	Apply Style	Applica stile
 	Arrange	Disponi
+	Arrange All	Arrange All
 	Arrange\nAll	Disponi\ntutto
 	Arrow	Freccia
 	Artistic Effects	Effetti artistici
@@ -749,6 +750,8 @@
 	Show/Hide ¶	Mostra tutto
 	Show\nComments	Mostra\ncommenti
 	Shrink Font 1 Point	Riduci carattere di 1 punto
+	Side by Side	Side by Side
+	Side by\nSide	Side by\nSide
 	Side to Side	Pagine affiancate
 	Side\nto Side	Pagine\naffiancate
 	Signature Line	Riga per la firma
@@ -794,8 +797,12 @@
 	Superscript	Apice
 	Switch Modes	Cambia modalità
 	Switch\nModes	Cambia\nmodalità
+	Switch Windows	Switch Windows
+	Switch\nWindows	Switch\nWindows
 	Symbol	Simbolo
 	Symbols	Simboli
+	Sync\nScrolling	Sync\nScrolling
+	Synchronous Scrolling	Synchronous Scrolling
 	Synonyms	Sinonimi
 	Tab	Tabulazione
 	Tab character	Carattere di tabulazione
@@ -880,6 +887,7 @@
 	Vertical Alignment	Allineamento verticale
 	View	Visualizza
 	View Gridlines	Visualizza griglia
+	View Side by Side	View Side by Side
 	View State	Stato visualizzazione
 	Views	Visualizzazioni
 	Voice	Voce
