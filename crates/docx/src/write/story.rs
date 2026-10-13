@@ -619,7 +619,7 @@ impl Writer<'_> {
                 // Tight and Through wrapping need a polygon: the shape's outline unless it has one.
                 if matches!(float.wrap, Wrap::Tight | Wrap::Through) && float.wrap_polygon.is_none() {
                     float.wrap_polygon =
-                        wordcraft_doc::wrap::shape_outline(*kind, *sw, *sh, extra.adj.unwrap_or(wordcraft_doc::shape_geom::DEFAULT_ADJ))
+                        wordcraft_doc::wrap::shape_outline(*kind, *sw, *sh, extra.adj.unwrap_or(wordcraft_doc::shape_geom::default_adj(*kind)))
                             .and_then(|pts| wordcraft_doc::wrap::WrapPolygon::from_unit(false, &pts))
                             .map(std::sync::Arc::new);
                 }

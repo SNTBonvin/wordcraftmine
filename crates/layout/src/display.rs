@@ -992,7 +992,7 @@ fn lines(
                 stroke: Some(text_color(&st.rc.color, None)),
                 stroke_width: e.stroke,
                 effects: Default::default(),
-                adj: wordcraft_doc::shape_geom::DEFAULT_ADJ,
+                adj: wordcraft_doc::shape_geom::default_adj(e.kind),
             });
         }
         // Ruby (Phonetic Guide) text over its base text, in runs of one style.
@@ -1203,7 +1203,7 @@ fn graphic_draws(doc: &Document, g: &Graphic, rect: Rect, alpha: f32) -> Vec<Dra
                 stroke: *stroke,
                 stroke_width: stroke_width * k,
                 effects: Default::default(),
-                adj: wordcraft_doc::shape_geom::DEFAULT_ADJ,
+                adj: wordcraft_doc::shape_geom::default_adj(*kind),
             }),
             GraphicItem::Path { segs, fill, stroke, stroke_width } => {
                 let segs = page_segs(segs, |x, y| (rect.x + x * sx, rect.y + y * sy));
@@ -1281,7 +1281,15 @@ fn shape_draws(
         return;
     }
     let Some(f) = freeform.filter(|_| kind == ShapeKind::Freeform) else {
-        out.push(Draw::Shape { rect, kind, fill, stroke, stroke_width, effects, adj: extra.adj.unwrap_or(wordcraft_doc::shape_geom::DEFAULT_ADJ) });
+        out.push(Draw::Shape {
+            rect,
+            kind,
+            fill,
+            stroke,
+            stroke_width,
+            effects,
+            adj: extra.adj.unwrap_or(wordcraft_doc::shape_geom::default_adj(kind)),
+        });
         return;
     };
     if f.is_ink() && opts.hide_ink {

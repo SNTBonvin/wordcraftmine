@@ -879,8 +879,9 @@ impl ShapeKind {
         self.info().2
     }
 
-    /// Whether the kind uses the corner-radius adjustment (`extra.adj`): the round/snip
-    /// family. Other shapes store no adjustment.
+    /// Whether the kind honours an `adj` (`extra.adj`): the round/snip family (a corner
+    /// radius) and NoSmoking (its bar thickness). `shape.adjust` accepts these kinds;
+    /// other shapes store no adjustment.
     pub fn uses_adj(self) -> bool {
         matches!(
             self,
@@ -893,6 +894,7 @@ impl ShapeKind {
                 | ShapeKind::Snip2DiagRect
                 | ShapeKind::SnipRoundRect
                 | ShapeKind::Plaque
+                | ShapeKind::NoSmoking
         )
     }
 

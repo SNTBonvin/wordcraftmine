@@ -2268,3 +2268,39 @@ fn replace_part(zip_bytes: &[u8], name: &str, data: &[u8]) -> Vec<u8> {
     }
     out.finish().unwrap().into_inner()
 }
+
+/// NoSmoking round-trips as preset `noSmoking` with its adjustment (bar thickness) and
+/// No Fill: the bar is canonical geometry, not a gallery-only mark, so a file that
+/// stores it keeps the shape whole.
+#[test]
+fn no_smoking_shape_round_trip() {
+    use wordcraft_doc::connector::ShapeExtra;
+    let shape = InlineObject::Shape {
+        kind: ShapeKind::NoSmoking,
+        w: 72.0,
+        h: 72.0,
+        fill: None,
+        stroke: Some(Rgb(200, 0, 0)),
+        stroke_width: 1.5,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: ShapeExtra { adj: Some(0.25), ..Default::default() },
+    };
+    let mut p = Paragraph::with_text("x", CharProps::default());
+    p.insert_object(1, shape, &CharProps::default()).unwrap();
+    let r = rt(&doc_with(vec![p]));
+    let got = paras(&r);
+    assert_eq!(got.len(), 1);
+    match &got[0].objects[0] {
+        InlineObject::Shape { kind, fill, stroke, stroke_width, extra, .. } => {
+            assert_eq!(*kind, ShapeKind::NoSmoking, "preset noSmoking survives");
+            assert_eq!(*fill, None, "No Fill survives");
+            assert_eq!(*stroke, Some(Rgb(200, 0, 0)));
+            assert_eq!(*stroke_width, 1.5);
+            assert_eq!(extra.adj, Some(0.25), "bar-thickness adjustment survives");
+        }
+        o => panic!("{o:?}"),
+    }
+}

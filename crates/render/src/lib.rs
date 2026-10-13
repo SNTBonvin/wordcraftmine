@@ -1294,6 +1294,30 @@ mod tests {
         let p = shape_path(ShapeKind::Line, kurbo::Rect::new(10.0, 20.0, 30.0, 60.0), wordcraft_doc::shape_geom::DEFAULT_ADJ);
         assert_eq!(p.elements(), &[kurbo::PathEl::MoveTo((10.0, 20.0).into()), kurbo::PathEl::LineTo((30.0, 60.0).into())]);
     }
+
+    /// NoSmoking's path holds the circle AND the bar as sub-paths of one path, so one
+    /// fill paints both and one stroke outlines both: under No Fill the bar is still
+    /// there, stroked, instead of leaving only a circle.
+    #[test]
+    fn no_smoking_path_contains_circle_and_bar() {
+        let p =
+            shape_path(ShapeKind::NoSmoking, kurbo::Rect::new(0.0, 0.0, 100.0, 100.0), wordcraft_doc::shape_geom::default_adj(ShapeKind::NoSmoking));
+        let pts: Vec<(f64, f64)> = p
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => Some((p.x, p.y)),
+                _ => None,
+            })
+            .collect();
+        // A point on the circle (the top of the rim).
+        assert!(pts.iter().any(|(x, y)| (x - 50.0).abs() < 1.0 && (y - 0.0).abs() < 1.0), "circle rim present");
+        // A bar corner: (0.5 + 0.49/√2 + 0.09375/√2, 0.5 − 0.49/√2 + 0.09375/√2) × 100.
+        let (bx, by) = (91.3, 22.0);
+        assert!(pts.iter().any(|(x, y)| (x - bx).abs() < 1.0 && (y - by).abs() < 1.0), "bar corner present at ({bx}, {by})");
+        // Two closed sub-paths: the path closes twice.
+        assert_eq!(p.elements().iter().filter(|e| matches!(e, kurbo::PathEl::ClosePath)).count(), 2);
+    }
 }
 
 #[cfg(test)]

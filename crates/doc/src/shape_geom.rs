@@ -4,11 +4,15 @@
 //! draws it, the raster/PDF renderers fall back to it, and the wrapper falls back to it for
 //! Tight/Through outlines. The outlines here are the preset shapes at their default
 //! adjustments; only the round- and snip-corner rectangles honour `adj` (the corner radius as
-//! a fraction of the shorter side), because those are the shapes whose adjustment a user
-//! drags. Interior detail lines (a predefined process's side bars, a callout's leader) are
-//! separate open sub-paths; the gallery draws them, the renderers stroke them, the wrapper
-//! ignores them (it takes the silhouette). The exact curve control points are our own
-//! approximation of the preset geometry, not copied from any other implementation.
+//! a fraction of the shorter side) and NoSmoking (its bar thickness), because those are the
+//! shapes whose adjustment a user drags or a file stores. Interior detail lines (a
+//! predefined process's side bars, a callout's leader, a cube's inner edges, a frame's inner
+//! rectangle) are separate open sub-paths; the gallery draws them, the renderers stroke
+//! them, the wrapper ignores them (it takes the silhouette). The one interior part that is a
+//! filled area, not a line — NoSmoking's bar — is a closed sub-path after the circle, so it
+//! fills with the shape and strokes as an outlined bar under No Fill. The exact curve
+//! control points are our own approximation of the preset geometry, not copied from any
+//! other implementation.
 
 use crate::connector::connector_segs;
 use crate::para::ShapeKind;
@@ -31,10 +35,11 @@ fn open(pts: Vec<(f32, f32)>) -> ShapePath {
 
 /// The outline of `kind` in a `w` × `h` frame: its sub-paths in unit coordinates. `None`
 /// for shapes whose outline is their frame (rectangle, text box, freeform). `adj` is the
-/// shape's adjustment (corner radius as a fraction of the shorter side) for the round- and
-/// snip-corner rectangles; other shapes ignore it.
+/// shape's adjustment: the corner radius as a fraction of the shorter side for the
+/// round- and snip-corner rectangles, the bar thickness for NoSmoking; other shapes ignore
+/// it.
 pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<ShapePath>> {
-    let adj = if adj.is_finite() { adj.clamp(0.0, 0.5) } else { crate::shape_geom::DEFAULT_ADJ };
+    let adj = if adj.is_finite() { adj.clamp(0.0, 0.5) } else { default_adj(kind) };
     let paths = match kind {
         // Lines and connectors: one open path from their segments.
         ShapeKind::Line
@@ -80,15 +85,24 @@ pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<Shape
         ShapeKind::PieWedge => vec![closed(pie_wedge())],
         ShapeKind::BlockArc => vec![closed(block_arc())],
         ShapeKind::Donut => vec![closed(donut())],
-        ShapeKind::NoSmoking => vec![closed(ellipse_pts(0.5, 0.5, 0.5, 0.5, 48))],
-        ShapeKind::Frame => vec![closed(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])],
-        ShapeKind::HalfFrame => vec![closed(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])],
+        ShapeKind::NoSmoking => vec![closed(ellipse_pts(0.5, 0.5, 0.5, 0.5, 48)), closed(no_smoking_bar(adj))],
+        ShapeKind::Frame => {
+            vec![
+                closed(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]),
+                open(vec![(0.15, 0.15), (0.85, 0.15), (0.85, 0.85), (0.15, 0.85), (0.15, 0.15)]),
+            ]
+        }
+        ShapeKind::HalfFrame => {
+            vec![closed(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]), open(vec![(0.15, 0.15), (0.85, 0.15), (0.85, 0.85), (0.15, 0.85)])]
+        }
         ShapeKind::Corner => vec![closed(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 0.25), (0.25, 0.25), (0.25, 1.0), (0.0, 1.0)])],
         ShapeKind::DiagStripe => vec![closed(vec![(0.0, 0.25), (0.75, 0.0), (1.0, 0.0), (1.0, 0.75), (0.25, 1.0), (0.0, 1.0)])],
         ShapeKind::Cross => vec![closed(cross())],
         ShapeKind::Plus => vec![closed(plus())],
         ShapeKind::Cloud => vec![closed(cloud())],
-        ShapeKind::FoldedCorner => vec![closed(vec![(0.0, 0.0), (0.72, 0.0), (1.0, 0.28), (1.0, 1.0), (0.0, 1.0)])],
+        ShapeKind::FoldedCorner => {
+            vec![closed(vec![(0.0, 0.0), (0.72, 0.0), (1.0, 0.28), (1.0, 1.0), (0.0, 1.0)]), open(vec![(0.72, 0.0), (0.72, 0.28), (1.0, 0.28)])]
+        }
         ShapeKind::SmileyFace => vec![closed(ellipse_pts(0.5, 0.5, 0.5, 0.5, 48))],
         ShapeKind::LightningBolt => vec![closed(vec![(0.55, 0.0), (0.2, 0.55), (0.45, 0.55), (0.35, 1.0), (0.85, 0.4), (0.55, 0.4)])],
         ShapeKind::Sun => vec![closed(sun())],
@@ -96,7 +110,9 @@ pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<Shape
         ShapeKind::Arc => vec![open(arc_pts(0.5, 0.5, 0.5, 0.5, 0.0, std::f32::consts::FRAC_PI_2, 24))],
         ShapeKind::Chord => vec![closed(chord())],
         ShapeKind::Can => vec![closed(can())],
-        ShapeKind::Cube => vec![closed(cube())],
+        ShapeKind::Cube => {
+            vec![closed(cube()), open(vec![(0.5, 0.5), (0.5, 0.0)]), open(vec![(0.5, 0.5), (1.0, 0.25)]), open(vec![(0.5, 0.5), (0.0, 0.25)])]
+        }
         ShapeKind::Bevel => {
             vec![closed(snip_corners(corner_radius(w, h, 0.06), corner_radius(w, h, 0.06), corner_radius(w, h, 0.06), corner_radius(w, h, 0.06)))]
         }
@@ -158,7 +174,14 @@ pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<Shape
         ShapeKind::SplitArrow => vec![closed(split_arrow())],
         ShapeKind::UturnArrow => vec![closed(uturn_arrow())],
         ShapeKind::CircularArrow => vec![closed(circular_arrow(true))],
-        ShapeKind::StripedRightArrow => vec![closed(arrow_right(0.3, 0.35, 0.7))],
+        ShapeKind::StripedRightArrow => {
+            vec![
+                closed(arrow_right(0.3, 0.35, 0.7)),
+                open(vec![(0.15, 0.35), (0.15, 0.65)]),
+                open(vec![(0.25, 0.35), (0.25, 0.65)]),
+                open(vec![(0.35, 0.35), (0.35, 0.65)]),
+            ]
+        }
         ShapeKind::NotchedRightArrow => vec![closed(notched_arrow())],
         ShapeKind::BentUpArrow => vec![closed(bent_up_arrow())],
         ShapeKind::BentArrow => vec![closed(bent_arrow())],
@@ -277,6 +300,17 @@ pub fn shape_geom(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<Shape
 /// `0.16` the renderers used before adjustments existed (and close to the preset default of
 /// 16667/100000).
 pub const DEFAULT_ADJ: f32 = 0.16;
+
+/// The preset-default adjustment for `kind`: the OOXML preset default for shapes whose
+/// adjustment is not a corner radius (NoSmoking's bar thickness, 18750/100000);
+/// [`DEFAULT_ADJ`] for everything else. Callers resolving a stored `None` adjustment
+/// through this keep the preset's own default instead of the corner-radius default.
+pub fn default_adj(kind: ShapeKind) -> f32 {
+    match kind {
+        ShapeKind::NoSmoking => 0.1875,
+        _ => DEFAULT_ADJ,
+    }
+}
 
 /// A connector or line as one open sub-path, from its segments flattened to points.
 fn connector_path(kind: ShapeKind) -> ShapePath {
@@ -491,6 +525,19 @@ fn donut() -> Vec<(f32, f32)> {
     inner.push(first);
     outer.extend(inner);
     outer
+}
+
+/// The No Smoking bar: a thick diagonal parallelogram across the circle, bottom-left to
+/// top-right (the direction the gallery always drew it), `thickness` as a fraction of the
+/// frame (the preset's `adj`, default 18750/100000). The half-length keeps every corner
+/// inside the circle, so the bar's ends meet the rim without poking past it.
+fn no_smoking_bar(thickness: f32) -> Vec<(f32, f32)> {
+    let t = (thickness * 0.5).clamp(0.0, 0.5);
+    let l = (0.25 - t * t).max(0.0).sqrt().min(0.49);
+    let (dx, dy) = (std::f32::consts::FRAC_1_SQRT_2, -std::f32::consts::FRAC_1_SQRT_2);
+    let (nx, ny) = (std::f32::consts::FRAC_1_SQRT_2, std::f32::consts::FRAC_1_SQRT_2);
+    let c = |a: f32, b: f32| (0.5 + a * dx + b * nx, 0.5 + a * dy + b * ny);
+    vec![c(l, t), c(l, -t), c(-l, -t), c(-l, t)]
 }
 
 /// A diagonal cross (an X with thick arms).
@@ -830,4 +877,92 @@ fn wedge_ellipse() -> Vec<(f32, f32)> {
     let mut pts = arc_pts(0.5, 0.4, 0.5, 0.4, 80.0_f32.to_radians(), -240.0_f32.to_radians(), 40);
     pts.push((0.45, 1.0));
     pts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::para::ShapeKind;
+
+    fn area(pts: &[(f32, f32)]) -> f32 {
+        pts.iter()
+            .enumerate()
+            .map(|(i, (x, y))| {
+                let (x2, y2) = pts[(i + 1) % pts.len()];
+                x * y2 - x2 * y
+            })
+            .sum::<f32>()
+            .abs()
+            / 2.0
+    }
+
+    /// NoSmoking is a circle PLUS a thick diagonal bar: the bar is a closed sub-path after
+    /// the ellipse, a parallelogram whose corners all sit inside the circle.
+    #[test]
+    fn no_smoking_geometry_contains_the_bar() {
+        let paths = shape_geom(ShapeKind::NoSmoking, 100.0, 100.0, default_adj(ShapeKind::NoSmoking)).unwrap();
+        assert_eq!(paths.len(), 2, "circle + bar");
+        assert!(paths.iter().all(|p| p.closed), "both parts are filled areas");
+        assert_eq!(paths[0].pts.len(), 48, "the circle");
+        let bar = &paths[1].pts;
+        assert_eq!(bar.len(), 4, "the bar is a parallelogram");
+        for (x, y) in bar {
+            let d = ((x - 0.5).powi(2) + (y - 0.5).powi(2)).sqrt();
+            assert!(d <= 0.5, "bar corner ({x}, {y}) sits inside the circle, d={d}");
+        }
+        // A parallelogram's diagonals share a midpoint.
+        let mid = |a: (f32, f32), b: (f32, f32)| ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+        let (m1, m2) = (mid(bar[0], bar[2]), mid(bar[1], bar[3]));
+        assert!((m1.0 - m2.0).abs() < 1e-6 && (m1.1 - m2.1).abs() < 1e-6, "diagonals share a midpoint");
+        assert!(area(bar) > 0.05, "the bar has real area, {}", area(bar));
+    }
+
+    /// The bar's thickness follows `adj`: a bigger adjustment is a thicker bar.
+    #[test]
+    fn no_smoking_bar_thickness_follows_adj() {
+        let at = |adj: f32| {
+            let paths = shape_geom(ShapeKind::NoSmoking, 100.0, 100.0, adj).unwrap();
+            area(&paths[1].pts)
+        };
+        assert!(at(0.3) > at(0.1), "0.3 bar is thicker than 0.1 bar");
+        assert!(at(0.0) < 1e-6, "adj 0 is no bar at all");
+    }
+
+    /// The preset default for NoSmoking's bar is 18750/100000, not the corner-radius 0.16:
+    /// a stored `None` adjustment and a non-finite one both resolve to it.
+    #[test]
+    fn no_smoking_default_adj_is_the_preset_default() {
+        assert_eq!(default_adj(ShapeKind::NoSmoking), 0.1875);
+        assert_eq!(default_adj(ShapeKind::Rectangle), DEFAULT_ADJ);
+        let nan = shape_geom(ShapeKind::NoSmoking, 100.0, 100.0, f32::NAN).unwrap();
+        let preset = shape_geom(ShapeKind::NoSmoking, 100.0, 100.0, 0.1875).unwrap();
+        assert_eq!(nan[1].pts, preset[1].pts, "NaN adj falls back to the preset default");
+    }
+
+    /// The audit's other moved interiors: real geometric parts that used to be gallery-only
+    /// detail lines are now canonical sub-paths, so canvas/PDF/DOCX render them.
+    #[test]
+    fn moved_interiors_are_canonical_geometry() {
+        let geom = |kind| shape_geom(kind, 100.0, 100.0, DEFAULT_ADJ).unwrap();
+        // FoldedCorner: the fold edge.
+        let folded = geom(ShapeKind::FoldedCorner);
+        assert_eq!(folded.len(), 2);
+        assert!(!folded[1].closed && folded[1].pts == vec![(0.72, 0.0), (0.72, 0.28), (1.0, 0.28)]);
+        // Cube: the three inner edges meeting at the centre.
+        let cube = geom(ShapeKind::Cube);
+        assert_eq!(cube.len(), 4);
+        assert!(cube[1..].iter().all(|p| !p.closed && p.pts.len() == 2 && p.pts[0] == (0.5, 0.5)));
+        // Frame: the inner rectangle, as an open loop.
+        let frame = geom(ShapeKind::Frame);
+        assert_eq!(frame.len(), 2);
+        assert!(!frame[1].closed && frame[1].pts.first() == frame[1].pts.last());
+        // HalfFrame: the inner U.
+        let half = geom(ShapeKind::HalfFrame);
+        assert_eq!(half.len(), 2);
+        assert!(!half[1].closed && half[1].pts.len() == 4);
+        // StripedRightArrow: the three stripes across the shaft.
+        let striped = geom(ShapeKind::StripedRightArrow);
+        assert_eq!(striped.len(), 4);
+        assert!(striped[1..].iter().all(|p| !p.closed && p.pts.len() == 2));
+    }
 }

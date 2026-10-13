@@ -74,7 +74,11 @@ pub fn shape_outline(kind: ShapeKind, w: f32, h: f32, adj: f32) -> Option<Vec<(f
         | ShapeKind::StraightConnector
         | ShapeKind::ElbowConnector
         | ShapeKind::CurvedConnector => return None,
-        ShapeKind::Ellipse => (0..48).map(|i| (i as f32) * TAU / 48.0).map(|a| (0.5 + 0.5 * a.cos(), 0.5 + 0.5 * a.sin())).collect(),
+        // NoSmoking wraps around its circle: the bar is a later closed sub-path of the
+        // shared geometry, and the fallback below would otherwise take the bar.
+        ShapeKind::Ellipse | ShapeKind::NoSmoking => {
+            (0..48).map(|i| (i as f32) * TAU / 48.0).map(|a| (0.5 + 0.5 * a.cos(), 0.5 + 0.5 * a.sin())).collect()
+        }
         ShapeKind::RoundedRectangle => {
             // Corner radius as drawn: the shape's adjustment, a fraction of the shorter side.
             let r = adj.clamp(0.0, 0.5) * w.min(h);
@@ -237,6 +241,18 @@ mod tests {
             }
         }
         assert!(shape_outline(ShapeKind::Rectangle, 10.0, 10.0, crate::shape_geom::DEFAULT_ADJ).is_none());
+    }
+
+    /// NoSmoking wraps around its circle, not its bar: the bar is a later closed sub-path
+    /// of the shared geometry, and the fallback would otherwise take it.
+    #[test]
+    fn no_smoking_wrap_outline_is_the_circle() {
+        let pts = shape_outline(ShapeKind::NoSmoking, 100.0, 100.0, crate::shape_geom::DEFAULT_ADJ).unwrap();
+        assert_eq!(pts, shape_outline(ShapeKind::Ellipse, 100.0, 100.0, crate::shape_geom::DEFAULT_ADJ).unwrap());
+        for (x, y) in &pts {
+            let d = ((x - 0.5).powi(2) + (y - 0.5).powi(2)).sqrt();
+            assert!((d - 0.5).abs() < 1e-5, "outline point ({x}, {y}) lies on the circle");
+        }
     }
 
     /// The corner radius follows the adjustment: square corners (adj 0) put the corner
