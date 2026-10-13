@@ -156,6 +156,7 @@
 	Right (vertical)	靠右（直書）
 	Ruby text:	注音文字：
 	Save documents	儲存文件
+	Search	搜尋
 	Search for templates	搜尋範本
 	Show all revisions inline	以內嵌方式顯示所有修訂
 	Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged.	像「檢視 › 切換模式」一樣以反轉的色彩顯示文件。儲存、列印和 PDF 不受影響。
@@ -199,6 +200,7 @@
 	Page Border	頁面框線設定
 	Apply to:	套用至：
 	These marks show even when Show/Hide ¶ is off.	即使關閉「顯示/隱藏 ¶」，這些標記也會顯示。
+	Title Bar	標題列
 	Typing replaces selected text	輸入的內容取代選取的文字
 	Update fields before printing	列印前更新功能變數
 	Use the Insert key to switch overtype on and off	使用 Insert 鍵切換取代模式
@@ -470,6 +472,7 @@
 	Insert Above	插入上方列
 	Insert Below	插入下方列
 	Insert Caption	插入標號
+	Insert Caption…	插入標號…
 	Insert Citation	插入引文
 	Insert Endnote	插入章節附註
 	Insert Footnote	插入註腳
@@ -859,6 +862,7 @@
 	Table of Contents	目錄
 	Table of\nContents	目錄
 	Table Properties	表格內容
+	Table Properties…	表格內容…
 	Table Row Height	表格列高
 	Table Style Options	表格樣式選項
 	Table Styles	表格樣式

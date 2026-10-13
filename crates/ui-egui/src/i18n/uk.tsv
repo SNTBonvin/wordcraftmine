@@ -164,6 +164,7 @@
 	Border Painter	Пензель меж
 	Border\nPainter	Пензель\nмеж
 	Borders	Межі
+	Search	Пошук
 	Show the mini toolbar when text is selected	Показувати міні-панель інструментів під час виділення тексту
 	Spaces	Пробіли
 	Spelling	Правопис
@@ -180,6 +181,7 @@
 	Page Border	Межа сторінки
 	Apply to:	Застосувати до:
 	These marks show even when Show/Hide ¶ is off.	Ці знаки відображаються, навіть коли «Показати/приховати ¶» вимкнено.
+	Title Bar	Рядок заголовка
 	Typing replaces selected text	Введення замінює виділений текст
 	Update fields before printing	Оновлювати поля перед друком
 	Use the Insert key to switch overtype on and off	Клавіша Insert вмикає та вимикає режим заміни
@@ -482,6 +484,7 @@
 	Insert Above	Вставити вище
 	Insert Below	Вставити нижче
 	Insert Caption	Вставити підпис
+	Insert Caption…	Вставити підпис…
 	Insert Citation	Вставити цитату
 	Insert Endnote	Вставити кінцеву виноску
 	Insert Footnote	Вставити виноску
@@ -885,6 +888,7 @@
 	Table of Contents	Зміст
 	Table of\nContents	Зміст
 	Table Properties	Властивості таблиці
+	Table Properties…	Властивості таблиці…
 	Table Row Height	Висота рядка таблиці
 	Table Style Options	Параметри стилю таблиці
 	Table Styles	Стилі таблиць

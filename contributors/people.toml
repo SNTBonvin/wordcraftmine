@@ -71,10 +71,11 @@ sync_github_name = true
 [people.krinry]
 sync_github_name = true
 
+
+[people.Silvertree2010]
+display_name = "Netter"
+sync_github_name = false
 [people.manucarcor]
 real_name = "Manuel Carmona"
 display_name = "manucarcor"
-sync_github_name = false
-sync_github_name = true
-
 [people.odedigo]

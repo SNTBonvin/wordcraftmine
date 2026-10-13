@@ -412,6 +412,7 @@
 	Insert Above	Inserisci sopra
 	Insert Below	Inserisci sotto
 	Insert Caption	Inserisci didascalia
+	Insert Caption…	Inserisci didascalia…
 	Insert Citation	Inserisci citazione
 	Insert Endnote	Inserisci nota di chiusura
 	Insert Footnote	Inserisci nota a piè di pagina
@@ -803,6 +804,7 @@
 	Table Design	Tabella Design
 	Table Layout	Tabella Layout
 	Table Properties	Proprietà tabella
+	Table Properties…	Proprietà tabella…
 	Table Row Height	Altezza riga tabella
 	Table Style Options	Opzioni stile tabella
 	Table Styles	Stili tabella
@@ -2455,3 +2457,5 @@ preview	Title	Esempio
 	Correct accidental usage of cAPS LOCK key	Correggi l'uso accidentale del tasto bLOC mAIUSC
 	Region:	Area geografica:
 	Automatic ({region})	Automatico ({region})
+	Search	Cerca
+	Title Bar	Barra del titolo

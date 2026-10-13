@@ -63,6 +63,7 @@ pub mod panes;
 pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
+pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -71,6 +72,7 @@ pub mod system_clipboard;
 pub mod table_mouse;
 pub mod table_pen;
 pub mod table_resize;
+pub mod table_ruler;
 pub mod theme;
 pub mod widgets;
 pub mod window_geometry;
@@ -87,6 +89,10 @@ pub use file_dialogs::{FileDialogAnswer, FileDialogRequest, open_filters};
 /// Platform services injected by the host (file dialogs, file I/O).
 #[derive(Default)]
 pub struct Services {
+    /// Desktop: discover configured printers on a worker.
+    pub printers: Option<printing::Discover>,
+    /// Desktop: submit the PDF with the chosen settings on a worker.
+    pub print_native: Option<printing::Submit>,
     /// Pick a file to open; the argument says what for (`document`, `picture`).
     pub pick_open: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Pick a path to save to, given a suggested name.
@@ -107,9 +113,8 @@ pub struct Services {
     /// Web: told whether the document has unsaved changes after each pass, for the browser's
     /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
     pub on_dirty: Option<Box<dyn Fn(bool)>>,
-    /// Hand PDF bytes to the system's print flow. Web: the browser's print dialog on that PDF (no
-    /// download, no intermediate file). Desktop: the PDF opens in the system's viewer (a temporary
-    /// file), where the user prints (#15). An error means nothing was opened.
+    /// Web: hand PDF bytes to the browser's print dialog (no download or intermediate file).
+    /// Desktop uses `print_native` instead. An error means nothing was opened.
     pub print: Option<Box<dyn Fn(&[u8]) -> Result<(), String>>>,
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
@@ -341,6 +346,8 @@ pub struct WordApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    pub printing: printing::State,
+    print_feedback_seen: Option<printing::Feedback>,
     pub canvas: canvas::CanvasState,
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
@@ -371,6 +378,8 @@ pub struct WordApp {
     pub(crate) synthetic: Vec<egui::Event>,
     /// Badge rects recorded during layout for the current keytip phase (cleared by `logic`, painted by `show`).
     pub(crate) keytip_rects: Vec<(egui::Rect, String)>,
+    /// The Navigation pane's search box takes the keyboard on its next frame (Ctrl+F, #712).
+    pub(crate) nav_search_focus: bool,
     styled: bool,
     /// The CJK face order the installed UI fonts use (Chinese first, or Japanese first).
     fonts_hans: bool,
@@ -458,6 +467,8 @@ impl WordApp {
             session,
             ui: UiState::default(),
             services,
+            printing: Default::default(),
+            print_feedback_seen: None,
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
@@ -472,6 +483,7 @@ impl WordApp {
             pending_shots: Vec::new(),
             synthetic: Vec::new(),
             keytip_rects: Vec::new(),
+            nav_search_focus: false,
             styled: false,
             fonts_hans: false,
             fonts_system_cjk: false,
@@ -825,6 +837,10 @@ impl WordApp {
     /// The window's close button (or the system) asked to quit. Returns true to let the window
     /// close; with unsaved changes it asks first and returns false.
     pub fn close_requested(&mut self) -> bool {
+        if self.printing.busy() {
+            self.status(tl!("Wait for the print job to finish submitting before closing."));
+            return false;
+        }
         if self.quit_requested || !self.session.dirty {
             return true;
         }
@@ -844,7 +860,8 @@ impl WordApp {
         if id == "view.readMode" {
             self.canvas.read_first_visible = None;
         }
-        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
+        // Drawing leaves the caret where it was: following it would pull the view off the ink.
+        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") && !id.starts_with("draw.") {
             self.canvas.scroll_to_caret = true;
         }
         for req in std::mem::take(&mut self.session.ui_requests) {
@@ -867,6 +884,10 @@ impl WordApp {
 
     /// Requests commands make of the UI (open a dialog…).
     fn handle_request(&mut self, req: &Value) {
+        // Ctrl+F: type straight into the Navigation pane's search box (#712).
+        if req.get("focus").and_then(Value::as_str) == Some("navSearch") {
+            self.nav_search_focus = true;
+        }
         if let Some(what) = req.get("open").and_then(Value::as_str) {
             match what {
                 "openFile" => self.open_dialog(),
@@ -977,6 +998,12 @@ impl WordApp {
                 self.pick_picture();
                 json!({"pending": self.change_picture_target.is_some()})
             }
+            // The page's context menu at the caret, as Shift+F10 or the Menu key opens it (#821).
+            "ui.contextMenu" => {
+                self.canvas.context_menu_from_keys = true;
+                self.canvas.want_focus = true;
+                json!({"pending": "contextMenu"})
+            }
             "ui.collapseRibbon" => {
                 self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
                 json!({"collapsed": self.ui.ribbon_collapsed})
@@ -1075,10 +1102,9 @@ impl WordApp {
                 self.pick_recipient_list();
                 json!({"pending": self.recipient_list_pending})
             }
-            // Send the document to the system print flow (web, desktop). `file.print` opens the Print
-            // page; this is the button on it, and the one programmatic call that opens system UI
-            // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system(p)),
+            // Native printing submits the selected queue on a worker; the browser owns its dialog.
+            "ui.printSettings" => return Some(printing::settings(&mut self.printing, p, self.services.printers.as_ref())),
+            "ui.print" | "ui.printSubmit" => return Some(self.print_to_system(p)),
             // File › Options › General › Make WordCraft the default… changes the user's system
             // default apps (Linux) or opens system settings (Windows), so only a click on that
             // button does it ([`WordApp::make_default_app`]); scripts, the control channel and
@@ -1126,38 +1152,9 @@ impl WordApp {
         }))
     }
 
-    /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
-    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
-    /// `file.printPdf`); without any, every page prints once.
-    /// An error when the host can't print (File › Print then only saves a PDF).
+    /// Submit the selected print job; the implementation lives beside its localized controls.
     fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
-        if self.services.print.is_none() {
-            return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
-        }
-        // File › Options › Display: fields first, and the page colour only when asked for.
-        if self.ui.update_fields_before_print
-            && let Err(e) = self.session.run("references.updateFields", &json!({}))
-        {
-            log::warn!("updating fields before printing: {e}");
-        }
-        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
-        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
-        if colour.is_some() {
-            self.session.doc.settings.page_color = colour;
-        }
-        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
-        match result {
-            Ok(len) => {
-                self.status(tl!("Opening print dialog…"));
-                Ok(json!({"printing": true, "bytes": len}))
-            }
-            Err(e) => {
-                log::error!("print failed: {e}");
-                let msg = i18n::fmt(tl!("Print failed: {error}"), &[("error", &e)]);
-                self.status(msg.clone());
-                Err(msg)
-            }
-        }
+        printing::submit(self, p)
     }
 
     /// File › Options › General › Make WordCraft the default…: hand over to the host's
@@ -1294,6 +1291,22 @@ impl WordApp {
         }
     }
 
+    /// Terminal feedback also reaches the normal window when printing starts through control.
+    pub fn poll_printing(&mut self, ctx: &egui::Context) {
+        self.printing.poll(ctx);
+        if self.printing.message == self.print_feedback_seen {
+            return;
+        }
+        self.print_feedback_seen = self.printing.message.clone();
+        let Some(message @ (printing::Feedback::Submitted(_) | printing::Feedback::Failed(_) | printing::Feedback::WorkerStopped)) =
+            self.printing.message.clone()
+        else {
+            return;
+        };
+        let text = printing::feedback(&message, |label| i18n::t(label).to_owned());
+        self.status(text);
+    }
+
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
         let lang = i18n::Lang::from_pref(&self.ui.language);
@@ -1348,6 +1361,7 @@ impl WordApp {
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
         }
+        self.poll_printing(ctx);
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
@@ -1369,7 +1383,7 @@ impl WordApp {
             {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
-                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
+                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lp.ends_with(e));
                 let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
                 let _ = if img {
                     self.run("insert.picture", json!({"path": path}))
@@ -1541,7 +1555,7 @@ impl WordApp {
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
-            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
+            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lower.ends_with(e));
             // Any recipient file ends the pending picker request, so a later .txt drop opens normally.
             let asked = std::mem::take(&mut self.recipient_list_pending);
             let list = lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && asked);
@@ -1783,6 +1797,9 @@ pub fn now_ms() -> f64 {
 }
 
 #[cfg(test)]
+mod tests_perf;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
@@ -2013,7 +2030,9 @@ mod tests {
         assert_eq!((style.as_str(), shape.as_str()), ("enlarge", "square"));
     }
 
-    /// Issue #772: Ctrl/⌘+F left focus on the document, so typing didn't go into Find what.
+    /// Issue #772: the Find and Replace dialog left focus on the document, so typing didn't go into
+    /// Find what. (Ctrl/⌘+F now searches in the Navigation pane, as in Word (#712), so this opens
+    /// the dialog with Ctrl/⌘+H.)
     #[test]
     fn find_shortcut_focuses_find_what() {
         let ctx = egui::Context::default();
@@ -2030,7 +2049,7 @@ mod tests {
         for _ in 0..3 {
             frame(&mut a, Vec::new());
         }
-        let key = egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let key = egui::Event::Key { key: egui::Key::H, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
         frame(&mut a, vec![key]);
         for _ in 0..2 {
             frame(&mut a, Vec::new());
@@ -2820,6 +2839,59 @@ mod tests {
         }
     }
 
+    /// #861: the save prompt answers from the keyboard alone. Save has focus when it opens, and
+    /// Left/Right move the focus between Save, Don't Save and Cancel (stopping at the ends).
+    #[test]
+    fn arrow_keys_choose_the_save_prompt_answer() {
+        use egui_kittest::kittest::Queryable;
+        for (arrows, focused, quits, saves) in [
+            (vec![egui::Key::ArrowLeft], "Save", true, true),
+            (vec![egui::Key::ArrowRight], "Don't Save", true, false),
+            (vec![egui::Key::ArrowRight, egui::Key::ArrowRight, egui::Key::ArrowRight], "Cancel", false, false),
+            (vec![egui::Key::ArrowRight, egui::Key::ArrowRight, egui::Key::ArrowLeft], "Don't Save", true, false),
+        ] {
+            let dir = scratch(&format!("arrows-{}-{}", arrows.len(), focused.len()));
+            let path = docx_on_disk(&dir, "Draft");
+            let before = std::fs::read(&path).unwrap();
+            let mut a = app();
+            a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+            a.run("text.insert", json!({"text": "Revised "})).unwrap();
+            a.run("file.close", json!({})).unwrap();
+            assert_eq!(prompt(&a), Some("saveChanges"));
+            let mut fonts = false;
+            let mut h = egui_kittest::Harness::builder().build_ui_state(
+                move |ui, app: &mut WordApp| {
+                    let ctx = ui.ctx().clone();
+                    if fonts {
+                        dialogs::show(app, &ctx);
+                    } else {
+                        theme::install_fonts_for(&ctx, false);
+                        fonts = true;
+                    }
+                },
+                a,
+            );
+            for _ in 0..3 {
+                h.step();
+            }
+            assert!(h.get_by_label("Save").is_focused(), "Save has focus when the prompt opens");
+            for key in &arrows {
+                h.key_press(*key);
+                h.step();
+            }
+            assert!(h.get_by_label(focused).is_focused(), "{arrows:?}: {focused} has focus");
+            h.key_press(egui::Key::Enter);
+            for _ in 0..3 {
+                h.step();
+            }
+            let a = h.state();
+            assert_eq!(prompt(a), None, "{arrows:?}: answered");
+            assert_eq!(a.quit_requested, quits, "{arrows:?}: quit");
+            assert_eq!(std::fs::read(&path).unwrap() != before, saves, "{arrows:?}: file written");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     /// `ui.print` hands the document's PDF to the host's print hook, and is an error (with
     /// nothing printed) when the host has none.
     #[test]
@@ -3111,10 +3183,11 @@ mod tests {
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
     }
 
-    /// #819: Alt+Q moves to "Tell me" command search, as in Word for Windows, without typing a q.
+    /// #819: Alt+Q opens Search with its box focused, as in Word: the Q isn't typed into the
+    /// document, and what is typed next goes into the search box.
     #[cfg(not(target_os = "macos"))]
     #[test]
-    fn alt_q_opens_command_search_from_the_page() {
+    fn alt_q_opens_search_and_typing_goes_there() {
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();
@@ -3126,13 +3199,64 @@ mod tests {
         for _ in 0..6 {
             h.step();
         }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
         h.event(egui::Event::Text("Kilns".into()));
         h.step();
-        h.event(egui::Event::Key { key: egui::Key::Q, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::ALT });
+        // Some platforms send the key's text with an Alt shortcut; it isn't typed.
+        h.event(key(egui::Key::Q, egui::Modifiers::ALT));
         h.event(egui::Event::Text("q".into()));
         h.step();
-        assert!(matches!(h.state().dialog, Some(dialogs::Dialog::Commands { .. })), "command search is open");
+        let query = |h: &egui_kittest::Harness<WordApp>| match &h.state().dialog {
+            Some(dialogs::Dialog::Commands { query, .. }) => Some(query.clone()),
+            _ => None,
+        };
+        assert_eq!(query(&h).as_deref(), Some(""), "Search is open and empty");
+        h.step();
+        {
+            use egui_kittest::kittest::Queryable;
+            assert!(h.query_by_label_contains("Word Count").is_some(), "an empty box suggests commands, as Word's does");
+        }
+        h.event(egui::Event::Text("bold".into()));
+        h.step();
+        assert_eq!(query(&h).as_deref(), Some("bold"), "typing goes into the search box");
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
+        h.event(key(egui::Key::Escape, egui::Modifiers::NONE));
+        h.step();
+        h.step();
+        assert!(h.state().dialog.is_none(), "Escape closes Search");
+        // Words that name no command: Enter finds them in the document, in the Navigation pane.
+        h.event(key(egui::Key::Q, egui::Modifiers::ALT));
+        h.step();
+        h.step();
+        // Typing sends each key's press before its text.
+        h.event(key(egui::Key::K, egui::Modifiers::SHIFT));
+        h.event(egui::Event::Text("Kilns".into()));
+        h.step();
+        h.event(key(egui::Key::Enter, egui::Modifiers::NONE));
+        h.step();
+        h.step();
+        assert!(h.state().dialog.is_none(), "Enter ran the search");
+        assert!(h.state().session.view.nav_pane, "the Navigation pane shows the results");
+        assert_eq!(h.state().session.find.results.len(), 1);
+    }
+
+    /// #819: `tools.search` with a query lists matching commands for scripts and agents; every
+    /// word has to match, so "insert table" finds the command that inserts a table.
+    #[test]
+    fn search_command_matches_every_word() {
+        let mut a = app();
+        let r = a.run("tools.search", json!({"query": "insert table"})).unwrap();
+        let ids: Vec<&str> = r["matches"].as_array().unwrap().iter().filter_map(|m| m["id"].as_str()).collect();
+        assert!(ids.contains(&"insert.table"), "{ids:?}");
+        assert!(r["matches"].as_array().unwrap().iter().all(|m| {
+            let hay = format!("{} {} {}", m["label"], m["location"], m["id"]).to_lowercase();
+            hay.contains("insert") && hay.contains("table")
+        }));
+        assert_eq!(a.run("tools.search", json!({"query": "   "})).unwrap()["matches"], json!([]));
+        assert_eq!(a.run("tools.search", json!({"query": "zzqqxx"})).unwrap()["matches"], json!([]));
+        assert!(a.dialog.is_none(), "a query never opens the box");
+        a.run("tools.search", json!({})).unwrap();
+        assert!(matches!(a.dialog, Some(dialogs::Dialog::Commands { .. })), "no query opens Search");
     }
 
     /// Save writes the document first, then carries on with what the user asked for.
@@ -4053,6 +4177,27 @@ mod tests {
         assert!(!a.recipient_list_pending);
     }
 
+    /// Issue #859: lifting the pen jumped the view back to the caret, usually on page 1. Drawing
+    /// leaves the caret where it was, so the view stays on the ink; typing still follows the caret.
+    #[test]
+    fn drawing_ink_keeps_the_view_where_it_is() {
+        let mut a = typed();
+        let keeps_view = |a: &mut WordApp, id: &str, params: Value| {
+            a.canvas.scroll_to_caret = false;
+            let r = a.run(id, params);
+            assert!(r.is_ok(), "{id}: {r:?}");
+            assert!(!a.canvas.scroll_to_caret, "{id} scrolled to the caret");
+        };
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[100, 300], [200, 320]], "tool": "pen"}));
+        keeps_view(&mut a, "draw.lasso", json!({"page": 0, "points": [[80, 280], [220, 280], [220, 340], [80, 340]]}));
+        keeps_view(&mut a, "draw.lassoMove", json!({"dx": 10, "dy": 10}));
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[300, 500], [400, 500]], "tool": "pencil"}));
+        keeps_view(&mut a, "draw.erase", json!({"page": 0, "x": 350, "y": 500}));
+        a.canvas.scroll_to_caret = false;
+        a.run("text.insert", json!({"text": "x"})).unwrap();
+        assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
+    }
+
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of
     /// writing a fixed name into the shared temporary folder, where another user could have
     /// planted a link to one of this user's files.
@@ -4076,5 +4221,107 @@ mod tests {
         assert_eq!(&png[..4], b"\x89PNG");
         assert_eq!(v["result"]["width"], 2, "{v}");
         assert_eq!(v["result"]["height"], 1, "{v}");
+    }
+
+    /// #821: Shift+F10 opens the page's context menu below the caret, like right-clicking there
+    /// (Word's keyboard way to it; the Menu key isn't passed on by the windowing layer); Escape
+    /// closes it and typing goes on.
+    #[test]
+    fn shift_f10_opens_the_context_menu_at_the_caret() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        h.event(egui::Event::Text("Kilns fire".into()));
+        h.step();
+        let pastes = |h: &egui_kittest::Harness<WordApp>| h.query_all_by_label_contains("Paste").count();
+        let before = pastes(&h);
+        h.event(key(egui::Key::F10, egui::Modifiers::SHIFT));
+        h.step();
+        h.step();
+        assert!(h.state().canvas.context_menu_open, "Shift+F10 opened the menu");
+        assert!(pastes(&h) > before, "the page's context menu, with Paste");
+        let caret = canvas::caret_screen(h.state_mut()).unwrap();
+        let at = h.state().canvas.context_menu_at.unwrap();
+        assert!((at.x - caret.0.x).abs() < 1.0 && at.y > caret.0.y, "below the caret: {at:?} vs {caret:?}");
+        assert_eq!(h.state().ui.keytips, keytips::Phase::Off, "Shift+F10 doesn't show keytips");
+        h.event(key(egui::Key::Escape, egui::Modifiers::NONE));
+        h.step();
+        h.step();
+        assert!(!h.state().canvas.context_menu_open, "Escape closes it");
+        // Scripts and agents open it too.
+        h.state_mut().run("ui.contextMenu", json!({})).unwrap();
+        h.step();
+        h.step();
+        assert!(h.state().canvas.context_menu_open);
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns fire");
+    }
+
+    /// #712: Find, Replace and Go To open as in Word. Ctrl+F puts the keyboard in the Navigation
+    /// pane's search box (with the selected text in it), not a dialog; Ctrl+H and Ctrl+G / F5 open
+    /// the one Find and Replace dialog on its Replace and Go To tabs.
+    #[test]
+    fn find_replace_and_go_to_keys_like_word() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        h.event(egui::Event::Text("Kilns fire clay. Kilns cool.".into()));
+        h.step();
+        let nav_query = |h: &egui_kittest::Harness<WordApp>| h.ctx.data(|d| d.get_temp::<String>(egui::Id::new("nav_query"))).unwrap_or_default();
+        // Ctrl+F: the pane, and typing goes into its search box.
+        h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert!(h.state().session.view.nav_pane, "the Navigation pane opened");
+        assert!(h.state().dialog.is_none(), "no dialog: {:?}", h.state().dialog.as_ref().map(|d| d.name()));
+        h.event(key(egui::Key::C, egui::Modifiers::NONE));
+        h.event(egui::Event::Text("cool".into()));
+        h.step();
+        h.step();
+        assert_eq!(nav_query(&h), "cool", "typed into the pane's search box");
+        assert_eq!(h.state().session.find.results.len(), 1);
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns fire clay. Kilns cool.");
+        // With text selected, Ctrl+F searches for it.
+        h.state_mut().run("select.text", json!({"text": "Kilns"})).unwrap();
+        h.state_mut().canvas.want_focus = true;
+        h.step();
+        h.event(key(egui::Key::F, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert_eq!(nav_query(&h), "Kilns");
+        assert_eq!(h.state().session.find.results.len(), 2);
+        // Ctrl+H: the Replace tab; Go To: the Go To tab of the same dialog.
+        h.state_mut().canvas.want_focus = true;
+        h.event(key(egui::Key::Escape, egui::Modifiers::NONE));
+        h.step();
+        h.step();
+        h.event(key(egui::Key::H, egui::Modifiers::COMMAND));
+        h.step();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("replace"));
+        h.state_mut().run("edit.goto", json!({})).unwrap();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("goto"));
+        h.state_mut().run("edit.advancedFind", json!({})).unwrap();
+        h.step();
+        assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"));
     }
 }
