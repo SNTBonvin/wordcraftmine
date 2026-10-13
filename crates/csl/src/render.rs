@@ -311,7 +311,7 @@ impl Style {
     /// `citation-number` and `pages` as its `locator` (the cited pages).
     pub fn cite(&self, item: &Source, position: Position, number: usize, pages: &str) -> String {
         let mut ctx = Ctx { style: self, item: Item { source: item, number, locator: pages }, position, in_bibliography: false, depth: 0 };
-        render_layout(&mut ctx, &self.citation)
+        render_layout(&mut ctx, &self.citation).text
     }
 
     /// Bibliography entries in bibliography order: sorted by the bibliography's `<sort>`
@@ -327,7 +327,7 @@ impl Style {
         for (rank, (_, source, key)) in order.into_iter().enumerate() {
             let mut ctx =
                 Ctx { style: self, item: Item { source, number: rank + 1, locator: "" }, position: Position::First, in_bibliography: true, depth: 0 };
-            out.push((render_layout(&mut ctx, &bib.layout), key));
+            out.push((render_layout(&mut ctx, &bib.layout).text, key));
         }
         out
     }
@@ -344,7 +344,7 @@ impl Style {
         sort.iter()
             .map(|k| match &k.field {
                 SortField::Variable(v) => pad_numeric(&raw_variable(&ctx, v)),
-                SortField::Macro(m) => render_macro(&mut ctx, m),
+                SortField::Macro(m) => render_macro(&mut ctx, m).text,
             })
             .map(|s| s.trim().to_lowercase())
             .collect()
@@ -369,8 +369,56 @@ fn compare_keys(a: &[String], b: &[String], sort: &[SortKey]) -> Ordering {
 // ---------------------------------------------------------------------------
 // Element rendering
 
+/// One element's render, carrying what the group-suppression rule needs beside the text:
+/// whether any variable was called (directly or through a macro), and whether anything
+/// called was non-empty — a variable with content, or (the spec's two follow-up
+/// paragraphs) a nested group or macro that rendered.
+struct Rendered {
+    text: String,
+    calls_variable: bool,
+    nonempty_variable: bool,
+}
+
+impl Rendered {
+    /// A term or value: its text, however long, never counts as a variable.
+    fn plain(text: String) -> Rendered {
+        Rendered { calls_variable: false, nonempty_variable: false, text }
+    }
+
+    /// A variable element: non-empty text means the variable had content.
+    fn variable(text: String) -> Rendered {
+        Rendered { calls_variable: true, nonempty_variable: !text.is_empty(), text }
+    }
+
+    /// The same render with the flags of another (a macro's body wrapped in affixes).
+    fn with_text(self, text: String) -> Rendered {
+        Rendered { text, calls_variable: self.calls_variable, nonempty_variable: self.nonempty_variable }
+    }
+}
+
+/// Whether an element is a nested group or a macro call — the two the spec treats as a
+/// non-empty variable for an enclosing group's suppression test when they render content.
+fn is_group_or_macro(el: &Element) -> bool {
+    match el {
+        Element::Group(_) => true,
+        Element::Text(t) => matches!(t.source, TextSource::Macro(_)),
+        _ => false,
+    }
+}
+
+/// How a child's render feeds its parent group's suppression test: its variable calls
+/// always count toward the union, and a nested group's or macro's non-empty output counts
+/// as a non-empty variable.
+fn absorb(calls: &mut bool, nonempty: &mut bool, child: &Rendered, group_or_macro: bool) {
+    *calls |= child.calls_variable;
+    *nonempty |= child.nonempty_variable;
+    if group_or_macro && !child.text.is_empty() {
+        *nonempty = true;
+    }
+}
+
 /// One rendering element.
-fn render_element(ctx: &mut Ctx, el: &Element) -> String {
+fn render_element(ctx: &mut Ctx, el: &Element) -> Rendered {
     match el {
         Element::Text(t) => render_text(ctx, t),
         Element::Number(n) => render_number(ctx, n),
@@ -382,34 +430,58 @@ fn render_element(ctx: &mut Ctx, el: &Element) -> String {
     }
 }
 
-/// A layout body: children concatenated with no separator. Layout affixes always render —
-/// they are the citation's brackets, not conditional punctuation.
-fn render_layout(ctx: &mut Ctx, l: &Layout) -> String {
-    let mut body = String::new();
-    for el in &l.elements {
-        body.push_str(&render_element(ctx, el));
+/// The elements of a body (a layout, macro or substitute chain) concatenated, with their
+/// variable calls and non-emptiness absorbed for whoever's suppression test needs them.
+fn render_body(ctx: &mut Ctx, els: &[Element]) -> Rendered {
+    let mut calls = false;
+    let mut nonempty = false;
+    let mut text = String::new();
+    for el in els {
+        let r = render_element(ctx, el);
+        absorb(&mut calls, &mut nonempty, &r, is_group_or_macro(el));
+        text.push_str(&r.text);
     }
-    format!("{}{}{}", l.prefix, body, l.suffix)
+    Rendered { text, calls_variable: calls, nonempty_variable: nonempty }
 }
 
-/// A group: non-empty children joined by the delimiter; an empty group renders nothing,
-/// affixes included.
-fn render_group(ctx: &mut Ctx, g: &Group) -> String {
-    let parts: Vec<String> = g.elements.iter().map(|e| render_element(ctx, e)).filter(|s| !s.is_empty()).collect();
-    if parts.is_empty() {
-        return String::new();
+/// A layout body: children concatenated with no separator. Layout affixes always render —
+/// they are the citation's brackets, not conditional punctuation.
+fn render_layout(ctx: &mut Ctx, l: &Layout) -> Rendered {
+    let r = render_body(ctx, &l.elements);
+    let text = format!("{}{}{}", l.prefix, r.text, l.suffix);
+    r.with_text(text)
+}
+
+/// A group: non-empty children joined by the delimiter — and suppressed entirely, the
+/// spec's conditional, when at least one child called a variable and nothing called had
+/// content (a variable, a nested group, or a macro). This is what keeps a volume-less
+/// book from wearing a bare "vol.": descriptive terms and labels ride along with their
+/// variables. An all-empty group also renders nothing, affixes included.
+fn render_group(ctx: &mut Ctx, g: &Group) -> Rendered {
+    let mut calls = false;
+    let mut nonempty = false;
+    let mut parts: Vec<String> = Vec::with_capacity(g.elements.len());
+    for el in &g.elements {
+        let r = render_element(ctx, el);
+        absorb(&mut calls, &mut nonempty, &r, is_group_or_macro(el));
+        if !r.text.is_empty() {
+            parts.push(r.text);
+        }
     }
-    format!("{}{}{}", g.prefix, parts.join(&g.delimiter), g.suffix)
+    if (calls && !nonempty) || parts.is_empty() {
+        return Rendered { text: String::new(), calls_variable: calls, nonempty_variable: nonempty };
+    }
+    Rendered { text: format!("{}{}{}", g.prefix, parts.join(&g.delimiter), g.suffix), calls_variable: calls, nonempty_variable: nonempty }
 }
 
 /// A choose: the first branch whose conditions hold, else the else body.
-fn render_choose(ctx: &mut Ctx, c: &Choose) -> String {
+fn render_choose(ctx: &mut Ctx, c: &Choose) -> Rendered {
     for b in &c.branches {
         if branch_matches(ctx, b) {
             return render_layout(ctx, &b.layout);
         }
     }
-    c.else_branch.as_ref().map_or(String::new(), |e| render_layout(ctx, e))
+    c.else_branch.as_ref().map_or(Rendered::plain(String::new()), |e| render_layout(ctx, e))
 }
 
 /// All/any/none over the conditions; a branch with no conditions never matches (the
@@ -444,37 +516,43 @@ fn affixed(body: &str, prefix: &str, suffix: &str, strip_periods: bool) -> Strin
 }
 
 /// A `<text>`: a variable, macro, term or literal value.
-fn render_text(ctx: &mut Ctx, t: &Text) -> String {
-    let body = match &t.source {
-        TextSource::Variable(v) => text_variable(ctx, v),
-        TextSource::Macro(m) => render_macro(ctx, m),
-        TextSource::Term(name) => ctx.style.locale_terms.text(name, t.form.unwrap_or(Form::Long), false).unwrap_or("").to_string(),
-        TextSource::Value(v) => v.clone(),
-    };
-    affixed(&body, &t.prefix, &t.suffix, t.strip_periods)
+fn render_text(ctx: &mut Ctx, t: &Text) -> Rendered {
+    match &t.source {
+        TextSource::Variable(v) => Rendered::variable(affixed(&text_variable(ctx, v), &t.prefix, &t.suffix, t.strip_periods)),
+        TextSource::Macro(m) => {
+            let r = render_macro(ctx, m);
+            let text = affixed(&r.text, &t.prefix, &t.suffix, t.strip_periods);
+            r.with_text(text)
+        }
+        TextSource::Term(name) => Rendered::plain(affixed(
+            ctx.style.locale_terms.text(name, t.form.unwrap_or(Form::Long), false).unwrap_or(""),
+            &t.prefix,
+            &t.suffix,
+            t.strip_periods,
+        )),
+        TextSource::Value(v) => Rendered::plain(affixed(v, &t.prefix, &t.suffix, t.strip_periods)),
+    }
 }
 
 /// A macro body: elements concatenated, bounded by the render depth. Macro references the
 /// parser cut arrive here as an empty value with their affixes kept — and render nothing,
-/// affixes dropped with the empty body.
-fn render_macro(ctx: &mut Ctx, name: &str) -> String {
+/// affixes dropped with the empty body. A non-empty macro counts as a non-empty variable
+/// for an enclosing group's suppression test (the caller's absorb applies that).
+fn render_macro(ctx: &mut Ctx, name: &str) -> Rendered {
     if ctx.depth >= MAX_RENDER_DEPTH {
-        return String::new();
+        return Rendered::plain(String::new());
     }
     let style = ctx.style;
-    let Some(body) = style.macros.get(name) else { return String::new() };
+    let Some(body) = style.macros.get(name) else { return Rendered::plain(String::new()) };
     ctx.depth += 1;
-    let mut out = String::new();
-    for el in body {
-        out.push_str(&render_element(ctx, el));
-    }
+    let out = render_body(ctx, body);
     ctx.depth -= 1;
     out
 }
 
 /// A `<number>`: a number variable in a number form. Values that aren't one number
 /// (ranges, lists, text) render as written — the subset doesn't reformat page ranges.
-fn render_number(ctx: &Ctx, n: &Number) -> String {
+fn render_number(ctx: &Ctx, n: &Number) -> Rendered {
     let raw = raw_variable(ctx, &n.variable);
     let body = match n.form {
         Some(Form::NumericLeadingZeros) => pad_digits(&raw, 2),
@@ -482,7 +560,7 @@ fn render_number(ctx: &Ctx, n: &Number) -> String {
         Some(Form::Roman) => roman_string(&raw),
         _ => raw, // numeric, and the forms that don't apply to numbers
     };
-    affixed(&body, &n.prefix, &n.suffix, false)
+    Rendered::variable(affixed(&body, &n.prefix, &n.suffix, false))
 }
 
 /// The ordinal form of a number value ("3" → "3rd"), suffixes from the locale's ordinal
@@ -536,12 +614,13 @@ fn roman_string(raw: &str) -> String {
 }
 
 /// A `<date>`: its explicit parts in the order the style wrote them, or the en-US
-/// localized forms when the style set a form instead of parts. A date with no parts at
-/// all renders nothing.
-fn render_date(ctx: &Ctx, d: &Date) -> String {
+/// localized forms when the style set a form instead of parts — narrowed to the parts
+/// `date-parts` allows ("year", "year-month" or everything). A date with no parts at all
+/// renders nothing.
+fn render_date(ctx: &Ctx, d: &Date) -> Rendered {
     let (year, month, day) = date_parts(ctx.item.source, &d.variable);
     if year.is_empty() && month.is_none() && day.is_none() {
-        return String::new();
+        return Rendered::variable(String::new());
     }
     let body = if !d.parts.is_empty() {
         let mut out = String::new();
@@ -551,12 +630,12 @@ fn render_date(ctx: &Ctx, d: &Date) -> String {
         out
     } else {
         match d.form {
-            Some(Form::Numeric) => localized_numeric_date(&year, month, day),
-            Some(Form::Text) => localized_text_date(ctx, &year, month, day),
+            Some(Form::Numeric) => localized_numeric_date(&year, month, day, d.date_parts),
+            Some(Form::Text) => localized_text_date(ctx, &year, month, day, d.date_parts),
             _ => String::new(),
         }
     };
-    affixed(&body, &d.prefix, &d.suffix, false)
+    Rendered::variable(affixed(&body, &d.prefix, &d.suffix, false))
 }
 
 /// One `<date-part>`; an absent part renders nothing, affixes included.
@@ -603,24 +682,36 @@ fn month_term(ctx: &Ctx, month: u32, form: Form) -> String {
     ctx.style.locale_terms.text(&format!("month-{month:02}"), form, false).unwrap_or("").to_string()
 }
 
-/// en-US `form="numeric"`: the present parts as m/d/y ("3/15/2020"); missing parts drop
-/// their separator too, so a year alone is "2020".
-fn localized_numeric_date(year: &str, month: Option<u32>, day: Option<u32>) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(m) = month {
-        parts.push(m.to_string());
+/// The parts a localized form may render, narrowed by `date-parts`.
+fn allowed_parts(month: Option<u32>, day: Option<u32>, parts: DateParts) -> (Option<u32>, Option<u32>) {
+    match parts {
+        DateParts::Year => (None, None),
+        DateParts::YearMonth => (month, None),
+        DateParts::YearMonthDay => (month, day),
     }
-    if let Some(d) = day {
-        parts.push(d.to_string());
-    }
-    if !year.is_empty() {
-        parts.push(year.to_string());
-    }
-    parts.join("/")
 }
 
-/// en-US `form="text"`: "September 1, 2020", parts dropping away as they are missing.
-fn localized_text_date(ctx: &Ctx, year: &str, month: Option<u32>, day: Option<u32>) -> String {
+/// en-US `form="numeric"`: the present parts as m/d/y ("3/15/2020"); missing parts (and
+/// parts `date-parts` doesn't allow) drop their separator too, so a year alone is "2020".
+fn localized_numeric_date(year: &str, month: Option<u32>, day: Option<u32>, parts: DateParts) -> String {
+    let (month, day) = allowed_parts(month, day, parts);
+    let mut out: Vec<String> = Vec::new();
+    if let Some(m) = month {
+        out.push(m.to_string());
+    }
+    if let Some(d) = day {
+        out.push(d.to_string());
+    }
+    if !year.is_empty() {
+        out.push(year.to_string());
+    }
+    out.join("/")
+}
+
+/// en-US `form="text"`: "September 1, 2020", parts dropping away as they are missing (or
+/// as `date-parts` doesn't allow them).
+fn localized_text_date(ctx: &Ctx, year: &str, month: Option<u32>, day: Option<u32>, parts: DateParts) -> String {
+    let (month, day) = allowed_parts(month, day, parts);
     let mut out = String::new();
     if let Some(m) = month {
         out.push_str(&month_term(ctx, m, Form::Long));
@@ -645,24 +736,24 @@ fn localized_text_date(ctx: &Ctx, year: &str, month: Option<u32>, day: Option<u3
 /// chains), followed by the names' own label; when no variable has names, the substitute
 /// chain is tried and the first element that renders something replaces the whole thing,
 /// label included.
-fn render_names(ctx: &mut Ctx, n: &Names) -> String {
+fn render_names(ctx: &mut Ctx, n: &Names) -> Rendered {
     let variable = n.variables.iter().find(|v| !names_of(ctx.item.source, v).is_empty());
     let Some(variable) = variable else {
-        let Some(substitute) = &n.substitute else { return String::new() };
+        let Some(substitute) = &n.substitute else { return Rendered::variable(String::new()) };
         for el in substitute {
-            let s = render_element(ctx, el);
-            if !s.is_empty() {
-                return s;
+            let r = render_element(ctx, el);
+            if !r.text.is_empty() {
+                return r;
             }
         }
-        return String::new();
+        return Rendered::variable(String::new());
     };
     let people = names_of(ctx.item.source, variable);
     let mut out = render_name_list(&ctx.style.locale_terms, &people, &n.options);
     if let Some(label) = &n.with_label {
         out.push_str(&names_label_text(ctx, label, variable, people.len()));
     }
-    out
+    Rendered::variable(out)
 }
 
 /// A `<label>` inside `<names>`: the term of the variable that rendered, plural by the
@@ -767,21 +858,21 @@ fn initials(given: &str, marker: &str) -> String {
 /// value. `locator` is the dynamic one: CSL resolves it to the locator type's term, and a
 /// Word citation only ever carries pages, so it is the page term over the cited pages —
 /// empty when there is no locator.
-fn render_label(ctx: &Ctx, l: &Label) -> String {
+fn render_label(ctx: &Ctx, l: &Label) -> Rendered {
     let (term, value) = label_value(ctx, &l.variable);
-    if value.is_empty() {
-        return String::new();
-    }
-    let Some(term) = term else { return String::new() };
-    let plural = match l.plural {
-        Some(Plural::Always) => true,
-        Some(Plural::Never) => false,
-        _ => label_is_plural(ctx, &l.variable, &value),
+    let text = if value.is_empty() {
+        String::new()
+    } else if let Some(term) = term {
+        let plural = match l.plural {
+            Some(Plural::Always) => true,
+            Some(Plural::Never) => false,
+            _ => label_is_plural(ctx, &l.variable, &value),
+        };
+        ctx.style.locale_terms.text(term, l.form.unwrap_or(Form::Long), plural).map_or(String::new(), |t| format!("{}{}{}", l.prefix, t, l.suffix))
+    } else {
+        String::new()
     };
-    match ctx.style.locale_terms.text(term, l.form.unwrap_or(Form::Long), plural) {
-        Some(t) => format!("{}{}{}", l.prefix, t, l.suffix),
-        None => String::new(),
-    }
+    Rendered::variable(text)
 }
 
 /// The term name and value a label reads: `locator` → the page term over the cited pages;

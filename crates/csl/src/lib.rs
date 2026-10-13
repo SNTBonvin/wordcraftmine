@@ -34,8 +34,8 @@ mod tests;
 mod tests_render;
 
 pub use model::{
-    AndStyle, Bibliography, Branch, Choose, Condition, Date, DatePart, DatePartName, Element, Form, Group, Label, Layout, Match, NameAsSortOrder,
-    NameOptions, Names, Number, Plural, Position, SortDirection, SortField, SortKey, Style, Text, TextSource,
+    AndStyle, Bibliography, Branch, Choose, Condition, Date, DatePart, DatePartName, DateParts, Element, Form, Group, Label, Layout, Match,
+    NameAsSortOrder, NameOptions, Names, Number, Plural, Position, SortDirection, SortField, SortKey, Style, Text, TextSource,
 };
 pub use parse::parse;
 pub use terms::{Term, TermSet};

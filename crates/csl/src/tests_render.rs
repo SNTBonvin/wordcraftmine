@@ -236,8 +236,131 @@ const NUMBERS: &str = r#"<style version="1.0">
   </citation>
 </style>"#;
 
+/// The spec's group-suppression rule: a group whose called variables are all empty is
+/// suppressed with its descriptive text and labels (the "retrieved from URL" example
+/// shape, and IEEE's volume/issue term groups through nested groups and macros).
+const GROUP_SUPPRESS: &str = r#"<style version="1.0">
+  <macro name="volume">
+    <group delimiter=", ">
+      <group delimiter=" ">
+        <number variable="volume" form="numeric"/>
+        <text term="volume" form="short"/>
+      </group>
+      <group delimiter=" ">
+        <number variable="issue" form="numeric"/>
+        <text term="issue" form="short"/>
+      </group>
+    </group>
+  </macro>
+  <citation>
+    <layout>
+      <group delimiter="; ">
+        <group delimiter=" ">
+          <text term="retrieved"/>
+          <text term="from"/>
+          <text variable="URL"/>
+        </group>
+        <group delimiter=", ">
+          <text variable="title"/>
+          <text macro="volume"/>
+        </group>
+      </group>
+    </layout>
+  </citation>
+</style>"#;
+
+/// A non-empty nested group counts as a non-empty variable: the outer group renders.
+const NESTED_GROUP: &str = r#"<style version="1.0">
+  <citation>
+    <layout>
+      <group delimiter=" ">
+        <group><text term="and" form="symbol"/></group>
+        <text variable="note"/>
+      </group>
+    </layout>
+  </citation>
+</style>"#;
+
+/// `date-parts` limits the localized date forms to fewer parts (APA 7's year-only dates);
+/// explicit parts render as written.
+const DATE_PARTS: &str = r#"<style version="1.0">
+  <citation>
+    <layout>
+      <group delimiter=" | ">
+        <date variable="issued" form="numeric"/>
+        <date variable="issued" form="numeric" date-parts="year"/>
+        <date variable="issued" form="numeric" date-parts="year-month"/>
+        <date variable="issued" form="text" date-parts="year"/>
+        <date variable="issued" date-parts="year">
+          <date-part name="month" form="short" suffix=" "/>
+          <date-part name="year"/>
+        </date>
+      </group>
+    </layout>
+  </citation>
+</style>"#;
+
 // ---------------------------------------------------------------------------
 // Tests
+
+#[test]
+fn group_suppression_hides_descriptive_text_of_empty_variables() {
+    let s = style(GROUP_SUPPRESS);
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+
+    let mut online = src("online", "book");
+    online.url = "https://example.com/x".into();
+    online.title = "Shared Spaces".into();
+    // URL set: the descriptive terms render with it; volume and issue empty: their term
+    // groups vanish (they only accompanied the empty numbers), nested and via the macro.
+    assert_eq!(s.cite(&online, Position::First, 1, ""), "retrieved from https://example.com/x; Shared Spaces");
+
+    let mut print = src("print", "book");
+    print.title = "Shared Spaces".into();
+    print.volume = "5".into();
+    print.issue = "2".into();
+    // No URL: "retrieved from" disappears with it; the numbers carry their terms.
+    assert_eq!(s.cite(&print, Position::First, 1, ""), "Shared Spaces, 5 vol., 2 no.");
+
+    let bare = src("bare", "book");
+    // Everything empty: every group suppresses, nothing renders.
+    assert_eq!(s.cite(&bare, Position::First, 1, ""), "");
+}
+
+#[test]
+fn a_nonempty_nested_group_counts_as_a_nonempty_variable() {
+    let s = style(NESTED_GROUP);
+    // The inner group rendered (its term has no variable to gate it): the outer group is
+    // not suppressed even though `note` is empty.
+    assert_eq!(s.cite(&src("n", "book"), Position::First, 1, ""), "&");
+}
+
+#[test]
+fn date_parts_limits_the_localized_forms() {
+    let s = style(DATE_PARTS);
+    let mut d = src("d", "book");
+    d.year = "2021".into();
+    d.month = "3".into();
+    d.day = "15".into();
+    // Defaults render everything; date-parts narrows the localized forms; the explicit
+    // parts render as written regardless (month-03 short stays "March", per the appendix).
+    assert_eq!(s.cite(&d, Position::First, 1, ""), "3/15/2021 | 2021 | 3/2021 | 2021 | March 2021");
+
+    // A year-month date with a day set: the day drops out of the localized forms (the
+    // text form's month-year join is the subset's ", ").
+    let s2 = style(
+        r#"<style version="1.0"><citation><layout>
+        <date variable="issued" form="numeric" date-parts="year-month"/>
+        <text value=" | "/>
+        <date variable="issued" form="text" date-parts="year-month"/>
+      </layout></citation></style>"#,
+    );
+    let mut ym = src("ym", "book");
+    ym.year = "2021".into();
+    ym.month = "3".into();
+    ym.day = "15".into();
+    assert_eq!(s2.cite(&ym, Position::First, 1, ""), "3/2021 | March, 2021");
+}
 
 #[test]
 fn author_date_cites_and_entries() {

@@ -139,6 +139,7 @@ fn golden_style_parses_into_the_expected_tree() {
     let year = Element::Date(Date {
         variable: "issued".into(),
         form: None,
+        date_parts: DateParts::default(),
         parts: vec![DatePart { name: DatePartName::Year, form: Some(Form::Long), prefix: String::new(), suffix: String::new() }],
         prefix: " ".into(),
         suffix: ".".into(),
@@ -223,6 +224,7 @@ fn golden_style_parses_into_the_expected_tree() {
                 Element::Date(Date {
                     variable: "issued".into(),
                     form: Some(Form::Text),
+                    date_parts: DateParts::default(),
                     parts: vec![
                         DatePart { name: DatePartName::Month, form: Some(Form::Short), prefix: String::new(), suffix: String::new() },
                         DatePart { name: DatePartName::Day, form: Some(Form::NumericLeadingZeros), prefix: String::new(), suffix: String::new() },

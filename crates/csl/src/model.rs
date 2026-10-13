@@ -163,9 +163,34 @@ pub struct Date {
     /// `form="text"`/`form="numeric"` selects a localized date format; explicit `parts`
     /// render directly.
     pub form: Option<Form>,
+    /// `date-parts`: which parts the localized forms render (explicit `parts` render as
+    /// written). The spec default renders everything.
+    pub date_parts: DateParts,
     pub parts: Vec<DatePart>,
     pub prefix: String,
     pub suffix: String,
+}
+
+/// The `date-parts` attribute of a localized date: which of the present parts its form
+/// renders.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DateParts {
+    Year,
+    YearMonth,
+    #[default]
+    YearMonthDay,
+}
+
+impl DateParts {
+    /// The attribute value as written, or `None` when it isn't a `date-parts` value.
+    pub fn parse(v: &str) -> Option<DateParts> {
+        Some(match v {
+            "year" => DateParts::Year,
+            "year-month" => DateParts::YearMonth,
+            "year-month-day" => DateParts::YearMonthDay,
+            _ => return None,
+        })
+    }
 }
 
 /// `<date-part>`: one component of a [`Date`].

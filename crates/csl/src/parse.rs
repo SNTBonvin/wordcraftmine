@@ -435,7 +435,14 @@ fn date_el(el: &El, w: &mut Warnings) -> Option<Date> {
         }
         parts.push(DatePart { name, form: c.attr("form").and_then(Form::parse), prefix: attr(c, "prefix"), suffix: attr(c, "suffix") });
     }
-    Some(Date { variable, form: el.attr("form").and_then(Form::parse), parts, prefix: attr(el, "prefix"), suffix: attr(el, "suffix") })
+    Some(Date {
+        variable,
+        form: el.attr("form").and_then(Form::parse),
+        date_parts: el.attr("date-parts").and_then(DateParts::parse).unwrap_or_default(),
+        parts,
+        prefix: attr(el, "prefix"),
+        suffix: attr(el, "suffix"),
+    })
 }
 
 /// `<names>`: variables, options (from the element merged with its `<name>` child), label,
