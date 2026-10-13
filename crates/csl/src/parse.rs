@@ -704,6 +704,12 @@ fn check_term_references(
         }
     }
     for (name, form) in &label_refs {
+        // Label variables the renderer resolves itself: `locator` is dynamic (CSL resolves
+        // it to the locator type's term, the page term over the cited pages here), and the
+        // number variables without a locale term of their own render no label at all.
+        if matches!(name.as_str(), "locator" | "citation-number" | "chapter-number" | "first-reference-note-number") {
+            continue;
+        }
         if terms.get(name, form.unwrap_or(Form::Long)).is_none() {
             w.push(format!("label variable '{name}' is not in the en-US locale (or the style's overrides); it renders empty"));
         }

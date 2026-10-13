@@ -5149,6 +5149,7 @@ name = "wordcraft-csl"
 version = "0.6.1"
 dependencies = [
  "quick-xml",
+ "wordcraft-doc",
 ]
 
 [[package]]

@@ -1,10 +1,12 @@
-//! CSL 1.0.2 style files, parsed for citation rendering.
+//! CSL 1.0.2 style files, parsed and rendered for citations.
 //!
 //! The Citation Style Language (docs.citationstyles.org — a public spec) is the XML format
 //! Zotero/Mendeley styles are written in. This crate reads a style file into the [`Style`]
 //! model: the subset of CSL 1.0.2 that WordCraft's renderer draws on (text, numbers, dates,
 //! names, labels, groups and conditionals), with the en-US locale terms from the spec's
-//! appendix.
+//! appendix. It then renders that model against a document's sources — plain-text
+//! citations ([`Style::cite`]) and bibliography entries in sorted order
+//! ([`Style::entries`]) — mapping a [`wordcraft_doc::Source`] onto CSL item variables.
 //!
 //! Parsing is lenient the way the format demands forward-compatibility (unknown elements
 //! and attributes are ignored) but honest about the subset's edges: constructs that would
@@ -12,20 +14,24 @@
 //! non-en-US locales, name/date options the model doesn't carry — load with a
 //! human-readable entry in [`Style::warned`]. Hostile input never panics or hangs: files are
 //! capped at 2 MiB, XML nesting at 64 elements, macro expansion at 32 levels (references
-//! beyond are dropped with a warning), and real XML errors are `Err(String)`.
+//! beyond are dropped with a warning), and real XML errors are `Err(String)`. Rendering
+//! keeps the promise from its side: missing variables render empty, hostile values render
+//! something, and nothing panics.
 //!
-//! Layer L2: this crate stays a pure parser — rendering the model against a document is the
-//! engine's job.
+//! Layer L2: the renderer draws on `wordcraft-doc`'s `Source` (L1) and nothing above it.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod model;
 mod parse;
+mod render;
 mod terms;
 mod xml;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_render;
 
 pub use model::{
     AndStyle, Bibliography, Branch, Choose, Condition, Date, DatePart, DatePartName, Element, Form, Group, Label, Layout, Match, NameAsSortOrder,
