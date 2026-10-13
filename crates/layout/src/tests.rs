@@ -2231,15 +2231,26 @@ fn multiple_line_spacing_adds_its_leading_below_the_text() {
             );
         }
     }
-    // Exact spacing still keeps the descent below the baseline.
-    let mut d = Document::from_text("Exact");
-    if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
-        p.props.line_spacing = Some(LineSpacing::Exactly(30.0));
+}
+
+/// Exact line spacing puts the baseline four-fifths of the way down the line, whatever the font's
+/// size: 0.8 × 30 = 24 pt below the top of a 30 pt line, 0.8 × 10 = 8 pt below the top of a 10 pt one.
+#[test]
+fn exact_line_baseline_sits_four_fifths_down() {
+    use wordcraft_doc::props::{CharProps, LineSpacing};
+    for (height, size) in [(30.0, 11.0), (30.0, 20.0), (10.0, 11.0)] {
+        let mut d = Document::new();
+        let chr = CharProps { size: Some(size), ..Default::default() };
+        d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Exact", chr))];
+        if let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) {
+            p.props.line_spacing = Some(LineSpacing::Exactly(height));
+        }
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
+        let line = &para.lines[0];
+        assert!((line.height - height).abs() < 0.01);
+        assert!((line.baseline - line.top - 0.8 * height).abs() < 0.01, "{size} pt in {height} pt: {}", line.baseline - line.top);
     }
-    let l = lay(&d);
-    let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-    let line = &para.lines[0];
-    assert!((line.top + line.height - line.baseline - para.styles[0].descent).abs() < 0.01);
 }
 
 #[test]
