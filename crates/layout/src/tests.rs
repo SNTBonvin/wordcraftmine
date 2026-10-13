@@ -4922,3 +4922,55 @@ fn automatic_spacing_drops_between_list_items() {
         );
     }
 }
+
+/// #1320: a section's vertical alignment (`w:vAlign`, ECMA-376 §17.6.23). Justified shares the
+/// room left on each page out equally between the page's blocks, so the first line stays at the
+/// top margin and the last one sits on the bottom margin (Word for Mac 16.113.4): a partly filled
+/// last page too, and a page ending in a manual page break, where the paragraph holding the break
+/// is the page's last block. A page with one block keeps it at the top.
+#[test]
+fn section_vertical_alignment_top_center_justify_bottom() {
+    use wordcraft_doc::section::PageVAlign;
+    let para = |text: &str| {
+        let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
+        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+        wordcraft_doc::para_block(p)
+    };
+    let laid = |texts: &[&str], va: PageVAlign| {
+        let mut d = Document::new();
+        d.body = texts.iter().map(|t| para(t)).collect();
+        d.last_section.valign = va;
+        lay(&d)
+    };
+    let three = ["One", "Two", "Three"];
+    let top = laid(&three, PageVAlign::Top);
+    let body = top.pages[0].body;
+    let (body_top, body_bottom) = (body.y, body.y + body.h);
+    let t = para_boxes(&top);
+    let h: f32 = t[2].3 - t[0].2;
+    assert!((t[0].2 - body_top).abs() < 0.5, "top: at the top margin {t:?} {body:?}");
+    let c = para_boxes(&laid(&three, PageVAlign::Center));
+    let room = body_bottom - body_top - h;
+    assert!((c[0].2 - (body_top + room / 2.0)).abs() < 0.5, "center: {c:?}");
+    assert!((c[1].2 - c[0].3).abs() < 0.05 && (c[2].2 - c[1].3).abs() < 0.05, "center keeps the blocks together: {c:?}");
+    let b = para_boxes(&laid(&three, PageVAlign::Bottom));
+    assert!((b[2].3 - body_bottom).abs() < 0.5, "bottom: {b:?} {body:?}");
+    // Justified: first at the top, last on the bottom margin, equal gaps.
+    let j = para_boxes(&laid(&three, PageVAlign::Justify));
+    assert!((j[0].2 - body_top).abs() < 0.5, "justify: first line at the top margin {j:?}");
+    assert!((j[2].3 - body_bottom).abs() < 0.5, "justify: last line on the bottom margin {j:?} {body:?}");
+    let (g1, g2) = (j[1].2 - j[0].3, j[2].2 - j[1].3);
+    assert!(g1 > 100.0 && (g1 - g2).abs() < 0.05, "justify: equal gaps {g1} {g2}");
+    // One block on the page stays at the top.
+    let one = para_boxes(&laid(&["Only"], PageVAlign::Justify));
+    assert!((one[0].2 - body_top).abs() < 0.5, "a single block stays at the top: {one:?}");
+    // A manual page break: its paragraph is page 1's last block; "Four" alone on page 2 stays up.
+    let brk = wordcraft_doc::para::PAGE_BREAK.to_string();
+    let p = para_boxes(&laid(&["One", "Two", "Three", &brk, "Four"], PageVAlign::Justify));
+    assert_eq!(p.iter().map(|e| e.0).collect::<Vec<_>>(), vec![0, 0, 0, 0, 1], "{p:?}");
+    assert!((p[0].2 - body_top).abs() < 0.5, "{p:?}");
+    assert!((p[3].3 - body_bottom).abs() < 0.5, "the break's paragraph sits on the bottom margin: {p:?}");
+    let gaps: Vec<f32> = (1..4).map(|i| p[i].2 - p[i - 1].3).collect();
+    assert!(gaps.iter().all(|g| (g - gaps[0]).abs() < 0.05 && *g > 50.0), "{gaps:?}");
+    assert!((p[4].2 - body_top).abs() < 0.5, "Four keeps to the top of page 2: {p:?}");
+}

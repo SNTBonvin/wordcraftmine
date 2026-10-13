@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-13 · **Change:** trivial (section `w:vAlign` "both" round-trips as Justified, #1320; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -74,6 +74,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 | Themes, font table, settings, compatibility mode | ✅ | ✅ | Embedded fonts (`w:embedRegular`) not used for rendering, but the font table, its relationships and the embedded font parts are written back unchanged (#770); attached template (`w:attachedTemplate` and its external relationship) and `w:linkStyles` round-trip (#377). The template path comes from the file, so opening never reads it: styles update from it only on an explicit Update Styles |
 | Custom XML parts, document properties, bibliography sources | 🟡 | 🟡 | Custom XML stores reached from the package/main document preserve opaque data, properties and relationships; binding evaluation remains absent. Custom properties round-trip; bibliography model I/O remains separate (#532 open) |
 | Section text direction (`w:textDirection` in `w:sectPr`, §17.6.20) | ✅ | ✅ | `tbRl`, `btLr` (and `tbRlV`/`tbLrV`, read as `tbRl`); `lrTbV` and unknown values read as horizontal (#491) |
+| Section vertical alignment (`w:vAlign` in `w:sectPr`, §17.6.23) | ✅ | ✅ | `top`, `center`, `bottom` and `both` (Justified, read as Center before #1320); unknown values read as top, top writes nothing (`crates/docx/tests/section_valign.rs`). ODT/RTF don't carry it |
 | Ruby (`w:ruby`: `w:rubyPr`, `w:rt`, `w:rubyBase`) | ✅ | ✅ | #288; base and ruby text with their run formatting, alignment, sizes, raise, language |
 | Document grid (`w:docGrid`: type, line pitch, `w:charSpace`), paragraph `w:snapToGrid` | ✅ | ✅ | #391; run-level `w:snapToGrid` not read |
 | `w:eastAsianLayout`, `w:fitText` | ❌ | ❌ | East Asian layout |
@@ -163,6 +164,7 @@ raise readiness estimates. No Word-derived files are fixtures.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | Section `w:vAlign="both"` reads as Justified and writes back as `both` (#1320) |
 | 2026-10-12 | trivial | Paste keeps the formatting of HTML and RTF on the system clipboard; Paste Special lists them and pictures (#687, #833) |
 | 2026-10-12 | trivial | ODT page size, orientation and margins read back from `styles.xml` on open, so they survive a save and reopen (#810) |
 | 2026-10-12 | minor | RTF reads 8-bit text in the document's or the font's code page (`\ansicpg`, `\fcharset`, `\cpg`) instead of always Windows-1252; a `.doc`/`.docx`/`.rtf` whose content is another of these formats opens by signature. Found on a private corpus of real Russian documents: 38 of 44 `.doc` files were RTF, all now open with their Cyrillic text |
