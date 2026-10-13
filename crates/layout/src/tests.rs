@@ -570,6 +570,39 @@ fn a_three_line_paragraph_is_never_split() {
     assert_eq!(pages_of_last(4), (0, 1), "four lines split two and two");
 }
 
+/// A run of paragraphs with the same borders is drawn as one box: one line above the first, one
+/// below the last, the sides unbroken from top to bottom, and a line between two paragraphs
+/// only when a border between is set.
+#[test]
+fn a_run_of_boxed_paragraphs_is_drawn_as_one_box() {
+    use wordcraft_doc::props::{Border, BorderStyle, Borders};
+    let line = Some(Border { style: BorderStyle::Single, width: 0.5, color: None, space: 4.0 });
+    let boxed = Borders { top: line, left: line, bottom: line, right: line, ..Default::default() };
+    // (horizontal lines, vertical lines, top of the highest vertical, bottom of the lowest, and
+    // the same of the vertical pieces laid end to end)
+    let rules = |borders: Borders, n: usize| {
+        let mut d = Document::from_text("one\ntwo\nthree\nfour");
+        for i in 1..=n {
+            d.format_paragraphs(&Pos::body(i, 0), &Pos::body(i, 0), &|p| p.borders = Some(borders)).unwrap();
+        }
+        let l = lay(&d);
+        let all: Vec<(f32, f32, f32, f32)> = l.pages[0]
+            .items
+            .iter()
+            .filter_map(|i| if let Placed::Rule { x0, y0, x1, y1, .. } = i { Some((*x0, *y0, *x1, *y1)) } else { None })
+            .collect();
+        let across = all.iter().filter(|r| (r.1 - r.3).abs() < 0.01).count();
+        let mut left: Vec<(f32, f32)> =
+            all.iter().filter(|r| (r.0 - r.2).abs() < 0.01 && r.0 < 100.0).map(|r| (r.1.min(r.3), r.1.max(r.3))).collect();
+        left.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let unbroken = left.windows(2).all(|w| (w[1].0 - w[0].1).abs() < 0.01);
+        (across, unbroken)
+    };
+    assert_eq!(rules(boxed, 1), (2, true), "one paragraph: its own box");
+    assert_eq!(rules(boxed, 3), (2, true), "three paragraphs: one top, one bottom, sides end to end");
+    assert_eq!(rules(Borders { between: line, ..boxed }, 3), (4, true), "with a border between: two more lines");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");

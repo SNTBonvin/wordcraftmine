@@ -53,7 +53,7 @@ font can't match Word's metrics.
 | Text wrap: tight, through (contour, wrap polygon) | 🟡 | #354: lines follow the wrap polygon, or the outline worked out from the object (shape geometry; a picture's opaque pixels as a convex hull; otherwise the rectangle), turned and flipped with it, kept the left/right distance from text; Through also uses gaps inside the outline. Wrap side (`wrapText`: both sides, left only, right only, largest side per line) applies to square, tight and through wraps, turned objects included; picture outlines are convex; not compared page-for-page with Word | 1–2 |
 | Text boxes, overflow, linked text boxes | ✅ | #46; linked text boxes (#369): the text runs on through each box in turn at that box's line length, overflow past the last box hidden; Align Text top / middle / bottom; the box's own internal margins, and a box set to Resize shape to fit text shows all its text (#743) | — |
 | Rotated objects and text | 🟡 | #332: pictures, shapes, charts and groups drawn turned and flipped about their centre (screen and PDF); square wrap and inline lines keep clear of the rotated bounds; hit testing on the turned shape. Text in a rotated text box stays upright | 2–3 |
-| Paragraph borders and shading | 🟡 | Borders take their distance and width above and below the text; a run of paragraphs with the same borders and indents is spaced as one box, with room for a border between (`layout::tests::paragraph_borders_take_their_distance_and_width`). Each paragraph of such a run still draws its own top and bottom lines; shading doesn't fill the border's distance above and below | 2–3 |
+| Paragraph borders and shading | 🟡 | Borders take their distance and width above and below the text; a run of paragraphs with the same borders and indents is spaced as one box, with room for a border between (`layout::tests::paragraph_borders_take_their_distance_and_width`). Such a run is drawn as one box, its shading out to the borders (`layout::tests::a_run_of_boxed_paragraphs_is_drawn_as_one_box`). Border art and a box continuing over a page break are unmeasured | 1–2 |
 | Page borders (from page edge or text), page colour, watermark | ✅ | | — |
 | Line numbers (restart per page/section, count by) | ✅ | | — |
 | Vertical page alignment | ✅ | | — |
@@ -84,6 +84,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | A run of paragraphs with the same borders is drawn as one box (no lines between unless a border between is set), and shading fills out to the borders |
 | 2026-10-12 | trivial | Fixed-layout tables take a column's width from its cells' preferred widths when they agree (measured in Word for Windows; the grid of files written by other tools is often equal shares) |
 | 2026-10-12 | trivial | Latin text forms no standard ligatures by default, as in Word (measured in Word for Windows: each Calibri tt or ti pulled the rest of its line about 0.4 pt left) |
 | 2026-10-12 | trivial | Exact line spacing puts the baseline four-fifths of the way down the line, whatever the font and size (measured in Word for Windows) |
