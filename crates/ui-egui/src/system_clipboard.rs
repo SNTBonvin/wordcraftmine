@@ -67,6 +67,18 @@ pub(crate) fn fill(app: &mut WordApp, id: &str, params: &mut Value) -> Option<Re
     None
 }
 
+/// Copy/Cut finished: the text always reaches the system clipboard through egui, and its HTML
+/// rendering goes along where the host takes it, so pasting into other programs keeps
+/// bold/italics (#1243).
+pub(crate) fn copied(app: &WordApp, ctx: &egui::Context, text: &str) {
+    ctx.copy_text(text.to_string());
+    if let Some(write) = &app.services.clipboard_write
+        && let Some(f) = &app.session.clipboard
+    {
+        write(text, &f.to_html());
+    }
+}
+
 /// Format names worth showing: not the clipboard protocol's own bookkeeping targets.
 fn shown(name: &str) -> bool {
     let n = name.trim();
@@ -121,6 +133,28 @@ mod tests {
 
     fn app(services: Services) -> WordApp {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), services)
+    }
+
+    /// Copy offers the HTML rendering next to the text, so other programs keep the
+    /// formatting (#1243).
+    #[test]
+    fn copy_writes_html_next_to_text() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let written: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
+        let w = written.clone();
+        let mut a =
+            app(Services { clipboard_write: Some(Box::new(move |t, h| w.borrow_mut().push((t.to_string(), h.to_string())))), ..Default::default() });
+        a.run("text.insert", json!({"text": "hi"})).unwrap();
+        a.run("select.all", json!({})).unwrap();
+        a.run("format.bold", json!({})).unwrap();
+        a.run("edit.copy", json!({})).unwrap();
+        let ctx = egui::Context::default();
+        copied(&a, &ctx, &a.session.clipboard_text.clone());
+        let w = written.borrow();
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].0, "hi");
+        assert!(w[0].1.contains("font-weight:bold") && w[0].1.contains("hi"), "{}", w[0].1);
     }
 
     fn first_para(a: &WordApp) -> String {

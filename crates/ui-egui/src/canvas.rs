@@ -2493,7 +2493,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             && let Some(t) = r.get("text").and_then(|t| t.as_str())
             && !t.is_empty()
         {
-            ui.ctx().copy_text(t.to_string());
+            crate::system_clipboard::copied(app, ui.ctx(), t);
         }
         ui.close();
     }
@@ -2501,7 +2501,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         if let Ok(r) = app.run("edit.copy", json!({}))
             && let Some(t) = r.get("text").and_then(|t| t.as_str())
         {
-            ui.ctx().copy_text(t.to_string());
+            crate::system_clipboard::copied(app, ui.ctx(), t);
         }
         ui.close();
     }

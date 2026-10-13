@@ -21,6 +21,15 @@ pub fn text() -> Option<String> {
     open()?.get_text().ok()
 }
 
+/// Write text and its HTML rendering to the system clipboard (Copy/Cut, #1243). A failure is
+/// logged, never fatal: the text copy already went through egui.
+pub fn set(text: &str, html: &str) {
+    let Some(mut clipboard) = open() else { return };
+    if let Err(e) = clipboard.set_html(html, Some(text)) {
+        log::warn!("clipboard: {e}");
+    }
+}
+
 /// The clipboard's HTML (Windows: the fragment of its "HTML Format"), if not too large.
 pub fn html() -> Option<String> {
     open()?.get().html().ok().filter(|h| h.len() <= MAX_PASTE_BYTES)
