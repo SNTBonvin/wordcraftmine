@@ -277,4 +277,52 @@ mod tests {
         let p = s.doc.para_at(&s.sel.focus).unwrap();
         assert_eq!(p.text.get(s.sel.focus.off..), Some(" b."));
     }
+
+    /// A session over the testkit fixture: Mendeley, Zotero and EndNote citations, a
+    /// Mendeley bibliography across paragraphs, one citation in a footnote (#1058).
+    fn manager_session() -> Session {
+        let bytes = wordcraft_testkit::manager_fields_docx().expect("testkit package");
+        Session::new(wordcraft_docx::read(&bytes).expect("docx read"))
+    }
+
+    /// `caret.pastCitation` walks every manager's fields, not just Zotero's: Mendeley →
+    /// Zotero → the Mendeley bibliography (both its paragraphs) → EndNote → no more.
+    #[test]
+    fn past_citation_walks_manager_fields() {
+        let mut s = manager_session();
+        s.sel = crate::Selection::caret(Pos::body(0, 0));
+        let rest = |s: &mut Session| {
+            s.run("caret.pastCitation", &json!({})).unwrap();
+            let f = &s.sel.focus;
+            s.doc.para_at(f).and_then(|p| p.text.get(f.off..)).map(str::to_string).unwrap_or_default()
+        };
+        assert_eq!(rest(&mut s), ".", "after the Mendeley citation");
+        assert_eq!(rest(&mut s), ".", "after the Zotero citation");
+        s.run("caret.pastCitation", &json!({})).unwrap();
+        let bibl_end = s.doc.para(StoryRef::Body, &Path::top(3)).map(|p| p.len()).unwrap_or(0);
+        assert_eq!(
+            (s.sel.focus.path.clone(), s.sel.focus.off),
+            (Path::top(3), bibl_end),
+            "after the bibliography's end marker, past both its paragraphs"
+        );
+        assert_eq!(rest(&mut s), ".", "after the EndNote citation");
+        assert!(s.run("caret.pastCitation", &json!({})).is_err(), "no citation after the last one");
+    }
+
+    /// Read Aloud leaves out every manager's citations and bibliographies — Mendeley's and
+    /// EndNote's like Zotero's — and reads them again when skipping is off.
+    #[test]
+    fn read_aloud_skips_manager_citations_and_bibliographies() {
+        let mut s = manager_session();
+        let texts = |s: &Session| {
+            crate::speech::sentences(&s.doc, &Pos::body(0, 0), None, s.read_aloud.skip_citations).into_iter().map(|u| u.text).collect::<Vec<_>>()
+        };
+        assert_eq!(texts(&s), ["See.", "Also.", "Cf. note.", "Tracked.", "Page 1.", "After."],);
+        // With citations read: their text is back in the sentences, bibliography included.
+        s.run("readAloud.skipCitations", &json!({"value": false})).unwrap();
+        let read = texts(&s);
+        assert!(read.contains(&"See (Austen, 1813).".to_string()), "{read:?}");
+        assert!(read.contains(&"Tracked (Roe, 2019).".to_string()), "{read:?}");
+        assert!(read.contains(&"Pride and Prejudice.".to_string()), "the Mendeley bibliography text: {read:?}");
+    }
 }

@@ -2097,3 +2097,4 @@
 	Start-up	启动
 	Show the Start screen when WordCraft starts	启动 WordCraft 时显示开始屏幕
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	开：WordCraft 打开时显示“文件 › 开始”，其中有空白文档、模板和最近使用的文档。关：直接打开空白文档。
+	Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.	Mendeley 引文会保留；Mendeley 应用无法连接 — Zotero 可实时使用。

@@ -2085,3 +2085,4 @@
 	Start-up	起動
 	Show the Start screen when WordCraft starts	WordCraft の起動時にスタート画面を表示する
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	オン: WordCraft は [ファイル] › [ホーム] で開き、白紙の文書、テンプレート、最近使った文書を表示します。オフ: 白紙の文書を開きます。
+	Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.	Mendeley の引用文献は保持されます。Mendeley アプリに接続できません — Zotero はライブで動作します。
