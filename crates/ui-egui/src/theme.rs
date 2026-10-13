@@ -128,6 +128,72 @@ impl From<InterfaceSize> for u16 {
     }
 }
 
+/// The Animation effects setting (File › Options › Accessibility, `ui.animations`): on, off, or
+/// `System`, which follows the system's own setting as the host reports it
+/// ([`Services::animations_enabled`](crate::Services::animations_enabled): Windows' Animation
+/// effects, macOS' Reduce motion, the Linux/BSD desktop's setting, a browser's
+/// `prefers-reduced-motion`).
+/// Off: wheel notches scroll and zoom at once ([`crate::scroll`]) and nothing fades or glides
+/// ([`apply_animations`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum Animations {
+    #[default]
+    System,
+    On,
+    Off,
+}
+
+impl Animations {
+    /// In menu order.
+    pub const ALL: [Animations; 3] = [Animations::System, Animations::On, Animations::Off];
+
+    /// The value used in `ui.json` and by the `ui.animations` command.
+    pub fn code(self) -> &'static str {
+        match self {
+            Animations::System => "system",
+            Animations::On => "on",
+            Animations::Off => "off",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Animations> {
+        Animations::ALL.into_iter().find(|a| a.code().eq_ignore_ascii_case(code.trim()))
+    }
+
+    /// The English label (translated with `tl!` where shown).
+    pub fn label(self) -> &'static str {
+        match self {
+            Animations::System => "Use system setting",
+            Animations::On => "On",
+            Animations::Off => "Off",
+        }
+    }
+
+    /// Whether animation effects are on, given what the system reports (`None`: it doesn't say).
+    /// `System` falls back to on when the system reports nothing.
+    pub fn enabled(self, system: Option<bool>) -> bool {
+        match self {
+            Animations::System => system.unwrap_or(true),
+            Animations::On => true,
+            Animations::Off => false,
+        }
+    }
+}
+
+/// An unknown saved value reads as the default rather than discarding the whole `ui.json`.
+impl From<String> for Animations {
+    fn from(s: String) -> Self {
+        Animations::from_code(&s).unwrap_or_default()
+    }
+}
+
+impl From<Animations> for String {
+    fn from(a: Animations) -> Self {
+        a.code().to_string()
+    }
+}
+
 /// Every colour the UI uses; widgets never hard-code colours.
 #[derive(Clone, Copy, Debug)]
 pub struct Tokens {
@@ -194,7 +260,7 @@ impl Tokens {
             accent_text: APP_INK,
             on_accent: Color32::WHITE,
             input: Color32::WHITE,
-            input_border: Color32::from_rgb(0xC7, 0xC7, 0xC7),
+            input_border: Color32::from_rgb(0x8A, 0x8A, 0x8A),
             group_label: Color32::from_rgb(0x70, 0x70, 0x70),
             ruler: Color32::from_rgb(0xFF, 0xFF, 0xFF),
             ruler_margin: Color32::from_rgb(0xD4, 0xD4, 0xD4),
@@ -232,9 +298,10 @@ impl Tokens {
             checked: Color32::from_rgb(0x2E, 0x3A, 0x66),
             accent: Color32::from_rgb(0x7A, 0x93, 0xF0),
             accent_text: Color32::from_rgb(0x9C, 0xB0, 0xF5),
-            on_accent: Color32::WHITE,
+            // Dark text on the light dark-theme accent: white on #7a93f0 is only 2.9:1 (#655).
+            on_accent: Color32::from_rgb(0x11, 0x16, 0x2E),
             input: Color32::from_rgb(0x1E, 0x1E, 0x1E),
-            input_border: Color32::from_rgb(0x58, 0x58, 0x58),
+            input_border: Color32::from_rgb(0x7A, 0x7A, 0x7A),
             group_label: Color32::from_rgb(0xA0, 0xA0, 0xA0),
             ruler: Color32::from_rgb(0x2E, 0x2E, 0x2E),
             ruler_margin: Color32::from_rgb(0x45, 0x45, 0x45),
@@ -279,7 +346,8 @@ pub fn install_fonts_with(ctx: &egui::Context, prefer_hans: bool, system_cjk: bo
 }
 
 /// [`install_fonts_with`], also adding document-font `faces` as last-resort fallbacks (#565): the
-/// faces that cover the text an input method is composing.
+/// faces that cover text the interface fonts cannot draw (an input method's composition, or a
+/// file name in the window caption).
 pub fn install_fonts_extra(ctx: &egui::Context, prefer_hans: bool, system_cjk: bool, faces: &[Arc<wordcraft_fonts::FontFace>]) {
     let mut fonts = font_definitions(prefer_hans, system_cjk);
     add_fallback_faces(&mut fonts, faces);
@@ -301,10 +369,17 @@ pub fn add_fallback_faces(fonts: &mut FontDefinitions, faces: &[Arc<wordcraft_fo
     }
 }
 
-/// Document faces needed to draw `text` (the input method's composition), one for each character
-/// the interface fonts cannot draw, skipping faces in `have` (#565). Characters of the embedded
-/// interface fonts are not looked up; very large faces (system CJK collections) are left to the CJK
-/// fallback.
+/// A character the window caption can already draw without a document fallback: the Latin range
+/// the interface faces cover, or CJK, which uses the CJK UI font ([`install_fonts_with`]) rather
+/// than a document face. System CJK collections are larger than [`faces_for_preedit`] will load.
+pub fn caption_char_covered(c: char) -> bool {
+    (c as u32) < 0x250 || wordcraft_fonts::is_cjk(c)
+}
+
+/// Document faces needed to draw `text` (the input method's composition, or a file name in the
+/// window caption), one for each character the interface fonts cannot draw, skipping faces in
+/// `have` (#565). Characters of the embedded interface fonts are not looked up; very large faces
+/// (system CJK collections) are left to the CJK fallback.
 pub fn faces_for_preedit(
     text: &str,
     have: &[Arc<wordcraft_fonts::FontFace>],
@@ -511,6 +586,17 @@ pub fn apply(ctx: &egui::Context, appearance: Appearance) {
     });
 }
 
+/// Turn egui's own animations on or off: hover and press fades, menus, tooltips and windows fading
+/// in, sections sliding open, and the glide when a scroll area brings the caret or a list item
+/// into view. Off, each of them happens at once.
+pub fn apply_animations(ctx: &egui::Context, on: bool) {
+    let defaults = egui::Style::default();
+    ctx.all_styles_mut(|s| {
+        s.animation_time = if on { defaults.animation_time } else { 0.0 };
+        s.scroll_animation = if on { defaults.scroll_animation } else { egui::style::ScrollAnimation::none() };
+    });
+}
+
 /// egui's visuals for one of our palettes.
 fn visuals(t: &Tokens) -> Visuals {
     let mut v = if t.dark { Visuals::dark() } else { Visuals::light() };
@@ -555,6 +641,42 @@ pub fn c32(c: wordcraft_doc::Rgb) -> Color32 {
 mod tests {
     use std::collections::BTreeSet;
 
+    /// WCAG contrast ratio between two opaque colours.
+    pub(super) fn contrast(a: egui::Color32, b: egui::Color32) -> f32 {
+        let lum = |c: egui::Color32| {
+            let ch = |v: u8| {
+                let v = f32::from(v) / 255.0;
+                if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            };
+            0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+        };
+        let (x, y) = (lum(a), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    /// #655: text and knobs on filled accent controls (Share, avatar, AutoSave, keytips) reach 4.5:1
+    /// on the accent and on its hover shade, in both themes.
+    #[test]
+    fn on_accent_reads_on_the_accent() {
+        for t in [super::Tokens::light(), super::Tokens::dark()] {
+            for (name, bg) in [("accent", t.accent), ("hover", t.accent_text)] {
+                let r = contrast(t.on_accent, bg);
+                assert!(r >= 4.5, "dark={}: on_accent on {name} is {r:.2}:1", t.dark);
+            }
+        }
+    }
+
+    /// #657: text field and combo outlines reach 3:1 against the field and everything it sits on.
+    #[test]
+    fn input_borders_reach_three_to_one() {
+        for t in [super::Tokens::light(), super::Tokens::dark()] {
+            for (name, bg) in [("input", t.input), ("ribbon", t.ribbon), ("panel", t.panel), ("menu", t.menu), ("title bar", t.title_bar)] {
+                let r = contrast(t.input_border, bg);
+                assert!(r >= 3.0, "dark={}: input_border on {name} is {r:.2}:1", t.dark);
+            }
+        }
+    }
+
     /// #565: the composition of an input method (Bangla through ibus) drew as boxes because only the
     /// interface fonts were used. Faces found for the uncovered characters are added as fallbacks,
     /// once, and not for characters the interface fonts draw.
@@ -573,6 +695,48 @@ mod tests {
         super::add_fallback_faces(&mut defs, &got);
         assert_eq!(defs.font_data.len(), before + 1);
         assert!(defs.families[&egui::FontFamily::Proportional].last().is_some_and(|n| n.starts_with("fallback ")));
+    }
+
+    /// A file name in a script Inter lacks (Hebrew, Arabic, …) is drawn in the window caption,
+    /// which uses the semibold face. egui paints a missing glyph as `?`, so the caption borrows
+    /// one document fallback face. CJK stays with the CJK UI font: those files are too large to
+    /// add here.
+    #[test]
+    fn caption_borrows_one_fallback_face_for_hebrew() {
+        let face = wordcraft_fonts::FontDb::global().face("Source Sans 3", "Regular");
+        let lookup = |c: char| {
+            assert!(!super::caption_char_covered(c), "{c} is already drawn by the interface fonts");
+            Some(face.clone())
+        };
+        let hebrew = "מסמך";
+        let got = super::faces_for_preedit(hebrew, &[], super::caption_char_covered, lookup);
+        assert_eq!(got.len(), 1, "one face for the whole file name");
+        assert!(super::faces_for_preedit(hebrew, &got, super::caption_char_covered, lookup).is_empty(), "already added");
+        assert!(super::faces_for_preedit("文档", &[], super::caption_char_covered, lookup).is_empty(), "CJK uses the CJK UI font");
+        assert!(super::faces_for_preedit("report", &[], super::caption_char_covered, lookup).is_empty(), "Latin needs nothing");
+        let mut defs = super::font_definitions(false, false);
+        super::add_fallback_faces(&mut defs, &got);
+        let semi = &defs.families[&egui::FontFamily::Name("semibold".into())];
+        assert!(semi.iter().any(|n| n.starts_with("fallback ")), "the caption is painted with semibold");
+    }
+
+    /// #656: dialog primary buttons, the Discord pill, the table eraser and the Navigation search
+    /// highlight take their colours from the theme, not fixed light-theme values.
+    #[test]
+    fn interface_colours_come_from_the_theme() {
+        let banned = ["fill(crate::theme::APP_COLOR)", "0x58, 0x65, 0xF2", "0x47, 0x52, 0xC4", "0xFF, 0xF1, 0x76", "0xD1, 0x3B, 0x3B"];
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if !name.ends_with(".rs") || name == "theme.rs" || name == "icons.rs" {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).unwrap();
+            for b in banned {
+                assert!(!src.contains(b), "{name} hard-codes {b}; use theme::Tokens");
+            }
+        }
     }
 
     /// Symbols written as text in the interface code must exist in the interface fonts (Inter and

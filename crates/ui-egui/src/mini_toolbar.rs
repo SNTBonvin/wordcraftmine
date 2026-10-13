@@ -64,21 +64,31 @@ pub fn shown_id() -> egui::Id {
 
 /// Whether the bar may be shown for the current app state.
 pub fn visible(app: &WordApp) -> bool {
+    // Reading Mode permits text selection and copying, but never formatting controls.
+    if app.session.view.read_mode {
+        return false;
+    }
     // Never over a modal dialog or the Backstage.
-    if app.dialog.is_some() || app.ui.backstage {
+    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage {
         return false;
     }
     // Never while the right-click context menu is open: it owns the pointer and would double up.
     if app.canvas.context_menu_open {
         return false;
     }
-    // Never while a drag-select is in progress (Word shows it on mouse-up).
-    if app.canvas.drag_selecting() {
+    // Never while a drag-select is in progress, in the text or a table's selection areas (Word
+    // shows it on mouse-up), nor while a table is being moved.
+    if app.canvas.drag_selecting() || app.canvas.table_drag.is_some() {
         return false;
     }
     // Never while keytips are showing: the ribbon owns the letters, and the bar's buttons reuse
     // the ribbon's widgets, so they would record duplicate badges.
     if app.ui.keytips != crate::keytips::Phase::Off {
+        return false;
+    }
+    // Nor for whole table cells: pinned above them, it would cover the table's column selection
+    // areas, insert buttons and move handle.
+    if app.session.cell_range().is_some() {
         return false;
     }
     // Never for a collapsed caret.
@@ -132,8 +142,12 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
         let fams = app.previews.families();
         let prev = app.previews.font_preview_fn();
         if let Some(f) = widgets::font_combo(ui, "mini_font", COMBO_FONT_W, &font, &fams, Some(&*prev)) {
-            let f = app.previews.font_stored(&f);
-            let _ = app.run("format.font", json!({"name": f}));
+            let _ = if f == crate::widgets::ADD_FONT {
+                app.run("font.add", json!({}))
+            } else {
+                let f = app.previews.font_stored(&f);
+                app.run("format.font", json!({"name": f}))
+            };
         }
         let size =
             st.get("size").and_then(Value::as_f64).map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).unwrap_or_default();
@@ -205,7 +219,7 @@ fn highlight_menu(ui: &mut egui::Ui, app: &mut WordApp) {
     }
 }
 
-/// Font colour: Automatic plus the standard colour grid.
+/// Font colour: Automatic, the colour grid, Recent Colors and More Colors… (#606).
 fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
     egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
         if ui.selectable_label(false, "Automatic").clicked() {
@@ -214,11 +228,8 @@ fn font_color_menu(ui: &mut egui::Ui, app: &mut WordApp) {
             return;
         }
         let theme = app.session.doc.settings.theme_colors.clone();
-        if let Some(hex) = widgets::color_grid(ui, &theme) {
-            app.canvas.last_font_color = hex.clone();
-            let _ = app.run("format.color", json!({"color": hex}));
-            ui.close();
-        }
+        let target = crate::colors::Target::cmd("format.color").remember(crate::colors::Remember::FontColor);
+        crate::colors::menu(ui, app, &theme, target);
     });
 }
 
@@ -228,6 +239,22 @@ mod tests {
 
     fn vp() -> Rect {
         Rect::from_min_size(pos2(100.0, 50.0), Vec2::new(1200.0, 700.0))
+    }
+
+    #[test]
+    fn reading_mode_hides_formatting_even_with_an_existing_selection() {
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        app.run("text.insert", json!({"text": "Selectable text"})).unwrap();
+        app.run("select.all", json!({})).unwrap();
+        assert!(!app.session.sel.is_collapsed());
+        assert!(visible(&app), "selection shows the formatting bar in editing mode");
+
+        app.run("view.readMode", json!({})).unwrap();
+        assert!(!app.session.sel.is_collapsed(), "entering Reading Mode must preserve the selection");
+        assert!(!visible(&app), "formatting bar must not be accessible in Reading Mode");
+
+        app.run("view.printLayout", json!({})).unwrap();
+        assert!(visible(&app), "returning to editing restores the formatting bar");
     }
 
     #[test]
