@@ -111,7 +111,7 @@ pub fn parse_latex(s: &str) -> Arg {
         p.i += 1;
     }
     let out = merge_runs(out);
-    if out.iter().any(|n| matches!(n, MNode::Run(r) if r.text.contains('#'))) {
+    if out.iter().any(|n| matches!(n, MNode::Run(r) if !r.nor && r.text.contains('#'))) {
         return vec![MNode::EqArr { rows: vec![out] }];
     }
     out
@@ -231,10 +231,14 @@ impl Lp {
         }
         self.i += 1;
         let mut level = 0i32;
+        // The previous token was a control word (`\backslash{}`: the empty braces end its name).
+        let mut after_word = false;
         while let Some(t) = self.peek().cloned() {
             self.i += 1;
+            let was_word = std::mem::replace(&mut after_word, matches!(&t, Tok::Cmd(c) if c.chars().all(|c| c.is_ascii_alphabetic())));
             match t {
                 Tok::Close if level == 0 => break,
+                Tok::Open if was_word && self.peek() == Some(&Tok::Close) => self.i += 1,
                 Tok::Open => {
                     level += 1;
                     s.push('{');
@@ -744,6 +748,21 @@ fn chars(text: &str, s: &mut String) {
     }
 }
 
+/// Text inside `\text{…}`: only what LaTeX would read as markup is escaped.
+fn text_chars(text: &str, s: &mut String) {
+    for c in text.chars() {
+        match c {
+            '{' | '}' | '%' | '$' | '#' | '&' | '_' | '~' => {
+                s.push('\\');
+                s.push(c);
+            }
+            // `{}` ends the command name without adding a space (spaces count in text).
+            '\\' => s.push_str("\\backslash{}"),
+            c => s.push(c),
+        }
+    }
+}
+
 fn delim_tex(c: Option<char>) -> String {
     match c {
         None => ".".into(),
@@ -783,7 +802,7 @@ fn node(n: &MNode, s: &mut String, depth: usize) {
             };
             s.push_str(open);
             if r.nor {
-                s.push_str(&r.text);
+                text_chars(&r.text, s);
             } else {
                 chars(&r.text, s);
             }

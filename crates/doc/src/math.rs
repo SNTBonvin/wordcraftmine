@@ -340,7 +340,7 @@ fn yes() -> bool {
 
 /// A row holds an equation-number mark (`#`) in a top-level run.
 pub fn has_number_mark(row: &[MNode]) -> bool {
-    row.iter().any(|n| matches!(n, MNode::Run(r) if !r.lit && r.text.contains('#')))
+    row.iter().any(|n| matches!(n, MNode::Run(r) if !r.lit && !r.nor && r.text.contains('#')))
 }
 
 /// Integral signs (their limits default to sub/sup positions).
@@ -923,6 +923,17 @@ mod tests {
         assert_eq!(depth_of(&n), 11, "{n:#?}");
         let n = crate::math_latex::parse_latex(r"\sum_{i}\sum_{j}a_{ij}");
         assert!(matches!(&n[0], MNode::Nary { e, .. } if matches!(e.first(), Some(MNode::Nary { .. }))), "{n:#?}");
+    }
+
+    #[test]
+    fn latex_text_escapes_what_latex_reads_as_markup() {
+        for text in ["a}b\\c", "{x}", "50% of #1", "a_b&c$d~e^f", "\\", "\\alpha", "\\{"] {
+            let n = vec![MNode::Run(MRun { text: text.into(), nor: true, sty: Some(MSty::Plain), ..Default::default() })];
+            let tex = crate::math_latex::to_latex(&n);
+            assert_eq!(crate::math_latex::parse_latex(&tex), n, "{text:?} → {tex}");
+        }
+        let n = vec![MNode::Run(MRun::new("a\\b"))];
+        assert_eq!(crate::math_latex::parse_latex(&crate::math_latex::to_latex(&n)), n);
     }
 
     #[test]
