@@ -1047,6 +1047,16 @@ impl Reader<'_> {
                     s.endnote_pr = props::note_pr(k, false);
                 }
                 "w:documentProtection" => read_protection(k, s),
+                "w:themeFontLang" => {
+                    let tfl = wordcraft_doc::ThemeFontLang {
+                        val: k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string),
+                        east_asia: k.attr("w:eastAsia").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string),
+                        bidi: k.attr("w:bidi").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string),
+                    };
+                    if !tfl.is_empty() {
+                        s.theme_font_lang = Some(tfl);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1324,6 +1334,7 @@ impl Reader<'_> {
                 "dcterms:created" => c.created = t,
                 "dcterms:modified" => c.modified = t,
                 "cp:category" => c.category = t,
+                "dc:language" => c.language = t,
                 _ => {}
             }
         }

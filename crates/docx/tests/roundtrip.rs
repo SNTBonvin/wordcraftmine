@@ -101,6 +101,7 @@ fn every_char_prop_round_trips() {
             reflection: Some(wordcraft_doc::wordart::Reflection::default()),
         })),
         lang: Some("fr-FR".into()),
+        lang_east_asia: Some("zh-CN".into()),
         no_proof: Some(true),
         rtl: Some(false),
         cs: Some(true),
@@ -1886,6 +1887,30 @@ fn bibliography_sources_round_trip() {
     assert_eq!(back.sources[4].kind, "other");
     assert_eq!(back.sources[4].title, "Archive Manuscript");
     assert_eq!(back.sources[4].city, "Oxford");
+}
+
+#[test]
+fn language_attributes_and_settings_round_trip() {
+    let mut d = Document::new();
+    d.core.language = "es-MX".into();
+    d.settings.theme_font_lang =
+        Some(wordcraft_doc::ThemeFontLang { val: Some("es-MX".into()), east_asia: Some("zh-CN".into()), bidi: Some("ar-SA".into()) });
+    let chr = CharProps { lang: Some("es-MX".into()), lang_east_asia: Some("zh-CN".into()), lang_bidi: Some("ar-SA".into()), ..Default::default() };
+    let p = Paragraph::with_text("Hola mundo", chr);
+    d.body = vec![para_block(p)];
+
+    let bytes = wordcraft_docx::write(&d).expect("write docx");
+    let back = wordcraft_docx::read(&bytes).expect("read docx");
+
+    assert_eq!(back.core.language, "es-MX");
+    assert_eq!(
+        back.settings.theme_font_lang,
+        Some(wordcraft_doc::ThemeFontLang { val: Some("es-MX".into()), east_asia: Some("zh-CN".into()), bidi: Some("ar-SA".into()) })
+    );
+    let p_back = back.body[0].as_para().expect("para");
+    assert_eq!(p_back.runs[0].props.lang.as_deref(), Some("es-MX"));
+    assert_eq!(p_back.runs[0].props.lang_east_asia.as_deref(), Some("zh-CN"));
+    assert_eq!(p_back.runs[0].props.lang_bidi.as_deref(), Some("ar-SA"));
 }
 
 #[test]

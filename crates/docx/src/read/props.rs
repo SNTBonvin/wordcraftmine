@@ -220,6 +220,7 @@ impl PropCtx {
                 }
                 "w:lang" => {
                     c.lang = k.attr("w:val").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
+                    c.lang_east_asia = k.attr("w:eastAsia").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
                     c.lang_bidi = k.attr("w:bidi").filter(|v| !v.is_empty() && v.len() < 64).map(str::to_string);
                 }
                 n if n.starts_with("w14:") => {
