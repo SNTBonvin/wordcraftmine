@@ -122,14 +122,47 @@ pub fn write_as(doc: &Document, flavor: Flavor) -> Result<Vec<u8>, DocxError> {
 
 /// The parts of the package [`write_as`] zips, in order, `[Content_Types].xml` first: (part name
 /// without the leading `/`, bytes).
+/// Give every section without one a default header, so a watermark has somewhere to live.
+fn ensure_default_headers(doc: &mut Document) {
+    let missing: Vec<usize> = doc.sections().iter().filter(|(_, s)| s.headers.default.is_none()).map(|(e, _)| *e).collect();
+    if missing.is_empty() {
+        return;
+    }
+    let id = doc.add_part(PartKind::Header, Blocks::new());
+    for e in missing {
+        doc.section_mut(e).headers.default = Some(id);
+    }
+}
+
+/// Word's text watermark: a VML `v:shape` with a `v:textpath`, written into the headers so Word and
+/// other readers show it (#1290).
+fn write_watermark(w: &mut W, wm: &wordcraft_doc::Watermark) {
+    let text = xml::esc(&wm.text);
+    let font = xml::esc(&wm.font);
+    let family = if font.contains(' ') { format!("'{font}'") } else { font };
+    let color = format!("#{}", wm.color.hex());
+    let rotation = if wm.diagonal { ";rotation:-40" } else { "" };
+    w.raw(r##"<w:p><w:r><w:pict><v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>"##);
+    let shape = format!(
+        r##"<v:shape id="WaterMark" o:spid="_x0000_s2049" type="#_x0000_t136" style="width:500pt;height:100pt;margin-top:0;margin-left:0;mso-position-horizontal:center;mso-position-horizontal-relative:page;mso-position-vertical:center;mso-position-vertical-relative:page;position:absolute{rotation};z-index:251661312" fillcolor="{color}" strokecolor="{color}"><v:textpath style="font-family:{family}" string="{text}"/></v:shape></w:pict></w:r></w:p>"##
+    );
+    w.raw(&shape);
+}
+
 pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String, Vec<u8>)>, DocxError> {
     // A range field must be whole in the file: drop markers that lost their partner in editing.
-    let balanced;
-    let doc = if doc.has_unbalanced_field_ranges() {
+    // A watermark lives in the headers, so a document that has none gets a default one (#1290).
+    let owned;
+    let doc = if doc.has_unbalanced_field_ranges() || doc.settings.watermark.is_some() {
         let mut d = doc.clone();
-        d.balance_field_ranges();
-        balanced = d;
-        &balanced
+        if d.has_unbalanced_field_ranges() {
+            d.balance_field_ranges();
+        }
+        if d.settings.watermark.is_some() {
+            ensure_default_headers(&mut d);
+        }
+        owned = d;
+        &owned
     } else {
         doc
     };
@@ -210,6 +243,10 @@ pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String,
         w.open(tag, &ns_refs);
         let blocks: Blocks = doc.parts.get(&id).map(|p| p.blocks.clone()).unwrap_or_default();
         wr.blocks(&mut w, &blocks, &mut prels, false, 0);
+        // Word keeps the text watermark in the headers.
+        if !footer && let Some(wm) = &doc.settings.watermark {
+            write_watermark(&mut w, wm);
+        }
         w.close(tag);
         push_part(
             &mut entries,
