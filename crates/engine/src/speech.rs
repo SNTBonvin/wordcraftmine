@@ -505,6 +505,10 @@ fn windows_powershell(system_root: Option<std::ffi::OsString>) -> std::path::Pat
     std::path::Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
 }
 
+/// Win32 `CREATE_NO_WINDOW` process creation flag: a console program starts without a console window.
+#[cfg(any(target_os = "windows", test))]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Speak one sentence with the system's speech program, stopping early when `changed()`.
 #[cfg(not(target_arch = "wasm32"))]
 fn speak(text: &str, rate: f32, changed: &dyn Fn() -> bool) -> Spoken {
@@ -528,6 +532,9 @@ fn speak(text: &str, rate: f32, changed: &dyn Fn() -> bool) -> Spoken {
         );
         let mut c = Command::new(windows_powershell(std::env::var_os("SystemRoot")));
         c.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        // PowerShell is a console program: without this, every sentence flashes a console window
+        // over the document (#1122).
+        std::os::windows::process::CommandExt::creation_flags(&mut c, CREATE_NO_WINDOW);
         tries.push(c);
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -590,6 +597,12 @@ mod tests {
             let p = windows_powershell(root);
             assert!(p.starts_with("C:\\Windows") && p.ends_with(&tail), "{}", p.display());
         }
+    }
+
+    #[test]
+    fn powershell_starts_without_a_console_window() {
+        // Win32's CREATE_NO_WINDOW: any other value lets every sentence flash a console (#1122).
+        assert_eq!(CREATE_NO_WINDOW, 0x0800_0000);
     }
 
     #[test]
