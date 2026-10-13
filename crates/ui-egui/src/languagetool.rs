@@ -228,10 +228,9 @@ pub fn describe(e: &LtError) -> String {
     use crate::i18n::fmt;
     match e {
         LtError::BadServer(a) => fmt(tl!("The LanguageTool server address isn't a web address: {address}"), &[("address", a)]),
-        LtError::TooLong { bytes, max } => fmt(
-            tl!("A paragraph is too long to check ({bytes} bytes; at most {max})."),
-            &[("bytes", &bytes.to_string()), ("max", &max.to_string())],
-        ),
+        LtError::TooLong { bytes, max } => {
+            fmt(tl!("A paragraph is too long to check ({bytes} bytes; at most {max})."), &[("bytes", &bytes.to_string()), ("max", &max.to_string())])
+        }
         LtError::Network(why) => fmt(tl!("Couldn't reach the LanguageTool server: {reason}"), &[("reason", why)]),
         LtError::Timeout => tl!("The LanguageTool server didn't answer in time.").to_string(),
         LtError::RateLimited => tl!("The LanguageTool server is limiting requests; checking resumes in a minute.").to_string(),

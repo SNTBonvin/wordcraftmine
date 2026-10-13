@@ -313,11 +313,24 @@ fn the_retry_with_detection_waits_for_the_pacing_gap() {
 #[test]
 fn credentials_are_refused_over_plain_http_to_other_computers() {
     let with = |server: &str| Settings { server: server.into(), username: "me@example.org".into(), api_key: "SECRET".into(), ..on() };
-    for bad in ["http://lt.example.org", "http://192.168.1.5:8081", "HTTP://lt.example.org/v2", "http://localhost.example.org", "http://127.0.0.1@evil.example"] {
+    for bad in [
+        "http://lt.example.org",
+        "http://192.168.1.5:8081",
+        "HTTP://lt.example.org/v2",
+        "http://localhost.example.org",
+        "http://127.0.0.1@evil.example",
+    ] {
         assert_eq!(request::build(&with(bad), "text", "auto"), Err(LtError::InsecureAccount), "{bad}");
         assert_eq!(with(bad).account_check(), Err(LtError::InsecureAccount), "{bad}");
     }
-    for good in ["https://lt.example.org", "http://localhost:8081", "http://127.0.0.1:8081/", "http://[::1]:8081", "http://lt.localhost", "http://evil@localhost:8081"] {
+    for good in [
+        "https://lt.example.org",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081/",
+        "http://[::1]:8081",
+        "http://lt.localhost",
+        "http://evil@localhost:8081",
+    ] {
         let r = request::build(&with(good), "text", "auto").unwrap();
         assert!(form(&r.body).contains(&("apiKey".into(), "SECRET".into())), "{good}");
     }

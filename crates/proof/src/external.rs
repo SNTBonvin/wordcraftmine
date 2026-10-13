@@ -93,7 +93,8 @@ pub fn get(text: &str) -> Option<Vec<Issue>> {
 /// language (the paragraph's language changed, or another paragraph with the same text is in
 /// another language) doesn't count: it is checked again, and both results are kept.
 pub fn has(text: &str, language: &str) -> bool {
-    LEN.load(Ordering::Relaxed) > 0 && store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).is_some_and(|v| v.iter().any(|e| e.language == language))
+    LEN.load(Ordering::Relaxed) > 0
+        && store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).is_some_and(|v| v.iter().any(|e| e.language == language))
 }
 
 /// Which stored result applies to `text` (0: none). Changes whenever a new result is stored for
