@@ -41,13 +41,15 @@ config works across the suite) keep the agent to the folders you give it:
 - Every file a command reads must lie inside the **read root**: `open_document` and `file.open`,
   `file.newFromTemplate`, `insert.textFromFile` and `insert.object`, `insert.picture` and
   `picture.change` with a `path`, `mailings.recipients` with a `path` (csv, tsv, txt, xlsx, xlsm,
-  ods), `references.importSources` with a `path` (bib, ris, json), `review.compare` (`path` and
-  `original`), the templates and documents `tools.updateStyles`,
-  `styles.organizer` and `styles.copyFrom` read. The pictures an opened HTML file names are read
-  from beside that file, so they are inside the read root too (a link that leads out is not followed).
+  ods), `references.importSources` with a `path` (bib, ris, json), `references.cslStyles` with an
+  `add` path (csl), `review.compare` (`path` and `original`), the templates and documents
+  `tools.updateStyles`, `styles.organizer` and `styles.copyFrom` read. The pictures an opened
+  HTML file names are read from beside that file, so they are inside the read root too (a link
+  that leads out is not followed).
 - Every file a command writes must lie inside the **write root**: `save_document`, `file.save`,
   `file.saveAs`, `file.exportPdf`, `file.exportPng`, `file.printPdf`, `file.saveTemplate`, and `mailings.finish` with
-  a `path`.
+  a `path`. `references.cslStyles`'s `add` copies the style file into the styles folder under the
+  config folder, so a write root that doesn't contain it refuses the install.
 - Read and write access are separate. Give the same folder twice for both; a root left out grants
   none of its access (with only `--automation-read-root`, nothing can be written to disk). Without
   either flag nothing changes.
