@@ -28,6 +28,9 @@ use wordcraft_ui_egui::{
     window_geometry::{WindowGeometry, take_rescue},
 };
 
+/// The port the Codex MCP bridge is configured to use on this computer.
+const CODEX_CONTROL_PORT: u16 = 7981;
+
 /// The app, the restored window geometry until the first frame has checked it, the control
 /// server's key file (removed on exit), the file dialogs the app asked for and, on macOS, the
 /// documents opened from Finder.
@@ -44,6 +47,23 @@ impl eframe::App for App {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.4, &mut self.0, ctx);
         self.0.logic(ctx);
+        if self.0.take_codex_disconnect_request() {
+            self.0.disconnect_control();
+            if let Some(server) = self.2.take() {
+                server.remove();
+            }
+        }
+        if self.0.take_codex_connect_request() && !self.0.codex_is_ready() {
+            let port = self.0.codex_port().unwrap_or(CODEX_CONTROL_PORT);
+            match control_server::start(port, ctx.clone(), wordcraft_control_key::settings_dir().as_deref()) {
+                Some((rx, Some(key_file))) => {
+                    self.0.connect_control(rx, port);
+                    self.2 = Some(key_file);
+                }
+                Some((_rx, None)) => self.0.codex_connect_failed("WordCraft could not save its private control key."),
+                None => self.0.codex_connect_failed(format!("WordCraft could not open port {port}. Check whether another app is using it.")),
+            }
+        }
         self.3.show(frame);
         let prev = self.0.ui.window;
         self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
@@ -333,7 +353,7 @@ fn main() -> eframe::Result {
             if let Some(port) = control_port
                 && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
             {
-                app = app.with_control(rx);
+                app = app.with_codex_control(rx, port);
                 key_file = file;
             }
             // Nothing to open (no files, no sample, no control channel driving the editor): start

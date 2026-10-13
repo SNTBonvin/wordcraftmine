@@ -1,6 +1,6 @@
 # WordCraft parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (table border drags with Ctrl and Alt, from the left edge and of selected cells, #711; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: all 12 bibliography styles, #383; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Ollama task pane adds an in-app writing assistant; parity estimates not remeasured; previously trivial: table border drags with Ctrl and Alt, from the left edge and of selected cells, #711; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; all 12 bibliography styles, #383; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; replaces the parity tables that lived in ROADMAP.md) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 The authoritative assessment of how close WordCraft is to Microsoft Word. [`ROADMAP.md`](../ROADMAP.md)
 summarizes it; [`gaps.md`](gaps.md) itemizes every shortfall; the deep checklists are
@@ -199,7 +199,7 @@ Word. Their weighted sum is the **full ready for real work** number.
 | Platforms | 3% | 95% | 5–10 | [ROADMAP.md](../ROADMAP.md) | macOS (universal, signed), Windows x64/x86/arm64, Linux (AppImage/deb/rpm/Flatpak), FreeBSD, web. Beyond Word on Linux, BSD and the web; Word's iPad/iPhone/Android apps are out of scope |
 | Hardware | 1% | 40% | 20–40 | [hardware-parity.md](hardware-parity.md) | No native printing on desktop, no pen/ink, no dictation; GPU drawing and HiDPI fine. Ink hours are in the Features row (Draw tab) |
 | Ecosystem and plugins | 2% | 15% | 40–80 | [gaps.md](gaps.md) | Zotero built in, macros record/play commands, `.docm` macros preserved (#172). No VBA execution, no Office add-ins, no EndNote/Mendeley plugins, no cloud storage or co-authoring |
-| AI features | 0% | 40% | 15–30 | [gaps.md](gaps.md) | Beyond Word for external agents (MCP, CLI). No in-app writing assistant like Copilot yet (chat PR #178 open). Weight 0: Copilot is a paid add-on and not what decides a switch |
+| AI features | 0% | 40% | 3–6 | [gaps.md](gaps.md) | Beyond Word for external agents (MCP, CLI); [Ollama chat](ollama.md) now supports local/cloud and llama.cpp models, verified writing, web tools and live document editing with permission and undo. Inline suggestions, chat persistence and model management remain. Weight 0: Copilot is a paid add-on and not what decides a switch |
 
 **Ready for real work ≈ 0.30·68 + 0.20·60 + 0.15·55 + 0.10·65 + 0.10·50 + 0.05·75 + 0.04·25 +
 0.03·95 + 0.01·40 + 0.02·15 ≈ 60%.**
@@ -248,6 +248,8 @@ licensed or commissioned metric-compatible Aptos substitute, and a real-world DO
 can be used without committing Word output.
 
 ## Revision history
+
+| 2026-10-13 | minor | In-app Ollama task pane with local/cloud and llama.cpp models, verified writing, web tools and gated document edits; assistant parity estimates not remeasured |
 
 | Date | Change | Summary |
 |---|---|---|

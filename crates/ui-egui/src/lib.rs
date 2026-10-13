@@ -58,6 +58,7 @@ pub mod keys;
 pub mod keytips;
 pub mod mini_toolbar;
 pub mod objects;
+pub mod ollama;
 pub mod options;
 pub mod panes;
 pub mod paste_picture;
@@ -166,6 +167,7 @@ pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub tab: String,
+    pub agents: ollama::Preferences,
     pub backstage: bool,
     pub backstage_page: String,
     /// File › Print settings (#641); not saved.
@@ -264,6 +266,7 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             tab: "Home".into(),
+            agents: Default::default(),
             backstage: false,
             backstage_page: "home".into(),
             print: print_page::PrintSettings::default(),
@@ -346,6 +349,7 @@ pub struct WordApp {
     pub ui: UiState,
     pub services: Services,
     pub printing: printing::State,
+    pub ollama: ollama::State,
     print_feedback_seen: Option<printing::Feedback>,
     pub canvas: canvas::CanvasState,
     /// Content control frames, check boxes and lists on the page.
@@ -371,6 +375,11 @@ pub struct WordApp {
     /// macOS: the window has no title bar; leave room for the traffic lights.
     pub integrated_titlebar: bool,
     control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
+    codex_connect_requested: bool,
+    codex_disconnect_requested: bool,
+    codex_ready: bool,
+    codex_port: Option<u16>,
+    codex_connection_error: Option<String>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
     pending_shots: Vec<(u64, Option<String>, std::sync::mpsc::Sender<Value>, f64)>,
@@ -467,6 +476,7 @@ impl WordApp {
             ui: UiState::default(),
             services,
             printing: Default::default(),
+            ollama: Default::default(),
             print_feedback_seen: None,
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
@@ -477,6 +487,11 @@ impl WordApp {
             previews: previews::Previews::default(),
             integrated_titlebar: false,
             control_rx: None,
+            codex_connect_requested: false,
+            codex_disconnect_requested: false,
+            codex_ready: false,
+            codex_port: None,
+            codex_connection_error: None,
             shot_token: 0,
             queued_shots: Vec::new(),
             pending_shots: Vec::new(),
@@ -526,6 +541,60 @@ impl WordApp {
         self
     }
 
+    /// Attach an active desktop control server and show its port in Agents.
+    pub fn with_codex_control(mut self, rx: std::sync::mpsc::Receiver<ControlRequest>, port: u16) -> Self {
+        self.control_rx = Some(rx);
+        self.codex_ready = true;
+        self.codex_port = Some(port);
+        self
+    }
+
+    /// Whether the desktop host should start the local control server requested from Agents › Codex.
+    pub fn take_codex_connect_request(&mut self) -> bool {
+        std::mem::take(&mut self.codex_connect_requested)
+    }
+
+    pub fn take_codex_disconnect_request(&mut self) -> bool {
+        std::mem::take(&mut self.codex_disconnect_requested)
+    }
+
+    pub fn disconnect_control(&mut self) {
+        self.control_rx = None;
+        self.codex_ready = false;
+        self.codex_connection_error = None;
+        // Keep the port so the next toggle reconnects this window's endpoint.
+    }
+
+    /// Attach a host-started control server to this window.
+    pub fn connect_control(&mut self, rx: std::sync::mpsc::Receiver<ControlRequest>, port: u16) {
+        self.control_rx = Some(rx);
+        self.codex_ready = true;
+        self.codex_port = Some(port);
+        self.codex_connection_error = None;
+    }
+
+    /// Show why a requested local connection could not start.
+    pub fn codex_connect_failed(&mut self, error: impl Into<String>) {
+        self.codex_ready = false;
+        self.codex_port = None;
+        self.codex_connection_error = Some(error.into());
+    }
+
+    /// Whether this window already has an active local control channel.
+    pub fn codex_is_ready(&self) -> bool {
+        self.codex_ready
+    }
+
+    /// The loopback port the Codex bridge should connect to, when enabled.
+    pub fn codex_port(&self) -> Option<u16> {
+        self.codex_port
+    }
+
+    /// A user-facing error from the last attempt to connect Codex.
+    pub fn codex_connection_error(&self) -> Option<&str> {
+        self.codex_connection_error.as_deref()
+    }
+
     /// Start-up with no document to open (#766): show File › Home (Blank document, the templates
     /// and Recent), as Word starts, when the Start screen setting is on (the default). Esc or the
     /// back arrow leaves the empty document the app was created with. Hosts call this after
@@ -544,6 +613,7 @@ impl WordApp {
     /// preferences.
     pub fn prefs(&self) -> UiState {
         let mut ui = self.ui.clone();
+        ui.agents = self.ollama.preferences();
         ui.author = self.session.author.clone();
         ui.initials = self.session.initials.clone();
         ui.dictionary = wordcraft_engine::proof::user_dictionary();
@@ -559,6 +629,7 @@ impl WordApp {
 
     /// Restore preferences saved by [`WordApp::prefs`].
     pub fn apply_prefs(&mut self, ui: UiState) {
+        self.ollama.apply_preferences(&ui.agents);
         self.ui = ui;
         self.ui.backstage = false;
         // A `ui.json` from before the theme setting: its dark-mode switch picks Dark or Light.
@@ -957,6 +1028,44 @@ impl WordApp {
                     self.ui.backstage = false;
                 }
                 json!({"tab": self.ui.tab})
+            }
+            "ui.codexConnect" => {
+                let enabled = p.get("value").and_then(Value::as_bool).unwrap_or(!self.codex_ready);
+                if enabled && !self.codex_ready {
+                    self.codex_connection_error = None;
+                    self.codex_connect_requested = true;
+                    self.codex_disconnect_requested = false;
+                } else if !enabled {
+                    self.codex_connect_requested = false;
+                    self.codex_disconnect_requested = true;
+                    self.disconnect_control();
+                }
+                json!({"ready": self.codex_ready, "requested": self.codex_connect_requested})
+            }
+            "ui.ollama" => {
+                self.ollama.open = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ollama.open);
+                #[cfg(not(target_arch = "wasm32"))]
+                if self.ollama.open
+                    && self.ollama.models.is_empty()
+                    && !self.ollama.busy
+                    && let Some(ctx) = self.ctx.clone()
+                {
+                    ollama::refresh(self, &ctx);
+                }
+                json!({"open": self.ollama.open})
+            }
+            "ui.ollamaEdit" => {
+                self.ollama.allow_edits = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ollama.allow_edits);
+                json!({"allowEdits": self.ollama.allow_edits})
+            }
+            "ui.ollamaRefresh" | "ui.ollamaSend" | "ui.ollamaStop" | "ui.ollamaNewChat" | "ui.ollamaSettings" | "ui.ollamaInternet" => {
+                return Some(ollama::command(self, id, p));
+            }
+            "ui.ollamaUndo" => {
+                if let Err(error) = ollama::undo(self) {
+                    return Some(Err(error));
+                }
+                json!({"undone": true})
             }
             "ui.backstage" => {
                 self.ui.backstage = p.get("value").and_then(Value::as_bool).unwrap_or(!self.ui.backstage);
@@ -1516,10 +1625,13 @@ impl WordApp {
         crate::keytips::logic(self, &ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
+            ollama::poll(self, &ctx);
         } else {
             chrome::title_bar(self, ui);
             ribbon::show(self, ui);
             chrome::status_bar(self, ui);
+            ollama::show(self, ui);
+            ollama::poll(self, &ctx);
             panes::show(self, ui);
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
                 canvas::show(self, ui);
@@ -1592,8 +1704,13 @@ impl WordApp {
                     self.pending_shots.push((token, path, reply, now_ms() + 8000.0));
                 }
             }
+            if self.codex_disconnect_requested {
+                break;
+            }
         }
-        self.control_rx = Some(rx);
+        if !self.codex_disconnect_requested {
+            self.control_rx = Some(rx);
+        }
     }
 
     fn issue_screenshots(&mut self, ctx: &egui::Context) {
@@ -3046,7 +3163,7 @@ mod tests {
                 a,
             );
             h.run_steps(4);
-            assert!(h.query_by_label("Show the community button in the title bar").is_some(), "hook {hook}: the Options page rendered");
+            assert!(h.query_by_label("Show the mini toolbar when text is selected").is_some(), "hook {hook}: the Options page rendered");
             assert_eq!(h.query_by_label(LABEL).is_some(), hook, "hook {hook}: the button");
             if hook {
                 h.get_by_label(LABEL).click();

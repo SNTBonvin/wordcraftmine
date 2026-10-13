@@ -1116,6 +1116,47 @@ impl Session {
     /// Run a command by id with JSON params (the single entry point for the UI, CLI, MCP and
     /// control channel). Mutating commands are undoable; a failed command leaves the document as
     /// it was; a panic inside a command becomes an error.
+    /// Run an in-document operation as one separately named undo step, even when the command
+    /// runs nested commands or follows manual typing. The caller must exclude file replacement
+    /// and other external side effects. Failed operations keep the original undo/redo history.
+    pub fn run_labeled(&mut self, id: &str, params: &Value, label: &str) -> Result<Value, CmdError> {
+        let mutates = self.registry.get(id).is_some_and(|spec| spec.mutates);
+        if !mutates {
+            return self.run(id, params);
+        }
+        let before = Arc::new(Undo {
+            label: label.chars().take(128).collect(),
+            doc: self.doc.clone(),
+            sel: self.sel.clone(),
+            pending: self.pending.clone(),
+            column: self.column.clone(),
+        });
+        let history = self.history.clone();
+        let redo = self.redo.clone();
+        let evicted = self.undo_evicted;
+        let typing = self.typing_open;
+        let join = self.join_next;
+        self.typing_open = false;
+        self.join_next = false;
+        let result = self.run(id, params);
+        self.history = history;
+        self.undo_evicted = evicted;
+        self.typing_open = false;
+        if result.is_ok() {
+            self.history.push(before);
+            if self.history.len() > MAX_UNDO {
+                self.history.remove(0);
+                self.undo_evicted = self.undo_evicted.saturating_add(1);
+            }
+            self.redo.clear();
+        } else {
+            self.redo = redo;
+            self.typing_open = typing;
+            self.join_next = join;
+        }
+        result
+    }
+
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
         let join = std::mem::take(&mut self.join_next);
         let reg = self.registry.clone();

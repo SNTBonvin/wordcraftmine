@@ -9,7 +9,7 @@ use crate::theme::{Tokens, medium, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, combo, font_combo, group, menu_button, small, split};
 use crate::{WordApp, icons};
 
-pub const TABS: [&str; 13] = wordcraft_engine::ribbon::TABS;
+pub const TABS: [&str; 14] = wordcraft_engine::ribbon::TABS;
 
 /// True when the caret/selection touches a picture (#147).
 pub fn has_picture_selected(s: &wordcraft_engine::Session) -> bool {
@@ -297,6 +297,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "View" => view(app, ui),
                         "Developer" => developer(app, ui),
                         "Zotero" => zotero(app, ui),
+                        "Agents" => agents(app, ui),
                         "Help" => help(app, ui),
                         "Table Design" => table_design(app, ui),
                         "Table Layout" => table_layout(app, ui),
@@ -1744,8 +1745,45 @@ fn help(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "help", "Help", "ui.dialog", json!({"name": "about"}), false);
         big(ui, app, "discord", "Community\nDiscord", "ui.discord", json!({}), false);
     });
-    group(ui, "Agents", None, app, |ui, app| {
-        big(ui, app, "macros", "Commands", "ui.dialog", json!({"name": "commands"}), false);
+}
+
+/// Local bridge to the running WordCraft window (`wordcraft-cli mcp --connect`).
+fn agents(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    group(ui, "Codex", None, app, |ui, app| {
+        if app.codex_is_ready() {
+            crate::widgets::big_toggle(ui, app, "macros", "Codex\nOn", "ui.codexConnect", true);
+        } else {
+            let enabled = !cfg!(target_arch = "wasm32");
+            ui.add_enabled_ui(enabled, |ui| {
+                big(ui, app, "macros", "Connect to\nCodex", "ui.codexConnect", json!({}), false)
+                    .on_hover_text(tl!("Start the local, protected connection Codex uses to control this WordCraft window."));
+            });
+        }
+    });
+    group(ui, "Assistant", None, app, |ui, app| {
+        ui.add_enabled_ui(!cfg!(target_arch = "wasm32"), |ui| {
+            crate::widgets::big_toggle(ui, app, "textPane", "Ollama\nChat", "ui.ollama", app.ollama.open);
+            crate::widgets::big_toggle(ui, app, "restrict", "Allow AI\nEditing", "ui.ollamaEdit", app.ollama.allow_edits);
+            ui.add_enabled_ui(crate::ollama::can_undo(app), |ui| {
+                big(ui, app, "undo", "Undo AI\nChange", "ui.ollamaUndo", json!({}), false);
+            });
+        });
+    });
+    group(ui, "Connection", None, app, |ui, app| {
+        ui.vertical(|ui| {
+            if let Some(port) = app.codex_port().filter(|_| app.codex_is_ready()) {
+                ui.colored_label(t.green, tl!("Ready for Codex"));
+                ui.label(format!("127.0.0.1:{port}"));
+            } else if let Some(error) = app.codex_connection_error() {
+                ui.colored_label(t.red, error);
+            } else if cfg!(target_arch = "wasm32") {
+                ui.label(tl!("Connect from the desktop app."));
+            } else {
+                ui.label(tl!("Only this computer can connect."));
+                ui.label(tl!("The private key stays on this device."));
+            }
+        });
     });
 }
 

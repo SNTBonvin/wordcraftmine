@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
@@ -22,14 +23,25 @@ const MAX_LINE: usize = 1 << 20;
 const FIRST_REQUEST: Duration = Duration::from_secs(30);
 
 /// The key file of a running control server; [`KeyFile::remove`] it when the window closes.
-pub struct KeyFile(PathBuf);
+pub struct KeyFile(PathBuf, Arc<AtomicBool>, std::sync::Mutex<Option<std::thread::JoinHandle<()>>>);
 
 impl KeyFile {
     pub fn path(&self) -> &Path {
         &self.0
     }
     pub fn remove(&self) {
-        let _ = std::fs::remove_file(&self.0);
+        if !self.1.swap(true, Ordering::SeqCst) {
+            let _ = std::fs::remove_file(&self.0);
+            if let Some(worker) = self.2.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                let _ = worker.join();
+            }
+        }
+    }
+}
+
+impl Drop for KeyFile {
+    fn drop(&mut self) {
+        self.remove();
     }
 }
 
@@ -51,11 +63,12 @@ pub fn start(port: u16, ctx: egui::Context, settings: Option<&Path>) -> Option<(
             return None;
         }
     };
+    let stopped = Arc::new(AtomicBool::new(false));
     let key_file = match settings {
         Some(dir) => {
             let p = wordcraft_control_key::key_path(dir, port);
             match write_key_file(&p, &key) {
-                Ok(()) => Some(KeyFile(p)),
+                Ok(()) => Some(KeyFile(p, stopped.clone(), std::sync::Mutex::new(None))),
                 Err(e) => {
                     log::error!("control key file not written ({e}): requests will be refused");
                     None
@@ -71,7 +84,14 @@ pub fn start(port: u16, ctx: egui::Context, settings: Option<&Path>) -> Option<(
         Some(f) => log::info!("control server listening on 127.0.0.1:{port}, key in {}", f.path().display()),
         None => log::info!("control server listening on 127.0.0.1:{port}"),
     }
-    Some((serve_on(listener, ctx, key, FIRST_REQUEST), key_file))
+    // No unusable listener is left behind when its key cannot be written.
+    key_file.as_ref()?;
+    listener.set_nonblocking(true).ok()?;
+    let (rx, worker) = serve_on_cancel(listener, ctx, key, FIRST_REQUEST, stopped)?;
+    if let Some(file) = key_file.as_ref() {
+        *file.2.lock().unwrap_or_else(|e| e.into_inner()) = Some(worker);
+    }
+    Some((rx, key_file))
 }
 
 /// A new key: 32 random bytes from the operating system, as hex.
@@ -103,16 +123,59 @@ fn keys_match(given: &str, key: &str) -> bool {
     !b.is_empty() && a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+#[cfg(test)]
 fn serve_on(listener: TcpListener, ctx: egui::Context, key: String, first: Duration) -> Receiver<ControlRequest> {
+    let _ = listener.set_nonblocking(true);
+    match serve_on_cancel(listener, ctx, key, first, Arc::new(AtomicBool::new(false))) {
+        Some((rx, _worker)) => rx,
+        None => {
+            let (_tx, rx) = channel();
+            rx
+        }
+    }
+}
+
+fn serve_on_cancel(
+    listener: TcpListener,
+    ctx: egui::Context,
+    key: String,
+    first: Duration,
+    stopped: Arc<AtomicBool>,
+) -> Option<(Receiver<ControlRequest>, std::thread::JoinHandle<()>)> {
     let (tx, rx) = channel::<ControlRequest>();
     let key: Arc<str> = key.into();
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let (tx, ctx, key) = (tx.clone(), ctx.clone(), key.clone());
-            std::thread::spawn(move || serve(stream, tx, ctx, &key, first));
-        }
-    });
-    rx
+    let worker = std::thread::Builder::new()
+        .name("wordcraft-control".into())
+        .spawn(move || {
+            let active = Arc::new(AtomicUsize::new(0));
+            while !stopped.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        if active.load(Ordering::SeqCst) >= 32 {
+                            continue;
+                        }
+                        active.fetch_add(1, Ordering::SeqCst);
+                        let (tx, ctx, key, stopped, active) = (tx.clone(), ctx.clone(), key.clone(), stopped.clone(), active.clone());
+                        let counter = active.clone();
+                        if let Err(error) = std::thread::Builder::new().name("wordcraft-control-client".into()).spawn(move || {
+                            serve(stream, tx, ctx, &key, first, stopped);
+                            active.fetch_sub(1, Ordering::SeqCst);
+                        }) {
+                            counter.fetch_sub(1, Ordering::SeqCst);
+                            log::warn!("control client worker failed: {error}");
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(10)),
+                    Err(e) => {
+                        log::error!("control accept failed: {e}");
+                        break;
+                    }
+                }
+            }
+        })
+        .map_err(|error| log::error!("control worker failed: {error}"))
+        .ok()?;
+    Some((rx, worker))
 }
 
 /// The read side of a connection with an optional overall deadline: each read waits only for
@@ -120,24 +183,32 @@ fn serve_on(listener: TcpListener, ctx: egui::Context, key: String, first: Durat
 struct Timed {
     s: TcpStream,
     deadline: Option<Instant>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl Read for Timed {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if let Some(d) = self.deadline {
-            let left = d.checked_duration_since(Instant::now()).filter(|l| !l.is_zero()).ok_or(std::io::ErrorKind::TimedOut)?;
-            self.s.set_read_timeout(Some(left))?;
+        loop {
+            if self.stopped.load(Ordering::SeqCst) {
+                return Err(std::io::ErrorKind::Interrupted.into());
+            }
+            let timeout = if let Some(d) = self.deadline {
+                d.checked_duration_since(Instant::now()).filter(|l| !l.is_zero()).ok_or(std::io::ErrorKind::TimedOut)?.min(Duration::from_millis(100))
+            } else {
+                Duration::from_millis(100)
+            };
+            self.s.set_read_timeout(Some(timeout))?;
+            match self.s.read(buf) {
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => continue,
+                result => return result,
+            }
         }
-        self.s.read(buf)
     }
 }
 
 impl Timed {
     fn set_deadline(&mut self, d: Option<Instant>) {
         self.deadline = d;
-        if d.is_none() {
-            let _ = self.s.set_read_timeout(None);
-        }
     }
 }
 
@@ -175,15 +246,28 @@ fn discard_rest_of_line(r: &mut BufReader<Timed>) {
     }
 }
 
-fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key: &str, first: Duration) {
+fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key: &str, first: Duration, stopped: Arc<AtomicBool>) {
+    // macOS propagates the listener's nonblocking flag to accepted sockets. Timed reads need
+    // blocking mode so idle connections sleep instead of spinning between cancellation checks.
+    if let Err(error) = stream.set_nonblocking(false) {
+        log::warn!("control socket setup failed: {error}");
+        return;
+    }
+    if let Err(error) = stream.set_write_timeout(Some(Duration::from_secs(5))) {
+        log::warn!("control write timeout setup failed: {error}");
+        return;
+    }
     let Ok(read) = stream.try_clone() else { return };
     let mut out = stream;
     // One overall deadline from accept to the first authorised request; after it, none.
-    let mut reader = BufReader::new(Timed { s: read, deadline: Some(Instant::now() + first) });
+    let mut reader = BufReader::new(Timed { s: read, deadline: Some(Instant::now() + first), stopped: stopped.clone() });
     let mut authorised = false;
     // The key an `auth` request gave this connection.
     let mut conn_key: Option<String> = None;
     while let Some(line) = read_line(&mut reader) {
+        if stopped.load(Ordering::SeqCst) {
+            break;
+        }
         let line = match line {
             Ok(l) => l,
             Err(e) => {
@@ -237,6 +321,9 @@ fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key:
             }
             continue;
         }
+        if stopped.load(Ordering::SeqCst) {
+            break;
+        }
         let (req, rrx) = ControlRequest::new(method, params);
         if tx.send(req).is_err() {
             break;
@@ -254,6 +341,32 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpStream;
+
+    #[test]
+    fn disabling_closes_port_removes_key_and_allows_reconnect() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let dir = std::env::temp_dir().join(format!("wordcraft-control-toggle-{}-{port}", std::process::id()));
+        let (rx, file) = start(port, egui::Context::default(), Some(&dir)).unwrap();
+        let file = file.unwrap();
+        let path = file.path().to_path_buf();
+        assert!(path.exists());
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        file.remove();
+        assert!(!path.exists());
+        assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+        let mut byte = [0; 1];
+        assert!(matches!(socket.read(&mut byte), Ok(0) | Err(_)));
+        assert!(rx.try_recv().is_err());
+        let (_rx, next) = start(port, egui::Context::default(), Some(&dir)).unwrap();
+        drop(file);
+        assert!(path.exists(), "dropping an old handle cannot remove the new key");
+        drop(next);
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir(&dir);
+    }
 
     const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

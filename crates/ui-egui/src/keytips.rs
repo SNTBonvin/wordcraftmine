@@ -67,7 +67,7 @@ impl Target {
 
 /// Word's tab letters, as Word for Windows shows them after Alt (File F, Design G, References S,
 /// Review R, View W, Help Y). File opens the Backstage.
-const TAB_LETTERS: [(&str, &str); 11] = [
+const TAB_LETTERS: [(&str, &str); 12] = [
     ("File", "F"),
     ("Home", "H"),
     ("Insert", "N"),
@@ -78,6 +78,7 @@ const TAB_LETTERS: [(&str, &str); 11] = [
     ("Mailings", "M"),
     ("Review", "R"),
     ("View", "W"),
+    ("Agents", "A"),
     ("Help", "Y"),
 ];
 
@@ -336,6 +337,12 @@ fn controls(tab: &str) -> Vec<Control> {
             c("Macros", "tools.macros"),
         ],
         "Help" => vec![d("Help", "about"), c("Community Discord", "ui.discord"), d("Commands", "commands")],
+        "Agents" => vec![
+            c("Connect to Codex", "ui.codexConnect"),
+            c("Ollama Chat", "ui.ollama"),
+            c("Allow AI Editing", "ui.ollamaEdit"),
+            c("Undo AI Change", "ui.ollamaUndo"),
+        ],
         "Table Design" => {
             vec![m("Shading", "table.shading"), m("Borders", "table.borders"), c("Border Painter", "table.borderPainter")]
         }

@@ -1,5 +1,7 @@
 # MCP server
 
+> **Last updated:** 2026-10-13 · **Change:** Agents toggles the Codex endpoint and opens in-app Ollama/llama.cpp document assistance.
+
 WordCraft speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so
 Claude and other agents can write and edit documents.
 
@@ -8,6 +10,12 @@ wordcraft-cli mcp                          # headless session (no window)
 wordcraft --control 7981 &                 # or: drive the running app…
 wordcraft-cli mcp --connect 127.0.0.1:7981 # …including clicks, keys and screenshots
 ```
+
+On desktop, open **Agents › Connect to Codex** to start the protected loopback endpoint on port
+7981 from the WordCraft window. Configure Codex once with
+`codex mcp add wordcraft -- wordcraft-cli mcp --connect 127.0.0.1:7981`; after that, Codex can
+control the open document whenever WordCraft shows **Ready for Codex**. The button starts WordCraft's
+endpoint; the MCP server itself runs as Codex's stdio child process.
 
 Claude Code: `claude mcp add wordcraft -- wordcraft-cli mcp`.
 
@@ -176,3 +184,14 @@ the distance from the text). Missing fields are `none`, 0, no colour and 0, so a
 | `kinsoku`, `wordWrap`, `overflowPunct`, `autoSpaceDE`, `autoSpaceDN`, `snapToGrid` | bool | East Asian typography; unset = on |
 | `topLinePunct` | bool | East Asian typography; unset = off |
 | `numChange`, `fmtChange` | | Track Changes bookkeeping |
+
+Click the selected **Codex On** button again to turn the connection off. WordCraft closes the
+listener, rejects queued commands, closes connected clients and removes the key. Reconnecting
+creates a fresh key and uses this window's previous port (including a `--control` preview port).
+For an assistant inside the app, use [Agents → Ollama Chat](ollama.md).
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-13 | minor | Codex endpoint toggles off/on; in-app Ollama and llama.cpp document/research assistance |
