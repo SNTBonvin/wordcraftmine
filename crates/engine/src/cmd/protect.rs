@@ -8,9 +8,10 @@
 //! command that nothing outside them changed (the command is rolled back otherwise).
 
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use wordcraft_doc::para::{InlineObject, OBJ};
 use wordcraft_doc::props::CharProps;
-use wordcraft_doc::{Document, PermRange, Pos, StoryRef};
+use wordcraft_doc::{Document, Path, PermRange, Pos, StoryRef};
 
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
 
@@ -267,10 +268,46 @@ enum Piece {
     Mark(Box<wordcraft_doc::ParaProps>, CharProps),
 }
 
-/// Deepest nesting of control markers the walk tracks (the doc crate's `MAX_DEPTH` pattern);
-/// deeper nesting — only a hostile document — keeps the stack at the cap, its interior treated
-/// like the innermost tracked control's, so the stack can't grow unboundedly.
+/// Deepest nesting of control markers the forms walk pairs (the doc crate's `MAX_DEPTH`
+/// pattern). Markers nested deeper — only a hostile document — are orphans like unpaired
+/// ones: ordinary protected content, so no stack can grow unboundedly.
 const MAX_CONTROL_DEPTH: usize = 16;
+
+/// The control markers of a story that pair, bracket-style (last opened closes first), over
+/// the story's paragraphs in document order — the same markers [`outside`] walks, so an
+/// unbalanced document stays conservative: a start that never closes (or an end nothing
+/// opened, or markers nested past [`MAX_CONTROL_DEPTH`]) is an orphan, not a hole, and the
+/// text after it stays protected.
+fn paired_control_markers(doc: &Document, story: StoryRef) -> HashSet<(Path, usize)> {
+    let mut paired = HashSet::new();
+    let mut open: Vec<(Path, usize)> = Vec::new();
+    // Unclosed starts past the depth cap, so their ends still pair with them (as orphans).
+    let mut over = 0_usize;
+    for path in doc.para_paths(story) {
+        let Some(p) = doc.para(story, &path) else { continue };
+        for off in p.object_offsets() {
+            match p.object_at(off) {
+                Some(InlineObject::ControlStart { .. }) => {
+                    if open.len() < MAX_CONTROL_DEPTH {
+                        open.push((path.clone(), off));
+                    } else {
+                        over = over.saturating_add(1);
+                    }
+                }
+                Some(InlineObject::ControlEnd) => {
+                    if over > 0 {
+                        over -= 1;
+                    } else if let Some(start) = open.pop() {
+                        paired.insert(start);
+                        paired.insert((path.clone(), off));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    paired
+}
 
 /// Everything outside the editable regions, in order.
 fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
@@ -283,8 +320,8 @@ fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
     for story in stories {
         let mut open: Vec<u32> = Vec::new();
         let mut fillable: Vec<bool> = Vec::new();
-        // Control markers past the depth cap, so they still pair with their end.
-        let mut over = 0_usize;
+        // In forms mode, only markers that pair open and close holes (orphans stay content).
+        let paired = if matches!(mode, HoleMode::Controls) { paired_control_markers(doc, story) } else { HashSet::new() };
         // The perm range or fillable control the walk is inside, innermost last.
         let in_hole = |open: &[u32], fillable: &[bool]| match mode {
             HoleMode::Perms(_) => !open.is_empty(),
@@ -319,23 +356,14 @@ fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
                                 _ => {}
                             },
                             HoleMode::Controls => match obj {
-                                Some(InlineObject::ControlStart { control }) => {
+                                Some(InlineObject::ControlStart { control }) if paired.contains(&(path.clone(), r.start + i)) => {
                                     flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
-                                    if fillable.len() < MAX_CONTROL_DEPTH {
-                                        fillable.push(control.lock.can_edit());
-                                    } else {
-                                        over = over.saturating_add(1);
-                                    }
+                                    fillable.push(control.lock.can_edit());
                                     boundary = true;
                                 }
-                                // An end marker nothing opened is an ordinary object below.
-                                Some(InlineObject::ControlEnd) if over > 0 || !fillable.is_empty() => {
+                                Some(InlineObject::ControlEnd) if paired.contains(&(path.clone(), r.start + i)) => {
                                     flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
-                                    if over > 0 {
-                                        over -= 1;
-                                    } else {
-                                        fillable.pop();
-                                    }
+                                    fillable.pop();
                                     boundary = true;
                                 }
                                 _ => {}
@@ -345,7 +373,6 @@ fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
                             flush(&mut out, &mut piece, props, false);
                             out.push(Piece::Object(obj.cloned()));
                         }
-                        let _ = i;
                         continue;
                     }
                     if !in_hole(&open, &fillable) {
@@ -479,6 +506,9 @@ mod tests {
         s.run("developer.chooseItem", &json!({"control": "size", "value": "M"})).unwrap();
         let before = s.doc.plain_text(StoryRef::Body);
         select(&mut s, "Locked");
+        assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
+        // Text after the unclosed fillable starts is still locked: they are orphans, not a hole.
+        select(&mut s, "End");
         assert!(s.run("text.insert", &json!({"text": "x"})).is_err());
         assert_eq!(s.doc.plain_text(StoryRef::Body), before);
     }
