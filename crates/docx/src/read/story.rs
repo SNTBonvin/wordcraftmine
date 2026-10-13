@@ -1359,6 +1359,26 @@ impl Reader<'_> {
         })
     }
 
+    /// Word's text watermark: a VML `v:shape` holding a `v:textpath` inside a header, e.g.
+    /// `&lt;v:shape id="WaterMark" fillcolor="gray"&gt;&lt;v:textpath string="BOZZA"/&gt;`. Map it to the
+    /// document's watermark so the screen and the PDF draw it (#1290).
+    pub fn read_watermark(&mut self, root: &El) {
+        let Some(shape) = find_textpath_shape(root, 0) else { return };
+        let Some(textpath) = shape.find("v:textpath") else { return };
+        let text = textpath.attr("string").unwrap_or("").trim();
+        if text.is_empty() {
+            return;
+        }
+        let font = vml_style(textpath.attr("style").unwrap_or(""), "font-family")
+            .map(|f| f.trim_matches(['\'', '"']).trim().to_string())
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| wordcraft_doc::styles::BODY_FONT.to_string());
+        let color = shape.attr("fillcolor").and_then(vml_color).unwrap_or(Rgb(0xC0, 0xC0, 0xC0));
+        // Word's diagonal watermark is rotated (about -40°); the horizontal one is not.
+        let diagonal = vml_degrees(vml_style(shape.attr("style").unwrap_or(""), "rotation")).map(|r| r.abs() > 1.0).unwrap_or(true);
+        self.doc.settings.watermark = Some(wordcraft_doc::Watermark { text: text.to_string(), font, color, diagonal, semitransparent: true });
+    }
+
     /// An OLE object (`w:object`, ECMA-376 §17.3.3.19): shown as its picture (VML, or a DrawingML
     /// picture in `w:drawing`), and kept whole so saving writes the object back.
     fn read_object(&mut self, sc: &mut StoryCtx, obj: &El, rels: &Rels) -> Option<InlineObject> {
@@ -1576,6 +1596,28 @@ fn wrap_polygon(e: &El) -> Option<wordcraft_doc::wrap::WrapPolygon> {
 /// The value of property `key` in a VML `style` attribute (CSS declarations; the last one wins).
 fn vml_style<'a>(style: &'a str, key: &str) -> Option<&'a str> {
     style.rsplit(';').filter_map(|d| d.split_once(':')).find(|(k, _)| k.trim().eq_ignore_ascii_case(key)).map(|(_, v)| v.trim())
+}
+
+/// The first VML `v:shape` holding a `v:textpath`: Word's text watermark (#1290).
+fn find_textpath_shape(e: &El, depth: usize) -> Option<&El> {
+    if depth > 64 {
+        return None;
+    }
+    for c in e.els() {
+        if c.local() == "shape" && c.find("v:textpath").is_some() {
+            return Some(c);
+        }
+        if let Some(s) = find_textpath_shape(c, depth + 1) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+/// A VML `rotation` as degrees (`-40`, `-40deg`), finite.
+fn vml_degrees(v: Option<&str>) -> Option<f32> {
+    let v = v?.trim().trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    v.trim().parse::<f32>().ok().filter(|x| x.is_finite())
 }
 
 /// Placement of a VML shape (ECMA-376 Part 4, VML): `position:absolute` in its style makes it

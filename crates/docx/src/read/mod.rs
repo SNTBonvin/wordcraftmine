@@ -634,6 +634,10 @@ impl Reader<'_> {
             Ok(Some(r)) => r,
             _ => return Some(id),
         };
+        // Word keeps its text watermark as a VML shape in the headers (#1290).
+        if !footer {
+            self.read_watermark(&root);
+        }
         let rels = self.pkg.rels(path);
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();

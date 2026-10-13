@@ -791,6 +791,33 @@ fn absolute_vml_text_box_in_header_floats() {
     check(&wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap());
 }
 
+/// Issue #1290: Word's text watermark (a VML `v:shape` with a `v:textpath` in the headers) becomes
+/// the document's watermark, so the screen and the PDF draw it.
+#[test]
+fn word_text_watermark_in_the_header_is_read() {
+    let header_for = |rotation: &str| {
+        format!(
+            r##"<w:hdr {W_NS}><w:p><w:r><w:pict><v:shape id="WaterMark" type="#_x0000_t136" style="position:absolute;width:500pt;height:100pt;mso-position-horizontal:center;mso-position-horizontal-relative:page;mso-position-vertical:center;mso-position-vertical-relative:page;rotation:{rotation}" fillcolor="gray"><v:textpath style="font-family:Arial" string="BOZZA"/></v:shape></w:pict></w:r></w:p></w:hdr>"##
+        )
+    };
+    let body = r#"<w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdH"/></w:sectPr>"#;
+    let read = |header: &str| {
+        let bytes = docx(body, &[("rIdH", "header", "header1.xml")], &[("word/header1.xml", header)]);
+        wordcraft_docx::read(&bytes).unwrap()
+    };
+    let d = read(&header_for("-40"));
+    let wm = d.settings.watermark.expect("the header's watermark is read");
+    assert_eq!(wm.text, "BOZZA");
+    assert_eq!(wm.font, "Arial");
+    assert_eq!(wm.color, Rgb(0x80, 0x80, 0x80));
+    assert!(wm.diagonal, "a rotated watermark is diagonal");
+    // A horizontal watermark (no rotation) is not.
+    assert!(!read(&header_for("0")).settings.watermark.expect("read").diagonal);
+    // A header without a watermark shape leaves the document's watermark unset.
+    let plain = format!(r#"<w:hdr {W_NS}><w:p><w:r><w:t>H</w:t></w:r></w:p></w:hdr>"#);
+    assert!(read(&plain).settings.watermark.is_none());
+}
+
 #[test]
 fn hostile_vml_style_values_stay_finite() {
     let body = r#"<w:p><w:r><w:pict><v:shape style="position:ABSOLUTE;margin-left:1e39pt;left:-1e39pt;margin-top:NaNpt;top:;width:-5pt;height:1e30in;z-index:99999999999999999999999;mso-position-horizontal:bogus;mso-wrap-distance-left:-3pt;mso-wrap-distance-top:1e9pt;;:;position"><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>"#;
