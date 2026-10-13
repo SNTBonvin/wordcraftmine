@@ -202,6 +202,13 @@ pub(crate) fn check_before(s: &Session, id: &str, params: &Value) -> Result<bool
     if always_allowed(id) {
         return Ok(false);
     }
+    // Word blocks content-control property edits until Stop Protection: changing a control's
+    // lock flags would reshape what forms mode lets through. The param's presence is the
+    // trigger — absent, the command keeps the current lock (as `check_formatting` inspects
+    // params); other properties (title, tag, placeholder…) are unaffected.
+    if id == "developer.properties" && (params.get("lockEdit").is_some() || params.get("lockDelete").is_some()) {
+        return Err(CmdError::Disabled(format!("{id}: stop protection before changing a content control's locks")));
+    }
     if s.doc.settings.protect_formatting {
         check_formatting(s, id, params)?;
     }
@@ -269,45 +276,14 @@ enum Piece {
     Mark(Box<wordcraft_doc::ParaProps>, CharProps),
 }
 
-/// Deepest nesting of control markers the forms walk pairs (the doc crate's `MAX_DEPTH`
-/// pattern). Markers nested deeper — only a hostile document — are orphans like unpaired
-/// ones: ordinary protected content, so no stack can grow unboundedly.
-const MAX_CONTROL_DEPTH: usize = 16;
-
-/// The control markers of a story that pair, bracket-style (last opened closes first), over
-/// the story's paragraphs in document order — the same markers [`outside`] walks, so an
-/// unbalanced document stays conservative: a start that never closes (or an end nothing
-/// opened, or markers nested past [`MAX_CONTROL_DEPTH`]) is an orphan, not a hole, and the
-/// text after it stays protected.
+/// The control markers of a story that pair, bracket-style — the start and end positions of
+/// the doc crate's [`Document::control_ranges`], which pairs per block list (never across a
+/// table-cell boundary) and skips controls wrapped around tables. These are the same markers
+/// [`outside`] walks and [`Document::fillable_controls`] counts, so the walk and the count
+/// agree. A start that never closes (or an end nothing opened) is an orphan, not a hole: it
+/// stays ordinary protected content, and the text after it stays protected.
 fn paired_control_markers(doc: &Document, story: StoryRef) -> HashSet<(Path, usize)> {
-    let mut paired = HashSet::new();
-    let mut open: Vec<(Path, usize)> = Vec::new();
-    // Unclosed starts past the depth cap, so their ends still pair with them (as orphans).
-    let mut over = 0_usize;
-    for path in doc.para_paths(story) {
-        let Some(p) = doc.para(story, &path) else { continue };
-        for off in p.object_offsets() {
-            match p.object_at(off) {
-                Some(InlineObject::ControlStart { .. }) => {
-                    if open.len() < MAX_CONTROL_DEPTH {
-                        open.push((path.clone(), off));
-                    } else {
-                        over = over.saturating_add(1);
-                    }
-                }
-                Some(InlineObject::ControlEnd) => {
-                    if over > 0 {
-                        over -= 1;
-                    } else if let Some(start) = open.pop() {
-                        paired.insert(start);
-                        paired.insert((path.clone(), off));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    paired
+    doc.control_ranges(story).into_iter().flat_map(|r| [(r.start.path, r.start.off), (r.end.path, r.end.off)]).collect()
 }
 
 /// Everything outside the editable regions, in order.
@@ -516,6 +492,70 @@ mod tests {
         assert_eq!(s.doc.plain_text(StoryRef::Body), before);
     }
 
+    /// Word blocks content-control property edits until Stop Protection: while any restriction
+    /// is enforced, `developer.properties` refuses to change a control's lock flags — the
+    /// presence of `lockEdit`/`lockDelete` is the trigger, whatever their value (absent, they
+    /// keep the current lock). Other properties (title, tag…) stay editable.
+    #[test]
+    fn lock_property_changes_are_refused_under_protection() {
+        let mut s = Session::new(Document::from_text("Fill [pick] now."));
+        select(&mut s, "pick");
+        s.run("developer.richText", &json!({"tag": "free"})).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        // A lock flag on a fillable control: refused, whatever the value.
+        assert!(s.run("developer.properties", &json!({"control": "free", "lockEdit": true})).is_err(), "lockEdit: true");
+        assert!(s.run("developer.properties", &json!({"control": "free", "lockDelete": true})).is_err(), "lockDelete: true");
+        assert!(s.run("developer.properties", &json!({"control": "free", "lockEdit": false})).is_err(), "lockEdit: false");
+        // Other properties still work, and the control stays fillable.
+        s.run("developer.properties", &json!({"control": "free", "title": "Renamed"})).unwrap();
+        let titled = s.doc.control_ranges(StoryRef::Body).iter().find(|r| r.control.tag == "free").map(|r| r.control.title.clone());
+        assert_eq!(titled, Some("Renamed".into()));
+        // Any enforced mode refuses it too: read only, even with an exception that allows edits.
+        s.run("review.restrict", &json!({"stop": true})).unwrap();
+        select(&mut s, "now");
+        s.run("review.restrict", &json!({"exception": "add"})).unwrap();
+        s.run("review.restrict", &json!({"mode": "readOnly"})).unwrap();
+        assert!(s.run("developer.properties", &json!({"control": "free", "lockEdit": true})).is_err());
+        // Without protection, the lock flag works again (and makes the control unfillable).
+        s.run("review.restrict", &json!({"stop": true})).unwrap();
+        s.run("developer.properties", &json!({"control": "free", "lockEdit": true})).unwrap();
+        assert_eq!(s.doc.fillable_controls(), 0);
+    }
+
+    /// The review's bypass: with forms protection enforced, a recipient could clear a control's
+    /// locks through `developer.properties` — the walk never compares the marker payload the
+    /// command changes, and an empty control has no content to flip either. Refused now.
+    #[test]
+    fn forms_mode_cannot_clear_a_controls_lock_by_properties() {
+        use wordcraft_doc::control::{ContentControl, ControlKind, ControlLock, ListItem};
+        let mut s = Session::new(Document::from_text("Fill now."));
+        select(&mut s, "now");
+        s.run("developer.richText", &json!({"tag": "free"})).unwrap();
+        // An empty content-locked combo box (adjacent markers, nothing between): only the
+        // payload `developer.properties` changes differs — the bypass's shape.
+        let at = s.doc.end_of(StoryRef::Body);
+        let props = CharProps::default();
+        let mut ctl = ContentControl::new(ControlKind::ComboBox {
+            items: vec![ListItem { display: "BSc".into(), value: "BSc".into() }],
+            last_value: String::new(),
+        });
+        ctl.tag = "deg".into();
+        ctl.lock = ControlLock::ContentLocked;
+        let start = s.doc.insert_object(&at, InlineObject::ControlStart { control: Box::new(ctl) }, &props).unwrap();
+        s.doc.insert_object(&start, InlineObject::ControlEnd, &props).unwrap();
+        s.run("review.restrict", &json!({"mode": "forms"})).unwrap();
+        assert_eq!(s.doc.fillable_controls(), 1, "only the rich-text control is fillable");
+        // Clearing "cannot be edited" (or "cannot be deleted") by properties: refused.
+        assert!(s.run("developer.properties", &json!({"control": "deg", "lockEdit": false})).is_err(), "clearing lockEdit");
+        assert!(s.run("developer.properties", &json!({"control": "deg", "lockDelete": false})).is_err(), "clearing lockDelete");
+        // The control is still content-locked: its content takes no entries.
+        assert!(s.run("developer.chooseItem", &json!({"control": "deg", "value": "BSc"})).is_err());
+        // After Stop Protection, the lock can be changed again.
+        s.run("review.restrict", &json!({"stop": true})).unwrap();
+        s.run("developer.properties", &json!({"control": "deg", "lockEdit": false})).unwrap();
+        assert_eq!(s.doc.fillable_controls(), 2);
+    }
+
     /// Locks nest: innermost wins. A locked control inside a fillable one keeps its own content
     /// frozen while the control around it stays fillable. (Typing into the locked control is
     /// already refused by the control rules; the protection walk is what refuses formatting.)
@@ -629,8 +669,10 @@ mod tests {
         assert_eq!(next_region(&s, &s.doc.start_of(StoryRef::Body)), None);
     }
 
-    /// Malformed control markers — an orphan end, starts nested past the walk's depth cap that
-    /// never close — keep forms mode conservative: no panic or loop, locked text stays locked.
+    /// Malformed control markers — an orphan end, a hostile pile of nested starts that never
+    /// close — keep forms mode conservative: no panic or loop, locked text stays locked (the
+    /// pairing comes from the doc crate's per-block-list scan, so unclosed markers are orphans
+    /// whatever their depth, and markers never pair across a table-cell boundary).
     #[test]
     fn forms_mode_with_malformed_markers_stays_conservative() {
         use wordcraft_doc::control::{ContentControl, ControlKind};
@@ -643,9 +685,9 @@ mod tests {
         let paths = s.doc.para_paths(StoryRef::Body);
         let at = Pos { story: StoryRef::Body, path: paths[0].clone(), off: s.doc.para(StoryRef::Body, &paths[0]).map(|p| p.len()).unwrap_or(0) };
         s.doc.insert_object(&at, InlineObject::ControlEnd, &props).unwrap();
-        // …and more nested starts than the walk tracks, none of them closed.
+        // …and a hostile pile of nested starts, none of them closed (deeper than any cap).
         let mut at = Pos { story: StoryRef::Body, path: paths[2].clone(), off: 0 };
-        for _ in 0..MAX_CONTROL_DEPTH + 8 {
+        for _ in 0..24 {
             at = s
                 .doc
                 .insert_object(&at, InlineObject::ControlStart { control: Box::new(ContentControl::new(ControlKind::RichText)) }, &props)
