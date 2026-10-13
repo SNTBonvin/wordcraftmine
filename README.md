@@ -126,6 +126,9 @@ The honest picture, area by area, is in [ROADMAP.md](ROADMAP.md), the
 
 ## Quick start
 
+Install Rust with [rustup](https://rustup.rs). This checkout pins Rust 1.95.0 in
+`rust-toolchain.toml`; rustup selects and installs it automatically on the first Cargo command.
+
 ```sh
 git clone https://github.com/storytold/wordcraft
 cd wordcraft
