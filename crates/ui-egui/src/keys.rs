@@ -369,11 +369,23 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("insert.closeHeader", json!({}));
                     continue;
                 }
+                if leave_full_screen(app, key, modifiers) {
+                    continue;
+                }
                 app.canvas.swallow_text = dispatch(app, key, modifiers) && modifiers.alt;
             }
             _ => {}
         }
     }
+}
+
+/// Escape leaves full screen (#980) once nothing nearer (a pen, a text box, a header) took it.
+fn leave_full_screen(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
+    if key != Key::Escape || !m.is_none() || !app.session.view.full_screen || !app.escape_free {
+        return false;
+    }
+    let _ = app.run("view.fullScreen", json!({"value": false}));
+    true
 }
 
 /// Whether a key runs its shortcut with the canvas unfocused (after a ribbon click, say): Mod and
@@ -390,10 +402,13 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     }
     let events = ctx.input(|i| i.events.clone());
     for e in events {
-        if let egui::Event::Key { key, pressed: true, modifiers, .. } = e
-            && is_global_shortcut(key, modifiers)
-        {
-            dispatch(app, key, modifiers);
+        if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
+            if leave_full_screen(app, key, modifiers) {
+                continue;
+            }
+            if is_global_shortcut(key, modifiers) {
+                dispatch(app, key, modifiers);
+            }
         }
     }
 }
