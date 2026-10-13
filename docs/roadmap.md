@@ -60,7 +60,7 @@ partial rows are fidelity gaps (beta work), not broken workflows. WordCraft stay
 | M11 | Draw and objects | text wrap, text boxes, canvas handles, rotation (#332), ink pens and eraser (#307), contour wrap (#354), lasso, Add Pen, Ink to Shape and Ink Replay (#395) done; Ink to Math, grouping missing | 35–55 h |
 | M12 | Formats breadth (PDF, ODT, RTF, HTML, MD, TXT, LaTeX, `.doc` import) | done (first versions); `.doc` write, encryption, minor formats missing | 60–100 h |
 | M13 | Performance budgets | on track (1.4 ms relayout); large real-world documents unmeasured | 10–20 h |
-| M14 | 1.0 polish, packaging, signing | releases v0.1.0–v0.4.0 published (Linux .deb x86_64; earlier releases also shipped other platforms) | — |
+| M14 | 1.0 polish, packaging, signing | releases v0.1.0–v0.4.0 published (signed macOS, Windows MSI x64/x86/arm64, Linux, FreeBSD, web) | — |
 | M15 | Localization (12 key languages, RTL interface, proofing languages) | 15 UI languages; English, Polish and Portuguese proofing, a proofing language per run | 70–115 h |
 | M16 | Right-to-left and East Asian typography | RTL paragraphs done (#207) | 30–45 h |
 

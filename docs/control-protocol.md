@@ -18,12 +18,13 @@ connection (so an HTTP request sent to the port can't run a command); reconnect 
 Any local program (and possibly a web page) can reach a loopback port, so every request needs the
 window's key. Once the port is bound, the app writes a random key (256 bits, as hex) to
 `<settings>/control-key.<instance>` and removes the file when the window closes; a new start
-writes a new key. `<settings>` is the folder that holds the preferences:
-`$XDG_CONFIG_HOME/wordcraft` (by default `~/.config/wordcraft`). `<instance>` is
-`local-<port>`. The file has mode 0600.
+writes a new key. `<settings>` is the folder that holds the preferences: on Linux
+`$XDG_CONFIG_HOME/wordcraft` (by default `~/.config/wordcraft`), on macOS
+`~/Library/Application Support/WordCraft`, on Windows `%APPDATA%\WordCraft`. `<instance>` is the
+Flatpak instance id inside Flatpak, and `local-<port>` otherwise. On Unix the file has mode 0600.
 
 ```sh
-cat ~/.config/wordcraft/control-key.local-7981   # port 7981
+cat ~/.config/wordcraft/control-key.local-7981   # Linux, outside Flatpak, port 7981
 ```
 
 - Send the key as top-level `"key"` with every request, or once per connection with

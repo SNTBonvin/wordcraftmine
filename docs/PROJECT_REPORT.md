@@ -65,29 +65,23 @@ the UI paints them (`render`); save/export goes back through `engine::io`. UI st
 `WordApp`/`Session`; prefs in `ui.json`; logs beside prefs. IPC: JSON-lines control channel
 (`ui-egui/control.rs`, key file per `control-key`), MCP over stdio, CLI as subprocess.
 
-## 4. Build and packaging system (post-cleanup: Linux .deb x86_64 only)
+## 4. Build and packaging system (full multi-platform build scope)
 
 - `packaging/linux/package.sh`: `cargo build --release --locked -p wordcraft -p wordcraft-cli`,
-  stages an FHS tree (`/usr/bin`, `.desktop`, MIME, metainfo, hicolor icons, docs), validates with
-  `desktop-file-validate`/`appstreamcli` when present, then `nfpm package -p deb`. Refuses
-  non-`x86_64` hosts. Default (and only) output: `dist/release/wordcraft-<ver>-linux-x86_64.deb`.
-- `packaging/linux/nfpm.yaml`: `Package: wordcraft`, `Architecture: amd64` (via `NFPM_ARCH`),
-  `Depends: libc6 (>= 2.35), libgcc-s1, libxkbcommon0, libvulkan1 | libegl1`, recommendations for
-  Wayland/X11/Vulkan drivers/portal, `postinst`/`postrm` scripts.
-- CI (`.github/workflows/`): `release.yml` = single `ubuntu-24.04` job (deps → nfpm → build →
-  upload `dist/release/*.deb` on tags/`release`); `printing.yml` = fmt/clippy/tests + wasm check on
-  `ubuntu-24.04` only; `packaging-lint.yml` = static checks via shared action. `freebsd.yml` and
-  `windows-arm64.yml` deleted.
-- Removed: `packaging/macos/` (dmg scripts, `Info.plist.in`, entitlements, cert import),
-  `packaging/windows/` (WiX `.wxs`, ps1 scripts), `packaging/linux/flatpak/` + bundle script,
-  AppImage/rpm/tar.gz/riscv64/aarch64 paths in `package.sh`, macOS/Windows deps in
-  `apps/wordcraft/Cargo.toml`, `.icns`/macOS-only PNG assets, signing/notarization secrets from
-  `release.yml`.
+  stages an FHS tree (`/usr/bin`, `.desktop`, MIME, metainfo, hicolor icons, docs, man pages, copyright,
+  changelog), validates with `desktop-file-validate`/`appstreamcli` when present. Supports building
+  AppImage, deb, rpm, and tar.gz for `x86_64`, `aarch64`, and `riscv64` cross-targets.
+- `packaging/linux/flatpak/`: Flatpak manifest (`ai.storyteller.wordcraft.yml`) and bundling script.
+- `packaging/macos/`: `package.sh` builds universal `WordCraft.app` bundle and DMG with layout and background;
+  `import-cert.sh` imports Developer ID signing certificates; `entitlements.plist` specifies macOS hardened runtime.
+- `packaging/windows/`: `package.ps1` builds MSI installers (WiX `wordcraft.wxs`) and portable zips for x64,
+  arm64, and x86; `sign.ps1` handles Azure Trusted Signing.
+- CI (`.github/workflows/`): `release.yml` builds multi-platform release artifacts across macOS (universal DMG/CLI),
+  Windows (MSI + zip for x64/x86/arm64), Linux (AppImage, deb, rpm, tar.gz for x86_64/aarch64, riscv64 tarball, Flatpak),
+  FreeBSD (`freebsd.yml`), and WebAssembly zip. `printing.yml` matrix tests Ubuntu, Windows, and macOS.
+  `windows-arm64.yml` and `freebsd.yml` provide specialized platform test runners.
 - Release process (`docs/releasing.md`): bump via `cargo xtask version set`, merge to `release`,
-  CI drafts the GitHub Release with `SHA256SUMS.txt`.
-- Deliberately kept (inert on Linux, noted in `CHANGES_SUMMARY.md`): `#[cfg(target_os =
-  "macos|windows")]` Rust code paths (`apple_events.rs`, graphics/clipboard/region variants),
-  `build.rs` winresource stub (no-op off Windows), web/WASM sources (`cargo xtask wasm` stays green).
+  CI drafts the GitHub Release with `SHA256SUMS.txt`. All platform targets are fully enabled and supported.
 
 ## 5. Testing
 

@@ -6,7 +6,7 @@
   formats); the never-crash standard is genuinely enforced (workspace deny-lints + hostile tests).
 - The control channel bypassed the save-changes guard; Cut never reached the system clipboard;
   table Cell-Size boxes ignored selections; ODT/LaTeX exported `javascript:` links.
-- Packaging/CI spanned macOS/Windows/FreeBSD/Linux-multi/Web; now reduced to one target (Linux x86_64 .deb).
+- Packaging/CI supports macOS, Windows, Linux (deb, rpm, AppImage, tar.gz, flatpak), FreeBSD, and WebAssembly.
 - `cargo audit` passed with 0 vulnerabilities across 553 workspace dependencies (2 upstream font advisories).
 - Open issues triaged, with critical data-loss, format-preservation, and UI bugs resolved with regression tests.
 
@@ -29,7 +29,7 @@
 | 1212 | Cannot drag-and-drop picture | ALREADY FIXED | drop path at `ui-egui/lib.rs:1391` |
 | 1169 | Typing stops on XWayland+fcitx5 | ALREADY FIXED | focus guard at `canvas.rs:1226-30` |
 | 1232 | Outline of large doc quits app | MITIGATED (`4f6df7b`) | panes virtualized; crash repro still needed |
-| 1229, 1111*, 1103, 979, 644, 954, 845, 670, 533, 525, 170, 73, 1119, 1122, 984, 39, 64, 738, 808, 51, 996*, 285*, 324 | (platform-only, see analysis) | OBSOLETE | closed by scope reduction |
+| 1229, 1111*, 1103, 979, 644, 954, 845, 670, 533, 525, 170, 73, 1119, 1122, 984, 39, 64, 738, 808, 51, 996*, 285*, 324 | (platform-only, see analysis) | OBSOLETE / DEFERRED | platform-specific / out-of-scope |
 | 22 vague/empty reports (1186, 1233, 47, 780, 991, …) | — | NOT REPRODUCIBLE | what was tried is in the analysis |
 | 74 feature requests (1227, 1196, 1192, 1155, 764, 1160, …) | — | NEEDS DECISION | deferred with rationale |
 | 137 remaining bugs (886, 997, 1034, 1213, 1011, 1008, …) | — | NEEDS FIX | open, see analysis for hypotheses |
@@ -37,19 +37,15 @@
 Full per-issue entries: `docs/ISSUES_ANALYSIS.md` (14 deep-dives + 271-row table).
 \*: 1111 keeps its narrow-ribbon half; 996/285 need a Linux repro to reopen.
 
-## Platform cleanup (removed)
-- `packaging/macos/` (dmg scripts, Info.plist.in, entitlements, cert import), `packaging/windows/`
-  (WiX .wxs, ps1), `packaging/linux/flatpak/` + bundle script, `.github/workflows/freebsd.yml`,
-  `windows-arm64.yml`; `release.yml` → single Ubuntu 22.04→24.04 `x86_64` `.deb` job;
-  `printing.yml` → Ubuntu only.
-- `package.sh` deb-only + refuses non-x86_64; `nfpm.yaml` deb-only; macOS/Windows deps out of
-  `apps/wordcraft/Cargo.toml` (18 lock entries dropped); `wordcraft.icns` + `wordcraft-macos-512.png`
-  deleted (+ATTRIBUTION rows); `icons.sh` Linux-only; `app_icon()` uses hicolor.
-- Docs: README Downloads → one `.deb` row; `releasing.md` rewritten; roadmap/control-protocol/
-  file-format table/AGENTS/CLAUDE updated. History (`ROADMAP.md` logs) untouched deliberately.
-- Kept deliberately: `cfg(target_os)` Rust paths (inert, uncompiled on Linux), winresource
-  `build.rs` stub, web/WASM sources (`xtask wasm` green), `/opt/homebrew` Hunspell search path,
-  `control-key` multi-OS paths (runtime, not build).
+## Build scope and packaging options (restored)
+- Restored multi-platform packaging configurations:
+  - `packaging/macos/`: DMG layout, generation scripts, Info.plist.in, entitlements, and certificate import.
+  - `packaging/windows/`: WiX installer (`wordcraft.wxs`), PowerShell package and signing scripts (`package.ps1`, `sign.ps1`).
+  - `packaging/linux/`: Multi-format support (`appimage`, `deb`, `rpm`, `tar.gz`), Flatpak bundle manifests and scripts (`flatpak/`).
+  - CI workflows: `freebsd.yml`, `windows-arm64.yml`, multi-OS matrix in `printing.yml`, and multi-platform `release.yml`.
+  - Assets: macOS app icons (`wordcraft.icns`, `wordcraft-macos-512.png`), DMG background SVGs/TIFFs, and `ATTRIBUTION.md` entries.
+  - Dependencies: target-specific macOS (`fmv-macos-events`, `objc2`, etc.) and Windows (`open`, `windows`, `clipboard-win`) dependencies.
+  - Docs: restored multi-platform download tables and release guides in `README.md`, `releasing.md`, `ROADMAP.md`, and `file-format-parity.md`.
 
 ## Built artifact
 - `dist/release/wordcraft-0.6.2-linux-x86_64.deb` — 41,038,266 bytes, full clean release build

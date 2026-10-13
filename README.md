@@ -15,14 +15,14 @@
 
 <p align="center">
   A fast, open-source word processor with the Word workflow you already know: the ribbon, styles,
-  tables, track changes, references and mail merge. It reads and writes .docx and runs natively on
-  Linux (x86_64).<br>
+  tables, track changes, references and mail merge. It reads and writes .docx, runs natively on
+  macOS, Windows, Linux and BSD, and in the browser via WebAssembly.<br>
   <i>By the ArtCraft team.</i>
 </p>
 
 <p align="center">
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-2b47b5?style=flat-square&logo=rust&logoColor=white">
-  <img alt="Runs on Linux x86_64" src="https://img.shields.io/badge/runs%20on-Linux%20x86__64-3b5bdb?style=flat-square">
+  <img alt="Runs on macOS, Windows, Linux, BSD and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20BSD%20%C2%B7%20Web-3b5bdb?style=flat-square">
   <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-2b47b5?style=flat-square">
   <img alt="Agent-drivable over MCP" src="https://img.shields.io/badge/agents-MCP%20%C2%B7%20CLI-3b5bdb?style=flat-square">
 </p>
@@ -93,7 +93,7 @@ Every screenshot below is WordCraft itself, rendered offscreen by its own UI tes
   with real, selectable text, links and bookmarks.
 - **Fast.** Paragraph layout is cached, so typing in a 188-page document re-lays it out in about
   1.4 ms; pages render on demand.
-- **Native.** One Rust codebase for Linux (x86_64). No Electron, no
+- **Everywhere.** One Rust codebase for macOS, Windows, Linux, BSD and the web. No Electron, no
   Tauri: native [egui](https://github.com/emilk/egui) on the GPU.
 - **Built for agents.** Every action is a command with an id. The same 422 commands drive the
   ribbon, keyboard shortcuts, the command search, a command-line tool, a JSON control channel and
@@ -165,10 +165,9 @@ play it back (`tools.recordMacro`, `tools.macros`).
 ## Logs
 
 The desktop app writes its log records to standard error and to `logs/wordcraft.log` next to its
-preferences: `$XDG_CONFIG_HOME/wordcraft/logs/` (by default `~/.config/wordcraft/logs/`).
-Portable mode: an empty `portable.txt` next to the executable keeps preferences, logs and
-key files in a `WordCraftData` folder beside it instead.
-A start from a desktop menu has no terminal, so this file is what to attach to a bug
+preferences: on Linux `$XDG_CONFIG_HOME/wordcraft/logs/` (by default `~/.config/wordcraft/logs/`),
+on macOS `~/Library/Application Support/WordCraft/logs/`, on Windows `%APPDATA%\WordCraft\logs\`.
+A start from a desktop menu or the Dock has no terminal, so this file is what to attach to a bug
 report: unreadable parts of a .docx, pictures or fonts a PDF export had to leave out and panics the
 command guard recovered from land there. Each launch moves the previous log to `wordcraft.1.log`
 (and that one to `wordcraft.2.log`), so the log of a run that crashed survives the next start; a
@@ -209,13 +208,69 @@ and estimates: [ROADMAP.md](ROADMAP.md) and [where we fall short](docs/gaps.md).
 
 ## Downloads
 
-**Download WordCraft** from GitHub: the [latest release](https://github.com/storytold/wordcraft/releases/latest) has the build below, and [all releases](https://github.com/storytold/wordcraft/releases) has earlier versions and their notes. `<ver>` in the file name is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
+**Download WordCraft** from GitHub: the [latest release](https://github.com/storytold/wordcraft/releases/latest) has every build listed below, and [all releases](https://github.com/storytold/wordcraft/releases) has earlier versions and their notes. `<ver>` in the file names is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
 
-### Linux (x86_64)
+### Windows
 
-| Format | File | Notes |
+| Build | Installer | Portable |
 |---|---|---|
-| Debian/Ubuntu | `wordcraft-<ver>-linux-x86_64.deb` | Install with `sudo dpkg -i wordcraft-<ver>-linux-x86_64.deb` (or double-click it in your file manager) |
+| x64 (64-bit Intel/AMD) | `wordcraft-<ver>-windows-x64.msi` | `wordcraft-<ver>-windows-x64-portable.zip` |
+| arm64 (Snapdragon and other ARM PCs) | `wordcraft-<ver>-windows-arm64.msi` | `wordcraft-<ver>-windows-arm64-portable.zip` |
+| x86 (32-bit) | `wordcraft-<ver>-windows-x86.msi` | `wordcraft-<ver>-windows-x86-portable.zip` |
+
+Installers and executables are code-signed.
+
+**If the app doesn't open on Windows:** the desktop app initializes only DirectX 12 by default.
+Letting wgpu also create an OpenGL instance can crash some graphics drivers (AMD's
+`atio6axx.dll`) before the window appears, so the app would flash in Task Manager and quit.
+`WGPU_BACKEND` overrides the default for troubleshooting (for example `dx12` or `vulkan`). In
+PowerShell, from the folder containing the executable:
+
+```powershell
+$env:WGPU_BACKEND = "vulkan"
+& .\wordcraft.exe
+Remove-Item Env:WGPU_BACKEND                     # restore the default for later launches
+```
+
+An explicit `gl` override can bring the driver crash back on affected systems. The macOS, Linux
+and web backend defaults are unchanged.
+
+The **32-bit** build uses OpenGL even when a DirectX 12 graphics card is present. On 32-bit
+Windows, creating a DirectX 12 graphics pipeline fails immediately and the app exits before the
+window appears. `WGPU_BACKEND=vulkan` (or `dx12`) still overrides that.
+
+**If the app quits right after its window appears with "Parent device is lost" in the log:**
+WordCraft compiles DirectX 12 shaders with FXC, the compiler built into Windows, so it needs no
+`dxcompiler.dll`/`dxil.dll` and ignores any copy another program put on `PATH` (#603).
+`WGPU_DX12_COMPILER` (`fxc`, `dxc`, `auto`) overrides this; with `dxc`, a matching
+`dxcompiler.dll` *and* `dxil.dll` must sit next to `wordcraft.exe`. `WGPU_BACKEND = "vulkan"`
+also avoids DirectX 12 altogether.
+
+**If the app is slow on an older Windows PC:** when DirectX 12 finds no graphics card with a
+driver for it (for example Intel 4th-generation graphics on Windows 11), it only offers Microsoft's
+software renderer, which draws every frame on the processor. In that case WordCraft uses OpenGL
+instead, without setting anything. The log file records the choice (lines starting with
+`graphics:`). `WGPU_BACKEND` still overrides it, e.g. `$env:WGPU_BACKEND = "gl"` or `"dx12"`.
+
+### macOS
+
+| Build | File | Notes |
+|---|---|---|
+| App, universal (Apple silicon + Intel) | `wordcraft-<ver>-macos-universal.dmg` | Signed and notarized |
+| Command-line tool, universal | `wordcraft-cli-<ver>-macos-universal.zip` | Signed and notarized |
+
+### Linux
+
+| Format | x86_64 | aarch64 (ARM64) | Notes |
+|---|---|---|---|
+| AppImage | `wordcraft-<ver>-linux-x86_64.AppImage` | `wordcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
+| Flatpak | `wordcraft-<ver>-linux-x86_64.flatpak` | `wordcraft-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
+| Debian/Ubuntu | `wordcraft-<ver>-linux-x86_64.deb` | `wordcraft-<ver>-linux-aarch64.deb` | |
+| Fedora/RHEL/openSUSE | `wordcraft-<ver>-linux-x86_64.rpm` | `wordcraft-<ver>-linux-aarch64.rpm` | |
+| Tarball | `wordcraft-<ver>-linux-x86_64.tar.gz` | `wordcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+
+RISC-V (riscv64): `wordcraft-<ver>-linux-riscv64.tar.gz`, a tarball cross-compiled for glibc 2.39+
+(Ubuntu 24.04, Debian 13 and newer).
 
 **Wayland:** on a Wayland desktop the app runs through XWayland when it is available, because
 winit (the windowing library) supports dragging files into the window only on X11. To use the
@@ -225,6 +280,26 @@ of file drag-and-drop), start it with `WORDCRAFT_WAYLAND=1`:
 ```sh
 WORDCRAFT_WAYLAND=1 wordcraft
 ```
+
+**Arch Linux (AUR).** Community members maintain three AUR packages; the project doesn't publish
+to the AUR itself. Install one of them:
+| Package | What it installs | Choose it when |
+|---|---|---|
+| [`wordcraft-bin`](https://aur.archlinux.org/packages/wordcraft-bin) | The release tarball above, prebuilt (x86_64, aarch64) | You want the latest release without compiling (quickest) |
+| [`wordcraft`](https://aur.archlinux.org/packages/wordcraft) | The latest release, built from source with `cargo` | You prefer to build releases yourself |
+| [`wordcraft-git`](https://aur.archlinux.org/packages/wordcraft-git) | The current `main` branch, built from source | You want unreleased changes and accept an occasional broken build |
+For example `yay -S wordcraft-bin` or `paru -S wordcraft-bin`.
+### FreeBSD
+
+| Build | File |
+|---|---|
+| x86_64 | `wordcraft-<ver>-freebsd-x86_64.tar.gz` |
+
+### Web (WebAssembly)
+
+| Build | File | Notes |
+|---|---|---|
+| Static site | `wordcraft-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
 
 ## The Crafting Apps
 
