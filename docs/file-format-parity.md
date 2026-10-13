@@ -163,7 +163,7 @@ raise readiness estimates. No Word-derived files are fixtures.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | trivial | HTML export writes equations as MathML instead of linear text, and HTML import (open and paste) reads `<math>` back into equations; a copy holding an equation puts that HTML on the system clipboard (#816). OMML on the clipboard (Word's "Office Open XML" format) is a follow-up |
+| 2026-10-13 | trivial | HTML export writes equations as MathML instead of linear text, and HTML import (open and paste) reads `<math>` back into equations; a copy holding an equation puts that HTML on the system clipboard: MathML in HTML on the clipboard (Word/LibreOffice paste not yet verified; OMML is #1297) (#816) |
 | 2026-10-12 | trivial | Paste keeps the formatting of HTML and RTF on the system clipboard; Paste Special lists them and pictures (#687, #833) |
 | 2026-10-12 | trivial | ODT page size, orientation and margins read back from `styles.xml` on open, so they survive a save and reopen (#810) |
 | 2026-10-12 | minor | RTF reads 8-bit text in the document's or the font's code page (`\ansicpg`, `\fcharset`, `\cpg`) instead of always Windows-1252; a `.doc`/`.docx`/`.rtf` whose content is another of these formats opens by signature. Found on a private corpus of real Russian documents: 38 of 44 `.doc` files were RTF, all now open with their Cyrillic text |

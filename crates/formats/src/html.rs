@@ -1164,6 +1164,8 @@ fn read_math(lx: &mut Lexer, name: String, attrs: Vec<(String, String)>) -> crat
     while let Some(t) = lx.next() {
         count += 1;
         if count > MAX_NODES * 4 {
+            // Over the cap: drop the rest of this element so its tokens aren't read as HTML text.
+            skip_math(lx, t);
             break;
         }
         match t {
@@ -1202,6 +1204,27 @@ fn read_math(lx: &mut Lexer, name: String, attrs: Vec<(String, String)>) -> crat
         close(&mut stack);
     }
     stack.pop().unwrap_or_default()
+}
+
+/// Skip tokens (starting with `first`) up to and including the `</math>` that closes the element
+/// being read; nested `<math>` elements are counted. An unclosed element ends with the input.
+fn skip_math(lx: &mut Lexer, first: Tok) {
+    use crate::mathml::local;
+    let mut depth = 0usize;
+    let mut t = Some(first);
+    while let Some(tok) = t {
+        match tok {
+            Tok::Start { name, self_close: false, .. } if local(&name) == "math" => depth = depth.saturating_add(1),
+            Tok::End(name) if local(&name) == "math" => {
+                if depth == 0 {
+                    return;
+                }
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+        t = lx.next();
+    }
 }
 
 /// Parse HTML into a document.

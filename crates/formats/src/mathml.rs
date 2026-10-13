@@ -1,7 +1,7 @@
 //! Equations as MathML (W3C MathML Core / Presentation MathML): written into HTML export and the
-//! HTML a copy puts on the system clipboard, so Word, LibreOffice, Google Docs and browsers get a
-//! formatted equation instead of its linear text (#816); and read back from pasted or opened
-//! HTML.
+//! HTML a copy puts on the system clipboard, so programs that read MathML can get a formatted
+//! equation instead of its linear text (#816; pasting into Word and LibreOffice not yet verified;
+//! OMML for Word is #1297); and read back from pasted or opened HTML.
 //!
 //! The writer walks the equation tree ([`MNode`]) and wraps it in `<semantics>` with the linear
 //! format as an `application/x-unicodemath` annotation, which renderers ignore and WordCraft reads
@@ -13,6 +13,7 @@ use wordcraft_doc::math::{
     Arg, ColJc, FracKind, LimLoc, MAX_DEPTH, MClass, MNode, MRun, MScr, MSty, ScriptKind, is_integral, is_nary_char, math_alnum, math_class,
     to_linear,
 };
+use wordcraft_doc::math_linear::FUNCTION_NAMES;
 
 use crate::html::esc;
 
@@ -301,7 +302,8 @@ fn node(n: &MNode, o: &mut String, depth: usize, eq_arr: bool) {
             o.push_str(&format!("</{tag}>"));
         }
         MNode::EqArr { rows } => {
-            o.push_str("<mtable>");
+            // `displaystyle` marks an equation array; a bare one-column table reads as a matrix.
+            o.push_str("<mtable displaystyle=\"true\">");
             for r in rows {
                 o.push_str("<mtr><mtd>");
                 arg(r, o, depth, true);
@@ -489,6 +491,21 @@ fn seq(els: &[&El], depth: usize, budget: &mut usize) -> Arg {
     let mut i = 0;
     while let Some(el) = els.get(i) {
         i += 1;
+        // A function name (`<mi>sin</mi>`) applies to the next element even without U+2061,
+        // so it doesn't merge with it into `sinx`. Before an operator (`(`, U+2061) the runs
+        // merge and the linear format finds the function itself.
+        if local(&el.name) == "mi"
+            && let Some(next) = els.get(i).filter(|n| local(&n.name) != "mo")
+        {
+            let t = el.text();
+            let t = t.trim();
+            if FUNCTION_NAMES.contains(&t) && *budget > 0 {
+                *budget -= 1;
+                i += 1;
+                out.push(MNode::Func { name: vec![MNode::Run(MRun::plain(t))], e: elem(next, depth + 1, budget) });
+                continue;
+            }
+        }
         let mut a = elem(el, depth, budget);
         if let [MNode::Nary { e, .. }] = a.as_mut_slice()
             && e.is_empty()
@@ -651,7 +668,11 @@ fn elem(e: &El, depth: usize, budget: &mut usize) -> Arg {
             if rows.is_empty() {
                 return Vec::new();
             }
-            if rows.iter().all(|r| r.len() <= 1) {
+            // One column is an equation array only when marked as one (`displaystyle`, alignment
+            // marks, labelled rows, as TeX's align and our own writer give); else a column vector.
+            let marked =
+                e.attr("displaystyle").is_some_and(|v| v.trim() == "true") || e.els().any(|r| local(&r.name) == "mlabeledtr") || has_align_mark(e, 0);
+            if marked && rows.iter().all(|r| r.len() <= 1) {
                 return vec![MNode::EqArr { rows: rows.into_iter().map(|mut r| r.pop().unwrap_or_default()).collect() }];
             }
             vec![MNode::Matrix { rows, col_jc: Vec::new() }]
@@ -670,6 +691,11 @@ fn elem(e: &El, depth: usize, budget: &mut usize) -> Arg {
         "annotation" | "annotation-xml" | "mspace" | "none" | "mprescripts" | "maligngroup" | "malignmark" => Vec::new(),
         _ => children(e, d, budget),
     }
+}
+
+/// Whether `e` holds a `maligngroup` or `malignmark` near the top (in a cell or a row inside it).
+fn has_align_mark(e: &El, depth: usize) -> bool {
+    depth <= 4 && e.els().any(|c| matches!(local(&c.name), "maligngroup" | "malignmark") || has_align_mark(c, depth + 1))
 }
 
 fn nary(chr: char, lim_loc: LimLoc, sub: Arg, sup: Arg) -> MNode {
@@ -793,6 +819,68 @@ mod tests {
         // Hostile nesting is bounded.
         let deep = format!("<math>{}<mi>x</mi>{}</math>", "<mrow>".repeat(5000), "</mrow>".repeat(5000));
         assert!(pasted(&deep).len() <= 1);
+    }
+
+    #[test]
+    fn math_over_the_token_cap_is_skipped_to_its_end() {
+        // Past the cap, the rest of the element is dropped, not read as body text.
+        let html = format!("<p><math>{}<mrow><mi>z</mi></mrow></math> tail</p>", "<mi>y</mi>".repeat(MAX_NODES * 2));
+        let flow = crate::html::parse(&html);
+        let mut text = String::new();
+        for b in &flow.blocks {
+            if let crate::model::FBlock::Para(p) = b {
+                for i in &p.inlines {
+                    if let crate::model::Inline::Text(t, _) = i {
+                        text.push_str(t);
+                    }
+                }
+            }
+        }
+        assert_eq!(text.trim(), "tail");
+    }
+
+    #[test]
+    fn function_names_apply_without_the_invisible_operator() {
+        let cases = [
+            ("<math><mi>sin</mi><mi>x</mi></math>", "sin\u{2061}x"),
+            ("<math><mi>log</mi><mrow><mi>a</mi><mi>b</mi></mrow></math>", "log\u{2061}ab"),
+            ("<math><mi>cos</mi><mo>\u{2061}</mo><mi>x</mi></math>", "cos\u{2061}x"),
+            ("<math><mi>ab</mi><mi>x</mi></math>", "abx"),
+        ];
+        for (html, want) in cases {
+            assert_eq!(pasted(html).first().map(|g| g.0.as_str()), Some(want), "{html}");
+        }
+        let tree = to_tree(&El {
+            name: "math".into(),
+            attrs: vec![],
+            children: vec![
+                Item::El(El { name: "mi".into(), attrs: vec![], children: vec![Item::Text("sin".into())] }),
+                Item::El(El { name: "mi".into(), attrs: vec![], children: vec![Item::Text("x".into())] }),
+            ],
+        });
+        assert!(matches!(tree.as_slice(), [MNode::Func { .. }]), "{tree:?}");
+    }
+
+    #[test]
+    fn one_column_tables_are_column_vectors_unless_marked() {
+        let tree = |html: &str| {
+            let linear = pasted(html).first().map(|g| g.0.clone()).unwrap_or_default();
+            wordcraft_doc::math::parse_linear(&linear)
+        };
+        let vector = tree("<math><mtable><mtr><mtd><mi>a</mi></mtd></mtr><mtr><mtd><mi>b</mi></mtd></mtr></mtable></math>");
+        assert!(matches!(vector.as_slice(), [MNode::Matrix { rows, .. }] if rows.len() == 2), "{vector:?}");
+        for marked in [
+            "<math><mtable displaystyle='true'><mtr><mtd><mi>a</mi></mtd></mtr><mtr><mtd><mi>b</mi></mtd></mtr></mtable></math>",
+            "<math><mtable><mtr><mtd><mi>a</mi><maligngroup/><mo>=</mo><mn>1</mn></mtd></mtr><mtr><mtd><mi>b</mi></mtd></mtr></mtable></math>",
+        ] {
+            let t = tree(marked);
+            assert!(matches!(t.as_slice(), [MNode::EqArr { rows }] if rows.len() == 2), "{marked}: {t:?}");
+        }
+        // Our own equation arrays read back as equation arrays from their elements alone.
+        let ml = to_mathml(&[MNode::EqArr { rows: vec![parse_linear("x=1"), parse_linear("y=2")] }], false, "");
+        let ml = ml.replace("application/x-unicodemath", "x-ignored");
+        let t = tree(&ml);
+        assert!(matches!(t.as_slice(), [MNode::EqArr { .. }]), "{ml}: {t:?}");
     }
 
     #[test]

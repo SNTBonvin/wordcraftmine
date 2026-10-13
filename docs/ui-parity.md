@@ -46,7 +46,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | trivial | Copy and Cut of a selection holding an equation put HTML with the equation as MathML on the system clipboard beside the text (desktop, through arboard), so Word, LibreOffice, Google Docs and browsers paste a formatted equation instead of `y=2x_s` (#816). Web: text only |
+| 2026-10-13 | trivial | Copy and Cut of a selection holding an equation put HTML with the equation as MathML on the system clipboard beside the text (desktop, through arboard), as MathML in HTML on the clipboard (Word/LibreOffice paste not yet verified; OMML is #1297) (#816). Only copies containing an equation get HTML. Web: text only |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |
