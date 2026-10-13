@@ -82,6 +82,7 @@
 	Centimeters	Centímetros
 	Changed lines:	Linhas alteradas:
 	Check spelling as you type	Verificar a ortografia enquanto você digita
+	Citation Styles (CSL)	Estilos de citação (CSL)
 	Click level to modify:	Clique no nível a modificar:
 	Click to switch back to inserting	Clique para voltar a inserir
 	Color only	Somente cor
@@ -97,6 +98,8 @@
 	Ignore web and file addresses	Ignorar endereços da Web e de arquivos
 	Ignore words in capitals	Ignorar palavras em maiúsculas
 	Ignore words with numbers	Ignorar palavras com números
+	Import Sources Library	Importar biblioteca de fontes
+	Import…	Importar…
 	Inches	Polegadas
 	Formatting exceptions	Exceções de formatação
 	Include level number from:	Incluir número do nível:
@@ -232,6 +235,7 @@
 	Check Spelling as You Type	Verificar ortografia ao digitar
 	Check\nAccessibility	Verificar\nacessibilidade
 	Citation Style	Estilo de citação
+	Citation Style (CSL styles: docs/csl-styles.md)	Estilo de citação (estilos CSL: docs/csl-styles.md)
 	Citations & Bibliography	Citações e bibliografia
 	Clear	Limpar
 	Clear All Formatting	Limpar toda a formatação
@@ -843,6 +847,8 @@
 	Style based on:	Estilo baseado em:
 	Style Set	Conjunto de estilos
 	Style: {style}	Estilo: {style}
+	Style {style} added	Estilo {style} adicionado
+	Style {style} added, with warnings: {warnings}	Estilo {style} adicionado, com avisos: {warnings}
 	Styles	Estilos
 	Styles Pane	Painel de estilos
 	Subscript	Subscrito
@@ -1741,6 +1747,8 @@
 	Word document	Documento do Word
 	All files	Todos os arquivos
 	Recipient lists	Listas de destinatários
+	Source libraries	Bibliotecas de fontes
+	CSL styles	Estilos CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	A caixa de diálogo de arquivos do sistema não está disponível, então o WordCraft mostra a sua própria. Para usar a do sistema, instale um portal seletor de arquivos (como xdg-desktop-portal-gtk) ou o zenity.
 	Up one level	Subir um nível
 	Home folder	Pasta pessoal
@@ -1835,6 +1843,7 @@
 	Above the item	Acima do item
 	Accessed on	Acessado em
 	Add New Source…	Adicionar nova fonte…
+	Add style from file…	Adicionar estilo do arquivo…
 	Add the chapter number	Adicionar o número do capítulo
 	Atmosphere	Atmosfera
 	Below the item	Abaixo do item
@@ -1927,6 +1936,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Entradas marcadas: {n}.
+	{added} added, {updated} updated	{added} adicionadas, {updated} atualizadas
 	Lasso Select	Seleção com laço
 	Move Selected Ink	Mover a tinta selecionada
 	Delete Selected Ink	Excluir a tinta selecionada
@@ -2087,3 +2097,4 @@
 	Start-up	Inicialização
 	Show the Start screen when WordCraft starts	Mostrar a tela inicial ao abrir o WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Ativado: o WordCraft abre em Arquivo › Início, com um documento em branco, os modelos e seus documentos recentes. Desativado: abre um documento em branco.
+	Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.	As citações do Mendeley são preservadas; o aplicativo do Mendeley não consegue se conectar — o Zotero funciona ao vivo.

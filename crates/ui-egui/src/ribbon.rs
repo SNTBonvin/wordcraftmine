@@ -454,11 +454,17 @@ pub(crate) fn language_menu(ui: &mut Ui, app: &mut WordApp) {
 
 /// A menu item with a check mark when `checked` (the current choice of several).
 fn mi_check(ui: &mut Ui, app: &mut WordApp, label: &str, checked: bool, id: &str, params: Value) {
+    mi_check_text(ui, app, tl!(label), checked, id, params);
+}
+
+/// A menu item with a check mark whose text is already in the interface language: a loaded CSL
+/// style's title is its author's words, so it is never translated (like a user style's name).
+fn mi_check_text(ui: &mut Ui, app: &mut WordApp, text: &str, checked: bool, id: &str, params: Value) {
     // An invisible mark keeps the unchecked labels aligned with the checked one.
     let mark = egui::RichText::new("✓");
     let mark = if checked { mark } else { mark.color(egui::Color32::TRANSPARENT) };
     let enabled = crate::widgets::enabled(app, id);
-    let resp = ui.add_enabled(enabled, egui::Button::new((mark, tl!(label))).selected(checked).min_size(vec2(200.0, 0.0)));
+    let resp = ui.add_enabled(enabled, egui::Button::new((mark, text)).selected(checked).min_size(vec2(200.0, 0.0)));
     if resp.clicked() {
         crate::widgets::run_from_ribbon(app, id, params);
         ui.close();
@@ -1313,6 +1319,18 @@ fn group_menu(ui: &mut Ui, app: &mut WordApp, label: Option<&str>) {
     });
 }
 
+/// The name the References ▸ Style combo shows for the document's citation style: a built-in's
+/// name, or the title of the CSL style a `csl:<id>` choice stands for (the id itself when that
+/// style is no longer installed).
+fn citation_style_name(app: &WordApp, bib_style: &str) -> String {
+    let Some(id) = bib_style.strip_prefix("csl:") else { return bib_style.to_string() };
+    app.session
+        .csl_styles
+        .iter()
+        .find(|e| e.id().eq_ignore_ascii_case(id))
+        .map_or_else(|| bib_style.to_string(), |e| if e.style.title.is_empty() { e.file.clone() } else { e.style.title.clone() })
+}
+
 fn references(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Table of Contents", None, app, |ui, app| {
         menu_button(ui, app, "toc", Some("Table of\nContents"), "Table of Contents", true, "references.toc", |ui, app| {
@@ -1359,12 +1377,47 @@ fn references(app: &mut WordApp, ui: &mut Ui) {
         stack(ui, |ui| {
             small(ui, app, "sources", Some("Manage Sources"), "Manage Sources", "references.sources", json!({}), false);
             let current = app.session.bib_style.clone();
-            let label = crate::i18n::fmt(tl!("Style: {style}"), &[("style", &current)]);
-            menu_button(ui, app, "styles", Some(&label), "Citation Style", false, "references.citationStyle", |ui, app| {
-                for st in &wordcraft_engine::cmd::citations::STYLES {
-                    mi_check(ui, app, st.name, st.name == current, "references.citationStyle", json!({"style": st.name}));
-                }
-            });
+            let shown = citation_style_name(app, &current);
+            let label = crate::i18n::fmt(tl!("Style: {style}"), &[("style", &shown)]);
+            menu_button(
+                ui,
+                app,
+                "styles",
+                Some(&label),
+                "Citation Style (CSL styles: docs/csl-styles.md)",
+                false,
+                "references.citationStyle",
+                |ui, app| {
+                    for st in &wordcraft_engine::cmd::citations::STYLES {
+                        mi_check(ui, app, st.name, st.name == current, "references.citationStyle", json!({"style": st.name}));
+                    }
+                    // #1058: styles added from CSL files, by title; the document's recorded choice is
+                    // `csl:<id>`.
+                    let csl: Vec<(String, String)> = app
+                        .session
+                        .csl_styles
+                        .iter()
+                        .map(|e| (e.id().to_string(), if e.style.title.is_empty() { e.file.clone() } else { e.style.title.clone() }))
+                        .collect();
+                    if !csl.is_empty() {
+                        ui.separator();
+                    }
+                    for (id, title) in &csl {
+                        let on = current.strip_prefix("csl:").is_some_and(|c| c.eq_ignore_ascii_case(id));
+                        mi_check_text(ui, app, title, on, "references.citationStyle", json!({"style": format!("csl:{id}")}));
+                    }
+                    ui.separator();
+                    // #1058: pick a CSL file to install as a style; it is added, its warnings show in
+                    // the status line, and it becomes the document's style.
+                    if ui.button(tl!("Add style from file…")).clicked() {
+                        let _ = app.ask_file(
+                            crate::file_dialogs::FileDialogRequest::Open { purpose: "csl-style".into() },
+                            crate::file_dialogs::AfterPick::CslStyle,
+                        );
+                        ui.close();
+                    }
+                },
+            );
             small(ui, app, "bibliography", Some("Bibliography"), "Bibliography", "references.bibliography", json!({}), false);
         });
     });
@@ -2564,5 +2617,106 @@ mod tests {
         assert_eq!(resolve_tab("Picture Format", &["Home"]), "Home");
         assert_eq!(resolve_tab("Table Design", &["Home"]), "Home");
         assert_eq!(resolve_tab("Home", &["Home"]), "Home");
+    }
+
+    /// A test CSL style, clean (no warnings) — written for these tests, like every file here.
+    const CSL_CLEAN: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/csl" version="1.0">
+  <info><id>http://wordcraft.test/clean</id><title>WordCraft Test Clean</title></info>
+  <citation><layout><text variable="title"/></layout></citation>
+  <bibliography><layout><text variable="title"/></layout></bibliography>
+</style>
+"#;
+
+    /// A test CSL style that loads with a warning (`default-locale` isn't en-US).
+    const CSL_HARVARD: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/csl" version="1.0" default-locale="de-DE">
+  <info><id>http://wordcraft.test/harvard</id><title>WordCraft Test Harvard</title></info>
+  <citation><layout><text variable="title"/></layout></citation>
+  <bibliography><layout><text variable="title"/></layout></bibliography>
+</style>
+"#;
+
+    /// #1058: the References ▸ Style combo lists the built-ins, then the loaded CSL styles by
+    /// title; picking one records `csl:<id>`, and "Add style from file…" asks for a CSL file and
+    /// installs, selects and reports it.
+    #[test]
+    fn style_combo_lists_adds_and_selects_csl_styles() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use std::sync::mpsc::{Sender, channel};
+
+        use egui_kittest::kittest::Queryable;
+
+        use crate::file_dialogs::{FileDialogAnswer, FileDialogRequest};
+
+        let dir = std::env::temp_dir().join(format!("wordcraft-ui-csl-combo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let styles = dir.join("styles");
+        std::fs::create_dir_all(&styles).unwrap();
+        std::fs::write(styles.join("clean.csl"), CSL_CLEAN.as_bytes()).unwrap();
+        let to_add = dir.join("harvard.csl");
+        std::fs::write(&to_add, CSL_HARVARD.as_bytes()).unwrap();
+        let mut session = Session::new(wordcraft_doc::Document::new());
+        session.set_csl_styles_dir(styles.clone());
+        let shown: Rc<RefCell<Vec<(FileDialogRequest, Sender<FileDialogAnswer>)>>> = Rc::default();
+        let log = shown.clone();
+        let services = crate::Services {
+            file_dialog: Some(Box::new(move |req| {
+                let (tx, rx) = channel();
+                log.borrow_mut().push((req, tx));
+                rx
+            })),
+            ..Default::default()
+        };
+        let mut a = WordApp::new(session, services);
+        a.run("ui.tab", json!({"tab": "References"})).unwrap();
+        // The menu buttons paint their own text (no AccessKit label), so the test reads the rects
+        // `menu_button` records while drawing, and clicks them like a pointer would.
+        let drawn: Rc<RefCell<Vec<(String, egui::Rect)>>> = Rc::default();
+        let seen = drawn.clone();
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+                *seen.borrow_mut() = crate::widgets::MENU_BUTTONS.with_borrow_mut(std::mem::take);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let combo =
+            || drawn.borrow().iter().rev().find(|(tip, _)| tip.starts_with("Citation Style")).map(|(_, r)| *r).expect("the style combo is drawn");
+        let click = |h: &mut egui_kittest::Harness<'_, WordApp>, at: egui::Pos2| {
+            h.event(egui::Event::PointerMoved(at));
+            h.run_steps(1);
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+            h.run_steps(1);
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+            h.run_steps(2);
+        };
+        click(&mut h, combo().center());
+        assert!(h.query_by_label_contains("APA").is_some(), "the built-ins are still listed");
+        assert!(
+            h.query(egui_kittest::kittest::By::new().label_contains("WordCraft Test Clean")).is_some(),
+            "the loaded CSL style is listed by title"
+        );
+        h.get_by_label_contains("WordCraft Test Clean").click();
+        h.run_steps(2);
+        assert_eq!(h.state().session.bib_style, "csl:http://wordcraft.test/clean", "picking the CSL style records csl:<id>");
+        // Add style from file…: the host's file dialog, then install, warn and select.
+        click(&mut h, combo().center());
+        h.get_by_label("Add style from file…").click();
+        h.run_steps(2);
+        assert_eq!(shown.borrow()[0].0, FileDialogRequest::Open { purpose: "csl-style".into() });
+        let (_, tx) = shown.borrow_mut().pop().unwrap();
+        tx.send(Ok(Some(to_add.to_string_lossy().into_owned()))).unwrap();
+        h.run_steps(4);
+        assert!(styles.join("harvard.csl").is_file(), "the picked file is copied into the styles folder");
+        assert_eq!(h.state().session.bib_style, "csl:http://wordcraft.test/harvard", "the added style becomes the document's");
+        let status = h.state().status_msg.as_ref().map(|(m, _)| m.as_str()).unwrap_or_default();
+        assert!(status.contains("with warnings"), "the warnings show in the status line: {status}");
+        assert!(status.contains("WordCraft Test Harvard"), "the style the warnings belong to: {status}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

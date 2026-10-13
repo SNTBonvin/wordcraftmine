@@ -389,7 +389,8 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
 }
 
 /// [`read_file`] for a file that must be a regular file of at most `max` bytes, checked before
-/// anything is read (a font named by the user, which could be any size).
+/// anything is read (a file named by the user — a font, a citation library — which could be any
+/// size on disk).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_file_capped(path: &str, max: u64, what: &str) -> Result<Vec<u8>, String> {
     crate::file_access::check_read(path)?;
@@ -403,6 +404,11 @@ pub fn read_file_capped(path: &str, max: u64, what: &str) -> Result<Vec<u8>, Str
     std::fs::read(path).map_err(|e| format!("{path}: {e}"))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn read_file_capped(path: &str, _max: u64, _what: &str) -> Result<Vec<u8>, String> {
+    Err(format!("{path}: files are opened through the browser on the web"))
+}
+
 /// Write `bytes` to the file at `path`, inside the automation write root when there is one.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
@@ -413,6 +419,43 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
 #[cfg(target_arch = "wasm32")]
 pub fn write_file(path: &str, _bytes: &[u8]) -> Result<(), String> {
     Err(format!("{path}: files are saved through the browser on the web"))
+}
+
+/// Delete the file at `path`, inside the automation write root when there is one.
+pub fn delete_file(path: &std::path::Path) -> Result<(), String> {
+    crate::file_access::check_write(&path.to_string_lossy())?;
+    std::fs::remove_file(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Make sure `dir` exists (the styles folder before the first style is copied into it),
+/// inside the automation write root when there is one.
+pub fn create_dir(dir: &std::path::Path) -> Result<(), String> {
+    crate::file_access::check_write(&dir.to_string_lossy())?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+/// The files whose name ends in `ext` (any case) inside `dir`, in file name order — the
+/// CSL styles folder ([`crate::Session::set_csl_styles_dir`], #1058). A folder that doesn't
+/// exist yet (nothing installed) holds none; an unreadable file is left out.
+pub fn read_dir_files(dir: &std::path::Path, ext: &str) -> Vec<(String, Vec<u8>)> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.to_ascii_lowercase().ends_with(ext))
+        .collect();
+    names.sort();
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        if let Ok(b) = std::fs::read(dir.join(&name)) {
+            out.push((name, b));
+        }
+    }
+    out
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -441,4 +484,31 @@ pub fn save_path_with(path: &std::path::Path, _doc: &Document, _password: Option
 /// Windows-1252 (see [`wordcraft_formats::txt::decode`]).
 pub fn decode_text(b: &[u8]) -> String {
     wordcraft_formats::txt::decode(b)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    /// `create_dir` is held to the automation write root like every other write: the
+    /// styles folder a `references.cslStyles {"add"}` makes cannot be created outside it.
+    #[test]
+    fn create_dir_is_held_to_the_write_root() {
+        use crate::file_access::{AutomationRoots, confine};
+        let base = std::env::temp_dir().join(format!("wc-mkdir-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in ["out", "outside"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        let roots = AutomationRoots::new(None, Some(&base.join("out"))).unwrap();
+        confine(roots.as_ref(), || {
+            let err = super::create_dir(&base.join("outside/escape")).unwrap_err();
+            assert!(err.contains("outside the write root"), "{err}");
+            assert!(!base.join("outside/escape").exists(), "nothing created outside the root");
+            super::create_dir(&base.join("out/styles")).unwrap();
+        });
+        assert!(base.join("out/styles").is_dir());
+        // Without roots nothing is checked: the behaviour is unchanged.
+        super::create_dir(&base.join("outside/free")).unwrap();
+        assert!(base.join("outside/free").is_dir());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

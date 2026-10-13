@@ -1,6 +1,7 @@
 //! File tab (Backstage): new, open, save, export, print, properties; document inspection.
 
 use serde_json::{Value, json};
+use wordcraft_doc::para::InlineObject;
 use wordcraft_doc::{Block, Document, StoryRef};
 
 use super::{pos_json, sel_result};
@@ -8,6 +9,37 @@ use crate::{CmdError, CmdResult, CommandSpec, Session, p};
 
 /// Longest user name kept, in characters; longer names are cut, not refused.
 pub const MAX_AUTHOR_CHARS: usize = 255;
+
+/// What the status bar says when an opened document holds citation fields of a manager
+/// WordCraft doesn't drive (Mendeley, EndNote — see [`crate::speech::is_undriven_citation_code`]):
+/// the fields are preserved verbatim, only Zotero (and Word's own `CITATION` fields) are
+/// driven live. One non-blocking note; in the i18n catalogs, one row per language.
+pub(crate) const MANAGER_FIELDS_STATUS: &str = "Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.";
+
+/// Does the document hold citation fields of a manager WordCraft doesn't drive? Every story —
+/// the body, footnotes, endnotes — and both field shapes: range fields (`ADDIN …` between
+/// markers) and simple cached ones.
+fn has_undriven_manager_fields(doc: &Document) -> bool {
+    let stories = std::iter::once(StoryRef::Body).chain(doc.parts.keys().map(|k| StoryRef::Part(*k)));
+    for story in stories {
+        for r in doc.field_ranges(story) {
+            if crate::speech::is_undriven_citation_code(&r.instr) {
+                return true;
+            }
+        }
+        for path in doc.para_paths(story) {
+            let Some(p) = doc.para(story, &path) else { continue };
+            for off in p.object_offsets() {
+                if let Some(InlineObject::Field { instr, .. }) = p.object_at(off)
+                    && crate::speech::is_undriven_citation_code(instr)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
 
 /// Sets the user name that new tracked changes and comments are recorded under. The name is
 /// trimmed, stripped of control characters (they can't go into the saved XML) and cut to
@@ -155,6 +187,10 @@ fn open(s: &mut Session, v: &Value) -> CmdResult {
     }
     s.set_document(doc);
     s.path = Some(path.into());
+    // Another manager's citations ride along untouched; one status-bar note says so. Zotero
+    // fields and Word's own CITATION fields are driven live and say nothing. Unconditional:
+    // the note is about this document, so opening any other one clears it.
+    s.status = if has_undriven_manager_fields(&s.doc) { MANAGER_FIELDS_STATUS.into() } else { String::new() };
     // Like Word, a document opened with a password is saved with it again.
     if encrypted {
         s.password = password.map(crate::io::Password::new);

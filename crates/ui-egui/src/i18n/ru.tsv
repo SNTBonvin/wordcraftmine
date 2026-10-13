@@ -125,6 +125,8 @@
 	Check Spelling as You Type	Проверять орфографию при вводе
 	Check\nAccessibility	Проверить\nдоступность
 	Citation Style	Стиль ссылок
+	Citation Style (CSL styles: docs/csl-styles.md)	Стиль ссылок (стили CSL: docs/csl-styles.md)
+	Citation Styles (CSL)	Стили цитирования (CSL)
 	Citations & Bibliography	Ссылки и список литературы
 	Clear	Очистить
 	Clear All Formatting	Очистить всё форматирование
@@ -327,6 +329,8 @@
 	Immersive	Иммерсивный режим
 	Immersive Reader	Иммерсивное чтение
 	Immersive\nReader	Иммерсивное\nчтение
+	Import Sources Library	Импорт библиотеки источников
+	Import…	Импорт…
 	Increase Font Size	Увеличить размер шрифта
 	Increase Indent	Увеличить отступ
 	Indent	Отступ
@@ -707,6 +711,8 @@
 	Style based on:	Основан на стиле:
 	Style Set	Набор стилей
 	Style: {style}	Стиль: {style}
+	Style {style} added	Стиль {style} добавлен
+	Style {style} added, with warnings: {warnings}	Стиль {style} добавлен, с предупреждениями: {warnings}
 	Styles	Стили
 	Styles Pane	Область стилей
 	Subject	Тема
@@ -1886,6 +1892,7 @@ preview	Title	Пример
 	Above the item	Над объектом
 	Accessed on	Дата обращения
 	Add New Source…	Добавить новый источник…
+	Add style from file…	Добавить стиль из файла…
 	Add the chapter number	Добавить номер главы
 	Atmosphere	Атмосфера
 	Below the item	Под объектом
@@ -1976,6 +1983,7 @@ preview	Title	Пример
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Помечено записей: {n}.
+	{added} added, {updated} updated	Добавлено: {added}, обновлено: {updated}
 	Lasso Select	Лассо
 	Move Selected Ink	Переместить выделенные штрихи
 	Delete Selected Ink	Удалить выделенные штрихи
@@ -2174,6 +2182,8 @@ preview	Title	Пример
 	Word document	Документ Word
 	All files	Все файлы
 	Recipient lists	Списки получателей
+	Source libraries	Библиотеки источников
+	CSL styles	Стили CSL
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Системное диалоговое окно выбора файлов недоступно, поэтому WordCraft показывает собственное. Чтобы пользоваться системным, установите портал выбора файлов (например, xdg-desktop-portal-gtk) или zenity.
 	Up one level	На уровень вверх
 	Home folder	Домашняя папка
@@ -2474,3 +2484,4 @@ preview	Title	Пример
 	Level 7	Уровень 7
 	Level 8	Уровень 8
 	Level 9	Уровень 9
+	Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.	Ссылки Mendeley сохранены; приложение Mendeley не может подключиться — Zotero работает в реальном времени.

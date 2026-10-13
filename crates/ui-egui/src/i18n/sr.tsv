@@ -90,6 +90,7 @@
 	Bottom Margin	Доња маргина
 	Centimeters	Центиметри
 	Check spelling as you type	Проверавај правопис током куцања
+	Citation Styles (CSL)	Стилови цитирања (CSL)
 	Click a border between two cells to merge them. Esc stops.	Кликните ивицу између две ћелије да их спојите. Esc завршава.
 	Based on: {style}	Заснован на: {style}
 	Built-in style	Уграђени стил
@@ -125,6 +126,8 @@
 	Ignore web and file addresses	Занемари веб-адресе и путање датотека
 	Ignore words in capitals	Занемари речи писане великим словима
 	Ignore words with numbers	Занемари речи са бројевима
+	Import Sources Library	Увези библиотеку извора
+	Import…	Увези…
 	Inches	Инчи
 	Formatting exceptions	Изузеци форматирања
 	Include level number from:	Укључи број нивоа:
@@ -313,6 +316,7 @@
 	Check Spelling as You Type	Провера правописа док пишете
 	Check\nAccessibility	Провера\nприступачности
 	Citation Style	Стил цитирања
+	Citation Style (CSL styles: docs/csl-styles.md)	Стил цитирања (CSL стилови: docs/csl-styles.md)
 	Citations & Bibliography	Цитати и библиографија
 	Clear	Обриши
 	Clear All Formatting	Обриши све форматирање
@@ -900,6 +904,8 @@
 	Style based on:	Стил заснован на:
 	Style Set	Скуп стилова
 	Style: {style}	Стил: {style}
+	Style {style} added	Стил {style} је додат
+	Style {style} added, with warnings: {warnings}	Стил {style} је додат, уз упозорења: {warnings}
 	Styles	Стилови
 	Styles Pane	Окно стилова
 	Subscript	Индекс доле
@@ -1743,6 +1749,8 @@
 	Word document	Word документ
 	All files	Све датотеке
 	Recipient lists	Листе прималаца
+	Source libraries	Библиотеке извора
+	CSL styles	CSL стилови
 	The system file dialog isn't available, so WordCraft shows its own. To get the system dialog, install a file chooser portal (such as xdg-desktop-portal-gtk) or zenity.	Системски дијалог за датотеке није доступан, па WordCraft приказује свој. Да бисте добили системски дијалог, инсталирајте портал за избор датотека (на пример xdg-desktop-portal-gtk) или zenity.
 	Up one level	Један ниво горе
 	Home folder	Лична фасцикла
@@ -1837,6 +1845,7 @@
 	Above the item	Изнад ставке
 	Accessed on	Приступљено
 	Add New Source…	Додај нови извор…
+	Add style from file…	Додај стил из фајла…
 	Add the chapter number	Додај број поглавља
 	Atmosphere	Атмосфера
 	Below the item	Испод ставке
@@ -1929,6 +1938,7 @@
 	a, b, c, …	a, b, c, …
 	i, ii, iii, …	i, ii, iii, …
 	{n} entries marked.	Означено ставки: {n}.
+	{added} added, {updated} updated	Додато: {added}, ажурирано: {updated}
 	Lasso Select	Избор ласом
 	Move Selected Ink	Премести изабрани рукопис
 	Delete Selected Ink	Обриши изабрани рукопис
@@ -2089,3 +2099,4 @@
 	Start-up	Покретање
 	Show the Start screen when WordCraft starts	Прикажи почетни екран при покретању програма WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Укључено: WordCraft се отвара на Фајл › Почетак, са празним документом, шаблонима и недавним документима. Искључено: отвара празан документ.
+	Mendeley citations are preserved; the Mendeley app can't connect — Zotero works live.	Mendeley цитати су очувани; Mendeley апликација не може да се повеже — Zotero ради уживо.
