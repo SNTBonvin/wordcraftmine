@@ -21,6 +21,10 @@ pub enum ProofLang {
     /// friends, when there is one), the Portuguese grammar rules and the Portuguese hyphenation
     /// patterns.
     Pt,
+    /// Norwegian Bokmål, using an installed Hunspell nb_NO dictionary.
+    Nb,
+    /// Norwegian Nynorsk, using an installed Hunspell nn_NO dictionary.
+    Nn,
     /// A language without proofing tools here (`fr-FR`, `ja-JP`, `x-none`…). Like Word without
     /// the language's proofing tools: no spelling or grammar marks, so its words are never
     /// flagged as English misspellings. Hyphenation keeps using the English patterns, as before
@@ -30,12 +34,16 @@ pub enum ProofLang {
 
 impl ProofLang {
     /// Every language with a spelling dictionary, in display order.
-    pub const PROOFED: [ProofLang; 3] = [ProofLang::En, ProofLang::Pl, ProofLang::Pt];
+    pub const PROOFED: [ProofLang; 5] = [ProofLang::En, ProofLang::Pl, ProofLang::Pt, ProofLang::Nb, ProofLang::Nn];
 
     /// The proofing language of a BCP 47 tag (`pl-PL`, `en_GB`, `PL`…). Only the primary subtag
     /// counts. No tag (or an empty one) is English, WordCraft's default editing language.
     pub fn from_tag(tag: Option<&str>) -> ProofLang {
         let Some(tag) = tag.map(str::trim).filter(|t| !t.is_empty()) else { return ProofLang::En };
+        let normalized = tag.split(['.', '@']).next().unwrap_or(tag).replace('_', "-").to_ascii_lowercase();
+        if normalized == "no-nn" {
+            return ProofLang::Nn;
+        }
         let primary = tag.split(['-', '_']).next().unwrap_or("");
         if primary.eq_ignore_ascii_case("en") || primary.eq_ignore_ascii_case("eng") {
             ProofLang::En
@@ -45,6 +53,14 @@ impl ProofLang {
             ProofLang::Bg
         } else if primary.eq_ignore_ascii_case("pt") || primary.eq_ignore_ascii_case("por") {
             ProofLang::Pt
+        } else if primary.eq_ignore_ascii_case("nn") || primary.eq_ignore_ascii_case("nno") {
+            ProofLang::Nn
+        } else if primary.eq_ignore_ascii_case("nb")
+            || primary.eq_ignore_ascii_case("nob")
+            || primary.eq_ignore_ascii_case("no")
+            || primary.eq_ignore_ascii_case("nor")
+        {
+            ProofLang::Nb
         } else {
             ProofLang::Other
         }
@@ -57,6 +73,8 @@ impl ProofLang {
             ProofLang::Pl => "pl",
             ProofLang::Bg => "bg",
             ProofLang::Pt => "pt",
+            ProofLang::Nb => "nb",
+            ProofLang::Nn => "nn",
             ProofLang::Other => "",
         }
     }

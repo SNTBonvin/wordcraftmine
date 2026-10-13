@@ -115,9 +115,9 @@ Every screenshot below is WordCraft itself, rendered offscreen by its own UI tes
 | **Pages** | Margins, orientation, size, columns, page/column/section breaks, headers and footers (first page, odd/even), page numbers, watermark, page borders, line numbers, vertical alignment, drop caps, automatic hyphenation |
 | **Objects** | Pictures (resize, crop, recolour, brightness/contrast, transparency, background removal, picture styles, rotate), shapes, text boxes, floating position with text wrapping (square, top and bottom, behind or in front of text) |
 | **References** | Table of contents, footnotes and endnotes, citations and bibliography (APA, MLA, Chicago, IEEE), captions, table of figures, cross-references, index, table of authorities |
-| **Review** | Spelling and grammar with suggestions (English and Polish, by each run's language), thesaurus, word count, comments in margin balloons or a pane, track changes, accept/reject, compare documents, restrict editing, accessibility checker, document inspector |
+| **Review** | Spelling with suggestions (English, Polish, Portuguese, Norwegian Bokmål and Nynorsk, by each run's language), grammar for English, Polish and Portuguese, thesaurus, word count, comments in margin balloons or a pane, track changes, accept/reject, compare documents, restrict editing, accessibility checker, document inspector |
 | **Mailings** | Mail merge from CSV, merge fields, address block, greeting line, rules, preview, finish to a document; envelopes and labels |
-| **View** | Print layout, web layout, draft, read mode, focus, zoom, one/multiple pages, page width, Navigation pane, rulers, gridlines, dark mode; interface in English, 简体中文, 繁體中文, 日本語, Português (Brasil), Español, Українська, Српски / Srpski, Eesti, Türkçe, Русский, Italiano, Deutsch, Polski, Čeština, Magyar, Français or Български (follows the system language by default) |
+| **View** | Print layout, web layout, draft, read mode, focus, zoom, one/multiple pages, page width, Navigation pane, rulers, gridlines, dark mode; interface in English, 简体中文, 繁體中文, 日本語, Português (Brasil), Español, Українська, Српски / Srpski, Eesti, Türkçe, Русский, Italiano, Deutsch, Polski, Čeština, Magyar, Français, Български, Norsk bokmål or Norsk nynorsk (follows the system language by default) |
 | **Files** | .docx read/write (opens in Word), Word 97-2003 .doc import, PDF export, .odt, .rtf, .html, .md, .tex, .txt import/export, page images |
 
 The honest picture, area by area, is in [ROADMAP.md](ROADMAP.md), the
@@ -353,7 +353,14 @@ with its author, source and license in [ATTRIBUTION.md](ATTRIBUTION.md).
 The English spelling dictionary and hyphenation come from Grady Ward's public-domain Moby
 Hyphenator II word list. Polish spelling reads the Hunspell `pl_PL` dictionary installed on the system (not bundled) and
 Polish hyphenation the TeX patterns by Hanna Kołodziejska, Bogusław Jackowski and Marek Ryćko (MIT
-option). The sample documents and templates are original text written for WordCraft.
+option). Norwegian Bokmål and Nynorsk spelling uses installed `nb_NO.aff`/`nb_NO.dic` and
+`nn_NO.aff`/`nn_NO.dic` Hunspell dictionaries. WordCraft searches system Hunspell/MySpell
+folders, `~/Library/Spelling`, LibreOffice's `dict-no` extension, and `WORDCRAFT_DICTIONARIES`.
+Without the dictionary for a language, spelling quietly stays off; no dictionaries are bundled.
+Norwegian grammar and language-specific hyphenation are not provided. The interface selects
+the editing language for new blank documents; existing documents and English templates retain
+their language. Paper, measurements and decimal separators follow the region setting.
+The sample documents and templates are original text written for WordCraft.
 
 The ArtCraft name, wordmark and logos in [`docs/brand/`](docs/brand/) are trademarks of the
 ArtCraft Team and are not covered by this license. They may be used only unmodified, and only as

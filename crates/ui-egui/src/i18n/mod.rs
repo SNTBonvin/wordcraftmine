@@ -52,7 +52,7 @@ pub struct LangInfo {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 19] = [
+pub static LANGUAGES: [LangInfo; 21] = [
     LangInfo { code: "en", name: "English", source: "", prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` resolve here (see `candidates`).
     LangInfo {
@@ -128,6 +128,22 @@ pub static LANGUAGES: [LangInfo; 19] = [
     // Bulgarian; `bg`, `bg-BG` and `bg_BG.UTF-8` resolve here.
     LangInfo {
         code: "bg", name: "Български", source: include_str!("bg.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new()
+    },
+    LangInfo {
+        code: "nb",
+        name: "Norsk bokmål",
+        source: include_str!("nb.tsv"),
+        prefer_hans: false,
+        editing_lang: Some("nb-NO"),
+        catalog: OnceLock::new(),
+    },
+    LangInfo {
+        code: "nn",
+        name: "Norsk nynorsk",
+        source: include_str!("nn.tsv"),
+        prefer_hans: false,
+        editing_lang: Some("nn-NO"),
+        catalog: OnceLock::new(),
     },
 ];
 
@@ -244,6 +260,13 @@ fn candidates(tag: &str) -> Vec<String> {
 /// The registered language for a locale tag such as `ja_JP.UTF-8` or `zh-Hant-TW`; `None` when
 /// there is no catalog for it. `C`/`POSIX` mean English.
 pub fn lang_from_tag(tag: &str) -> Option<Lang> {
+    let normalized = tag.split(['.', '@']).next().unwrap_or(tag).replace('_', "-").to_ascii_lowercase();
+    if normalized == "no-nn" {
+        return Lang::from_code("nn");
+    }
+    if normalized == "no" || normalized.starts_with("no-") {
+        return Lang::from_code("nb");
+    }
     let cands = candidates(tag);
     if matches!(cands.first().map(String::as_str), Some("c" | "posix")) {
         return Some(Lang::EN);
