@@ -2471,6 +2471,16 @@
 	Language:	Nyelv:
 	Paragraphs checked: {count}	Ellenőrzött bekezdések: {count}
 	LanguageTool checking needs the desktop app; the browser version can't send text to a checking server yet.	A LanguageTool-ellenőrzéshez az asztali alkalmazás szükséges; a böngészős változat még nem tud szöveget küldeni ellenőrző kiszolgálónak.
+# LanguageTool: errors and committed fields (#1283)
+	The LanguageTool server address isn't a web address: {address}	A LanguageTool-kiszolgáló címe nem webcím: {address}
+	A paragraph is too long to check ({bytes} bytes; at most {max}).	Egy bekezdés túl hosszú az ellenőrzéshez ({bytes} bájt; legfeljebb {max}).
+	Couldn't reach the LanguageTool server: {reason}	Nem érhető el a LanguageTool-kiszolgáló: {reason}
+	The LanguageTool server didn't answer in time.	A LanguageTool-kiszolgáló nem válaszolt időben.
+	The LanguageTool server is limiting requests; checking resumes in a minute.	A LanguageTool-kiszolgáló korlátozza a kéréseket; az ellenőrzés egy perc múlva folytatódik.
+	The LanguageTool server answered {status}: {message}	A LanguageTool-kiszolgáló válasza {status}: {message}
+	Unexpected answer from the LanguageTool server: {reason}	Váratlan válasz a LanguageTool-kiszolgálótól: {reason}
+	The username and API key are only sent over https:// or to this computer. Use an https:// server address.	A felhasználónév és az API-kulcs csak https:// kapcsolaton vagy erre a számítógépre megy. Adjon meg https:// kiszolgálócímet.
+	Changes to these fields apply when you press Enter or leave the field.	Ezeknek a mezőknek a módosításai az Enter lenyomásakor vagy a mező elhagyásakor lépnek életbe.
 	Region:	Régió:
 	Automatic ({region})	Automatikus ({region})
 	Picture	Kép

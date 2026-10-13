@@ -51,6 +51,9 @@ pub enum LtError {
     /// The answer wasn't LanguageTool's JSON.
     #[error("unexpected answer from the LanguageTool server: {0}")]
     Protocol(String),
+    /// A username and API key would go over plain `http://` to another computer.
+    #[error("the username and API key are only sent over https:// or to this computer; use an https:// server address")]
+    InsecureAccount,
     /// This build can't make the request.
     #[error("{0}")]
     Unsupported(&'static str),
@@ -61,11 +64,30 @@ impl LtError {
     pub fn is_auth(&self) -> bool {
         matches!(self, LtError::Http { status: 401 | 403, .. })
     }
+
+    /// Checking stops until the settings change: a rejected key, a bad or wrong address (404,
+    /// 405), credentials that would go out unencrypted, or a build that can't check.
+    pub fn stops_checking(&self) -> bool {
+        self.is_auth()
+            || matches!(self, LtError::BadServer(_) | LtError::InsecureAccount | LtError::Unsupported(_) | LtError::Http { status: 404 | 405, .. })
+    }
+
+    /// Something about this paragraph the server won't take (too long, an answer that isn't
+    /// LanguageTool's JSON or isn't UTF-8, any other 4xx): it isn't sent again, and checking moves
+    /// on (#1283). Sending it again every 30 seconds would never succeed.
+    pub fn skips_paragraph(&self) -> bool {
+        match self {
+            LtError::TooLong { .. } | LtError::Protocol(_) => true,
+            LtError::Http { status, .. } => (400..500).contains(status) && !self.stops_checking() && *status != 429,
+            _ => false,
+        }
+    }
 }
 
 /// Check one paragraph: build the request, send it with `transport`, read the answer. When the
 /// server rejects a specific language (HTTP 400), the text is checked once more with automatic
-/// language detection.
+/// language detection (a second call of `transport`: the worker's transport waits out its pacing
+/// gap before each call, so the retry counts against the rate limit like any request).
 pub fn check_with(
     settings: &Settings,
     transport: &mut dyn FnMut(&Request) -> Result<String, LtError>,

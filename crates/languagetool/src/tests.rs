@@ -285,3 +285,62 @@ fn hosted_free_use_is_paced_under_its_rate_limit() {
     assert!(Pacing::for_settings(&on()).gap >= Duration::from_secs(3), "≤ 20 requests a minute");
     assert!(Pacing::for_settings(&Settings { server: "http://localhost:8081".into(), ..on() }).gap < Duration::from_secs(1));
 }
+
+/// #1283: the retry with `auto` after a rejected language waits out the pacing gap like any
+/// request, so the hosted server's 20 requests a minute hold.
+#[test]
+fn the_retry_with_detection_waits_for_the_pacing_gap() {
+    let times = Arc::new(Mutex::new(Vec::<std::time::Instant>::new()));
+    let log = times.clone();
+    let transport: worker::Transport = Box::new(move |r: &Request| {
+        log.lock().unwrap().push(std::time::Instant::now());
+        let lang = form(&r.body).into_iter().find(|(k, _)| k == "language").map(|(_, v)| v).unwrap_or_default();
+        if lang == "auto" { Ok(answer(json!([]))) } else { Err(LtError::Http { status: 400, message: "unknown language".into() }) }
+    });
+    let gap = Duration::from_millis(150);
+    let pacing = Pacing { gap, backoff: gap, timeout: Duration::from_secs(1) };
+    let w = Worker::spawn(on(), pacing, transport, Box::new(|| {})).unwrap();
+    assert!(w.send(Job { text: "Hallo".into(), language: "xx-YY".into() }));
+    let d = w.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(d.result, Ok(Vec::new()));
+    let t = times.lock().unwrap();
+    assert_eq!(t.len(), 2);
+    assert!(t[1].duration_since(t[0]) >= gap, "{:?}", t[1].duration_since(t[0]));
+}
+
+/// #1283: a username and API key never go over plain http:// to another computer; to this
+/// computer, or over https://, they do.
+#[test]
+fn credentials_are_refused_over_plain_http_to_other_computers() {
+    let with = |server: &str| Settings { server: server.into(), username: "me@example.org".into(), api_key: "SECRET".into(), ..on() };
+    for bad in ["http://lt.example.org", "http://192.168.1.5:8081", "HTTP://lt.example.org/v2", "http://localhost.example.org", "http://127.0.0.1@evil.example"] {
+        assert_eq!(request::build(&with(bad), "text", "auto"), Err(LtError::InsecureAccount), "{bad}");
+        assert_eq!(with(bad).account_check(), Err(LtError::InsecureAccount), "{bad}");
+    }
+    for good in ["https://lt.example.org", "http://localhost:8081", "http://127.0.0.1:8081/", "http://[::1]:8081", "http://lt.localhost", "http://evil@localhost:8081"] {
+        let r = request::build(&with(good), "text", "auto").unwrap();
+        assert!(form(&r.body).contains(&("apiKey".into(), "SECRET".into())), "{good}");
+    }
+    // Without an account, http:// to anywhere is the user's choice.
+    let s = Settings { server: "http://lt.example.org".into(), ..on() };
+    assert!(request::build(&s, "text", "auto").is_ok());
+    assert!(LtError::InsecureAccount.stops_checking());
+}
+
+/// #1283: answers the server will never accept for this paragraph skip it instead of retrying
+/// every 30 seconds; credentials and addresses stop checking; the network pauses it.
+#[test]
+fn failures_are_classified_as_skip_stop_or_pause() {
+    let http = |status| LtError::Http { status, message: String::new() };
+    for e in [http(400), http(413), http(422), LtError::Protocol("x".into()), LtError::TooLong { bytes: 1, max: 0 }] {
+        assert!(e.skips_paragraph() && !e.stops_checking(), "{e:?}");
+    }
+    for e in [http(401), http(403), http(404), LtError::BadServer("x".into()), LtError::InsecureAccount] {
+        assert!(e.stops_checking() && !e.skips_paragraph(), "{e:?}");
+    }
+    for e in [http(429), http(500), http(503), LtError::RateLimited, LtError::Timeout, LtError::Network("x".into())] {
+        assert!(!e.stops_checking() && !e.skips_paragraph(), "{e:?}");
+    }
+    assert!(matches!(http::utf8_body(vec![b'{', 0xff, b'}']), Err(LtError::Protocol(_))));
+    assert_eq!(http::utf8_body(b"{}".to_vec()), Ok("{}".into()));
+}

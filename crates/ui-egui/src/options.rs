@@ -272,11 +272,12 @@ fn proofing(app: &mut WordApp, ui: &mut Ui) {
 }
 
 /// Options › Proofing › LanguageTool (#575). Off by default: when on, paragraph
-/// text goes to the chosen server. The fields edit the settings directly (a half-typed address
-/// only takes effect once it's a web address); the switch and language go through
-/// `ui.languageTool`.
-fn language_tool(app: &mut WordApp, ui: &mut Ui) {
-    use wordcraft_languagetool::{DEFAULT_SERVER, http};
+/// text goes to the chosen server. Everything goes through `ui.languageTool`: the switch and the
+/// language at once, the Server, Username and API key fields when committed (Enter or leaving
+/// the field), so nothing is sent to a half-typed address (#1283).
+pub(crate) fn language_tool(app: &mut WordApp, ui: &mut Ui) {
+    use crate::languagetool::{Field, text_field};
+    use wordcraft_languagetool::http;
     let mut on = app.ui.language_tool.enabled;
     let r = ui.add_enabled(http::available(), egui::Checkbox::new(&mut on, tl!("Check spelling and grammar with LanguageTool")));
     if !http::available() {
@@ -293,20 +294,24 @@ fn language_tool(app: &mut WordApp, ui: &mut Ui) {
         .small()
         .weak(),
     );
-    let s = &mut app.ui.language_tool;
     ui.horizontal(|ui| {
         ui.label(tl!("Server:"));
-        ui.add(egui::TextEdit::singleline(&mut s.server).hint_text(DEFAULT_SERVER).desired_width(300.0));
+        text_field(app, ui, Field::Server, 300.0);
     });
     ui.label(egui::RichText::new(tl!("Use your own LanguageTool server by entering its address, such as http://localhost:8081.")).small().weak());
     ui.horizontal(|ui| {
         ui.label(tl!("Username:"));
-        ui.add(egui::TextEdit::singleline(&mut s.username).desired_width(220.0));
+        text_field(app, ui, Field::Username, 220.0);
     });
     ui.horizontal(|ui| {
         ui.label(tl!("API key:"));
-        ui.add(egui::TextEdit::singleline(&mut s.api_key).password(true).desired_width(220.0));
+        text_field(app, ui, Field::ApiKey, 220.0);
     });
+    ui.label(egui::RichText::new(tl!("Changes to these fields apply when you press Enter or leave the field.")).small().weak());
+    if let Some(e) = &app.language_tool.drafts.error {
+        ui.label(egui::RichText::new(e.as_str()).small().color(ui.visuals().error_fg_color));
+    }
+    let s = &app.ui.language_tool;
     let current = s.language.clone();
     let label = |code: &str| match code {
         "auto" | "" => tl!("Detect automatically").to_string(),

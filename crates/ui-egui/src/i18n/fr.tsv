@@ -2081,6 +2081,16 @@
 	Language:	Langue :
 	Paragraphs checked: {count}	Paragraphes vérifiés : {count}
 	LanguageTool checking needs the desktop app; the browser version can't send text to a checking server yet.	La vérification LanguageTool nécessite l'application de bureau ; la version navigateur ne peut pas encore envoyer de texte à un serveur de vérification.
+# LanguageTool: errors and committed fields (#1283)
+	The LanguageTool server address isn't a web address: {address}	L'adresse du serveur LanguageTool n'est pas une adresse web : {address}
+	A paragraph is too long to check ({bytes} bytes; at most {max}).	Un paragraphe est trop long pour être vérifié ({bytes} octets ; {max} au maximum).
+	Couldn't reach the LanguageTool server: {reason}	Impossible de joindre le serveur LanguageTool : {reason}
+	The LanguageTool server didn't answer in time.	Le serveur LanguageTool n'a pas répondu à temps.
+	The LanguageTool server is limiting requests; checking resumes in a minute.	Le serveur LanguageTool limite les requêtes ; la vérification reprend dans une minute.
+	The LanguageTool server answered {status}: {message}	Le serveur LanguageTool a répondu {status} : {message}
+	Unexpected answer from the LanguageTool server: {reason}	Réponse inattendue du serveur LanguageTool : {reason}
+	The username and API key are only sent over https:// or to this computer. Use an https:// server address.	Le nom d'utilisateur et la clé API ne sont envoyés que via https:// ou à cet ordinateur. Utilisez une adresse de serveur https://.
+	Changes to these fields apply when you press Enter or leave the field.	Les modifications de ces champs s'appliquent quand vous appuyez sur Entrée ou quittez le champ.
 	Region:	Région :
 	Automatic ({region})	Automatique ({region})
 	Picture	Image

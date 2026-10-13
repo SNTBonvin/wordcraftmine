@@ -31,10 +31,10 @@ pub fn post(req: &Request, timeout: Duration) -> Result<String, LtError> {
         .send_string(&req.body);
     match sent {
         Ok(resp) => {
-            let mut body = String::new();
+            let mut bytes = Vec::new();
             let limit = u64::try_from(crate::response::MAX_RESPONSE_BYTES).unwrap_or(u64::MAX).saturating_add(1);
-            resp.into_reader().take(limit).read_to_string(&mut body).map_err(|e| io_error(&e))?;
-            Ok(body)
+            resp.into_reader().take(limit).read_to_end(&mut bytes).map_err(|e| io_error(&e))?;
+            utf8_body(bytes)
         }
         Err(ureq::Error::Status(429, _)) => Err(LtError::RateLimited),
         Err(ureq::Error::Status(status, resp)) => {
@@ -49,6 +49,12 @@ pub fn post(req: &Request, timeout: Duration) -> Result<String, LtError> {
             if s.contains("timed out") || s.contains("Timeout") { Err(LtError::Timeout) } else { Err(LtError::Network(s)) }
         }
     }
+}
+
+/// An answer's body as text. One that isn't UTF-8 isn't LanguageTool's JSON: a protocol error, so
+/// the paragraph is skipped rather than sent again every 30 seconds (#1283).
+pub fn utf8_body(bytes: Vec<u8>) -> Result<String, LtError> {
+    String::from_utf8(bytes).map_err(|e| LtError::Protocol(format!("the answer isn't UTF-8 text ({e})")))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

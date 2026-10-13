@@ -23,6 +23,8 @@ impl std::fmt::Debug for Request {
 }
 
 /// The request checking `text` in `language` (`auto` or a code; anything else is sent as `auto`).
+/// A username and API key are refused over plain `http://` to another computer
+/// ([`Settings::account_check`]).
 pub fn build(settings: &Settings, text: &str, language: &str) -> Result<Request, LtError> {
     if text.len() > MAX_TEXT_BYTES {
         return Err(LtError::TooLong { bytes: text.len(), max: MAX_TEXT_BYTES });
@@ -33,6 +35,7 @@ pub fn build(settings: &Settings, text: &str, language: &str) -> Result<Request,
     form.append_pair("text", text);
     form.append_pair("language", language);
     if settings.has_account() {
+        settings.account_check()?;
         form.append_pair("username", settings.username.trim());
         form.append_pair("apiKey", settings.api_key.trim());
     }

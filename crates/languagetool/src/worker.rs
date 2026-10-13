@@ -104,15 +104,21 @@ impl Worker {
 fn run(settings: &Settings, pacing: Pacing, mut transport: Transport, jobs: &Receiver<Job>, done: &Sender<Done>, wake: &dyn Fn()) {
     let mut next_at: Option<Instant> = None;
     while let Ok(job) = jobs.recv() {
-        if let Some(at) = next_at {
-            let now = Instant::now();
-            if at > now {
-                std::thread::sleep(at - now);
+        // Every request waits out the gap, the retry with `auto` after a rejected language too
+        // (#1283), so the hosted server's rate limit holds.
+        let mut paced = |req: &Request| {
+            if let Some(at) = next_at {
+                let now = Instant::now();
+                if at > now {
+                    std::thread::sleep(at - now);
+                }
             }
-        }
-        let result = crate::check_with(settings, &mut |req| transport(req), &job.text, &job.language);
-        let pause = if result == Err(LtError::RateLimited) { pacing.backoff } else { pacing.gap };
-        next_at = Instant::now().checked_add(pause);
+            let result = transport(req);
+            let pause = if result == Err(LtError::RateLimited) { pacing.backoff } else { pacing.gap };
+            next_at = Instant::now().checked_add(pause);
+            result
+        };
+        let result = crate::check_with(settings, &mut paced, &job.text, &job.language);
         if let Err(e) = &result {
             // Never the text, the key or the request body: only what went wrong.
             log::warn!("LanguageTool check failed: {e}");

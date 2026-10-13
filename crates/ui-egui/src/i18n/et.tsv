@@ -1592,6 +1592,16 @@
 	Language:	Keel:
 	Paragraphs checked: {count}	Kontrollitud lõike: {count}
 	LanguageTool checking needs the desktop app; the browser version can't send text to a checking server yet.	LanguageTooli kontroll vajab töölauarakendust; brauseriversioon ei saa veel teksti kontrollserverisse saata.
+# LanguageTool: errors and committed fields (#1283)
+	The LanguageTool server address isn't a web address: {address}	LanguageTooli serveri aadress ei ole veebiaadress: {address}
+	A paragraph is too long to check ({bytes} bytes; at most {max}).	Lõik on kontrollimiseks liiga pikk ({bytes} baiti; kõige rohkem {max}).
+	Couldn't reach the LanguageTool server: {reason}	LanguageTooli serveriga ei saa ühendust: {reason}
+	The LanguageTool server didn't answer in time.	LanguageTooli server ei vastanud õigeks ajaks.
+	The LanguageTool server is limiting requests; checking resumes in a minute.	LanguageTooli server piirab päringuid; kontrollimine jätkub minuti pärast.
+	The LanguageTool server answered {status}: {message}	LanguageTooli server vastas {status}: {message}
+	Unexpected answer from the LanguageTool server: {reason}	Ootamatu vastus LanguageTooli serverilt: {reason}
+	The username and API key are only sent over https:// or to this computer. Use an https:// server address.	Kasutajanimi ja API-võti saadetakse ainult https:// kaudu või sellesse arvutisse. Kasutage https://-serveriaadressi.
+	Changes to these fields apply when you press Enter or leave the field.	Nende väljade muudatused rakenduvad, kui vajutate sisestusklahvi või lahkute väljalt.
 	Right-to-Left Table	Paremalt vasakule tabel
 	Right-to-Left Section	Paremalt vasakule jaotis
 	Table direction:	Tabeli suund:

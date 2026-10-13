@@ -129,10 +129,37 @@ impl Settings {
         code.filter(|c| is_language_code(c)).map(str::to_string).unwrap_or_else(|| crate::request::AUTO.to_string())
     }
 
+    /// Whether the username and API key may go to the server: over `https://`, or over `http://`
+    /// only to this computer (`localhost`, `127.0.0.0/8`, `::1`), where nobody on the network can
+    /// read them. Settings without an account always pass.
+    pub fn account_check(&self) -> Result<(), LtError> {
+        if !self.has_account() {
+            return Ok(());
+        }
+        let url = self.endpoint()?;
+        let lower = url.to_ascii_lowercase();
+        match lower.strip_prefix("http://") {
+            Some(rest) if !is_loopback_host(rest) => Err(LtError::InsecureAccount),
+            _ => Ok(()),
+        }
+    }
+
     /// Whether a username and API key are both set (a premium account).
     pub fn has_account(&self) -> bool {
         !self.username.trim().is_empty() && !self.api_key.trim().is_empty()
     }
+}
+
+/// Whether the authority at the start of `rest` (what follows `scheme://`) names this computer.
+fn is_loopback_host(rest: &str) -> bool {
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let host = match host_port.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => host_port.split(':').next().unwrap_or(""),
+    };
+    let host = host.trim_end_matches('.');
+    host == "localhost" || host.ends_with(".localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// A short, safe excerpt of user input for an error message.

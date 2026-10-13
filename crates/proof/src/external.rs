@@ -1,8 +1,9 @@
 //! Results from an external checker (LanguageTool, #575).
 //!
 //! An external checker runs somewhere else (a server) and answers later, so its results are kept
-//! here, keyed by the exact paragraph text they were computed for, with the language they were
-//! checked in. A paragraph whose text has a
+//! here, keyed by the exact paragraph text they were computed for and the language they were
+//! checked in: the same text in two languages keeps both results (#1283), so neither paragraph
+//! asks again in a loop. A paragraph whose text has a
 //! stored result shows those issues instead of the built-in checks ([`crate::check`]); any edit
 //! changes the text, so a stale result can never land on the wrong words — the paragraph falls
 //! back to the built-in checks until the checker answers for the new text.
@@ -20,14 +21,30 @@ use crate::Issue;
 /// asked for again as paragraphs are seen).
 pub const MAX_ENTRIES: usize = 20_000;
 
+/// At most this many languages are kept per text (the oldest goes first).
+pub const MAX_LANGUAGES: usize = 8;
+
 /// At most this many issues are kept per paragraph.
 pub const MAX_ISSUES: usize = 1_000;
 
+/// One result: the language it was checked in, its stamp and its issues.
+struct Entry {
+    language: String,
+    stamp: u64,
+    issues: Vec<Issue>,
+}
+
 #[derive(Default)]
 struct Store {
-    /// Text → (stamp, language, issues).
-    map: HashMap<String, (u64, String, Vec<Issue>)>,
+    /// Text → its results, one per language, the newest last.
+    map: HashMap<String, Vec<Entry>>,
     next: u64,
+}
+
+impl Store {
+    fn latest(&self, text: &str) -> Option<&Entry> {
+        self.map.get(text).and_then(|v| v.last())
+    }
 }
 
 fn store() -> &'static RwLock<Store> {
@@ -53,23 +70,30 @@ pub fn put(text: &str, language: &str, issues: Vec<Issue>) {
     }
     s.next = s.next.saturating_add(1);
     let stamp = s.next;
-    s.map.insert(text.to_string(), (stamp, language.to_string(), issues));
+    let entries = s.map.entry(text.to_string()).or_default();
+    entries.retain(|e| e.language != language);
+    if entries.len() >= MAX_LANGUAGES {
+        entries.remove(0);
+    }
+    entries.push(Entry { language: language.to_string(), stamp, issues });
     LEN.store(s.map.len(), Ordering::Relaxed);
 }
 
-/// The stored issues for exactly `text`, if any.
+/// The stored issues for exactly `text`, if any: the newest result when it was checked in more
+/// than one language (layout doesn't know the checker's language choice; the same text in two
+/// languages is rare, and each paragraph is still checked in its own).
 pub fn get(text: &str) -> Option<Vec<Issue>> {
     if LEN.load(Ordering::Relaxed) == 0 {
         return None;
     }
-    store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).map(|(_, _, v)| v.clone())
+    store().read().unwrap_or_else(|e| e.into_inner()).latest(text).map(|e| e.issues.clone())
 }
 
 /// Whether a result is stored for exactly `text` checked in `language`. A result in another
-/// language (the paragraph's language changed) doesn't count: it is checked again, and the new
-/// result replaces it.
+/// language (the paragraph's language changed, or another paragraph with the same text is in
+/// another language) doesn't count: it is checked again, and both results are kept.
 pub fn has(text: &str, language: &str) -> bool {
-    LEN.load(Ordering::Relaxed) > 0 && store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).is_some_and(|(_, l, _)| l == language)
+    LEN.load(Ordering::Relaxed) > 0 && store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).is_some_and(|v| v.iter().any(|e| e.language == language))
 }
 
 /// Which stored result applies to `text` (0: none). Changes whenever a new result is stored for
@@ -78,7 +102,7 @@ pub fn stamp(text: &str) -> u64 {
     if LEN.load(Ordering::Relaxed) == 0 {
         return 0;
     }
-    store().read().unwrap_or_else(|e| e.into_inner()).map.get(text).map(|(s, _, _)| *s).unwrap_or(0)
+    store().read().unwrap_or_else(|e| e.into_inner()).latest(text).map(|e| e.stamp).unwrap_or(0)
 }
 
 /// Whether anything is stored (cheap; lets callers skip work when no external checker runs).

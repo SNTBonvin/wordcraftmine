@@ -1075,7 +1075,9 @@ mod tests {
     }
 
     /// #575 review: a result counts only for the language it was checked in. When the paragraph's
-    /// language changes, the text is checked again and the new result replaces the old one.
+    /// language changes, the text is checked again and the new result is shown. #1283: the old
+    /// one is kept, so two paragraphs with the same text in two languages don't evict each
+    /// other's result and ask again forever.
     #[test]
     fn external_results_belong_to_their_language() {
         let text = "Les enfant 575 jouent.";
@@ -1085,9 +1087,18 @@ mod tests {
         assert!(!external::has(text, "fr-FR"), "a French paragraph needs a French result");
         let s1 = external::stamp(text);
         external::put(text, "fr-FR", vec![issue(0, 10)]);
-        assert!(external::has(text, "fr-FR") && !external::has(text, "en-US"));
+        assert!(external::has(text, "fr-FR") && external::has(text, "en-US"), "both languages are kept");
         assert!(external::stamp(text) > s1, "the new result redraws the paragraph");
         assert_eq!(check(text).iter().map(|i| (i.start, i.end)).collect::<Vec<_>>(), [(0, 10)]);
+        // Storing English again doesn't forget French; the newest result is shown.
+        external::put(text, "en-US", vec![issue(4, 10)]);
+        assert!(external::has(text, "fr-FR") && external::has(text, "en-US"));
+        assert_eq!(check(text).iter().map(|i| (i.start, i.end)).collect::<Vec<_>>(), [(4, 10)]);
+        // A bounded number of languages per text.
+        for k in 0..external::MAX_LANGUAGES + 2 {
+            external::put(text, &format!("x{k}"), Vec::new());
+        }
+        assert!(!external::has(text, "fr-FR") && external::has(text, &format!("x{}", external::MAX_LANGUAGES + 1)));
     }
 
     /// #575: a range that cuts a character in two is dropped, never sliced.
