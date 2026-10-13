@@ -16,7 +16,6 @@ mod clipboard;
 mod control_server;
 mod default_apps;
 mod file_dialogs;
-#[cfg(any(target_os = "windows", test))]
 mod graphics;
 mod logging;
 mod print;
@@ -77,7 +76,7 @@ impl eframe::App for App {
         self.0.ui(ui);
         self.3.show(frame);
     }
-    fn on_exit(&mut self) {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         print::finish_pending_jobs();
         save_prefs(&self.0);
         if let Some(key_file) = &self.2 {
@@ -128,6 +127,31 @@ fn prefs_path() -> Option<std::path::PathBuf> {
 /// Where the log files live: `logs` in the preferences folder (see `logging`).
 fn log_dir() -> Option<std::path::PathBuf> {
     Some(prefs_path()?.parent()?.join("logs"))
+}
+
+/// Record an eframe error and all of its causes. Desktop launches normally have no terminal, so
+/// the log is the only complete diagnostic a reporter can attach.
+fn log_startup_error(renderer: graphics::Renderer, error: &dyn std::error::Error) {
+    log::error!("graphics: {} startup failed: {error:?}", renderer.name());
+    let mut cause = error.source();
+    while let Some(error) = cause {
+        log::error!("graphics: caused by: {error}");
+        cause = error.source();
+    }
+}
+
+/// Show the failure details' location when neither renderer can create a window.
+fn show_startup_error(log_path: Option<&std::path::Path>) {
+    let log_path = log_path.map_or_else(|| "standard error".to_owned(), |path| path.display().to_string());
+    let description = format!(
+        "WordCraft could not start with either graphics renderer.\n\nThe full error is in:\n{log_path}\n\nPlease report it at https://github.com/storytold/wordcraft/issues"
+    );
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("WordCraft could not start")
+        .set_description(description)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
 }
 
 /// `custom-dictionary.txt` in the settings folder: the words Add to Dictionary kept (#40).
@@ -265,96 +289,125 @@ fn main() -> eframe::Result {
             None => logger.no_file(),
         }
     }
-    let mut options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("WordCraft")
-            .with_app_id("ai.storyteller.wordcraft")
-            .with_inner_size([1440.0, 920.0])
-            .with_min_inner_size([760.0, 480.0])
-            .with_drag_and_drop(true)
-            .with_fullsize_content_view(true)
-            .with_titlebar_shown(false)
-            .with_title_shown(false),
-        ..Default::default()
-    };
-    if let Some(icon) = app_icon() {
-        options.viewport = options.viewport.with_icon(icon);
-    }
-    // Before eframe creates the wgpu instance: default Windows to DirectX 12 only, or OpenGL when
-    // DirectX 12 has no GPU driver or this is a 32-bit build, and compile DirectX 12 shaders with
-    // FXC, which needs no DLL of ours (#603; see graphics.rs).
-    #[cfg(target_os = "windows")]
-    graphics::configure(&mut options, eframe::wgpu::Backends::from_env());
     load_user_fonts();
     let restored = saved_window();
-    if let Some(window) = restored {
-        options.viewport = window.apply(options.viewport);
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    // winit has no file drag-and-drop on Wayland (only on X11), so dropping files from the file
-    // manager showed a "no" cursor. Run through XWayland when it's there; WORDCRAFT_WAYLAND=1
-    // keeps the native Wayland backend.
-    if std::env::var_os("DISPLAY").is_some() && std::env::var_os("WORDCRAFT_WAYLAND").is_none() {
-        options.event_loop_builder = Some(Box::new(|b| {
-            use winit::platform::x11::EventLoopBuilderExtX11;
-            b.with_x11();
-        }));
-    }
     // Registered before the event loop starts, so it catches the Finder event that launched us as
     // well as later ones. Lives until the event loop returns; the app creator only borrows it.
     #[cfg(target_os = "macos")]
     let apple_events = apple_events::AppleEvents::install();
     #[cfg(target_os = "macos")]
     let apple_events = &apple_events;
-    eframe::run_native(
-        "WordCraft",
-        options,
-        Box::new(move |cc| {
-            // The system region picks the new document's paper, the units and the decimal
-            // separator (#838).
-            let region = region::system();
-            let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_engine::blank_document(&region) };
-            let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
-            let mut session = Session::new(doc);
-            session.system_region = region;
-            let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
-            load_prefs(&mut app);
-            load_user_dictionary(&mut app);
-            // A region chosen in File › Options replaces the system's for the first blank
-            // document too (#838).
-            if !sample && app.session.prefs.region.is_some() {
-                let doc = app.session.blank_document();
-                app.session.set_document(doc);
-            }
-            app.watch_desktop_theme(&cc.egui_ctx);
-            app.ui.window = restored;
-            app.integrated_titlebar = cfg!(target_os = "macos");
-            let mut key_file = None;
-            if let Some(port) = control_port
-                && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
-            {
-                app = app.with_control(rx);
-                key_file = file;
-            }
-            // Nothing to open (no files, no sample, no control channel driving the editor): start
-            // on File › Home, as Word does (#766), unless the Start screen option is off. Files
-            // macOS hands over later open on top of it and close it (`apple_events`).
-            if files.is_empty() && !sample && control_port.is_none() {
-                app.start_screen();
-            }
-            for f in files {
-                if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
-                    log::warn!("{f}: {e}");
+    let make_options = |renderer: graphics::Renderer| {
+        let mut options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_title("WordCraft")
+                .with_app_id("ai.storyteller.wordcraft")
+                .with_inner_size([1440.0, 920.0])
+                .with_min_inner_size([760.0, 480.0])
+                .with_drag_and_drop(true)
+                .with_fullsize_content_view(true)
+                .with_titlebar_shown(false)
+                .with_title_shown(false),
+            renderer: renderer.eframe(),
+            ..Default::default()
+        };
+        if let Some(icon) = app_icon() {
+            options.viewport = options.viewport.with_icon(icon);
+        }
+        if let Some(window) = restored {
+            options.viewport = window.apply(options.viewport);
+        }
+        // Before eframe creates the wgpu instance: default Windows to DirectX 12 only, or OpenGL
+        // when DirectX 12 has no GPU driver or this is a 32-bit build, and compile DirectX 12
+        // shaders with FXC, which needs no DLL of ours (#603; see graphics.rs).
+        #[cfg(target_os = "windows")]
+        if renderer == graphics::Renderer::Wgpu {
+            graphics::configure(&mut options, eframe::wgpu::Backends::from_env());
+        }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        // winit has no file drag-and-drop on Wayland (only on X11), so dropping files from the file
+        // manager showed a "no" cursor. Run through XWayland when it's there; WORDCRAFT_WAYLAND=1
+        // keeps the native Wayland backend.
+        if std::env::var_os("DISPLAY").is_some() && std::env::var_os("WORDCRAFT_WAYLAND").is_none() {
+            options.event_loop_builder = Some(Box::new(|b| {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                b.with_x11();
+            }));
+        }
+        options
+    };
+    let run = |renderer: graphics::Renderer| {
+        log::info!("graphics: starting {} renderer", renderer.name());
+        eframe::run_native(
+            "WordCraft",
+            make_options(renderer),
+            Box::new(|cc| {
+                // The system region picks the new document's paper, the units and the decimal
+                // separator (#838).
+                let region = region::system();
+                let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_engine::blank_document(&region) };
+                let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
+                let mut session = Session::new(doc);
+                session.system_region = region;
+                let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
+                load_prefs(&mut app);
+                load_user_dictionary(&mut app);
+                // A region chosen in File › Options replaces the system's for the first blank
+                // document too (#838).
+                if !sample && app.session.prefs.region.is_some() {
+                    let doc = app.session.blank_document();
+                    app.session.set_document(doc);
                 }
-            }
-            Ok(Box::new(App(
-                app,
-                restored,
-                key_file,
-                dialogs,
-                #[cfg(target_os = "macos")]
-                apple_events.connect(&cc.egui_ctx),
-            )))
-        }),
-    )
+                app.watch_desktop_theme(&cc.egui_ctx);
+                app.ui.window = restored;
+                app.integrated_titlebar = cfg!(target_os = "macos");
+                let mut key_file = None;
+                if let Some(port) = control_port
+                    && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
+                {
+                    app = app.with_control(rx);
+                    key_file = file;
+                }
+                // Nothing to open (no files, no sample, no control channel driving the editor): start
+                // on File › Home, as Word does (#766), unless the Start screen option is off. Files
+                // macOS hands over later open on top of it and close it (`apple_events`).
+                if files.is_empty() && !sample && control_port.is_none() {
+                    app.start_screen();
+                }
+                for f in &files {
+                    if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
+                        log::warn!("{f}: {e}");
+                    }
+                }
+                Ok(Box::new(App(
+                    app,
+                    restored,
+                    key_file,
+                    dialogs,
+                    #[cfg(target_os = "macos")]
+                    apple_events.connect(&cc.egui_ctx),
+                )))
+            }),
+        )
+    };
+    let settings_dir = prefs_enabled().then(wordcraft_control_key::settings_dir).flatten();
+    let renderer_value = std::env::var("WORDCRAFT_RENDERER").ok();
+    let renderer_override = graphics::parse_renderer(renderer_value.as_deref());
+    if renderer_value.is_some() && renderer_override.is_none() {
+        log::warn!("graphics: WORDCRAFT_RENDERER must be wgpu or glow; ignoring {renderer_value:?}");
+    }
+    let initial = graphics::choose_renderer(renderer_override, graphics::has_wgpu_failure(settings_dir.as_deref()));
+    let final_renderer = graphics::fallback_renderer(initial).unwrap_or(initial);
+    match graphics::run_with_fallback(initial, run, |failed, error, fallback| {
+        log_startup_error(failed, error);
+        graphics::remember_wgpu_failure(settings_dir.as_deref());
+        log::warn!("graphics: retrying startup with {} after {} failure", fallback.name(), failed.name());
+    }) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            log_startup_error(final_renderer, &error);
+            show_startup_error(log_dir().filter(|_| prefs_enabled()).as_deref());
+            Err(error)
+        }
+    }
 }

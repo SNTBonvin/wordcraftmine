@@ -1,13 +1,118 @@
-//! Windows graphics instance configuration (backends and the DirectX 12 shader compiler), applied
-//! before wgpu can initialize any driver.
+//! Graphics startup selection and Windows wgpu instance configuration.
+//!
+//! wgpu is the normal renderer.  When its device cannot be created, eframe's OpenGL renderer is
+//! an independent escape hatch: it does not create a wgpu instance at all.  Keep selection here,
+//! rather than in `main`, so the policy is deterministic and testable without a window or GPU.
 
+#[cfg(any(target_os = "windows", test))]
 use eframe::{
     NativeOptions,
     egui_wgpu::WgpuSetup,
     wgpu::{Backends, DeviceType, Dx12Compiler},
 };
+use std::path::{Path, PathBuf};
+
+/// The desktop renderer WordCraft can ask eframe to start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Renderer {
+    Wgpu,
+    Glow,
+}
+
+impl Renderer {
+    /// The spelling accepted by `WORDCRAFT_RENDERER`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Wgpu => "wgpu",
+            Self::Glow => "glow",
+        }
+    }
+
+    /// Convert to eframe's renderer enum after its `glow` feature is enabled for this app.
+    pub const fn eframe(self) -> eframe::Renderer {
+        match self {
+            Self::Wgpu => eframe::Renderer::Wgpu,
+            Self::Glow => eframe::Renderer::Glow,
+        }
+    }
+}
+
+/// The marker saved in the settings folder after wgpu fails before the app can start.
+pub const WGPU_FAILURE_MARKER: &str = "wgpu-startup-failed";
+
+/// Parse the explicit renderer preference. Empty or unrecognised values are ignored safely.
+pub fn parse_renderer(value: Option<&str>) -> Option<Renderer> {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) if value.eq_ignore_ascii_case("wgpu") => Some(Renderer::Wgpu),
+        Some(value) if value.eq_ignore_ascii_case("glow") => Some(Renderer::Glow),
+        _ => None,
+    }
+}
+
+/// Select the first renderer for this launch.
+///
+/// An environment override wins over the saved failure marker. Otherwise the marker moves the
+/// next launch straight to OpenGL, avoiding another no-window exit on the same machine.
+pub const fn choose_renderer(override_renderer: Option<Renderer>, wgpu_failed_before: bool) -> Renderer {
+    match override_renderer {
+        Some(renderer) => renderer,
+        None if wgpu_failed_before => Renderer::Glow,
+        None => Renderer::Wgpu,
+    }
+}
+
+/// The only retry allowed for a startup attempt. A failed wgpu setup gets one fresh OpenGL event
+/// loop; Glow errors are reported to the user rather than retried.
+pub const fn fallback_renderer(renderer: Renderer) -> Option<Renderer> {
+    match renderer {
+        Renderer::Wgpu => Some(Renderer::Glow),
+        Renderer::Glow => None,
+    }
+}
+
+/// Run a renderer start attempt and, only after a wgpu failure, one OpenGL attempt.
+///
+/// This is generic so its regression test can simulate a lost wgpu device without loading a GPU
+/// driver. The caller records the initial failure before it invokes the retry.
+pub fn run_with_fallback<E, F, H>(initial: Renderer, mut run: F, mut before_fallback: H) -> Result<(), E>
+where
+    F: FnMut(Renderer) -> Result<(), E>,
+    H: FnMut(Renderer, &E, Renderer),
+{
+    match run(initial) {
+        Ok(()) => Ok(()),
+        Err(error) if fallback_renderer(initial).is_some() => {
+            let fallback = Renderer::Glow;
+            before_fallback(initial, &error, fallback);
+            run(fallback)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Location of the persisted wgpu startup-failure marker.
+pub fn failure_marker_path(settings_dir: Option<&Path>) -> Option<PathBuf> {
+    settings_dir.map(|dir| dir.join(WGPU_FAILURE_MARKER))
+}
+
+/// Whether the preceding wgpu launch failed before a usable window appeared.
+pub fn has_wgpu_failure(settings_dir: Option<&Path>) -> bool {
+    failure_marker_path(settings_dir).is_some_and(|path| path.is_file())
+}
+
+/// Persist a wgpu start failure. Failure to write the marker is non-fatal and logged.
+pub fn remember_wgpu_failure(settings_dir: Option<&Path>) {
+    let Some(path) = failure_marker_path(settings_dir) else { return };
+    let Some(parent) = path.parent() else { return };
+    if let Err(error) =
+        std::fs::create_dir_all(parent).and_then(|()| std::fs::write(&path, b"wgpu startup failed; WordCraft will try glow next launch\n"))
+    {
+        log::warn!("graphics: could not save wgpu fallback marker {}: {error}", path.display());
+    }
+}
 
 /// What the start-up probe learned about one DirectX 12 adapter.
+#[cfg(any(target_os = "windows", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dx12Adapter {
     /// `Cpu` is WARP (Microsoft's software rasteriser): it works, but every frame is drawn on the
@@ -35,6 +140,7 @@ pub struct Dx12Adapter {
 /// and the process exits before the first frame. Compute pipelines use the older API and succeed,
 /// which is why startup gets as far as the egui pipeline and then quits. OpenGL does not use that
 /// stream.
+#[cfg(any(target_os = "windows", test))]
 pub fn choose_backends(backend_override: Option<Backends>, dx12_adapters: &[Dx12Adapter], dx12_graphics: bool) -> Backends {
     if let Some(backends) = backend_override {
         return backends;
@@ -55,6 +161,7 @@ pub fn choose_backends(backend_override: Option<Backends>, dx12_adapters: &[Dx12
 }
 
 /// Restricts the wgpu instance eframe creates to `backends`.
+#[cfg(any(target_os = "windows", test))]
 pub fn configure_backends(options: &mut NativeOptions, backends: Backends) {
     if let WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup {
         // eframe's default includes GL. Creating that backend can crash inside AMD's
@@ -74,6 +181,7 @@ pub fn configure_backends(options: &mut NativeOptions, backends: Backends) {
 /// `dxil.dll` beside it, DXC warns that the DXIL is unsigned; wgpu takes the warning for a compile
 /// error, its own indirect-validation pipeline fails, the device is lost and eframe exits before
 /// the first frame. FXC is always there and compiles everything egui's shaders need.
+#[cfg(any(target_os = "windows", test))]
 pub fn dx12_compiler(env: Option<&str>) -> Dx12Compiler {
     let Some(value) = env else { return Dx12Compiler::Fxc };
     value.parse().unwrap_or_else(|e| {
@@ -83,6 +191,7 @@ pub fn dx12_compiler(env: Option<&str>) -> Dx12Compiler {
 }
 
 /// Makes the wgpu instance eframe creates compile DirectX 12 shaders with `compiler`.
+#[cfg(any(target_os = "windows", test))]
 pub fn configure_dx12_compiler(options: &mut NativeOptions, compiler: Dx12Compiler) {
     if let WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup {
         create.instance_descriptor.backend_options.dx12.shader_compiler = compiler;
@@ -227,5 +336,54 @@ mod tests {
         assert_eq!(choose_backends(Some(Backends::DX12), &gpu, false), Backends::DX12);
         assert_eq!(choose_backends(Some(Backends::VULKAN), &[], false), Backends::VULKAN);
         assert_eq!(configured_backends(choose_backends(None, &gpu, false)), Backends::GL);
+    }
+
+    #[test]
+    fn renderer_selection_honours_override_and_saved_failure() {
+        assert_eq!(parse_renderer(Some("GLOW")), Some(Renderer::Glow));
+        assert_eq!(parse_renderer(Some("wgpu")), Some(Renderer::Wgpu));
+        assert_eq!(parse_renderer(Some("other")), None);
+        assert_eq!(choose_renderer(None, false), Renderer::Wgpu);
+        assert_eq!(choose_renderer(None, true), Renderer::Glow);
+        assert_eq!(choose_renderer(Some(Renderer::Wgpu), true), Renderer::Wgpu);
+        assert_eq!(fallback_renderer(Renderer::Wgpu), Some(Renderer::Glow));
+        assert_eq!(fallback_renderer(Renderer::Glow), None);
+    }
+
+    #[test]
+    fn simulated_wgpu_start_failure_retries_glow_once() {
+        let mut attempts = Vec::new();
+        let result = run_with_fallback(
+            Renderer::Wgpu,
+            |renderer| {
+                attempts.push(renderer);
+                match renderer {
+                    Renderer::Wgpu => Err("simulated device lost"),
+                    Renderer::Glow => Ok(()),
+                }
+            },
+            |failed, error, fallback| {
+                assert_eq!(failed, Renderer::Wgpu);
+                assert_eq!(*error, "simulated device lost");
+                assert_eq!(fallback, Renderer::Glow);
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(attempts, [Renderer::Wgpu, Renderer::Glow]);
+    }
+
+    #[test]
+    fn simulated_glow_failure_is_not_retried() {
+        let mut attempts = Vec::new();
+        let result = run_with_fallback(
+            Renderer::Glow,
+            |renderer| {
+                attempts.push(renderer);
+                Err::<(), _>("simulated OpenGL failure")
+            },
+            |_failed, _error, _fallback| panic!("OpenGL must not retry"),
+        );
+        assert_eq!(result, Err("simulated OpenGL failure"));
+        assert_eq!(attempts, [Renderer::Glow]);
     }
 }
