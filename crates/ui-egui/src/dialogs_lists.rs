@@ -237,11 +237,15 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
             ui.end_row();
         }
         ui.label(tl!("Link level to style:"));
-        let shown = styles.iter().find(|(id, _)| *id == l.style).map(|(_, n)| n.clone()).unwrap_or_else(|| tl!("(no style)").to_string());
+        let shown = styles
+            .iter()
+            .find(|(id, _)| *id == l.style)
+            .map(|(_, n)| crate::rtl_text::visual(n).into_owned())
+            .unwrap_or_else(|| tl!("(no style)").to_string());
         egui::ComboBox::from_id_salt("mll_link").selected_text(shown).show_ui(ui, |ui| {
             ui.selectable_value(&mut l.style, String::new(), tl!("(no style)"));
             for (id, name) in &styles {
-                ui.selectable_value(&mut l.style, id.clone(), name);
+                ui.selectable_value(&mut l.style, id.clone(), crate::rtl_text::visual(name));
             }
         });
         ui.end_row();

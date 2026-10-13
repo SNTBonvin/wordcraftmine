@@ -373,7 +373,13 @@ fn body(ui: &mut Ui, b: &mut FileBrowser, t: &Tokens) -> Option<Option<PathBuf>>
                     }
                     let icon = Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(18.0, 18.0));
                     icons::paint(ui.painter(), icon, if e.dir { "folder" } else { "file" }, t.icon, t.accent);
-                    ui.painter().with_clip_rect(r).text(pos2(r.min.x + 30.0, r.center().y), Align2::LEFT_CENTER, &e.name, regular(13.0), t.text);
+                    ui.painter().with_clip_rect(r).text(
+                        pos2(r.min.x + 30.0, r.center().y),
+                        Align2::LEFT_CENTER,
+                        &*crate::rtl_text::visual(&e.name),
+                        regular(13.0),
+                        t.text,
+                    );
                     if resp.double_clicked() {
                         if e.dir {
                             go = Some(e.path.clone());
@@ -395,10 +401,13 @@ fn body(ui: &mut Ui, b: &mut FileBrowser, t: &Tokens) -> Option<Option<PathBuf>>
         b.navigate(dir);
     }
     let message = match (&b.listing, &b.note) {
-        (_, Note::NotFound(name)) => Some((crate::i18n::fmt(tl!("{name} wasn't found."), &[("name", name)]), t.red)),
+        (_, Note::NotFound(name)) => Some((crate::i18n::fmt(tl!("{name} wasn't found."), &[("name", &crate::rtl_text::visual(name))]), t.red)),
         (_, Note::Replace(p)) => {
             let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            Some((crate::i18n::fmt(tl!("{name} already exists. Choose Save again to replace it."), &[("name", &name)]), t.red))
+            Some((
+                crate::i18n::fmt(tl!("{name} already exists. Choose Save again to replace it."), &[("name", &crate::rtl_text::visual(&name))]),
+                t.red,
+            ))
         }
         (Err(e), _) => Some((crate::i18n::fmt(tl!("This folder can't be read: {error}"), &[("error", e)]), t.red)),
         (Ok(l), _) if l.truncated => {

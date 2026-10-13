@@ -91,11 +91,12 @@ pub fn paint(app: &mut WordApp, painter: &egui::Painter, t: &Tokens, layout: &Do
             && !title.is_empty()
         {
             let font = regular(9.5);
+            let title = crate::rtl_text::visual(title);
             let w = painter.layout_no_wrap(title.to_string(), font.clone(), t.accent_text).size().x + 10.0;
             let tab = Rect::from_min_size(pos2(first.min.x, first.min.y - 14.0), vec2(w.min(320.0), 14.0));
             painter.rect_filled(tab, egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 }, if is_current { t.accent } else { t.checked });
             let ink = if is_current { t.on_accent } else { t.accent_text };
-            painter.with_clip_rect(tab).text(pos2(tab.min.x + 5.0, tab.center().y), Align2::LEFT_CENTER, title, font, ink);
+            painter.with_clip_rect(tab).text(pos2(tab.min.x + 5.0, tab.center().y), Align2::LEFT_CENTER, &*title, font, ink);
         }
         // The list/calendar button at the right of the current one.
         if is_current
@@ -173,7 +174,7 @@ pub fn popup(app: &mut WordApp, ctx: &egui::Context) {
                 ControlKind::ComboBox { items, .. } | ControlKind::DropDown { items, .. } => {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for (i, item) in items.iter().enumerate() {
-                            if ui.selectable_label(false, &item.display).clicked() {
+                            if ui.selectable_label(false, crate::rtl_text::visual(&item.display)).clicked() {
                                 let _ = app.run("developer.chooseItem", json!({"at": at_json, "index": i}));
                                 close = true;
                             }

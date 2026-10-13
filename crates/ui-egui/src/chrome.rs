@@ -237,9 +237,10 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                 ui.painter().rect(r, 8.0, fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
                 let knob = if on { r.max.x - 8.0 } else { r.min.x + 8.0 };
                 ui.painter().circle_filled(pos2(knob, r.center().y), 5.0, knob_fill);
-                let tip = block
-                    .as_ref()
-                    .map_or_else(|| tl!("AutoSave saves every change to the file (needs a saved document)").to_string(), |b| b.reason());
+                let tip = block.as_ref().map_or_else(
+                    || tl!("AutoSave saves every change to the file (needs a saved document)").to_string(),
+                    |b| crate::rtl_text::visual(&b.reason()).into_owned(),
+                );
                 if resp.on_hover_text(tip).clicked() {
                     match block {
                         None => {
@@ -260,8 +261,8 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     let (r, resp) = ui.allocate_exact_size(vec2(control_h, control_h), Sense::click());
                     ui.painter().circle_filled(r.center(), control_h / 2.0 - 1.0, t.accent);
                     let initials: String = app.session.user_initials().chars().take(2).collect();
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, initials, semibold(10.5), t.on_accent);
-                    resp.on_hover_text(format!("{} — set your name in File › Options", app.session.author));
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, crate::rtl_text::visual(&initials), semibold(10.5), t.on_accent);
+                    resp.on_hover_text(format!("{} — set your name in File › Options", crate::rtl_text::visual(&app.session.author)));
                     ui.add_space(8.0);
                     if app.ui.show_discord {
                         let (r, resp) = ui.allocate_exact_size(vec2(84.0, 22.0), Sense::click());
@@ -317,7 +318,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
             // Centred title.
             let title = format!(
                 "{} — {}",
-                app.title_stem(),
+                crate::rtl_text::visual(&app.title_stem()),
                 if app.session.dirty {
                     tl!("Edited")
                 } else if app.session.path.is_some() {
@@ -405,7 +406,15 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                 {
                     let font = TypeRung::Caption.regular();
                     let track = TypeRung::Caption.tracking();
-                    paint_text(ui.painter(), pos2(ui.cursor().min.x, ui.cursor().min.y), Align2::LEFT_TOP, msg, &font, track, t.accent_text);
+                    paint_text(
+                        ui.painter(),
+                        pos2(ui.cursor().min.x, ui.cursor().min.y),
+                        Align2::LEFT_TOP,
+                        &crate::rtl_text::visual(msg),
+                        &font,
+                        track,
+                        t.accent_text,
+                    );
                     ui.allocate_space(vec2(text_width(ui.painter(), msg, &font, track, t.accent_text) + 1.0, TypeRung::Caption.line_height()));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

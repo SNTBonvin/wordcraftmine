@@ -375,7 +375,8 @@ pub fn tr(lang: Lang, s: &str) -> &str {
 /// the current language, styles the author made exactly as named. Display only: the document,
 /// commands and saved files keep the English name.
 pub fn style_name(style: &wordcraft_doc::Style) -> String {
-    if style.builtin { builtin_style_name(&style.name) } else { style.name.clone() }
+    // A custom name can be Arabic or Hebrew: shown in visual order (`rtl_text`).
+    if style.builtin { builtin_style_name(&style.name) } else { crate::rtl_text::visual(&style.name).into_owned() }
 }
 
 /// A built-in style's English name in the current language; numbered families go through one

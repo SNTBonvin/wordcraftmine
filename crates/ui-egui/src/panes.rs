@@ -165,11 +165,15 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
                 let post = p.text.get(b.off..to).unwrap_or("");
                 let mut job = egui::text::LayoutJob::default();
                 let fmt = |c| egui::TextFormat { font_id: regular(12.0), color: c, ..Default::default() };
-                job.append(pre, 0.0, fmt(ui.visuals().text_color()));
+                // Comment anchors, pictures and other objects sit in the text as U+FFFC: not shown.
+                let clean = |s: &str| s.replace('\u{FFFC}', "");
+                // Right-to-left context in visual order, the match located again inside it.
+                let (pre, hit, post) = rtl_context(&clean(pre), &clean(hit), &clean(post));
+                job.append(&pre, 0.0, fmt(ui.visuals().text_color()));
                 // The match is marked the way Find marks it on the page, per theme (#656).
                 let mark = Tokens::get(ui.ctx()).find_highlight;
-                job.append(hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: mark, color: ui.visuals().text_color(), ..Default::default() });
-                job.append(post, 0.0, fmt(ui.visuals().text_color()));
+                job.append(&hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: mark, color: ui.visuals().text_color(), ..Default::default() });
+                job.append(&post, 0.0, fmt(ui.visuals().text_color()));
                 job.wrap.max_width = ui.available_width();
                 if ui.add(egui::Button::new(job).frame(false)).clicked() {
                     let _ = app.run("select.range", json!({"anchor": a, "focus": b}));
@@ -212,16 +216,39 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+/// The before / match / after parts of a search result as egui should draw them. Text without a
+/// right-to-left character is returned as is; otherwise the whole line is put in visual order and
+/// the match is found again in it (one section when it can't be).
+fn rtl_context(pre: &str, hit: &str, post: &str) -> (String, String, String) {
+    let joined = format!("{pre}{hit}{post}");
+    if !wordcraft_doc::bidi::has_rtl(&joined) {
+        return (pre.to_string(), hit.to_string(), post.to_string());
+    }
+    let full = crate::rtl_text::visual(&joined);
+    let vh = crate::rtl_text::visual(hit);
+    match full.find(&*vh) {
+        Some(i) if !vh.is_empty() => {
+            let before = full.get(..i).unwrap_or("").to_string();
+            let after = full.get(i + vh.len()..).unwrap_or("").to_string();
+            (before, vh.into_owned(), after)
+        }
+        _ => (full.into_owned(), String::new(), String::new()),
+    }
+}
+
 /// Constrain each heading to the available pane width so long document text cannot
 /// enlarge the panel. The full heading stays accessible on hover.
 fn nav_heading(ui: &mut Ui, level: u8, text: &str, selected: bool) -> egui::Response {
     ui.horizontal(|ui| {
         ui.add_space(level as f32 * 14.0);
+        let font = if level == 0 { semibold(12.5) } else { regular(12.5) };
+        // An Arabic or Hebrew heading in visual order, shortened from its logical end.
+        let shown = crate::rtl_text::fit(ui.ctx(), text, &font, ui.available_width() - 2.0 * ui.spacing().button_padding.x);
         ui.add_sized(
             vec2(ui.available_width(), ui.spacing().interact_size.y),
-            egui::Button::selectable(selected, egui::RichText::new(text).font(if level == 0 { semibold(12.5) } else { regular(12.5) })).truncate(),
+            egui::Button::selectable(selected, egui::RichText::new(shown).font(font)).truncate(),
         )
-        .on_hover_text(text)
+        .on_hover_text(crate::rtl_text::visual(text))
     })
     .inner
 }
@@ -251,7 +278,7 @@ fn clipboard(app: &mut WordApp, ui: &mut Ui) {
         for (i, preview) in items.iter().enumerate() {
             egui::Frame::NONE.fill(t.input).stroke(Stroke::new(1.0, t.border)).corner_radius(6).inner_margin(8).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                let text = if preview.is_empty() { tl!("(picture or object)").to_string() } else { preview.clone() };
+                let text = if preview.is_empty() { tl!("(picture or object)").to_string() } else { crate::rtl_text::visual(preview).into_owned() };
                 let mut job =
                     egui::text::LayoutJob::single_section(text, egui::TextFormat { font_id: regular(12.5), color: t.text, ..Default::default() });
                 job.wrap.max_width = ui.available_width();
@@ -365,7 +392,9 @@ fn comments(app: &mut WordApp, ui: &mut Ui) {
                     ui.add_space(0.0);
                 }
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(c.get("author").and_then(Value::as_str).unwrap_or("")).font(semibold(12.0)));
+                    ui.label(
+                        egui::RichText::new(crate::rtl_text::visual(c.get("author").and_then(Value::as_str).unwrap_or(""))).font(semibold(12.0)),
+                    );
                     ui.label(egui::RichText::new(comment_stamp(c.get("date").and_then(Value::as_str).unwrap_or(""))).small().weak());
                     if c.get("resolved").and_then(Value::as_bool).unwrap_or(false) {
                         ui.label(egui::RichText::new(tl!("Resolved")).small().color(t.green));
@@ -421,9 +450,25 @@ pub(crate) fn comment_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Opti
     let Some(part) = app.session.doc.comments.get(&id).map(|c| c.part) else { return };
     let key = edit_key(id);
     let mut text = ui.data(|d| d.get_temp::<String>(key)).unwrap_or_else(|| app.session.doc.plain_text(StoryRef::Part(part)));
-    let mut edit = egui::TextEdit::multiline(&mut text).desired_rows(1).desired_width(f32::INFINITY).hint_text(tl!("Add a comment"));
+    let edit_id = ui.id().with(("comment-edit", id));
+    let show_visual = !(focus || ui.memory(|m| m.has_focus(edit_id))) && wordcraft_doc::bidi::has_rtl(&text);
+    let shown_font = font.clone().unwrap_or_else(|| egui::TextStyle::Body.resolve(ui.style()));
+    // Not being edited: an Arabic or Hebrew comment is shown wrapped and in visual order
+    // (`rtl_text`); the caret needs the logical text, so editing shows that.
+    let mut rtl_layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+        let shown = crate::rtl_text::wrap(ui.ctx(), buf.as_str(), &shown_font, wrap_width);
+        let mut job = egui::text::LayoutJob::simple(shown, shown_font.clone(), ui.visuals().text_color(), wrap_width);
+        if wordcraft_doc::bidi::first_strong_is_rtl(buf.as_str()) {
+            job.halign = egui::Align::RIGHT;
+        }
+        ui.fonts_mut(|f| f.layout_job(job))
+    };
+    let mut edit = egui::TextEdit::multiline(&mut text).id(edit_id).desired_rows(1).desired_width(f32::INFINITY).hint_text(tl!("Add a comment"));
     if let Some(f) = font {
         edit = edit.font(f);
+    }
+    if show_visual {
+        edit = edit.layouter(&mut rtl_layouter);
     }
     let r = ui.add(edit);
     if focus {
@@ -516,7 +561,8 @@ fn inspector(app: &mut WordApp, ui: &mut Ui) {
             if level_row(ui, &t, "Style", &pstyle_shown, false, "Reset to Normal", pstyle == "Normal" && para["style"] == "Normal") {
                 clear = Some("paragraphStyle");
             }
-            let (txt, empty) = if pdirect.is_empty() { (none.clone(), true) } else { (pdirect.join(", "), false) };
+            let (txt, empty) =
+                if pdirect.is_empty() { (none.clone(), true) } else { (crate::rtl_text::visual(&pdirect.join(", ")).into_owned(), false) };
             if level_row(ui, &t, "Direct formatting", &txt, empty, "Clear Paragraph Formatting", empty) {
                 clear = Some("paragraphFormatting");
             }
@@ -530,7 +576,8 @@ fn inspector(app: &mut WordApp, ui: &mut Ui) {
             if level_row(ui, &t, "Style", &txt, empty, "Clear Character Style", empty) {
                 clear = Some("characterStyle");
             }
-            let (txt, empty) = if cdirect.is_empty() { (none.clone(), true) } else { (cdirect.join(", "), false) };
+            let (txt, empty) =
+                if cdirect.is_empty() { (none.clone(), true) } else { (crate::rtl_text::visual(&cdirect.join(", ")).into_owned(), false) };
             if level_row(ui, &t, "Direct formatting", &txt, empty, "Clear Character Formatting", empty) {
                 clear = Some("characterFormatting");
             }

@@ -280,7 +280,7 @@ fn custom_dictionary(app: &mut WordApp, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 ui.allocate_ui_with_layout(vec2(220.0, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_min_width(220.0);
-                    ui.add(egui::Label::new(w.as_str()).truncate());
+                    ui.add(egui::Label::new(crate::rtl_text::visual(w)).truncate());
                 });
                 if ui.small_button(tl!("Remove")).clicked() {
                     set(app, json!({"removeWords": [w]}));

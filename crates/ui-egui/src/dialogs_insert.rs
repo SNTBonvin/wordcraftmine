@@ -1222,9 +1222,9 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
                 ui.add(egui::TextEdit::singleline(&mut f.target).desired_width(200.0));
                 ui.label(egui::RichText::new(tl!("The document has no bookmarks yet.")).small().color(t.text_dim));
             } else {
-                egui::ComboBox::from_id_salt("field_bookmark").selected_text(f.target.clone()).width(200.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("field_bookmark").selected_text(crate::rtl_text::visual(&f.target)).width(200.0).show_ui(ui, |ui| {
                     for b in &f.bookmarks {
-                        ui.selectable_value(&mut f.target, b.clone(), b);
+                        ui.selectable_value(&mut f.target, b.clone(), crate::rtl_text::visual(b));
                     }
                 });
             }
@@ -1235,7 +1235,7 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
             if !f.merge_fields.is_empty() {
                 ui.horizontal_wrapped(|ui| {
                     for m in f.merge_fields.clone() {
-                        if ui.selectable_label(f.target == m, &m).clicked() {
+                        if ui.selectable_label(f.target == m, crate::rtl_text::visual(&m)).clicked() {
                             f.target = m;
                         }
                     }

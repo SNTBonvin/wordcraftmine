@@ -33,9 +33,10 @@ pub fn accessibility(app: &mut WordApp, ui: &mut Ui) {
                     for (k, i) in group.into_iter().enumerate() {
                         ui.push_id(k, |ui| {
                             let text = i["issue"].as_str().unwrap_or("");
-                            let r = ui.add(egui::Button::new(egui::RichText::new(text).font(regular(12.5))).frame(false).wrap());
+                            let r =
+                                ui.add(egui::Button::new(egui::RichText::new(crate::rtl_text::visual(text)).font(regular(12.5))).frame(false).wrap());
                             if let Some(fix) = i["fix"].as_str() {
-                                ui.label(egui::RichText::new(fix).small().weak());
+                                ui.label(egui::RichText::new(crate::rtl_text::visual(fix)).small().weak());
                             }
                             if r.clicked() {
                                 picked = Some((i.clone(), None));

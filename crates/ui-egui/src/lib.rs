@@ -66,6 +66,7 @@ pub mod print_page;
 pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
+pub mod rtl_text;
 pub mod scroll;
 pub mod system_clipboard;
 pub mod table_mouse;
@@ -1260,8 +1261,22 @@ impl WordApp {
     /// script those faces lack would otherwise be drawn as `?`. Borrow the document fonts'
     /// fallback faces, as IME composition does (#565). A CJK name uses the CJK UI font instead:
     /// those collections are too large to add here.
+    /// The backstage's Recent list draws file names and paths with the same faces, so while it is
+    /// open their characters (see [`rtl_text`]) count too, and so does right-to-left document text
+    /// anywhere in the interface once [`rtl_text::saw_rtl`].
     fn ensure_caption_fonts(&mut self) {
-        let stem = self.title_stem();
+        let mut stem = self.title_stem();
+        if self.ui.backstage {
+            for p in self.ui.recent.iter().take(self.ui.recent_shown()) {
+                stem.push(' ');
+                stem.push_str(&rtl_text::visual_path(p));
+            }
+        }
+        // Document text shown by the interface (headings, style names, authors…) went through
+        // `rtl_text`: one Arabic and one Hebrew face cover it, whatever the string.
+        if rtl_text::saw_rtl() {
+            stem.push_str(" \u{0628} \u{05E9}");
+        }
         if stem.chars().any(wordcraft_fonts::is_cjk) {
             self.want_system_cjk = true;
         }
@@ -1883,6 +1898,27 @@ mod tests {
 
     fn app() -> WordApp {
         WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
+    }
+
+    /// File › Home lists recent documents with the interface faces too: an Arabic file name there
+    /// borrows a face that covers it, once, as the caption does (`rtl_text`).
+    #[test]
+    fn arabic_recent_file_names_borrow_a_face() {
+        let ctx = egui::Context::default();
+        let frame = |app: &mut WordApp| {
+            ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+        };
+        let mut a = app();
+        a.ui.recent = vec!["/Users/me/عقود/خطة التسويق.docx".into()];
+        a.ui.backstage = true;
+        frame(&mut a);
+        let letter = 'خ';
+        if wordcraft_fonts::FontDb::global().fallback_for(letter, u32::MAX).is_some_and(|f| f.data().len() <= 16 << 20) {
+            assert!(a.canvas.ime_faces.iter().any(|f| f.covers(letter)), "the Recent list borrows a face for Arabic");
+        }
+        let n = a.canvas.ime_faces.len();
+        frame(&mut a);
+        assert_eq!(a.canvas.ime_faces.len(), n, "the face is added once");
     }
 
     /// File › Options › Advanced › Animation: the caret's animation is a UI command, kept between

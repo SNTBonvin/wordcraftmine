@@ -138,7 +138,13 @@ impl Previews {
                     );
                 }
                 None => {
-                    ui.painter().text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, name, regular(12.0), t.text);
+                    ui.painter().text(
+                        pos2(r.min.x + 8.0, r.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        &*crate::rtl_text::visual(name),
+                        regular(12.0),
+                        t.text,
+                    );
                 }
             }
             resp

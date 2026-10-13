@@ -1614,7 +1614,7 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, id: u
     let name = |app: &WordApp, cid: u32| app.session.doc.comments.get(&cid).map(|c| author_name(&c.author)).unwrap_or_default();
     let resolved = app.session.doc.comments.get(&id).is_some_and(|c| c.resolved);
     child.horizontal(|ui| {
-        ui.label(egui::RichText::new(name(app, id)).font(bold.clone()).color(t.text));
+        ui.label(egui::RichText::new(crate::rtl_text::visual(&name(app, id))).font(bold.clone()).color(t.text));
         if resolved {
             ui.label(egui::RichText::new(tl!("Resolved")).font(small.clone()).color(t.green));
         }
@@ -1622,7 +1622,7 @@ fn active_balloon(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, id: u
     crate::panes::comment_editor(app, &mut child, id, Some(font.clone()), focus && !app.canvas.balloon_reply);
     for rid in thread {
         child.add_space(4.0);
-        child.label(egui::RichText::new(name(app, *rid)).font(bold.clone()).color(t.text));
+        child.label(egui::RichText::new(crate::rtl_text::visual(&name(app, *rid))).font(bold.clone()).color(t.text));
         crate::panes::comment_editor(app, &mut child, *rid, Some(font.clone()), false);
     }
     if app.canvas.balloon_reply && crate::panes::reply_editor(app, &mut child, id, Some(font.clone()), focus) {
@@ -2012,7 +2012,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
         && let Some(link) = link_under(app, layout, page, x, y, &pos)
     {
         let key = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" };
-        let tip = format!("{link}\n{}", crate::i18n::fmt(tl!("{key}+Click to follow link"), &[("key", key)]));
+        let tip = format!("{}\n{}", crate::rtl_text::visual(&link), crate::i18n::fmt(tl!("{key}+Click to follow link"), &[("key", key)]));
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("link_tip"), egui::PopupAnchor::Pointer).show(|ui| {
             ui.label(tip);
         });
@@ -2470,7 +2470,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             ui.label(egui::RichText::new(tl!("(no suggestions)")).italics());
         }
         for sgt in sugg {
-            if ui.button(egui::RichText::new(&sgt).strong()).clicked() {
+            if ui.button(egui::RichText::new(crate::rtl_text::visual(&sgt)).strong()).clicked() {
                 let _ = app.run("review.applySuggestion", json!({"text": sgt}));
                 ui.close();
             }
@@ -2495,7 +2495,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     if let Some(syn) = app.canvas.context_synonyms.clone().and_then(|v| v.as_array().cloned()).filter(|a| !a.is_empty()) {
         ui.menu_button(tl!("Synonyms"), |ui| {
             for w in syn.iter().filter_map(|x| x.as_str()) {
-                if ui.button(w).clicked() {
+                if ui.button(crate::rtl_text::visual(w)).clicked() {
                     let _ = app.run("select.word", json!({}));
                     let (a, b) = app.session.sel.ordered();
                     let trimmed = app.session.doc.para_at(&a).and_then(|p| p.text.get(a.off..b.off)).map(|t| t.trim_end().len()).unwrap_or(0);

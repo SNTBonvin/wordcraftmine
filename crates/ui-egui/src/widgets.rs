@@ -736,7 +736,7 @@ fn list_rows<'a>(
                     }
                     p(ui, it).clicked()
                 }
-                None => ui.selectable_label(if highlight.is_some() { lit } else { it == current }, it.as_str()).clicked(),
+                None => ui.selectable_label(if highlight.is_some() { lit } else { it == current }, crate::rtl_text::visual(it)).clicked(),
             };
             if clicked {
                 out = Some(it.clone());

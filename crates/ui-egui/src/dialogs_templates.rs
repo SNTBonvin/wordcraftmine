@@ -187,7 +187,8 @@ pub fn organizer(app: &mut WordApp, ui: &mut Ui, f: &mut OrganizerForm) -> bool 
             list_frame(ui, "organizer_mine", &mut |ui| {
                 for st in &mine {
                     let id = s(st, "id");
-                    if ui.selectable_label(f.left == id, format!("{}  {}", glyph(&s(st, "type")), s(st, "name"))).clicked() {
+                    if ui.selectable_label(f.left == id, crate::rtl_text::visual(&format!("{}  {}", glyph(&s(st, "type")), s(st, "name")))).clicked()
+                    {
                         f.left = id;
                         f.rename = None;
                     }
@@ -203,10 +204,10 @@ pub fn organizer(app: &mut WordApp, ui: &mut Ui, f: &mut OrganizerForm) -> bool 
         });
         ui.vertical(|ui| {
             let name = std::path::Path::new(&f.file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "—".into());
-            ui.label(egui::RichText::new(name).font(semibold(12.5))).on_hover_text(f.file.as_str());
+            ui.label(egui::RichText::new(crate::rtl_text::visual(&name)).font(semibold(12.5))).on_hover_text(crate::rtl_text::visual_path(&f.file));
             list_frame(ui, "organizer_other", &mut |ui| {
                 for (n, ty) in &f.other {
-                    if ui.selectable_label(f.right == *n, format!("{}  {n}", glyph(ty))).clicked() {
+                    if ui.selectable_label(f.right == *n, crate::rtl_text::visual(&format!("{}  {n}", glyph(ty)))).clicked() {
                         f.right = n.clone();
                     }
                 }
