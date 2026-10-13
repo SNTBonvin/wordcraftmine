@@ -1254,6 +1254,196 @@ impl Session {
         result
     }
 
+    /// Reserve an app-controlled revision author distinct from the owner and existing
+    /// document authors. `unique_suffix` comes from the host, never from the client label.
+    /// Keep the returned name for this attachment; its subsequent revisions are its own.
+    pub fn agent_author(&self, label: &str, unique_suffix: &str) -> Result<String, String> {
+        let label = label.trim();
+        if label.is_empty() || label.len() > 128 || !label.chars().all(|c| c.is_ascii_alphanumeric() || " _.-@".contains(c)) {
+            return Err("agent label must contain 1-128 ASCII letters, numbers, spaces, _, ., - or @".into());
+        }
+        if unique_suffix.is_empty()
+            || unique_suffix.len() > 128
+            || !unique_suffix.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        {
+            return Err("agent author suffix must be a bounded host-generated identifier".into());
+        }
+        let in_use = |candidate: &str| {
+            candidate.trim() == self.author.trim()
+                || self.doc.revisions.iter().any(|revision| revision.author.trim() == candidate.trim())
+                || self.doc.comments.values().any(|comment| comment.author.trim() == candidate.trim())
+        };
+        for serial in 0..32 {
+            let suffix = if serial == 0 { unique_suffix.to_string() } else { format!("{unique_suffix}-{serial}") };
+            let candidate = format!("{label} (WordCraft agent {suffix})");
+            if !in_use(&candidate) {
+                return Ok(candidate);
+            }
+        }
+        Err("cannot reserve a distinct agent author; disable access and request a new invitation".into())
+    }
+
+    /// Execute a permitted live-agent command with its own author, selection and typing
+    /// properties. The host supplies the command policy; this transaction isolates owner UI
+    /// state, forces tracked edits, and keeps agent undo separate from owner typing.
+    #[allow(clippy::type_complexity)]
+    pub fn run_as_agent(
+        &mut self,
+        author: &str,
+        selection: Selection,
+        pending: Option<CharProps>,
+        id: &str,
+        params: &Value,
+    ) -> Result<(Value, Selection, Option<CharProps>), CmdError> {
+        if author.trim().is_empty() || author.len() > 512 || author.chars().any(char::is_control) || author.trim() == self.author.trim() {
+            return Err(CmdError::Failed("agent revision author must be distinct from the document owner's author".into()));
+        }
+        let mutates = self.registry.get(id).ok_or_else(|| CmdError::Unknown(id.to_string()))?.mutates;
+        crate::agent_selection::validate_selection(&self.doc, &selection).map_err(CmdError::Failed)?;
+        let edited_start = selection.ordered().0;
+        let before = self.doc.clone();
+        let history = self.history.clone();
+        let redo = self.redo.clone();
+        let evicted = self.undo_evicted;
+        let rev = self.rev;
+        let dirty = self.dirty;
+        let typing_open = self.typing_open;
+        let join_next = self.join_next;
+        let mut owner = AgentOwnerState::take(self);
+        self.sel = selection;
+        self.pending = pending;
+        self.author = author.to_string();
+        self.initials.clear();
+        self.doc.settings.track_changes = true;
+        self.prefs.markup.track_formatting = true;
+        self.prefs.autocorrect.enabled = false;
+        self.prefs.overtype = false;
+        self.prefs.typing_replaces_selection = true;
+        self.typing_open = false;
+        self.join_next = false;
+        let mut result = self.run(id, params);
+        let agent_selection = self.sel.clone();
+        let agent_pending = self.pending.clone();
+        if result.is_ok()
+            && let Err(error) = crate::agent_selection::validate_selection(&self.doc, &agent_selection)
+        {
+            result = Err(CmdError::Failed(format!("agent_postcondition_failed: {error}; operation was rolled back")));
+        }
+        self.doc.settings.track_changes = before.settings.track_changes;
+        let mut owner_relocated = None;
+        let owner_selection = match &result {
+            Ok(_) => match crate::shift_agent_selection(&before, &self.doc, &owner.sel).or_else(|error| {
+                // These audited commands change formatting, never paragraph paths or text.
+                // Generic mapping stays identity-first; only its failure can reach this
+                // bounded certificate, so duplicated paragraphs do not block plain bold.
+                if matches!(
+                    id,
+                    "format.bold"
+                        | "format.italic"
+                        | "format.underline"
+                        | "format.strikethrough"
+                        | "format.font"
+                        | "format.size"
+                        | "format.color"
+                        | "format.highlight"
+                        | "format.subscript"
+                        | "format.superscript"
+                        | "para.style"
+                        | "para.align"
+                        | "para.alignLeft"
+                        | "para.alignCenter"
+                        | "para.alignRight"
+                        | "para.justify"
+                        | "para.spacing"
+                        | "para.indents"
+                ) {
+                    crate::agent_selection::preserve_formatting_selection(&before, &self.doc, &owner.sel)
+                } else {
+                    Err(error)
+                }
+            }) {
+                Ok(selection) => selection,
+                Err(error) => match crate::agent_selection::relocate_owner_selection(&self.doc, &edited_start, &agent_selection) {
+                    Ok(selection) => {
+                        owner_relocated = Some(error);
+                        selection
+                    }
+                    Err(recovery) => {
+                        result = Err(CmdError::Failed(format!("agent_postcondition_failed: {recovery}; operation was rolled back")));
+                        owner.sel.clone()
+                    }
+                },
+            },
+            Err(_) => owner.sel.clone(),
+        };
+        if result.is_err() {
+            self.doc = before;
+            self.history = history;
+            self.redo = redo;
+            self.undo_evicted = evicted;
+            self.rev = rev;
+            self.dirty = dirty;
+            self.typing_open = typing_open;
+            self.join_next = join_next;
+            self.relayout();
+        } else {
+            // The snapshot belongs to the owner's Undo button: restoring it must also
+            // restore the owner's caret, pending formatting and Track Changes preference.
+            let gone = usize::try_from(self.undo_evicted.saturating_sub(evicted)).unwrap_or(usize::MAX);
+            let first_new = history.len().saturating_sub(gone);
+            for undo in self.history.iter_mut().skip(first_new) {
+                let undo = Arc::make_mut(undo);
+                undo.doc.settings.track_changes = before.settings.track_changes;
+                undo.sel = owner.sel.clone();
+                undo.pending = owner.pending.clone();
+                undo.column = owner.column.clone();
+                undo.label = format!("Agent {author}: {}", undo.label);
+            }
+            if mutates {
+                owner.after_edit(&before, &self.doc);
+            }
+            if owner_relocated.is_some() {
+                // Undo snapshots above retain the original owner's complete selection state.
+                // At the recovered caret, old typing props/geometry must not drive a new edit.
+                owner.pending = None;
+                owner.goal_x = None;
+                owner.page_hint = 0;
+                owner.column = None;
+                owner.column_mode = false;
+                owner.widened = None;
+                owner.also_selected.clear();
+                owner.pending_move = None;
+                owner.math = None;
+                owner.math_latex = false;
+                owner.math_normal_text = false;
+            }
+            // A mutating agent operation ends the owner's typing group on both sides.
+            // Pure agent reads and selection changes must not split the owner's typing.
+            self.typing_open = if mutates || owner_relocated.is_some() { false } else { typing_open };
+            self.join_next = if mutates || owner_relocated.is_some() { false } else { join_next };
+        }
+        let warning = owner_relocated.map(|reason| {
+            serde_json::json!({
+                "code":"owner_selection_relocated",
+                "reason":reason,
+                "ownerSelection":owner_selection,
+                "nextStep":"The edit succeeded. Inspect the document; do not retry this operation."
+            })
+        });
+        owner.restore(self, owner_selection);
+        result.map(|mut value| {
+            if let Some(warning) = warning {
+                match value.as_object_mut() {
+                    Some(fields) => {
+                        fields.insert("agentWarnings".into(), serde_json::json!([warning]));
+                    }
+                    None => value = serde_json::json!({"value":value,"agentWarnings":[warning]}),
+                }
+            }
+            (value, agent_selection, agent_pending)
+        })
+    }
+
     /// The paragraph path the caret is in.
     pub fn caret_path(&self) -> &Path {
         &self.sel.focus.path
@@ -1300,4 +1490,356 @@ pub fn blank_document(region: &wordcraft_geom::Region) -> Document {
     d.last_section.page_w = w;
     d.last_section.page_h = h;
     d
+}
+
+/// Transient state owned by the person, never by a live agent command.
+struct AgentOwnerState {
+    sel: Selection,
+    pending: Option<CharProps>,
+    author: String,
+    initials: String,
+    view: ViewState,
+    prefs: Prefs,
+    find: FindState,
+    goal_x: Option<f32>,
+    page_hint: usize,
+    painter: Option<(CharProps, wordcraft_doc::ParaProps, bool)>,
+    math: Option<MathEdit>,
+    math_latex: bool,
+    math_normal_text: bool,
+    column: Option<ColumnBlock>,
+    column_mode: bool,
+    widened: Option<Widened>,
+    also_selected: Vec<Pos>,
+    pending_move: Option<crate::cmd::moves::PendingMove>,
+    last_command: Option<(String, Value)>,
+    recording: Option<(String, Vec<(String, Value)>)>,
+    edit_marks: Vec<Pos>,
+    go_back_step: usize,
+    ui_requests: Vec<Value>,
+    status: String,
+}
+
+impl AgentOwnerState {
+    fn take(s: &mut Session) -> Self {
+        // Exhaustive like edit_snapshot: each new Session field requires an explicit
+        // decision about owner isolation here. Document/history/cache are handled by the
+        // transaction; host wiring and unrelated persistent data remain in the session.
+        let Session {
+            doc: _,
+            sel,
+            view,
+            pending,
+            path: _,
+            user_dict_path: _,
+            dirty: _,
+            clipboard: _,
+            pending_move,
+            clipboard_text: _,
+            clip_history: _,
+            find,
+            goal_x,
+            page_hint,
+            registry: _,
+            author,
+            initials,
+            painter,
+            status,
+            history: _,
+            undo_evicted: _,
+            redo: _,
+            typing_open: _,
+            join_next: _,
+            rev: _,
+            cache: _,
+            layout: _,
+            originals: _,
+            last_command,
+            recording,
+            macros: _,
+            versions: _,
+            building_blocks: _,
+            autosave: _,
+            bib_style: _,
+            merge: _,
+            ui_requests,
+            document_id: _,
+            read_aloud: _,
+            prefs,
+            system_region: _,
+            keymap: _,
+            ribbon: _,
+            editing_lang: _,
+            math,
+            math_latex,
+            math_normal_text,
+            password: _,
+            also_selected,
+            column,
+            column_mode,
+            widened,
+            edit_marks,
+            go_back_step,
+        } = s;
+        Self {
+            sel: std::mem::take(sel),
+            pending: pending.take(),
+            author: author.clone(),
+            initials: initials.clone(),
+            view: view.clone(),
+            prefs: prefs.clone(),
+            find: std::mem::take(find),
+            goal_x: goal_x.take(),
+            page_hint: std::mem::replace(page_hint, 0),
+            painter: painter.take(),
+            math: math.take(),
+            math_latex: std::mem::replace(math_latex, false),
+            math_normal_text: std::mem::replace(math_normal_text, false),
+            column: column.take(),
+            column_mode: std::mem::replace(column_mode, false),
+            widened: widened.take(),
+            also_selected: std::mem::take(also_selected),
+            pending_move: pending_move.take(),
+            last_command: last_command.take(),
+            recording: recording.take(),
+            edit_marks: std::mem::take(edit_marks),
+            go_back_step: std::mem::replace(go_back_step, 0),
+            ui_requests: std::mem::take(ui_requests),
+            status: std::mem::take(status),
+        }
+    }
+    fn after_edit(&mut self, before: &Document, after: &Document) {
+        let same_blocks =
+            |a: &wordcraft_doc::Blocks, b: &wordcraft_doc::Blocks| a.len() == b.len() && a.iter().zip(b).all(|(x, y)| Arc::ptr_eq(x, y));
+        let changed = !same_blocks(&before.body, &after.body)
+            || before.parts.len() != after.parts.len()
+            || before.parts.iter().any(|(id, part)| after.parts.get(id).is_none_or(|p| !same_blocks(&part.blocks, &p.blocks)));
+        if !changed {
+            return;
+        }
+        // A block/cell selection can refer to obsolete rows or line geometry after an edit.
+        // Keep the mapped ordinary selection, and leave these modes before the person types.
+        self.column = None;
+        self.column_mode = false;
+        self.widened = None;
+        self.also_selected.clear();
+        self.pending_move = None;
+        self.edit_marks = self
+            .edit_marks
+            .iter()
+            .filter_map(|p| crate::shift_agent_selection(before, after, &Selection::caret(p.clone())).ok().map(|s| s.focus))
+            .collect();
+        self.go_back_step %= self.edit_marks.len().max(1);
+        // Keep the person's search and view. Results are regenerated by Find Next;
+        // stale match offsets must not drive an edit, and remapping all matches is unbounded.
+        self.find.results.clear();
+        self.find.current = 0;
+        self.find.highlights = None;
+        if let Some(math) = &mut self.math {
+            let end = Pos { off: math.at.off.saturating_add(wordcraft_doc::para::OBJ.len_utf8()), ..math.at.clone() };
+            let mapped = crate::shift_agent_selection(before, after, &Selection { anchor: math.at.clone(), focus: end }).ok();
+            let next = mapped.and_then(|s| {
+                after.para_at(&s.anchor).and_then(|p| match p.object_at(s.anchor.off) {
+                    Some(wordcraft_doc::InlineObject::Equation { math: equation, .. }) => {
+                        Some((s.anchor.clone(), wordcraft_doc::math_edit::clamp(&equation.nodes, &math.pos)))
+                    }
+                    _ => None,
+                })
+            });
+            match next {
+                Some((at, pos)) => {
+                    math.at = at;
+                    math.pos = pos;
+                }
+                None => self.math = None,
+            }
+        }
+    }
+    fn restore(self, s: &mut Session, selection: Selection) {
+        // Exhaustive like edit_snapshot: each new Session field requires an explicit
+        // decision about owner isolation here. Document/history/cache are handled by the
+        // transaction; host wiring and unrelated persistent data remain in the session.
+        let Session {
+            doc: _,
+            sel,
+            view,
+            pending,
+            path: _,
+            user_dict_path: _,
+            dirty: _,
+            clipboard: _,
+            pending_move,
+            clipboard_text: _,
+            clip_history: _,
+            find,
+            goal_x,
+            page_hint,
+            registry: _,
+            author,
+            initials,
+            painter,
+            status,
+            history: _,
+            undo_evicted: _,
+            redo: _,
+            typing_open: _,
+            join_next: _,
+            rev: _,
+            cache: _,
+            layout: _,
+            originals: _,
+            last_command,
+            recording,
+            macros: _,
+            versions: _,
+            building_blocks: _,
+            autosave: _,
+            bib_style: _,
+            merge: _,
+            ui_requests,
+            document_id: _,
+            read_aloud: _,
+            prefs,
+            system_region: _,
+            keymap: _,
+            ribbon: _,
+            editing_lang: _,
+            math,
+            math_latex,
+            math_normal_text,
+            password: _,
+            also_selected,
+            column,
+            column_mode,
+            widened,
+            edit_marks,
+            go_back_step,
+        } = s;
+        *sel = selection;
+        *pending = self.pending;
+        *author = self.author;
+        *initials = self.initials;
+        *view = self.view;
+        *prefs = self.prefs;
+        *find = self.find;
+        *goal_x = self.goal_x;
+        *page_hint = self.page_hint;
+        *painter = self.painter;
+        *math = self.math;
+        *math_latex = self.math_latex;
+        *math_normal_text = self.math_normal_text;
+        *column = self.column;
+        *column_mode = self.column_mode;
+        *widened = self.widened;
+        *also_selected = self.also_selected;
+        *pending_move = self.pending_move;
+        *last_command = self.last_command;
+        *recording = self.recording;
+        *edit_marks = self.edit_marks;
+        *go_back_step = self.go_back_step;
+        *ui_requests = self.ui_requests;
+        *status = self.status;
+    }
+}
+
+#[cfg(test)]
+#[path = "tests_agents.rs"]
+mod agent_tests;
+
+#[cfg(test)]
+mod live_selection_review_tests {
+    use super::*;
+    use serde_json::json;
+    use wordcraft_doc::RevisionKind;
+
+    #[test]
+    fn whole_document_edits_with_blank_duplicates_succeed_and_warn_without_losing_owner_undo() {
+        let original = "Title\n\n\nPara one\n\nPara two";
+        for command in ["text.insert", "text.delete"] {
+            let mut session = Session::new(Document::from_text(original));
+            session.author = "Owner".into();
+            session.initials = "OW".into();
+            session.view.zoom = 1.7;
+            session.prefs.overtype = true;
+            session.pending = Some(CharProps { italic: Some(true), ..Default::default() });
+            session.sel = Selection { anchor: Pos::body(2, 0), focus: Pos::body(5, 3) };
+            let owner = session.sel.clone();
+            let pending = session.pending.clone();
+            let prefs = session.prefs.clone();
+            let before = serde_json::to_value(&session.doc).unwrap();
+            let selected = session.run_as_agent("Review agent", Selection::caret(Pos::body(0, 0)), None, "select.all", &json!({})).unwrap().1;
+            let (result, _, _) =
+                session.run_as_agent("Review agent", selected, None, command, &json!({"text":"😀 replacement", "raw":true})).unwrap();
+            assert_eq!(result["agentWarnings"][0]["code"], "owner_selection_relocated");
+            assert!(result["agentWarnings"][0]["nextStep"].as_str().unwrap().contains("do not retry"));
+            assert_eq!(result["agentWarnings"][0]["ownerSelection"], json!(session.sel));
+            assert!(session.sel.is_collapsed());
+            crate::agent_selection::validate_selection(&session.doc, &session.sel).unwrap();
+            assert_eq!(session.author, "Owner");
+            assert_eq!(session.initials, "OW");
+            assert_eq!(session.view.zoom, 1.7);
+            assert_eq!(session.prefs, prefs);
+            assert!(!session.doc.settings.track_changes);
+            assert!(session.doc.revisions.iter().any(|r| r.kind == RevisionKind::Delete && r.author == "Review agent"));
+            if command == "text.insert" {
+                assert!(session.doc.revisions.iter().any(|r| r.kind == RevisionKind::Insert && r.author == "Review agent"));
+                assert!(session.doc.plain_text(StoryRef::Body).contains("😀 replacement"));
+            }
+            assert!(session.pending.is_none());
+            assert_eq!(session.undo_depth(), 1);
+            assert!(session.undo());
+            assert_eq!(serde_json::to_value(&session.doc).unwrap(), before);
+            assert_eq!(session.sel, owner);
+            assert_eq!(session.pending, pending);
+        }
+    }
+
+    #[test]
+    fn local_agent_insert_and_formatting_work_in_more_than_65536_paragraphs() {
+        let mut session = Session::new(Document::from_text(&"x\n".repeat(65_538)));
+        session.sel = Selection::caret(Pos::body(65_536, 1));
+        let owner = session.sel.clone();
+        let (insert, _, _) =
+            session.run_as_agent("Review agent", Selection::caret(Pos::body(0, 0)), None, "text.insert", &json!({"text":"new ","raw":true})).unwrap();
+        assert!(insert.get("agentWarnings").is_none());
+        assert_eq!(session.sel, owner);
+        session.sel = Selection::caret(Pos::body(0, 5));
+        let formatted_owner = session.sel.clone();
+        let range = Selection { anchor: Pos::body(0, 0), focus: Pos::body(0, 4) };
+        let (format, _, _) = session.run_as_agent("Review agent", range, None, "format.bold", &json!({"value":true})).unwrap();
+        assert!(format.get("agentWarnings").is_none());
+        assert_eq!(session.sel, formatted_owner);
+        assert_eq!(session.doc.para_at(&Pos::body(0, 0)).unwrap().props_at(0).bold, Some(true));
+        assert!(session.undo());
+        assert_eq!(session.sel, formatted_owner);
+        assert!(session.undo());
+        assert_eq!(session.sel, owner);
+        assert_eq!(session.doc.para_at(&Pos::body(0, 0)).unwrap().text, "x");
+    }
+
+    #[test]
+    fn duplicate_unicode_paragraphs_in_table_cell_can_be_replaced_with_safe_owner_recovery() {
+        let mut session = Session::new(Document::new());
+        session.run("insert.table", &json!({"rows":1,"cols":1})).unwrap();
+        session.run("text.insert", &json!({"text":"Текст\r\r\r尾段","raw":true})).unwrap();
+        let table = session.sel.focus.path.0.get(..3).unwrap().to_vec();
+        let position = |paragraph: u32, off: usize| {
+            let mut path = table.clone();
+            path.push(paragraph);
+            Pos { story: StoryRef::Body, path: Path(path), off }
+        };
+        session.sel = Selection::caret(position(2, 0));
+        let owner = session.sel.clone();
+        let before = serde_json::to_value(&session.doc).unwrap();
+        let selection = Selection { anchor: position(0, 0), focus: position(3, "尾段".len()) };
+        assert_eq!(session.doc.para_at(&selection.focus).unwrap().text, "尾段");
+        let (result, _, _) = session.run_as_agent("Review agent", selection, None, "text.insert", &json!({"text":"é😀", "raw":true})).unwrap();
+        assert_eq!(result["agentWarnings"][0]["code"], "owner_selection_relocated");
+        assert!(session.sel.is_collapsed());
+        assert_eq!(session.sel.focus.path.0.get(..3), Some(table.as_slice()));
+        crate::agent_selection::validate_selection(&session.doc, &session.sel).unwrap();
+        assert!(session.undo());
+        assert_eq!(serde_json::to_value(&session.doc).unwrap(), before);
+        assert_eq!(session.sel, owner);
+    }
 }

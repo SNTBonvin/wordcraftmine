@@ -5200,6 +5200,7 @@ dependencies = [
  "image",
  "js-sys",
  "log",
+ "proptest",
  "regex",
  "regex-automata",
  "serde",
