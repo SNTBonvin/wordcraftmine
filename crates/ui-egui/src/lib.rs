@@ -788,7 +788,7 @@ impl WordApp {
                     file_dialogs::Asked::Busy => Ok(json!({"done": false})),
                 };
             }
-            SaveChoice::Save => self.save_for_prompt(),
+            SaveChoice::Save => self.save_for_prompt()?,
         };
         if !go {
             return Ok(json!({"done": false}));
@@ -815,13 +815,28 @@ impl WordApp {
     /// Save before New/Open/Close (and the mailings that replace the document): true once the
     /// document is safely written. A save in a format that doesn't keep everything (a page
     /// image, plain text) writes a copy and leaves the document unsaved, so it doesn't count:
-    /// the command is cancelled and the document stays.
-    fn save_for_prompt(&mut self) -> bool {
+    /// the command is cancelled and the document stays. A save that fails (no permission, the
+    /// file locked by another app, a missing folder) is an error that says so plainly, on the
+    /// status bar too, and keeps the document open (#1445).
+    fn save_for_prompt(&mut self) -> Result<bool, String> {
         let saved = match self.execute("file.save", json!({})) {
             Ok(v) => v.get("saved").and_then(Value::as_bool) == Some(true) || v.get("downloaded").is_some(),
-            Err(_) => false,
+            Err(error) => {
+                let name = self
+                    .session
+                    .path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| self.title_stem());
+                let msg =
+                    i18n::fmt(tl!("Couldn't save {name}, so it is still open and nothing was lost: {error}"), &[("name", &name), ("error", &error)]);
+                log::error!("save before closing failed: {error}");
+                self.status(msg.clone());
+                return Err(msg);
+            }
         };
-        self.safely_saved(saved)
+        Ok(self.safely_saved(saved))
     }
 
     /// Whether a save before New/Open/Close counts: it happened, and kept everything.
@@ -2790,6 +2805,52 @@ mod tests {
         assert!(body_text(&a).contains(UNSAVED), "nothing was replaced on the way out");
     }
 
+    /// #1445: the window's X on an edited document with a file → Save writes the file and lets
+    /// the window close.
+    #[test]
+    fn window_close_save_writes_the_file_and_quits() {
+        let dir = scratch("close-save");
+        let path = docx_on_disk(&dir, "Draft");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        a.run("text.insert", json!({"text": "Revised "})).unwrap();
+        assert!(!a.close_requested());
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        let on_disk = wordcraft_engine::io::open_path(&path).unwrap().plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(on_disk.contains("Revised Draft"), "the edit is on disk: {on_disk:?}");
+        assert!(a.quit_requested, "the app may close");
+        assert!(a.close_requested(), "the close that follows goes ahead");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1445: when Save in the close prompt can't write the file, the prompt's answer is an error
+    /// that says so plainly, the status bar shows it, and the document stays open, still edited.
+    #[test]
+    fn window_close_save_that_fails_says_so_and_keeps_the_document() {
+        let dir = scratch("close-save-fails");
+        let folder = dir.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = docx_on_disk(&folder, "Draft");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        a.run("text.insert", json!({"text": "Revised "})).unwrap();
+        // The document's folder is gone and a file has its name: nothing can be written there.
+        std::fs::remove_dir_all(&folder).unwrap();
+        std::fs::write(&folder, b"not a folder").unwrap();
+        assert!(!a.close_requested());
+        a.status_msg = None;
+        let err = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap_err();
+        assert!(err.contains("Couldn't save contract.docx") && err.contains("still open"), "{err}");
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| *m == err), "the status bar says why: {:?}", a.status_msg);
+        assert!(!a.quit_requested, "nothing closes");
+        assert!(a.session.dirty && body_text(&a).contains("Revised Draft"), "nothing was discarded");
+        assert_eq!(a.session.path.as_deref(), Some(path.as_path()));
+        assert!(!a.close_requested(), "the next close asks again");
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Enter activates the focused prompt button; it means Save only when no button has focus.
     /// (Enter on a focused Cancel or Don't Save used to be overridden by a blanket Enter → Save.)
     #[test]
@@ -3346,8 +3407,9 @@ mod tests {
 
         a.run("file.new", json!({})).unwrap();
         a.status_msg = None;
-        let r = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
-        assert_eq!(r["done"], false, "the New was cancelled");
+        // A failed save is an error, not a quiet Cancel (#1445); the New doesn't run.
+        let err = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap_err();
+        assert!(err.contains("still open") && err.contains("blocked by the browser"), "{err}");
         assert!(body_text(&a).contains(UNSAVED));
         assert!(a.session.dirty);
         let msg = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
