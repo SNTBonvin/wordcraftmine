@@ -261,6 +261,10 @@ pub struct UiState {
     pub dictionaries_dir: String,
     /// Fit modes by file path, most recent first (#995).
     pub doc_views: Vec<(String, DocViewMemory)>,
+    /// Reopen the last document at startup (#918).
+    pub reopen_last: bool,
+    /// The last opened or saved file (#918).
+    pub last_open: Option<String>,
 }
 
 /// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
@@ -323,6 +327,8 @@ impl Default for UiState {
             dictionary: Vec::new(),
             dictionaries_dir: String::new(),
             doc_views: Vec::new(),
+            reopen_last: true,
+            last_open: None,
         }
     }
 }
@@ -909,11 +915,14 @@ impl WordApp {
         }
         // #995: OOXML has no slot for the fit mode, so remember each file's and give it back
         // on reopen (a saved document's own view settings, applied first, always win).
+        // #918: the last opened file, for reopening at startup.
         if let Ok(v) = r {
             if matches!(id, "file.save" | "file.saveAs") && v.get("saved").and_then(Value::as_bool) == Some(true) {
                 self.remember_doc_view();
+                self.ui.last_open = self.session.path.as_ref().map(|p| p.to_string_lossy().to_string());
             } else if id == "file.open" && v.get("path").and_then(Value::as_str).is_some() {
                 self.restore_doc_view();
+                self.ui.last_open = self.session.path.as_ref().map(|p| p.to_string_lossy().to_string());
             }
         }
         if !self.session.status.is_empty() {
@@ -2762,6 +2771,22 @@ mod tests {
         assert!(!body_text(&a).trim().is_empty());
     }
 
+    /// #918: the last opened file is recorded for reopening at startup.
+    #[test]
+    fn last_opened_file_is_recorded() {
+        let dir = scratch("last-open");
+        let path = dir.join("novel.docx");
+        let p = path.to_string_lossy().to_string();
+        let mut a = app();
+        assert!(a.ui.reopen_last, "reopening is on by default");
+        assert_eq!(a.ui.last_open, None);
+        a.execute("file.save", json!({"path": p})).unwrap();
+        assert_eq!(a.ui.last_open.as_deref(), Some(p.as_str()));
+        a.execute("file.open", json!({"path": p})).unwrap();
+        assert_eq!(a.ui.last_open.as_deref(), Some(p.as_str()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// #995: a reopened file gets back the fit mode it was saved with (OOXML cannot express
     /// one-page vs multiple-pages, so the app remembers it per file).
     #[test]
@@ -3677,6 +3702,18 @@ mod tests {
             assert!(on_file(&path).contains("Signed contract"), "{id}: the original is untouched");
             let _ = std::fs::remove_dir_all(&dir);
         }
+    }
+
+    /// #184: AutoSave is off per document until it is saved where AutoSave can write: an
+    /// unsaved document is never written and never ambushed with Save As.
+    #[test]
+    fn autosave_never_touches_unsaved_documents() {
+        let mut a = typed();
+        assert!(a.session.path.is_none() && a.session.dirty);
+        assert!(!a.autosaves());
+        a.autosave_tick(now_ms() + 10_000.0);
+        assert!(a.session.ui_requests.is_empty(), "no Save As ambush");
+        assert!(a.session.dirty);
     }
 
     /// Surfaces finding 3: AutoSave rewrote any opened .docx ~2.5 s after the first keystroke,

@@ -213,6 +213,8 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     {
         let _ = app.run("ui.startScreen", json!({"value": start}));
     }
+    ui.checkbox(&mut app.ui.reopen_last, tl!("Reopen the last document at startup"))
+        .on_hover_text(tl!("On: with nothing else to open, WordCraft reopens the file it had open instead of the Start screen."));
     ui.add_space(8.0);
     section(ui, "Personalize");
     egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {

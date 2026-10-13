@@ -340,11 +340,20 @@ fn main() -> eframe::Result {
                 app = app.with_control(rx);
                 key_file = file;
             }
-            // Nothing to open (no files, no sample, no control channel driving the editor): start
-            // on File › Home, as Word does (#766), unless the Start screen option is off. Files
-            // macOS hands over later open on top of it and close it (`apple_events`).
+            // Nothing to open (no files, no sample, no control channel driving the editor):
+            // the last document when asked (#918), else File › Home as in Word (#766) unless
+            // the Start screen option is off. Files handed over later open on top of it.
             if files.is_empty() && !sample && control_port.is_none() {
-                app.start_screen();
+                let mut reopened = false;
+                if app.ui.reopen_last
+                    && let Some(last) = app.ui.last_open.clone()
+                    && std::path::Path::new(&last).is_file()
+                {
+                    reopened = app.run("file.open", serde_json::json!({"path": last})).is_ok();
+                }
+                if !reopened {
+                    app.start_screen();
+                }
             }
             for f in files {
                 if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
