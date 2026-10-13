@@ -44,10 +44,19 @@ USAGE:
 ";
 
 fn open(path: &str) -> Result<Session, String> {
-    let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
+    // A file that gives no page size (HTML, Markdown, plain text) opens on the system region's
+    // paper, as in the app: A4 in Italy, Letter in the US (#1381).
+    let region = system_region();
+    let (doc, _) = wordcraft_engine::io::open_path_in(std::path::Path::new(path), None, &region)?;
     let mut s = Session::new(doc);
+    s.system_region = region;
     s.path = Some(path.into());
     Ok(s)
+}
+
+/// The system region, read as the app reads it (locale variables, else the platform's locale).
+fn system_region() -> wordcraft_engine::Region {
+    wordcraft_engine::Region::from_locale_vars(|name| std::env::var(name).ok(), sys_locale::get_locale)
 }
 
 /// `--author NAME`: the author recorded on tracked changes and comments (`file.setAuthor`).
