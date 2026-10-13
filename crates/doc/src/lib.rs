@@ -399,6 +399,18 @@ pub struct CustomProp {
     pub value: String,
 }
 
+/// A page background picture fill.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PageBackground {
+    /// Key in [`Document::media`].
+    pub media: String,
+    /// The `v:fill` type (`tile`, `frame`, …), written back verbatim.
+    pub fill: String,
+    /// The `v:fill` title, written back verbatim.
+    pub title: String,
+}
+
 /// Document properties (File › Info).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -438,6 +450,10 @@ pub struct Settings {
     /// Most consecutive lines that may end with a hyphen (`w:consecutiveHyphenLimit`); 0 = no limit.
     pub consecutive_hyphen_limit: u32,
     pub page_color: Option<Rgb>,
+    /// Page background picture/texture fill (`w:background` + `v:fill`): media key and the
+    /// fill type (`tile`, …). Only carried through saves for now (#999).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_background: Option<PageBackground>,
     pub watermark: Option<Watermark>,
     /// Theme fonts (major = headings, minor = body).
     pub major_font: String,
@@ -549,6 +565,7 @@ impl Default for Settings {
             hyphenate_caps: true,
             consecutive_hyphen_limit: 0,
             page_color: None,
+            page_background: None,
             watermark: None,
             major_font: styles::HEADING_FONT.into(),
             minor_font: styles::BODY_FONT.into(),

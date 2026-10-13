@@ -189,7 +189,28 @@ pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String,
     let ns = xml::body_ns();
     let ns_refs: Vec<(&str, &str)> = ns.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     w.open("w:document", &ns_refs);
-    if let Some(c) = doc.settings.page_color {
+    // Page background colour and/or picture fill (#999). The fill image rides in `media/`
+    // with a document relationship, like inline pictures.
+    if let Some(bg) = doc.settings.page_background.as_ref().filter(|b| wr.media_files.contains_key(&b.media)) {
+        wr.used_media.insert(bg.media.clone());
+        let file = &wr.media_files[&bg.media];
+        let rid = rels.add(rt::IMAGE, &format!("media/{file}"), false);
+        let mut attrs = Vec::new();
+        if let Some(c) = doc.settings.page_color {
+            attrs.push(("w:color", c.hex()));
+        }
+        w.open("w:background", &attrs.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+        w.open("v:background", &[("id", "_x0000_s1025")]);
+        let title = bg.title.clone();
+        let mut fill = vec![("r:id", rid.as_str())];
+        if !title.is_empty() {
+            fill.push(("o:title", title.as_str()));
+        }
+        fill.push(("type", bg.fill.as_str()));
+        w.empty("v:fill", &fill);
+        w.close("v:background");
+        w.close("w:background");
+    } else if let Some(c) = doc.settings.page_color {
         w.empty("w:background", &[("w:color", &c.hex())]);
     }
     w.open("w:body", &[]);
@@ -974,7 +995,7 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
     if let Some(m) = &s.math {
         math::math_pr(&mut w, m);
     }
-        // Settings the model does not represent ride along verbatim (#1034).
+    // Settings the model does not represent ride along verbatim (#1034).
     for x in &doc.settings.extra_xml {
         w.raw(x);
     }
