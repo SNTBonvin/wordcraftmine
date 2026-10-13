@@ -1054,6 +1054,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.textures.retain(|k, _| *k < n && geo.rects.get(*k).is_some_and(|r| r.translate(content_origin.to_vec2()).intersects(near)));
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
+        crate::ollama::paint_edits(app, ui, &painter, &layout, &rects, geo.scale);
         // Find › Reading Highlight.
         let marks: Vec<(Pos, Pos)> = app.session.find_highlights().iter().take(5000).cloned().collect();
         for (a, b) in &marks {

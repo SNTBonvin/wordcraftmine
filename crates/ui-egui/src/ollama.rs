@@ -14,6 +14,9 @@ mod codex;
 #[cfg(not(target_arch = "wasm32"))]
 mod transport;
 
+mod edits;
+mod markdown;
+
 const MAX_INPUT: usize = 16_000;
 const MAX_MESSAGES: usize = 96;
 
@@ -36,6 +39,7 @@ pub struct Preferences {
     pub llama_endpoint: String,
     pub model: String,
     pub internet: bool,
+    pub effort: String,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -45,6 +49,7 @@ impl Default for Preferences {
             llama_endpoint: "http://127.0.0.1:8085".into(),
             model: String::new(),
             internet: true,
+            effort: String::new(),
         }
     }
 }
@@ -67,6 +72,13 @@ pub struct State {
     pub account: String,
     pub signed_in: bool,
     pub usage: String,
+    pub effort: String,
+    pub capabilities: Vec<ModelOptions>,
+    pub phase: String,
+    pub thinking: String,
+    pub review: edits::Review,
+    markdown: egui_commonmark::CommonMarkCache,
+    show_changes: bool,
     entries: Vec<(String, String)>,
     history: Vec<Value>,
     context: Value,
@@ -98,6 +110,13 @@ impl Default for State {
             account: String::new(),
             signed_in: false,
             usage: String::new(),
+            effort: String::new(),
+            capabilities: Vec::new(),
+            phase: String::new(),
+            thinking: String::new(),
+            review: edits::Review::default(),
+            markdown: egui_commonmark::CommonMarkCache::default(),
+            show_changes: false,
             entries: Vec::new(),
             history: Vec::new(),
             context: Value::Null,
@@ -123,8 +142,19 @@ struct UndoMark {
     depth: usize,
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ModelOptions {
+    pub model: String,
+    pub display_name: String,
+    pub default_effort: String,
+    pub efforts: Vec<(String, String)>,
+}
+
 pub(super) enum Event {
     Models(Result<Vec<String>, String>),
+    Capabilities(Vec<ModelOptions>),
+    Phase(String),
+    Thinking(String),
     Account { label: String, signed_in: bool },
     Login(String),
     Usage(String),
@@ -143,6 +173,7 @@ impl State {
             llama_endpoint: self.llama_endpoint.clone(),
             model: self.model.clone(),
             internet: self.internet,
+            effort: self.effort.clone(),
         }
     }
     pub fn apply_preferences(&mut self, p: &Preferences) {
@@ -152,6 +183,7 @@ impl State {
         self.llama_endpoint = clip(&p.llama_endpoint, 2000);
         self.model = clip(&p.model, 256);
         self.internet = p.internet;
+        self.effort = clip(&p.effort, 64);
         self.allow_edits = false;
         self.models.clear();
         self.status = "Choose a model to start.".into();
@@ -168,6 +200,7 @@ impl State {
     fn entry(&mut self, role: &str, text: String) {
         if self.entries.len() >= MAX_MESSAGES {
             self.entries.remove(0);
+            self.markdown = Default::default();
         }
         self.entries.push((role.into(), clip(&text, 24_000)));
     }
@@ -249,6 +282,7 @@ pub fn undo(app: &mut WordApp) -> Result<(), String> {
     app.ollama.stop();
     app.session.run("edit.undo", &json!({})).map_err(|e| e.to_string())?;
     app.ollama.undo.pop();
+    app.ollama.review.refresh_after_undo(&app.session.doc, app.session.rev(), &app.session.sel);
     if let Some(mark) = app.ollama.undo.last_mut() {
         // Only consecutive AI steps remain eligible; manual steps between them keep their own history.
         if mark.depth == app.session.undo_depth() {
@@ -337,8 +371,13 @@ fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, S
             }
             let provider = if app.ollama.source == Source::Codex { "Codex" } else { "Ollama" };
             let label = format!("{provider}: {}", spec.label);
+            let before = mutates.then(|| app.session.doc.clone());
             let result = app.session.run_labeled(id, &params, &label).map_err(|e| e.to_string())?;
             app.ollama.turn_revision = Some(app.session.rev());
+            if let Some(before) = before {
+                app.ollama.review.record(&before, &app.session.doc, app.session.document_id(), app.session.rev(), &app.session.sel, &label);
+                app.ollama.show_changes = false;
+            }
             if mutates {
                 if app.ollama.undo.len() >= 100 {
                     app.ollama.undo.remove(0);
@@ -348,6 +387,8 @@ fn document_tool(app: &mut WordApp, name: &str, args: &Value) -> Result<Value, S
             }
             app.canvas.want_focus = false;
             if mutates {
+                app.canvas.scroll_to_caret = true;
+                app.ollama.phase = "Editing document".into();
                 let preview = clip(&app.session.doc.plain_text(wordcraft_doc::StoryRef::Body), 12_000);
                 Ok(
                     json!({"command":id,"result":result,"documentTextPreview":preview,"revision":app.session.rev(),"verify":"Read the document to verify the requested change before reporting success."}),
@@ -365,8 +406,11 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
         app.ollama.stop();
         app.ollama.document = Some(app.session.document_id());
         app.ollama.entries.clear();
+        app.ollama.markdown = Default::default();
+        app.ollama.thinking.clear();
         app.ollama.sources.clear();
         app.ollama.undo.clear();
+        app.ollama.review = edits::Review::default();
         app.ollama.allow_edits = false;
         app.ollama.status = "Document changed. AI editing is off.".into();
     }
@@ -384,6 +428,11 @@ pub fn poll(app: &mut WordApp, ctx: &egui::Context) {
             }
         };
         match event {
+            Event::Capabilities(options) => {
+                app.ollama.capabilities = options;
+            }
+            Event::Phase(phase) => app.ollama.phase = phase,
+            Event::Thinking(text) => app.ollama.thinking = clip(&text, 24_000),
             Event::Usage(label) => app.ollama.usage = label,
             Event::Account { label, signed_in } => {
                 app.ollama.account = label;
@@ -485,6 +534,9 @@ pub(crate) fn send(app: &mut WordApp, ctx: &egui::Context) {
     if app.ollama.history.len() > MAX_MESSAGES {
         app.ollama.history.clear();
     }
+    app.ollama.review.begin_turn();
+    app.ollama.phase = "Thinking".into();
+    app.ollama.thinking.clear();
     app.ollama.document = Some(app.session.document_id());
     app.ollama.turn_revision = Some(app.session.rev());
     app.ollama.context = json!({"title":document_title(app),"documentId":app.session.document_id(),"revision":app.session.rev(),
@@ -509,65 +561,165 @@ fn source_name(source: Source) -> &'static str {
     }
 }
 
-fn response_text(ui: &mut Ui, text: &str, t: &Tokens) {
-    let mut code = false;
-    for line in text.lines().take(2000) {
-        if line.trim_start().starts_with("```") {
-            code = !code;
-            continue;
-        }
-        if line.is_empty() {
-            ui.add_space(6.0);
-            continue;
-        }
-        let (line, heading) = if let Some(s) = line.strip_prefix("### ") {
-            (s, 16.0)
-        } else if let Some(s) = line.strip_prefix("## ") {
-            (s, 18.0)
-        } else if let Some(s) = line.strip_prefix("# ") {
-            (s, 20.0)
-        } else {
-            (line, 14.0)
-        };
-        let mut job = egui::text::LayoutJob::default();
-        for (i, part) in line.split("**").enumerate() {
-            job.append(
-                part,
-                0.0,
-                egui::TextFormat {
-                    font_id: if code { egui::FontId::monospace(12.0) } else { egui::FontId::proportional(heading) },
-                    color: if code { t.text_dim } else { t.text },
-                    extra_letter_spacing: if i % 2 == 1 { 0.25 } else { 0.0 },
-                    ..Default::default()
-                },
-            );
-        }
-        ui.add(egui::Label::new(job).wrap().selectable(true));
+fn effort_label(effort: &str) -> &str {
+    match effort {
+        "" => "Auto",
+        "low" => "Light",
+        "medium" => "Medium",
+        "high" => "High",
+        "xhigh" => "Extra high",
+        "max" => "Max",
+        "ultra" => "Ultra",
+        "none" => "Off",
+        other => other,
     }
 }
 
-fn message_card(ui: &mut Ui, role: &str, text: &str, t: &Tokens) {
-    ui.add_space(12.0);
-    let user = role == "You";
-    let activity = role == "Activity" || role == "Error";
-    let frame = egui::Frame::NONE.fill(if user { t.hover } else { t.panel }).corner_radius(16).inner_margin(12);
-    frame.show(ui, |ui| {
-        ui.set_width((ui.available_width() - 2.0).max(20.0));
-        ui.label(RichText::new(role).size(11.0).strong().color(if role == "Error" { t.red } else { t.text_dim }));
-        ui.add_space(4.0);
-        if role == "Assistant" {
-            response_text(ui, text, t);
-        } else {
-            ui.add(egui::Label::new(RichText::new(text).size(if activity { 12.0 } else { 14.0 })).wrap().selectable(true));
-        }
-        if !activity {
-            ui.horizontal(|ui| {
-                if ui.small_button("Copy").on_hover_text("Copy this message").clicked() {
-                    ui.ctx().copy_text(text.to_string());
-                }
+fn message(ui: &mut Ui, role: &str, text: &str, t: &Tokens, cache: &mut egui_commonmark::CommonMarkCache) {
+    ui.add_space(16.0);
+    if role == "Activity" {
+        ui.horizontal(|ui| {
+            ui.colored_label(t.green, "✓");
+            ui.small(RichText::new(text).color(t.text_dim));
+        });
+        return;
+    }
+    if role == "Error" {
+        ui.colored_label(t.red, text);
+        return;
+    }
+    if role == "You" {
+        ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
+            egui::Frame::NONE.fill(t.hover).corner_radius(14).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
+                ui.set_max_width((ui.available_width() - 28.0).max(60.0));
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.add(egui::Label::new(text).wrap().selectable(true));
+                });
             });
+        });
+    } else {
+        markdown::show(ui, cache, text);
+        ui.add_space(6.0);
+        if ui.add(egui::Button::new(RichText::new("Copy").size(11.0).color(t.text_dim)).frame(false)).clicked() {
+            ui.ctx().copy_text(text.to_string());
+        }
+    }
+}
+
+fn connection_menu(app: &mut WordApp, ui: &mut Ui, ctx: &egui::Context) {
+    ui.label(RichText::new("Provider").strong());
+    let old = app.ollama.source;
+    for source in [Source::Codex, Source::Local, Source::Cloud, Source::LlamaCpp] {
+        ui.selectable_value(&mut app.ollama.source, source, source_name(source));
+    }
+    if old != app.ollama.source {
+        app.ollama.models.clear();
+        app.ollama.model.clear();
+        app.ollama.capabilities.clear();
+        app.ollama.effort.clear();
+        app.ollama.history.clear();
+        app.ollama.entries.clear();
+        app.ollama.markdown = Default::default();
+        app.ollama.thinking.clear();
+        app.ollama.sources.clear();
+        #[cfg(not(target_arch = "wasm32"))]
+        refresh(app, ctx);
+    }
+    ui.separator();
+    if app.ollama.source == Source::Codex {
+        ui.label(&app.ollama.account);
+        if !app.ollama.usage.is_empty() {
+            ui.small(&app.ollama.usage);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if !app.ollama.signed_in
+            && ui.button("Sign in with ChatGPT").clicked()
+            && let Err(e) = command(app, "ui.codexSignIn", &json!({}))
+        {
+            app.ollama.status = e;
+        }
+        ui.small("Uses your Codex subscription. Document context is sent to OpenAI.");
+        ui.hyperlink_to("Manage usage", "https://chatgpt.com/codex/settings/usage");
+    } else {
+        if app.ollama.source == Source::Local {
+            ui.label("Ollama address");
+            if ui.text_edit_singleline(&mut app.ollama.endpoint).changed() {
+                app.ollama.history.clear();
+                app.ollama.models.clear();
+            }
+        }
+        if app.ollama.source == Source::LlamaCpp {
+            ui.label("llama.cpp address");
+            if ui.text_edit_singleline(&mut app.ollama.llama_endpoint).changed() {
+                app.ollama.history.clear();
+                app.ollama.models.clear();
+            }
+        }
+        ui.label("Ollama key · optional");
+        ui.add(egui::TextEdit::singleline(&mut app.ollama.api_key).password(true));
+        ui.small("Stored in memory for this session.");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if ui.button("Refresh models").clicked() {
+        refresh(app, ctx);
+        ui.close();
+    }
+}
+
+fn changes_view(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    if app.ollama.review.marks.is_empty() {
+        return;
+    }
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add(egui::Button::new(RichText::new(format!("{} document changes  ▾", app.ollama.review.marks.len())).color(t.green)).frame(false))
+            .clicked()
+        {
+            app.ollama.show_changes = !app.ollama.show_changes;
+        }
+        if ui.add_enabled(can_undo(app), egui::Button::new("Undo").frame(false)).clicked()
+            && let Err(e) = undo(app)
+        {
+            app.ollama.status = e;
+        }
+        if ui.button("Dismiss").clicked() {
+            let _ = command(app, "ui.agentDismissChanges", &json!({}));
         }
     });
+    if app.ollama.show_changes {
+        ui.small("Green: added · red: removed · purple: formatting");
+        if app.ollama.review.revision != app.session.rev() {
+            ui.small("Highlights cleared after subsequent manual edits. Changes below are the AI's earlier edits.");
+        }
+        let mut show = None;
+        for (index, mark) in app.ollama.review.marks.iter().enumerate() {
+            egui::Frame::NONE.stroke(Stroke::new(1.0, t.border)).corner_radius(8).inner_margin(10).show(ui, |ui| {
+                ui.set_width((ui.available_width() - 2.0).max(20.0));
+                if ui.add_enabled(app.ollama.review.revision == app.session.rev(), egui::Button::new("Show in document").frame(false)).clicked() {
+                    show = Some(index);
+                }
+                if mark.formatting {
+                    ui.small("Formatting / layout changed");
+                }
+                if !mark.removed.is_empty() {
+                    ui.add(egui::Label::new(RichText::new(format!("− {}", mark.removed)).color(t.red).strikethrough()).wrap().selectable(true));
+                }
+                if !mark.added.is_empty() {
+                    ui.add(egui::Label::new(RichText::new(format!("+ {}", mark.added)).color(t.green)).wrap().selectable(true));
+                }
+            });
+            ui.add_space(5.0);
+        }
+        if let Some(index) = show
+            && let Err(error) = command(app, "ui.agentShowChange", &json!({"index":index}))
+        {
+            app.ollama.status = error;
+        }
+        if app.ollama.review.truncated {
+            ui.small("Large changes are summarized; not every region is highlighted.");
+        }
+    }
 }
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
@@ -575,207 +727,211 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    egui::Panel::right("ollama_chat")
-        .default_size(400.0)
-        .size_range(330.0..=640.0)
+    egui::Panel::right("agent_chat_v2")
+        .default_size(440.0)
+        .size_range(340.0..=680.0)
         .resizable(true)
-        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(16).stroke(Stroke::new(1.0, t.border)))
+        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(18).stroke(Stroke::new(1.0, t.border)))
         .show(ui, |ui| {
-            if crate::panes::header(ui, "Agent chat") {
-                app.ollama.open = false;
+            let ctx = ui.ctx().clone();
+            // This scope changes only the chat: quiet, borderless controls retain native focus/hover.
+            let visuals = ui.visuals_mut();
+            for visual in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered] {
+                visual.bg_stroke = Stroke::NONE;
+                visual.corner_radius = egui::CornerRadius::same(8);
             }
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(source_name(app.ollama.source)).size(18.0).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new("×").frame(false)).on_hover_text("Close chat").clicked() {
+                        app.ollama.open = false;
+                    }
+                    ui.add_enabled_ui(!app.ollama.busy, |ui| {
+                        ui.menu_button("•••", |ui| {
+                            connection_menu(app, ui, &ctx);
+                        });
+                        if ui.add(egui::Button::new("New chat").frame(false)).clicked() {
+                            let _ = command(app, "ui.ollamaNewChat", &json!({}));
+                            app.ollama.markdown = Default::default();
+                            app.ollama.thinking.clear();
+                        }
+                    });
+                });
+            });
             if cfg!(target_arch = "wasm32") {
-                ui.label("Agent chat is available in the desktop app.");
+                ui.label("Agent chat requires the desktop app.");
                 return;
             }
-            let ctx = ui.ctx().clone();
             ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut app.ollama.allow_edits, "Allow editing").on_hover_text("Hard permission switch: AI changes are rejected while off.");
+                ui.label(
+                    RichText::new(if app.ollama.allow_edits { "Live edits" } else { "Read only" }).size(11.0).color(if app.ollama.allow_edits {
+                        t.accent_text
+                    } else {
+                        t.text_dim
+                    }),
+                );
+            });
+            ui.add_space(4.0);
+            ui.separator();
+            let extra = if app.ollama.models.is_empty() && !app.ollama.busy { 30.0 } else { 0.0 }
+                + if app.ollama.status != "Ready." && !app.ollama.busy { 28.0 } else { 0.0 };
+            let height = (ui.available_height() - 190.0 - extra).max(40.0);
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_height(height);
+                egui::ScrollArea::vertical()
+                    .id_salt("agent_conversation_v2")
+                    .stick_to_bottom(true)
+                    .max_height(height)
+                    .min_scrolled_height(height)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        if app.ollama.entries.is_empty() {
+                            ui.add_space(55.0);
+                            ui.label(RichText::new("Write something great.").size(22.0));
+                            ui.add_space(6.0);
+                            ui.label(RichText::new("Your document, with a thinking partner.").color(t.text_dim));
+                            ui.add_space(22.0);
+                            for (label, prompt) in [
+                                ("Summarize", "Summarize the current document."),
+                                ("Refine my writing", "Suggest improvements to the selected text, or the document if nothing is selected."),
+                                ("Research", "Help me research a topic for this document. Ask which topic first."),
+                            ] {
+                                if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                                    app.ollama.input = prompt.into();
+                                }
+                            }
+                        }
+                        if !app.ollama.thinking.is_empty() {
+                            ui.add_space(10.0);
+                            ui.collapsing("Thinking summary", |ui| {
+                                markdown::show(ui, &mut app.ollama.markdown, &app.ollama.thinking);
+                            });
+                        }
+                        for (role, text) in &app.ollama.entries {
+                            message(ui, role, text, &t, &mut app.ollama.markdown);
+                        }
+                        if !app.ollama.live_response.is_empty() {
+                            message(ui, "Assistant", &app.ollama.live_response, &t, &mut app.ollama.markdown);
+                        }
+                        if app.ollama.busy {
+                            ui.add_space(12.0);
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label(
+                                    RichText::new(if app.ollama.phase.is_empty() { "Thinking…" } else { &app.ollama.phase })
+                                        .size(12.0)
+                                        .color(t.text_dim),
+                                );
+                            });
+                        }
+                        changes_view(app, ui, &t);
+                        if !app.ollama.sources.is_empty() {
+                            ui.add_space(8.0);
+                            ui.collapsing("Sources", |ui| {
+                                for (title, url) in &app.ollama.sources {
+                                    ui.hyperlink_to(title, url);
+                                }
+                            });
+                        }
+                    });
+            });
+            ui.add_space(10.0);
+            egui::Frame::NONE.fill(t.hover.gamma_multiply(0.45)).stroke(Stroke::new(1.0, t.border)).corner_radius(14).inner_margin(12).show(
+                ui,
+                |ui| {
+                    let response = ui.add(
+                        egui::TextEdit::multiline(&mut app.ollama.input)
+                            .frame(egui::Frame::NONE)
+                            .hint_text("Ask anything about your document")
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY)
+                            .char_limit(MAX_INPUT),
+                    );
+                    let submit = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command);
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut app.ollama.internet, "Web").on_hover_text("Allow public web search and browsing").changed()
+                            && app.ollama.busy
+                            && !app.ollama.internet
+                        {
+                            app.ollama.stop();
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if app.ollama.busy {
+                                if ui.add(egui::Button::new("■").frame(false)).on_hover_text("Stop").clicked() {
+                                    app.ollama.stop();
+                                }
+                            } else {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if (ui
+                                    .add_enabled(
+                                        !app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty(),
+                                        egui::Button::new(RichText::new("↑").size(19.0).color(t.panel))
+                                            .fill(t.text)
+                                            .corner_radius(255)
+                                            .min_size(egui::vec2(28.0, 28.0)),
+                                    )
+                                    .on_hover_text("Send · ⌘/Ctrl Enter")
+                                    .clicked()
+                                    || submit)
+                                    && !app.ollama.input.trim().is_empty()
+                                {
+                                    send(app, &ctx);
+                                }
+                            }
+                        });
+                    });
+                },
+            );
+            ui.add_space(6.0);
             ui.add_enabled_ui(!app.ollama.busy, |ui| {
                 ui.horizontal(|ui| {
-                    let old = app.ollama.source;
-                    egui::ComboBox::from_id_salt("agent_provider").selected_text(RichText::new(source_name(old)).strong()).width(140.0).show_ui(
-                        ui,
-                        |ui| {
-                            for source in [Source::Codex, Source::Local, Source::Cloud, Source::LlamaCpp] {
-                                ui.selectable_value(&mut app.ollama.source, source, source_name(source));
+                    let old = app.ollama.model.clone();
+                    let title = app.ollama.capabilities.iter().find(|o| o.model == old).map_or_else(|| old.clone(), |o| o.display_name.clone());
+                    egui::ComboBox::from_id_salt("agent_model_v2")
+                        .truncate()
+                        .width((ui.available_width() - 160.0).max(90.0))
+                        .selected_text(RichText::new(if title.is_empty() { "Select model" } else { &title }).size(11.0))
+                        .show_ui(ui, |ui| {
+                            for model in &app.ollama.models {
+                                let label =
+                                    app.ollama.capabilities.iter().find(|o| o.model == *model).map_or(model.as_str(), |o| o.display_name.as_str());
+                                ui.selectable_value(&mut app.ollama.model, model.clone(), label);
                             }
-                        },
-                    );
-                    if old != app.ollama.source {
-                        app.ollama.models.clear();
-                        app.ollama.model.clear();
+                        });
+                    if old != app.ollama.model {
+                        app.ollama.effort.clear();
                         app.ollama.history.clear();
-                        app.ollama.entries.clear();
-                        app.ollama.sources.clear();
-                        #[cfg(not(target_arch = "wasm32"))]
-                        refresh(app, &ctx);
                     }
-                    if ui.button("New chat").clicked() {
-                        app.ollama.history.clear();
-                        app.ollama.entries.clear();
-                        app.ollama.sources.clear();
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if ui.small_button("↻").on_hover_text("Refresh models and connection").clicked() {
-                        refresh(app, &ctx);
-                    }
-                });
-                ui.add_space(6.0);
-                let old_model = app.ollama.model.clone();
-                egui::ComboBox::from_id_salt("ollama_model")
-                    .truncate()
-                    .width(ui.available_width() - 12.0)
-                    .selected_text(if old_model.is_empty() { "Choose a model" } else { &old_model })
-                    .show_ui(ui, |ui| {
-                        for model in &app.ollama.models {
-                            ui.selectable_value(&mut app.ollama.model, model.clone(), model);
-                        }
-                    });
-                if old_model != app.ollama.model {
-                    app.ollama.history.clear();
-                    app.ollama.entry("Activity", "Model changed. Started a new chat context.".into());
-                }
-                if app.ollama.source == Source::Codex {
-                    ui.add_space(4.0);
-                    ui.small(
-                        RichText::new(if app.ollama.account.is_empty() { "Connect your ChatGPT subscription" } else { &app.ollama.account })
-                            .color(t.text_dim),
-                    );
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if !app.ollama.signed_in
-                        && ui.button("Sign in with ChatGPT").clicked()
-                        && let Err(e) = command(app, "ui.codexSignIn", &json!({}))
-                    {
-                        app.ollama.status = e;
-                    }
-                }
-                ui.collapsing("Connection settings", |ui| {
                     if app.ollama.source == Source::Codex {
-                        if !app.ollama.usage.is_empty() {
-                            ui.small(&app.ollama.usage);
-                        }
-                        ui.small("Uses your installed Codex and ChatGPT account. Your Codex usage limits apply. Document context is sent to OpenAI.");
-                        ui.hyperlink_to("Manage Codex usage", "https://chatgpt.com/codex/settings/usage");
-                    } else {
-                        if app.ollama.source == Source::Local {
-                            ui.label("Ollama server");
-                            ui.add(egui::TextEdit::singleline(&mut app.ollama.endpoint).desired_width(f32::INFINITY));
-                        }
-                        if app.ollama.source == Source::LlamaCpp {
-                            ui.label("llama.cpp server");
-                            ui.add(egui::TextEdit::singleline(&mut app.ollama.llama_endpoint).desired_width(f32::INFINITY));
-                        }
-                        ui.label("Ollama API key (optional)");
-                        ui.add(egui::TextEdit::singleline(&mut app.ollama.api_key).password(true).desired_width(f32::INFINITY));
-                        ui.small("The key stays in memory. Cloud uses signed-in Ollama without a key. Refresh after changing connection settings.");
-                        ui.hyperlink_to("Ollama account", "https://ollama.com/settings/keys");
+                        let options = app.ollama.capabilities.iter().find(|o| o.model == app.ollama.model);
+                        egui::ComboBox::from_id_salt("agent_effort")
+                            .truncate()
+                            .width(144.0)
+                            .selected_text(RichText::new(format!("Thinking: {}", effort_label(&app.ollama.effort))).size(11.0))
+                            .show_ui(ui, |ui| {
+                                let label = options.map_or("Auto · model default".into(), |o| format!("Auto · {}", effort_label(&o.default_effort)));
+                                ui.selectable_value(&mut app.ollama.effort, String::new(), label);
+                                if let Some(options) = options {
+                                    for (level, description) in &options.efforts {
+                                        ui.selectable_value(&mut app.ollama.effort, level.clone(), effort_label(level)).on_hover_text(description);
+                                    }
+                                }
+                            });
                     }
                 });
             });
-            ui.add_space(8.0);
-            egui::Frame::NONE.fill(t.hover).corner_radius(12).inner_margin(10).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut app.ollama.allow_edits, "Allow AI editing");
-                    if ui.add_enabled(can_undo(app), egui::Button::new("Undo change")).on_hover_text("Undo the last AI document change").clicked()
-                        && let Err(e) = undo(app)
-                    {
-                        app.ollama.status = e;
-                    }
-                });
-                ui.small(
-                    RichText::new(if app.ollama.allow_edits {
-                        "Edits appear live · every change is undoable"
-                    } else {
-                        "Read only · your document is protected"
-                    })
-                    .color(if app.ollama.allow_edits { t.text_dim } else { t.green }),
-                );
-                if ui.checkbox(&mut app.ollama.internet, "Search the web").changed() && app.ollama.busy && !app.ollama.internet {
-                    app.ollama.stop();
+            if app.ollama.models.is_empty() && !app.ollama.busy {
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui.button("Connect / load models").clicked() {
+                    refresh(app, &ctx);
                 }
-            });
-            ui.add_space(8.0);
-            let conversation_height = (ui.available_height() - 165.0).max(50.0);
-            egui::ScrollArea::vertical()
-                .id_salt("ollama_messages")
-                .stick_to_bottom(true)
-                .max_height(conversation_height)
-                .min_scrolled_height(conversation_height)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    if app.ollama.entries.is_empty() {
-                        ui.add_space(32.0);
-                        ui.label(RichText::new("What are we writing?").size(23.0).strong());
-                        ui.add_space(8.0);
-                        ui.label(RichText::new("Draft, refine, or research with your document beside you.").size(14.0).color(t.text_dim));
-                        ui.add_space(18.0);
-                        for (label, prompt) in [
-                            ("Summarize this document", "Summarize the current document."),
-                            ("Polish my writing", "Suggest improvements to the selected passage, or the document if nothing is selected."),
-                            ("Research a topic", "Help me research a topic for this document. Ask which topic first."),
-                        ] {
-                            if ui.add_sized([ui.available_width(), 34.0], egui::Button::new(label).corner_radius(10)).clicked() {
-                                app.ollama.input = prompt.into();
-                            }
-                            ui.add_space(6.0);
-                        }
-                    }
-                    for (role, text) in &app.ollama.entries {
-                        message_card(ui, role, text, &t);
-                    }
-                    if !app.ollama.live_response.is_empty() {
-                        message_card(ui, "Assistant", &app.ollama.live_response, &t);
-                    }
-                    if app.ollama.busy {
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.small("Working on your request…");
-                        });
-                    }
-                    if !app.ollama.sources.is_empty() {
-                        ui.add_space(12.0);
-                        ui.collapsing("Sources", |ui| {
-                            for (title, url) in &app.ollama.sources {
-                                ui.hyperlink_to(title, url);
-                            }
-                        });
-                    }
-                });
-            ui.add_space(10.0);
-            egui::Frame::NONE.fill(t.input).stroke(Stroke::new(1.0, t.input_border)).corner_radius(18).inner_margin(12).show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut app.ollama.input)
-                        .frame(egui::Frame::NONE)
-                        .hint_text("Message your document assistant…")
-                        .desired_rows(3)
-                        .desired_width(f32::INFINITY)
-                        .char_limit(MAX_INPUT),
-                );
-                ui.horizontal(|ui| {
-                    ui.small(RichText::new(if app.ollama.allow_edits { "Editing enabled" } else { "Read only" }).color(t.text_dim));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if app.ollama.busy {
-                            if ui.button("Stop").clicked() {
-                                app.ollama.stop();
-                            }
-                        } else {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            if ui
-                                .add_enabled(
-                                    !app.ollama.model.is_empty() && !app.ollama.input.trim().is_empty(),
-                                    egui::Button::new(RichText::new("Send ↑").color(t.on_accent)).fill(t.accent).corner_radius(12),
-                                )
-                                .clicked()
-                            {
-                                send(app, &ctx);
-                            }
-                        }
-                    });
-                });
-            });
-            ui.add_space(5.0);
-            ui.add(egui::Label::new(RichText::new(&app.ollama.status).size(11.0).color(t.text_dim)).wrap());
+            }
+            if app.ollama.status != "Ready." && !app.ollama.busy {
+                ui.add(egui::Label::new(RichText::new(&app.ollama.status).size(11.0).color(t.text_dim)).wrap());
+            }
         });
 }
 
@@ -783,7 +939,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 pub fn inspect(app: &WordApp) -> Value {
     json!({"open":app.ollama.open,"model":app.ollama.model,"source":match app.ollama.source {Source::Cloud=>"cloud",Source::Local=>"local",Source::LlamaCpp=>"llamacpp",Source::Codex=>"codex"},
         "busy":app.ollama.busy,"status":app.ollama.status,"allowEdits":app.ollama.allow_edits,"internet":app.ollama.internet,
-        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
+        "account":app.ollama.account,"signedIn":app.ollama.signed_in,"usage":app.ollama.usage,"effort":app.ollama.effort,"capabilities":app.ollama.capabilities,"phase":app.ollama.phase,"changes":app.ollama.review.inspect(app.session.rev()),"canUndo":can_undo(app),"models":app.ollama.models,"messages":app.ollama.entries,"sources":app.ollama.sources})
 }
 
 pub fn commands(app: &WordApp) -> Vec<Value> {
@@ -795,7 +951,7 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         (
             "ui.ollamaSettings",
             "Ollama connection settings",
-            r#"{"source"?:"local|cloud|llamacpp|codex","endpoint"?:string,"llamaEndpoint"?:string,"model"?:string,"apiKey"?:string}"#,
+            r#"{"source"?:"local|cloud|llamacpp|codex","endpoint"?:string,"llamaEndpoint"?:string,"model"?:string,"effort"?:string,"apiKey"?:string}"#,
         ),
         ("ui.ollamaRefresh", "Refresh Ollama models", "{}"),
         ("ui.ollamaSend", "Send Ollama message", r#"{"text"?:string}"#),
@@ -804,6 +960,8 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
         ("ui.ollamaEdit", "Allow AI editing", r#"{"value"?:bool}"#),
         ("ui.ollamaInternet", "Internet access", r#"{"value"?:bool}"#),
         ("ui.ollamaUndo", "Undo AI change", "{}"),
+        ("ui.agentDismissChanges", "Dismiss AI highlighting", "{}"),
+        ("ui.agentShowChange", "Show AI change in document", r#"{"index"?:number}"#),
     ]
     .into_iter()
     .map(|(id, label, params)| {
@@ -815,6 +973,16 @@ pub fn commands(app: &WordApp) -> Vec<Value> {
 
 pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, String> {
     match id {
+        "ui.agentShowChange" => {
+            if app.ollama.review.revision != app.session.rev() {
+                return Err("The document has changed since this AI edit.".into());
+            }
+            let index = p.get("index").and_then(Value::as_u64).and_then(|v| usize::try_from(v).ok()).unwrap_or(0);
+            let pos = app.ollama.review.marks.get(index).ok_or("No such AI change")?.start.clone();
+            app.session.run("caret.set", &json!({"pos":wordcraft_engine::cmd::pos_json(&pos)})).map_err(|e| e.to_string())?;
+            app.canvas.scroll_to_caret = true;
+        }
+        "ui.agentDismissChanges" => app.ollama.review = edits::Review::default(),
         "ui.codexChat" => {
             if app.ollama.source != Source::Codex {
                 app.ollama.stop();
@@ -822,6 +990,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 app.ollama.model.clear();
                 app.ollama.models.clear();
                 app.ollama.entries.clear();
+                app.ollama.markdown = Default::default();
+                app.ollama.thinking.clear();
                 app.ollama.sources.clear();
             }
             app.ollama.open = p.get("value").and_then(Value::as_bool).unwrap_or(true);
@@ -858,6 +1028,8 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
             app.ollama.stop();
             app.ollama.history.clear();
             app.ollama.entries.clear();
+            app.ollama.markdown = Default::default();
+            app.ollama.thinking.clear();
             app.ollama.sources.clear();
             app.ollama.status = "Ready.".into();
         }
@@ -878,6 +1050,7 @@ pub(crate) fn command(app: &mut WordApp, id: &str, p: &Value) -> Result<Value, S
                 ("endpoint", &mut app.ollama.endpoint, 2000),
                 ("llamaEndpoint", &mut app.ollama.llama_endpoint, 2000),
                 ("model", &mut app.ollama.model, 256),
+                ("effort", &mut app.ollama.effort, 64),
                 ("apiKey", &mut app.ollama.api_key, 2000),
             ] {
                 if let Some(text) = p.get(name).and_then(Value::as_str) {
@@ -940,6 +1113,7 @@ fn verified_write(app: &mut WordApp, args: &Value) -> Result<Value, String> {
     let snapshot = app.session.edit_snapshot();
     let pending = app.session.pending.clone();
     let marks = app.ollama.undo.len();
+    let review = app.ollama.review.clone();
     let result = (|| {
         if mode == "append" {
             let end = wordcraft_engine::cmd::pos_json(&app.session.doc.end_of(wordcraft_doc::StoryRef::Body));
@@ -970,6 +1144,8 @@ fn verified_write(app: &mut WordApp, args: &Value) -> Result<Value, String> {
         app.session.restore(snapshot);
         app.session.pending = pending;
         app.ollama.undo.truncate(marks);
+        app.ollama.review = review;
+        app.ollama.review.restore_revision(&app.session.doc, app.session.rev());
         app.ollama.turn_revision = Some(app.session.rev());
         if let Some(mark) = app.ollama.undo.last_mut() {
             mark.revision = app.session.rev();
@@ -980,3 +1156,7 @@ fn verified_write(app: &mut WordApp, args: &Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn paint_edits(app: &WordApp, ui: &Ui, painter: &egui::Painter, layout: &wordcraft_layout::DocLayout, pages: &[egui::Rect], scale: f32) {
+    edits::paint(app, ui, painter, layout, pages, scale);
+}

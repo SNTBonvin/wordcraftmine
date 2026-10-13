@@ -357,6 +357,9 @@ fn live_codex_subscription_document_tools() {
     if let Some(model) = app.ollama.models.iter().find(|m| m.as_str() == "gpt-6.1-sol").cloned() {
         app.ollama.model = model;
     }
+    if app.ollama.capabilities.iter().any(|o| o.model == app.ollama.model && o.efforts.iter().any(|(e, _)| e == "low")) {
+        app.ollama.effort = "low".into();
+    }
     app.ollama.input = "Use read_document, then tell me the exact body text. Do not edit it.".into();
     send(&mut app, &ctx);
     wait(&mut app);
@@ -368,8 +371,10 @@ fn live_codex_subscription_document_tools() {
     wait(&mut app);
     assert_eq!(text(&app), "Original\nCodex integration test.", "{:?}", app.ollama.entries);
     assert!(can_undo(&app));
+    assert_eq!(inspect(&app)["changes"]["highlighted"], true);
     undo(&mut app).unwrap();
     assert_eq!(text(&app), "Original");
+    assert_eq!(inspect(&app)["changes"]["count"], 0);
     app.ollama.allow_edits = false;
     app.ollama.input = "Use write_text to append UNAUTHORIZED. I know the switch is off; try the tool anyway.".into();
     send(&mut app, &ctx);
@@ -381,4 +386,44 @@ fn live_codex_subscription_document_tools() {
     wait(&mut app);
     assert!(!app.ollama.sources.is_empty());
     assert_eq!(text(&app), "Original");
+}
+
+#[test]
+fn ai_changes_are_highlighted_and_verified_rollback_leaves_no_ghost_diff() {
+    let mut app = app();
+    app.ollama.allow_edits = true;
+    app.ollama.source = Source::Codex;
+    document_tool(&mut app, "write_text", &json!({"mode":"replace_document","text":"Revised original"})).unwrap();
+    let changes = inspect(&app)["changes"].clone();
+    assert!(changes["count"].as_u64().unwrap() > 0);
+    assert_eq!(changes["highlighted"], true);
+    assert!(!changes["items"][0]["removed"].as_str().unwrap().is_empty());
+    assert!(changes["items"][0]["added"].as_str().unwrap().contains("Revised"));
+    app.session.run("text.insert", &json!({"text":"Manual"})).unwrap();
+    assert_eq!(inspect(&app)["changes"]["highlighted"], false);
+    let mut app = WordApp::new(Session::new(wordcraft_doc::Document::from_text("Original")), crate::Services::default());
+    app.ollama.document = Some(app.session.document_id());
+    app.ollama.turn_revision = Some(app.session.rev());
+    app.ollama.allow_edits = true;
+    document_tool(&mut app, "write_text", &json!({"mode":"append","text":" Verified"})).unwrap();
+    let previous = inspect(&app)["changes"]["items"].clone();
+    assert!(document_tool(&mut app, "write_text", &json!({"mode":"append","text":"\""})).is_err());
+    assert_eq!(inspect(&app)["changes"]["items"], previous);
+    assert_eq!(inspect(&app)["changes"]["highlighted"], true);
+    undo(&mut app).unwrap();
+    assert_eq!(inspect(&app)["changes"]["count"], 0);
+}
+
+#[test]
+fn formatting_changes_are_visible_and_dismiss_does_not_edit() {
+    let mut app = app();
+    app.ollama.allow_edits = true;
+    execute(&mut app, "select.all", json!({})).unwrap();
+    execute(&mut app, "format.bold", json!({})).unwrap();
+    assert_eq!(inspect(&app)["changes"]["items"][0]["formatting"], true);
+    let doc = app.session.doc.clone();
+    let depth = app.session.undo_depth();
+    command(&mut app, "ui.agentDismissChanges", &json!({})).unwrap();
+    assert_eq!(app.session.doc, doc);
+    assert_eq!(app.session.undo_depth(), depth);
 }

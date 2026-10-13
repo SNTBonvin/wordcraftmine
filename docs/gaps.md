@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Codex subscription chat and refreshed agent sidebar; Ollama task pane provides draft/rewrite/summarize through document commands; assistant gap narrowed; previously trivial: the Font list no longer keeps every previewed font in memory, #848; table column and row markers on the rulers, #700; table borders and resize handle drag on the page, #217; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Ollama task pane provides draft/rewrite/summarize through document commands; assistant gap narrowed; previously trivial: the Font list no longer keeps every previewed font in memory, #848; table column and row markers on the rulers, #700; table borders and resize handle drag on the page, #217; formatting revisions landed, #41; Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -75,6 +75,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Native Markdown chat, model-supported Codex thinking levels and transient document diffs/animation; no saved review markup introduced |
 | 2026-10-13 | minor | [Codex subscription chat](codex-chat.md) joins local/cloud agents with streamed replies and guarded document tools; refreshed right chat pane |
 | 2026-10-11 | trivial | Table column and row markers on the rulers landed (#700): the ruler's column markers are off the UI/UX gaps |
 | 2026-10-11 | trivial | UI/UX gaps: the table context menu landed, its items following the selection as in Word (Delete Cells, Rows, Columns or Table, Merge and Split Cells, Distribute, AutoFit, Text Direction, Insert Caption…, Table Properties…); objects' menus and Border Styles remain |
