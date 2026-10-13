@@ -959,6 +959,18 @@ impl Session {
         self.bib_style = doc_bib_style(&doc);
         self.doc = doc;
         self.doc.ensure_nonempty();
+        // #995: open in the view the file was saved in (nothing stated: keep the current view).
+        match self.doc.settings.view.as_deref() {
+            None => {}
+            Some("web") => self.view.mode = wordcraft_layout::ViewMode::Web,
+            Some("outline") => self.view.mode = wordcraft_layout::ViewMode::Outline,
+            Some(_) => self.view.mode = wordcraft_layout::ViewMode::Print,
+        }
+        if let Some(z) = self.doc.settings.zoom {
+            self.view.zoom = (z as f32) / 100.0;
+            self.view.fit.clear();
+            self.view.multi_page = false;
+        }
         self.password = None;
         self.sel = Selection::caret(self.doc.start_of(StoryRef::Body));
         self.pending = None;

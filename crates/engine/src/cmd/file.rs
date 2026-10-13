@@ -200,6 +200,19 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
         s.password = Some(crate::io::Password::new(pw));
     }
     s.stamp_save();
+    // #995: remember the view in the file, so reopening restores it (Draft and Read have no
+    // OOXML view value and keep whatever the file had).
+    if !matches!(s.view.mode, wordcraft_layout::ViewMode::Draft | wordcraft_layout::ViewMode::Read) {
+        s.doc.settings.view = Some(
+            match s.view.mode {
+                wordcraft_layout::ViewMode::Web => "web",
+                wordcraft_layout::ViewMode::Outline => "outline",
+                _ => "print",
+            }
+            .to_string(),
+        );
+    }
+    s.doc.settings.zoom = Some((s.view.zoom * 100.0).round().clamp(10.0, 500.0) as u32);
     let password = s.password.as_ref().map(crate::io::Password::as_str);
     crate::io::save_path_with(&path, &s.doc, password, &export_options(s, v)).map_err(CmdError::Failed)?;
     let encrypted = password.is_some() && crate::io::can_encrypt(&path.to_string_lossy());

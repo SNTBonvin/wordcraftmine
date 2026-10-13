@@ -1014,6 +1014,16 @@ impl Reader<'_> {
                     }
                 }
                 "w:evenAndOddHeaders" => s.even_odd_headers = on_off(k),
+                // #995: the view the file was saved in (one of none/print/outline/masterViews/normal/web).
+                "w:view" => {
+                    s.view = k
+                        .attr("w:val")
+                        .filter(|v| !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_ascii_alphanumeric()))
+                        .map(str::to_string);
+                }
+                "w:zoom" => {
+                    s.zoom = k.attr("w:percent").and_then(|v| v.parse::<u32>().ok()).map(|z| z.clamp(10, 500));
+                }
                 "w:drawingGridHorizontalSpacing" | "w:drawingGridVerticalSpacing" => {
                     if let Some(v) = tw(k, "w:val").filter(|v| *v > 0.0) {
                         let v = v.clamp(0.5, 1584.0);

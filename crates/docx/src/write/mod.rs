@@ -890,7 +890,12 @@ fn settings_xml(doc: &Document, footnotes: bool, endnotes: bool, template_rel: O
     let ns = xml::body_ns();
     let ns_refs: Vec<(&str, &str)> = ns.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     w.open("w:settings", &ns_refs);
-    w.empty("w:zoom", &[("w:percent", "100")]);
+    // #995: the view and zoom the document is opened in (Word reads these too).
+    if let Some(v) = s.view.as_deref().filter(|v| !v.is_empty()) {
+        w.empty("w:view", &[("w:val", v)]);
+    }
+    let zoom = s.zoom.unwrap_or(100).to_string();
+    w.empty("w:zoom", &[("w:percent", zoom.as_str())]);
     if s.page_color.is_some() {
         w.empty("w:displayBackgroundShape", &[]);
     }

@@ -419,6 +419,12 @@ pub struct CoreProps {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub track_changes: bool,
+    /// Document view (`w:view`: `print`, `web`, `outline`, …), when the file states one (#995).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    /// Zoom percent (`w:zoom`), when the file states one (#995).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoom: Option<u32>,
     /// Default tab stop interval, points.
     pub default_tab: f32,
     pub even_odd_headers: bool,
@@ -529,6 +535,8 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             track_changes: false,
+            view: None,
+            zoom: None,
             default_tab: 36.0,
             even_odd_headers: false,
             mirror_margins: false,

@@ -2329,6 +2329,25 @@ fn html_pictures_load_relative_to_the_file() {
     assert!(!text.contains("Logo") && text.contains('T') && text.contains("Web"), "{text:?}");
 }
 
+/// View and zoom survive a save/reopen round trip (#995): the file remembers them, and
+/// opening applies them.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn saved_view_settings_reopen() {
+    let dir = scratch_dir("view-settings");
+    let path = dir.join("v.docx");
+    let p = path.to_string_lossy().to_string();
+    let mut s = s();
+    run(&mut s, "view.zoom", json!({"value": 150}));
+    run(&mut s, "file.save", json!({"path": p}));
+    assert_eq!(s.doc.settings.zoom, Some(150));
+    assert_eq!(s.doc.settings.view.as_deref(), Some("print"));
+    run(&mut s, "view.zoom", json!({"value": 100}));
+    run(&mut s, "file.open", json!({"path": p}));
+    assert_eq!(s.view.zoom, 1.5, "the saved zoom comes back");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A fresh, empty scratch folder for one test.
 #[cfg(not(target_arch = "wasm32"))]
 fn scratch_dir(name: &str) -> std::path::PathBuf {

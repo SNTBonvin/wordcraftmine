@@ -256,12 +256,25 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
+    /// Fit modes by file path, most recent first (#995).
+    pub doc_views: Vec<(String, DocViewMemory)>,
 }
 
 /// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
 pub const MAX_RECENT: usize = 50;
 /// Most custom dictionary words read back from `ui.json`.
 pub const MAX_DICTIONARY: usize = 10_000;
+/// Most per-file fit modes remembered (#995).
+pub const MAX_DOC_VIEWS: usize = 100;
+
+/// A file's fit mode, most recent first (#995): OOXML has no slot for one-page vs
+/// multiple-pages, so a reopened file gets back the fit it was saved or last opened with.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DocViewMemory {
+    pub fit: String,
+    pub multi_page: bool,
+}
 
 impl Default for UiState {
     fn default() -> Self {
@@ -305,6 +318,7 @@ impl Default for UiState {
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
+            doc_views: Vec::new(),
         }
     }
 }
@@ -730,7 +744,7 @@ impl WordApp {
         if let Ok(v) = &r {
             self.keep_web_font(id, &params, v);
         }
-        self.after_command(id);
+        self.after_command(id, &r);
         if let Err(e) = &r {
             self.status(e.clone());
         }
@@ -860,7 +874,7 @@ impl WordApp {
         false
     }
 
-    fn after_command(&mut self, id: &str) {
+    fn after_command(&mut self, id: &str, r: &Result<Value, String>) {
         options::sync(self);
         self.canvas.caret_visible_since = now_ms();
         if id == "view.outline" {
@@ -886,12 +900,42 @@ impl WordApp {
             self.ui.recent.insert(0, p);
             self.ui.recent.truncate(MAX_RECENT);
         }
+        // #995: OOXML has no slot for the fit mode, so remember each file's and give it back
+        // on reopen (a saved document's own view settings, applied first, always win).
+        if let Ok(v) = r {
+            if matches!(id, "file.save" | "file.saveAs") && v.get("saved").and_then(Value::as_bool) == Some(true) {
+                self.remember_doc_view();
+            } else if id == "file.open" && v.get("path").and_then(Value::as_str).is_some() {
+                self.restore_doc_view();
+            }
+        }
         if !self.session.status.is_empty() {
             // Engine messages are English; the catalog translates the ones it knows.
             let s = std::mem::take(&mut self.session.status);
             let s = tl!(&s).to_string();
             self.status(s);
         }
+    }
+
+    /// Remember the current file's fit mode for its next open (#995).
+    fn remember_doc_view(&mut self) {
+        let Some(path) = self.session.path.as_ref().map(|p| p.to_string_lossy().to_string()) else { return };
+        let view = DocViewMemory { fit: self.session.view.fit.clone(), multi_page: self.session.view.multi_page };
+        self.ui.doc_views.retain(|(p, _)| *p != path);
+        self.ui.doc_views.insert(0, (path, view));
+        self.ui.doc_views.truncate(MAX_DOC_VIEWS);
+    }
+
+    /// Give a reopened file back the fit mode it was saved or last opened with (#995). The
+    /// file's own view settings (applied by `Session::set_document`) always win for mode and
+    /// zoom; only the fit, which OOXML cannot express, comes from memory.
+    fn restore_doc_view(&mut self) {
+        let Some(path) = self.session.path.as_ref().map(|p| p.to_string_lossy().to_string()) else { return };
+        let Some((_, view)) = self.ui.doc_views.iter().find(|(p, _)| *p == path).cloned() else { return };
+        self.session.view.fit = view.fit.clone();
+        self.session.view.multi_page = view.multi_page;
+        self.session.view.single_column = matches!(view.fit.as_str(), "onePage" | "pageWidth");
+        self.remember_doc_view();
     }
 
     /// Requests commands make of the UI (open a dialog…).
@@ -2709,6 +2753,23 @@ mod tests {
         a.run("file.new", json!({"template": "letter"})).unwrap();
         assert_eq!(prompt(&a), None);
         assert!(!body_text(&a).trim().is_empty());
+    }
+
+    /// #995: a reopened file gets back the fit mode it was saved with (OOXML cannot express
+    /// one-page vs multiple-pages, so the app remembers it per file).
+    #[test]
+    fn reopened_files_keep_their_fit() {
+        let dir = scratch("fit");
+        let path = dir.join("fit.docx");
+        let p = path.to_string_lossy().to_string();
+        let mut a = app();
+        a.run("view.zoom", json!({"value": "onePage"})).unwrap();
+        a.run("file.save", json!({"path": p})).unwrap();
+        a.run("view.zoom", json!({"value": "multiplePages"})).unwrap();
+        a.run("file.open", json!({"path": p})).unwrap();
+        assert_eq!(a.session.view.fit, "onePage");
+        assert!(!a.session.view.multi_page);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #1268: the control channel has no dialog to answer, so `execute` refuses to discard
