@@ -2077,3 +2077,8 @@
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	オン: WordCraft は [ファイル] › [ホーム] で開き、白紙の文書、テンプレート、最近使った文書を表示します。オフ: 白紙の文書を開きます。
 	Privacy Options	プライバシー オプション
 	Trust Center	セキュリティ センター
+	Privacy for this document	このドキュメントのプライバシー
+	Remove my name from comments, changes and file properties when saving	保存時にコメント、変更、ファイルのプロパティから自分の名前を削除する
+	Leave out the date and time of comments and tracked changes when saving	保存時にコメントと変更履歴の日時を含めない
+	The document you are editing keeps the names and dates; only the saved file leaves them out.	編集中のドキュメントには名前と日時が残ります。保存したファイルにだけ含まれません。
+	Privacy Settings	現在のプライバシー設定

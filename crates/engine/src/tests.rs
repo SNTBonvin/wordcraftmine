@@ -1611,7 +1611,7 @@ fn privacy_options_strip_names_and_dates_from_the_saved_docx_only() {
     run(&mut s, "text.insert", json!({"text": " added"}));
     run(&mut s, "select.text", json!({"text": "added"}));
     run(&mut s, "review.newComment", json!({"text": "Tightened."}));
-    let off = run(&mut s, "file.privacyOptions", json!({}));
+    let off = run(&mut s, "file.privacy", json!({}));
     assert_eq!(off, json!({"removePersonalInfo": false, "removeDateTime": false}));
     let plain = wordcraft_docx::write(&s.doc).unwrap();
     let back = wordcraft_docx::read(&plain).unwrap();
@@ -1631,6 +1631,23 @@ fn privacy_options_strip_names_and_dates_from_the_saved_docx_only() {
     // Undoable like any document change.
     run(&mut s, "edit.undo", json!({}));
     assert!(!s.doc.settings.remove_personal_info);
+}
+
+/// Reading the privacy settings changes nothing: no undo step, no unsaved changes, and it works
+/// on a protected document. `file.privacyOptions` without a setting is refused, not a silent edit.
+#[test]
+fn reading_privacy_options_is_side_effect_free() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Draft"}));
+    s.dirty = false;
+    let undo = s.undo_depth();
+    assert_eq!(run(&mut s, "file.privacy", json!({})), json!({"removePersonalInfo": false, "removeDateTime": false}));
+    assert!(s.run("file.privacyOptions", &json!({})).is_err());
+    assert!(s.run("file.privacyOptions", &json!({"removePersonalInfo": "yes"})).is_err());
+    assert_eq!(s.undo_depth(), undo, "no undo step");
+    assert!(!s.dirty, "no unsaved changes");
+    s.doc.settings.protection = Some("readOnly".into());
+    assert_eq!(run(&mut s, "file.privacy", json!({}))["removeDateTime"], false);
 }
 
 #[test]
