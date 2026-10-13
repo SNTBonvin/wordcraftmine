@@ -149,13 +149,18 @@ impl From<InterfaceSize> for serde_json::Value {
 }
 
 /// A `ui.json` from before #822 saved `interfaceSize` as a percentage on top of the display scale.
-/// Its default, 100, meant "the display's scale", which is Auto now; another value was picked on
-/// purpose and is kept as the absolute size it reads as.
-pub fn migrate_legacy_interface_size(v: &serde_json::Value) -> InterfaceSize {
-    match v.as_f64() {
-        Some(p) if (p - 100.0).abs() >= 0.5 => InterfaceSize::from_percent(p).unwrap_or_default(),
-        _ => InterfaceSize::AUTO,
-    }
+/// Its default, 100, meant "the display's scale", which is Auto now (`None`); another value was
+/// picked on purpose and is returned, to become an absolute size once the display's scale is
+/// known ([`migrate_legacy_interface_size`]). Junk reads as Auto.
+pub fn legacy_interface_percent(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64().filter(|p| p.is_finite() && (p - 100.0).abs() >= 0.5)
+}
+
+/// The absolute size a pre-#822 `interfaceSize` of `old` percent drew at on a display whose own
+/// scale is `native`: `old × native`, clamped to 50–300 %. A 2× display with 125 % drew at 250 %,
+/// and keeps drawing there.
+pub fn migrate_legacy_interface_size(old: f64, native: f32) -> InterfaceSize {
+    InterfaceSize::from_percent(old * f64::from(usable_scale(native))).unwrap_or_default()
 }
 
 /// The Animation effects setting (File › Options › Accessibility, `ui.animations`): on, off, or
