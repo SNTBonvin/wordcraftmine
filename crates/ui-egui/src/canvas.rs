@@ -1065,6 +1065,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
+        // Embedded: the host's tinted passages (drawn, never part of the document).
+        let decorations = app.decoration_ranges();
+        for (a, b, color) in decorations.iter() {
+            for (pi, r) in layout.selection_rects(&app.session.doc, a, b, app.session.page_hint) {
+                if let Some(pr) = rects.get(pi) {
+                    let scale = layout.pages.get(pi).map_or(geo.scale, |page| page_screen_scale(*pr, page, geo.scale));
+                    let hr = Rect::from_min_size(pos2(pr.min.x + r.x * scale, pr.min.y + r.y * scale), vec2(r.w * scale, r.h * scale));
+                    painter.rect_filled(hr, 0.0, *color);
+                }
+            }
+        }
         // Selection (a selected object shows its frame instead): whole table cells shade the
         // cells (an empty one too), a column selection each row's piece.
         let selected: Vec<_> = if crate::objects::selected(app).is_some() {

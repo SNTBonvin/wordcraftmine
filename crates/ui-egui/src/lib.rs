@@ -45,6 +45,7 @@ pub mod dialogs_review;
 pub mod dialogs_ribbon;
 pub mod dialogs_smart_art;
 pub mod dialogs_templates;
+pub mod embed;
 pub mod equation_tab;
 /// The built-in file browser, for desktops without a system file dialog (#576).
 #[cfg(not(target_arch = "wasm32"))]
@@ -435,6 +436,9 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// Embed mode ([`embed`]): set by [`WordApp::embedded`] when the editor runs inside another
+    /// app's window, which owns the file.
+    pub embed: Option<embed::EmbedState>,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -518,6 +522,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            embed: None,
         }
     }
 
@@ -595,6 +600,17 @@ impl WordApp {
     /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
     /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        // Embedded, the host owns the file: Save asks it to save, and New, Open and Close are its own.
+        if self.is_embedded() {
+            match id {
+                "file.save" | "file.saveAs" => {
+                    self.request_host_save();
+                    return Ok(json!({"pending": "host"}));
+                }
+                "file.new" | "file.open" | "file.close" => return Err(format!("{id}: the app WordCraft is in opens and closes documents")),
+                _ => {}
+            }
+        }
         // A button whose command needs input the user hasn't given yet opens its dialog (#240).
         if let Some(name) = input_dialog(id, &params)
             && widgets::enabled(self, id)
@@ -1514,7 +1530,14 @@ impl WordApp {
         // Keytips are read before layout so the frame paints the new state; badges paint after
         // the ribbon so they sit on top of it.
         crate::keytips::logic(self, &ctx);
-        if self.ui.backstage {
+        if self.is_embedded() {
+            // The host has the window: just the ribbon and the pages (no Backstage to go to).
+            self.ui.backstage = false;
+            ribbon::show(self, ui);
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
+                canvas::show(self, ui);
+            });
+        } else if self.ui.backstage {
             backstage::show(self, ui);
         } else {
             chrome::title_bar(self, ui);
@@ -1538,7 +1561,7 @@ impl WordApp {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
         let title = format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" });
-        if title != self.sent_title {
+        if title != self.sent_title && !self.is_embedded() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;
         }

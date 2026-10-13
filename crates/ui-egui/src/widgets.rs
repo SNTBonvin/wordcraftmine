@@ -91,7 +91,8 @@ fn keytip_badge(ui: &Ui, rect: Rect, id: &str, name: &str) {
 /// Whether a command exists and is enabled.
 pub fn enabled(app: &WordApp, id: &str) -> bool {
     match app.session.registry.get(id) {
-        Some(s) => (s.enabled)(&app.session).is_none(),
+        // Read-only: nothing that changes the document.
+        Some(s) => (s.enabled)(&app.session).is_none() && !(s.mutates && app.session.read_only),
         // Zotero: one command at a time, and only in the desktop app.
         None if id.starts_with("ui.zotero.") => app.zotero.busy.is_none() && !cfg!(target_arch = "wasm32"),
         None if id == "ui.linkTextBox" => enabled(app, "shape.link"),

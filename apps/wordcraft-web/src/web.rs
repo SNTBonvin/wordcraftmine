@@ -422,7 +422,7 @@ const PRINT_FRAME_ID: &str = "wordcraft-print-frame";
 /// a download or a popup window the browser might block. The previous
 /// print's iframe and object URL are removed first, so only one copy of the
 /// document's PDF stays in the page (the last one may still be printing).
-fn print_pdf(bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn print_pdf(bytes: &[u8]) -> Result<(), String> {
     let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
     let window = web_sys::window().ok_or("no window")?;
     let document = window.document().ok_or("no document")?;
