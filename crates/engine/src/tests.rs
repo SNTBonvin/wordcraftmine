@@ -1683,6 +1683,32 @@ fn comments() {
     assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().objects.len(), 0);
 }
 
+/// #1345: deleting a comment also removes its anchors in headers and its replies to replies.
+#[test]
+fn delete_comment_clears_header_anchors_and_nested_replies() {
+    use wordcraft_doc::para::InlineObject;
+    use wordcraft_doc::{Paragraph, PartKind, para_block};
+    let mut s = s();
+    let hdr = s.doc.add_part(PartKind::Header, vec![para_block(Paragraph::with_text("Head", Default::default()))]);
+    let at = |off| Pos { story: StoryRef::Part(hdr), path: wordcraft_doc::Path::top(0), off };
+    run(&mut s, "text.insert", json!({"text": "Body"}));
+    let root = run(&mut s, "review.newComment", json!({"text": "root"}))["id"].as_u64().unwrap() as u32;
+    s.doc.insert_object(&at(4), InlineObject::CommentEnd { id: root }, &Default::default()).unwrap();
+    s.doc.insert_object(&at(0), InlineObject::CommentStart { id: root }, &Default::default()).unwrap();
+    let r1 = run(&mut s, "review.reply", json!({"id": root, "text": "one"}))["id"].as_u64().unwrap();
+    let r2 = run(&mut s, "review.reply", json!({"id": r1, "text": "two"}))["id"].as_u64().unwrap();
+    let parts_before = s.doc.parts.len();
+    run(&mut s, "review.deleteComment", json!({"id": root}));
+    assert!(s.doc.comments.is_empty(), "replies to replies must go too: {:?}", s.doc.comments.keys().collect::<Vec<_>>());
+    assert_eq!(s.doc.para_at(&at(0)).unwrap().objects.len(), 0, "header anchors must go");
+    assert_eq!(s.doc.parts.len(), 1, "only the header part is left");
+    assert!(s.undo());
+    assert_eq!(s.doc.comments.len(), 3);
+    assert!(s.doc.comments.contains_key(&(r2 as u32)));
+    assert_eq!(s.doc.parts.len(), parts_before);
+    assert_eq!(s.doc.para_at(&at(0)).unwrap().objects.len(), 2);
+}
+
 #[test]
 fn toc_and_fields() {
     let mut s = Session::new(crate::sample::report());

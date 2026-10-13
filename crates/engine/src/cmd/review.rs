@@ -185,7 +185,8 @@ fn comment_at_caret(s: &Session) -> Option<u32> {
 }
 
 fn remove_anchors(s: &mut Session, ids: &[u32]) -> Result<(), CmdError> {
-    for story in [StoryRef::Body] {
+    let stories: Vec<StoryRef> = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|k| StoryRef::Part(*k))).collect();
+    for story in stories {
         for path in s.doc.para_paths(story) {
             let offs: Vec<usize> = s
                 .doc
@@ -214,9 +215,14 @@ fn delete_comment(s: &mut Session, v: &Value) -> CmdResult {
         s.doc.comments.keys().copied().collect()
     } else {
         let id = p::u64(v, "id").map(|x| x as u32).or_else(|| comment_at_caret(s)).ok_or_else(|| CmdError::Params("no comment here".into()))?;
-        // The comment and its replies.
+        // The comment and all its replies, including replies to replies.
         let mut v = vec![id];
-        v.extend(s.doc.comments.iter().filter(|(_, c)| c.parent == Some(id)).map(|(k, _)| *k));
+        let mut i = 0;
+        while let Some(&parent) = v.get(i) {
+            let kids: Vec<u32> = s.doc.comments.iter().filter(|(k, c)| c.parent == Some(parent) && !v.contains(k)).map(|(k, _)| *k).collect();
+            v.extend(kids);
+            i += 1;
+        }
         v
     };
     remove_anchors(s, &ids)?;
