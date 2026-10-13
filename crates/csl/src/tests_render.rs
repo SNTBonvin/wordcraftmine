@@ -4,7 +4,7 @@
 //! this crate renders (layout affixes, group delimiter/empty rules, choose evaluation,
 //! name options, date forms, label plurals, number forms, terms).
 
-use crate::model::{Position, Style};
+use crate::model::{Element, Position, Style};
 use crate::parse;
 use wordcraft_doc::Source;
 
@@ -441,6 +441,47 @@ fn inherited_name_options_render_the_apa_shape() {
     let mut who = src("who", "book");
     who.author = "Kilns, Dana".into();
     assert_eq!(s.cite(&who, Position::First, 1, ""), "Kilns, D");
+}
+
+#[test]
+fn text_terms_honor_plural() {
+    let s = parse(
+        br#"<style version="1.0"><citation><layout>
+        <text term="page" form="short"/>
+        <text value=" | "/>
+        <text term="page" form="short" plural="true"/>
+        <text value=" | "/>
+        <text term="page" form="short" plural="false"/>
+        <text value=" | "/>
+        <text term="editor"/>
+        <text value=" | "/>
+        <text term="editor" plural="true"/>
+      </layout></citation></style>"#,
+    )
+    .unwrap();
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+    // plural="true" picks the term's multiple shape, "false" and the default the single.
+    assert_eq!(s.cite(&src("x", "book"), Position::First, 1, ""), "p. | pp. | p. | editor | editors");
+}
+
+#[test]
+fn a_names_label_renders_where_the_style_wrote_it() {
+    // Label first: "Edited by Ann Lee & Kim Fox" (a name child follows the label).
+    let s = parse(
+        br#"<style version="1.0"><citation><layout>
+        <names variable="editor">
+          <label form="verb" suffix=" "/>
+          <name and="symbol"/>
+        </names>
+      </layout></citation></style>"#,
+    )
+    .unwrap();
+    let mut e = src("e", "book");
+    e.editor = "Lee, Ann; Fox, Kim".into();
+    assert_eq!(s.cite(&e, Position::First, 1, ""), "edited by Ann Lee & Kim Fox");
+    // The position is carried into the model (the LABELS fixture pins label-after).
+    let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
+    assert!(n.label_precedes_names);
 }
 
 #[test]

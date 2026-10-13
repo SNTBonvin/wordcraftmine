@@ -454,6 +454,11 @@ fn text_el(el: &El, w: &mut Warnings) -> Option<Text> {
     Some(Text {
         source,
         form: el.attr("form").and_then(Form::parse),
+        plural: match el.attr("plural") {
+            Some("true") => Some(true),
+            Some("false") => Some(false),
+            _ => None,
+        },
         prefix: attr(el, "prefix"),
         suffix: attr(el, "suffix"),
         strip_periods: el.attr("strip-periods") == Some("true"),
@@ -517,21 +522,27 @@ fn names_el(el: &El, w: &mut Warnings) -> Option<Names> {
     let mut options = NameOptions::default();
     apply_name_attrs(el, &mut options, w);
     let mut with_label = None;
+    let mut label_precedes_names = false;
     let mut substitute = None;
+    let mut seen_name = false;
     for c in el.els() {
         match c.local() {
-            "name" => apply_name_attrs(c, &mut options, w),
+            "name" => {
+                seen_name = true;
+                apply_name_attrs(c, &mut options, w);
+            }
             "institution" => w.push("<institution> (institutional names) is not supported".into()),
             "label" => {
                 if with_label.is_none() {
                     with_label = Some(names_label(c));
+                    label_precedes_names = !seen_name;
                 }
             }
             "substitute" if substitute.is_none() => substitute = Some(elements(c, w)),
             _ => {}
         }
     }
-    Some(Names { variables, options, with_label, substitute })
+    Some(Names { variables, options, with_label, label_precedes_names, substitute })
 }
 
 /// A `<label>` inside `<names>`: no variable of its own (it labels the names themselves).

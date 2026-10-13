@@ -550,7 +550,7 @@ fn render_text(ctx: &mut Ctx, t: &Text) -> Rendered {
             r.with_text(text)
         }
         TextSource::Term(name) => Rendered::plain(affixed(
-            ctx.style.locale_terms.text(name, t.form.unwrap_or(Form::Long), false).unwrap_or(""),
+            ctx.style.locale_terms.text(name, t.form.unwrap_or(Form::Long), t.plural.unwrap_or(false)).unwrap_or(""),
             &t.prefix,
             &t.suffix,
             t.strip_periods,
@@ -775,11 +775,10 @@ fn render_names(ctx: &mut Ctx, n: &Names) -> Rendered {
     };
     let people = names_of(ctx.item.source, variable);
     let options = n.options.with_defaults(&ctx.name_defaults);
-    let mut out = render_name_list(&ctx.style.locale_terms, &people, &options);
-    if let Some(label) = &n.with_label {
-        out.push_str(&names_label_text(ctx, label, variable, people.len()));
-    }
-    Rendered::variable(out)
+    let names = render_name_list(&ctx.style.locale_terms, &people, &options);
+    let label = n.with_label.as_ref().map_or(String::new(), |l| names_label_text(ctx, l, variable, people.len()));
+    // Label-first styles ("Edited by Smith") render the label where the style wrote it.
+    Rendered::variable(if n.label_precedes_names { format!("{label}{names}") } else { format!("{names}{label}") })
 }
 
 /// A `<label>` inside `<names>`: the term of the variable that rendered, plural by the

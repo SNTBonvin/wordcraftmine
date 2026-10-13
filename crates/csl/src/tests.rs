@@ -94,7 +94,7 @@ const GOLDEN: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 </style>"#;
 
 fn text(source: TextSource) -> Text {
-    Text { source, form: None, prefix: String::new(), suffix: String::new(), strip_periods: false }
+    Text { source, form: None, plural: None, prefix: String::new(), suffix: String::new(), strip_periods: false }
 }
 
 fn layout(elements: Vec<Element>) -> Layout {
@@ -131,8 +131,15 @@ fn golden_style_parses_into_the_expected_tree() {
             prefix: " (".into(),
             suffix: ")".into(),
         }),
+        label_precedes_names: false, // the label is written after the <name>
         substitute: Some(vec![
-            Element::Names(Names { variables: vec!["translator".into()], options: NameOptions::default(), with_label: None, substitute: None }),
+            Element::Names(Names {
+                variables: vec!["translator".into()],
+                options: NameOptions::default(),
+                with_label: None,
+                label_precedes_names: false,
+                substitute: None,
+            }),
             Element::Text(text(TextSource::Variable("title".into()))),
         ]),
     });
@@ -571,6 +578,21 @@ fn wide_attribute_lists_load_with_truncation_warnings() {
     warned_contains(&s, "more than 64");
     let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
     assert_eq!(n.variables.len(), 64);
+}
+
+#[test]
+fn names_label_position_parses() {
+    // The label written before the <name> child precedes the names; after it, it follows.
+    let s = parse(whole(r#"<citation><layout><names variable="editor"><label form="verb"/><name/></names></layout></citation>"#).as_bytes()).unwrap();
+    let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
+    assert!(n.label_precedes_names);
+    let s = parse(whole(r#"<citation><layout><names variable="editor"><name/><label form="verb"/></names></layout></citation>"#).as_bytes()).unwrap();
+    let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
+    assert!(!n.label_precedes_names);
+    // Without a <name> child the label is the only child; it precedes.
+    let s = parse(whole(r#"<citation><layout><names variable="editor"><label/></names></layout></citation>"#).as_bytes()).unwrap();
+    let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
+    assert!(n.label_precedes_names);
 }
 
 #[test]

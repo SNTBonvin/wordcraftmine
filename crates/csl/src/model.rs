@@ -148,6 +148,9 @@ pub enum TextSource {
 pub struct Text {
     pub source: TextSource,
     pub form: Option<Form>,
+    /// `plural` on a term: `Some(true)`/`Some(false)` force the multiple/single shape
+    /// (the spec's values for `text term`; the default is the singular).
+    pub plural: Option<bool>,
     pub prefix: String,
     pub suffix: String,
     /// `strip-periods="true"`: periods removed from the rendered text.
@@ -224,8 +227,12 @@ pub struct Names {
     pub variables: Vec<String>,
     /// Name options from the `<names>` element merged with its `<name>` child (child wins).
     pub options: NameOptions,
-    /// The `<label>` child, rendered with the names (`with-label`).
+    /// The `<label>` child, rendered with the names (`with-label`) — before or after them
+    /// as the style wrote it ([`Names::label_precedes_names`]).
     pub with_label: Option<Label>,
+    /// Whether the `<label>` child was written before the `<name>` child (label-first
+    /// styles render "Edited by Smith", not "Smith (ed.)").
+    pub label_precedes_names: bool,
     /// The `<substitute>` children, tried in order when the variables are empty.
     pub substitute: Option<Vec<Element>>,
 }
