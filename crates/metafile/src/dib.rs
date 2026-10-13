@@ -103,8 +103,8 @@ pub(crate) fn decode_clip(info: Bytes, bits: Bytes, keep_alpha: bool, src: [i64;
     for (y, line) in (clip.r0..clip.r1).zip(px.chunks_exact_mut(ow * 4)) {
         let src_row = if hd.top_down { y } else { hd.h - 1 - y };
         let row = src_row * stride;
-        for (x, dst_px) in (clip.x0..clip.x1).zip(line.chunks_exact_mut(4)) {
-            dst_px.copy_from_slice(&pixel(data, row, x, &hd, pal, keep_alpha)?);
+        for (x, dst_px) in (clip.x0..clip.x1).zip(line.as_chunks_mut::<4>().0) {
+            *dst_px = pixel(data, row, x, &hd, pal, keep_alpha)?;
         }
     }
     Some((Rgba { w: ow, h: oh, px }, out))
