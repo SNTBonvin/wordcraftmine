@@ -229,12 +229,23 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         }
         return;
     }
+    let alt_codes = alt_codes_supported(ctx);
     for e in events {
         // An Alt shortcut (Alt+Shift+D, Alt+F7…) may also send its key's text; it isn't typed.
         match &e {
-            egui::Event::Key { pressed: true, .. } => app.canvas.swallow_text = false,
+            egui::Event::Key { pressed: true, .. } => {
+                app.canvas.swallow_text = false;
+                app.canvas.alt_code_echo = None;
+            }
             egui::Event::Text(_) if std::mem::take(&mut app.canvas.swallow_text) => continue,
+            egui::Event::Text(t) if app.canvas.alt_code_echo.as_ref() == Some(t) => {
+                app.canvas.alt_code_echo = None;
+                continue;
+            }
             _ => {}
+        }
+        if alt_codes && app.session.math.is_none() && alt_code_event(app, &e) {
+            continue;
         }
         if let egui::Event::Paste(t) = &e {
             app.canvas.pasted = true;
@@ -376,6 +387,85 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     }
 }
 
+/// Alt+numpad character codes are a Windows convention; on macOS Option+digit types its own
+/// characters (¡ ™ £…), so they're off there (also in a browser on a Mac).
+fn alt_codes_supported(ctx: &egui::Context) -> bool {
+    !cfg!(target_os = "macos") && ctx.os() != egui::os::OperatingSystem::Mac
+}
+
+/// The digit a key types for an Alt code.
+///
+/// Word counts only numeric-keypad digits. egui 0.36 reports keypad and top-row digits alike
+/// (`Key::Num0`…`Num9`, with the same `physical_key`), and eframe passes no winit key location
+/// on, so the top-row digits compose codes too (they type nothing else with Alt alone; Ctrl+Alt+1
+/// and keytip digits are untouched).
+fn alt_code_digit(key: Key) -> Option<char> {
+    let n = match key {
+        Key::Num0 => 0,
+        Key::Num1 => 1,
+        Key::Num2 => 2,
+        Key::Num3 => 3,
+        Key::Num4 => 4,
+        Key::Num5 => 5,
+        Key::Num6 => 6,
+        Key::Num7 => 7,
+        Key::Num8 => 8,
+        Key::Num9 => 9,
+        _ => return None,
+    };
+    char::from_digit(n, 10)
+}
+
+/// Alt+numpad entry (#961): digits typed with Alt alone held collect; releasing Alt types the
+/// character their code names (`text.typeCode`: 0233 → é, 233 → Θ in code page 437). Returns
+/// whether the event was part of it (and isn't handled otherwise).
+fn alt_code_event(app: &mut WordApp, e: &egui::Event) -> bool {
+    let alt_only = |m: &Modifiers| m.alt && !m.ctrl && !m.shift && !m.command && !m.mac_cmd;
+    match e {
+        egui::Event::Key { key, pressed: true, modifiers, .. } if alt_only(modifiers) => match alt_code_digit(*key) {
+            Some(d) => {
+                // Codes beyond seven digits name nothing; stop collecting rather than grow.
+                if app.canvas.alt_code.len() < 8 {
+                    app.canvas.alt_code.push(d);
+                }
+                // The digit's text (Linux sends it even with Alt held) isn't typed.
+                app.canvas.swallow_text = true;
+                true
+            }
+            None => {
+                app.canvas.alt_code.clear();
+                false
+            }
+        },
+        egui::Event::Key { key: Key::AltLeft | Key::AltRight, pressed: false, .. } => {
+            finish_alt_code(app);
+            false
+        }
+        egui::Event::ModifiersChanged(m) if !m.alt => {
+            finish_alt_code(app);
+            false
+        }
+        egui::Event::Key { pressed: true, .. } => {
+            // Another key with Ctrl/Shift held (or without Alt) ends the entry unfinished.
+            app.canvas.alt_code.clear();
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Alt released: type the collected code's character, if any.
+fn finish_alt_code(app: &mut WordApp) {
+    let code = std::mem::take(&mut app.canvas.alt_code);
+    if code.is_empty() {
+        return;
+    }
+    crate::objects::enter_text_box(app);
+    if let Ok(r) = app.run("text.typeCode", json!({"code": code})) {
+        app.canvas.alt_code_echo = r.get("char").and_then(Value::as_str).map(String::from);
+    }
+}
+
 /// Whether a key runs its shortcut with the canvas unfocused (after a ribbon click, say): Mod and
 /// Alt shortcuts (Alt+Q reaches Search from anywhere, as in Word, #819) and the function keys.
 fn is_global_shortcut(key: Key, m: Modifiers) -> bool {
@@ -454,5 +544,48 @@ mod tests {
         assert!(is_global_shortcut(Key::F7, m(false, false, false)), "F7");
         assert!(!is_global_shortcut(Key::Q, m(false, false, false)), "a plain letter is typing");
         assert!(!is_global_shortcut(Key::Q, m(false, false, true)), "Shift+letter is typing");
+    }
+
+    /// Alt held, keypad 0 2 3 3, Alt released: é is typed, the digits aren't, and keytips stay
+    /// off (#961). Linux sends each digit's text too; Windows may send the composed character.
+    #[test]
+    fn alt_numpad_code_types_its_character_without_keytips() {
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        let doc_text = |a: &WordApp| a.session.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        let ctx = egui::Context::default();
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        let alt = Modifiers { alt: true, ..Default::default() };
+        let key = |key, pressed, modifiers| egui::Event::Key { key, physical_key: Some(key), pressed, repeat: false, modifiers };
+        let frame = |a: &mut WordApp, events: Vec<egui::Event>| {
+            ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                crate::keytips::logic(a, ui.ctx());
+                canvas_events(a, ui.ctx());
+            })
+            .drop_without_applying_deltas();
+        };
+        frame(&mut a, vec![egui::Event::ModifiersChanged(alt), key(Key::AltLeft, true, alt)]);
+        for (k, t) in [(Key::Num0, "0"), (Key::Num2, "2"), (Key::Num3, "3"), (Key::Num3, "3")] {
+            frame(&mut a, vec![key(k, true, alt), egui::Event::Text(t.into()), key(k, false, alt)]);
+        }
+        assert_eq!(doc_text(&a).trim_end(), "", "nothing typed while Alt is held");
+        frame(&mut a, vec![key(Key::AltLeft, false, alt), egui::Event::ModifiersChanged(Modifiers::NONE)]);
+        assert_eq!(doc_text(&a).trim_end(), "é");
+        assert_eq!(a.ui.keytips, crate::keytips::Phase::Off, "an Alt code doesn't open keytips");
+        // The platform's own composed character isn't typed twice; the next typing is.
+        frame(&mut a, vec![egui::Event::Text("é".into())]);
+        frame(&mut a, vec![key(Key::E, true, Modifiers::NONE), egui::Event::Text("é".into())]);
+        assert_eq!(doc_text(&a).trim_end(), "éé");
+        // Without the leading zero: the system locale's OEM code page (233 is Θ in 437, Ú in 850).
+        frame(&mut a, vec![egui::Event::ModifiersChanged(alt), key(Key::AltLeft, true, alt)]);
+        frame(&mut a, vec![key(Key::Num2, true, alt), key(Key::Num3, true, alt), key(Key::Num3, true, alt)]);
+        frame(&mut a, vec![key(Key::AltLeft, false, alt), egui::Event::ModifiersChanged(Modifiers::NONE)]);
+        let oem = wordcraft_engine::cmd::text::alt_code_char("233", wordcraft_engine::cmd::text::system_oem_code_page());
+        assert_eq!(doc_text(&a).trim_end(), format!("éé{}", oem.unwrap_or('?')));
+        // A bare Alt tap still opens keytips.
+        frame(&mut a, vec![egui::Event::ModifiersChanged(alt), key(Key::AltLeft, true, alt)]);
+        frame(&mut a, vec![key(Key::AltLeft, false, alt), egui::Event::ModifiersChanged(Modifiers::NONE)]);
+        assert_eq!(a.ui.keytips, crate::keytips::Phase::Tabs);
     }
 }

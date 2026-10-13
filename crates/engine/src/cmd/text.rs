@@ -30,6 +30,9 @@ pub fn specs() -> Vec<CommandSpec> {
         } else {
             "Alt+X"
         }),
+        // Alt+numpad codes: the shell collects the keypad digits while Alt is held (#961).
+        CommandSpec::new("text.typeCode", "Type Character Code", "Editing", insert_code)
+            .params(r#"{"code": string (decimal digits as typed on the keypad, e.g. "0233"), "oem"?: 437 | 850}"#),
         CommandSpec::new("text.emDash", "Em Dash", "Insert › Symbols", |s, _| ins_char(s, '—')).key("Mod+Alt+-"),
         // On macOS Option+G / R / 2 / ; type these directly, so Word for Mac has no Cmd shortcut.
         CommandSpec::new("text.copyright", "Copyright Sign", "Insert › Symbols", |s, _| ins_char(s, '©')).key(non_mac("Mod+Alt+C")),
@@ -359,6 +362,75 @@ fn toggle_unicode(s: &mut Session, _: &Value) -> CmdResult {
     s.pending = None;
     type_text(s, &replacement)?;
     sel_result(s)
+}
+
+/// Alt+numpad entry: type the character a decimal code names at the caret, as typed text (one
+/// undo step, AutoFormat as for a typed character). The result's `char` is the character.
+fn insert_code(s: &mut Session, v: &Value) -> CmdResult {
+    let code = p::req_str(v, "code")?;
+    let oem = match p::u64(v, "oem") {
+        Some(cp @ (437 | 850)) => cp as u16,
+        Some(_) => return Err(CmdError::Params("oem must be 437 or 850".into())),
+        None => system_oem_code_page(),
+    };
+    let c = alt_code_char(code, oem).ok_or_else(|| CmdError::Failed(format!("{code:?} isn't a character code")))?;
+    let mut r = insert(s, &serde_json::json!({"text": c.to_string()}))?;
+    if let Value::Object(m) = &mut r {
+        m.insert("char".into(), Value::String(c.to_string()));
+    }
+    Ok(r)
+}
+
+/// The character Word on Windows types for an Alt+numpad code (decimal digits, as typed):
+/// - with a leading 0 and a value up to 255, the Windows-1252 (ANSI) character: `0233` → é,
+///   `0128` → €;
+/// - without one, 1–255 is the OEM code page's character (`oem`: 437 or 850): `233` → Θ in
+///   437, Ú in 850 (é is `130` in both); 1–31 and 127 are the code page's glyphs (`1` → ☺, `7` → •);
+/// - above 255, with or without the 0, the Unicode character with that decimal value
+///   (`8364` → €), as Word inserts it.
+///
+/// `None` for an empty or non-numeric code, 0, a control character or a value past Unicode.
+pub fn alt_code_char(code: &str, oem: u16) -> Option<char> {
+    if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits = code.trim_start_matches('0');
+    // More than seven significant digits is past U+10FFFF (1114111).
+    if digits.len() > 7 {
+        return None;
+    }
+    let value: u32 = if digits.is_empty() { 0 } else { digits.parse().ok()? };
+    let c = match u8::try_from(value) {
+        Ok(0) => return None,
+        Ok(b) if code.starts_with('0') => wordcraft_doc::encoding::cp1252(b),
+        Ok(b) => wordcraft_doc::encoding::oem_byte(oem, b),
+        Err(_) => char::from_u32(value)?,
+    };
+    Some(c).filter(|c| codeable(*c) && *c != '\u{FFFD}')
+}
+
+/// The OEM code page for the system locale the shell reported (437 headless).
+pub fn system_oem_code_page() -> u16 {
+    oem_code_page(crate::session::system_locale())
+}
+
+/// The OEM code page Windows uses for a locale (BCP 47 tag): 850 for Western European
+/// languages and English outside the US, 437 otherwise (US English, unknown, headless). Other
+/// OEM code pages (852, 866…) aren't supported and read as 437.
+pub fn oem_code_page(locale: Option<&str>) -> u16 {
+    let Some(tag) = locale else { return 437 };
+    let mut parts = tag.split(['-', '_', '.', '@']);
+    let lang = parts.next().unwrap_or_default().to_ascii_lowercase();
+    let region = parts.find(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_alphabetic())).map(str::to_ascii_uppercase);
+    const WESTERN: [&str; 18] = ["ca", "da", "de", "es", "eu", "fi", "fo", "fr", "ga", "gl", "is", "it", "nb", "nl", "nn", "no", "pt", "sv"];
+    match lang.as_str() {
+        "en" => match region.as_deref() {
+            None | Some("US") => 437,
+            Some(_) => 850,
+        },
+        l if WESTERN.contains(&l) => 850,
+        _ => 437,
+    }
 }
 
 /// The character a hex code (1–6 digits) names, if it is one Alt+X makes.

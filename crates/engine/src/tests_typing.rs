@@ -665,6 +665,65 @@ fn alt_x_toggles_between_a_character_and_its_code() {
 }
 
 #[test]
+fn alt_numpad_codes_map_like_word_on_windows() {
+    use crate::cmd::text::{alt_code_char, oem_code_page};
+    let c = |code| alt_code_char(code, 437);
+    // Leading 0: Windows-1252.
+    assert_eq!(c("0233"), Some('é'));
+    assert_eq!(c("0128"), Some('€'));
+    assert_eq!(c("0150"), Some('–'));
+    assert_eq!(c("065"), Some('A'));
+    assert_eq!(c("0032"), Some(' '));
+    assert_eq!(c("0255"), Some('ÿ'));
+    // No leading 0: the OEM code page (437 here, 850 in Western Europe).
+    assert_eq!(c("233"), Some('Θ'));
+    // The issue said 233 → é in 850; the CP850 mapping file has Ú at 0xE9 (é is 130 in both).
+    assert_eq!(alt_code_char("233", 850), Some('Ú'));
+    assert_eq!(alt_code_char("130", 850), Some('é'));
+    assert_eq!(c("130"), Some('é'));
+    assert_eq!(alt_code_char("155", 850), Some('ø'));
+    assert_eq!(c("155"), Some('¢'));
+    assert_eq!(c("65"), Some('A'));
+    assert_eq!(c("1"), Some('☺'));
+    assert_eq!(c("7"), Some('•'));
+    assert_eq!(c("127"), Some('⌂'));
+    assert_eq!(c("176"), Some('░'));
+    // Above 255: the Unicode character with that decimal value.
+    assert_eq!(c("8364"), Some('€'));
+    assert_eq!(c("09733"), Some('★'));
+    assert_eq!(c("128512"), Some('😀'));
+    // Nothing for junk, 0, control characters, surrogates or values past Unicode.
+    for bad in ["", "0", "000", "0009", "0013", "0127", "0129", "x1", "-5", "55296", "1114112", "99999999999999999999", "4294967361"] {
+        assert_eq!(c(bad), None, "{bad:?}");
+    }
+    assert_eq!(oem_code_page(None), 437);
+    assert_eq!(oem_code_page(Some("en-US")), 437);
+    assert_eq!(oem_code_page(Some("en_GB.UTF-8")), 850);
+    assert_eq!(oem_code_page(Some("fr-FR")), 850);
+    assert_eq!(oem_code_page(Some("de")), 850);
+    assert_eq!(oem_code_page(Some("ru-RU")), 437);
+}
+
+#[test]
+fn alt_numpad_code_types_one_character() {
+    // `texts` lowercases; the capitals matter here.
+    let raw = |s: &Session| paras(s).into_iter().map(|p| p.0).collect::<Vec<_>>();
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "caf"}));
+    run(&mut s, "text.typeCode", json!({"code": "0233"}));
+    run(&mut s, "text.insert", json!({"text": " "}));
+    run(&mut s, "text.typeCode", json!({"code": "233", "oem": 437}));
+    run(&mut s, "text.insert", json!({"text": " "}));
+    run(&mut s, "text.typeCode", json!({"code": "155", "oem": 850}));
+    assert_eq!(raw(&s), ["Café Θ ø"]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(raw(&s), ["Café Θ "], "one undo step per code");
+    assert!(s.run("text.typeCode", &json!({"code": "0"})).is_err());
+    assert!(s.run("text.typeCode", &json!({"code": "65", "oem": 866})).is_err());
+    assert_eq!(raw(&s), ["Café Θ "]);
+}
+
+#[test]
 fn shift_f5_goes_back_through_the_last_edits() {
     let mut s = typed("One\nTwo\nThree");
     run(&mut s, "caret.docStart", json!({}));

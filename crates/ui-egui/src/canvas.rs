@@ -129,6 +129,11 @@ pub struct CanvasState {
     /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
     /// isn't typed. The next key press clears it.
     pub(crate) swallow_text: bool,
+    /// Alt+numpad entry in progress: the digits typed while Alt is held (#961).
+    pub(crate) alt_code: String,
+    /// The character an Alt code just typed: if the platform also sends it as text on the Alt
+    /// release (Windows composes Alt codes itself), that text isn't typed twice.
+    pub(crate) alt_code_echo: Option<String>,
     /// Create Link is waiting for a click on the text box to link to: the linking box's object.
     pub(crate) link_from: Option<wordcraft_doc::Pos>,
     /// What screen readers were last told about the document (#488).
@@ -193,6 +198,8 @@ impl Default for CanvasState {
             mini_anchor: None,
             pasted: false,
             swallow_text: false,
+            alt_code: String::new(),
+            alt_code_echo: None,
             wheel: Default::default(),
             scroll_offset: egui::Vec2::ZERO,
             scroll_max: egui::Vec2::ZERO,
