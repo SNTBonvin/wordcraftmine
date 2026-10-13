@@ -64,7 +64,7 @@ pub fn tool_definitions() -> Value {
         tool(
             "execute",
             "Run a command",
-            "Run one command by id with params, e.g. {command:\"format.bold\"} or {command:\"insert.table\", params:{rows:3, cols:4}}.",
+            "Run one command by id with params, e.g. {command:\"format.bold\"} or {command:\"insert.table\", params:{rows:3, cols:4}}. Answers with what changed, or the command's own result.",
             obj(json!({"command": s("Command id"), "params": {"type": "object", "description": "Command parameters"}}), &["command"]),
             false
         ),
@@ -160,6 +160,7 @@ fn exec(b: &mut dyn Backend, id: &str, params: Value) -> Result<Value, String> {
 
 fn wrap(r: Result<Value, String>) -> ToolResult {
     match r {
+        Ok(Value::String(said)) => ToolResult::text(said),
         Ok(v) => ToolResult::json(&v),
         Err(e) => ToolResult::error(e),
     }

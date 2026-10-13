@@ -40,10 +40,10 @@ impl Headless {
             "engine.execute" | "command" => {
                 let id = params.get("command").and_then(Value::as_str).ok_or("missing `command`")?.to_string();
                 let p = params.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-                self.session.run(&id, &p).map_err(|e| e.to_string())
+                self.session.call(&id, &p)
             }
             "engine.commands" => Ok(self.session.registry.describe()),
-            "document.inspect" => self.session.run("document.inspect", &params).map_err(|e| e.to_string()),
+            "document.inspect" => self.session.call("document.inspect", &params),
             "ui.parity" => Ok(wordcraft_engine::catalog::parity(&self.session.registry)),
             "ui.render" | "render.page" => {
                 let page = params.get("page").and_then(Value::as_u64).unwrap_or(1).max(1) as usize - 1;
@@ -57,7 +57,7 @@ impl Headless {
                 )
             }
             m if m.starts_with("ui.") => Err(format!("`{m}` {NEEDS_APP}")),
-            other => self.session.run(other, &params).map_err(|e| e.to_string()),
+            other => self.session.call(other, &params),
         }
     }
 }

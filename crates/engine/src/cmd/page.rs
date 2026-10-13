@@ -54,7 +54,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 _ => wordcraft_doc::props::VAlign::Top,
             };
             with_sect(s, |x| x.valign = va)
-        }),
+        })
+        .params(r#"{"value"?: "top|center|bottom" (default top)}"#),
         CommandSpec::new("layout.sectionRtl", "Right-to-Left Section", "Layout › Page Setup", |s, v| {
             let on = p::bool(v, "value").unwrap_or(!sect(s).rtl);
             with_sect(s, |x| x.rtl = on)
@@ -66,11 +67,13 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("layout.differentFirstPage", "Different First Page", "Header & Footer › Options", |s, v| {
             let on = p::bool(v, "value").unwrap_or(!sect(s).title_page);
             with_sect(s, |x| x.title_page = on)
-        }),
+        })
+        .params(r#"{"value"?: bool}"#),
         CommandSpec::new("layout.differentOddEven", "Different Odd & Even Pages", "Header & Footer › Options", |s, v| {
             s.doc.settings.even_odd_headers = p::bool(v, "value").unwrap_or(!s.doc.settings.even_odd_headers);
             sel_result(s)
-        }),
+        })
+        .params(r#"{"value"?: bool}"#),
         CommandSpec::new("layout.pageNumberFormat", "Format Page Numbers", "Insert › Header & Footer › Page Number", |s, v| {
             let fmt = p::str(v, "format").map(wordcraft_doc::section::NumFormat::from_ooxml);
             let start = p::u64(v, "start").map(|x| x.min(100_000) as u32);

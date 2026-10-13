@@ -104,7 +104,7 @@ pub fn specs() -> Vec<CommandSpec> {
             step(s, 1)
         })
         .key("Mod+G / F3 / Mod+PageDown")
-        .params(r#"{"text"?: string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool}"#)
+        .params(r#"{"text"?: string, …options of edit.find}"#)
         .pure(),
         CommandSpec::new("edit.findPrevious", "Find Previous", "Home › Editing › Find", |s, v| {
             read_opts(s, v);
@@ -112,7 +112,7 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         // Elsewhere Ctrl+Shift+G is Word Count; Ctrl+Page Up/Down browse the find results.
         .key(super::mac_or("Mod+Shift+G / Mod+PageUp", "Mod+PageUp"))
-        .params(r#"{"text"?: string, "matchCase"?: bool, "wholeWord"?: bool, "regex"?: bool}"#)
+        .params(r#"{"text"?: string, …options of edit.find}"#)
         .pure(),
         CommandSpec::new("edit.replace", "Replace", "Home › Editing", replace).params(r#"{"text": string, "with": string, …options of edit.replaceAll}"#),
         // Ctrl+H, Home › Replace: the Find and Replace dialog on its Replace tab (#712). Opening

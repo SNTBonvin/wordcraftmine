@@ -641,6 +641,22 @@ impl WordApp {
     /// Run a command for a script or an agent (control channel, MCP bridge): never asks first.
     /// UI-level commands (`ui.*`) are handled here, the rest by the engine.
     pub fn execute(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        self.dispatch(id, params, |s, id, p| s.run(id, p).map_err(|e| e.to_string()))
+    }
+
+    /// [`Self::execute`] for an agent reading the answer: parameters the command doesn't take are
+    /// refused and an edit answers with what it changed ([`wordcraft_engine::Session::call`]).
+    pub fn call(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        self.session.check_params(id, &params)?;
+        self.dispatch(id, params, wordcraft_engine::Session::call)
+    }
+
+    fn dispatch(
+        &mut self,
+        id: &str,
+        params: Value,
+        engine: fn(&mut wordcraft_engine::Session, &str, &Value) -> Result<Value, String>,
+    ) -> Result<Value, String> {
         // A pending Change Picture only survives until the next action (#147).
         if !matches!(id, "ui.changePicture" | "picture.change" | "insert.picture") {
             self.change_picture_target = None;
@@ -702,7 +718,7 @@ impl WordApp {
             return Ok(json!({"downloaded": name, "bytes": bytes.len()}));
         }
         let document = self.session.document_id();
-        let r = self.session.run(id, &params).map_err(|e| e.to_string());
+        let r = engine(&mut self.session, id, &params);
         // When the document has been replaced (not when Open only showed its picker), a pending
         // "Save changes?" and AutoSave's go-ahead were both about the old one.
         if self.session.document_id() != document {
@@ -4322,5 +4338,23 @@ mod tests {
         h.state_mut().run("edit.advancedFind", json!({})).unwrap();
         h.step();
         assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("find"));
+    }
+
+    #[test]
+    fn the_control_channel_answers_engine_commands_in_words() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let answer = |a: &mut WordApp, params: Value| match control::handle(a, &ctx, &ControlRequest::new("engine.execute", params).0) {
+            control::Outcome::Done(v) => v,
+            control::Outcome::Screenshot { .. } => panic!("not a screenshot"),
+        };
+        let r = answer(&mut a, json!({"command": "text.insert", "params": {"text": "Hi"}}));
+        assert_eq!(r, json!({"ok": true, "result": "inserted `Hi` into paragraph 0, offsets 0–2; the caret is at paragraph 0, offset 2"}));
+        let r = answer(&mut a, json!({"command": "text.insert", "params": {"content": "Hi"}}));
+        assert_eq!(r["ok"], false);
+        assert!(r["error"].as_str().unwrap().starts_with("`text.insert` was given `content`, which it doesn't take."), "{r}");
+        let r = answer(&mut a, json!({"command": "file.autosave", "params": {"bogus": true}}));
+        assert!(r["error"].as_str().unwrap().starts_with("`file.autosave` was given `bogus`, which it doesn't take."), "{r}");
+        assert_eq!(body_text(&a), "Hi");
     }
 }

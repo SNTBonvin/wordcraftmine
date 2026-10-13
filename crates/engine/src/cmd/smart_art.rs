@@ -127,7 +127,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         })
-        .params(r#"{"variant": "accent1|accent2|accent3|accent4|accent5|accent6|colorful"}"#)
+        .params(r#"{"variant"|"colors": "accent1|accent2|accent3|accent4|accent5|accent6|colorful"}"#)
         .when(has_smart_art),
         CommandSpec::new("smartArt.reset", "Reset Graphic", "SmartArt Design › Reset", |s, _| {
             edit(s, |g| {

@@ -18,11 +18,14 @@ const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
 const RESOURCE_NOT_FOUND: i64 = -32002;
 
-const INSTRUCTIONS: &str = "WordCraft is a word processor (a Microsoft Word clone). Every action is a command: find ids and \
-parameters with list_commands and run them with execute (or several with batch). Positions are \
-{story:\"body\", path:[block,(row,cell,block)...], off:byteOffset}. Typical flow: new_document → type_text \
-\"Hello\" → execute text.newParagraph → execute para.style {style:\"Heading 1\"} → select_text {text:\"Hello\"} → \
-execute format.bold → inspect_document to verify → render_page to look at the result → save {path:\"out.docx\"}.";
+const INSTRUCTIONS: &str = "WordCraft is a word processor (a Microsoft Word clone). Every action is a command: list_commands gives the \
+ids and what each takes, execute runs one and batch several. A command refuses parameters it doesn't take, and an edit \
+answers in words with what it changed. A document is a list of blocks, paragraphs and tables, numbered from 0. A position is \
+{story:\"body\", path:[block], off:byteOffset} (path [block,row,cell,paragraph] inside a table); headers, footers and text \
+boxes are parts, story {part:id}. Typing and inserting happen at the caret, replacing the selected text; format.* and para.* \
+act on the selection, else format.* sets what is typed next. Sizes are points, colours \"RRGGBB\". Typical flow: \
+new_document → type_text \"Hello\" → execute text.newParagraph → execute para.style {style:\"Heading 1\"} → select_text \
+{text:\"Hello\"} → execute format.bold → inspect_document to verify → render_page to look at the result → save {path:\"out.docx\"}.";
 
 /// Resource URIs.
 pub const DOC_URI: &str = "wordcraft://document";

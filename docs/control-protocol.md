@@ -6,11 +6,15 @@ It listens on `127.0.0.1` only. Send one JSON object per line, with the window's
 
 ```json
 {"id": 1, "key": "…", "method": "engine.execute", "params": {"command": "text.insert", "params": {"text": "Hello"}}}
-{"id": 1, "ok": true, "result": {"anchor": {...}, "focus": {...}}}
+{"id": 1, "ok": true, "result": "inserted `Hello` into paragraph 0, offsets 0–5; the caret is at paragraph 0, offset 5"}
 ```
 
 Errors come back as `{"id": …, "ok": false, "error": "message"}`. A failed command leaves the
-document unchanged. A line that isn't valid JSON gets one error reply, then the server closes the
+document unchanged. For engine commands, `engine.execute` refuses parameters the command doesn't
+take, naming the ones it does. A command that answers with the selection alone answers instead
+with what it changed, in words, e.g. `"formatted paragraph 0: bold true"` or `"nothing changed"`;
+a mutating command, or one that moved the selection, that answers with JSON of its own carries
+the same under `changed`. A line that isn't valid JSON gets one error reply, then the server closes the
 connection (so an HTTP request sent to the port can't run a command); reconnect to continue.
 
 ## Keys
@@ -51,7 +55,6 @@ and set `WORDCRAFT_CONTROL_KEY` to that app's key.
 | Method | Params | Result |
 |---|---|---|
 | `engine.execute` | `command`, `params` | the command's result (any id from `engine.commands`, including UI commands `ui.tab`, `ui.dialog`, `ui.backstage`, `ui.zotero.*` (see `docs/zotero.md`), `ui.language` (`{"value": "auto"|"en"|"zh-hans"|"zh-hant"|"ja"|"pt-br"|"es"|"uk"|"sr"|"sr-latn"|"et"|"tr"|"ru"|"pl"|"de"|"it"|"cs"|"hu"|"fr"}`), `ui.theme` (`{"value": "system"|"light"|"dark"}`; `system` follows the OS appearance, light when it reports none), `ui.interfaceSize` (`{"percent": 80–200}`, clamped; no value reads it; scales the interface on top of the system display scale, document zoom stays `view.zoom`), `ui.animations` (`{"value": "system"|"on"|"off"}`; no value reads it; `system` follows the system's animation setting, which the desktop app reads on Windows, macOS, Linux and the BSDs and the web app from `prefers-reduced-motion`, and means on where the system doesn't say; the result's `enabled` is what the setting comes to and `system` what the system reports, `null` when it doesn't say), `ui.fileBrowser` (desktop: `{"purpose": "document"|"picture"|"recipients"|"save"}` opens WordCraft's own file browser, for when the system file dialog doesn't show up, #576), `ui.caretAnimation` (`{"value": true|false}`; no value reads it; off, the caret jumps and blinks on and off instead of gliding and fading), `ui.startScreen` (`{"value": true|false}`; no value reads it; on, the default, the desktop and web apps start on File › Home when launched with nothing to open, #766)…) |
-| `engine.execute` | `command`, `params` | the command's result (any id from `engine.commands`, including UI commands `ui.tab`, `ui.dialog`, `ui.backstage`, `ui.zotero.*` (see `docs/zotero.md`), `ui.language` (`{"value": "auto"|"en"|"zh-hans"|"zh-hant"|"ja"|"pt-br"|"es"|"uk"|"sr"|"sr-latn"|"et"|"tr"|"ru"}`), `ui.theme` (`{"value": "system"|"light"|"dark"}`; `system` follows the OS appearance, light when it reports none), `ui.interfaceSize` (`{"percent": 80–200}`, clamped; no value reads it; scales the interface on top of the system display scale, document zoom stays `view.zoom`), `ui.animations` (`{"value": "system"|"on"|"off"}`; no value reads it; `system` follows the system's animation setting, which the desktop app reads on Windows, macOS, Linux and the BSDs and the web app from `prefers-reduced-motion`, and means on where the system doesn't say; the result's `enabled` is what the setting comes to and `system` what the system reports, `null` when it doesn't say), `ui.fileBrowser` (desktop: `{"purpose": "document"|"picture"|"recipients"|"save"}` opens WordCraft's own file browser, for when the system file dialog doesn't show up, #576), `ui.caretAnimation` (`{"value": true|false}`; no value reads it; off, the caret jumps and blinks on and off instead of gliding and fading), `ui.contextMenu` (opens the page's context menu below the caret, as Shift+F10 does)…) |
 | `engine.commands` | — | every command: id, label, location, shortcut, params, enabled |
 | `document.inspect` | `text?` | blocks (text, style, runs, lists, tables), parts, sections, selection, pages |
 | `ui.inspect` | — | UI state, view, dialog, window size, page rects on screen, caret, comment balloons (`balloons`: id + screen rect; `balloon`: the selected one), perf |

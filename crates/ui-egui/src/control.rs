@@ -112,7 +112,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         "engine.execute" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-            match app.execute(id, params) {
+            match app.call(id, params) {
                 Ok(v) => ok(v),
                 Err(e) => err(e),
             }
@@ -133,7 +133,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             }
             ok(Value::Array(commands))
         }
-        "document.inspect" => match app.session.run("document.inspect", p) {
+        "document.inspect" => match app.session.call("document.inspect", p) {
             Ok(v) => ok(v),
             Err(e) => err(e),
         },
@@ -242,7 +242,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         }
         other => {
             // Anything else: a command id.
-            match app.execute(other, p.clone()) {
+            match app.call(other, p.clone()) {
                 Ok(v) => ok(v),
                 Err(e) => err(e),
             }

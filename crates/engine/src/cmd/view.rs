@@ -19,6 +19,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.relayout();
             r
         })
+        .params(r#"{"value"?: bool}"#)
         .key("Mod+Shift+8 / Mod+8")
         .pure(),
         CommandSpec::new("view.printLayout", "Print Layout", "View › Views", |s, _| mode(s, ViewMode::Print, false)).key("Mod+Alt+P").pure(),
@@ -40,8 +41,8 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("view.hideWhiteSpace", "Hide White Space", "View › Show", |s, v| toggle(s, v, |x| &mut x.hide_white_space))
             .params(r#"{"value"?: bool}"#)
             .pure(),
-        CommandSpec::new("view.focus", "Focus", "View › Immersive", |s, v| toggle(s, v, |x| &mut x.focus_mode)).pure(),
-        CommandSpec::new("view.ruler", "Ruler", "View › Show", |s, v| toggle(s, v, |x| &mut x.ruler)).pure(),
+        CommandSpec::new("view.focus", "Focus", "View › Immersive", |s, v| toggle(s, v, |x| &mut x.focus_mode)).params(r#"{"value"?: bool}"#).pure(),
+        CommandSpec::new("view.ruler", "Ruler", "View › Show", |s, v| toggle(s, v, |x| &mut x.ruler)).params(r#"{"value"?: bool}"#).pure(),
         // The drawing grid over the page (screen only; never printed or exported).
         CommandSpec::new("view.gridlines", "Gridlines", "View › Show", |s, v| toggle(s, v, |x| &mut x.gridlines))
             .params(r#"{"value"?: bool}"#)
@@ -50,7 +51,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("table.viewGridlines", "View Gridlines", "Table Layout › Table", |s, v| toggle(s, v, |x| &mut x.table_gridlines))
             .params(r#"{"value"?: bool}"#)
             .pure(),
-        CommandSpec::new("view.navigationPane", "Navigation Pane", "View › Show", |s, v| toggle(s, v, |x| &mut x.nav_pane)).pure(),
+        CommandSpec::new("view.navigationPane", "Navigation Pane", "View › Show", |s, v| toggle(s, v, |x| &mut x.nav_pane))
+            .params(r#"{"value"?: bool}"#)
+            .pure(),
         CommandSpec::new("view.zoom", "Zoom", "View › Zoom", zoom)
             .params(r#"{"value": percent (10-500) | "pageWidth" | "onePage" | "multiplePages"}"#)
             .pure(),
@@ -68,9 +71,15 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("view.onePage", "One Page", "View › Zoom", |s, _| zoom(s, &json!({"value": "onePage"}))).pure(),
         CommandSpec::new("view.multiplePages", "Multiple Pages", "View › Zoom", |s, _| zoom(s, &json!({"value": "multiplePages"}))).pure(),
         CommandSpec::new("view.pageWidth", "Page Width", "View › Zoom", |s, _| zoom(s, &json!({"value": "pageWidth"}))).pure(),
-        CommandSpec::new("view.darkMode", "Switch Modes", "View › Dark Mode", |s, v| toggle(s, v, |x| &mut x.dark_mode)).pure(),
-        CommandSpec::new("view.stylesPane", "Styles Pane", "Home › Styles", |s, v| toggle(s, v, |x| &mut x.styles_pane)).pure(),
-        CommandSpec::new("view.commentsPane", "Comments Pane", "Review › Comments", |s, v| toggle(s, v, |x| &mut x.comments_pane)).pure(),
+        CommandSpec::new("view.darkMode", "Switch Modes", "View › Dark Mode", |s, v| toggle(s, v, |x| &mut x.dark_mode))
+            .params(r#"{"value"?: bool}"#)
+            .pure(),
+        CommandSpec::new("view.stylesPane", "Styles Pane", "Home › Styles", |s, v| toggle(s, v, |x| &mut x.styles_pane))
+            .params(r#"{"value"?: bool}"#)
+            .pure(),
+        CommandSpec::new("view.commentsPane", "Comments Pane", "Review › Comments", |s, v| toggle(s, v, |x| &mut x.comments_pane))
+            .params(r#"{"value"?: bool}"#)
+            .pure(),
         CommandSpec::new("view.accessibilityPane", "Accessibility Pane", "Review › Accessibility", |s, v| {
             toggle(s, v, |x| &mut x.accessibility_pane)
         })

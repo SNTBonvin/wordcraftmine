@@ -145,7 +145,8 @@ pub fn specs() -> Vec<CommandSpec> {
                     row.props.header = on.unwrap_or(!row.props.header);
                 }
             })
-        })),
+        })
+        .params(r#"{"value"?: bool (default: toggle)}"#)),
         // Table Properties › Alt Text: the title (`w:tblCaption`) and description (`w:tblDescription`).
         t(CommandSpec::new("table.altText", "Alt Text", "Table Layout › Table › Properties", |s, v| {
             let (title, text) = (p::str(v, "title"), p::str(v, "text"));

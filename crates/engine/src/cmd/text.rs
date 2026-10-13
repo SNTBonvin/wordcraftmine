@@ -10,7 +10,7 @@ use crate::{CmdError, CmdResult, CommandSpec, Selection, Session, p};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("text.insert", "Type Text", "Editing", insert).params(r#"{"text": string}"#),
+        CommandSpec::new("text.insert", "Type Text", "Editing", insert).params(r#"{"text": string, "raw"?: bool (no AutoCorrect or AutoFormat)}"#),
         CommandSpec::new("text.newParagraph", "New Paragraph", "Editing", new_paragraph).key("Enter"),
         CommandSpec::new("text.lineBreak", "Line Break", "Editing", |s, _| ins_char(s, '\n')).key("Shift+Enter"),
         CommandSpec::new("text.pageBreak", "Page Break", "Insert › Pages", |s, _| ins_char(s, PAGE_BREAK)).key("Mod+Enter"),

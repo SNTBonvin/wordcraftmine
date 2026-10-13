@@ -18,7 +18,8 @@ pub fn specs() -> Vec<CommandSpec> {
             let c = s.doc.comments.get_mut(&id).ok_or_else(|| CmdError::Params("no such comment".into()))?;
             c.resolved = p::bool(v, "value").unwrap_or(!c.resolved);
             sel_result(s)
-        }),
+        })
+        .params(r#"{"id"?: n (default: the comment at the caret), "value"?: bool (default: toggle)}"#),
         CommandSpec::new("review.nextComment", "Next", "Review › Comments", |s, _| nav_comment(s, 1)).pure(),
         CommandSpec::new("review.previousComment", "Previous", "Review › Comments", |s, _| nav_comment(s, -1)).pure(),
         CommandSpec::new("review.comments", "Show Comments", "Review › Comments", list_comments).pure(),
@@ -40,6 +41,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.relayout();
             Ok(json!({"showMarkup": s.view.show_markup}))
         })
+        .params(r#"{"value"?: "allMarkup|simpleMarkup|noMarkup|original" (default: toggle)}"#)
         .pure(),
         CommandSpec::new("review.trackingOptions", "Track Changes Options", "Review › Tracking", tracking_options)
             .params(
@@ -91,6 +93,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.relayout();
             Ok(json!({"ignored": w}))
         })
+        .params(r#"{"word"?: string (default: the word at the caret)}"#)
         .pure(),
         CommandSpec::new("review.applySuggestion", "Change", "Review › Proofing", |s, v| {
             let text = p::req_str(v, "text")?.to_string();
@@ -106,8 +109,12 @@ pub fn specs() -> Vec<CommandSpec> {
             s.view.proofing = p::bool(v, "value").unwrap_or(!s.view.proofing);
             Ok(json!({"value": s.view.proofing}))
         })
+        .params(r#"{"value"?: bool}"#)
         .pure(),
-        CommandSpec::new("review.thesaurus", "Thesaurus", "Review › Proofing", thesaurus).key("Shift+F7").pure(),
+        CommandSpec::new("review.thesaurus", "Thesaurus", "Review › Proofing", thesaurus)
+            .params(r#"{"word"?: string (default: the word at the caret)}"#)
+            .key("Shift+F7")
+            .pure(),
     ]
 }
 

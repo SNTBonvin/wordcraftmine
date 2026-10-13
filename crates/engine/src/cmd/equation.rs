@@ -32,7 +32,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("equation.exit", "Leave Equation", "Equation", exit).pure().when(editing).params(r#"{"before"?: bool}"#),
         CommandSpec::new("equation.type", "Type in Equation", "Equation", type_text).when(editing).params(r#"{"text": string}"#),
         CommandSpec::new("equation.insertStructure", "Insert Structure", "Equation › Structures", insert_structure)
-            .params(r#"{"id"?: string (see equation.gallery), "linear"?: string, "latex"?: string}"#),
+            .params(r#"{"id"?: string (see equation.gallery), "builtin"?: string (as insert.equation), "linear"?: string, "latex"?: string}"#),
         CommandSpec::new("equation.insertSymbol", "Insert Symbol", "Equation › Symbols", insert_symbol).params(r#"{"char": string}"#),
         CommandSpec::new("equation.move", "Move in Equation", "Equation", move_caret)
             .pure()

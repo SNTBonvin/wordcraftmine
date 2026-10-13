@@ -82,8 +82,8 @@ files it was given rather than guarding against other software on the computer.
 
 | Tool | What it does |
 |---|---|
-| `list_commands` | every command (filter with `query`) — over 270 of them |
-| `execute` | run one command: `{command: "insert.table", params: {rows: 3, cols: 4}}` |
+| `list_commands` | every command (filter with `query`) — over 600 of them |
+| `execute` | run one command: `{command: "insert.table", params: {rows: 3, cols: 4}}`. A parameter the command doesn't take is refused, naming the ones it does. An edit answers in words with what it changed, e.g. `inserted `Hello` into paragraph 0, offsets 0–5; the caret is at paragraph 0, offset 5` or `nothing changed`; a mutating command that answers with JSON of its own carries the same under `changed` |
 | `batch` | run several commands in order |
 | `new_document` | blank, sample, letter, resume, report |
 | `open_document` / `save_document` | docx, doc (open only), odt, rtf, html, md, tex, txt, json; save also pdf, png |
@@ -103,8 +103,8 @@ The acceptance test `crates/mcp/src/tests.rs` writes a formatted document using 
 `format.set {"props": CharProps}`, `para.set {"props": ParaProps}`,
 `styles.modify {"style": …, "chr"?: CharProps, "para"?: ParaProps}` and the `para` of
 `table.newStyle` / `table.modifyStyle` take these two objects. Every field is optional: a field
-left out keeps what the style chain gives. A field name the object doesn't know is ignored, not
-refused, so check the spelling. Lengths are points; `[r, g, b]` is a colour as three numbers
+left out keeps what the style chain gives. A top-level parameter the command doesn't take is
+refused; a field name inside these objects is ignored, not refused, so check the spelling. Lengths are points; `[r, g, b]` is a colour as three numbers
 0–255.
 
 ```json

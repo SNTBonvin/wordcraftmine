@@ -41,7 +41,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("caret.pageUp", "Page Up", "Navigation", |s, v| page(s, v, -1)).key("PageUp").params(EXTEND).pure(),
         CommandSpec::new("caret.pageDown", "Page Down", "Navigation", |s, v| page(s, v, 1)).key("PageDown").params(EXTEND).pure(),
         CommandSpec::new("caret.set", "Set Caret", "Navigation", set)
-            .params(r#"{"pos": Pos, "extend"?: bool} | {"page": n, "x": pt, "y": pt}"#)
+            .params(r#"{"pos": Pos, "extend"?: bool} | {"page": n, "x": pt, "y": pt, "story"?: Story}"#)
             .pure(),
         CommandSpec::new("select.all", "Select All", "Home › Editing › Select", select_all).key("Mod+A").pure(),
         CommandSpec::new("select.range", "Select Range", "Navigation", select_range).params(r#"{"anchor": Pos, "focus": Pos}"#).pure(),
@@ -52,13 +52,16 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"unit": "word|sentence|line|paragraph|document", "start": Pos, "end": Pos, "pos": Pos}"#)
             .pure(),
         CommandSpec::new("select.line", "Select Line", "Navigation", select_line).params(r#"{"pos"?: Pos}"#).pure(),
-        CommandSpec::new("select.text", "Select Text", "Navigation", select_text).params(r#"{"text": string, "occurrence"?: n}"#).pure(),
+        CommandSpec::new("select.text", "Select Text", "Navigation", select_text)
+            .params(r#"{"text": string, "occurrence"?: n, "story"?: Story (default: the caret's)}"#)
+            .pure(),
         CommandSpec::new("select.collapse", "Collapse Selection", "Navigation", |s, v| {
             let to_end = p::bool(v, "end").unwrap_or(false);
             let (a, b) = s.sel.ordered();
             s.sel = Selection::caret(if to_end { b } else { a });
             sel_result(s)
         })
+        .params(r#"{"end"?: bool (collapse to the end; default the start)}"#)
         .key("Escape")
         .pure(),
     ]

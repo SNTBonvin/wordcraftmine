@@ -2,17 +2,21 @@
 //!
 //! **Everything is a command.** Each user-visible action is a [`CommandSpec`] with a stable id
 //! (`format.bold`, `insert.table`), a label, the ribbon/menu location, a default shortcut, a
-//! params description and a `run` function. Menus, ribbon, shortcuts, the command palette, the
-//! CLI, the JSON control channel and the MCP server all call [`Session::run`].
+//! params description and a `run` function. Menus, ribbon, shortcuts and the command palette call
+//! [`Session::run`]; the CLI, the JSON control channel and the MCP server call [`Session::call`],
+//! which answers an agent in words.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod call;
 pub mod catalog;
 pub mod cmd;
+mod describe;
 pub mod file_access;
 pub mod io;
 mod io_ext;
 pub mod keymap;
 pub mod math_gallery;
+pub mod params_doc;
 pub mod print;
 pub mod ribbon;
 pub mod sample;
@@ -168,6 +172,8 @@ pub mod p {
 mod tests;
 #[cfg(test)]
 mod tests_bidi;
+#[cfg(test)]
+mod tests_call;
 #[cfg(test)]
 mod tests_fonts;
 #[cfg(test)]

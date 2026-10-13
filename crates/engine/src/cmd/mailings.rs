@@ -98,12 +98,14 @@ pub fn specs() -> Vec<CommandSpec> {
             s.merge.highlight = p::bool(v, "value").unwrap_or(!s.merge.highlight);
             Ok(json!({"value": s.merge.highlight}))
         })
+        .params(r#"{"value"?: bool}"#)
         .pure(),
         CommandSpec::new("mailings.preview", "Preview Results", "Mailings › Preview Results", |s, v| {
             s.merge.preview = p::bool(v, "value").unwrap_or(!s.merge.preview);
             refresh(s);
             Ok(json!({"preview": s.merge.preview, "record": s.merge.record + 1}))
         })
+        .params(r#"{"value"?: bool}"#)
         .key(super::non_mac("Alt+Shift+K"))
         .when(has_recipients),
         CommandSpec::new("mailings.next", "Next Record", "Mailings › Preview Results", |s, _| step(s, 1)).when(has_recipients),
@@ -121,6 +123,7 @@ pub fn specs() -> Vec<CommandSpec> {
             refresh(s);
             Ok(json!({"record": idx + 1}))
         })
+        .params(r#"{"text": string}"#)
         .when(has_recipients),
         CommandSpec::new("mailings.checkErrors", "Check for Errors", "Mailings › Finish", |s, _| {
             let mut missing = Vec::new();

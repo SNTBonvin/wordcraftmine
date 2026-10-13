@@ -61,7 +61,8 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"value"?: bool}"#),
         CommandSpec::new("format.doubleStrikethrough", "Double Strikethrough", "Home › Font › Font", |s, v| {
             toggle(s, v, |r| r.double_strike, |c, on| c.double_strike = Some(on))
-        }),
+        })
+        .params(r#"{"value"?: bool}"#),
         CommandSpec::new("format.subscript", "Subscript", "Home › Font", |s, v| {
             toggle(
                 s,
@@ -70,6 +71,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 |c, on| c.vert_align = Some(if on { VertAlign::Subscript } else { VertAlign::Baseline }),
             )
         })
+        .params(r#"{"value"?: bool}"#)
         .key("Mod+="),
         CommandSpec::new("format.superscript", "Superscript", "Home › Font", |s, v| {
             toggle(
@@ -79,21 +81,29 @@ pub fn specs() -> Vec<CommandSpec> {
                 |c, on| c.vert_align = Some(if on { VertAlign::Superscript } else { VertAlign::Baseline }),
             )
         })
+        .params(r#"{"value"?: bool}"#)
         .key("Mod+Shift+="),
         CommandSpec::new("format.allCaps", "All Caps", "Home › Font › Font", |s, v| toggle(s, v, |r| r.caps, |c, on| c.caps = Some(on)))
+            .params(r#"{"value"?: bool}"#)
             .key("Mod+Shift+A"),
         CommandSpec::new("format.smallCaps", "Small Caps", "Home › Font › Font", |s, v| {
             toggle(s, v, |r| r.small_caps, |c, on| c.small_caps = Some(on))
         })
+        .params(r#"{"value"?: bool}"#)
         .key("Mod+Shift+K"),
         CommandSpec::new("format.hidden", "Hidden", "Home › Font › Font", |s, v| toggle(s, v, |r| r.hidden, |c, on| c.hidden = Some(on)))
+            .params(r#"{"value"?: bool}"#)
             .key("Mod+Shift+H"),
         CommandSpec::new("format.outline", "Outline", "Home › Font › Text Effects", |s, v| {
             toggle(s, v, |r| r.outline, |c, on| c.outline = Some(on))
-        }),
-        CommandSpec::new("format.shadow", "Shadow", "Home › Font › Text Effects", |s, v| toggle(s, v, |r| r.shadow, |c, on| c.shadow = Some(on))),
-        CommandSpec::new("format.emboss", "Emboss", "Home › Font › Font", |s, v| toggle(s, v, |r| r.emboss, |c, on| c.emboss = Some(on))),
-        CommandSpec::new("format.engrave", "Engrave", "Home › Font › Font", |s, v| toggle(s, v, |r| r.engrave, |c, on| c.engrave = Some(on))),
+        })
+        .params(r#"{"value"?: bool}"#),
+        CommandSpec::new("format.shadow", "Shadow", "Home › Font › Text Effects", |s, v| toggle(s, v, |r| r.shadow, |c, on| c.shadow = Some(on)))
+            .params(r#"{"value"?: bool}"#),
+        CommandSpec::new("format.emboss", "Emboss", "Home › Font › Font", |s, v| toggle(s, v, |r| r.emboss, |c, on| c.emboss = Some(on)))
+            .params(r#"{"value"?: bool}"#),
+        CommandSpec::new("format.engrave", "Engrave", "Home › Font › Font", |s, v| toggle(s, v, |r| r.engrave, |c, on| c.engrave = Some(on)))
+            .params(r#"{"value"?: bool}"#),
         CommandSpec::new("format.font", "Font", "Home › Font", font).key("Mod+Shift+F").params(r#"{"name"?: string, "eastAsia"?: string}"#),
         CommandSpec::new("format.size", "Font Size", "Home › Font", size).key("Mod+Shift+P").params(r#"{"size": number}"#),
         CommandSpec::new("format.growFont", "Increase Font Size", "Home › Font", |s, _| step_size(s, 1)).key("Mod+Shift+. / Mod+Shift+>"),
@@ -573,7 +583,8 @@ fn char_style(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn set(s: &mut Session, v: &Value) -> CmdResult {
-    let mut props: CharProps = serde_json::from_value(v.get("props").cloned().unwrap_or(Value::Null)).map_err(|e| CmdError::Params(e.to_string()))?;
+    let mut props: CharProps =
+        serde_json::from_value(v.get("props").cloned().unwrap_or(Value::Null)).map_err(|e| super::props_error("props", "CharProps", e))?;
     // The font dialog and callers supplying one value format both scripts. Explicit
     // complex-script values still take precedence; importing a DOCX never uses this command.
     props.size_cs = props.size_cs.or(props.size);

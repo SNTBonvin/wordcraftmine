@@ -2,6 +2,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod automation_args;
+mod help;
 
 use std::fmt;
 use std::io::Write;
@@ -10,44 +11,132 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 use wordcraft_engine::Session;
 
-const USAGE: &str = "\
-wordcraft-cli — WordCraft from the command line
-
-USAGE:
-  wordcraft-cli convert <in> <out> [--markup]
-                                              convert between formats (docx, doc [read], pdf, odt, rtf, html, md, tex, txt, json, png);
-                                              --markup (Print Markup): comments beside each page and
-                                              tracked changes in pdf/png, a comment list in html/md/txt
-  wordcraft-cli info <file>                   pages, words, paragraphs, properties (JSON)
-  wordcraft-cli text <file>                   plain text
-  wordcraft-cli inspect <file>                document structure (JSON)
-  wordcraft-cli render <file> <out.png> [--page N] [--scale S]
-  wordcraft-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
-                    [--author NAME]           run commands headlessly, then save (--author names
-                                              who tracked changes and comments are by)
-  wordcraft-cli commands [--json]             list every command
-  wordcraft-cli parity [--markdown]           feature-catalog parity
-  wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
-                                              MCP server on stdio (headless, or bridged to the app).
-                                              --automation-read-root / --automation-write-root confine
-                                              the files the agent's commands read (open, insert text
-                                              or picture, mail-merge data, templates…) and write (save,
-                                              export, merge output…) to DIR, links followed; a root left
-                                              out grants none of its access. They apply to the headless
-                                              server and are an error with --connect.
-  wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
-                                              run a Zotero command on a document (Zotero must be
-                                              running): addEditCitation, addEditBibliography,
-                                              addNote, refresh, removeCodes, setDocPrefs
-                                              (--cmd runs first, e.g. --cmd caret.docEnd)
-  wordcraft-cli --version
-";
-
 fn open(path: &str) -> Result<Session, String> {
-    let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
+    let doc = wordcraft_engine::io::open_path(std::path::Path::new(path)).map_err(|e| format!("can't open {e}"))?;
     let mut s = Session::new(doc);
     s.path = Some(path.into());
     Ok(s)
+}
+
+fn blank() -> Session {
+    Session::new(wordcraft_doc::Document::new())
+}
+
+fn from_template(name: &str) -> Result<Session, String> {
+    let templates = wordcraft_engine::cmd::file::TEMPLATES;
+    if !templates.contains(&name) {
+        return Err(format!("`{name}` is not a template: --template takes {}.", list(&templates)));
+    }
+    let mut s = blank();
+    s.call("file.new", &json!({"template": name}))?;
+    Ok(s)
+}
+
+fn list(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [head @ .., last] => format!("{} or {last}", head.join(", ")),
+    }
+}
+
+fn page_number(args: &[String]) -> Result<Option<u64>, String> {
+    match arg_value(args, "--page") {
+        None => Ok(None),
+        Some(p) => {
+            p.parse::<u64>().ok().filter(|n| *n >= 1).map(Some).ok_or_else(|| format!("--page takes a page number, 1 = the first; `{p}` is not one"))
+        }
+    }
+}
+
+fn scale(args: &[String]) -> Result<Option<f64>, String> {
+    match arg_value(args, "--scale") {
+        None => Ok(None),
+        Some(p) => p
+            .parse::<f64>()
+            .ok()
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .map(Some)
+            .ok_or_else(|| format!("--scale takes pixels per point, e.g. 2; `{p}` is not a number above 0")),
+    }
+}
+
+fn steps(args: &[String], reg: &wordcraft_engine::Registry) -> Result<Vec<(String, Value)>, String> {
+    if args.last().is_some_and(|a| a == "--cmd") {
+        return Err("the last --cmd has no command: --cmd takes COMMAND=PARAMS, e.g. --cmd 'text.insert={\"text\":\"Hello\"}'. Nothing ran.".into());
+    }
+    let specs: Vec<&String> = args.iter().zip(args.iter().skip(1)).filter(|(a, _)| *a == "--cmd").map(|(_, v)| v).collect();
+    let total = specs.len();
+    let at = |n: usize| format!("--cmd {} of {total}", n + 1);
+    specs
+        .iter()
+        .enumerate()
+        .map(|(n, spec)| {
+            let (id, text) = spec.split_once('=').unwrap_or((spec, ""));
+            let Some(command) = reg.get(id) else {
+                let read = if text.is_empty() { "no parameters".to_string() } else { format!("parameters `{}`", shown(text)) };
+                return Err(format!(
+                    "{} was read as command `{id}` with {read}. {} --cmd takes COMMAND=PARAMS, a command id, then `=`, then a JSON \
+                     object, e.g. --cmd 'text.insert={{\"text\":\"Hello\"}}'; `wordcraft-cli commands` lists the ids. Nothing ran.",
+                    at(n),
+                    wordcraft_engine::call::unknown_command(reg, id)
+                ));
+            };
+            let params = if text.is_empty() {
+                json!({})
+            } else {
+                serde_json::from_str::<Value>(text).map_err(|e| {
+                    format!(
+                        "{} was read as command `{id}` with parameters `{}`, which are not JSON: {e}.{} Nothing ran.",
+                        at(n),
+                        shown(text),
+                        wordcraft_engine::call::takes(command)
+                    )
+                })?
+            };
+            Ok((id.to_string(), params))
+        })
+        .collect()
+}
+
+fn shown(text: &str) -> String {
+    match text.char_indices().nth(200) {
+        Some((i, _)) => format!("{}… ({} chars)", text.get(..i).unwrap_or_default(), text.chars().count()),
+        None => text.to_string(),
+    }
+}
+
+fn run_steps(s: &mut Session, steps: &[(String, Value)], print: bool, unsaved: bool) -> Result<(), Failure> {
+    let total = steps.len();
+    for (n, (id, params)) in steps.iter().enumerate() {
+        let r = s.call(id, params).map_err(|e| {
+            let e = e.trim_end_matches('.');
+            if unsaved { format!("--cmd {} of {total}: {e}. Nothing was saved.", n + 1) } else { format!("--cmd {} of {total}: {e}.", n + 1) }
+        })?;
+        if print {
+            match r {
+                Value::String(said) => write_stdout(|o| writeln!(o, "{id} → {said}"))?,
+                r => write_stdout(|o| writeln!(o, "{id} → {r}"))?,
+            }
+        }
+    }
+    Ok(())
+}
+
+fn save(s: &mut Session, args: &[String], out: &str) -> Result<(), String> {
+    let r = if out.to_ascii_lowercase().ends_with(".png") {
+        let mut v = json!({"path": out});
+        if let Some(n) = page_number(args)? {
+            v["page"] = json!(n);
+        }
+        if let Some(k) = scale(args)? {
+            v["scale"] = json!(k);
+        }
+        s.call("file.exportPng", &v)
+    } else {
+        s.call("file.save", &json!({"path": out}))
+    };
+    r.map(|_| ()).map_err(|e| format!("--save: {e}"))
 }
 
 /// `--author NAME`: the author recorded on tracked changes and comments (`file.setAuthor`).
@@ -70,12 +159,20 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
     while let Some(arg) = args.get(i) {
         if let Some(name) = arg.strip_prefix("--") {
             let Some(spec) = specs.iter().find(|spec| spec.name == arg) else {
-                return Err(format!("{command}: unknown option --{name}"));
+                let takes = match specs {
+                    [] => "takes no options".to_string(),
+                    specs => format!("takes {}", list(&specs.iter().map(|s| s.name).collect::<Vec<_>>())),
+                };
+                return Err(format!(
+                    "{command} was given `--{name}`, which it doesn't take. {command} {takes}; `wordcraft-cli help {command}` explains them."
+                ));
             };
-            if spec.takes_value && args.get(i + 1).is_some_and(|value| !value.starts_with("--")) {
+            if !spec.takes_value {
+                i += 1;
+            } else if args.get(i + 1).is_some_and(|value| !value.starts_with("--")) {
                 i += 2;
             } else {
-                i += 1;
+                return Err(format!("{command} was given `{arg}` without a value; `wordcraft-cli help {command}` says what it takes."));
             }
         } else {
             i += 1;
@@ -176,7 +273,17 @@ fn write_stdout(write: impl FnOnce(&mut std::io::StdoutLock<'static>) -> std::io
 fn run(args: &[String]) -> Result<(), Failure> {
     let cmd = args.first().map(String::as_str).unwrap_or("");
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
-    let pos = |i: usize| rest.iter().filter(|a| !a.starts_with("--")).nth(i).cloned().ok_or_else(|| format!("missing argument\n\n{USAGE}"));
+    if rest.iter().any(|a| a == "--help" || a == "-h")
+        && let Some(page) = help::page(cmd)
+    {
+        return write_stdout(|o| writeln!(o, "{page}"));
+    }
+    let pos = |i: usize| {
+        rest.iter().filter(|a| !a.starts_with("--")).nth(i).cloned().ok_or_else(|| {
+            let usage = help::SUBCOMMANDS.iter().find(|s| s.name == cmd).map(|s| s.usage).unwrap_or(cmd);
+            format!("{cmd} is missing an argument: usage: wordcraft-cli {usage}")
+        })
+    };
     match cmd {
         "convert" => {
             validate_options("convert", &rest, CONVERT_OPTIONS)?;
@@ -184,18 +291,17 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let markup = rest.iter().any(|a| a == "--markup");
             let mut s = open(&i)?;
             let r = if o.to_ascii_lowercase().ends_with(".png") {
-                s.run("file.exportPng", &json!({"path": o, "page": 1, "markup": markup}))
+                s.call("file.exportPng", &json!({"path": o, "page": 1, "markup": markup}))
             } else {
-                s.run("file.save", &json!({"path": o, "markup": markup}))
+                s.call("file.save", &json!({"path": o, "markup": markup}))
             };
-            r.map_err(|e| e.to_string())?;
-            eprintln!("wrote {o}");
-            Ok(())
+            r?;
+            write_stdout(|out| writeln!(out, "OK: wrote {o}"))
         }
         "info" => {
             validate_options("info", &rest, NO_OPTIONS)?;
             let mut s = open(&pos(0)?)?;
-            let info = serde_json::to_string_pretty(&s.run("file.info", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default();
+            let info = serde_json::to_string_pretty(&s.call("file.info", &json!({}))?).unwrap_or_default();
             write_stdout(|o| writeln!(o, "{info}"))
         }
         "text" => {
@@ -206,85 +312,82 @@ fn run(args: &[String]) -> Result<(), Failure> {
         "inspect" => {
             validate_options("inspect", &rest, NO_OPTIONS)?;
             let mut s = open(&pos(0)?)?;
-            let tree = serde_json::to_string_pretty(&s.run("document.inspect", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default();
+            let tree = serde_json::to_string_pretty(&s.call("document.inspect", &json!({}))?).unwrap_or_default();
             write_stdout(|o| writeln!(o, "{tree}"))
         }
         "render" => {
             validate_options("render", &rest, RENDER_OPTIONS)?;
             let (i, o) = (pos(0)?, pos(1)?);
+            let page = page_number(&rest)?.unwrap_or(1);
+            let scale = scale(&rest)?.unwrap_or(2.0);
             let mut s = open(&i)?;
-            let page = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()).unwrap_or(1);
-            let scale = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()).unwrap_or(2.0);
-            let r = s.run("file.exportPng", &json!({"path": o, "page": page, "scale": scale})).map_err(|e| e.to_string())?;
+            let r = s.call("file.exportPng", &json!({"path": o, "page": page, "scale": scale})).map_err(|e| format!("can't render {i}: {e}"))?;
             write_stdout(|o| writeln!(o, "{r}"))
         }
         "run" => {
             validate_options("run", &rest, RUN_OPTIONS)?;
+            let reg = wordcraft_engine::cmd::registry();
+            let steps = steps(&rest, &reg)?;
+            let out = arg_value(&rest, "--save");
+            page_number(&rest)?;
+            scale(&rest)?;
             let mut s = match (arg_value(&rest, "--file"), arg_value(&rest, "--template")) {
                 (Some(f), _) => open(&f)?,
-                (None, Some(t)) => {
-                    let mut s = Session::new(wordcraft_doc::Document::new());
-                    s.run("file.new", &json!({"template": t})).map_err(|e| e.to_string())?;
-                    s
-                }
-                _ => Session::new(wordcraft_doc::Document::new()),
+                (None, Some(t)) => from_template(&t)?,
+                _ => blank(),
             };
             if let Some(name) = arg_value(&rest, "--author") {
                 set_author(&mut s, &name)?;
             }
-            let mut i = 0;
-            while i < rest.len() {
-                if rest.get(i).map(String::as_str) == Some("--cmd") {
-                    let spec = rest.get(i + 1).ok_or("--cmd needs a value")?;
-                    let (id, params) = match spec.split_once('=') {
-                        Some((id, p)) => (id.to_string(), serde_json::from_str::<Value>(p).map_err(|e| format!("{id}: bad JSON params: {e}"))?),
-                        None => (spec.clone(), json!({})),
-                    };
-                    let r = s.run(&id, &params).map_err(|e| format!("{id}: {e}"))?;
-                    if rest.iter().any(|a| a == "--print") {
-                        write_stdout(|o| writeln!(o, "{id}: {r}"))?;
-                    }
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+            let print = rest.iter().any(|a| a == "--print");
+            run_steps(&mut s, &steps, print, out.is_some())?;
+            let mut done = vec![if steps.len() == 1 { "1 command ran".to_string() } else { format!("{} commands ran", steps.len()) }];
+            if let Some(out) = out {
+                save(&mut s, &rest, &out)?;
+                done.push(format!("saved {out}"));
             }
-            if let Some(out) = arg_value(&rest, "--save") {
-                let r = if out.to_ascii_lowercase().ends_with(".png") {
-                    let mut v = json!({"path": out});
-                    if let Some(n) = arg_value(&rest, "--page").and_then(|p| p.parse::<u64>().ok()) {
-                        v["page"] = json!(n);
-                    }
-                    if let Some(k) = arg_value(&rest, "--scale").and_then(|p| p.parse::<f64>().ok()) {
-                        v["scale"] = json!(k);
-                    }
-                    s.run("file.exportPng", &v)
-                } else {
-                    s.run("file.save", &json!({"path": out}))
-                };
-                r.map_err(|e| e.to_string())?;
-                eprintln!("wrote {out}");
-            }
-            Ok(())
+            write_stdout(|o| writeln!(o, "OK: {}", done.join(", ")))
         }
         "commands" => {
             validate_options("commands", &rest, COMMANDS_OPTIONS)?;
-            let s = Session::new(wordcraft_doc::Document::new());
+            let reg = wordcraft_engine::cmd::registry();
+            let filter = pos(0).unwrap_or_default().to_lowercase();
+            let listed =
+                reg.all().iter().filter(|c| filter.is_empty() || c.id.to_lowercase().contains(&filter) || c.label.to_lowercase().contains(&filter));
             if rest.iter().any(|a| a == "--json") {
-                let list = serde_json::to_string_pretty(&s.registry.describe()).unwrap_or_default();
+                let ids: std::collections::HashSet<&str> = listed.map(|c| c.id).collect();
+                let list: Vec<Value> = reg
+                    .describe()
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|c| ids.contains(c["id"].as_str().unwrap_or_default()))
+                    .collect();
+                let list = serde_json::to_string_pretty(&list).unwrap_or_default();
                 write_stdout(|o| writeln!(o, "{list}"))
             } else {
                 write_stdout(|o| {
-                    for c in s.registry.all() {
-                        writeln!(o, "{:<32} {:<36} {:<24} {}", c.id, c.label, c.shortcut, c.location)?;
+                    for c in listed {
+                        match wordcraft_engine::params_doc::parse(c.params) {
+                            Ok(d) if d.takes_nothing() => writeln!(o, "{} — {}", c.id, c.label)?,
+                            _ => writeln!(o, "{} — {}: {}", c.id, c.label, c.params)?,
+                        }
                     }
                     Ok(())
                 })
             }
         }
+        "describe" => {
+            validate_options("describe", &rest, NO_OPTIONS)?;
+            let id = pos(0)?;
+            let reg = wordcraft_engine::cmd::registry();
+            let spec = reg.get(&id).ok_or_else(|| wordcraft_engine::call::unknown_command(&reg, &id))?;
+            write_stdout(|o| writeln!(o, "{}", describe(spec)))
+        }
         "parity" => {
             validate_options("parity", &rest, PARITY_OPTIONS)?;
-            let s = Session::new(wordcraft_doc::Document::new());
+            let s = blank();
             let p = wordcraft_engine::catalog::parity(&s.registry);
             if rest.iter().any(|a| a == "--markdown") {
                 write_stdout(|o| write!(o, "{}", parity_markdown(&p)))
@@ -338,20 +441,17 @@ fn run(args: &[String]) -> Result<(), Failure> {
         "zotero" => {
             validate_options("zotero", &rest, ZOTERO_OPTIONS)?;
             let name = pos(0)?;
-            let command = wordcraft_zotero::Command::from_name(&name).ok_or_else(|| format!("unknown Zotero command `{name}`\n\n{USAGE}"))?;
+            let command = wordcraft_zotero::Command::from_name(&name).ok_or_else(|| {
+                format!("`{name}` is not a Zotero command: zotero takes addEditCitation, addEditBibliography, addNote, refresh, removeCodes or setDocPrefs")
+            })?;
             let file = pos(1)?;
-            let mut s = open(&file)?;
-            for spec in rest.iter().zip(rest.iter().skip(1)).filter(|(a, _)| *a == "--cmd").map(|(_, v)| v) {
-                let (id, params) = match spec.split_once('=') {
-                    Some((id, p)) => (id.to_string(), serde_json::from_str::<Value>(p).map_err(|e| format!("{id}: bad JSON params: {e}"))?),
-                    None => (spec.clone(), json!({})),
-                };
-                s.run(&id, &params).map_err(|e| format!("{id}: {e}"))?;
-            }
+            let steps = steps(&rest, &wordcraft_engine::cmd::registry())?;
             let mut opts = wordcraft_zotero::client::Options::default();
             if let Some(p) = arg_value(&rest, "--port") {
-                opts.addr.set_port(p.parse().map_err(|_| format!("bad port `{p}`"))?);
+                opts.addr.set_port(p.parse().map_err(|_| format!("--port takes a port number, e.g. 23116; `{p}` is not one"))?);
             }
+            let mut s = open(&file)?;
+            run_steps(&mut s, &steps, false, true)?;
             let trace = rest.iter().any(|a| a == "--trace");
             let mut bridge = wordcraft_zotero::Bridge::new();
             let mut host = wordcraft_zotero::Headless::default();
@@ -369,15 +469,85 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             eprintln!("{} calls, {}", out.calls, if out.completed { "completed" } else { "ended without completing (cancelled?)" });
             if let Some(o) = arg_value(&rest, "--save") {
-                s.run("file.save", &json!({"path": o})).map_err(|e| e.to_string())?;
-                eprintln!("wrote {o}");
+                save(&mut s, &rest, &o)?;
+                write_stdout(|out| writeln!(out, "OK: saved {o}"))?;
             }
             Ok(())
         }
-        "--version" | "-V" => write_stdout(|o| writeln!(o, "wordcraft-cli {}", env!("CARGO_PKG_VERSION"))),
-        "" | "help" | "--help" | "-h" => write_stdout(|o| write!(o, "{USAGE}")),
-        other => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
+        "--version" | "-V" | "version" => write_stdout(|o| writeln!(o, "wordcraft-cli {}", env!("CARGO_PKG_VERSION"))),
+        "help" | "--help" | "-h" => match rest.first() {
+            None => write_stdout(|o| writeln!(o, "{}", help::overview())),
+            Some(name) => match help::page(name) {
+                Some(page) => write_stdout(|o| writeln!(o, "{page}")),
+                None => Err(unknown_subcommand(name).into()),
+            },
+        },
+        "" => Err(format!("wordcraft-cli needs a subcommand.\n\n{}", help::overview()).into()),
+        other => Err(unknown_subcommand(other).into()),
     }
+}
+
+fn unknown_subcommand(name: &str) -> String {
+    let names: Vec<&str> = help::SUBCOMMANDS.iter().map(|s| s.name).filter(|n| *n != "version").collect();
+    format!("`{name}` is not a subcommand of wordcraft-cli; the subcommands are {}. `wordcraft-cli help` explains them.", list(&names))
+}
+
+fn describe(spec: &wordcraft_engine::CommandSpec) -> String {
+    let mut out = format!("{}: {}", spec.id, spec.label);
+    if !spec.location.is_empty() {
+        out += &format!(", in {}", spec.location);
+    }
+    if !spec.shortcut.is_empty() {
+        out += &format!(", shortcut {}", spec.shortcut);
+    }
+    out += ".\n";
+    let call = match wordcraft_engine::params_doc::parse(spec.params) {
+        Ok(doc) => {
+            if doc.takes_nothing() {
+                out += "\nTakes no parameters.\n";
+            } else {
+                out += "\nParameters:\n";
+                let width = doc.params.iter().map(|p| param_label(p).len()).max().unwrap_or_default();
+                for object in 0..doc.objects {
+                    let indent = if doc.objects > 1 {
+                        out += if object == 0 { "  either:\n" } else { "  or:\n" };
+                        "    "
+                    } else {
+                        "  "
+                    };
+                    for p in doc.params.iter().filter(|p| p.object == object) {
+                        out += &format!("{indent}{:<width$}  {}\n", param_label(p), p.about);
+                    }
+                }
+                if doc.elided {
+                    out += &format!("  and {}\n", doc.elision);
+                }
+            }
+            if !doc.remark.is_empty() {
+                out += &format!("Note: {}\n", doc.remark.trim_start_matches('(').trim_end_matches(')'));
+            }
+            if !doc.answer.is_empty() {
+                out += &format!("Answers with {}.\n", doc.answer.trim_end_matches('.'));
+            }
+            if doc.takes_nothing() { format!("--cmd {}", spec.id) } else { format!("--cmd '{}={{…}}'", spec.id) }
+        }
+        Err(_) => {
+            out += &format!("\nParameters: {}\n", spec.params);
+            format!("--cmd '{}={{…}}'", spec.id)
+        }
+    };
+    if let Some(why) = (spec.enabled)(&blank()) {
+        out += &format!("Not available in a new document: {why}.{}\n", wordcraft_engine::call::how_to_enable(why));
+    }
+    if ["CharProps", "ParaProps", "Pos"].iter().any(|t| spec.params.contains(t)) {
+        out += "CharProps, ParaProps and Pos: `wordcraft-cli help types`.\n";
+    }
+    out += &format!("\nRun it with: wordcraft-cli run {call}");
+    out
+}
+
+fn param_label(p: &wordcraft_engine::params_doc::Param<'_>) -> String {
+    if p.optional { format!("{}, optional", p.name) } else { p.name.to_string() }
 }
 
 /// At most 400 characters of `s`, for traces.
@@ -441,7 +611,10 @@ mod tests {
         assert!(validate_options("commands", &args(&["--json"]), COMMANDS_OPTIONS).is_ok());
         assert!(validate_options("parity", &args(&["--markdown"]), PARITY_OPTIONS).is_ok());
         assert!(validate_options("mcp", &args(&["--connect", "127.0.0.1:9000"]), MCP_OPTIONS).is_ok());
-        assert!(validate_options("render", &args(&["in.docx", "out.png", "--page"]), RENDER_OPTIONS).is_ok());
+        assert_eq!(
+            validate_options("render", &args(&["in.docx", "out.png", "--page"]), RENDER_OPTIONS),
+            Err("render was given `--page` without a value; `wordcraft-cli help render` says what it takes.".into())
+        );
         assert!(
             validate_options(
                 "zotero",
@@ -454,9 +627,19 @@ mod tests {
 
     #[test]
     fn unknown_options_are_rejected_before_file_access() {
-        assert_eq!(run(&args(&["info", "missing.docx", "--passwrod", "x"])), Err("info: unknown option --passwrod".into()));
-        assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])), Err("render: unknown option --sclae".into()));
-        assert_eq!(run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])), Err("zotero: unknown option --prot".into()));
+        assert_eq!(
+            run(&args(&["info", "missing.docx", "--passwrod", "x"])),
+            Err("info was given `--passwrod`, which it doesn't take. info takes no options; `wordcraft-cli help info` explains them.".into())
+        );
+        assert_eq!(
+            run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])),
+            Err("render was given `--sclae`, which it doesn't take. render takes --page or --scale; `wordcraft-cli help render` explains them."
+                .into())
+        );
+        assert_eq!(
+            run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])),
+            Err("zotero was given `--prot`, which it doesn't take. zotero takes --cmd, --save, --trace or --port; `wordcraft-cli help zotero` explains them.".into())
+        );
     }
 
     #[test]

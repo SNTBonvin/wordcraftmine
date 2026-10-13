@@ -437,6 +437,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.autosave = p::bool(v, "value").unwrap_or(!s.autosave);
             Ok(json!({"value": s.autosave}))
         })
+        .params(r#"{"value"?: bool}"#)
         .pure(),
         CommandSpec::new("file.compatibility", "Check Compatibility", "File › Info", |s, _| {
             let mut issues = Vec::new();
@@ -460,7 +461,7 @@ pub fn specs() -> Vec<CommandSpec> {
         .pure(),
         CommandSpec::new("insert.quickParts", "Quick Parts", "Insert › Text", quick_parts)
             .params(r#"{"save"?: name (from the selection), "insert"?: name, "delete"?: name} → list"#),
-        CommandSpec::new("insert.autoText", "AutoText", "Insert › Text › Quick Parts", quick_parts).params(r#"{"save"?: name, "insert"?: name}"#),
+        CommandSpec::new("insert.autoText", "AutoText", "Insert › Text › Quick Parts", quick_parts).params(r#"{"save"?: name, "insert"?: name, "delete"?: name}"#),
         CommandSpec::new("insert.docProperty", "Document Property", "Insert › Text › Quick Parts", |s, v| {
             let name = p::str(v, "name").unwrap_or("Title").to_string();
             let c = &s.doc.core;
@@ -576,7 +577,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 "table.borders",
                 &json!({"kind": p::str(v, "kind").unwrap_or("all"), "width": p::f32(v, "width").unwrap_or(0.5), "color": p::str(v, "color")}),
             )
-        }),
+        })
+        .params(r#"{"kind"?: string (as table.borders; default all), "width"?: pt (default 0.5), "color"?: "RRGGBB"}"#),
         CommandSpec::new("para.setNumberingValue", "Set Numbering Value", "Home › Paragraph › Numbering", |s, v| {
             let value = p::u64(v, "value").unwrap_or(1).clamp(0, 100_000) as u32;
             let f = s.sel.focus.clone();
@@ -633,6 +635,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.relayout();
             Ok(json!({"value": s.view.show_markup}))
         })
+        .params(r#"{"value"?: bool}"#)
         .pure(),
         CommandSpec::new("review.editor", "Editor", "Home › Editor", |s, v| s.run("review.spelling", v)).pure(),
         CommandSpec::new("select.similar", "Select Text with Similar Formatting", "Home › Editing › Select", select_similar).pure(),
@@ -655,7 +658,8 @@ pub fn specs() -> Vec<CommandSpec> {
             s.doc.settings.theme_name =
                 format!("{} ({})", s.doc.settings.theme_name.split(" (").next().unwrap_or("Craft"), p::str(v, "name").unwrap_or("Subtle"));
             sel_result(s)
-        }),
+        })
+        .params(r#"{"name"?: string (default Subtle)}"#),
         CommandSpec::new("view.immersive", "Immersive Reader", "View › Immersive", |s, _| {
             s.view.read_mode = !s.view.read_mode;
             s.view.focus_mode = s.view.read_mode;

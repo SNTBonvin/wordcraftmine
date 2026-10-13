@@ -119,3 +119,48 @@ fn headless_sessions_keep_the_dictionary_in_memory() {
     h.session.run("review.addToDictionary", &json!({"word": "zxqmcpword2"})).expect("added");
     assert!(h.session.user_dict_path.is_none());
 }
+
+#[test]
+fn execute_answers_in_words_and_refuses_unknown_parameters() {
+    let mut s = Server::new(Box::new(Headless::default()));
+    assert_eq!(
+        tool(&mut s, "type_text", json!({"text": "Hello"})),
+        json!("inserted `Hello` into paragraph 0, offsets 0–5; the caret is at paragraph 0, offset 5")
+    );
+    assert_eq!(tool(&mut s, "execute", json!({"command": "select.all"})), json!("selected `Hello` in paragraph 0, offsets 0–5"));
+    let r = call(&mut s, 9, "tools/call", json!({"name": "execute", "arguments": {"command": "text.insert", "params": {"content": "x"}}}));
+    assert_eq!(r["result"]["isError"], true);
+    let text = r["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("`text.insert` was given `content`, which it doesn't take."), "{text}");
+    let r = call(&mut s, 9, "tools/call", json!({"name": "execute", "arguments": {"command": "nwe"}}));
+    assert_eq!(r["result"]["content"][0]["text"], "`nwe` is not a command.");
+}
+
+#[test]
+fn every_tool_takes_the_arguments_its_schema_declares() {
+    let dir = std::env::temp_dir().join(format!("wc-mcp-schema-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("x.docx").to_string_lossy().into_owned();
+    let mut s = Server::new(Box::new(Headless::default()));
+    for t in crate::tools::tool_definitions().as_array().unwrap() {
+        let name = t["name"].as_str().unwrap();
+        let mut args = serde_json::Map::new();
+        for (k, p) in t["inputSchema"]["properties"].as_object().unwrap() {
+            args.insert(
+                k.clone(),
+                match (k.as_str(), p["type"].as_str()) {
+                    ("path", _) => json!(path),
+                    (_, Some("number")) => json!(1),
+                    (_, Some("boolean")) => json!(false),
+                    (_, Some("array")) => json!([]),
+                    (_, Some("object")) => json!({}),
+                    _ => json!("x"),
+                },
+            );
+        }
+        let r = call(&mut s, 9, "tools/call", json!({"name": name, "arguments": args}));
+        let text = r["result"]["content"][0]["text"].as_str().unwrap_or_default();
+        assert!(!text.contains("which it doesn't take"), "{name}: {text}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

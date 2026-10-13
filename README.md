@@ -141,7 +141,12 @@ wordcraft-cli text report.docx                      # plain text
 wordcraft-cli inspect report.docx                   # structure as JSON
 wordcraft-cli run --template sample \
   --cmd 'select.text={"text":"Membership"}' --cmd format.bold --save out.docx
+wordcraft-cli help run                              # how to write a command, and what the ids don't say
+wordcraft-cli describe insert.picture               # one command and its parameters
 ```
+
+Every answer and error is written for the agent reading it: `run --print` says what each command
+changed, and an error says how the input was read, what is wrong and the form that works.
 
 Web: `cd apps/wordcraft-web && trunk serve`, then open <http://127.0.0.1:8771/?sample>.
 

@@ -93,7 +93,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         })
-        .params(r#"{"pos"?: "right|left|top|bottom|none"} (no pos: switch the legend on or off)"#)
+        .params(r#"{"pos"|"position"?: "right|left|top|bottom|none"} (no pos: switch the legend on or off)"#)
         .when(has_chart),
         CommandSpec::new("chart.dataLabels", "Data Labels", "Chart Design › Chart Layouts › Add Chart Element", |s, v| {
             let on = p::bool(v, "on").or_else(|| p::bool(v, "value"));
@@ -102,7 +102,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         })
-        .params(r#"{"on"?: bool} (no value: switch the data labels on or off)"#)
+        .params(r#"{"on"|"value"?: bool} (no value: switch the data labels on or off)"#)
         .when(has_chart),
     ]
 }

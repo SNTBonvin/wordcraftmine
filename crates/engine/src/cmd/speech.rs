@@ -17,7 +17,7 @@ pub fn specs() -> Vec<CommandSpec> {
             .key("Mod+Alt+Space")
             .params(r#"{"skipCitations"?: bool}"#)
             .pure(),
-        CommandSpec::new("readAloud.playPause", "Play/Pause", "Review › Speech", play_pause).pure(),
+        CommandSpec::new("readAloud.playPause", "Play/Pause", "Review › Speech", play_pause).params(r#"{"skipCitations"?: bool}"#).pure(),
         CommandSpec::new("readAloud.next", "Next Sentence", "Review › Speech", next).pure(),
         CommandSpec::new("readAloud.previous", "Previous Sentence", "Review › Speech", previous).pure(),
         CommandSpec::new("readAloud.stop", "Stop Reading", "Review › Speech", stop).pure(),

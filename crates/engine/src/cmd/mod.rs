@@ -127,6 +127,13 @@ pub fn pos_json(p: &Pos) -> Value {
     serde_json::to_value(p).unwrap_or(Value::Null)
 }
 
+/// The error for a `CharProps` or `ParaProps` object (`kind`) under `key` that doesn't read as one.
+pub fn props_error(key: &str, kind: &str, e: serde_json::Error) -> CmdError {
+    CmdError::Params(format!(
+        "`{key}` is not a {kind}: {e}. Lengths are points, `color` is \"RRGGBB\", other colours [r, g, b]; `wordcraft-cli help types` and docs/mcp.md list the fields"
+    ))
+}
+
 /// The standard result: the selection after the command.
 pub fn sel_result(s: &Session) -> CmdResult {
     Ok(json!({"anchor": pos_json(&s.sel.anchor), "focus": pos_json(&s.sel.focus)}))

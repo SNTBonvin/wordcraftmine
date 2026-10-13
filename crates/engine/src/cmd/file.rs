@@ -26,6 +26,9 @@ pub(crate) fn set_author(s: &mut Session, v: &Value) -> CmdResult {
     Ok(r)
 }
 
+/// The built-in templates `file.new` takes.
+pub const TEMPLATES: [&str; 5] = ["blank", "sample", "letter", "resume", "report"];
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.new", "New", "File", new).key("Mod+N").params(r#"{"template"?: "blank|sample|letter|resume|report"}"#).pure(),
@@ -90,6 +93,7 @@ pub fn specs() -> Vec<CommandSpec> {
             let story = super::story_param(s, v);
             Ok(json!({"text": s.doc.plain_text(story)}))
         })
+        .params(r#"{"story"?: Story (default: the caret's)}"#)
         .pure(),
         CommandSpec::new("document.paragraph", "Paragraph Details", "Agents", paragraph).params(r#"{"path": [n], "story"?: Story}"#).pure(),
         CommandSpec::new("document.selection", "Selection", "Agents", |s, _| {
