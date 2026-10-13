@@ -15,6 +15,12 @@ pub struct RowLayout {
     pub height: f32,
     /// Items relative to the table's top-left (x) and the row's top (y).
     pub items: Vec<Placed>,
+    /// The first `carried` items are the content of vertically merged cells that started in a
+    /// row above and runs on into this one.
+    pub carried: usize,
+    /// How far that content reaches above where a cell's text starts (it runs on from the row
+    /// above): the room [`at_page_top`] makes for it when the row starts a page.
+    pub lead: f32,
 }
 
 pub struct TableLayout {
@@ -406,6 +412,8 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         borders: Borders,
         vmerge: VMerge,
         margins: [f32; 4],
+        /// Top margin plus top border band: where the cell's text starts.
+        top: f32,
         g: usize,
         span: usize,
         /// Turned text: `items` are still in the turned frame (placed in the second pass).
@@ -555,6 +563,7 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                 borders,
                 vmerge: cell.props.vmerge,
                 margins,
+                top: margins[0] + band_t,
                 g,
                 span,
                 turned,
@@ -606,9 +615,14 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         .collect();
     // Second pass: place cells with their row height, fills and borders.
     let mut out = Vec::with_capacity(rows.len());
+    // Content of a vertically merged cell that falls in a later row of the merge, kept with
+    // that row (and how far it reaches above the row's text) so a page break between the rows
+    // takes it along.
+    let mut carry: Vec<(Vec<Placed>, f32)> = (0..rows.len()).map(|_| (Vec::new(), 0.0)).collect();
     for (ri, cells) in rows.into_iter().enumerate() {
         let rh = heights.get(ri).copied().unwrap_or(0.0);
-        let mut items = Vec::new();
+        let (mut items, lead) = carry.get_mut(ri).map(std::mem::take).unwrap_or_default();
+        let carried = items.len();
         for (ci, c) in cells.into_iter().enumerate() {
             // A restart cell spans several rows: its height is their sum.
             let mut span_h = rh;
@@ -620,10 +634,21 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                 }
             }
             let rect = Rect::new(c.x, 0.0, c.w, span_h);
+            // The rows the merge runs through: (row, top, bottom) measured from this row's top.
+            let mut bands = vec![(ri, 0.0f32, rh)];
+            if c.vmerge == VMerge::Restart {
+                let mut k = ri + 1;
+                while cont.get(k).is_some_and(|v| v.contains(&c.g)) {
+                    let top = bands.last().map_or(0.0, |b| b.2);
+                    bands.push((k, top, top + heights.get(k).copied().unwrap_or(0.0)));
+                    k += 1;
+                }
+            }
+            let mut to = Bands { bands: &bands, ri, inset: c.top, items: &mut items, carry: &mut carry };
             if c.vmerge != VMerge::Continue
                 && let Some(f) = c.fill
             {
-                items.push(Placed::Fill { rect, color: f });
+                to.put(Placed::Fill { rect, color: f });
             }
             let mut dy = match c.valign {
                 VAlign::Top => 0.0,
@@ -631,6 +656,7 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                 VAlign::Bottom => (span_h - c.h).max(0.0),
             };
             let mut cell_items = c.items;
+            let turned = c.turned.is_some();
             if let Some(tn) = c.turned {
                 dy = 0.0;
                 let m = c.margins;
@@ -665,9 +691,15 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                     it.turn(tn.turn, ox, oy);
                 }
             }
+            let mut to = Bands { bands: &bands, ri, inset: c.top, items: &mut items, carry: &mut carry };
             for mut it in cell_items {
                 it.translate(0.0, dy);
-                items.push(it);
+                // Turned text runs along the whole merge and moves as a whole.
+                if turned {
+                    to.items.push(it);
+                } else {
+                    to.put(it);
+                }
             }
             let b = c.borders;
             let (x0, x1, y0, y1) = (c.x, c.x + c.w, 0.0, rh);
@@ -694,9 +726,123 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
                 story,
             });
         }
-        out.push(RowLayout { height: rh, items });
+        out.push(RowLayout { height: rh, items, carried, lead });
     }
     TableLayout { x, width: total, rows: out }
+}
+
+/// Where the items of a cell go: the rows a vertical merge runs through (`(row, top, bottom)`
+/// measured from the top of row `ri`, the one being placed), and the rows below it.
+struct Bands<'a> {
+    bands: &'a [(usize, f32, f32)],
+    ri: usize,
+    /// Where the cell's text starts below a row's top.
+    inset: f32,
+    items: &'a mut Vec<Placed>,
+    carry: &'a mut [(Vec<Placed>, f32)],
+}
+
+impl Bands<'_> {
+    /// Put an item of the cell into the row of the merge it falls in, moved up by that row's
+    /// offset so it is drawn where it was: lines go with the row their bottom is in, shading is
+    /// cut at the row edges, anything else goes with the row its top is in. Without a merge the
+    /// item stays in this row as it is.
+    fn put(&mut self, it: Placed) {
+        let Some(last) = self.bands.len().checked_sub(1).filter(|l| *l > 0) else {
+            self.items.push(it);
+            return;
+        };
+        let band_of = |y: f32| self.bands.iter().position(|b| y <= b.2 + 0.01).unwrap_or(last);
+        match it {
+            Placed::Lines { story, path, para, l0, l1, x, y, turn } => {
+                let base = para.lines.get(l0).map(|l| l.top).unwrap_or(0.0);
+                let bottom = |k: usize| para.lines.get(k).map_or(y, |l| y + l.top - base + l.height);
+                let mut start = l0;
+                while start < l1 {
+                    let band = band_of(bottom(start));
+                    let mut end = start + 1;
+                    while end < l1 && band_of(bottom(end)) == band {
+                        end += 1;
+                    }
+                    let top = para.lines.get(start).map_or(y, |l| y + l.top - base);
+                    self.put_in(band, Placed::Lines { story, path: path.clone(), para: para.clone(), l0: start, l1: end, x, y: top, turn });
+                    start = end;
+                }
+            }
+            Placed::Fill { rect, color } => {
+                for (band, &(_, top, bottom)) in self.bands.iter().enumerate() {
+                    let (a, b) = (rect.y.max(top), rect.bottom().min(bottom));
+                    if b > a {
+                        self.put_in(band, Placed::Fill { rect: Rect::new(rect.x, a, rect.w, b - a), color });
+                    }
+                }
+            }
+            it => {
+                let top = crate::v_span(&it).0;
+                let band = self.bands.iter().position(|b| top < b.2 - 0.01).unwrap_or(last);
+                self.put_in(band, it);
+            }
+        }
+    }
+
+    /// Put `it` (measured from the top of row `ri`) into the row of `band`, measured from that
+    /// row's top. Content other than shading that reaches above where the row's text starts
+    /// raises the row's lead.
+    fn put_in(&mut self, band: usize, mut it: Placed) {
+        let Some(&(row, top, _)) = self.bands.get(band) else { return };
+        it.translate(0.0, -top);
+        if row == self.ri {
+            self.items.push(it);
+        } else if let Some((items, lead)) = self.carry.get_mut(row) {
+            if !matches!(it, Placed::Fill { .. }) {
+                *lead = lead.max(self.inset - crate::v_span(&it).0);
+            }
+            items.push(it);
+        }
+    }
+}
+
+/// Row `row` placed at the top of a page (or under the header rows repeated there): the merged
+/// cell content that runs on into it from the rows above moves down by the row's lead, so its
+/// first line starts at the cell's top margin as in a new cell instead of reaching above the
+/// row, and the row grows by as much. `None` when nothing reaches above the row's text: on a
+/// page with the rows above, the row is laid out as it is.
+pub fn at_page_top(row: &RowLayout) -> Option<RowLayout> {
+    let d = row.lead;
+    if d <= 0.01 || !d.is_finite() {
+        return None;
+    }
+    let bottom = |b: f32| (b - row.height).abs() < 0.01;
+    let items = row
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            let mut it = it.clone();
+            let moves = match &mut it {
+                // Shading and cell areas down to the row's bottom stretch with it (the merged cell's
+                // own shading too); the content running on moves down; borders' ends at the bottom
+                // move with it.
+                Placed::Fill { rect, .. } | Placed::Cell { rect, .. } if rect.y <= 0.01 && bottom(rect.bottom()) => {
+                    rect.h += d;
+                    false
+                }
+                _ if i < row.carried => true,
+                Placed::Rule { y0, y1, .. } => {
+                    let (b0, b1) = (bottom(*y0), bottom(*y1));
+                    *y0 += if b0 { d } else { 0.0 };
+                    *y1 += if b1 { d } else { 0.0 };
+                    false
+                }
+                _ => false,
+            };
+            if moves {
+                it.translate(0.0, d);
+            }
+            it
+        })
+        .collect();
+    Some(RowLayout { height: row.height + d, items, carried: 0, lead: 0.0 })
 }
 
 /// Split a row at `cut` (points below the row's top) so the part above fits on this page.
@@ -852,7 +998,10 @@ pub fn split_row(row: &RowLayout, cut: f32) -> Option<(RowLayout, RowLayout)> {
             }
         }
     }
-    Some((RowLayout { height: cut, items: a }, RowLayout { height: (row.height - shift).max(4.0), items: b }))
+    Some((
+        RowLayout { height: cut, items: a, carried: 0, lead: 0.0 },
+        RowLayout { height: (row.height - shift).max(4.0), items: b, carried: 0, lead: 0.0 },
+    ))
 }
 
 /// The parts of `r` above `cut` and below it, the latter moved up by `shift` (onto the
