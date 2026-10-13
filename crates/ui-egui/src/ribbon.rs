@@ -596,7 +596,7 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "Double Strikethrough", "format.doubleStrikethrough", json!({}));
                 });
                 let hl = app.canvas.last_highlight.clone();
-                let hl_sw = wordcraft_doc::props::Highlight::ALL.iter().find(|h| h.ooxml() == hl).and_then(|h| h.rgb()).map(crate::theme::c32);
+                let hl_sw = crate::widgets::highlight_swatch(&hl);
                 split(ui, app, "highlight", "Text Highlight Color", "format.highlight", json!({"color": hl}), false, hl_sw, |ui, app| {
                     let grid = wordcraft_doc::props::Highlight::ALL;
                     egui::Grid::new("hl").spacing(vec2(3.0, 3.0)).show(ui, |ui| {
@@ -943,7 +943,9 @@ fn draw(app: &mut WordApp, ui: &mut Ui) {
         big_toggle(ui, app, "eraser", "Eraser", "draw.eraser", mode == DrawMode::Eraser);
         big_toggle(ui, app, "pen", "Pen", "draw.pen", mode == DrawMode::Pen(InkTool::Pen) && custom.is_none());
         big_toggle(ui, app, "pencil", "Pencil", "draw.pencil", mode == DrawMode::Pen(InkTool::Pencil) && custom.is_none());
-        big_toggle(ui, app, "highlight", "Highlighter", "draw.highlighter", mode == DrawMode::Pen(InkTool::Highlighter) && custom.is_none());
+        let hl_ink = crate::theme::c32(app.session.view.draw.settings(InkTool::Highlighter).color);
+        let hl_on = mode == DrawMode::Pen(InkTool::Highlighter) && custom.is_none();
+        crate::widgets::big_toggle_swatch(ui, app, "highlight", "Highlighter", "draw.highlighter", hl_on, hl_ink);
         // Pens added with Add Pen; right-click one to remove it.
         let pens = app.session.view.draw.pens.clone();
         for (i, pen) in pens.iter().enumerate() {
@@ -1875,14 +1877,16 @@ fn chart_design(app: &mut WordApp, ui: &mut Ui) {
 
 /// Shape Format: fill, outline and effects of the selected shape, and its arrangement.
 fn shape_format(app: &mut WordApp, ui: &mut Ui) {
-    let (stroke, glow_size) = match wordcraft_engine::cmd::objects::selected(&app.session) {
-        Some((_, wordcraft_doc::para::InlineObject::Shape { stroke, effects, .. })) => (stroke, effects.glow.map(|g| g.size)),
-        _ => (None, None),
+    let (fill, stroke, glow_size) = match wordcraft_engine::cmd::objects::selected(&app.session) {
+        Some((_, wordcraft_doc::para::InlineObject::Shape { fill, stroke, effects, .. })) => (fill, stroke, effects.glow.map(|g| g.size)),
+        _ => (None, None, None),
     };
+    // Shape Fill's bar shows the current fill; no fill, no bar.
+    let fill_sw = fill.map_or(egui::Color32::TRANSPARENT, crate::theme::c32);
     let theme = app.session.doc.settings.theme_colors.clone();
     group(ui, "Shape Styles", None, app, |ui, app| {
         stack(ui, |ui| {
-            menu_button(ui, app, "shading", Some("Shape Fill"), "Shape Fill", false, "shape.fill", |ui, app| {
+            crate::widgets::menu_button_swatch(ui, app, "shading", Some("Shape Fill"), "Shape Fill", false, "shape.fill", Some(fill_sw), |ui, app| {
                 mi(ui, app, "No Color", "shape.fill", json!({"color": null}));
                 crate::colors::menu(ui, app, &theme, Target::cmd("shape.fill"));
             });

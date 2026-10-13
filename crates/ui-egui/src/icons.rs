@@ -501,12 +501,21 @@ impl Pen<'_> {
 }
 
 /// Paint icon `name` into `r`. `c` is the line colour, `accent` the detail colour; status colours
-/// come from the theme unless the icon is disabled (`c == accent`).
+/// come from the theme unless the icon is drawn disabled, which this guesses from the colours
+/// (`c == accent`, or a transparent accent). Use [`paint_state`] when the accent is a chosen colour
+/// that may equal `c`.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
+    let disabled = c == accent || accent.a() == 0;
+    paint_state(p, r, name, c, if accent.a() == 0 { c } else { accent }, disabled);
+}
+
+/// [`paint`] with the disabled state given: a disabled icon has no soft fill and draws its status
+/// colours in `c`. A transparent `accent` leaves out the colour bar of the colour commands
+/// (no colour to show).
+pub fn paint_state(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32, disabled: bool) {
     let side = r.width().min(r.height());
     let s = side / 16.0;
-    let disabled = c == accent || accent.a() == 0;
-    let a = if accent.a() == 0 { c } else { accent };
+    let a = accent;
     let tokens = crate::theme::Tokens::get(p.ctx());
     let tint = if disabled { Color32::TRANSPARENT } else { a.gamma_multiply(if tokens.dark { 0.28 } else { 0.16 }) };
     let pen = Pen { p, o: r.center() - vec2(8.0 * s, 8.0 * s), s, w: stroke_px(side), c, a, t: tint };
@@ -2142,12 +2151,18 @@ fn draw(pen: &Pen, name: &str, c: Color32, a: Color32, green: Color32, red: Colo
             pen.acc(&[(9.3, 7.8), (8.0, 8.9), (8.0, 9.25)]);
             pen.dot(8.0, 11.9, 0.9, a);
         }
+        // Fallback (a command with no drawing of its own, e.g. on the Quick Access Toolbar): the
+        // bracket frame with the name's first letter in the accent, so two such commands differ.
         _ => {
             for (x0, y0, x1, y1) in [(2.0, 2.0, 5.0, 2.0), (11.0, 2.0, 14.0, 2.0), (2.0, 14.0, 5.0, 14.0), (11.0, 14.0, 14.0, 14.0)] {
                 pen.line(&[(x0, y0), (x1, y1)]);
             }
             pen.line(&[(2.0, 2.0), (2.0, 14.0)]);
             pen.line(&[(14.0, 2.0), (14.0, 14.0)]);
+            if let Some(ch) = name.chars().find(|ch| ch.is_alphanumeric()) {
+                let letter: String = ch.to_uppercase().collect();
+                pen.text(8.0, 8.0, 9.0, &letter, if a.a() == 0 { c } else { a }, true);
+            }
         }
     }
 }
@@ -2167,6 +2182,9 @@ fn brackets(pen: &Pen, y0: f32, y1: f32) {
 /// The colour bar under the colour commands, in the colour that will be applied. A very light
 /// colour gets an ink outline so it stays visible on light grounds.
 fn color_bar(pen: &Pen, col: Color32) {
+    if col.a() == 0 {
+        return;
+    }
     pen.block(1.5, 12.5, 14.5, 15.0, 0.75, col);
     let [r, g, b, _] = col.to_srgba_unmultiplied();
     let light = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b) > 215.0;
@@ -2569,12 +2587,67 @@ mod tests {
         assert!(dup.is_empty(), "icons sharing a drawing: {dup:?}");
     }
 
-    /// No name the interface uses falls through to the fallback tile.
+    /// No name the interface uses falls through to the fallback tile. The tile carries the
+    /// name's first letter, so compare with an unknown name that starts with the same letter.
     #[test]
     fn every_name_has_a_drawing() {
         let ctx = context();
-        let fallback = shapes_of(&ctx, "\u{0}no such icon");
-        let missing: Vec<&str> = NAMES.iter().copied().filter(|n| shapes_of(&ctx, n) == fallback).collect();
+        let missing: Vec<&str> = NAMES
+            .iter()
+            .copied()
+            .filter(|n| {
+                let first = n.chars().next().map(String::from).unwrap_or_default();
+                shapes_of(&ctx, n) == shapes_of(&ctx, &format!("{first}\u{0}no such icon"))
+            })
+            .collect();
         assert!(missing.is_empty(), "icons drawn as the fallback: {missing:?}");
+    }
+
+    /// #1282: the fallback carries the name's first letter, so two commands without a drawing
+    /// of their own (Quick Access Toolbar, custom groups) don't show the same blank tile.
+    #[test]
+    fn unknown_names_draw_their_first_letter() {
+        let ctx = context();
+        let (a, b) = (shapes_of(&ctx, "\u{0}apple"), shapes_of(&ctx, "\u{0}zebra"));
+        assert_ne!(a, b, "two unknown names drew the same fallback");
+        assert!(a.contains('A') && b.contains('Z'), "fallback letters missing");
+        // No letter to show: still a frame, never a panic.
+        assert!(!shapes_of(&ctx, "").is_empty());
+    }
+
+    /// #1282: a colour bar in the icon's own ink colour isn't the disabled look: the state is
+    /// given, not guessed from `c == accent`.
+    #[test]
+    fn explicit_state_wins_over_matching_colours() {
+        let ctx = context();
+        let ink = Color32::from_gray(66);
+        let draw = |disabled: bool| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(64.0, 64.0))), ..Default::default() };
+            let mut full = ctx.run_ui(input, |ui| {
+                let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("icon")));
+                paint_state(&painter, Rect::from_min_size(Pos2::ZERO, vec2(32.0, 32.0)), "highlight", ink, ink, disabled);
+            });
+            let out: String = std::mem::take(&mut full.shapes).iter().map(|s| format!("{:?}", s.shape)).collect();
+            full.drop_without_applying_deltas();
+            out
+        };
+        assert_ne!(draw(false), draw(true), "an enabled icon whose colour equals its ink drew as disabled");
+    }
+
+    /// #1282: a transparent accent leaves out the colour bar (Shape Fill with no fill).
+    #[test]
+    fn transparent_swatch_draws_no_bar() {
+        let ctx = context();
+        let draw = |accent: Color32| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(64.0, 64.0))), ..Default::default() };
+            let full = ctx.run_ui(input, |ui| {
+                let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("icon")));
+                paint_state(&painter, Rect::from_min_size(Pos2::ZERO, vec2(32.0, 32.0)), "shading", Color32::from_gray(66), accent, false);
+            });
+            let n = full.shapes.len();
+            full.drop_without_applying_deltas();
+            n
+        };
+        assert!(draw(Color32::TRANSPARENT) < draw(Color32::from_rgb(200, 30, 30)), "no fill still drew a bar");
     }
 }
