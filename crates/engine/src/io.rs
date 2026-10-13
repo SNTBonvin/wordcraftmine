@@ -427,8 +427,10 @@ pub fn delete_file(path: &std::path::Path) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Make sure `dir` exists (the styles folder before the first style is copied into it).
+/// Make sure `dir` exists (the styles folder before the first style is copied into it),
+/// inside the automation write root when there is one.
 pub fn create_dir(dir: &std::path::Path) -> Result<(), String> {
+    crate::file_access::check_write(&dir.to_string_lossy())?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))
 }
 
@@ -482,4 +484,31 @@ pub fn save_path_with(path: &std::path::Path, _doc: &Document, _password: Option
 /// Windows-1252 (see [`wordcraft_formats::txt::decode`]).
 pub fn decode_text(b: &[u8]) -> String {
     wordcraft_formats::txt::decode(b)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    /// `create_dir` is held to the automation write root like every other write: the
+    /// styles folder a `references.cslStyles {"add"}` makes cannot be created outside it.
+    #[test]
+    fn create_dir_is_held_to_the_write_root() {
+        use crate::file_access::{AutomationRoots, confine};
+        let base = std::env::temp_dir().join(format!("wc-mkdir-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in ["out", "outside"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        let roots = AutomationRoots::new(None, Some(&base.join("out"))).unwrap();
+        confine(roots.as_ref(), || {
+            let err = super::create_dir(&base.join("outside/escape")).unwrap_err();
+            assert!(err.contains("outside the write root"), "{err}");
+            assert!(!base.join("outside/escape").exists(), "nothing created outside the root");
+            super::create_dir(&base.join("out/styles")).unwrap();
+        });
+        assert!(base.join("out/styles").is_dir());
+        // Without roots nothing is checked: the behaviour is unchanged.
+        super::create_dir(&base.join("outside/free")).unwrap();
+        assert!(base.join("outside/free").is_dir());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
