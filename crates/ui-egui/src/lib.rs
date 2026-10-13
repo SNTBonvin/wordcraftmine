@@ -860,7 +860,13 @@ impl WordApp {
             self.canvas.read_first_visible = None;
         }
         // Drawing leaves the caret where it was: following it would pull the view off the ink.
-        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") && !id.starts_with("draw.") {
+        // Select all puts the caret at the document's end, but Word keeps the view where it is.
+        if !id.starts_with("view.")
+            && !id.starts_with("document.")
+            && !id.starts_with("format.state")
+            && !id.starts_with("draw.")
+            && id != "select.all"
+        {
             self.canvas.scroll_to_caret = true;
         }
         for req in std::mem::take(&mut self.session.ui_requests) {
@@ -4195,6 +4201,18 @@ mod tests {
         a.canvas.scroll_to_caret = false;
         a.run("text.insert", json!({"text": "x"})).unwrap();
         assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
+    }
+
+    /// Issue #1188: Ctrl+A scrolled to the end of the document, where select all leaves the caret.
+    /// Word selects everything and keeps the view where it is; moving the caret afterwards follows it.
+    #[test]
+    fn select_all_keeps_the_view_where_it_is() {
+        let mut a = typed();
+        a.canvas.scroll_to_caret = false;
+        a.run("select.all", json!({})).unwrap();
+        assert!(!a.canvas.scroll_to_caret, "select all scrolled to the caret");
+        a.run("caret.left", json!({})).unwrap();
+        assert!(a.canvas.scroll_to_caret, "moving the caret still brings it into view");
     }
 
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of
