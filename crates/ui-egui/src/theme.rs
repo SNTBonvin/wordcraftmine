@@ -431,6 +431,12 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
         // The same static bytes the document fonts use: one copy in the binary.
         add_cjk(&mut fonts, format!("{} {}", f.family, f.style), FontData::from_static(f.bytes));
     }
+    // العربية: the bundled Arabic face after the CJK ones (Noto Sans Arabic from craft-fonts;
+    // Inter carries no Arabic glyphs). The first face with the glyph wins, so other text is
+    // untouched, and a build without craft-fonts simply keeps the system fallbacks.
+    for f in &wordcraft_fonts::ui_arabic_fonts() {
+        add_cjk(&mut fonts, format!("{} {}", f.family, f.style), FontData::from_static(f.bytes));
+    }
     // The embedded faces leave interface characters without a glyph (a build without craft-fonts,
     // without its Chinese face, #241, or with faces lacking catalog characters, #486): an
     // installed CJK font after them, so the menus don't show boxes or `?`.
