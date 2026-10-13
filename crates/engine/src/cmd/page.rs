@@ -23,7 +23,7 @@ pub fn specs() -> Vec<CommandSpec> {
             with_sect(s, |x| x.set_landscape(land))
         })
         .params(r#"{"value": "portrait|landscape"}"#),
-        CommandSpec::new("layout.size", "Size", "Layout › Page Setup", size).params(r#"{"name"?: "Letter|Legal|A4|…", "width"?: pt, "height"?: pt}"#),
+        CommandSpec::new("layout.size", "Size", "Layout › Page Setup", size).params(r#"{"name"?: "Letter|Legal|A4|…", "width"?: pt, "height"?: pt} (each side clamped to 7.2–1584 pt, 0.1–22 in; the section keeps its orientation)"#),
         CommandSpec::new("layout.columns", "Columns", "Layout › Page Setup", columns)
             .params(
                 r#"{"count": 1-12, "space"?: pt, "separator"?: bool, "preset"?: "left|right", "widths"?: [[width pt, space after pt], …] (unequal columns; sets the count), "apply"?: "section|document|forward"}"#,
@@ -373,6 +373,10 @@ fn margins(s: &mut Session, v: &Value) -> CmdResult {
     })
 }
 
+/// The smallest and largest page side, points (0.1" and 22", as Word allows).
+pub const MIN_PAGE_SIDE: f32 = 7.2;
+pub const MAX_PAGE_SIDE: f32 = 1584.0;
+
 fn size(s: &mut Session, v: &Value) -> CmdResult {
     let (w, h) = if let Some(n) = p::str(v, "name") {
         let (_, w, h) = wordcraft_geom::PAPER_SIZES
@@ -383,9 +387,8 @@ fn size(s: &mut Session, v: &Value) -> CmdResult {
     } else {
         (p::req_f32(v, "width")?, p::req_f32(v, "height")?)
     };
-    if !(72.0..=1584.0).contains(&w) || !(72.0..=1584.0).contains(&h) {
-        return Err(CmdError::Params("page size must be 1\"–22\"".into()));
-    }
+    // Word's range per side is 0.1"–22" (#1433); `p::f32` already refused NaN and infinities.
+    let (w, h) = (w.clamp(MIN_PAGE_SIDE, MAX_PAGE_SIDE), h.clamp(MIN_PAGE_SIDE, MAX_PAGE_SIDE));
     with_sect(s, |x| {
         let (pw, ph) = if x.landscape { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
         x.page_w = pw;

@@ -1378,6 +1378,29 @@ fn page_setup_and_breaks() {
     assert!(s.run("layout.margins", &json!({"left": 1000.0})).is_err());
 }
 
+/// #1433: a custom page size (More Paper Sizes…) sets the section in its orientation, and
+/// out-of-range sizes clamp to Word's 0.1"–22" instead of failing or reaching the layout.
+#[test]
+fn layout_size_takes_a_custom_size_and_clamps_it() {
+    let mut s = s();
+    let size = |s: &Session| (s.doc.last_section.page_w, s.doc.last_section.page_h);
+    run(&mut s, "layout.size", json!({"width": 300.0, "height": 500.0}));
+    assert_eq!(size(&s), (300.0, 500.0));
+    run(&mut s, "layout.size", json!({"width": 1.0, "height": 5000.0}));
+    assert_eq!(size(&s), (7.2, 1584.0), "clamped to 0.1\" and 22\"");
+    run(&mut s, "layout.size", json!({"width": -50.0, "height": 40.0}));
+    assert_eq!(size(&s), (7.2, 40.0), "negative clamps to the minimum");
+    for junk in [json!({"width": 1e300, "height": 400.0}), json!({"width": "NaN", "height": 400.0}), json!({"width": null}), json!({})] {
+        assert!(s.run("layout.size", &junk).is_err(), "{junk}");
+        assert_eq!(size(&s), (7.2, 40.0), "{junk} leaves the size alone");
+    }
+    // A landscape section keeps its orientation: the long side goes across.
+    run(&mut s, "layout.orientation", json!({"value": "landscape"}));
+    run(&mut s, "layout.size", json!({"width": 300.0, "height": 500.0}));
+    assert_eq!(size(&s), (500.0, 300.0));
+    assert!(s.doc.last_section.landscape);
+}
+
 #[test]
 fn track_changes_and_accept() {
     let mut s = s();
