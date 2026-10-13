@@ -256,6 +256,9 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
+    /// Hunspell dictionaries folder, searched first (#100, #1063); empty uses the default
+    /// locations (and `WORDCRAFT_DICTIONARIES` when the launcher passes it through).
+    pub dictionaries_dir: String,
     /// Fit modes by file path, most recent first (#995).
     pub doc_views: Vec<(String, DocViewMemory)>,
 }
@@ -318,6 +321,7 @@ impl Default for UiState {
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
+            dictionaries_dir: String::new(),
             doc_views: Vec::new(),
         }
     }
@@ -606,6 +610,9 @@ impl WordApp {
         self.session.ribbon = std::mem::take(&mut self.ui.ribbon);
         self.session.ribbon.retain_known(&reg);
         self.session.view.draw.pens = std::mem::take(&mut self.ui.ink_pens);
+        // A dictionaries folder from an earlier run takes effect before any check (#100).
+        let dir = self.ui.dictionaries_dir.trim().to_string();
+        wordcraft_engine::proof::hunspell::set_dictionary_dir(if dir.is_empty() { None } else { Some(dir.into()) });
     }
 
     /// Run a command the user asked for (ribbon, shortcut, Backstage, file drop). New, Open,
@@ -3841,6 +3848,24 @@ mod tests {
         let mut second = app();
         second.apply_prefs(serde_json::from_slice(&saved).unwrap());
         assert!(second.session.view.dark_mode);
+    }
+
+    /// #100: a saved dictionaries folder is restored and takes effect for Hunspell lookups.
+    #[test]
+    fn dictionaries_folder_pref_is_restored_and_searched_first() {
+        let mut a = app();
+        let dir = std::env::temp_dir().join(format!("wordcraft-dictpref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let saved = serde_json::json!({"dictionariesDir": dir.to_string_lossy()}).to_string();
+        a.apply_prefs(serde_json::from_str(&saved).unwrap());
+        assert_eq!(a.ui.dictionaries_dir, dir.to_string_lossy());
+        let first = wordcraft_engine::proof::hunspell::search_dirs(None).into_iter().next();
+        assert_eq!(first.as_deref(), Some(dir.as_path()));
+        wordcraft_engine::proof::hunspell::set_dictionary_dir(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        let back = serde_json::to_string(&a.prefs()).unwrap();
+        assert!(back.contains("dictionariesDir"), "{back}");
     }
 
     #[test]
