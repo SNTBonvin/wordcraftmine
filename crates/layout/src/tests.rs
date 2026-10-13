@@ -626,6 +626,47 @@ fn the_empty_paragraph_after_a_nested_table_takes_no_room() {
     assert!(text > none + 5.0, "a paragraph with text takes its line: {text} vs {none}");
 }
 
+/// An autofit table that its indent pushes past the right margin shrinks to end at the margin,
+/// each column giving up room in proportion to what it has above its longest word: of two
+/// 150 pt columns, the one holding a long word narrows less than the one holding a short one.
+#[test]
+fn an_indented_autofit_table_shrinks_to_the_margin() {
+    let widths = |indent: f32| {
+        let para = |t: &str| wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(t, Default::default()));
+        let mut d = Document::from_text("");
+        let mut t = Table::new(1, 3, 450.0);
+        t.props.indent = Some(indent);
+        for (c, text) in t.rows[0].cells.iter_mut().zip(["a", "incomprehensibilities", "a"]) {
+            c.props.width = Some(150.0);
+            c.blocks = vec![para(text)];
+        }
+        d.body = vec![std::sync::Arc::new(wordcraft_doc::Block::Table(t))];
+        let l = lay(&d);
+        let xs: Vec<f32> = l.pages[0]
+            .items
+            .iter()
+            .filter_map(|i| if let Placed::Cell { rect, row: 0, .. } = i { Some((rect.x, rect.w)) } else { None })
+            .flat_map(|(x, w)| [x, x + w])
+            .collect();
+        (xs[2] - xs[0], xs[4] - xs[2], xs[5] - xs[4], xs[5])
+    };
+    // 450 pt in a 468 pt column: it fits while the indent leaves it room.
+    let (a, b, c, right) = widths(10.0);
+    assert!((a - 150.0).abs() < 0.01 && (b - 150.0).abs() < 0.01 && (c - 150.0).abs() < 0.01 && right < 540.0, "{a} {b} {c} {right}");
+    // Pushed 60 pt further it ends at the right margin (72 + 468), its last border (0.5 pt,
+    // centred on the cell's edge) just inside: the outer columns give up the same, and more
+    // than the middle one with its long word.
+    let (a, b, c, right) = widths(70.0);
+    assert!((right - (540.0 - 0.25)).abs() < 0.05, "ends at {right}");
+    assert!((a - c).abs() < 0.01 && b > a + 1.0 && a < 149.0, "{a} {b} {c}");
+    // Each column gives up the same share of its room above its longest word, so twice the
+    // overrun takes twice as much from each.
+    let over = 150.0 * 3.0 - (a + b + c);
+    let (a2, b2, _, right) = widths(70.0 + over);
+    assert!((right - (540.0 - 0.25)).abs() < 0.05, "ends at {right}");
+    assert!(((150.0 - a2) - 2.0 * (150.0 - a)).abs() < 0.05 && ((150.0 - b2) - 2.0 * (150.0 - b)).abs() < 0.05, "{a2} {b2}");
+}
+
 #[test]
 fn lists_get_labels_and_indent() {
     let mut d = Document::from_text("one\ntwo\nthree");

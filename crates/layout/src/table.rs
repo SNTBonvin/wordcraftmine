@@ -342,29 +342,6 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         grid.iter_mut().for_each(|w| *w *= k);
         total = avail;
     }
-    if !t.props.fixed {
-        // Measuring lays paragraphs out once more; it mustn't count their equations twice.
-        let eq_count = ctx.eq_count;
-        let content = column_content(ctx, t, style.as_ref(), depth);
-        ctx.eq_count = eq_count;
-        if let Some(content) = content {
-            autofit(&mut grid, &content, t, avail);
-            // Never wider than the room it had, however long an unbreakable word.
-            let fitted: f32 = grid.iter().sum();
-            let cap = avail.max(total);
-            if fitted > cap {
-                grid.iter_mut().for_each(|w| *w *= cap / fitted);
-            }
-            total = grid.iter().sum();
-        }
-    }
-    let mut colx = Vec::with_capacity(ncols + 1);
-    let mut acc = 0.0;
-    for w in &grid {
-        colx.push(acc);
-        acc += w;
-    }
-    colx.push(acc);
     // Word 2013 and later (compatibility mode 15) put the table's border at the margin (plus its
     // indent); earlier modes line the first cell's text up with it instead.
     let margins_def = default_margins(t, style.as_ref());
@@ -388,6 +365,46 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
     } else {
         indent - first_cell_left_margin_in(t, margins_def)
     };
+    if !t.props.fixed {
+        // Measuring lays paragraphs out once more; it mustn't count their equations twice.
+        let eq_count = ctx.eq_count;
+        let content = column_content(ctx, t, style.as_ref(), depth);
+        ctx.eq_count = eq_count;
+        if let Some(content) = content {
+            autofit(&mut grid, &content, t, avail);
+            // Its room ends at the end margin: an indent leaves less of it, and in Word 2013's
+            // layout the outer borders stay inside the text area, so half the first border
+            // (in `start_offset`) and half the last come off too. A table nested in a cell
+            // keeps its width (Word lets it reach past the cell's edge); one with a preferred
+            // width of its own, or columns that are wider than the text area by themselves
+            // (dragged out past the margin, say), is unmeasured and keeps its width.
+            let fits_alone = grid.iter().sum::<f32>() <= avail + 0.01;
+            if depth <= 1 && fits_alone && target.is_none() && !matches!(t.props.align, Some(Align::Center | Align::Right)) {
+                let end_half = if ctx.doc.settings.compat_mode >= 15 {
+                    let last_cell = t.rows.first().and_then(|r| r.cells.last());
+                    let border = last_cell.and_then(|c| c.props.borders.and_then(|b| b.right)).or(tborders.right);
+                    border.filter(Border::is_visible).map_or(0.0, |b| b.width.clamp(0.0, 12.0) / 2.0)
+                } else {
+                    0.0
+                };
+                shrink_to_room(&mut grid, &content, avail - start_offset.max(0.0) - end_half);
+            }
+            // Never wider than the room it had, however long an unbreakable word.
+            let fitted: f32 = grid.iter().sum();
+            let cap = avail.max(total);
+            if fitted > cap {
+                grid.iter_mut().for_each(|w| *w *= cap / fitted);
+            }
+            total = grid.iter().sum();
+        }
+    }
+    let mut colx = Vec::with_capacity(ncols + 1);
+    let mut acc = 0.0;
+    for w in &grid {
+        colx.push(acc);
+        acc += w;
+    }
+    colx.push(acc);
     let x = match (t.props.align, rtl) {
         (Some(Align::Center), _) => (avail - total) / 2.0,
         // End alignment: the right margin, or the left one in a right-to-left table.
@@ -1063,6 +1080,29 @@ fn fixed_cell_widths(grid: &mut [f32], t: &Table) {
         if let (Some(a), true) = (asked, agree) {
             *w = a.max(4.0);
         }
+    }
+}
+
+/// An autofit table that an indent pushes past the end margin shrinks to end there. Each column
+/// gives up room in proportion to what it has above its narrowest content (its longest word and
+/// the cell margins), so a column of short words narrows more than one holding a long word.
+/// Measured in Word for Windows: four 117 pt columns indented 18, 36, 72 and 144 pt ended at
+/// the margin, the columns narrower by 27%, 27%, 30% and 16% of the indent, their shares of the
+/// room above their longest words; with borders of 0.5 to 4.5 pt and no indent the table was
+/// narrower by one border width, its outer borders inside the text area. Columns with nothing
+/// to give keep their width.
+fn shrink_to_room(grid: &mut [f32], content: &[(f32, f32)], room: f32) {
+    let over = grid.iter().sum::<f32>() - room;
+    if grid.len() != content.len() || !over.is_finite() || over <= 0.01 {
+        return;
+    }
+    let spare: f32 = grid.iter().zip(content).map(|(w, c)| (*w - c.0).max(0.0)).sum();
+    if spare <= 0.01 {
+        return;
+    }
+    let give = (over / spare).min(1.0);
+    for (w, c) in grid.iter_mut().zip(content) {
+        *w -= (*w - c.0).max(0.0) * give;
     }
 }
 
