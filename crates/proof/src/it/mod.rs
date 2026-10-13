@@ -25,8 +25,8 @@ pub use suggest::suggest;
 /// The Italian dictionary: `None` until first use, then the installed one (or an empty one).
 static DICT: RwLock<Option<Arc<AffixDict>>> = RwLock::new(None);
 
-/// File names of an Italian Hunspell dictionary.
-const NAMES: &[&str] = &["it_IT", "it-IT", "it"];
+/// File names of an Italian Hunspell dictionary (Italy first, then Switzerland).
+const NAMES: &[&str] = &["it_IT", "it_CH", "it-IT", "it"];
 
 /// The Italian dictionary: the installed Hunspell `it_IT` (read on first use), one given with
 /// [`install_dictionary`], or an empty one when none is available (Italian spelling is off
@@ -136,6 +136,19 @@ mod tests {
         assert!(d.len() > 50, "{}", d.len());
         assert!(d.rule_count() >= 4, "the test dictionary's affix rules");
         assert!(!d.rep().is_empty() && !d.map().is_empty() && !d.try_chars().is_empty());
+    }
+
+    #[test]
+    fn swiss_dictionary_files_are_found() {
+        // it_CH is searched too, so Swiss users with only it_CH installed get Italian spelling.
+        let dir = std::env::temp_dir().join(format!("wc-it-ch-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("it_CH.aff"), test_dict::AFF).expect("aff");
+        std::fs::write(dir.join("it_CH.dic"), test_dict::DIC).expect("dic");
+        let found = crate::hunspell::find_in(&dir, NAMES);
+        let ok = found.as_ref().is_some_and(|(a, d)| a.ends_with("it_CH.aff") && d.ends_with("it_CH.dic"));
+        assert!(ok, "{found:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
