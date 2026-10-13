@@ -376,6 +376,16 @@ pub fn caption_char_covered(c: char) -> bool {
     (c as u32) < 0x250 || wordcraft_fonts::is_cjk(c)
 }
 
+/// A letter the embedded interface faces draw (Inter covers Latin, Greek and Cyrillic), or CJK,
+/// which has its own interface fallback. Symbols count as covered: the catalogs share them with
+/// English, letterlike ones (the equation gallery's `xⁿ`) included. Interface text in another
+/// script (Hebrew) borrows a document face instead.
+pub fn interface_char_covered(c: char) -> bool {
+    static INTER: std::sync::OnceLock<Arc<wordcraft_fonts::FontFace>> = std::sync::OnceLock::new();
+    let symbol = !c.is_alphabetic() || ('\u{2000}'..='\u{2BFF}').contains(&c);
+    symbol || caption_char_covered(c) || INTER.get_or_init(|| wordcraft_fonts::FontDb::global().face("Inter", "Regular")).covers(c)
+}
+
 /// Document faces needed to draw `text` (the input method's composition, or a file name in the
 /// window caption), one for each character the interface fonts cannot draw, skipping faces in
 /// `have` (#565). Characters of the embedded interface fonts are not looked up; very large faces

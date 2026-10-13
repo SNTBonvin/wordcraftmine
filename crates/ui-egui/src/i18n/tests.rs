@@ -924,9 +924,10 @@ fn polish_covers_every_key_of_every_other_catalog() {
     let polish = keys(lang("pl").0.source);
     // Italian and Hungarian still carry "Style: APA", which the interface no longer shows;
     // Hungarian and Bulgarian also name the citation styles, and Bulgarian has a few one-line
-    // pieces of gallery labels. Polish matches every other catalog, including the style names and
-    // equation gallery Russian translates.
-    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg")) {
+    // pieces of gallery labels; Hebrew carries every key of every catalog, those included. Polish
+    // matches every other catalog, including the style names and equation gallery Russian
+    // translates.
+    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg" | "he")) {
         let mut missing: Vec<String> = keys(other.0.source).difference(&polish).cloned().collect();
         missing.sort();
         assert!(missing.is_empty(), "pl lacks {}'s {missing:?}", other.code());
@@ -1190,4 +1191,112 @@ fn bundled_interface_fonts_cover_bulgarian_without_system_fallbacks() {
         }
     }
     assert!(!lang("bg").uses_cjk());
+}
+
+#[test]
+fn hebrew_locales_and_saved_preference_work_without_changing_the_document() {
+    let he = lang("he");
+    for tag in ["he", "he-IL", "he_IL.UTF-8", "HE-il", "he-Hebr-IL"] {
+        assert_eq!(lang_from_tag(tag), Some(he), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "he-IL", "en-US"]), Some(he));
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "HE"})).unwrap();
+    assert_eq!(result["effective"], "he");
+    assert_eq!(app.ui.language, "he");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "he" && l["name"] == "עברית"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), he);
+    assert_eq!(he.name(), "עברית");
+    assert!(!he.uses_cjk());
+}
+
+#[test]
+fn hebrew_covers_every_key_of_every_other_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    let (_, errors) = parse_entries(lang("he").0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+    let hebrew = keys(lang("he").0.source);
+    for other in Lang::all().filter(|l| *l != Lang::EN && l.code() != "he") {
+        let mut missing: Vec<String> = keys(other.0.source).difference(&hebrew).cloned().collect();
+        missing.sort();
+        assert!(missing.is_empty(), "he lacks {}'s {missing:?}", other.code());
+    }
+    let he = lang("he");
+    for (source, expected) in [
+        ("File", "קובץ"),
+        ("Home", "בית"),
+        ("Insert", "הוספה"),
+        ("Font", "גופן"),
+        ("Paragraph", "פסקה"),
+        ("Review", "סקירה"),
+        ("Save", "שמירה"),
+        // Kept in display order: drawn left to right, these read right to left.
+        ("Heading 1", "1 כותרת"),
+        ("Track Changes", "שינויים אחר מעקב"),
+        ("Hebrew", "עברית"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(tr(he, source), expected, "{source}");
+    }
+    // The search hint's example must find the command it names (search matches word by word).
+    assert_eq!(tr(he, "Insert Table"), "טבלה הוספת");
+    assert!(tr(he, "Type a command, e.g. \"insert table\"").contains(tr(he, "Insert Table")));
+    assert_eq!(fmt(tr(he, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]), "9 מתוך 3 עמוד");
+    // Count-neutral wording reads the same for one word and many: `מילים: 21`.
+    for count in [0, 1, 2, 10, 21, 1000] {
+        let words = count.to_string();
+        assert_eq!(fmt(tr(he, "{words} words"), &[("words", &words)]), format!("{count} :מילים"));
+    }
+    set_current(he);
+    assert_eq!(location("Review › Proofing"), "הגהה ‹ סקירה");
+    set_current(Lang::EN);
+}
+
+/// Hebrew text is written in logical order with no direction marks: the interface lays out
+/// right-to-left runs itself, and a stray mark would show as a box in some faces.
+#[test]
+fn hebrew_catalog_has_no_direction_control_characters() {
+    let (entries, _) = parse_entries(lang("he").0.source);
+    for e in &entries {
+        assert!(
+            !e.translation.chars().any(|c| matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')),
+            "{:?}",
+            e.source
+        );
+    }
+}
+
+/// The embedded interface faces have no Hebrew letters: a Hebrew interface borrows an installed
+/// face that has them, as a Hebrew file name in the caption does, instead of drawing boxes.
+#[test]
+fn a_hebrew_interface_borrows_a_face_for_its_letters() {
+    let letter = 'ק';
+    assert!(!crate::theme::interface_char_covered(letter), "Inter has no Hebrew");
+    assert!(crate::theme::interface_char_covered('Ж'), "Inter draws Cyrillic itself");
+    let ctx = egui::Context::default();
+    let frame = |app: &mut crate::WordApp| {
+        ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+    };
+    let lookup = |c| wordcraft_fonts::FontDb::global().fallback_for(c, u32::MAX);
+    for other in Lang::all().filter(|l| !l.uses_cjk() && l.code() != "he") {
+        let faces = crate::theme::faces_for_preedit(other.catalog_text(), &[], crate::theme::interface_char_covered, lookup);
+        assert!(faces.is_empty(), "{} is drawn by the embedded faces", other.code());
+    }
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    frame(&mut app);
+    app.run("ui.language", serde_json::json!({"value": "he"})).unwrap();
+    frame(&mut app);
+    if wordcraft_fonts::FontDb::global().fallback_for(letter, u32::MAX).is_some_and(|f| f.data().len() <= 16 << 20) {
+        assert!(app.canvas.ime_faces.iter().any(|f| f.covers(letter)), "the interface borrows a face with Hebrew letters");
+    }
+    let n = app.canvas.ime_faces.len();
+    frame(&mut app);
+    assert_eq!(app.canvas.ime_faces.len(), n, "the face is added once");
+    set_current(Lang::EN);
 }

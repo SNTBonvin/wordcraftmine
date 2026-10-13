@@ -181,11 +181,7 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
         });
         sep(ui, t);
 
-        use wordcraft_doc::Align as A;
-        widgets::small(ui, app, "alignLeft", None, "Align Left", "para.alignLeft", json!({}), align == A::Left);
-        widgets::small(ui, app, "alignCenter", None, "Center", "para.alignCenter", json!({}), align == A::Center);
-        widgets::small(ui, app, "alignRight", None, "Align Right", "para.alignRight", json!({}), align == A::Right);
-        widgets::small(ui, app, "justify", None, "Justify", "para.justify", json!({}), align == A::Justify);
+        widgets::align_buttons(ui, app, align);
     });
 }
 

@@ -19,16 +19,16 @@ native-speaker review (human).
 
 ## What WordCraft ships (measured)
 
-- **19 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
-  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr` and Bulgarian `bg`. Catalogs have 2,057–2,454 entries
-  each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian and Bulgarian translate so far (a test checks it). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
+- **20 interface languages**: English plus `zh-hans`, `zh-hant`, `ja`, `uk`, `es`, `pt-br`,
+  Serbian `sr`/`sr-latn` (#250), Estonian `et`, Turkish `tr`, Russian `ru`, Italian `it` (#594), German `de` (#574), Polish `pl`, Czech `cs`, Hungarian `hu`, French `fr`, Bulgarian `bg` and Hebrew `he`. Catalogs have 2,057–2,463 entries
+  each; Polish has every key of every other catalog, including the built-in style names and the equation gallery, except the citation style names only Hungarian, Bulgarian and Hebrew translate so far (a test checks it). Hebrew has every key of every catalog (a test checks that too). A test (`every_tab_and_command_is_translated`) enforces that every ribbon tab, command
   label and ribbon location is translated in every language.
   `pl`, `pl-PL` and `pl_PL.UTF-8` system locales pick Polish automatically.
 - Of the 675 English strings a scan extracts from `tl!(…)` calls and command labels/locations, each
   catalog covers **661 (98%)**. Some newer dialog and pane strings (Equation tab tooltips, Zotero,
   Read Aloud, Backstage greetings) aren't wrapped in `tl!` yet, so they show in English in every
   language: the true share of visible strings is **~93–95%** (estimated).
-- Pending PRs: Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20).
+- Pending PRs: Norwegian Bokmål (#208) and Nynorsk (#210), Hebrew with RTL (#20; the Hebrew interface and its mirrored layout have since landed separately).
 - **Proofing: English, Polish and Portuguese**, chosen per run from its language (`w:lang`, resolved through
   the styles; Review › Language and the status bar set it). Languages without proofing tools get
   no spelling or grammar marks (as in Word without the language's tools) instead of being flagged
@@ -57,8 +57,8 @@ shared items below.
 | Korean | ko | 0 | ❌ | Hangul ✅; macOS Korean IME fixes pending (#163, #164) | no | none | 3–5 |
 | Vietnamese | vi | 0 | ❌ | Latin with stacked diacritics, untested | no | none | 3–4 |
 
-Other shipped languages: **13** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
-Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`), Russian (`ru`), Italian (`it`, #594), Polish (`pl`), Czech (`cs`), Hungarian (`hu`), French (`fr`) and Bulgarian (`bg`), all partial.
+Other shipped languages: **14** — Traditional Chinese (`zh-hant`), Ukrainian (`uk`), Serbian
+Cyrillic and Latin (`sr`, `sr-latn`, #250), Estonian (`et`), Turkish (`tr`), Russian (`ru`), Italian (`it`, #594), Polish (`pl`), Czech (`cs`), Hungarian (`hu`), French (`fr`), Bulgarian (`bg`) and Hebrew (`he`), all partial.
 Estonian uses the existing fonts, follows `et-EE` system locales, and is available in Options or
 through `ui.language` with `{"value":"et"}`. Its 1,307 entries cover the existing interface catalog.
 Estonian spelling, grammar, dates and document templates are not added by the interface catalog.
@@ -66,6 +66,18 @@ Turkish works the same way (`tr-TR` and `tr-CY` system locales, `{"value":"tr"}`
 entries, the same keys as the Russian catalog. Command search folds the Turkish dotted and dotless I (`italik` finds İtalik, `YAZI TİPİ`
 finds Yazı Tipi) while English labels and ASCII command ids keep their usual matching. Turkish
 proofing is not included; terminology and checks: [`localization-tr.md`](localization-tr.md).
+Hebrew (`he-IL` system locales, `{"value":"he"}`) has 2,463 entries: every key of every other
+catalog, and the interface audit checks it as it does Russian. Counts use count-neutral wording
+(`מילים: 21`). The embedded interface faces have no Hebrew letters, so a Hebrew interface (and the
+Options language list) borrows an installed face that has them, as a Hebrew file name in the
+caption does. egui has no bidirectional text, so the catalog is kept in display order when it
+loads (UAX #9 with a right-to-left paragraph; `i18n/rtl.rs`): words read right to left and trailing
+punctuation (`שם משתמש:`, `…`) sits on the left. The interface is mirrored as it is painted
+(`mirror.rs`, an egui plugin): every shape of the frame flips about the window's centre and the
+pointer flips back, so the ribbon, menus, dialogs, panes and status bar run right to left; text
+keeps its glyphs and icon letters keep their order (`x²`). The document canvas and the text field
+being edited move without flipping; popups opened from the page open leftwards from their point.
+Hebrew typed into text fields is still shown in typing order. Hebrew proofing is not included.
 Bulgarian (`bg-BG` system locales, `{"value":"bg"}`) has 2,419 entries: every key of the reference
 catalog, the equation gallery's labels and everything the interface audit finds (the audit checks
 Bulgarian as it does Russian). Counts use count-neutral wording (`Думи: 21`). Bulgarian text is
@@ -158,6 +170,7 @@ WordCraft keeps 2,54 cm).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Hebrew interface catalog (2,463 entries, every key of every catalog), `he-IL` locale selection, saved preference, audit coverage; an installed face draws Hebrew labels, kept in display order; mirrored right-to-left interface |
 | 2026-10-11 | minor | Turkish interface catalog completed (2,325 entries, the same keys as Russian): equation gallery, built-in style names, watermarks, paper sizes and preview tiles; the interface audit checks Turkish too (#774) |
 | 2026-10-12 | trivial | Region conventions: File › Options › Advanced › Region (saved) and an Automatic units entry; Unix `LC_PAPER`/`LC_MEASUREMENT`/`LC_NUMERIC` each decide their own convention; the web reads the browser's locale; `WORDCRAFT_NO_PREFS` runs stay en-US; where the decimal separator comes from (#838 review) |
 | 2026-10-12 | minor | New blank documents follow the system region: A4 outside the Letter territories, centimetres outside the US, the region's decimal separator in length fields; explicit Measurement units choice wins (#838) |

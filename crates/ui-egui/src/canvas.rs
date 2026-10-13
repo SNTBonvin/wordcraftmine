@@ -86,6 +86,10 @@ pub struct CanvasState {
     pub context_menu_from_keys: bool,
     /// Where the context menu stands: the right-click point, or below the caret.
     pub context_menu_at: Option<Pos2>,
+    /// The context menu's popup id: a mirrored interface moves it with the page ([`crate::mirror`]).
+    pub(crate) context_menu_id: Option<egui::Id>,
+    /// The canvas with its rulers this frame, when the document is on screen.
+    pub(crate) view_rect: Option<Rect>,
     /// Screen rect of the selection's first line, for the floating mini toolbar.
     pub mini_anchor: Option<Rect>,
     /// A picture, shape or text box being dragged by its frame.
@@ -190,6 +194,8 @@ impl Default for CanvasState {
             context_menu_open: false,
             context_menu_from_keys: false,
             context_menu_at: None,
+            context_menu_id: None,
+            view_rect: None,
             mini_anchor: None,
             pasted: false,
             swallow_text: false,
@@ -686,6 +692,7 @@ fn drawing_grid_step(spacing: f32, scale: f32) -> f32 {
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.available_rect_before_wrap();
+    app.canvas.view_rect = Some(full);
     // Full pagination is expensive. During a resize keep the already laid-out columns and
     // reflow once the viewport has been stable briefly; ordinary reading controls update now.
     const RESIZE_SETTLE: f64 = 0.16;
@@ -1321,6 +1328,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     menu.show(|ui| context_menu(app, ui));
     // Stand down while the context menu owns the pointer so the two never double up; the open
     // state also covers the click that dismisses the menu.
+    app.canvas.context_menu_id = Some(egui::Popup::default_response_id(&resp));
     app.canvas.context_menu_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     if let Some(c) = crate::ink::cursor(app).filter(|_| resp.hovered() || app.canvas.ink.is_some()) {
         ui.ctx().set_cursor_icon(c);

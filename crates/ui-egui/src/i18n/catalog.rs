@@ -128,6 +128,14 @@ impl Catalog {
         (catalog, errors)
     }
 
+    /// The catalog with every translation in right-to-left display order ([`super::rtl`]).
+    pub fn into_display_order(mut self) -> Catalog {
+        for t in self.plain.values_mut().chain(self.contextual.values_mut()) {
+            *t = super::rtl::display_order(t);
+        }
+        self
+    }
+
     pub fn plain(&self, s: &str) -> Option<&str> {
         self.plain.get(s).map(String::as_str)
     }
