@@ -249,6 +249,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | Field codes like Word's field keys (#339): show codes (Alt+F9, Shift+F9), edit, unlink, lock and step through fields |
 | 2026-10-11 | Word's common keyboard shortcuts (#330): 101 → 125 of ~250 |
 | 2026-10-12 | Bulgarian (`bg`) interface: 2,419 catalog entries (every key of the reference catalog, the equation gallery and everything the interface audit finds), `bg-BG` system locales and a saved language choice; locale, catalog and bundled-font tests; no Bulgarian proofing resources |
+| 2026-10-13 | Croatian (`hr`) interface: 2,505 catalog entries (every key of the reference catalog, built-in style names and the equation gallery), `hr-*` system locales and a saved language choice; locale, catalog and bundled-font tests; no Croatian proofing yet |
 | 2026-10-11 | Hungarian (`hu`) interface: all 2,419 catalog entries, built-in style names translated, `hu-HU` system locales and a saved language choice; locale, catalog and bundled-font tests; no Hungarian proofing resources |
 | 2026-10-11 | Turkish (`tr`) interface: all 1,307 catalog entries, `tr-TR`/`tr-CY` system locales and a saved language choice; command search keeps Turkish dotted and dotless I apart (`italik` finds İtalik); locale, catalog, search and bundled-font tests; no Turkish proofing resources |
 | 2026-10-11 | Italian (`it`) interface (#594): 2,399 entries, feature names as Italian Word users know them, locale and saved-preference tests, bundled-font checks; no Italian proofing resources |
@@ -338,6 +339,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 | 2026-10-11 | trivial | Word's common keyboard shortcuts (#330): 125 of ~250 |
 | 2026-10-11 | trivial | Collapsed duplicate rows left by parallel merges |
 | 2026-10-12 | trivial | Bulgarian interface (`bg`): progress log and shipped languages |
+| 2026-10-13 | trivial | Croatian interface (`hr`): progress log and shipped languages |
 | 2026-10-11 | trivial | Hungarian interface (`hu`): progress log and shipped languages |
 | 2026-10-11 | trivial | Turkish interface (`tr`): progress log and shipped languages |
 | 2026-10-12 | minor | Native drawing-level ink and its picture fallback survive DOCX edits and repeated saves; adapted to the current graphic writer; rendering and editing InkML remain missing |
