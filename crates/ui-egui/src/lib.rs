@@ -3925,6 +3925,46 @@ mod tests {
         assert!(h.state().session.view.full_screen, "and only that");
     }
 
+    /// #980: in full screen, Escape with text selected collapses the selection (as in a normal
+    /// window) and leaves full screen alone; the next Escape, with nothing selected, leaves it.
+    #[test]
+    fn escape_collapses_a_selection_before_leaving_full_screen() {
+        use egui::ViewportCommand::Fullscreen;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        let sent = |h: &mut egui_kittest::Harness<WordApp>| {
+            let mut out = Vec::new();
+            for _ in 0..2 {
+                h.step();
+                out.extend(h.output().viewport_output.values().flat_map(|v| v.commands.iter()).filter(|c| matches!(c, Fullscreen(_))).cloned());
+            }
+            out
+        };
+        h.state_mut().canvas.focused = true;
+        h.state_mut().run("text.insert", json!({"text": "Hello world"})).unwrap();
+        h.state_mut().run("select.all", json!({})).unwrap();
+        h.state_mut().run("view.fullScreen", json!({"value": true})).unwrap();
+        assert_eq!(sent(&mut h), vec![Fullscreen(true)]);
+        assert!(!h.state().session.sel.is_collapsed());
+        h.event(esc.clone());
+        assert_eq!(sent(&mut h), vec![], "Escape with a selection stays in full screen");
+        assert!(h.state().session.sel.is_collapsed(), "and collapses the selection");
+        assert!(h.state().session.view.full_screen);
+        h.event(esc);
+        assert_eq!(sent(&mut h), vec![Fullscreen(false)], "Escape with nothing selected leaves");
+        assert!(!h.state().session.view.full_screen);
+    }
+
     /// #980: the window leaving full screen by other means (the window manager, the macOS title
     /// bar button) turns View › Full Screen off, and entering it turns it on.
     #[test]

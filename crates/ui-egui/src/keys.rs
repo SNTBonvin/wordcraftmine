@@ -369,7 +369,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("insert.closeHeader", json!({}));
                     continue;
                 }
-                if leave_full_screen(app, key, modifiers) {
+                if leave_full_screen(app, key, modifiers, true) {
                     continue;
                 }
                 app.canvas.swallow_text = dispatch(app, key, modifiers) && modifiers.alt;
@@ -379,9 +379,18 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     }
 }
 
-/// Escape leaves full screen (#980) once nothing nearer (a pen, a text box, a header) took it.
-fn leave_full_screen(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
+/// Escape leaves full screen (#980) once nothing nearer took it: a pen, a text box, a header, a
+/// dialog, a menu or a popup, a drag on the page, and in the document (`canvas`) a selection,
+/// which Escape collapses first (`select.collapse`), as in a normal window.
+fn leave_full_screen(app: &mut WordApp, key: Key, m: Modifiers, canvas: bool) -> bool {
     if key != Key::Escape || !m.is_none() || !app.session.view.full_screen || !app.escape_free {
+        return false;
+    }
+    let c = &app.canvas;
+    if c.obj_drag.is_some() || c.table_resize.is_some() || c.table_drag.is_some() || c.link_from.is_some() {
+        return false;
+    }
+    if canvas && !app.session.sel.is_collapsed() {
         return false;
     }
     let _ = app.run("view.fullScreen", json!({"value": false}));
@@ -403,7 +412,7 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     let events = ctx.input(|i| i.events.clone());
     for e in events {
         if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-            if leave_full_screen(app, key, modifiers) {
+            if leave_full_screen(app, key, modifiers, false) {
                 continue;
             }
             if is_global_shortcut(key, modifiers) {

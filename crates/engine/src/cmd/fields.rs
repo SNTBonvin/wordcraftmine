@@ -324,6 +324,15 @@ mod tests {
         assert_eq!(key("Alt+Shift+F1"), Some("fields.previous"));
         assert_eq!(key("Shift+F11"), Some("fields.previous"));
         assert_eq!(key("Mod+F11"), Some("fields.lock"));
+        // ⌃⌘F is macOS' own full-screen key; elsewhere Mod is Ctrl, so "Mod+Ctrl+F" would read
+        // Ctrl+Ctrl+F: F11 only there.
+        let shortcut = s.registry.get("view.fullScreen").map(|c| c.shortcut);
+        if cfg!(target_os = "macos") {
+            assert_eq!(shortcut, Some("Mod+Ctrl+F / F11"));
+            assert_eq!(key("Mod+Ctrl+F"), Some("view.fullScreen"));
+        } else {
+            assert_eq!(shortcut, Some("F11"));
+        }
     }
 
     /// Editing a code changes the instruction and the result; lock keeps a result through updates;

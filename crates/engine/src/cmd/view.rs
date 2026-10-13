@@ -91,10 +91,11 @@ pub fn specs() -> Vec<CommandSpec> {
         .key("Mod+Alt+S")
         .pure(),
         // The window fills the screen, OS-level full screen (#980). F11 as in browsers and most
-        // desktop apps; ⌃⌘F on macOS. Escape also leaves it. The front end applies it.
+        // desktop apps; ⌃⌘F first on macOS, where Ctrl is a key of its own (elsewhere Mod is Ctrl,
+        // so "Mod+Ctrl+F" would read Ctrl+Ctrl+F). Escape also leaves it. The front end applies it.
         CommandSpec::new("view.fullScreen", "Full Screen", "View › Window", |s, v| toggle(s, v, |x| &mut x.full_screen))
             .params(r#"{"value"?: bool}"#)
-            .key("F11 / Mod+Ctrl+F")
+            .key(super::mac_or("Mod+Ctrl+F / F11", "F11"))
             .when(full_screen_available)
             .pure(),
         CommandSpec::new("view.state", "View State", "View", |s, _| serde_json::to_value(&s.view).map_err(|e| CmdError::Failed(e.to_string())))
