@@ -96,13 +96,13 @@ pub(crate) fn grid<R>(ui: &mut Ui, grid: egui::Grid, add: impl FnOnce(&mut Ui) -
 }
 
 pub(crate) fn checkbox(ui: &mut Ui, checked: &mut bool, text: impl Into<egui::WidgetText>) -> egui::Response {
-    if !enabled(ui) {
+    if !crate::i18n::current().is_rtl() {
         return ui.checkbox(checked, text);
     }
     let text = text.into();
     let accessible = text.text().to_owned();
     let response = ui
-        .horizontal(|ui| {
+        .allocate_ui_with_layout(vec2(ui.available_size_before_wrap().x, ui.spacing().interact_size.y), Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = ui.spacing().icon_spacing;
             let mut mark = ui.checkbox(checked, "");
             let label = ui.add(egui::Label::new(text).selectable(false).sense(egui::Sense::click()));
@@ -118,14 +118,14 @@ pub(crate) fn checkbox(ui: &mut Ui, checked: &mut bool, text: impl Into<egui::Wi
 }
 
 pub(crate) fn radio_value<T: PartialEq>(ui: &mut Ui, value: &mut T, alternative: T, text: impl Into<egui::WidgetText>) -> egui::Response {
-    if !enabled(ui) {
+    if !crate::i18n::current().is_rtl() {
         return ui.radio_value(value, alternative, text);
     }
     let text = text.into();
     let accessible = text.text().to_owned();
     let mut selected = *value == alternative;
     let response = ui
-        .horizontal(|ui| {
+        .allocate_ui_with_layout(vec2(ui.available_size_before_wrap().x, ui.spacing().interact_size.y), Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = ui.spacing().icon_spacing;
             let mut mark = ui.radio(*value == alternative, "");
             let label = ui.add(egui::Label::new(text).selectable(false).sense(egui::Sense::click()));
@@ -142,7 +142,7 @@ pub(crate) fn radio_value<T: PartialEq>(ui: &mut Ui, value: &mut T, alternative:
 }
 
 pub(crate) fn radio(ui: &mut Ui, mut selected: bool, text: impl Into<egui::WidgetText>) -> egui::Response {
-    if !enabled(ui) {
+    if !crate::i18n::current().is_rtl() {
         return ui.radio(selected, text);
     }
     radio_value(ui, &mut selected, true, text)

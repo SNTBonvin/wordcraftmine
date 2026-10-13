@@ -1934,7 +1934,7 @@ fn chart_design(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Chart Layouts", None, app, |ui, app| {
         menu_button(ui, app, "chartTitle", Some("Chart Title"), "Chart Title", true, "", |ui, app| {
             mi_check(ui, app, "None", chart.title.is_none(), "chart.title", json!({"text": null}));
-            let text = chart.title.clone().unwrap_or_else(|| tl!("Chart Title").to_string());
+            let text = chart.title.clone().unwrap_or_else(|| crate::i18n::tr(crate::i18n::current(), "Chart Title").to_string());
             mi_check(ui, app, "Above Chart", chart.title.is_some(), "chart.title", json!({"text": text}));
         });
         menu_button(ui, app, "legend", Some("Legend"), "Legend", true, "", |ui, app| {

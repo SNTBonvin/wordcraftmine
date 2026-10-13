@@ -23,6 +23,174 @@ fn app(language: &str) -> WordApp {
 }
 
 #[test]
+fn chart_title_menu_stores_logical_text_and_round_trips() {
+    let _language = LanguageGuard::new();
+    let mut state = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    state.ui.language = "qaa-rtl".into();
+    state.session.run("insert.chart", &json!({"type": "bar"})).unwrap();
+    state.session.run("chart.title", &json!({"text": null})).unwrap();
+    state.ui.tab = "Chart Design".into();
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1600.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        state,
+    );
+    h.run_steps(8);
+    let lang = crate::i18n::Lang::from_code("qaa-rtl").unwrap();
+    let logical = crate::i18n::tr(lang, "Chart Title");
+    assert_ne!(crate::i18n::t("Chart Title"), logical);
+    let caption = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == crate::i18n::t("Chart Title") => {
+                Some(text.galley.rect.translate(text.pos.to_vec2()).center())
+            }
+            _ => None,
+        })
+        .expect("chart title menu caption");
+    for pressed in [true, false] {
+        h.input_mut().events.extend([
+            egui::Event::PointerMoved(caption),
+            egui::Event::PointerButton { pos: caption, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE },
+        ]);
+        h.run_steps(1);
+    }
+    h.run_steps(3);
+    h.get_by_label("✓ Above Chart").click();
+    h.run_steps(3);
+    assert_eq!(wordcraft_engine::cmd::chart::selected_chart(&h.state().session).unwrap().title.as_deref(), Some(logical));
+    let bytes = wordcraft_engine::io::save_bytes("rtl.docx", &h.state().session.doc).unwrap();
+    let mut reopened = wordcraft_engine::Session::new(wordcraft_engine::io::open_bytes("rtl.docx", &bytes).unwrap());
+    reopened.sel = h.state().session.sel.clone();
+    assert_eq!(wordcraft_engine::cmd::chart::selected_chart(&reopened).unwrap().title.as_deref(), Some(logical));
+    for (block, key) in crate::previews::style_set_blocks().iter().skip(1).zip(["Heading 1", "Body text in a short paragraph to show spacing."]) {
+        let wordcraft_doc::Block::Para(paragraph) = block else { panic!("preview paragraph") };
+        assert_eq!(paragraph.plain_text(), crate::i18n::tr(lang, key));
+    }
+}
+
+#[test]
+fn grid_choice_markers_follow_interface_direction() {
+    let _language = LanguageGuard::new();
+    for language in ["en", "qaa-rtl-latin"] {
+        crate::i18n::set_current(crate::i18n::Lang::from_code(language).unwrap());
+        let ctx = egui::Context::default();
+        let mut checked = false;
+        let mut selected = 0;
+        let mut rects = [egui::Rect::NOTHING; 2];
+        for _ in 0..8 {
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                crate::rtl::root(ui, |ui| {
+                    crate::rtl::grid(ui, egui::Grid::new("choices").num_columns(1), |ui| {
+                        rects[0] = crate::rtl::checkbox(ui, &mut checked, "Effect").rect;
+                        ui.end_row();
+                        rects[1] = crate::rtl::radio_value(ui, &mut selected, 1, "Choice").rect;
+                        ui.end_row();
+                    })
+                });
+            });
+            for (label, rect) in ["Effect", "Choice"].into_iter().zip(rects) {
+                let text = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.text() == label => Some(text.galley.rect.translate(text.pos.to_vec2())),
+                        _ => None,
+                    })
+                    .unwrap();
+                let gap = if language == "en" { text.left() - rect.left() } else { rect.right() - text.right() };
+                assert!(gap > 12.0, "{language} {label}: marker is not at the reading start, gap {gap}");
+            }
+            output.drop_without_applying_deltas();
+        }
+    }
+}
+
+#[test]
+fn rtl_font_dialog_labels_fit_their_clip_rect() {
+    let _language = LanguageGuard::new();
+    let mut state = app("qaa-rtl-latin");
+    state.dialog = Dialog::open("font", &mut state);
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1100.0, 750.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        state,
+    );
+    h.run_steps(30);
+    for label in ["Effects", "Italic", "Preview"] {
+        let (rect, clip) = h
+            .output()
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => Some((text.galley.rect.translate(text.pos.to_vec2()), shape.clip_rect)),
+                _ => None,
+            })
+            .expect("font dialog label");
+        assert!(clip.expand(1.0).contains_rect(rect), "{label}: {rect:?} vs {clip:?}");
+    }
+}
+
+#[test]
+fn chart_data_last_series_is_reachable_in_both_interfaces() {
+    let _language = LanguageGuard::new();
+    for language in ["en", "qaa-rtl-latin"] {
+        crate::i18n::set_current(crate::i18n::Lang::from_code(language).unwrap());
+        let mut state = app(language);
+        let mut form = crate::dialogs_chart::ChartDataForm {
+            categories: vec!["Category".into()],
+            names: (0..8).map(|i| format!("SERIES{i}")).collect(),
+            cells: vec![vec!["1".into(); 8]],
+            message: String::new(),
+        };
+        let ctx = egui::Context::default();
+        let mut scroll_id = egui::Id::NULL;
+        let mut frame = |offset: Option<f32>| {
+            ctx.run_ui(
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() },
+                |ui| {
+                    crate::rtl::root(ui, |ui| {
+                        scroll_id = ui.make_persistent_id(egui::IdSalt::new("chart_data_h"));
+                        if let Some(offset) = offset {
+                            let mut scroll = egui::scroll_area::State::load(&ctx, scroll_id).unwrap();
+                            scroll.offset.x = offset;
+                            scroll.store(&ctx, scroll_id);
+                        }
+                        crate::dialogs_chart::data_ui(&mut state, ui, &mut form);
+                    });
+                },
+            )
+        };
+        for _ in 0..6 {
+            frame(None).drop_without_applying_deltas();
+        }
+        frame(Some(2000.0)).drop_without_applying_deltas();
+        for _ in 0..4 {
+            frame(None).drop_without_applying_deltas();
+        }
+        let output = frame(None);
+        let (rect, clip) = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "SERIES7" => Some((text.galley.rect.translate(text.pos.to_vec2()), shape.clip_rect)),
+                _ => None,
+            })
+            .expect("last series rendered");
+        assert!(clip.expand(1.0).contains_rect(rect), "{language}: last series outside viewport: {rect:?} vs {clip:?}");
+        output.drop_without_applying_deltas();
+    }
+}
+
+#[test]
 fn formatted_labels_keep_document_values_logical() {
     let _language = LanguageGuard::new();
     crate::i18n::set_current(crate::i18n::Lang::from_code("qaa-rtl").unwrap());
@@ -240,7 +408,7 @@ fn local_direction_screenshots() {
             app(language),
         );
         h.run_steps(6);
-        for surface in ["home", "paste-menu", "insert", "options", "pane", "dialog", "save"] {
+        for surface in ["home", "paste-menu", "insert", "options", "pane", "dialog", "font", "chart-data", "save"] {
             match surface {
                 "paste-menu" => {
                     h.state_mut().session.run("select.all", &json!({})).unwrap();
@@ -271,6 +439,16 @@ fn local_direction_screenshots() {
                     h.state_mut().session.view.nav_pane = false;
                     h.state_mut().dialog = Dialog::open("paragraph", h.state_mut());
                 }
+                "font" => h.state_mut().dialog = Dialog::open("font", h.state_mut()),
+                "chart-data" => {
+                    h.state_mut().dialog =
+                        Some(Dialog::Insert(Box::new(crate::dialogs_insert::InsertDialog::ChartData(crate::dialogs_chart::ChartDataForm {
+                            categories: vec!["Category".into()],
+                            names: (0..8).map(|i| format!("SERIES{i}")).collect(),
+                            cells: vec![vec!["1".into(); 8]],
+                            message: String::new(),
+                        }))));
+                }
                 "save" => {
                     let document = h.state().session.document_id();
                     h.state_mut().dialog =
@@ -278,7 +456,7 @@ fn local_direction_screenshots() {
                 }
                 _ => {}
             }
-            h.run_steps(6);
+            h.run_steps(20);
             h.render().unwrap().save(directory.join(format!("{language}-{surface}.png"))).unwrap();
         }
     }

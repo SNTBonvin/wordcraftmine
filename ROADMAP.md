@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (progress log: native RTL ribbon scrolling, logical search/navigation; previously trivial: symbol fonts, #776; previously major: full re-measure and progress-doc structure) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (shared RTL UI support and regression coverage; previously trivial: progress log: symbol fonts, #776; previously trivial: the save prompt answers from the keyboard, #861; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -135,7 +135,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
-| 2026-10-13 | Universal RTL interface containers and controls: ribbon groups and tabs, Backstage, Options, panes, dialogs, label display order and touchpad scrolling. Paired LTR/RTL screenshots and synthetic RTL tests; language catalogs remain separate |
+| 2026-10-13 | Shared RTL interface containers and controls: ribbon groups and tabs, Backstage, Options, panes, dialogs, label display order and simulated wheel scrolling. Paired LTR/RTL screenshots and synthetic RTL tests; language catalogs remain separate |
 | 2026-10-12 | RTF import now uses the RTF spec's defaults where a file names none (#902): no space before or after paragraphs, single line spacing, and the `\deff` default font, instead of WordCraft's Normal style; RTF files that relied on the old defaults open tighter, like in Word |
 | 2026-10-11 | Right-clicking a table cell offers the table's commands, and as in Word they follow the selection: with the caret in a cell Insert, Delete Cells, Split Cells, Text Direction and Table Properties…; with several cells Merge Cells instead of Split; with whole columns or rows Delete Columns or Rows, Merge Cells and Distribute Rows and Columns; with the whole table Delete Table, Distribute, AutoFit and Insert Caption…. A right-click beside selected cells moves the caret there instead of keeping them |
 | 2026-10-11 | Drags, Shift+arrows and Shift+click over table cells select whole cells, as in Word: from one cell into another the rectangle between them (bold, alignment and Delete leave the other cells alone), into or out of a table whole rows; extending again goes on from where the selection started |
@@ -274,10 +274,7 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | minor | RTL spacing follow-up: mirrored intrinsic ribbon widths/dividers, reading-order Info columns/forms and shared plain-text field alignment; identical-label geometry regressions; interface switches preserve both RTL and LTR documents |
-| 2026-10-13 | minor | RTL follow-up: native egui ribbon scrolling, logical template search and breadcrumbs, explicit direction metadata. No catalog added |
-| 2026-10-13 | minor | Universal RTL interface audit: shared containers/controls, label display order and logical document values, touchpad ribbon regression, paired English/RTL screenshots. Language catalogs and remaining egui/native-window limits tracked separately |
-| 2026-10-13 | minor | Progress log: RTL interface mirroring prepared for a future catalog |
+| 2026-10-13 | minor | Shared RTL UI infrastructure and regression coverage: logical chart/preview text, reachable chart data, grid choice controls and preserved native LTR paths; catalogs, native frame and full bidi editing remain separate |
 | 2026-10-12 | trivial | Progress log: Accept All and Reject All keep the right paragraph marks (#864) |
 | 2026-10-11 | trivial | Progress log: Ctrl, Alt, left-edge and selected-cells table border drags (#711) |
 | 2026-10-11 | trivial | Progress log: table markers on the rulers (#700) |

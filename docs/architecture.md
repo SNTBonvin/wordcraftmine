@@ -1,6 +1,6 @@
 # WordCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (`proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (shared RTL UI support and regression coverage; previously minor: `proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft is built today (origin/main `40c5d51`). The longer design notes in
 `plan/architecture.md` are gitignored and local to the original author's machine; this file is the
@@ -98,7 +98,6 @@ Local screenshots can be generated with `WORDCRAFT_RTL_AUDIT_DIR` and the
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | minor | RTL spacing follow-up: mirrored intrinsic ribbon widths/dividers, reading-order Info columns/forms and shared plain-text field alignment; identical-label geometry regressions |
-| 2026-10-13 | minor | Shared interface direction helpers, native ribbon scrolling and explicit direction metadata |
+| 2026-10-13 | minor | Shared RTL UI infrastructure and regression coverage: logical chart/preview text, reachable chart data, grid choice controls and preserved native LTR paths; catalogs, native frame and full bidi editing remain separate |
 | 2026-10-10 | minor | `proof`: proofing languages (English, Polish), affix engine, Polish patterns; layout and engine route each run by its language |
 | 2026-10-10 | major | First committed architecture doc, from the crates' sources and `AGENTS.md` |

@@ -96,30 +96,27 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 
 pub(crate) fn header(ui: &mut Ui, title: &str) -> bool {
     let mut close = false;
-    ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), 24.0),
-        if crate::i18n::current().is_rtl() {
-            egui::Layout::right_to_left(egui::Align::Center)
-        } else {
-            egui::Layout::left_to_right(egui::Align::Center)
-        },
-        |ui| {
-            ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
-            ui.with_layout(
-                if crate::i18n::current().is_rtl() {
-                    egui::Layout::left_to_right(egui::Align::Center)
-                } else {
-                    egui::Layout::right_to_left(egui::Align::Center)
-                },
-                |ui| {
-                    // Drawn, not the "✕" character: the interface fonts have no glyph for it.
-                    if crate::widgets::icon_button(ui, "close", tl!("Close")).clicked() {
-                        close = true;
-                    }
-                },
-            );
-        },
-    );
+    let contents = |ui: &mut Ui| {
+        ui.label(egui::RichText::new(tl!(title)).font(semibold(15.0)));
+        ui.with_layout(
+            if crate::i18n::current().is_rtl() {
+                egui::Layout::left_to_right(egui::Align::Center)
+            } else {
+                egui::Layout::right_to_left(egui::Align::Center)
+            },
+            |ui| {
+                // Drawn, not the "✕" character: the interface fonts have no glyph for it.
+                if crate::widgets::icon_button(ui, "close", tl!("Close")).clicked() {
+                    close = true;
+                }
+            },
+        );
+    };
+    if crate::i18n::current().is_rtl() {
+        ui.allocate_ui_with_layout(vec2(ui.available_width(), 24.0), egui::Layout::right_to_left(egui::Align::Center), contents);
+    } else {
+        ui.horizontal(contents);
+    }
     ui.add_space(4.0);
     close
 }
@@ -155,21 +152,18 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
         }
     }
     ui.add_space(4.0);
-    ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), 28.0),
-        if crate::i18n::current().is_rtl() {
-            egui::Layout::right_to_left(egui::Align::Center)
-        } else {
-            egui::Layout::left_to_right(egui::Align::Center)
-        },
-        |ui| {
-            for (k, l) in [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")] {
-                if ui.selectable_label(app.ui.nav_tab == k, tl!(l)).clicked() {
-                    app.ui.nav_tab = k.into();
-                }
+    let tabs = |ui: &mut Ui| {
+        for (k, l) in [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")] {
+            if ui.selectable_label(app.ui.nav_tab == k, tl!(l)).clicked() {
+                app.ui.nav_tab = k.into();
             }
-        },
-    );
+        }
+    };
+    if crate::i18n::current().is_rtl() {
+        ui.allocate_ui_with_layout(vec2(ui.available_width(), 28.0), egui::Layout::right_to_left(egui::Align::Center), tabs);
+    } else {
+        ui.horizontal(tabs);
+    }
     ui.separator();
     egui::ScrollArea::vertical().show(ui, |ui| match app.ui.nav_tab.as_str() {
         "pages" => {

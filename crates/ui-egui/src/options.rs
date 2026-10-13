@@ -103,11 +103,16 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
     ui.add_space(16.0);
     let current = if PANES.contains(&app.ui.options_pane.as_str()) { app.ui.options_pane.clone() } else { "general".to_string() };
     let content_width = (ui.available_width() - 203.0).clamp(200.0, 640.0);
-    ui.horizontal(|ui| {
+    let contents = |ui: &mut Ui| {
         nav(app, ui, &current, rtl);
         divider(ui);
         settings(app, ui, &current, content_width);
-    });
+    };
+    if rtl {
+        ui.horizontal(contents);
+    } else {
+        ui.horizontal_top(contents);
+    }
 }
 
 fn nav(app: &mut WordApp, ui: &mut Ui, current: &str, rtl: bool) {
@@ -148,7 +153,11 @@ fn divider(ui: &mut Ui) {
 
 fn settings(app: &mut WordApp, ui: &mut Ui, current: &str, width: f32) {
     crate::rtl::column(ui, |ui| {
-        ui.set_width(width);
+        if crate::i18n::current().is_rtl() {
+            ui.set_width(width);
+        } else {
+            ui.set_max_width(640.0);
+        }
         match current {
             "display" => display(app, ui),
             "proofing" => proofing(app, ui),

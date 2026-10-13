@@ -264,7 +264,8 @@ static RTL_TEST: LangInfo = LangInfo {
         "\tOptions\tالإعدادات\n\tGeneral\tعام\n\tUser name:\tاسم المستخدم:\n\tInitials:\tالأحرف الأولى:\n\tLight\tفاتح\n",
         "\t{group} settings\tإعدادات {group}\n\tNormal\tالنمط العادي\n\tCurrent style: {style}\tالنمط الحالي: {style}\n",
         "\tStudio handbook (sample)\tدليل الاستوديو (نموذج)\n",
-        "\tBold\tعريض\n\tNot {name}\tليس {name}\n\t{n} pt\t{n} نقطة\n\tAt least {n}\tعلى الأقل {n}\n"
+        "\tBold\tعريض\n\tNot {name}\tليس {name}\n\t{n} pt\t{n} نقطة\n\tAt least {n}\tعلى الأقل {n}\n",
+        "\tChart Title\tواحد اثنين\n\tHeading 1\tواحد اثنين\n\tBody text in a short paragraph to show spacing.\tواحد اثنين\n"
     ),
     rtl: true,
     prefer_hans: false,

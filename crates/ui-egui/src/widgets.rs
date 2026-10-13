@@ -466,10 +466,15 @@ pub fn customize_menu_items(ui: &mut Ui, app: &mut WordApp) {
 pub fn row(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     // `horizontal_top` creates a row with its own height and inherits the parent's
     // reading direction. A full-size `with_layout` moves controls to the group's bottom.
-    ui.horizontal_top(|ui| {
+    let row = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing = vec2(1.0, 0.0);
         add(ui);
-    });
+    };
+    if crate::i18n::current().is_rtl() {
+        ui.horizontal_top(row);
+    } else {
+        ui.horizontal(row);
+    }
 }
 
 /// A fixed-width RTL stack gives every command the same left icon edge and right text edge.

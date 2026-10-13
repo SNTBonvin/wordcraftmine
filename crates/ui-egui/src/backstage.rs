@@ -133,25 +133,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         });
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30))).show(ui, |ui| {
         crate::rtl::root(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                crate::rtl::root(ui, |ui| {
-                    let rtl_page = rtl && app.ui.backstage_page != "options";
-                    let mut page = |ui: &mut Ui| match app.ui.backstage_page.as_str() {
-                        "home" => home_page(app, ui),
-                        "new" => new_page(app, ui),
-                        "open" => open_page(app, ui),
-                        "saveAs" => save_as_page(app, ui),
-                        "info" => info_page(app, ui),
-                        "print" | "export" => export_page(app, ui),
-                        "options" => crate::options::page(app, ui),
-                        _ => home_page(app, ui),
-                    };
-                    if rtl_page {
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Max), page);
-                    } else {
-                        page(ui);
-                    }
-                })
+            egui::ScrollArea::vertical().show(ui, |ui| match app.ui.backstage_page.as_str() {
+                "home" => home_page(app, ui),
+                "new" => new_page(app, ui),
+                "open" => open_page(app, ui),
+                "saveAs" => save_as_page(app, ui),
+                "info" => info_page(app, ui),
+                "print" | "export" => export_page(app, ui),
+                "options" => crate::options::page(app, ui),
+                _ => home_page(app, ui),
             });
         })
     });

@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (native RTL scrolling, logical navigation and bidirectional labels audited; previously trivial: selection bar in the left margin, #856; previously major: first version) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (shared RTL UI support and regression coverage; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -46,9 +46,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-13 | minor | RTL spacing follow-up: mirrored intrinsic ribbon widths/dividers, reading-order Info columns/forms and shared plain-text field alignment; identical-label geometry and RTL/LTR document invariance regressions; review screenshots use the same English labels in both directions |
-| 2026-10-13 | minor | RTL follow-up: native egui ribbon scrolling, logical template search and breadcrumbs, explicit direction metadata. No catalog added |
-| 2026-10-13 | minor | Shared RTL containers/controls, Unicode label display order, touchpad ribbon events and LTR/RTL surface regression tests; local paired screenshots. Native decorations and text-field bidi editing are not claimed as covered |
+| 2026-10-13 | minor | Shared RTL UI infrastructure and regression coverage: logical chart/preview text, reachable chart data, grid choice controls and preserved native LTR paths; catalogs, native frame and full bidi editing remain separate |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |

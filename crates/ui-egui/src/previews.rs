@@ -499,11 +499,7 @@ pub fn style_set_gallery(app: &mut WordApp, ui: &mut Ui) {
         let tex = app.previews.get_or(ui.ctx(), &key, || {
             let mut s = wordcraft_engine::Session::new(Document::new());
             let _ = s.run("design.styleSet", &json!({"name": name}));
-            let blocks = vec![
-                Block::Para(Paragraph::with_text(crate::i18n::tc("preview", "Title"), CharProps::default()).styled("Title")),
-                Block::Para(Paragraph::with_text(tl!("Heading 1"), CharProps::default()).styled("Heading1")),
-                Block::Para(Paragraph::with_text(tl!("Body text in a short paragraph to show spacing."), CharProps::default())),
-            ];
+            let blocks = style_set_blocks();
             snippet_blocks(&s.doc, blocks, 120.0, 110.0, ppp * 0.42, 6.0, None, false)
         });
         if let Some(h) = tex {
@@ -517,6 +513,16 @@ pub fn style_set_gallery(app: &mut WordApp, ui: &mut Ui) {
             let _ = app.run("design.styleSet", json!({"name": name}));
         }
     }
+}
+
+/// The document renderer owns bidi ordering; never feed it display-order labels.
+pub(crate) fn style_set_blocks() -> Vec<Block> {
+    let lang = crate::i18n::current();
+    vec![
+        Block::Para(Paragraph::with_text(crate::i18n::trc(lang, "preview", "Title"), CharProps::default()).styled("Title")),
+        Block::Para(Paragraph::with_text(crate::i18n::tr(lang, "Heading 1"), CharProps::default()).styled("Heading1")),
+        Block::Para(Paragraph::with_text(crate::i18n::tr(lang, "Body text in a short paragraph to show spacing."), CharProps::default())),
+    ]
 }
 
 /// Table Design: a tile previewing a table style.
