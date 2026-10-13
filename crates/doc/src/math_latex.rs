@@ -5,7 +5,9 @@
 //! accents, `\overbrace`/`\underbrace`, `\text`/`\mathrm`/`\mathbf`/`\mathbb`…, function names,
 //! spacing and every named symbol in [`crate::math_symbols`]. Unknown commands stay as text.
 
-use crate::math::{Arg, FracKind, MAX_DEPTH, MNode, MRun, MScr, MSty, ScriptKind, is_nary_char, math_class, merge_runs};
+use crate::math::{
+    Arg, FracKind, MAX_DEPTH, MNode, MRun, MScr, MSty, ScriptKind, WRAP_DEPTH, any_too_deep, is_nary_char, math_class, merge_runs, too_deep,
+};
 use crate::math_linear::{FUNCTION_NAMES, map_args};
 use crate::math_symbols::{name_of, symbol};
 
@@ -147,8 +149,13 @@ impl Lp {
                 Tok::Sup | Tok::Sub => {
                     self.i += 1;
                     let s = self.arg();
-                    let base = out.pop();
-                    out.push(script(base, tok == Tok::Sup, s));
+                    if out.last().is_some_and(too_deep) {
+                        // Too deep to wrap (`x^1^1^1…`): the operator is dropped, the script kept.
+                        out.extend(s);
+                    } else {
+                        let base = out.pop();
+                        out.push(script(base, tok == Tok::Sup, s));
+                    }
                 }
                 Tok::Cmd(ref c) if c == "limits" || c == "nolimits" || c == "displaystyle" || c == "textstyle" => {
                     self.i += 1;
@@ -171,7 +178,7 @@ impl Lp {
         }
         self.depth -= 1;
         // Big operators take the following term as their operand.
-        nary_operands(out)
+        nary_operands(out, self.depth)
     }
 
     /// A command argument: a `{group}` or one token.
@@ -515,6 +522,10 @@ impl Lp {
         while let Some(t @ (Tok::Sup | Tok::Sub)) = self.peek().cloned() {
             self.i += 1;
             let s = self.arg();
+            if any_too_deep(&e) {
+                e.extend(s);
+                continue;
+            }
             let base = if e.len() == 1 { e.pop() } else { Some(group(std::mem::take(&mut e))) };
             e.push(script(base, t == Tok::Sup, s));
         }
@@ -629,12 +640,14 @@ fn script(base: Option<MNode>, sup: bool, s: Arg) -> MNode {
 }
 
 /// Big operators without an operand take the atoms after them up to a relation or binary operator.
-fn nary_operands(a: Arg) -> Arg {
+/// `depth` is how deep the operators already sit; past [`WRAP_DEPTH`] they stay without operand
+/// (`\sum\sum\sum…` must not nest once per operator).
+fn nary_operands(a: Arg, depth: usize) -> Arg {
     let mut out: Arg = Vec::with_capacity(a.len());
     let mut it = a.into_iter().peekable();
     while let Some(n) = it.next() {
         match n {
-            MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e } if e.is_empty() => {
+            MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e } if e.is_empty() && depth < WRAP_DEPTH => {
                 let mut body = Vec::new();
                 while let Some(next) = it.peek() {
                     let stop = match next {
@@ -650,8 +663,14 @@ fn nary_operands(a: Arg) -> Arg {
                         body.push(x);
                     }
                 }
-                let body = nary_operands(body);
-                out.push(MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e: merge_runs(body) });
+                let body = merge_runs(nary_operands(body, depth + 1));
+                if any_too_deep(&body) {
+                    // No room to wrap the operand: it follows the operator.
+                    out.push(MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e });
+                    out.extend(body);
+                } else {
+                    out.push(MNode::Nary { chr, lim_loc, grow, sub_hide, sup_hide, sub, sup, e: body });
+                }
             }
             other => out.push(other),
         }

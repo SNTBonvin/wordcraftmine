@@ -739,6 +739,72 @@ pub fn merge_runs(a: Arg) -> Arg {
     out
 }
 
+/// Deepest node (a leaf counts 1) the parsers wrap further. Half of [`MAX_DEPTH`]: serde_json
+/// stops reading at 128 nested containers and a node costs two (object and array).
+pub(crate) const WRAP_DEPTH: usize = MAX_DEPTH / 2;
+
+/// Calls `f` with every argument of `n`.
+fn each_arg<'a>(n: &'a MNode, f: &mut impl FnMut(&'a [MNode])) {
+    match n {
+        MNode::Run(_) => {}
+        MNode::Frac { num, den, .. } => {
+            f(num);
+            f(den);
+        }
+        MNode::Script { base, sub, sup, .. } => {
+            f(base);
+            f(sub);
+            f(sup);
+        }
+        MNode::Rad { deg, e, .. } => {
+            f(deg);
+            f(e);
+        }
+        MNode::Nary { sub, sup, e, .. } => {
+            f(sub);
+            f(sup);
+            f(e);
+        }
+        MNode::Delim { elems, .. } => elems.iter().for_each(|a| f(a)),
+        MNode::Func { name, e } => {
+            f(name);
+            f(e);
+        }
+        MNode::Lim { e, lim, .. } => {
+            f(e);
+            f(lim);
+        }
+        MNode::Acc { e, .. }
+        | MNode::Bar { e, .. }
+        | MNode::BorderBox { e, .. }
+        | MNode::Boxed { e }
+        | MNode::GroupChr { e, .. }
+        | MNode::Phant { e, .. } => f(e),
+        MNode::EqArr { rows } => rows.iter().for_each(|a| f(a)),
+        MNode::Matrix { rows, .. } => rows.iter().flatten().for_each(|a| f(a)),
+    }
+}
+
+/// `n` is already nested too deeply to be wrapped in another structure. The parsers use this so
+/// `x^1^1^1…` stays shallow (a left-nested tree 10 000 deep overflows the stack in `Clone`,
+/// `Drop`, `PartialEq` and serde). Iterative, stops at the first too-deep path; costs at most the
+/// size of `n`, which the parsers' input caps bound.
+pub(crate) fn too_deep(n: &MNode) -> bool {
+    let mut stack: Vec<(&MNode, usize)> = vec![(n, 1)];
+    while let Some((n, d)) = stack.pop() {
+        if d >= WRAP_DEPTH {
+            return true;
+        }
+        each_arg(n, &mut |a| stack.extend(a.iter().map(|c| (c, d + 1))));
+    }
+    false
+}
+
+/// Any of `a` is too deep to be wrapped ([`too_deep`]).
+pub(crate) fn any_too_deep(a: &[MNode]) -> bool {
+    a.iter().any(too_deep)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,6 +871,58 @@ mod tests {
             let back = parse_linear(&to_linear(&n));
             assert_eq!(n, back, "{s} → {}", to_linear(&n));
         }
+    }
+
+    /// Deepest nesting of `a` (a leaf counts 1), without recursion.
+    fn depth_of(a: &[MNode]) -> usize {
+        let mut best = 0;
+        let mut stack: Vec<(&MNode, usize)> = a.iter().map(|n| (n, 1)).collect();
+        while let Some((n, d)) = stack.pop() {
+            best = best.max(d);
+            each_arg(n, &mut |a| stack.extend(a.iter().map(|c| (c, d + 1))));
+        }
+        best
+    }
+
+    /// Run `f` on a thread with a stack far below the 8 MB of a main thread (#1456).
+    fn on_small_stack(f: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new().stack_size(512 * 1024).spawn(f).unwrap().join().unwrap();
+    }
+
+    #[test]
+    fn deeply_chained_input_stays_shallow() {
+        on_small_stack(|| {
+            let cases: Vec<(&str, Arg)> = vec![
+                ("x^1^1…", parse_linear(&format!("x{}", "^1".repeat(9999)))),
+                ("a/a/a…", parse_linear(&format!("a{}", "/a".repeat(9999)))),
+                ("accents", parse_linear(&format!("x{}", "\u{302}".repeat(9999)))),
+                ("limits", parse_linear(&format!("x{}", "┬a".repeat(9000)))),
+                ("(a b)^1^1…", parse_linear(&format!("(a b){}", "^1".repeat(9000)))),
+                ("latex x^1^1…", crate::math_latex::parse_latex(&format!("x{}", "^1".repeat(9999)))),
+                ("latex \\sum…", crate::math_latex::parse_latex(&"\\sum".repeat(5000))),
+                ("latex \\sin x^1…", crate::math_latex::parse_latex(&format!("\\sin x{}", "^1".repeat(9000)))),
+            ];
+            for (name, n) in cases {
+                assert!(!n.is_empty(), "{name}");
+                assert!(depth_of(&n) <= 70, "{name}: depth {}", depth_of(&n));
+                let copy = n.clone();
+                assert_eq!(copy, n, "{name}");
+                let _ = to_linear(&n);
+                let _ = crate::math_latex::to_latex(&n);
+                let json = serde_json::to_string(&n).unwrap();
+                let back: Arg = serde_json::from_str(&json).unwrap();
+                assert_eq!(back, n, "{name}");
+            }
+        });
+    }
+
+    #[test]
+    fn ordinary_nesting_is_still_built() {
+        // Well below the cap: scripts, fractions and operators still wrap.
+        let n = parse_linear(&format!("x{}", "^1".repeat(10)));
+        assert_eq!(depth_of(&n), 11, "{n:#?}");
+        let n = crate::math_latex::parse_latex(r"\sum_{i}\sum_{j}a_{ij}");
+        assert!(matches!(&n[0], MNode::Nary { e, .. } if matches!(e.first(), Some(MNode::Nary { .. }))), "{n:#?}");
     }
 
     #[test]
