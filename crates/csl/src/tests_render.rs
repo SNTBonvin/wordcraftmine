@@ -363,6 +363,25 @@ fn date_parts_limits_the_localized_forms() {
 }
 
 #[test]
+fn long_type_lists_dispatch_beyond_sixteen_entries() {
+    // An APA-shaped 18-entry type list: the 18th entry (motion-picture) must still
+    // dispatch — the kind map reverses into these spec type names.
+    let types = "article-journal article-magazine article-newspaper broadcast chapter dataset entry entry-dictionary entry-encyclopedia figure graphic interview legal_case legislation manuscript map musical_score motion-picture";
+    let s = parse(
+        format!(
+            r#"<style version="1.0"><citation><layout prefix="["><choose>
+            <if type="{types}" match="any"><text value="T"/></if>
+            <else><text value="OTHER"/></else>
+          </choose></layout></citation></style>"#
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(s.cite(&src("film", "film"), Position::First, 1, ""), "[T");
+    assert_eq!(s.cite(&src("other", "other"), Position::First, 1, ""), "[OTHER");
+}
+
+#[test]
 fn author_date_cites_and_entries() {
     let s = style(AUTHOR_DATE);
     assert!(s.warned().is_empty(), "{:?}", s.warned());

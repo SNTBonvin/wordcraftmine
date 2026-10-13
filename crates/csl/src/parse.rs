@@ -26,6 +26,12 @@ pub(crate) const MAX_MACROS: usize = 512;
 pub(crate) const MAX_TEXT_CHARS: usize = 4_000;
 /// `Style.warnings` is deduplicated and capped.
 pub(crate) const MAX_WARNINGS: usize = 256;
+/// Entries kept from a `variable`/`type`/`position` condition list (APA-scale type lists
+/// run to 18; hostile files are cut here, with a warning).
+pub(crate) const MAX_CONDITION_VALUES: usize = 128;
+/// Name variables kept from one `<names>` (the spec's name variables are 14; hostile
+/// files are cut here, with a warning).
+pub(crate) const MAX_NAME_VARIABLES: usize = 64;
 
 /// Parse a CSL 1.0.2 style file.
 ///
@@ -132,9 +138,15 @@ fn attr(el: &El, name: &str) -> String {
     clamp(el.attr(name).unwrap_or(""))
 }
 
-/// A whitespace-separated attribute value as a clamped, count-bounded list.
-fn list(el: &El, name: &str, max: usize) -> Vec<String> {
-    el.attr(name).unwrap_or("").split_whitespace().take(max).map(clamp).collect()
+/// A whitespace-separated attribute value as a clamped, count-bounded list; entries past
+/// `max` are dropped with a warning naming what was cut.
+fn list(el: &El, name: &str, max: usize, what: &str, w: &mut Warnings) -> Vec<String> {
+    let mut all: Vec<String> = el.attr(name).unwrap_or("").split_whitespace().take(max + 1).map(clamp).collect();
+    if all.len() > max {
+        all.truncate(max);
+        w.push(format!("a {what} lists more than {max} values; the rest are ignored"));
+    }
+    all
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +460,7 @@ fn date_el(el: &El, w: &mut Warnings) -> Option<Date> {
 /// `<names>`: variables, options (from the element merged with its `<name>` child), label,
 /// substitute.
 fn names_el(el: &El, w: &mut Warnings) -> Option<Names> {
-    let variables = list(el, "variable", 8);
+    let variables = list(el, "variable", MAX_NAME_VARIABLES, "names variable list", w);
     if variables.is_empty() {
         w.push("a <names> without variables is ignored".into());
         return None;
@@ -574,15 +586,15 @@ fn branch(el: &El, w: &mut Warnings) -> Branch {
         _ => Match::All, // the spec default
     };
     let mut conditions = Vec::new();
-    for name in list(el, "variable", 16) {
+    for name in list(el, "variable", MAX_CONDITION_VALUES, "condition", w) {
         conditions.push(Condition::Variable { name, set: true });
     }
-    let types = list(el, "type", 16);
+    let types = list(el, "type", MAX_CONDITION_VALUES, "condition", w);
     if !types.is_empty() {
         conditions.push(Condition::Type { names: types });
     }
-    for value in el.attr("position").unwrap_or("").split_whitespace().take(16) {
-        match value {
+    for value in list(el, "position", MAX_CONDITION_VALUES, "condition", w) {
+        match value.as_str() {
             "first" => conditions.push(Condition::Position { value: Position::First }),
             "subsequent" => conditions.push(Condition::Position { value: Position::Subsequent }),
             "ibid" => conditions.push(Condition::Position { value: Position::Ibid }),

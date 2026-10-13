@@ -536,6 +536,42 @@ fn unresolvable_term_references_warn() {
 }
 
 #[test]
+fn wide_attribute_lists_load_with_truncation_warnings() {
+    // APA-scale type lists (18 entries) load whole, silently.
+    let types = (1..=18).map(|i| format!("t{i:02}")).collect::<Vec<_>>().join(" ");
+    let s = parse(whole(&format!(r#"<citation><layout><choose><if type="{types}"><text value="x"/></if></choose></layout></citation>"#)).as_bytes())
+        .unwrap();
+    let Element::Choose(c) = &s.citation.elements[0] else { panic!("not choose") };
+    let Some(Condition::Type { names }) = c.branches[0].conditions.first() else { panic!("not a type condition") };
+    assert_eq!(names.len(), 18);
+    assert!(s.warned().is_empty(), "{:?}", s.warned());
+
+    // 130 types: 128 kept, with a warning; the same for variables and positions.
+    let over = (1..=130).map(|i| format!("t{i}")).collect::<Vec<_>>().join(" ");
+    let s = parse(whole(&format!(r#"<citation><layout><choose><if type="{over}"><text value="x"/></if></choose></layout></citation>"#)).as_bytes())
+        .unwrap();
+    warned_contains(&s, "more than 128");
+    let Element::Choose(c) = &s.citation.elements[0] else { panic!("not choose") };
+    let Some(Condition::Type { names }) = c.branches[0].conditions.first() else { panic!("not a type condition") };
+    assert_eq!(names.len(), 128);
+
+    let vars = (1..=130).map(|i| format!("v{i}")).collect::<Vec<_>>().join(" ");
+    let s =
+        parse(whole(&format!(r#"<citation><layout><choose><if variable="{vars}"><text value="x"/></if></choose></layout></citation>"#)).as_bytes())
+            .unwrap();
+    warned_contains(&s, "more than 128");
+    let Element::Choose(c) = &s.citation.elements[0] else { panic!("not choose") };
+    assert_eq!(c.branches[0].conditions.len(), 128);
+
+    // 70 name variables: 64 kept, with a warning.
+    let vars = (1..=70).map(|i| format!("n{i}")).collect::<Vec<_>>().join(" ");
+    let s = parse(whole(&format!(r#"<citation><layout><names variable="{vars}"/></layout></citation>"#)).as_bytes()).unwrap();
+    warned_contains(&s, "more than 64");
+    let Element::Names(n) = &s.citation.elements[0] else { panic!("not names") };
+    assert_eq!(n.variables.len(), 64);
+}
+
+#[test]
 fn pristine_minimal_style_has_no_warnings() {
     let s = parse(br#"<style version="1.0"><citation><layout><text variable="title"/></layout></citation></style>"#).unwrap();
     assert_eq!(s.title, "");
