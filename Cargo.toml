@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+exclude = ["vendor/winit"]
 default-members = ["crates/*", "apps/wordcraft", "apps/wordcraft-cli", "xtask"]
 
 [workspace.package]
@@ -95,3 +96,7 @@ opt-level = 3
 lto = "thin"
 codegen-units = 16
 debug = 0
+
+# Scoped macOS Korean first-key and duplicate-space fixes; see vendor/patches/winit/README.md.
+[patch.crates-io]
+winit = { path = "vendor/winit" }

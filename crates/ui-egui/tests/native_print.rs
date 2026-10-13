@@ -171,6 +171,8 @@ fn repeated_fast_jobs_each_surface_an_identical_receipt() {
 #[test]
 fn native_ranges_and_parity_do_not_duplicate_spooler_copies() {
     let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+    // Both PDF exports must use the same metadata, even across a wall-clock second.
+    app.session.doc.core.created = "2026-10-13T00:00:00Z".into();
     for page in 1..=3 {
         app.run("text.insert", json!({"text":format!("Distinct page {page}")})).unwrap();
         if page < 3 {

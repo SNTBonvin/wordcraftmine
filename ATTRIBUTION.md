@@ -74,3 +74,18 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `crates/ui-egui/src/i18n/bg.tsv` | Dimitar Klaturov (@bulgariamitko) with Claude Code | Original translation from the English interface labels in this repository; no other product localisation or other catalog used | MIT OR Apache-2.0 | Bulgarian interface catalog |
 | `crates/ui-egui/src/i18n/hu.tsv` | @Skaywalker | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Hungarian interface catalog |
 | `crates/ui-egui/src/i18n/fr.tsv` | @pechnikov2026-star | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | French interface catalog |
+
+## Vendored winit assets
+
+These upstream examples/documentation assets are retained in the vendored dependency source; they are not WordCraft interface assets. The keyboard diagrams retain their separate CC BY-SA 4.0 attribution.
+
+| File | Author | Source | Licence |
+|---|---|---|---|
+| `vendor/winit/docs/res/keyboard_left_shift_key.svg` | Tomiĉo; modifications by John Nunley | [Upstream attribution](vendor/winit/docs/res/ATTRIBUTION.md) and [original drawing](https://commons.wikimedia.org/wiki/File:ANSI_US_QWERTY_%28Windows%29.svg) | CC BY-SA 4.0 |
+| `vendor/winit/docs/res/keyboard_numpad_1_key.svg` | Tomiĉo; modifications by John Nunley | [Upstream attribution](vendor/winit/docs/res/ATTRIBUTION.md) and [original drawing](https://commons.wikimedia.org/wiki/File:ANSI_US_QWERTY_%28Windows%29.svg) | CC BY-SA 4.0 |
+| `vendor/winit/docs/res/keyboard_right_shift_key.svg` | Tomiĉo; modifications by John Nunley | [Upstream attribution](vendor/winit/docs/res/ATTRIBUTION.md) and [original drawing](https://commons.wikimedia.org/wiki/File:ANSI_US_QWERTY_%28Windows%29.svg) | CC BY-SA 4.0 |
+| `vendor/winit/docs/res/keyboard_standard_1_key.svg` | Tomiĉo; modifications by John Nunley | [Upstream attribution](vendor/winit/docs/res/ATTRIBUTION.md) and [original drawing](https://commons.wikimedia.org/wiki/File:ANSI_US_QWERTY_%28Windows%29.svg) | CC BY-SA 4.0 |
+| `vendor/winit/examples/data/cross.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/cross.png) | Apache-2.0 |
+| `vendor/winit/examples/data/cross2.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/cross2.png) | Apache-2.0 |
+| `vendor/winit/examples/data/gradient.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/gradient.png) | Apache-2.0 |
+| `vendor/winit/examples/data/icon.png` | winit contributors | [winit 0.30.13](https://github.com/rust-windowing/winit/blob/v0.30.13/examples/data/icon.png) | Apache-2.0 |

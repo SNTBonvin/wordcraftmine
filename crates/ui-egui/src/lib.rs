@@ -1308,6 +1308,7 @@ impl WordApp {
 
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        crate::keys::prepare_ime(self, ctx);
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
         // New documents are written in the interface's language when WordCraft can proof it
@@ -1480,6 +1481,11 @@ impl WordApp {
 
     /// Inject synthetic input events from the control channel (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        for event in &raw.events {
+            if matches!(event, egui::Event::Ime(_) | egui::Event::Text(_) | egui::Event::Key { pressed: true, .. }) {
+                log::trace!(target: "wordcraft_ui_egui::ime", "native input: {event:?}");
+            }
+        }
         if self.synthetic.is_empty() {
             return;
         }
@@ -1802,6 +1808,83 @@ mod tests_perf;
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn canvas_enables_ime_in_the_frame_that_takes_focus() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for _ in 0..6 {
+            let out = ctx.run_ui(
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0))), ..Default::default() },
+                |ui| {
+                    a.logic(ui.ctx());
+                    a.ui(ui);
+                },
+            );
+            let ime_enabled = out.platform_output.ime.is_some();
+            out.drop_without_applying_deltas();
+            if a.canvas.focused {
+                assert!(ime_enabled, "the first Korean key must already go through the native IME");
+            }
+        }
+        assert!(a.canvas.focused);
+    }
+
+    #[test]
+    fn canvas_keeps_native_ime_ready_while_the_window_is_inactive() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for focused in [false, false, false, false, true, false, true] {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    focused,
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    a.logic(ui.ctx());
+                    a.ui(ui);
+                },
+            );
+            let canvas_shown = !a.canvas.page_rects.is_empty();
+            let native_ime_ready = out.platform_output.ime.is_some();
+            out.drop_without_applying_deltas();
+            if canvas_shown {
+                assert!(native_ime_ready, "window activation must not depend on a repaint to enable IME");
+            }
+        }
+    }
+
+    #[test]
+    fn preedit_repaints_immediately_and_places_ime_cursor_after_the_syllable() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        let mut frame = |events| {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    a.logic(ui.ctx());
+                    a.ui(ui);
+                },
+            );
+            let caret = out.platform_output.ime.map(|ime| ime.cursor_rect.min.x);
+            let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay);
+            out.drop_without_applying_deltas();
+            (caret, delay)
+        };
+        for _ in 0..6 {
+            frame(Vec::new());
+        }
+        let before = frame(Vec::new()).0.unwrap();
+        let (_, delay) = frame(vec![egui::Event::Ime(egui::ImeEvent::Preedit { text: "라".into(), active_range_chars: None })]);
+        assert_eq!(delay, Some(std::time::Duration::ZERO));
+        let after = frame(Vec::new()).0.unwrap();
+        assert!(after > before, "the caret is after the pending syllable, not before it");
+    }
 
     fn mod_key(key: egui::Key) -> egui::Event {
         egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND }
