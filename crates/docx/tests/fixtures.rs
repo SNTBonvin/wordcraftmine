@@ -377,6 +377,40 @@ fn styles_numbering_settings_notes_comments_from_parts() {
 
 /// A table style's own pPr/rPr, its `wholeTable` region (which covers every cell) and its table
 /// shading and cell margins; a derived style keeps only what it sets itself.
+/// #1238: a styles part that marks no style for the gallery (no `w:qFormat`, as LibreOffice
+/// writes them) gives its built-in styles their usual gallery places instead of an empty gallery.
+#[test]
+fn styles_without_qformat_fill_the_gallery_from_builtins() {
+    let gallery = |marks: &str| {
+        let styles = format!(
+            r#"<w:styles {W_NS}>
+ <w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Heading"><w:name w:val="Heading"/><w:basedOn w:val="Normal"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/><w:basedOn w:val="Heading"/>{marks}</w:style>
+ <w:style w:type="paragraph" w:styleId="berschrift2"><w:name w:val="heading 2"/><w:basedOn w:val="Heading"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:uiPriority w:val="3"/></w:style>
+ <w:style w:type="paragraph" w:styleId="TextBody"><w:name w:val="Text Body"/></w:style>
+ <w:style w:type="paragraph" w:customStyle="1" w:styleId="Quote"><w:name w:val="Quote"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="Caption"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:semiHidden/></w:style>
+ <w:style w:type="character" w:styleId="Strong"><w:name w:val="Strong"/></w:style>
+ <w:style w:type="character" w:styleId="InternetLink"><w:name w:val="Internet Link"/></w:style>
+</w:styles>"#
+        );
+        let d = wordcraft_docx::read(&docx("<w:p/>", &[("rId1", "styles", "styles.xml")], &[("word/styles.xml", &styles)])).unwrap();
+        d.styles.gallery().iter().map(|s| (s.id.clone(), s.priority)).collect::<Vec<_>>()
+    };
+    // Built-ins matched by id or name, in their usual order; the file's own priority is kept.
+    // Custom, unknown, non-gallery and hidden styles stay out.
+    let ids = |v: Vec<(String, Option<u32>)>| v.into_iter().map(|(id, _)| id).collect::<Vec<_>>();
+    let none = gallery("");
+    assert_eq!(none.iter().find(|(id, _)| id == "Title").and_then(|(_, p)| *p), Some(3));
+    assert_eq!(ids(none), ["Normal", "Title", "Heading1", "berschrift2", "Strong"]);
+    // A file that marks its gallery styles is taken at its word.
+    assert_eq!(ids(gallery("<w:qFormat/>")), ["Heading1"]);
+    assert!(gallery(r#"<w:qFormat w:val="0"/>"#).is_empty());
+}
+
 #[test]
 fn table_style_whole_table_shading_and_margins() {
     let styles = format!(

@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** trivial (symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-13 · **Change:** trivial (DOCX styles without `w:qFormat` fill the Styles gallery from the built-in styles, #1238; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -47,7 +47,7 @@ Measured by grepping `crates/docx/src/read` and `src/write` for the OOXML elemen
 
 | Feature | Read | Write | Notes |
 |---|---|---|---|
-| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111); independent complex-script formatting inherited through defaults/styles and preserved over repeated saves (`complex_script_inheritance.rs`), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534); every ST_NumberFormat value of `w:numFmt` is kept on save, Chinese/Japanese/Korean, enclosed and full-width formats are drawn, the rest (Hebrew, Arabic, Hindi, Thai…) show decimal (#534). `w:beforeLines`/`w:afterLines` not kept (the points are) |
+| Text, runs, paragraph and character properties, styles, numbering, sections | ✅ | ✅ | Including complex-script props (`w:rtl`, `w:cs`, `w:szCs`, `w:bCs`…), East Asian fonts kept apart from Latin (#111); independent complex-script formatting inherited through defaults/styles and preserved over repeated saves (`complex_script_inheritance.rs`), indents in characters (`w:firstLineChars`, `w:hangingChars`, `w:leftChars`, `w:rightChars`, #534); every ST_NumberFormat value of `w:numFmt` is kept on save, Chinese/Japanese/Korean, enclosed and full-width formats are drawn, the rest (Hebrew, Arabic, Hindi, Thai…) show decimal (#534). `w:beforeLines`/`w:afterLines` not kept (the points are). A styles part with no `w:qFormat` at all (LibreOffice) puts the built-in styles it defines in the Styles gallery in their usual order, matched by id or name (#1238) |
 | Tables incl. floating (`w:tblpPr`), table styles and conditional formatting | ✅ | ✅ | Custom table styles round-trip (#256); right-to-left tables (`w:bidiVisual`) and sections (`w:bidi`) round-trip (#362) |
 | Headers/footers (first, even/odd), page borders, line numbers, gutter, mirror margins | ✅ | ✅ | |
 | Hyphenation settings (`w:autoHyphenation`, `w:hyphenationZone`, `w:doNotHyphenateCaps`, `w:consecutiveHyphenLimit`) | ✅ | ✅ | Zone, capitals and limit kept and honoured by layout (#407) |
@@ -163,6 +163,7 @@ raise readiness estimates. No Word-derived files are fixtures.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | DOCX styles without `w:qFormat` (LibreOffice) fill the Styles gallery from the built-in styles instead of leaving it empty (#1238) |
 | 2026-10-12 | trivial | Paste keeps the formatting of HTML and RTF on the system clipboard; Paste Special lists them and pictures (#687, #833) |
 | 2026-10-12 | trivial | ODT page size, orientation and margins read back from `styles.xml` on open, so they survive a save and reopen (#810) |
 | 2026-10-12 | minor | RTF reads 8-bit text in the document's or the font's code page (`\ansicpg`, `\fcharset`, `\cpg`) instead of always Windows-1252; a `.doc`/`.docx`/`.rtf` whose content is another of these formats opens by signature. Found on a private corpus of real Russian documents: 38 of 44 `.doc` files were RTF, all now open with their Cyrillic text |

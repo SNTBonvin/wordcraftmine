@@ -511,6 +511,20 @@ pub(crate) fn ui_style_name(n: &str) -> String {
     n.to_string()
 }
 
+/// For a styles part that marks no style for the Styles gallery (no `w:qFormat` anywhere, as
+/// LibreOffice writes them): the built-in styles it defines take their usual gallery places and
+/// order, matched by id or name, so the gallery isn't left empty (#1238). Custom styles stay out.
+fn builtin_gallery(sheet: &mut StyleSheet) {
+    let builtin = StyleSheet::builtin();
+    for st in sheet.styles.iter_mut().filter(|s| s.builtin) {
+        let same = |b: &&Style| b.kind == st.kind && (b.id == st.id || b.name.eq_ignore_ascii_case(&st.name));
+        if let Some(b) = builtin.styles.iter().find(same).filter(|b| b.quick) {
+            st.quick = true;
+            st.priority = st.priority.or(b.priority);
+        }
+    }
+}
+
 impl Reader<'_> {
     /// Keep the parts the VBA project at `project` relates to, with their relationship types and
     /// content types (see [`VBA_RELATED`]). Parts outside `word/`, relationship parts, the project
@@ -810,6 +824,9 @@ impl Reader<'_> {
         }
         if sheet.default_para.numbering.is_some_and(|n| n.num == props::LEVEL_ONLY) {
             sheet.default_para.numbering = None;
+        }
+        if !root.children("w:style").take(10_000).any(|s| s.child("w:qFormat").is_some()) {
+            builtin_gallery(&mut sheet);
         }
         self.doc.styles = sheet;
         Ok(())
