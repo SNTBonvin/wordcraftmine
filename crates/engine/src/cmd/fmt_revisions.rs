@@ -8,6 +8,7 @@
 //! Like Word, an author's later changes to the same text keep the formatting before their first
 //! one, and formatting changed back to what it was stops being a change.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -37,6 +38,9 @@ struct Recorder<'a> {
     before: &'a [Revision],
     revisions: &'a mut Vec<Revision>,
     rid: Option<u32>,
+    /// Records before this index are never shared ([`Session::revision_base`]).
+    base: usize,
+    reuse: &'a [u32],
 }
 
 impl Recorder<'_> {
@@ -46,7 +50,7 @@ impl Recorder<'_> {
             return r;
         }
         let found = self.revisions.iter().rposition(|r| r.kind == RevisionKind::Format && r.author == self.author && r.date == self.date);
-        let r = match found {
+        let r = match found.filter(|i| *i >= self.base) {
             Some(i) => i as u32,
             None => {
                 self.revisions.push(Revision { kind: RevisionKind::Format, author: self.author.clone(), date: self.date.clone(), move_name: None });
@@ -58,7 +62,7 @@ impl Recorder<'_> {
     }
 
     fn own(&self, rev: u32) -> bool {
-        self.before.get(rev as usize).is_some_and(|r| r.author == self.author)
+        (rev as usize >= self.base || self.reuse.contains(&rev)) && self.before.get(rev as usize).is_some_and(|r| r.author == self.author)
     }
 
     /// The tracked change `after` should carry, given the props `before` the command (`f` strips
@@ -102,7 +106,9 @@ impl Recorder<'_> {
         while let (Some((x, pb)), Some((y, pa))) = (rb.get(i), ra.get(j)) {
             let (from, to) = (x.start.max(y.start), x.end.min(y.end));
             // Formatting text the author is inserting themselves changes the insertion, as in Word.
-            let own_insert = pa.ins.and_then(|i| self.revisions.get(i as usize)).is_some_and(|r| r.author == self.author);
+            let own_insert = pa.ins.is_some_and(|i| {
+                (i as usize >= self.base || self.reuse.contains(&i)) && self.revisions.get(i as usize).is_some_and(|r| r.author == self.author)
+            });
             if from < to
                 && !own_insert
                 && let Some(want) = self.change(*pb, *pa, CharProps::formatting, |c| &c.fmt_change)
@@ -171,9 +177,17 @@ pub(crate) fn record(s: &mut Session, id: &str, before: &Document) {
     if !s.tracking() || !s.prefs.markup.track_formatting || !records(id) {
         return;
     }
-    let author = s.author.clone();
+    let (author, base) = (s.author.clone(), s.revision_base);
     let doc = &mut s.doc;
-    let mut r = Recorder { author, date: super::now_iso(), before: &before.revisions, revisions: &mut doc.revisions, rid: None };
+    let mut r = Recorder {
+        author,
+        date: super::now_iso(),
+        before: &before.revisions,
+        revisions: &mut doc.revisions,
+        rid: None,
+        base,
+        reuse: &s.revision_reuse,
+    };
     r.blocks(&before.body, &mut doc.body, 0);
     for (k, pb) in &before.parts {
         if let Some(pa) = doc.parts.get_mut(k) {
@@ -185,7 +199,7 @@ pub(crate) fn record(s: &mut Session, id: &str, before: &Document) {
 /// Compare Documents: record how paragraph `new` (the revised version, same text) is formatted
 /// differently from `old` as tracked formatting changes by `author`.
 pub(crate) fn compare_formatting(old: &Paragraph, new: &mut Paragraph, revisions: &mut Vec<Revision>, author: &str, date: &str) {
-    let mut r = Recorder { author: author.to_string(), date: date.to_string(), before: &[], revisions, rid: None };
+    let mut r = Recorder { author: author.to_string(), date: date.to_string(), before: &[], revisions, rid: None, base: 0, reuse: &[] };
     r.para(old, new);
 }
 
@@ -310,6 +324,68 @@ pub fn resolve_containers(blocks: &mut Blocks, accept: bool, depth: usize) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// [`resolve_containers`] for the changes of the revisions `ids` only; whether there were any.
+pub fn resolve_containers_of(blocks: &mut Blocks, ids: &BTreeSet<u32>, accept: bool, depth: usize) -> bool {
+    if depth > MAX_DEPTH {
+        return false;
+    }
+    let mine = |rev: Option<u32>| rev.is_some_and(|r| ids.contains(&r));
+    let mut found = false;
+    for b in blocks.iter_mut() {
+        // Only what holds such a change is copied (undo snapshots share the rest).
+        if !mentions(b, ids, depth) {
+            continue;
+        }
+        match Arc::make_mut(b) {
+            Block::Para(p) => {
+                if let Some(s) = p.section.as_deref_mut() {
+                    resolve_section(s, accept);
+                    p.touch();
+                    found = true;
+                }
+            }
+            Block::Table(t) => {
+                if mine(t.props.fmt_change.as_ref().map(|c| c.rev)) {
+                    resolve_table(t, accept);
+                    found = true;
+                }
+                for r in &mut t.rows {
+                    if mine(r.props.fmt_change.as_ref().map(|c| c.rev)) {
+                        resolve_row(r, accept);
+                        found = true;
+                    }
+                    for c in &mut r.cells {
+                        if mine(c.props.fmt_change.as_ref().map(|c| c.rev)) {
+                            resolve_cell(c, accept);
+                            found = true;
+                        }
+                        found |= resolve_containers_of(&mut c.blocks, ids, accept, depth + 1);
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Whether `b` holds a section, table, row or cell change of the revisions `ids`.
+fn mentions(b: &Block, ids: &BTreeSet<u32>, depth: usize) -> bool {
+    let mine = |rev: Option<u32>| rev.is_some_and(|r| ids.contains(&r));
+    match b {
+        Block::Para(p) => mine(p.section.as_ref().and_then(|s| s.fmt_change.as_ref().map(|c| c.rev))),
+        Block::Table(t) => {
+            depth <= MAX_DEPTH
+                && (mine(t.props.fmt_change.as_ref().map(|c| c.rev))
+                    || t.rows.iter().any(|r| {
+                        mine(r.props.fmt_change.as_ref().map(|c| c.rev))
+                            || r.cells
+                                .iter()
+                                .any(|c| mine(c.props.fmt_change.as_ref().map(|c| c.rev)) || c.blocks.iter().any(|b| mentions(b, ids, depth + 1)))
+                    }))
         }
     }
 }

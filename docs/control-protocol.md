@@ -66,7 +66,7 @@ and set `WORDCRAFT_CONTROL_KEY` to that app's key.
 | `ui.parity` | — | feature-catalog parity |
 | `ui.resize` / `ui.focus` / `app.quit` | | window control |
 | `agent.listen` | `timeoutMs?`, `agent?` | Ask Agent: the next request from the window, or `{none: true}` (see [Ask Agent](#ask-agent)) |
-| `agent.reply` | `id`, `text`, `done?` | Ask Agent: show the agent's answer in the window |
+| `agent.reply` | `id`, `text?`, `proposal?`, `format?`, `done?` | Ask Agent: show the agent's answer, or the text it proposes, in the window |
 
 Any other method name is treated as a command id: `{"method": "format.bold"}` works.
 
@@ -110,8 +110,8 @@ WordCraft calls no model and holds no key: the agent is whatever the person conn
 
 | Method | Params | Result |
 |---|---|---|
-| `agent.listen` | `timeoutMs?` (default 30000, at most 60000), `agent?` (the agent's name) | the oldest waiting request, `{id, instruction, action, apply, selection: {text, anchor, focus, truncated}, document: {title, saved, language}, review}`, or `{none: true}` when none came in time |
-| `agent.reply` | `id`, `text`, `done?` (default true) | `{id, shown: true, done}`, or `{id, cancelled: true}` when the person cancelled the request |
+| `agent.listen` | `timeoutMs?` (default 30000, at most 60000), `agent?` (the agent's name) | the oldest waiting request, `{id, instruction, action, apply, selection: {text, anchor, focus, truncated}, document: {title, saved, language}, review, proposalFormats, retryOf}`, or `{none: true}` when none came in time |
+| `agent.reply` | `id`, `text?`, `proposal?`, `format?` (`"text"` or `"markdown"`), `done?` (default true); `text`, `proposal` or both | `{id, shown: true, done}`, or `{id, cancelled: true}` when the person cancelled the request |
 
 - Both need the key, like every other method. They are answered on the connection's own thread
   from the window's queue, so an agent waiting in `agent.listen` holds up neither the window nor
@@ -159,15 +159,57 @@ WordCraft calls no model and holds no key: the agent is whatever the person conn
 - An agent command closes the typing group before and after a document edit, so Undo never
   combines the person's typing with that edit. For `replyOnly`, window (`ui.*`) commands are
   refused as well as mutating engine commands: window actions can initiate document changes.
+- **Proposals, streamed.** Instead of editing, the agent can send the new text: `agent.reply
+  {id, proposal}` with the whole text so far and `done: false` as it writes (each reply replaces
+  the last, so a lost or repeated reply does no harm), then the final text with `done: true`
+  (`text` stays the short note and may come with it or not). The bubble shows the text growing, at
+  most ten repaints a second, and once it is done the words it removes from the selection struck
+  through and the ones it adds underlined. `format: "markdown"` brings headings, lists, emphasis and
+  tables; plain text takes the formatting where it lands. A proposal is at most 200,000 bytes.
+  `proposalFormats` in the request lists the formats it takes (`[]` for `replyOnly`), and nothing
+  changes in the document until the person accepts.
+- **Accept, Discard, Retry.** Once a request is answered, the bubble (or the corner card) offers
+  them for its result. A proposal: Accept puts it where the person asked, in place of the
+  selection (`replace`, `auto`) or as new paragraphs after it (`insertBelow`), as one Undo step and
+  a tracked change by `Agent (<name>)`, wherever the caret is now; Discard drops it. The agent's
+  own edits: Accept makes exactly this request's tracked changes final, Discard rejects exactly
+  them (`review.accept` / `review.reject {revisions}`, one Undo step each); other authors' changes
+  and other requests' are never touched. Retry rejects the request's edits, if any, and sends the
+  same instruction or quick action about the same text again as a new request with `retryOf: <old
+  id>`, so the agent knows to try something different. Keys: Accept takes the keyboard when the
+  result arrives (Enter accepts, Tab moves to Discard and Retry), unless the person pressed a key
+  while the agent worked; then Escape closes without accepting or rejecting and Ctrl+R (⌘R) retries. Otherwise Escape, like a
+  click in the document, closes the bubble and the result waits in the corner card. Closing the
+  corner card folds it into an Ask Agent button; every retained request remains reachable there.
+- **Fixed scope.** Accept uses the original range only. If the text at that range changed or
+  moved, it refuses without changing the document, selection or Undo stack: "The text this request
+  was about has changed since: select it again and ask again." An agent's first direct edit for
+  that request checks the same range and document identity without changing its current selection.
+  Later direct edits refuse an intervening document revision, including Undo followed by a new edit.
+- **Edits or a proposal?** One or the other per request: a request the agent already edited takes
+  no proposal, and once it has a proposal, changes for it are refused (reading and selecting still
+  work). A proposal suits a rewrite of the selected text (the quick actions, "make this formal"):
+  the person sees it come and decides, and the agent needs no editing tools. Edits suit changes a
+  proposal can't express: several places in the document, comments, formatting only.
 - `ui.askAgent` (a UI command, through `engine.execute`): no params opens the bubble at the
   selection (an error, with the reason, when no agent listens); `{"instruction": "…"}` queues a
   request without the bubble; `{"action": "shorten"}` sends a quick action; `{"cancel": id}`
-  cancels one; `{"close": true}` closes the bubble. `ui.inspect` reports `askAgent`: `{available,
-  reason, agentListening, bubble, history, requests: [{id, state:
-  "waiting"|"working"|"answered"|"cancelled", action, apply, instruction, agent, reply}], actions:
-  [{id, label, menu, apply}]}`.
+  cancels one; `{"close": true}` closes the bubble; `{"accept": id}`, `{"discard": id}` and
+  `{"retry": id}` do what the bubble's buttons do (Retry answers the new request's `id`).
+  `ui.inspect` reports `askAgent`: `{available, reason, agentListening, bubble, history, requests:
+  [{id, state: "waiting"|"working"|"answered"|"failed"|"cancelled", action, apply, instruction, agent, reply,
+  proposal: {text, format}, revisions, review: "proposal"|"edits"|null, retryOf}], actions: [{id,
+  label, menu, apply}]}`.
 
 `wordcraft-cli mcp --connect` turns these into the tools `wait_for_request` and
 `reply_to_request` ([MCP server](mcp.md#ask-agent)).
 
 Quick actions also include **Final polish** under More (grammar, clarity and consistency, preserving facts, names, numbers, meaning and structure without additions), and **Reading level** with General public, Secondary school and Expert. All four use `apply: "replace"`.
+
+The bubble displays the fixed scope and **Waiting / Working / Ready / Failed / Stopped** states.
+**Stop** cancels generation separately from **Discard**; replies after Stop are ignored, and a stopped or failed proposal cannot be accepted.
+**Accept** is disabled while the attempt is incomplete. The **Original / Proposal / Changes** tabs reuse the stored selection and proposal; Changes compares plain text for replacement proposals, with an explicit fallback for Markdown, insertion or truncated originals.
+**Retry** keeps the instruction, action and original selection, displays the previous proposal until the next proposal arrives, and uses a new request id. Replies to superseded attempts return `cancelled: true` and do not affect the new attempt (a bounded 40-id tombstone queue; older unknown ids are refused).
+An agent may report a failure with `agent.reply {id, error: "message"}` (MCP `reply_to_request` has the same field). The error closes the attempt as Failed and preserves its preview for Retry or Discard. A failure cannot also contain a proposal or `done: false`.
+
+Formatting commands in one request may extend only that request’s earlier formatting revisions. A later request that formats an overlapping range supersedes the earlier formatting revision there, following the existing formatting model; Accept/Discard operate on each request’s revisions that remain in the document. Paragraph-format and list-numbering revision ids are resolved independently.
