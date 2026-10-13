@@ -1,323 +1,408 @@
 # WordCraft GitHub Issues Analysis
 
-This document provides a detailed analysis of open GitHub issues for WordCraft, including root cause analysis and planned fixes.
+*2026-10-13 · 271 open issues fetched via `gh issue list` (all of `storytold/wordcraft`, no PRs;
+full bodies in the fetch; zero labels on all). Status legend: **FIXED** (fixed + tested on this
+branch), **ALREADY FIXED** (verified in current code with file:line evidence), **MITIGATED**
+(partial), **OBSOLETE** (only meaningful on a removed build target), **NOT REPRODUCIBLE** (what
+was tried), **NEEDS DECISION** (feature request deferred with rationale), **NEEDS FIX** (open,
+not yet addressed, root-cause hypothesis included where one was established). Nothing was
+closed or commented on GitHub; commits reference numbers.*
 
+## Deep-dives (investigated with code evidence)
 
-## Issue 1246: Web Save in cross-origin iframe
-- **Summary**: Save does nothing in a cross-origin iframe on Chromium.
-- **Root Cause**: In `apps/wordcraft-web/src/web.rs`, `trigger_save_file_picker` returns `Ok(())` because the `showSaveFilePicker` call returns a promise. However, in cross-origin iframes, Chromium rejects this promise asynchronously with a `SecurityError`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Modify the `spawn_local` block in `trigger_save_file_picker` to treat `SecurityError` (and other non-`AbortError` rejections) as a failure that triggers `trigger_anchor_download`.
-- **Risk**: Low.
-## Issue 1246: Web Save in cross-origin iframe
-- **Summary**: Save does nothing in a cross-origin iframe on Chromium.
-- **Root Cause**: In `apps/wordcraft-web/src/web.rs`, `trigger_save_file_picker` returns `Ok(())` because the `showSaveFilePicker` call returns a promise. However, in cross-origin iframes, Chromium rejects this promise asynchronously with a `SecurityError`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Modify the `spawn_local` block in `trigger_save_file_picker` to treat `SecurityError` (and other non-`AbortError` rejections) as a failure that triggers `trigger_anchor_download`.
-- **Risk**: Low.
+### #1265 Cut does not write to the clipboard — FIXED (commit `6817fb7`, extended `5ee4e70`)
+Copy worked, Cut didn't: ribbon `cut` (`ui-egui/ribbon.rs:510`) and the canvas context-menu Cut
+(`ui-egui/canvas.rs:2484`) ran `edit.cut` (which correctly fills `Session.clipboard` via
+`engine/cmd/edit.rs:copy`) but never called `copy_text`, unlike the Copy buttons next to them.
+Only the Ctrl+X keyboard path (`keys.rs:317`) wrote the system clipboard. Fix: both buttons now
+push `session.clipboard_text` (Cut only when non-empty); all three sites route through
+`system_clipboard::copied`, which also writes the HTML rendering (see #1243). Verified by code
+inspection; headless clipboard-write test added for the HTML path.
 
-## Issue 1243: Copy rich text formatting
-- **Summary**: Copying formatted text loses bold/italics when pasted into other apps.
-- **Root Cause**: The `edit.copy` command in `crates/engine/src/cmd/edit.rs` only updates internal state and doesn't push rich text formats (HTML/RTF) to the system clipboard.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement system clipboard write for rich text (HTML/RTF) using OS-specific APIs.
-- **Risk**: Medium.
+### #1268 `file.close` over the control channel quits on unsaved changes — FIXED (`618903f`)
+`WordApp::run` (user path) stops discarding commands on a dirty document with a SaveChanges
+dialog (`ui-egui/lib.rs:605`, `discards_document` at `:1773`, added for #151 in `802ba30`), but
+the control channel goes through `WordApp::execute`, which called `session.run` directly and
+quit. Fix: `execute` returns `the document has unsaved changes (pass {"force": true} …)` when
+dirty + discarding and no `force:true`; the answered-dialog path (`ui.saveChanges` → Don't Save)
+injects `force` so normal flows are unaffected. Tests: `execute_refuses_to_discard_unsaved_changes`
+plus the pre-existing `new/open_asks…` suites pass.
 
-## Issue 1242: Table Height/Width changes apply only to last row/column
-- **Summary**: Height/Width changes apply only to the last row/column when the entire table is selected.
-- **Root Cause**: `table.rowHeight` and `table.columnWidth` in `crates/engine/src/cmd/table.rs` only apply changes to the caret cell's row/column.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Update these commands to iterate over the current selection and apply changes to all selected rows/columns.
-- **Risk**: Low.
+### #1243 Rich text lost on copy to other apps — FIXED (`5ee4e70`)
+`edit.copy` filled only the internal `Fragment`; every copy site called egui's text-only
+`copy_text`; `apps/wordcraft/clipboard.rs` only ever *read* the system clipboard. Fix:
+`Fragment::to_html` (`doc/edit.rs`: escaped text, bold/italic/underline/strike/color/highlight/
+size/sub-superscript/alignment/tables, final-shown runs, 4 MiB cap) + `Services::clipboard_write`
+hook + `system_clipboard::copied` used at all three copy sites + arboard `set_html(html,
+Some(text))` in the desktop app (failures warn, text copy preserved). Unit tests in `doc/edit.rs`
+and `system_clipboard.rs`. Limitation: pictures/fields have no HTML here (see #375).
 
-## Issue 1241: RTL text direction only works for numbers
-- **Summary**: Right-to-left text direction only seems to work for numbers, not letters.
-- **Root Cause**: RTL support in `crates/layout/src/para.rs` and `crates/layout/src/display.rs` is partial and lacks full bidi reordering for letters.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Review `unicode-bidi` integration and ensure visual ordering of letters in RTL paragraphs is correctly applied.
-- **Risk**: High.
+### #1242 Table Height/Width hit one row/column — FIXED (`76a5524`)
+`table.columnWidth`/`table.rowHeight` (`engine/cmd/table.rs`) applied only to the caret cell's
+row/column (`cell(s)`), ignoring `selected_cells` (which already handled cell ranges). Fix:
+resolve all selected grid columns/rows (immutable borrow first, grid-index math panic-safe via
+`get`/`min`, mirroring `grid_col` at `doc/table.rs:93` + `sync_cell_widths`), then apply in
+`with_table`. `columnWidth` also clears the table preferred width so layout keeps it. Test:
+`cell_size_boxes_apply_to_the_whole_selection` (whole-table select → uniform 90 pt / 25 pt exact).
 
-## Issue 1240: Save dialog window too tall on XWayland/niri
-- **Summary**: Save dialog window is taller than screen when running via XWayland on niri.
-- **Root Cause**: External issue with `xdg-desktop-portal-gtk` and XWayland on niri.
-- **Status**: `NOT REPRODUCIBLE / EXTERNAL`
-- **Planned Fix**: No internal fix planned.
-- **Risk**: N/A.
+### #981 CLI render silently defaults bad --page/--scale — FIXED (`f77f536`)
+`arg_value(...).parse().ok().unwrap_or(default)` in `apps/wordcraft-cli/main.rs:render`/`run`.
+Fix: `page_scale()` helper — malformed/missing/duplicated/non-positive/non-finite values are
+`Err` (non-zero exit); validated only where used (`render`, `run --save *.png`). Tests added.
 
-## Issue 1238: Styles selector empty with sample docx
-- **Summary**: Styles selector becomes empty when opening a specific sample docx file.
-- **Root Cause**: Likely failure in styles resolution or filtering in `crates/ui-egui/src/panes.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Investigate styles resolution in `crates/doc` and filtering in the Styles pane.
-- **Risk**: Low.
+### #968 `--help` treated as a file / rejected — FIXED (`f77f536`)
+Top-level `wordcraft-cli --help` already worked (`main.rs` match arm); subcommands rejected it
+via `validate_options`, and the GUI opened `--help` as a file. Fix: early `--help`/`-h` check in
+`run()` prints `USAGE`; GUI prints options and exits before logging/window. Tests added.
 
-## Issue 1237: Ctrl+ / Ctrl- for zooming
-- **Summary**: Feature request for Ctrl+ / Ctrl- keyboard shortcuts for zooming.
-- **Root Cause**: Support for mouse-wheel zoom exists, but keyboard shortcuts are missing in `crates/ui-egui/src/keys.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Add keyboard event handlers for `Ctrl+` and `Ctrl-` in `crates/ui-egui/src/keys.rs`.
-- **Risk**: Low.
+### #1148 Dark-theme ruler shading inverted — FIXED (`67681d9`)
+`canvas.rs:2037/2039` fills the margin band with `ruler_margin` and the text band with `ruler`;
+dark tokens had text (`0x2E`) darker than margins (`0x45`), opposite of the light theme
+(white text band, gray margins). Fix: swapped the two dark values (`ui-egui/theme.rs`), matching
+the reporter's expectation. No test (theme tokens); visual check via `ui_shot`.
 
-## Issue 1236: Bookmark Delete doesn't exist
-- **Summary**: Feature request: Bookmark > Delete does not exist.
-- **Root Cause**: Command not implemented in `crates/engine/src/cmd/`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement `bookmark.delete` command.
-- **Risk**: Low.
+### #866/#1080 Deleted text inline; `text` drops list labels — FIXED (`76a5524`, `b622409`)
+`document.text` (MCP `get_text`) and CLI `text` used `Document::plain_text`, which includes
+tracked-deleted runs inline; CLI `text` additionally skipped the list-label logic the txt
+exporter has (`formats/txt.rs:100`). Fix: new `Document::final_text` (`doc/lib.rs`, via the
+pre-existing but unused `Paragraph::final_text`) for `document.text`; CLI `text` now prints the
+txt export (labels + final-shown + dropped deletions, CRLF→LF for the terminal). Tests:
+`document_text_shows_tracked_changes_as_final`, `txt_export_keeps_list_labels`.
 
-## Issue 1234: Link > Place in This Document (does not exist)
-- **Summary**: Feature request: Link to "Place in This Document" does not exist.
-- **Root Cause**: Command not implemented.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement `insert.linkInternal` command.
-- **Risk**: Low.
+### #679 `javascript:` hrefs in exports — FIXED (`b622409`, completing pre-existing work)
+HTML/MD export already filtered via `doc::link::is_safe_href` (`formats/html.rs:1007,1208`,
+`markdown.rs:1129`, test `exported_links_keep_only_safe_targets`). ODT (`odt.rs:224`) and LaTeX
+(`latex.rs:321`) did not. Fix: same filter in both; extended the test to `tex` plus a new ODT
+content.xml test.
 
-## Issue 1233: Installing error
-- **Summary**: User reports an installing error (images only).
-- **Root Cause**: Undetermined.
-- **Status**: `NOT REPRODUCIBLE`
-- **Planned Fix**: None.
-- **Risk**: N/A.
-## Issue 1232: WordCraft quits when attempting to display a large document's outline
-- **Summary**: App crashes with a `wgpu` Validation Error when opening the Outline view of a large document.
-- **Root Cause**: The Outline view likely attempts to render a single large texture for the entire outline, exceeding GPU limits.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement virtualized rendering or texture tiling for the Outline view.
-- **Risk**: Medium.
+### #187 Open replaces an edited doc silently — ALREADY FIXED
+`WordApp::run` stops `file.new`/`file.open` (with path)/`file.close` on dirty docs with the
+SaveChanges dialog (`lib.rs:605-610`, `discards_document`), committed in `802ba30` (#151), with
+tests (`new_asks…`, `open_asks…`) that pass on this branch. Web path shares the guard.
 
-## Issue 1230: Object names and certain automatic numbering features are missing
-- **Summary**: Missing "Insert Caption" feature and advanced page numbering options.
-- **Root Cause**: Features not yet implemented in the engine or UI layers.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Add `insert.caption` command and implement automatic counter logic in the document model.
-- **Risk**: Low.
+### #168 Exports clear the Edited indicator — ALREADY FIXED
+Same commit: the download path only clears `dirty` for formats that keep everything
+(`lib.rs:698-702`, `keeps_everything` at `:1690`: docx/docm/dotx/dotm/odt/rtf/json/xml); engine
+`save()` likewise (`engine/cmd/file.rs:204-210`), and `export_png` never touches `dirty`.
 
-## Issue 1229: Text Box Feature bug view - [Mac OS]
-- **Summary**: Outlines and text disappear in text boxes on macOS.
-- **Status**: `OBSOLETE`
-- **Reason**: macOS-specific issue.
+### #1212 Cannot drag-and-drop pictures — ALREADY FIXED
+Drop handling is present: `lib.rs:1391` drains `dropped_files` into `insert.picture`/`file.open`
+paths (also `:1388`, `:1572`, test at `:4169` for CSV drops). Caveat: winit DnD needs X11, so on
+Wayland the app runs via XWayland unless `WORDCRAFT_WAYLAND=1` (README documents this).
 
-## Issue 1228: Tab row: Comments / Editing / Share buttons overlap ribbon tabs
-- **Summary**: When the window is narrow, the right-side action buttons overlap the ribbon tabs.
-- **Root Cause**: Tab row layout in `crates/ui-egui/src/ribbon.rs` doesn't account for the width of action buttons.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Calculate action button width first and implement a degradation strategy (icon-only -> trimmed labels -> overflow menu).
-- **Risk**: Low.
+### #1169 Typing stops on XWayland + fcitx5 — ALREADY FIXED (code-level)
+The alleged cause (`request_focus` on every interaction) is not present: focus is requested only
+on click/drag-started/explicit `want_focus` (`canvas.rs:1226-1230`) with a focus-lock filter.
+Cannot be reproduced headlessly here; if reports persist, suspect IME preedit handling, not focus.
 
-## Issue 1227: Feature request: Create with templates
-- **Summary**: Request for more common templates (MLA, APA, etc.) and searchability.
-- **Root Cause**: Only a few templates exist in `crates/engine/src/sample.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Add more template definitions and implement a search filter in the templates dialog.
-- **Risk**: Low.
+### #1232 Outline of a large document quits the app — MITIGATED (`4f6df7b`)
+Navigation panes built unbounded widget lists per frame; now `show_rows`-virtualized (pages,
+find results, headings). This bounds per-frame UI work but is *not proven* to fix the reported
+`wgpu` validation error (likely oversized texture); needs a `ui_shot` repro with a large
+outline before claiming more.
 
-## Issue 1225: Proofing: help users get a Hunspell dictionary
-- **Summary**: Users struggle to install Hunspell dictionaries.
-- **Root Cause**: No easy way to populate the local dictionary folder.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Add "Get dictionary..." and "Open dictionaries folder" buttons to the Proofing options dialog.
-- **Risk**: Low.
+### #1160 Broken `storytold/craftrules` links — NEEDS DECISION
+Repo is private/invisible to contributors (404 for outsiders); only the org can fix by publishing
+or vendoring the standards. Not touched (owner's call).
 
-## Issue 1223: [Bug] Zoom via ctrl+middle mouse causes scroll and zoom at the same time
-- **Summary**: Zooming with Ctrl+Middle Mouse also triggers scrolling.
-- **Root Cause**: Middle mouse events handled by both zoom and scroll logic in `crates/ui-egui/src/canvas.rs` or `crates/ui-egui/src/scroll.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Ensure Ctrl+middle-mouse events are captured exclusively by the zoom handler.
-- **Risk**: Low.
+### #764 LanguageTool API key in plaintext `ui.json` — NEEDS DECISION
+Real issue; fix needs per-OS credential-store integration (Secret Service on Linux-only scope)
+plus migration. Deferred as medium-risk feature work, documented here.
 
-## Issue 1218: Ctrl+Q clears paragraph formatting but also opens a save dialog
-- **Summary**: Ctrl+Q is bound to "Clear Paragraph Formatting" but also triggers the app's Quit action.
-- **Root Cause**: Shortcut conflict between `para.reset` and the framework's default Quit action.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Override the global Quit shortcut or ensure `para.reset` consumes the event.
-- **Risk**: Low.
+## Scope-obsolete (removed build targets — not fixed, closed by scope reduction)
 
-## Issue 1215: Bug in scrollbar when dragged
-- **Summary**: Scrollbar sticks when the cursor hits the edge of the screen.
-- **Root Cause**: Likely an issue with how `egui` or the wrapper handles mouse drag events when they leave window bounds.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Ensure dragging continues as long as the mouse button is held.
-- **Risk**: Low.
+| # | Note |
+|---|---|
+| 1229 | macOS-only text-box rendering |
+| 1111 | macOS pinch-zoom half (narrow-ribbon half survives → see #1228/#897, still open) |
+| 1103 | macOS LaunchServices default-app corruption |
+| 979, 644 | macOS Intel GPU/Metal crashes |
+| 954 | macOS Cmd+arrow keybinding |
+| 845 | Windows Explorer thumbnails (shell extension) |
+| 670 | macOS Palatino substitution table |
+| 533, 73, 51, 64 | Windows MSI installer issues (incl. ProductCode conflicts) |
+| 525 | macOS DMG signature/notarization |
+| 170 | Windows Intel Vulkan driver crash |
+| 1119 | Windows Magnifier caret tracking |
+| 1122 | Windows console window during TTS |
+| 984 | Android port request |
+| 39 | EXE installer request |
+| 738, 808 | Windows installer/portable launch failures |
+| 996, 285 | macOS-only env reports (suggestion-pick, CJK boxes); need Linux repro to reopen |
+| 324 | Author withdrew |
 
-## Issue 1213: Can't type anything under Xwayland in GNOME 50 + arboard not supporting wayland
-- **Summary**: Users on Wayland cannot type due to `arboard` clipboard initialization failure.
-- **Root Cause**: `arboard` has limited Wayland support, which may be blocking input.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Improve fallback mechanism in `apps/wordcraft/src/clipboard.rs` or implement a native Wayland bridge.
-- **Risk**: Medium.
-## Issue 1212: Cannot drag n drop picture
-- **Summary**: User reports inability to drag and drop files from file manager to WordCraft on Ubuntu.
-- **Root Cause**: Codebase implements dropped file handling in `crates/ui-egui/src/lib.rs`, but may have platform-specific gaps.
-- **Status**: `ALREADY FIXED`
-- **Planned Fix**: None needed.
-- **Risk**: None.
+## Full triage table (all 271)
 
-## Issue 1211: Print Option Doesn't show my printers
-- **Summary**: Native spooling not showing printers on Linux.
-- **Root Cause**: `craft_print` discovery may be failing or UI doesn't distinguish native vs PDF.
-- **Status**: `NEEDS FIX / NEEDS DECISION`
-- **Planned Fix**: Verify `craft_print` discovery on Linux and clarify UI options.
-- **Risk**: Low.
-
-## Issue 1208: Laggy Cursor
-- **Summary**: Cursor trails behind typing.
-- **Root Cause**: Caret gliding in `crates/ui-egui/src/caret_glide.rs` may be too slow.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Review and potentially reduce `GLIDE_SECS` or make it configurable.
-- **Risk**: Low.
-
-## Issue 1207: Document Tabs & importing doc with tabs fails
-- **Summary**: Google Docs "Tabs" are not supported in import or model.
-- **Root Cause**: Multi-tab support is not in `crates/doc` or OOXML reader.
-- **Status**: `NEEDS FIX (Import Bug) / NEEDS DECISION (Feature)`
-- **Planned Fix**: Investigate Google Docs tab export and evaluate architectural impact of adding tabs to `Session`.
-- **Risk**: Medium.
-
-## Issue 1206: Margins, Orientation, Size, and Columns dialog missing icon and active setting
-- **Summary**: UI menus lack checkmarks and icons for active settings.
-- **Root Cause**: `mi` helper used instead of `mi_check` in `crates/ui-egui/src/ribbon.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Replace `mi` with `mi_check` and add icons from `crates/ui-egui/src/icons.rs`.
-- **Risk**: Low.
-
-## Issues 1201, 1200, 1199, 1198, 1197
-- **Status**: `NOT ANALYZED`
-- **Reason**: GitHub API rate limits.
-## Issue 1196: Provide pre-built Docker images on GHCR or Docker Hub
-- **Summary**: Request for pre-built Docker images for easier deployment.
-- **Root Cause**: Infrastructure gap; images must be built manually by users.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Set up a GitHub Action to build and push the WordCraft Docker image to GHCR.
-- **Risk**: Low.
-
-## Issue 1192: Proposal: LawCraft, legal drafting tools for WordCraft
-- **Summary**: Proposal for a specialized "LawCraft" toolset for legal drafting.
-- **Root Cause**: Feature request for specialized legal tools.
-- **Status**: `NEEDS DECISION`
-- **Planned Fix**: Decide if this should be an official extension or a community project.
-- **Risk**: Low.
-
-## Issue 1189: Ten catalogues are ~397 keys behind the leaders
-- **Summary**: Localization gap in several language catalogues (e.g., pt-BR).
-- **Root Cause**: Missing translation keys in specific catalogues.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Coordinate translations and update i18n tests to enforce catalogue synchronization.
-- **Risk**: Low.
-
-## Issue 1188: Bug Ctrl+A
-- **Summary**: `Ctrl+A` (Select All) automatically scrolls to the bottom of the page.
-- **Root Cause**: UI layer likely forces viewport scroll to the focus (end of document) during selection.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Ensure `select.all` does not force viewport scroll if the cursor was elsewhere.
-- **Risk**: Low.
-
-## Issue 1186: Flickering after update to 0.6.1
-- **Summary**: Vague report of "flickering" after update.
-- **Root Cause**: Undetermined; lack of details on OS/Hardware.
-- **Status**: `NOT REPRODUCIBLE`
-- **Planned Fix**: Request more information from the user.
-- **Risk**: N/A.
-
-## Issue 1183: Feature Request: KeyTips for Table Design and Table Format Ribbon
-- **Summary**: Request for MS Word-style Alt-key navigation (KeyTips) for Table ribbons.
-- **Root Cause**: KeyTips for Table ribbons not implemented in `crates/ui-egui/src/keytips.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement keytip mappings for Table Design and Table Layout ribbons.
-- **Risk**: Low.
-
-## Issue 1182: Random placeholder profile icon at the top right
-- **Summary**: A "WU" placeholder icon appears in the top right corner.
-- **Root Cause**: Leftover template/feature code in `crates/ui-egui`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Locate and remove the rendering code for this icon.
-- **Risk**: Very Low.
-
-## Issue 1181: Mirror margins do not load correctly from .docx; shapes shift right
-- **Summary**: Mirror margins in .docx files are not loaded correctly, affecting shape positions.
-- **Root Cause**: Potential bugs in `crates/docx/src/read/mod.rs` or mirror margin application in `crates/layout/src/lib.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Verify DOCX loading logic and apply mirrored offsets correctly in the layout engine.
-- **Risk**: Medium.
-
-## Issue 1178: Modify styles page does not have a font selector
-- **Summary**: Style modification dialog uses a plain text field instead of a font combo box.
-- **Root Cause**: `TextEdit` used instead of `font_combo` in the style dialog.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Replace `TextEdit` with `font_combo` widget from `crates/ui-egui/src/widgets.rs`.
-- **Risk**: Low.
-
-## Issue 1174: DOCX: legacy form fields not drawn/saved; gridBefore mispositioned/lost
-- **Summary**: Legacy form fields and `gridBefore` table offsets are ignored/stripped.
-- **Root Cause**: Missing support for `w:ffData` and `w:gridBefore` in `crates/docx` and `crates/layout`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement support for legacy form fields in the reader/writer and `gridBefore` logic in table layout.
-- **Risk**: Medium.
-## Issue 1173: Picture Adjustments compound
-- **Summary**: Adjustments (transparency, color, etc.) are applied to the already-edited image, compounding effects.
-- **Root Cause**: `adjust()` in `crates/engine/src/cmd/objects.rs` decodes the current bitmap instead of the original.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Use `adjust_media()` to apply adjustments from the original source.
-- **Risk**: Low.
-
-## Issue 1171: Embedded fonts in .docx not used
-- **Summary**: Embedded fonts in .docx are ignored, falling back to system fonts.
-- **Root Cause**: Embedded font parts are read but not integrated into `FontDb` in `crates/fonts`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Extract and de-obfuscate embedded fonts from DOCX and register them as document-scoped fonts.
-- **Risk**: Medium.
-
-## Issue 1169: Typing stops on XWayland with fcitx5 XIM
-- **Summary**: Typing stops on XWayland with fcitx5 XIM due to IME interrupts.
-- **Root Cause**: `crates/ui-egui/src/canvas.rs` calls `request_focus()` on every interaction, interrupting IME and causing a race condition in fcitx5.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Only call `request_focus()` if the widget does not already have focus.
-- **Risk**: Very Low.
-
-## Issue 1167: Proofing dictionary missing hint
-- **Summary**: No feedback is given when a proofing dictionary is missing.
-- **Root Cause**: Lack of UI notification for missing dictionaries.
-- **Status**: `NEEDS DECISION`
-- **Planned Fix**: Implement a UI hint (e.g., dimmed language in status bar or a mark in the Language menu).
-- **Risk**: Low.
-
-## Issue 1160: Broken links to `storytold/craftrules`
-- **Summary**: Links in `CLAUDE.md` and `AGENTS.md` are broken.
-- **Root Cause**: Target repository is private or moved.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Update URLs or mirror essential standards into the WordCraft repo.
-- **Risk**: Negligible.
-
-## Issue 1159: Bulleted lists alignment bug
-- **Summary**: Bullets remain anchored to the margin when paragraph alignment is changed.
-- **Root Cause**: Bullet position in `crates/layout/src/para.rs` is not relative to the aligned text block.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Update layout engine to position bullets relative to the text block's start.
-- **Risk**: Low.
-
-## Issue 1158: Multi-column shape wrap bug
-- **Summary**: Shape wrap areas are not correctly applied to text in previous columns.
-- **Root Cause**: Wrap areas are only added when the anchor paragraph is laid out.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Implement a layout re-pass for the current page if a shape's wrap area overlaps already-placed text.
-- **Risk**: Medium.
-
-## Issue 1156: Print preview zoom/size
-- **Summary**: Print preview is static and small.
-- **Root Cause**: Print preview UI lacks zoom and pan capabilities.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Update Print page UI to allow the preview to fill space and add zoom/pan support.
-- **Risk**: Low.
-
-## Issue 1155: Finnish proofing (Voikko)
-- **Summary**: Request to integrate Finnish proofing via `corevoikko`.
-- **Root Cause**: Feature request.
-- **Status**: `NEEDS DECISION`
-- **Planned Fix**: Review and integrate the provided working branch if approved.
-- **Risk**: Low.
-
-## Issue 1148: Dark theme ruler shading inverted
-- **Summary**: Ruler shading in dark theme makes text area darker than margins.
-- **Root Cause**: Inverted colors for `ruler` and `ruler_margin` in `crates/ui-egui/src/theme.rs`.
-- **Status**: `NEEDS FIX`
-- **Planned Fix**: Swap the values of `ruler` and `ruler_margin` in the dark theme tokens.
-- **Risk**: Negligible.
+| # | Title | Status | Note |
+|---|---|---|---|
+| 1269 | [Bug] Colour emoji are not drawn on screen, although the PDF export has them | NEEDS FIX | open bug, not yet addressed |
+| 1268 | [Bug] `file.close` over the control channel quits and discards unsaved changes without a p | FIXED | execute() refuses discarding dirty docs without force:true |
+| 1266 | File ▸ Options: a pane label wider than the nav column (170 px) runs over the divider — ru | NEEDS DECISION | feature request, deferred |
+| 1265 | Cut does not write to the clipboard: Paste inserts the last copied content (data loss). Co | FIXED | ribbon + context-menu Cut now write system clipboard |
+| 1264 | Persistent default formatting for new documents (Normal template), and RTF losing the defa | NEEDS DECISION | feature request, deferred |
+| 1263 | FR - Tabbed browsing | NEEDS FIX | open bug, not yet addressed |
+| 1252 | [WordCraft] HIghlight in darkmode not visible for black text. | NEEDS FIX | open bug, not yet addressed |
+| 1251 | Feature request: Built-in citation and reference management (like EndNote/Zotero) | NEEDS DECISION | feature request, deferred |
+| 1246 | Web: Save does nothing in a cross-origin iframe on Chromium (showSaveFilePicker rejects as | NEEDS FIX | open bug, not yet addressed |
+| 1243 | Copy: Rich text formatting is not placed on the clipboard, so pasting into other apps lose | FIXED | HTML+text now placed on system clipboard (Fragment::to_html + arboard set_html) |
+| 1242 | Table Layout: Height/Width changes apply only to the last row/column when the entire table | FIXED | columnWidth/rowHeight apply to all selected rows/cols |
+| 1241 | [Bug] Right-to-left text direction only seems to work for numbers. | NEEDS FIX | open bug, not yet addressed |
+| 1240 | Save dialog window is 1222x1307 (taller than screen) when running via XWayland on niri; fi | NEEDS FIX | open bug, not yet addressed |
+| 1238 | [Bug] Styles selector becomes empty with attached sample docx file | NEEDS FIX | open bug, not yet addressed |
+| 1237 | [feature] ctrl+ ctrl- for zooming | NEEDS DECISION | feature request, deferred |
+| 1236 | Bookmark Delete doesn't exist | NEEDS FIX | open bug, not yet addressed |
+| 1234 | Link > Place in This Document (does not exist) | NEEDS FIX | open bug, not yet addressed |
+| 1233 | installing error | NOT REPRODUCIBLE | install error, images only |
+| 1232 | WordCraft quits when attempting to display a large document's outline | MITIGATED | nav panes virtualized (mitigation; crash repro still wanted) |
+| 1230 | Object names and certain automatic numbering features are missing. | NEEDS DECISION | feature request, deferred |
+| 1229 | Text Box Feature bug view - [Mac OS] [WordCraft] | OBSOLETE | macOS-only text-box rendering |
+| 1228 | Tab row: Comments / Editing / Share buttons overlap and hide ribbon tabs when the window i | NEEDS FIX | open bug, not yet addressed |
+| 1227 | Feature request: Create with templates | NEEDS DECISION | feature request, deferred |
+| 1225 | Proofing: help users get a Hunspell dictionary (a link and the dictionaries folder now, an | NEEDS FIX | open bug, not yet addressed |
+| 1223 | [Bug] Zoom via ctrl+middle mouse causes scroll and zoom at the same time | NEEDS FIX | open bug, not yet addressed |
+| 1218 | Ctrl+Q clears paragraph formatting but also opens a save dialog | NEEDS FIX | open bug, not yet addressed |
+| 1215 | Bug in scrollbar when dragged | NEEDS FIX | open bug, not yet addressed |
+| 1213 | [WordCraft] Can't type anything under Xwayland in GNOME 50 + arboard not supporting waylan | NEEDS DECISION | feature request, deferred |
+| 1212 | Cannot drag n drop picture | ALREADY FIXED | drop handling present in lib.rs:1391 |
+| 1211 | [WordCraft] Print Option Doesn't show my printers, it converts the word document into pdf  | NEEDS DECISION | feature request, deferred |
+| 1208 | [Bug] Laggy Cursor | NEEDS FIX | open bug, not yet addressed |
+| 1207 | [Feature] Document Tabs & [Bug] importing doc with tabs fails | NEEDS FIX | import failure is a bug; doc-tabs feature needs decision |
+| 1206 | Margins, Orientation, Size, and Columns drop down dialog missing icon and the active setti | NEEDS FIX | menu checkmarks/icons missing |
+| 1201 | Table Layout →  Formula Dialog is missing | NEEDS FIX | open bug, not yet addressed |
+| 1200 | Table  Layout →  Sort Dialog is missing | NEEDS FIX | open bug, not yet addressed |
+| 1199 | Navigation Pane content should align to left | NEEDS FIX | open bug, not yet addressed |
+| 1198 | Tables don't Delete correctly | NEEDS FIX | open bug, not yet addressed |
+| 1197 | TOC: Update table of contents missing | NEEDS FIX | open bug, not yet addressed |
+| 1196 | Provide pre-built Docker images on GHCR or Docker Hub | NEEDS DECISION | feature request, deferred |
+| 1192 | Proposal: LawCraft, legal drafting tools for WordCraft | NEEDS DECISION | feature request, deferred |
+| 1189 | Ten catalogues are ~397 keys behind the leaders (pt-br among them): equation, citation and | NEEDS DECISION | feature request, deferred |
+| 1188 | Bug Ctrl+A | NEEDS FIX | open bug, not yet addressed |
+| 1186 | [WordCraft] It's flickering after been updated to version 0.6.1 this morning. Thank You. | NOT REPRODUCIBLE | “flickering”, no OS/hw info |
+| 1183 | [Feature Request] Need KeyTips for Table Design and Table Format Ribbon | NEEDS DECISION | feature request, deferred |
+| 1182 | Random placeholder profile icon at the top right | NEEDS FIX | open bug, not yet addressed |
+| 1181 | [WordCraft] Facing (mirror) margins do not load correctly from a .docx file. I also have S | NEEDS FIX | open bug, not yet addressed |
+| 1178 | Modify styles page does not have a font selector | NEEDS FIX | open bug, not yet addressed |
+| 1174 | DOCX: legacy form fields (FORMCHECKBOX/FORMTEXT) are not drawn and lose ffData on save; ro | NEEDS FIX | open bug, not yet addressed |
+| 1173 | Picture Adjustments compound instead of re-applying from the original (transparency 80% →  | NEEDS FIX | open bug, not yet addressed |
+| 1171 | Fonts embedded in a .docx are not used for layout or rendering (text falls back to Liberat | NEEDS FIX | open bug, not yet addressed |
+| 1169 | [bug] Typing stops after a few characters on XWayland when fcitx5 XIM is connected | ALREADY FIXED | focus guard already present (canvas.rs:1226-30) |
+| 1167 | [Feature Request] Surface a visible hint when a proofing dictionary isn't installed | NEEDS DECISION | feature request, deferred |
+| 1160 | AGENTS.md / CLAUDE.md link to `storytold/craftrules`, which returns 404 for contributors | NEEDS FIX | open bug, not yet addressed |
+| 1159 | Bulleted lists: bullet doesn't move with the text when paragraph alignment is changed (cen | NEEDS FIX | open bug, not yet addressed |
+| 1158 | Layout: text in an earlier column doesn't wrap around a shape anchored in a later column | NEEDS FIX | open bug, not yet addressed |
+| 1156 | File › Print: preview is small and can't be zoomed; it should fill the pane, with a zoom s | NEEDS FIX | open bug, not yet addressed |
+| 1155 | Finnish spelling, grammar and hyphenation through Rust Voikko | NEEDS FIX | open bug, not yet addressed |
+| 1148 | Dark theme: ruler margin and text areas have inverted shading (text area is darker than th | FIXED | dark ruler/ruler_margin tokens swapped back |
+| 1129 | Startup: a blank document is created behind the File (Backstage) Home page; Back shows it  | NEEDS FIX | open bug, not yet addressed |
+| 1128 | The interface-translation audit is red on main: 2 Mailings labels bypass translation, and  | NEEDS FIX | open bug, not yet addressed |
+| 1126 | White mouse cursor (I-Beam) on a white background | NEEDS FIX | open bug, not yet addressed |
+| 1124 | File (Backstage): add a "Close" item to the side menu, after "Export" | NEEDS DECISION | feature request, deferred |
+| 1122 | [WordCraft] Read Aloud on the Review Tab opens a CLI window during TTS. | OBSOLETE | Windows console window during TTS |
+| 1119 | [WordCraft] Windows Magnifier now follows the text insertion point, but ignores the Return | OBSOLETE | Windows Magnifier integration |
+| 1116 | Layout: a paragraph ending above footnotes needs its space after clear of the separator (p | NEEDS FIX | open bug, not yet addressed |
+| 1113 | Feature Request: Add Advanced Page Numbering and Formatting Options | NEEDS DECISION | feature request, deferred |
+| 1111 | macOS: pinch zoom isn't anchored at the pointer; ribbon groups don't collapse in narrow wi | OBSOLETE | macOS pinch part (ribbon-collapse half stays, see 1228/897) |
+| 1110 | Narrow window: ribbon tabs run under the Comments / Editing / Share buttons | NEEDS FIX | open bug, not yet addressed |
+| 1109 | Perf: every edit and zoom step re-renders whole pages on the CPU | NEEDS FIX | open bug, not yet addressed |
+| 1103 | MacOS: File is considered corrupt after setting WordCraft as the default application | OBSOLETE | macOS LaunchServices default-app behavior |
+| 1093 | Disappearing blinking cursor when certain UI elements are clicked | NEEDS FIX | open bug, not yet addressed |
+| 1091 | Wordcraft lags when the window enlarged | NEEDS FIX | open bug, not yet addressed |
+| 1086 | Add clear hover hints (tooltips) to UI controls | NEEDS DECISION | feature request, deferred |
+| 1085 | [WordCraft] When creating empty comment, one cannot delete it. | NEEDS FIX | open bug, not yet addressed |
+| 1082 | [WordCraft] Comment function - not able to reply, resolve or delete | NEEDS FIX | open bug, not yet addressed |
+| 1081 | Parity: save as Word 2003 XML Document (.xml, WordprocessingML 2003) | NEEDS DECISION | feature request, deferred |
+| 1080 | wordcraft-cli text drops bullet and number labels (the #434 fix covered convert to TXT onl | FIXED | CLI text uses txt exporter (labels) |
+| 1079 | Parity: encrypted .doc — open password-protected Word 97–2003 files (RC4, XOR) | NEEDS DECISION | feature request, deferred |
+| 1078 | Mouse pointer disappears over table selection areas while dragging/scrolling | NEEDS FIX | open bug, not yet addressed |
+| 1077 | support for forms, read-only parts, selectors, etc | NEEDS DECISION | feature request, deferred |
+| 1073 | lenovo Chromebook, IME not working on Chromebook Crostini Wayland - fcitx5 works in mousep | NEEDS FIX | open bug, not yet addressed |
+| 1067 | =rand() / =lorem() sample text like in Word | NEEDS FIX | open bug, not yet addressed |
+| 1065 | Middle Click Document Scrolling (Autoscrolling) | NEEDS DECISION | feature request, deferred |
+| 1063 | No setting for a Hunspell dictionaries folder (WORDCRAFT_DICTIONARIES doesn't reach apps s | NEEDS DECISION | feature request, deferred |
+| 1062 | Saving ignores "remove personal information" / "remove date and time" (authors, dates and  | NEEDS FIX | open bug, not yet addressed |
+| 1058 | [WordCraft] Feature request: Mendeley support for citations (import .bib/.ris, Mendeley Ci | NEEDS DECISION | feature request, deferred |
+| 1055 | Comments: an option to show a comment only for the selected text (default stays as in Word | NEEDS DECISION | feature request, deferred |
+| 1054 | Parity: ODT — footnotes, endnotes and comments (text:note, office:annotation) | NEEDS DECISION | feature request, deferred |
+| 1053 | Parity: RTF — footnotes, endnotes and comments (\footnote, \annotation) | NEEDS DECISION | feature request, deferred |
+| 1047 | Font Import | NEEDS FIX | open bug, not yet addressed |
+| 1045 | [WordCraft] Proof language locked to English US | NEEDS FIX | open bug, not yet addressed |
+| 1039 | Eraser: borders beside vertically merged cells merge or hide, as in Word | NEEDS FIX | open bug, not yet addressed |
+| 1037 | Track Changes: a tracked deletion inside a field result (e.g. a =SUM(ABOVE) subtotal) is r | NEEDS FIX | open bug, not yet addressed |
+| 1034 | Saving a .docx silently drops settings and parts the model doesn't represent (compat setti | NEEDS FIX | silent compat-settings drop (data-loss class) |
+| 1031 | Multi-select text with Ctrl | NEEDS FIX | open bug, not yet addressed |
+| 1026 | Double-click doesn't open header/footer editing until one exists, and the footer is unreac | NEEDS FIX | open bug, not yet addressed |
+| 1022 | Paperpile plugin use | NEEDS DECISION | feature request, deferred |
+| 1019 | Clicking on (and holding) the ToolBar makes the document scroll while you are holding | NEEDS FIX | open bug, not yet addressed |
+| 1018 | Hebrew not fully supported with rtl | NEEDS DECISION | feature request, deferred |
+| 1015 | Accessibility: Save Changes dialog needs screen-reader announcements and reliable focus ma | NEEDS FIX | open bug, not yet addressed |
+| 1014 | Ctrl + click and drag should copy the object | NEEDS FIX | open bug, not yet addressed |
+| 1013 | 2 clicks on a comment box makes it unselected instead of moving the cursor inside of the e | NEEDS FIX | open bug, not yet addressed |
+| 1012 | Accessibility: expose ribbon tabs and Alt/F10 KeyTips to screen readers | NEEDS FIX | open bug, not yet addressed |
+| 1011 | Fix duplicate title bars on Linux | NEEDS FIX | open bug, not yet addressed |
+| 1010 | [insert] Dragging a shape retains the text, equations, tables, and shapes behind it in dra | NEEDS FIX | open bug, not yet addressed |
+| 1008 | Markdown table round-trip moves or drops content in code-span cells | NEEDS FIX | open bug, not yet addressed |
+| 1007 | Down arrow from the start of the line above a table skips the table | NEEDS FIX | open bug, not yet addressed |
+| 1002 | [ui] Equation elements have mismatched and errant background colors | NEEDS FIX | open bug, not yet addressed |
+| 1001 | Require a test, or a stated reason for none, in every pull request | NEEDS DECISION | feature request, deferred |
+| 999 | Page background picture/texture fill is not drawn, and is removed on save | NEEDS FIX | open bug, not yet addressed |
+| 998 | Radar and stock charts render as blank space, with no placeholder or warning | NEEDS FIX | open bug, not yet addressed |
+| 997 | Saving replaces Office 2016 charts (cx:chart) with their fallback pictures and drops the c | NEEDS FIX | open bug, not yet addressed |
+| 996 | Spellchecker doesn't work on woodcraft Mac OS Sillicon | OBSOLETE | macOS-only env; suggestion-pick needs Linux repro |
+| 995 | Single-page view setting is not preserved when reopening a document | NEEDS DECISION | feature request, deferred |
+| 993 | i18n: Add Italian language support (UI, spell checker, thesaurus) | NEEDS DECISION | feature request, deferred |
+| 992 | Superscript is bugged | NEEDS FIX | open bug, not yet addressed |
+| 991 | Focus button doesn't work. | NOT REPRODUCIBLE | one line, no repro |
+| 989 | [WordCraft] Quick panel overlap text size/font selector | NEEDS FIX | open bug, not yet addressed |
+| 988 | Increase the size of toolbar icons in the ribbon | NEEDS FIX | open bug, not yet addressed |
+| 987 | Flaky test: native print PDFs differ by their creation time | NEEDS FIX | open bug, not yet addressed |
+| 984 | [WordCraft] Request for android version of the wordcraft and gridcraft | OBSOLETE | Android port request (no mobile target) |
+| 981 | CLI: render silently accepts invalid or duplicate page and scale options | FIXED | strict --page/--scale parsing + tests |
+| 980 | [WordCraft] F11 (full screen mode) doesn't exist | NEEDS FIX | open bug, not yet addressed |
+| 979 | WordCraft 0.5.0 crashes on macOS 12.7.6 (Intel Mac) | OBSOLETE | macOS 12 Intel GPU crash |
+| 975 | Ruler: tab stops can't be set, moved or cleared with the pointer; Tabs dialog loses un-Set | NEEDS FIX | open bug, not yet addressed |
+| 974 | No CI on most pull requests: `cargo xtask ci` isn't enforced, and releases ship without ru | NEEDS DECISION | feature request, deferred |
+| 971 | Tables: AutoFit in a nested table, whole-cell shading for selections through a table, Shif | NEEDS FIX | open bug, not yet addressed |
+| 969 | Question: should AutoCorrect be off by default in headless runs? | NEEDS FIX | open bug, not yet addressed |
+| 968 | `--help` on the GUI binary and on CLI subcommands is treated as a file or rejected | FIXED | subcommand --help prints usage; GUI --help added |
+| 967 | para.keepNext, keepLines, pageBreakBefore, widowControl: accept {"value": bool} like forma | NEEDS FIX | open bug, not yet addressed |
+| 966 | Layout: keep with next leaves a heading alone at the bottom of a page when the next paragr | NEEDS FIX | open bug, not yet addressed |
+| 965 | insert.picture: the next typing command deletes the picture | NEEDS FIX | open bug, not yet addressed |
+| 963 | [WordCraft] Document content does not load correctly | NOT REPRODUCIBLE | no repro info |
+| 962 | Tables: dragging a selected cell's border moves it in that cell's row only | NEEDS FIX | open bug, not yet addressed |
+| 961 | Typing: Alt+numpad decimal character entry (ANSI/OEM Alt codes) | NEEDS FIX | open bug, not yet addressed |
+| 960 | [WordCraft] Double click on top of page to create header | NEEDS FIX | open bug, not yet addressed |
+| 959 | Bring back 'Clippy' and other assistants pretty please😭 | NEEDS DECISION | feature request, deferred |
+| 957 | Ticket to close tickets: already done, duplicates, or off-topic | NEEDS FIX | open bug, not yet addressed |
+| 955 | WordCraft language | NEEDS FIX | open bug, not yet addressed |
+| 954 | macos: CMD + arrow left/right behaves incorrectly | OBSOLETE | macOS Cmd+arrow keybinding |
+| 951 | [Feature Request] Add Italian (it-IT) proofing dictionary | NEEDS DECISION | feature request, deferred |
+| 949 | [WordCraft] Dictate and transcribe | NEEDS DECISION | feature request, deferred |
+| 938 | BUG | NOT REPRODUCIBLE | no repro info |
+| 918 | Missing feature: Autosave control and reopening last open documents (and page positions) a | NEEDS DECISION | feature request, deferred |
+| 917 | [bug] Page shakes while typing | NOT REPRODUCIBLE | no repro info |
+| 916 | [WordCraft] cross-references don't open | NEEDS FIX | open bug, not yet addressed |
+| 911 | [WordCraft] the menu next to undo/redo is not working | NOT REPRODUCIBLE | no repro info |
+| 905 | Bug Report: Automatic Scrolling Does Not Work When Selecting Text by Dragging the Mouse | NOT REPRODUCIBLE | no repro info |
+| 903 | [Feature Request] Add Italian (it-IT) UI language support | NEEDS DECISION | feature request, deferred |
+| 900 | [WordCraft] ... doesnt work and theme | NOT REPRODUCIBLE | no repro info |
+| 898 | Zotero citation fields buggy (not closed) when introduced at the end of a document and typ | NEEDS DECISION | feature request, deferred |
+| 897 | Ribbon tab strip: tabs that don't fit hide under Comments / Editing / Share, so Table Desi | NEEDS FIX | open bug, not yet addressed |
+| 895 | [REQUEST] - Support for FRA Language | NEEDS DECISION | feature request, deferred |
+| 886 | Saving a .docx silently drops DrawingML shapes (data loss, no warning) | NEEDS FIX | open bug, not yet addressed |
+| 884 | Shapes with square wrap type not wrapping properly | NEEDS FIX | open bug, not yet addressed |
+| 883 | [Feature request] Add add-ins | NEEDS DECISION | feature request, deferred |
+| 880 | [WordCraft] .doc files import bug, images does not load. | NEEDS FIX | open bug, not yet addressed |
+| 878 | fix(references): updating an imported TOC field writes the entries outside the field and k | NEEDS FIX | open bug, not yet addressed |
+| 877 | fix(docx): saving drops w:dirty from field begin markers, so Word no longer refreshes an i | NEEDS FIX | open bug, not yet addressed |
+| 867 | [Feature Request] Portable Mode: write preferences and settings in the application folder  | NEEDS DECISION | feature request, deferred |
+| 866 | get_text / wordcraft-cli text include deleted tracked text inline | FIXED | document.text/CLI text read as final |
+| 865 | MCP/commands: styles.modify rejects hex colours that format.color accepts; CharProps/ParaP | NEEDS FIX | open bug, not yet addressed |
+| 863 | .odt Heading of a document is missing. | NEEDS FIX | open bug, not yet addressed |
+| 860 | Language-related commands (proofing language / text language) are disabled; document defau | NEEDS FIX | open bug, not yet addressed |
+| 851 | WordPerfect-Style Reveal Codes for Precise Document Formatting and Troubleshooting | NEEDS DECISION | feature request, deferred |
+| 845 | Windows Explorer thumbnails for files (and folder previews) | OBSOLETE | Windows Explorer shell extension |
+| 834 | Package for arch linux AUR | NEEDS FIX | open bug, not yet addressed |
+| 824 | Supporting Farsi fonts | NEEDS DECISION | feature request, deferred |
+| 822 | 100% scaling is incorrect | NEEDS FIX | open bug, not yet addressed |
+| 820 | [ui] Add floating Paste Options widget (Ctrl) after paste | NEEDS DECISION | feature request, deferred |
+| 816 | [clipboard] Copying equations exports plain linear text instead of OMML/MathML to Word | NEEDS FIX | open bug, not yet addressed |
+| 808 | [WordCraft] Cannot open the program | OBSOLETE | Windows craft-apps launch |
+| 799 | Harper grammar checker integration | NEEDS DECISION | feature request, deferred |
+| 794 | 中文乱码问题，期望修复 | NOT REPRODUCIBLE | no repro info |
+| 793 | [REQUEST]: add some man-made C, and stop using AI! | NEEDS DECISION | feature request, deferred |
+| 789 | Top Ribbon and Spell Check Issues | NOT REPRODUCIBLE | no repro info |
+| 788 | Selecting multiple non-contiguous blocks of text | NEEDS FIX | open bug, not yet addressed |
+| 786 | pt_BR spell check: pt module reading the installed VERO dictionary | NEEDS FIX | open bug, not yet addressed |
+| 785 | [Feature Request] enable voice dictation | NEEDS DECISION | feature request, deferred |
+| 784 | Reduce flatpak permissions | NEEDS FIX | open bug, not yet addressed |
+| 781 | [Feature Request] MathType-like WYSIWYG Math Formula Editor | NEEDS DECISION | feature request, deferred |
+| 780 | Images also display incorrectly | NOT REPRODUCIBLE | image only |
+| 778 | Existing list does not support XLSX/XLS, recipient list shows garbled text, and filter fun | NEEDS DECISION | feature request, deferred |
+| 777 | [WordCraft] Incorrect paragraph breaks when pressing Enter | NEEDS FIX | open bug, not yet addressed |
+| 775 | Styleref in mergefield | NEEDS FIX | open bug, not yet addressed |
+| 767 | UI rendering issue after opening Word docx files | NEEDS FIX | open bug, not yet addressed |
+| 764 | LanguageTool: keep the API key in the OS credential store, not ui.json | NEEDS FIX | open bug, not yet addressed |
+| 763 | LanguageTool: check mixed-language paragraphs in each run's language | NEEDS FIX | open bug, not yet addressed |
+| 762 | LanguageTool: check headers, footers, notes and text boxes too | NEEDS FIX | open bug, not yet addressed |
+| 754 | CI: run cargo xtask ci on pull requests and main | NEEDS DECISION | feature request, deferred |
+| 753 | Spellcheck dictionary needs to be expanded | NEEDS FIX | open bug, not yet addressed |
+| 749 | Page size looks wrong when set to small margins, doesn't render properly | NEEDS FIX | open bug, not yet addressed |
+| 738 | WordCraft does not open | OBSOLETE | Windows installable/portable launch |
+| 735 | Per-language rules for typing, dates and proofing, keyed by the text's language (w:lang) | NEEDS FIX | open bug, not yet addressed |
+| 714 | [Feature request] Options in table style editor | NEEDS DECISION | feature request, deferred |
+| 685 | Insert a chart backed by an embedded .xlsx workbook (like Word's Insert > Chart) | NEEDS FIX | open bug, not yet addressed |
+| 680 | Voice Typing not working. | NEEDS FIX | open bug, not yet addressed |
+| 679 | HTML and Markdown export write javascript: and other non-web hyperlink targets into href | FIXED | HTML/MD filtered before; ODT/LaTeX filtered now |
+| 670 | Palatino Linotype / Book Antiqua fall back to Times New Roman on macOS instead of Palatino | OBSOLETE | macOS font-substitution table |
+| 662 | Home tab overflows at common window widths | NEEDS FIX | open bug, not yet addressed |
+| 660 | Icons painted at off-grid sizes outside the ribbon | NEEDS FIX | open bug, not yet addressed |
+| 650 | Browser / cloud version (e.g., integrated with nextcloud) | NEEDS DECISION | feature request, deferred |
+| 646 | Cannot open two documents at once | NEEDS FIX | open bug, not yet addressed |
+| 644 | macOS launch failure on Intel MacBook Pro — Metal shader compilation and surface creation  | OBSOLETE | macOS Metal launch failure |
+| 641 | File > Print: add Word's print settings (Current Page, custom page range, copies, printer, | NEEDS DECISION | feature request, deferred |
+| 638 | Design tab: style set gallery overlaps the Colors and Fonts buttons in Document Formatting | NEEDS FIX | open bug, not yet addressed |
+| 634 | support for mobile screens | NEEDS DECISION | feature request, deferred |
+| 619 | A compact single-line ribbon | NEEDS FIX | open bug, not yet addressed |
+| 618 | Integrate with Himmelblau, for full o365 like experience? | NEEDS DECISION | feature request, deferred |
+| 613 | Printing and export is not working under Linux | NEEDS FIX | open bug, not yet addressed |
+| 602 | ~50ms stroke/ink rendering delay on canvas (shared render pipeline) | NEEDS FIX | open bug, not yet addressed |
+| 599 | Unable to select partial/full text/terms inside equation blocks using mouse or Shift + Arr | NEEDS FIX | open bug, not yet addressed |
+| 590 | The link to the wordcraft website is broken | NEEDS FIX | open bug, not yet addressed |
+| 585 | wordcraft ui is stiff. there is no fluid animation | NEEDS DECISION | feature request, deferred |
+| 582 | Let an end user add a font without rebuilding | NEEDS DECISION | feature request, deferred |
+| 575 | Languagetool integration for spell and grammar checking | NEEDS DECISION | feature request, deferred |
+| 554 | Performance: large documents (500+ pages, many pictures and tables) stay responsive | NEEDS FIX | open bug, not yet addressed |
+| 537 | Header color is still black even in light theme in linux | NEEDS FIX | open bug, not yet addressed |
+| 534 | Font, typesetting, and paragraph issues | NEEDS DECISION | feature request, deferred |
+| 533 | Cannot write anything with release 0.5.0 Windows x64 installer | OBSOLETE | Windows MSI installed build only |
+| 529 | Add RTL for the tables | NEEDS DECISION | feature request, deferred |
+| 525 | fix(macos): shipped DMG app fails strict signature verification with FinderInfo metadata | OBSOLETE | macOS DMG signature |
+| 523 | Window decorations and title bar inconsistent with VectorCraft / PhotoCraft | NEEDS FIX | open bug, not yet addressed |
+| 518 | Feature request: AutoSave & version history to a storage target you own (local/NAS, Google | NEEDS DECISION | feature request, deferred |
+| 498 | Request: Add support for Indonesian in Proofing Language | NEEDS DECISION | feature request, deferred |
+| 403 | Feature Request: Extensible Plugin System for WordCraft | NEEDS DECISION | feature request, deferred |
+| 375 | Copy/past feature doesn't work with Images | NEEDS DECISION | feature request, deferred |
+| 374 | feat(distribution): provide reliable CLI access with desktop packages | NEEDS DECISION | feature request, deferred |
+| 373 | feat(agents): guide desktop users through CLI and MCP setup | NEEDS FIX | open bug, not yet addressed |
+| 358 | Word documents containing images become misformatted. | NEEDS FIX | open bug, not yet addressed |
+| 336 | UI localization: translation mechanism (and Polish as a first community language?) | NEEDS FIX | open bug, not yet addressed |
+| 324 | won't start | OBSOLETE | author withdrew (wrong version) |
+| 322 | Parity: View › Window — New Window, Arrange All, View Side by Side, Synchronous Scrolling, | NEEDS DECISION | feature request, deferred |
+| 299 | Cursor corlor not changin, is not visible. PDF EDITOR and WORDCRAFT // no languaje changes | NEEDS FIX | open bug, not yet addressed |
+| 285 | [Bug] Software interface garbled characters | OBSOLETE | macOS CJK font env; needs Linux repro |
+| 279 | WordCraft cannot open files in the "Word Document" format. | NEEDS FIX | open bug, not yet addressed |
+| 211 | Arabic Letter (Unicode not rendering) | NEEDS FIX | open bug, not yet addressed |
+| 201 | Linux (deb): no update reminder and no one-click update | NEEDS FIX | open bug, not yet addressed |
+| 199 | arabic support | NEEDS DECISION | feature request, deferred |
+| 197 | How about Wincraft? | NEEDS FIX | open bug, not yet addressed |
+| 187 | [Bug] Open silently replaces an edited document and clears its Undo history | ALREADY FIXED | guarded since 802ba30 (SaveChanges prompt) |
+| 184 | AutoSave: off per document by default, with an "AutoSave all documents" option | NEEDS DECISION | feature request, deferred |
+| 170 | Crash on startup on Windows with Intel UHD Graphics (Access Violation 0xc0000005 in igvk64 | OBSOLETE | Windows Intel Vulkan driver crash |
+| 168 | [Bug] PDF, PNG and TXT exports clear the editable document’s Edited indicator | ALREADY FIXED | guarded since 802ba30 (keeps_everything) |
+| 167 | still needs margin and margin comments implementation same as word | NEEDS DECISION | feature request, deferred |
+| 142 | Broken shape tool | NEEDS FIX | open bug, not yet addressed |
+| 118 | Change font | NEEDS FIX | open bug, not yet addressed |
+| 106 | "a newer version of wordcraft is installed" error | NEEDS FIX | open bug, not yet addressed |
+| 105 | [Feature Request] Support for "CraftCloud", decentralized encrypted cloud extension | NEEDS DECISION | feature request, deferred |
+| 100 | [Feature Request] Support Hunspell / system dictionaries and configurable proofing languag | NEEDS DECISION | feature request, deferred |
+| 97 | PDF export: REF cross-reference field prints U+FFFC instead of its result | NEEDS FIX | open bug, not yet addressed |
+| 95 | Cant exit bullet list using enter or backspace | NEEDS FIX | open bug, not yet addressed |
+| 80 | macros not working | NEEDS FIX | open bug, not yet addressed |
+| 78 | Linux (GNOME Wayland): window title bar doesn't match the desktop theme | NEEDS FIX | open bug, not yet addressed |
+| 73 | Windows intaller won't work if you have other Art apps already installed | OBSOLETE | Windows MSI ProductCode conflict |
+| 70 | Missing feature: Show all | NEEDS DECISION | feature request, deferred |
+| 68 | Scaling issue on fedora 1080p. | NOT REPRODUCIBLE | no repro info |
+| 66 | Full Arabic and RTL Support | NOT REPRODUCIBLE | no repro info |
+| 64 | App won't install. Says that a newer version is already installed, but I never installed i | OBSOLETE | Windows MSI install error |
+| 63 | Arabic text not displaying correctly | NEEDS FIX | open bug, not yet addressed |
+| 56 | Language pack issue | NOT REPRODUCIBLE | no repro info |
+| 51 | Big problem | OBSOLETE | Windows MSI ProductCode conflict |
+| 48 | rtl texts format is cursed | NOT REPRODUCIBLE | no repro info |
+| 47 | just dont open itself and files | NOT REPRODUCIBLE | empty body |
+| 42 | Section breaks not displaying | NOT REPRODUCIBLE | no repro info |
+| 40 | English (UK) spelling dictionary | NEEDS FIX | open bug, not yet addressed |
+| 39 | EXE Installer | OBSOLETE | EXE installer (no Windows target) |
+| 25 | Choice of language for correction not implemented yet | NOT REPRODUCIBLE | no repro info |
+| 19 | Bug Report: Incorrect RTL (Right-to-Left) Text Rendering and Alignment | NOT REPRODUCIBLE | no repro info |
+| 18 | The styles not working on the portable | NOT REPRODUCIBLE | no repro info |
+| 15 | Print dialog and text render | NOT REPRODUCIBLE | no repro info |

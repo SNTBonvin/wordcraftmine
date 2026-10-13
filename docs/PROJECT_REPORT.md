@@ -1,104 +1,156 @@
 # WordCraft Project Report
 
+*Status: 2026-10-13 · branch `fix/open-issues-and-linux-deb-only` · version 0.6.1. Written from the
+sources (no guessing from filenames); every claim cites a path. An earlier draft of this file
+circulated with an unverified "never-crash violations" section — that section was wrong (the cited
+`panic!`s are test-only) and is corrected in §6 below.*
+
 ## 1. Overview
-WordCraft is an open-source, Rust-native word processor designed for high-performance document creation with a target of Microsoft Word parity. It is developed as part of the "ArtCraft" suite of creative tools.
 
-- **Purpose**: To provide a clean-room, open-source alternative to proprietary word processors, focusing on speed, openness, and AI-agent controllability.
-- **Target Users**: Writers, designers, and professionals who require a familiar Word-like workflow (ribbon, styles, track changes) but prefer open-source software.
-- **Maturity**: Currently in **Alpha**. It implements approximately 88% of Word's ribbon features. The team estimates it is ~60% toward replacing Word for general professional work.
+WordCraft (`https://github.com/storytold/wordcraft`) is a clean-room, open-source, Rust-native word
+processor aiming at Microsoft Word parity — ribbon, styles, tables, track changes, references, mail
+merge — plus agent control (every action is a command). Target users: writers and professionals who
+want a Word-like workflow without proprietary software, and AI agents driving documents over CLI /
+MCP / control channel. Maturity: **alpha** (`README.md`: ~88% of ribbon features have commands,
+~60% of the way to replacing Word for general work). 271 GitHub issues were open at the time of
+writing (all filed 2026-10-08…13, none labelled).
 
-## 2. Tech Stack
-- **Language**: Rust (Edition 2024, version 1.90).
-- **UI Framework**: `egui` / `eframe` (GPU-accelerated via `wgpu`).
-- **Rendering**: `vello_cpu` for rasterization, `krilla` for PDF export.
-- **Fonts/Shaping**: `skrifa`, `harfrust`.
-- **Formats**: OOXML (`docx`), legacy `.doc` (`docbin`), and others (Markdown, HTML, RTF, ODT, LaTeX) via a shared intermediate model.
-- **Packaging**: `nfpm` (Linux .deb/.rpm), `WiX v5` (Windows .msi), `hdiutil` (macOS .dmg), `Trunk` (WASM/Web).
-- **Toolchain**: Cargo, GitHub Actions for CI.
+## 2. Tech stack
+
+- **Language**: Rust, edition 2024, `rust-version = "1.90"` (`Cargo.toml` workspace root).
+- **UI**: `egui`/`eframe` 0.36 over `wgpu` (`apps/wordcraft`, `crates/ui-egui`). Web front end via
+  eframe + `Trunk` (`apps/wordcraft-web`, `Trunk.toml`).
+- **Rendering/export**: `vello_cpu` 0.2 (raster), `krilla` 0.8 (PDF), `image` 0.25.
+- **Text**: `skrifa` 0.47 + `harfrust` 0.13 (shaping), `wuff` 0.2.9 (WOFF), `unicode-bidi`,
+  `unicode-segmentation`, `unicode-linebreak`, `unicode-script`.
+- **Formats**: `quick-xml` 0.41 + `zip` 3 + `cfb` 0.15 (OOXML / legacy `.doc`), `miniz_oxide`.
+- **Infra**: `serde`/`serde_json`, `thiserror`, `rayon`, `regex`, `kurbo`; clipboard `arboard` 3.6
+  (+ `wl-clipboard-rs`, XDG portals), dialogs `rfd`, printing via git dep `craft-print`.
+- **Toolchain**: Cargo workspace (`crates/*`, `apps/*`, `xtask`), `cargo xtask ci` gate,
+  GitHub Actions (thin wrappers over `storytold/craft-common-actions@main`), `nfpm` for the .deb.
 
 ## 3. Architecture
-### Directory Tree
-- `apps/`: Binaries (`wordcraft` desktop, `wordcraft-cli`, `wordcraft-web`).
-- `crates/`: Core logic divided into layers (L0-L6).
-- `packaging/`: Platform-specific build scripts (linux, macos, windows, web).
-- `xtask/`: Custom cargo tasks for parity, layers, and assets.
-- `docs/`: Parity checklists, architecture, and roadmap.
-- `assets/`: App icons, fonts, and linguistic data.
 
-### Main Modules (Layers)
-| Layer | Crate | Responsibility |
-|---|---|---|
-| L0 | `geom` | Basic units, rectangles, and measurement parsing. |
-| L1 | `doc`, `fonts`, `proof` | Document model, font database/shaping, and linguistic proofing. |
-| L2 | `layout`, `docx`, `formats` | Pagination, line breaking, OOXML I/O, and other format converters. |
-| L3 | `render`, `pdf` | Rasterizing the display list to images or PDF. |
-| L4 | `engine` | `Session` management, undo/redo, and the **Command Registry** (422 commands). |
-| L5 | `mcp` | Model Context Protocol server for AI agent integration. |
-| L6 | `ui-egui` | The visual front-end (ribbon, canvas, dialogs). |
+| Directory | Purpose |
+|---|---|
+| `apps/wordcraft` (`src/main.rs`) | Native desktop binary (eframe/wgpu); clipboard, file dialogs, control server, printing, logging |
+| `apps/wordcraft-cli` (`src/main.rs`) | Headless `convert/info/text/inspect/render/run/commands/parity/mcp/zotero` |
+| `apps/wordcraft-web` (`src/main.rs`, `web.rs`) | Browser build (WebGPU + WebGL2 fallback), `trunk build` → `dist/web` |
+| `crates/geom` (L0) | Units (pt/twip/EMU/in/cm), rects, measurement parsing |
+| `crates/doc` (L1) | Document model (stories/paras/runs/tables/styles/fields/notes/comments/revisions) + edit primitives |
+| `crates/fonts` (L1) | Font DB (bundled OFL + system), metrics/outlines/shaping, Word substitution (`word.rs`) |
+| `crates/proof` (L3) | Spelling/grammar/hyphenation (EN list, PL Hunspell) |
+| `crates/layout` (L2) | Line breaking, pagination, tables, headers/footers, hit testing |
+| `crates/docx` (L2) | OOXML read/write (ECMA-376); bounded reader (`package.rs: Package::open_limited`) |
+| `crates/docbin` (L2) | Word 97–2003 `.doc` reader ([MS-DOC] over `cfb`) |
+| `crates/formats` (L2) | TXT/MD/HTML/RTF/ODT/LaTeX via intermediate `model::Flow` |
+| `crates/metafile` | WMF/EMF → neutral vector model |
+| `crates/render` (L3) | `vello_cpu` rasteriser, PNG/JPEG export |
+| `crates/pdf` (L3) | `krilla` PDF (subset fonts, selectable text, links/outline) |
+| `crates/engine` (L4) | `Session`, undo, **command registry** (`src/cmd/*.rs`), feature catalog, I/O dispatch |
+| `crates/mcp` (L5) | MCP server (headless or bridged to the app) |
+| `crates/control-key` | Control-port key file location/reading |
+| `crates/zotero` | Zotero word-processor wire protocol vs engine `Session` |
+| `crates/ui-egui` (L6) | Ribbon front end (swappable); `WordApp::run` = user path, `WordApp::execute` = programmatic path |
+| `packaging/linux` | `package.sh` (builds + stages), `nfpm.yaml` (deb metadata), `.desktop`/MIME/AppStream, `postinst.sh` |
+| `packaging/web`, `apps/wordcraft-web` | Static-site build (dev artifact; not a release target) |
+| `xtask` | `ci` (fmt, clippy `-D warnings`, tests, assets, layers, wasm), `parity`, `layers`, `assets`, `version`, `stats`, `ico`, `corpus` |
+| `docs/` | Parity checklists, architecture, roadmap, protocols, and the Phase reports in §6 of `CHANGES_SUMMARY.md` |
+| `assets/` | `app-icon/` (original SVG + generated PNGs), OFL fonts, hyphenation/spelling data; every file has an `ATTRIBUTION.md` row (enforced) |
+| `contributors/` | Generated `contributors.json` + self-chosen `people.toml`, baked by `crates/ui-egui/build.rs` |
 
-### Data Flow & State
-1. **I/O**: Files are read via `engine::io` $\rightarrow$ `doc::Document`.
-2. **Execution**: Every action is a `CommandSpec` run through `Session::run`.
-3. **Layout**: The `layout` crate incrementally produces a display list of positioned glyphs/boxes.
-4. **Render**: The UI paints the display list using `render` on a GPU canvas.
-5. **Persistence**: Saved back via `engine::io` using the appropriate writer.
+Data flow: files → `engine::io` → `doc::Document`; every action is a `CommandSpec` through
+`Session::run` (undoable, hostile-param fuzzed); `layout` produces positioned display lists;
+the UI paints them (`render`); save/export goes back through `engine::io`. UI state lives in
+`WordApp`/`Session`; prefs in `ui.json`; logs beside prefs. IPC: JSON-lines control channel
+(`ui-egui/control.rs`, key file per `control-key`), MCP over stdio, CLI as subprocess.
 
-## 4. Build and Packaging System
-### Build Scripts
-- **Linux**: `packaging/linux/package.sh` produces AppImages, .deb, .rpm, and .tar.gz.
-- **macOS**: `packaging/macos/package.sh` produces signed and notarized .dmg and .zip.
-- **Windows**: `packaging/windows/package.ps1` produces .msi (via WiX) and portable .zip.
-- **Web**: `packaging/web/package.sh` uses `Trunk` to build WASM.
+## 4. Build and packaging system (post-cleanup: Linux .deb x86_64 only)
 
-### CI/CD
-- **Workflows**: `.github/workflows/` handles release builds, packaging linting, and cross-platform checks (FreeBSD, Windows ARM64).
-- **Quality Gates**: `cargo xtask ci` runs fmt, clippy, tests, asset attribution, and layering checks.
-
-### Release Process
-- Artifacts are named `wordcraft-<version>-<platform>-<arch>.<ext>`.
-- macOS/Windows builds include code-signing and (for macOS) notarization.
+- `packaging/linux/package.sh`: `cargo build --release --locked -p wordcraft -p wordcraft-cli`,
+  stages an FHS tree (`/usr/bin`, `.desktop`, MIME, metainfo, hicolor icons, docs), validates with
+  `desktop-file-validate`/`appstreamcli` when present, then `nfpm package -p deb`. Refuses
+  non-`x86_64` hosts. Default (and only) output: `dist/release/wordcraft-<ver>-linux-x86_64.deb`.
+- `packaging/linux/nfpm.yaml`: `Package: wordcraft`, `Architecture: amd64` (via `NFPM_ARCH`),
+  `Depends: libc6 (>= 2.35), libgcc-s1, libxkbcommon0, libvulkan1 | libegl1`, recommendations for
+  Wayland/X11/Vulkan drivers/portal, `postinst`/`postrm` scripts.
+- CI (`.github/workflows/`): `release.yml` = single `ubuntu-24.04` job (deps → nfpm → build →
+  upload `dist/release/*.deb` on tags/`release`); `printing.yml` = fmt/clippy/tests + wasm check on
+  `ubuntu-24.04` only; `packaging-lint.yml` = static checks via shared action. `freebsd.yml` and
+  `windows-arm64.yml` deleted.
+- Removed: `packaging/macos/` (dmg scripts, `Info.plist.in`, entitlements, cert import),
+  `packaging/windows/` (WiX `.wxs`, ps1 scripts), `packaging/linux/flatpak/` + bundle script,
+  AppImage/rpm/tar.gz/riscv64/aarch64 paths in `package.sh`, macOS/Windows deps in
+  `apps/wordcraft/Cargo.toml`, `.icns`/macOS-only PNG assets, signing/notarization secrets from
+  `release.yml`.
+- Release process (`docs/releasing.md`): bump via `cargo xtask version set`, merge to `release`,
+  CI drafts the GitHub Release with `SHA256SUMS.txt`.
+- Deliberately kept (inert on Linux, noted in `CHANGES_SUMMARY.md`): `#[cfg(target_os =
+  "macos|windows")]` Rust code paths (`apple_events.rs`, graphics/clipboard/region variants),
+  `build.rs` winresource stub (no-op off Windows), web/WASM sources (`cargo xtask wasm` stays green).
 
 ## 5. Testing
-- **Unit/Integration**: ~821 `#[test]` functions.
-- **Property Testing**: 10 blocks for hostile input and round-trips.
-- **Typing Parity**: `crates/engine/src/tests_typing.rs` ensures typing behavior matches Word.
-- **Stability**: `hostile_params_never_panic` tests every command with junk parameters to ensure no crashes.
-- **UI Testing**: `ui_shot` example for headless screenshots.
 
-## 6. Code Quality Findings
-### High Risk: Never-Crash Violations
-The project has a strict "Never Crash" policy (no `unwrap`, `expect`, `panic` in non-test code). However, analysis found numerous violations:
-- **`crates/docx/src/read/math.rs`**: Multiple `panic!` calls during XML parsing of math nodes.
-- **`crates/docx/src/read/diagram.rs`**: Multiple `panic!` calls in diagram parsing.
-- **`crates/engine/src/cmd/ink_shape.rs`**: `panic!` when recognition fails.
-- **`crates/ui-egui/src/lib.rs`**: Numerous `panic!` calls in dialog handling and canvas layout.
-- **General**: Widespread use of `.unwrap()` in `crates/docx` (e.g., `package.rs`, `smart_art.rs`, `xml.rs`).
+- `cargo xtask ci` = `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings`
+  + `cargo test --workspace` + `xtask assets` + `xtask layers` + wasm check. Focused runs:
+  `cargo test -p <crate>`, `cargo test -p wordcraft -p wordcraft-ui-egui`, headless UI shots via
+  `wordcraft-ui-egui --example ui_shot`.
+- Coverage: ~800+ unit/integration tests (`crates/*/src/tests*.rs`, `crates/{docx,engine,mcp,fonts,ui-egui}/tests/`),
+  typing-parity tests (`engine/tests_typing.rs`), hostile-input property tests incl.
+  `hostile_params_never_panic` (every command with junk params), format round-trips + fuzz
+  (`formats/tests.rs`), print stability tests. This work added 10 regression tests (table
+  selection, clipboard HTML, unsafe-link ODT/LaTeX, txt labels, `document.text` final-shown,
+  CLI validation/help, save-changes guard).
+- Gaps: no `cargo audit` integration (tool unavailable here); UI tests need a display or `ui_shot`;
+  system-clipboard *writes* and print spooling can't be covered headlessly; many open issues lack
+  repro tests (see `ISSUES_ANALYSIS.md`); web/E2E coverage is thin.
 
-### Medium Risk: Security & Robustness
-- **Hostile Input**: While `hostile_params_never_panic` exists, the presence of `unwrap()` in `docx` readers suggests potential crash vectors when opening malformed `.docx` files.
-- **Dependency Audit**: `cargo audit` is not integrated into the local environment provided to the agent, but the `Cargo.toml` uses modern versions of key crates.
+## 6. Code quality findings (all verified at the cited lines)
 
-### Documentation Gaps
-- Architecture is well-documented in `docs/architecture.md` and `CLAUDE.md`.
-- Parity is tracked meticulously in `docs/parity-checklist.md`.
+- **Never-crash holds.** Workspace roots carry `#![deny(clippy::unwrap_used, …)]`
+  (e.g. `crates/docx/src/lib.rs:8`, `crates/engine/src/lib.rs:7`); `clippy.toml` allows
+  unwrap/panic/indexing **only in tests**. The `panic!`s previously flagged in
+  `crates/docx/src/read/math.rs:330ff` and `diagram.rs:577ff` sit inside `#[cfg(test)] mod tests`
+  (modules open at `math.rs:313`, `diagram.rs:550`); the `unwrap()`s in `docx/src/package.rs:353`
+  etc. are likewise test-only. `cargo clippy --workspace --all-targets -- -D warnings` is green.
+  Hostile input is bounded (`Package::open_limited`, capped allocations, `*_limited` readers).
+- **Fixed by this work**: clipboard writes missing on Cut paths (`ribbon.rs`, `canvas.rs` — #1265);
+  control-channel `execute` bypassed the save-changes guard (`ui-egui/lib.rs:execute` — #1268);
+  `table.columnWidth`/`rowHeight` ignored multi-selections (`engine/cmd/table.rs` — #1242);
+  ODT/LaTeX exported `javascript:` targets (`formats/odt.rs:224`, `latex.rs:321` — #679 rest);
+  CLI silently defaulted bad `--page`/`--scale` (`apps/wordcraft-cli/main.rs` — #981); dark-ruler
+  tokens swapped (`ui-egui/theme.rs` — #1148).
+- **Remaining risks**: silent model gaps on save (DrawingML shapes #886, `cx:chart` #997,
+  compat settings #1034, background fills #999 — data-loss class, all open); deceased-platform
+  `cfg` code left in tree (audited, inert); `Session::run`'s panic-guard is a last resort, not a
+  licence; clipboard *reads* on Wayland depend on arboard/XDG portal (#1213 open).
+- **Security**: `javascript:`/`vbscript:`/`data:` hrefs now filtered in HTML/MD (pre-existing,
+  `formats/tests.rs`) **and** ODT/LaTeX (new); LanguageTool API key in plaintext `ui.json` (#764,
+  open, needs decision); encrypted `.doc` unsupported (#1079, documented limitation).
+- **Performance**: caret glide tuning (#1208), full-page CPU re-render per edit (#1109),
+  large-document responsiveness (#554) — all open, none regressed here.
+- **Accessibility/i18n**: save-changes dialog a11y (#1015), KeyTips exposure (#1012) open; 10
+  catalogues ~397 keys behind (#1189); translation mechanism (#336) open.
+- **Docs**: parity docs updated for the deb-only scope (`releasing.md`, README, roadmap,
+  file-format table, control protocol); `ROADMAP.md` history left untouched deliberately.
 
-## 7. Dependency Audit
-The project relies on a lean set of high-quality Rust crates:
-- `egui`/`eframe` for UI.
-- `vello_cpu` for rendering.
-- `serde` for serialization.
-- `thiserror` for error handling.
-- `quick-xml` for OOXML processing.
+## 7. Dependency audit
 
-## 8. Prioritized Recommendations
+`cargo audit` is not installed in this environment and was not added (no vendored advisory DB to
+verify against; adding network-fetched audit tooling to CI is a maintainer call). Manual review of
+`Cargo.lock` (v0.6.1): workspace pins are current-generation (`egui`/`eframe` 0.36, `skrifa`
+0.47, `kurbo` 0.13, `quick-xml` 0.41, `zip` 3, `arboard` 3.6, `winit` 0.30); the macOS-only
+`fmv-macos-events`/`objc2*`/`dispatch2` and Windows-only `windows`/`clipboard-win`/`open` edges
+were removed from the lock by this work (18 entries dropped, 1 added: CLI → `wordcraft-formats`);
+one git dependency remains (`craft-print` at a pinned rev). No duplicated/conflicting major
+versions observed. Recommendation: enable `cargo audit` (or `cargo-deny`) in CI — Medium priority.
 
-### High Priority
-1. **Eliminate Panics**: Replace all `unwrap()`, `expect()`, and `panic!()` calls in `crates/` with `Result<T, E>` and proper error propagation. This is a core project requirement ("Never Crash").
-2. **Harden Docx Reader**: Audit the `docx` and `docbin` crates specifically for boundary checks and safe XML parsing to prevent crashes on corrupted files.
+## 8. Prioritized recommendations
 
-### Medium Priority
-3. **Expand Testing**: Increase property-test coverage for the intermediate document model to ensure stability across format conversions.
-4. **CI Integration**: Integrate `cargo audit` directly into `cargo xtask ci` to catch vulnerable dependencies automatically.
-
-### Low Priority
-5. **Refine UI Error States**: Instead of panicking when a dialog is missing (as seen in `ui-egui`), implement graceful fallback or logging.
+**High**: land the silent-drop fixes (#886 DrawingML, #997 cx:chart, #1034 settings, #999
+backgrounds — warn or preserve); decide #764 (credential store) before more key-bearing
+integrations; reproduce #1232's outline crash under `ui_shot` and prove the virtualization fix.
+**Medium**: wire `cargo-audit`/`cargo-deny` into `xtask ci`; Wayland clipboard robustness (#1213);
+backfill repro tests for the top-20 open bugs; Hunspell dictionaries UX (#1225/#1063/#1167).
+**Low**: caret-glide tuning (#1208), ribbon overflow polish (#1228/#897/#1110), template gallery
+(#1227), Docker images (#1196), KeyTips for table ribbons (#1183).
