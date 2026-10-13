@@ -455,7 +455,7 @@ fn an_empty_section_mark_stays_on_a_full_page() {
     // paragraph moves on as usual.
     let pages = |carries_section: bool| {
         let lines: Vec<String> = (1..=200).map(|i| format!("Line {i}")).collect();
-        let mut d = Document::from_text(&lines.join("\n"));
+        let d = Document::from_text(&lines.join("\n"));
         let one_page = lay(&d).pages[0].items.iter().filter(|i| matches!(i, Placed::Lines { .. })).count();
         let mut d = Document::from_text(&format!("{}\n\nNext", lines[..one_page].join("\n")));
         let mark = d.para_mut(StoryRef::Body, &Path::top(one_page)).unwrap();
