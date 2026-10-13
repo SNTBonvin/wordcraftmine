@@ -233,8 +233,9 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         let mut blocks = Blocks::new();
         r.read_blocks(&mut sc, body, &rels, &mut blocks, 0);
         r.flush_pending(&mut sc, &mut blocks);
-        toc_field_to_heading(&mut blocks);
         r.doc.body = blocks;
+        unstyle_toc_links(&mut r.doc);
+        toc_field_to_heading(&mut r.doc.body);
         if let Some(s) = body.child("w:sectPr") {
             r.doc.last_section = r.read_section(s, &rels);
         }
@@ -387,6 +388,23 @@ fn keep_glued_ids(doc: &mut Document, glued: &HashSet<u32>) {
         InlineObject::Group { children, .. } => children.iter_mut().for_each(|c| clear(&mut c.obj)),
         o => clear(o),
     });
+}
+
+/// Word draws a table of contents' entry links without the Hyperlink character style (no blue,
+/// no underline) though the entries carry it (measured in Word for Windows: a Hyperlink-styled run
+/// in a hyperlink inside a TOC field's result is plain; one outside a hyperlink, another style,
+/// direct formatting, or a hyperlink in another field keep their look). The style is dropped from
+/// those runs so they look the same here; the links stay.
+fn unstyle_toc_links(doc: &mut Document) {
+    for f in doc.field_ranges(wordcraft_doc::StoryRef::Body) {
+        if is_toc(&f.instr) {
+            let _ = doc.format_range(&f.start, &f.end, &|c| {
+                if c.link.is_some() && c.style.as_deref() == Some("Hyperlink") {
+                    c.style = None;
+                }
+            });
+        }
+    }
 }
 
 /// Normalize only a complete TOC range that the engine's heading/entry representation can
@@ -774,6 +792,25 @@ impl Reader<'_> {
                 st.table = (parts != TableStyleParts::default()).then_some(parts);
             }
             sheet.styles.push(st);
+        }
+        // Styles that give only a list level take the list from the style they are based on
+        // (Heading 3: level 3 of Heading 2's outline list).
+        let fixed: Vec<Option<wordcraft_doc::props::NumRef>> = sheet
+            .styles
+            .iter()
+            .map(|s| match s.para.numbering {
+                Some(n) if n.num == props::LEVEL_ONLY => {
+                    let base = s.based_on.as_deref().and_then(|b| props::chain_list(&sheet, b));
+                    base.map(|num| wordcraft_doc::props::NumRef { num, level: n.level })
+                }
+                other => other,
+            })
+            .collect();
+        for (s, n) in sheet.styles.iter_mut().zip(fixed) {
+            s.para.numbering = n;
+        }
+        if sheet.default_para.numbering.is_some_and(|n| n.num == props::LEVEL_ONLY) {
+            sheet.default_para.numbering = None;
         }
         self.doc.styles = sheet;
         Ok(())
