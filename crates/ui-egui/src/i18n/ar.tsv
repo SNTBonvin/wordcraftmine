@@ -11,8 +11,8 @@
 # Arabic computing vocabulary (Modern Standard Arabic, Microsoft Office Arabic terminology).
 # No product localisation, string table or translated UI was consulted or copied; add entries
 # the same way. Product, format and technology names (WordCraft, PDF, Markdown, MCP …) stay in
-# Latin letters. العربية is right-to-left; the shell keeps egui's left-to-right run order
-# until a bidi pass lands, so labels still lay out left to right for now.
+# Latin letters. العربية is right-to-left; the catalog's rows are parsed into visual order
+# (i18n/bidi.rs) so the labels read right to left, while the shell keeps egui's layout.
 	% of all commits	% من كل الارتباطات
 	(All)	(الكل)
 	(Custom)	(مخصص)
@@ -2210,7 +2210,7 @@
 	Text snaps to characters	النص يلتقط بالأحرف
 	Text to display:	النص المطلوب عرضه:
 	Text:	النص:
-	That format doesn't keep everything, so the document is still open. Save it as a Word document (.docx) to go on.	لا يحتفظ ذلك التنسيق بكل شيء، لذا يبقى المستند مفتوحاً. احفظه كمستند Word‏ (.docx) للمتابعة.
+	That format doesn't keep everything, so the document is still open. Save it as a Word document (.docx) to go on.	لا يحتفظ ذلك التنسيق بكل شيء، لذا يبقى المستند مفتوحاً. احفظه كمستند Word (.docx) للمتابعة.
 	That password isn't right. Check it (passwords are case-sensitive) and try again.	كلمة المرور غير صحيحة. تحقق منها (كلمات المرور حساسة لحالة الأحرف) وحاول مجدداً.
 	The clipboard is empty.	الحافظة فارغة.
 	The date it is today	تاريخ اليوم
@@ -2415,7 +2415,7 @@
 	Word Count	عدد الكلمات
 	Word Left	كلمة يساراً
 	Word Right	كلمة يميناً
-	Word XML Document (*.xml)	مستند Word XML‏ (*.xml)
+	Word XML Document (*.xml)	مستند Word XML (*.xml)
 	Word document	مستند Word
 	Word document (*.docx)	مستند Word (*.docx)
 	Word level	مستوى الكلمات
@@ -2470,7 +2470,7 @@
 	{selected} of {words} words	الكلمات: {words}؛ المحدد: {selected}
 	{size} pt	{size} نقطة
 	{words} words	الكلمات: {words}
-	“{text}” ({row}, {series}) isn't a number.	‏“{text}”‏ ({row} و{series}) ليس رقماً.
+	“{text}” ({row}, {series}) isn't a number.	“{text}” ({row} و{series}) ليس رقماً.
 	✓ None	✓ بلا
 	➕ New comment	➕ تعليق جديد
 	📂  Browse…	📂  استعراض…

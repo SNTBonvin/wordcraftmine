@@ -103,7 +103,7 @@ fn placeholders_fill_without_reinterpreting_values() {
 #[test]
 fn malformed_catalog_lines_are_skipped_not_fatal() {
     let (c, errors) =
-        Catalog::parse("# c\n\tHello\t你好\nctx\tA\tB\n\tOpen…\t打开\n\tPage {n}\t第 {m} 页\nno tabs\n\tHello\t重复\n\tLine\\nTwo\t一\\n二\n");
+        Catalog::parse("# c\n\tHello\t你好\nctx\tA\tB\n\tOpen…\t打开\n\tPage {n}\t第 {m} 页\nno tabs\n\tHello\t重复\n\tLine\\nTwo\t一\\n二\n", false);
     assert_eq!(errors.len(), 5, "{errors:?}");
     assert_eq!(c.plain("Hello"), Some("你好"), "the first entry wins");
     assert_eq!(c.plain("Line\nTwo"), Some("一\n二"));
@@ -219,16 +219,52 @@ fn arabic_covers_the_entire_existing_interface_catalog() {
     // its own — the same completeness the enforced tab/command test relies on.
     assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("ar").0.source)));
     let ar = lang("ar");
-    assert_eq!(tr(ar, "Home"), "الصفحة الرئيسية");
+    // Arabic's rows are stored in visual order (`bidi.rs`): the runs in the order egui draws
+    // them, the letters inside each run in logical order for the shaper.
+    assert_eq!(tr(ar, "Home"), "الرئيسية الصفحة");
     assert_eq!(tr(ar, "Font"), "خط");
     assert_eq!(tr(ar, "Save"), "حفظ");
     assert_eq!(tr(ar, "unknown future label"), "unknown future label");
-    assert_eq!(fmt(tr(ar, "{words} words"), &[("words", "5")]), "الكلمات: 5");
-    assert_eq!(fmt(tr(ar, "Exported {path}"), &[("path", "draft-3.docx")]), "تم التصدير إلى draft-3.docx");
-    // Count-neutral wording stays grammatical for Arabic's six integer categories.
+    assert_eq!(fmt(tr(ar, "{words} words"), &[("words", "5")]), "5 :الكلمات");
+    assert_eq!(fmt(tr(ar, "Exported {path}"), &[("path", "draft-3.docx")]), "draft-3.docx إلى التصدير تم");
+    // Count-neutral wording stays grammatical for Arabic's six integer categories; a filled
+    // count reads left to right in its place in the sentence.
     for count in ["0", "1", "2", "5", "11", "12", "21", "22", "25", "111", "121"] {
-        assert_eq!(fmt(tr(ar, "{words} words"), &[("words", count)]), format!("الكلمات: {count}"));
+        assert_eq!(fmt(tr(ar, "{words} words"), &[("words", count)]), format!("{count} :الكلمات"));
     }
+}
+
+/// egui lays a label out run by run, left to right, and the bidi pass (`bidi.rs`) orders an
+/// Arabic label's runs for it. This is that combination on a real egui layout, headless: after
+/// the pass the first word of a sentence sits rightmost, and a left-to-right island inside it
+/// keeps its own order — the pass and the shaper must not reverse each other's work.
+#[test]
+fn arabic_labels_lay_out_right_to_left() {
+    if wordcraft_fonts::ui_arabic_fonts().is_empty() {
+        eprintln!("skipped: built without craft-fonts (set CRAFT_FONTS_DIR to a checkout)");
+        return;
+    }
+    let ctx = egui::Context::default();
+    crate::theme::install_fonts(&ctx);
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
+        for (label, first, second) in [("مستند جديد", "مستند", "جديد"), ("حفظ كـ PDF…", "حفظ", "PDF")] {
+            let job = egui::text::LayoutJob::single_section(
+                super::bidi::visual_rtl(label),
+                egui::TextFormat { font_id: font.clone(), ..Default::default() },
+            );
+            let galley = ui.painter().layout_job(job);
+            let glyphs = &galley.rows[0].row.glyphs;
+            let x_of = |word: &str| glyphs.iter().filter(|g| word.contains(g.chr)).map(|g| g.pos.x).collect::<Vec<f32>>();
+            let (a, b) = (x_of(first), x_of(second));
+            assert!(!a.is_empty() && !b.is_empty(), "{label}: no glyphs for `{first}`/`{second}`");
+            assert!(
+                a.iter().all(|&x| b.iter().all(|&y| x > y)),
+                "`{label}`: `{first}` must sit right of `{second}` after the pass"
+            );
+        }
+    });
+    output.textures_delta.clear();
 }
 
 #[test]
@@ -624,7 +660,7 @@ fn spanish_built_in_style_names_are_translated() {
 
 #[test]
 fn context_entries_override_only_their_context_and_unknown_contexts_are_rejected() {
-    let (c, errors) = Catalog::parse("\tTitle\tЗаголовок\npreview\tTitle\tТитул\n\tFont\tШрифт\nnope\tFont\tX\n");
+    let (c, errors) = Catalog::parse("\tTitle\tЗаголовок\npreview\tTitle\tТитул\n\tFont\tШрифт\nnope\tFont\tX\n", false);
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].contains("unknown context"));
     assert_eq!(c.plain("Title"), Some("Заголовок"));

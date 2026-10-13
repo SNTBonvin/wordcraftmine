@@ -114,15 +114,18 @@ pub fn parse_entries(text: &str) -> (Vec<Entry>, Vec<String>) {
 }
 
 impl Catalog {
-    /// Build a catalog from its valid entries; the errors of the skipped lines come back too.
-    pub fn parse(text: &str) -> (Catalog, Vec<String>) {
+    /// Build a catalog from its valid entries; the errors of the skipped lines come back too. A
+    /// right-to-left language's translations are stored in visual order (`bidi.rs`) — the order
+    /// egui draws its runs in — so the lookups read right to left.
+    pub fn parse(text: &str, rtl: bool) -> (Catalog, Vec<String>) {
         let (entries, errors) = parse_entries(text);
         let mut catalog = Catalog::default();
         for e in entries {
+            let translation = if rtl { super::bidi::visual_rtl(&e.translation) } else { e.translation };
             if e.context.is_empty() {
-                catalog.plain.insert(e.source, e.translation);
+                catalog.plain.insert(e.source, translation);
             } else {
-                catalog.contextual.insert((e.context, e.source), e.translation);
+                catalog.contextual.insert((e.context, e.source), translation);
             }
         }
         (catalog, errors)
