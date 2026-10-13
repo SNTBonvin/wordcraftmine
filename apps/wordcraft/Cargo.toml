@@ -54,6 +54,9 @@ zbus = { version = "5", default-features = false, features = ["async-io", "block
 wl-clipboard-rs = "0.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Typed DWM attributes and OS-provided HWNDs: no raw FFI or unsafe handle conversion in this app.
+winsafe = { version = "=0.0.29", default-features = false, features = ["dwm"] }
+raw-window-handle = "0.6"
 # The upstream default-apps button opens Windows Settings; printing uses craft-print instead.
 open = "5"
 # The system's Animation effects setting (Settings › Accessibility › Visual effects), read through

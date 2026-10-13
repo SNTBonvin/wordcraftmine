@@ -12,6 +12,8 @@
 mod animations;
 #[cfg(target_os = "macos")]
 mod apple_events;
+#[cfg(target_os = "windows")]
+mod caption_direction;
 mod clipboard;
 mod control_server;
 mod default_apps;
@@ -36,6 +38,7 @@ struct App(
     Option<WindowGeometry>,
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
+    #[cfg(target_os = "windows")] caption_direction::State,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
 );
 
@@ -44,6 +47,8 @@ impl eframe::App for App {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.4, &mut self.0, ctx);
         self.0.logic(ctx);
+        #[cfg(target_os = "windows")]
+        self.4.sync(frame, wordcraft_ui_egui::i18n::current().is_rtl());
         self.3.show(frame);
         let prev = self.0.ui.window;
         self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
@@ -352,6 +357,8 @@ fn main() -> eframe::Result {
                 restored,
                 key_file,
                 dialogs,
+                #[cfg(target_os = "windows")]
+                caption_direction::State::default(),
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
             )))
