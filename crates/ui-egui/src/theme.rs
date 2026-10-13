@@ -303,8 +303,9 @@ impl Tokens {
             input: Color32::from_rgb(0x1E, 0x1E, 0x1E),
             input_border: Color32::from_rgb(0x7A, 0x7A, 0x7A),
             group_label: Color32::from_rgb(0xA0, 0xA0, 0xA0),
-            ruler: Color32::from_rgb(0x2E, 0x2E, 0x2E),
-            ruler_margin: Color32::from_rgb(0x45, 0x45, 0x45),
+            // The text area stays lighter than the margins, as in the light theme (#1148).
+            ruler: Color32::from_rgb(0x45, 0x45, 0x45),
+            ruler_margin: Color32::from_rgb(0x2E, 0x2E, 0x2E),
             ruler_tick: Color32::from_rgb(0xA0, 0xA0, 0xA0),
             status_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
             selection: Color32::from_rgba_unmultiplied(0x7A, 0x93, 0xF0, 0x55),
