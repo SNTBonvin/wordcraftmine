@@ -542,11 +542,11 @@ pub fn tcpr(pc: &PropCtx, e: &El) -> (CellProps, bool) {
             "w:tcMar" => c.margins = Some(margins(k)),
             "w:textDirection" => c.text_direction = TextDirection::from_ooxml(k.attr("w:val").unwrap_or("")),
             "w:vAlign" => {
-                c.valign = match k.attr("w:val") {
+                c.valign = Some(match k.attr("w:val") {
                     Some("center") => VAlign::Center,
                     Some("bottom") => VAlign::Bottom,
                     _ => VAlign::Top,
-                }
+                })
             }
             _ => {}
         }

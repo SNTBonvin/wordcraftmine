@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (Modify Table Style formats every table style part, #714); previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** trivial (Modify Table Style: No Border on an inherited part, clearing the font, #1288); previously trivial: Modify Table Style formats every table style part, #714; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -49,6 +49,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | New/Modify Table Style: No Border on a part that inherits its lines hides them; emptying the font box makes the part's font inherited again (#1288) |
 | 2026-10-12 | trivial | New/Modify Table Style: Apply formatting to any of the 13 table style parts (whole table, header/total row, first/last column, odd/even row and column bands, four corner cells), each with font, size, bold, italic, underline, colour, fill, borders (line style, width, colour; all/none/outside/inside/each edge) and the 9-way cell alignment, over a live preview (#714) |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
