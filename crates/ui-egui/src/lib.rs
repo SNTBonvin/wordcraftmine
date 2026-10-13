@@ -2688,6 +2688,51 @@ mod tests {
         assert!(copied(&ctx).contains(&text), "copy put {text:?} on the clipboard: {:?}", copied(&ctx));
     }
 
+    /// #1265: every user entry point publishes Cut to the one clipboard sink — the ribbon's button
+    /// and a real Cmd/Ctrl+X key event, not only the generic command dispatch the sink sits behind.
+    #[test]
+    fn every_cut_entry_point_publishes_to_the_clipboard() {
+        let copied = |ctx: &egui::Context| -> Vec<String> {
+            ctx.output(|o| o.commands.iter().filter_map(|c| match c {
+                egui::OutputCommand::CopyText(t) => Some(t.clone()),
+                _ => None,
+            }).collect())
+        };
+
+        // The ribbon's Cut button goes through `run_from_ribbon`, like every ribbon control.
+        let ctx = egui::Context::default();
+        let mut a = typed();
+        a.ctx = Some(ctx.clone());
+        a.run("select.all", json!({})).unwrap();
+        let text = a.session.selected_text();
+        crate::widgets::run_from_ribbon(&mut a, "edit.cut", json!({}));
+        assert!(body_text(&a).is_empty(), "ribbon Cut deleted the selection");
+        assert!(copied(&ctx).contains(&text), "ribbon Cut published {text:?}: {:?}", copied(&ctx));
+
+        // A real Cut key event through the app's key handling.
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            typed(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        h.state_mut().canvas.focused = true;
+        h.state_mut().run("select.all", json!({})).unwrap();
+        h.step();
+        h.event(egui::Event::Cut);
+        h.step();
+        let via_key: Vec<String> = h.output().platform_output.commands.iter().filter_map(|c| match c {
+            egui::OutputCommand::CopyText(t) => Some(t.clone()),
+            _ => None,
+        }).collect();
+        assert!(via_key.iter().any(|t| t.contains("My unsaved novel")), "key event Cut: {via_key:?} body={:?}", body_text(h.state()));
+    }
+
     /// A fresh scratch folder for one test.
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("wordcraft-ui-{name}-{}", std::process::id()));
