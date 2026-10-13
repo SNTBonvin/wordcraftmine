@@ -436,6 +436,10 @@ fn shapes_have_paths() {
         assert!(shape_path(k, &Rect::new(0.0, 5.0, 10.0, 0.0)).is_some(), "{k:?} horizontal");
         assert!(shape_path(k, &Rect::new(5.0, 0.0, 0.0, 10.0)).is_some(), "{k:?} vertical");
         assert!(shape_path(k, &Rect::new(5.0, 5.0, 0.0, 0.0)).is_none(), "{k:?} without length");
+        // Hostile sizes reach `shape_path` unclamped through the public fields.
+        for (w, h) in [(f32::NAN, 0.0), (f32::INFINITY, 0.0), (10.0, f32::NEG_INFINITY), (-10.0, 0.0), (0.0, -10.0), (10.0, -1.0)] {
+            assert!(shape_path(k, &Rect { x: 0.0, y: 0.0, w, h }).is_none(), "{k:?} {w} x {h}");
+        }
     }
     assert!(shape_path(ShapeKind::Rectangle, &Rect::new(0.0, 5.0, 10.0, 0.0)).is_none());
     assert!(shape_path(ShapeKind::Ellipse, &Rect::new(0.0, 0.0, f32::NAN, 1.0)).is_none());
