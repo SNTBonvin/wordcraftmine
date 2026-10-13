@@ -818,6 +818,53 @@ fn vml_textpath_in_header_is_the_watermark() {
     assert_eq!(read(r#"<v:shape id="PowerPlusWaterMarkObject2"><v:textpath string="  "/></v:shape>"#, true).0, None);
 }
 
+/// Issue #1290: a file with Word's watermark keeps it through save and reopen: the same
+/// watermark, the same headers with the same text and paragraphs, one shape per header written;
+/// header WordArt that isn't a watermark doesn't become one on the way.
+#[test]
+fn word_watermark_survives_save() {
+    let shape = |id: &str, text: &str| {
+        format!(
+            r##"<w:r><w:pict><v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" path="m0,0l21600,0m0,21600l21600,21600e"><v:textpath on="t" fitshape="t"/></v:shapetype><v:shape id="{id}" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:412pt;height:247pt;rotation:315;z-index:-251657216;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin" o:allowincell="f" fillcolor="silver" stroked="f"><v:fill opacity=".5"/><v:textpath style="font-family:&quot;Calibri Light&quot;;font-size:1pt" string="{text}"/></v:shape></w:pict></w:r>"##
+        )
+    };
+    let hdr = |inner: &str| {
+        format!(r#"<w:hdr {W_NS}><w:p>{inner}<w:r><w:t>Header label</w:t></w:r></w:p><w:p><w:r><w:t>Second line</w:t></w:r></w:p></w:hdr>"#)
+    };
+    let h1 = hdr(&shape("PowerPlusWaterMarkObject1", "CONFIDENTIAL"));
+    let h2 = hdr(&shape("PowerPlusWaterMarkObject2", "CONFIDENTIAL"));
+    let body = r#"<w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:headerReference w:type="first" r:id="rIdF"/><w:titlePg/></w:sectPr>"#;
+    let rels = [("rIdH", "header", "header1.xml"), ("rIdF", "header", "header2.xml")];
+    let d = wordcraft_docx::read(&docx(body, &rels, &[("word/header1.xml", &h1), ("word/header2.xml", &h2)])).unwrap();
+    let wm = d.settings.watermark.clone().expect("watermark");
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let d2 = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(d2.settings.watermark, Some(wm));
+    let headers = |d: &Document| {
+        let mut v: Vec<Vec<String>> = [d.last_section.headers.default, d.last_section.headers.first]
+            .iter()
+            .map(|id| d.parts[&id.unwrap()].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect())
+            .collect();
+        v.push(vec![d.parts.len().to_string()]);
+        v
+    };
+    assert_eq!(headers(&d2), headers(&d));
+    assert_eq!(headers(&d2)[0], vec!["Header label".to_string(), "Second line".to_string()]);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    for name in ["word/header1.xml", "word/header2.xml"] {
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(name).unwrap(), &mut xml).unwrap();
+        assert_eq!(xml.matches("<v:shape ").count(), 1, "{name}");
+    }
+
+    // A header logo in WordArt isn't a watermark, so none is written.
+    let logo = r##"<w:r><w:pict><v:shape type="#_x0000_t136" style="position:absolute;width:120pt;height:30pt;mso-position-horizontal:left" fillcolor="navy"><v:textpath string="ACME"/></v:shape></w:pict></w:r>"##;
+    let d = wordcraft_docx::read(&docx(body, &rels, &[("word/header1.xml", &hdr(logo)), ("word/header2.xml", &hdr(""))])).unwrap();
+    assert_eq!(d.settings.watermark, None);
+    let d2 = wordcraft_docx::read(&wordcraft_docx::write(&d).unwrap()).unwrap();
+    assert_eq!(d2.settings.watermark, None);
+}
+
 /// Issue #149: an absolutely positioned VML text box in a header floats where its style puts it
 /// (relative to the page here, behind the text at a negative z-index, no wrapping) instead of
 /// sitting inline in the header's flow, and it keeps that placement when saved and read back.

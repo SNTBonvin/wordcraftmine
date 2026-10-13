@@ -1356,6 +1356,43 @@ fn watermark_header_respects_linking() {
     assert_eq!(header_ids(&r).len(), 2);
 }
 
+/// #1290: a header holding only a table takes the watermark in the paragraph after the table
+/// (one every story ends with), so it gains no line.
+#[test]
+fn watermark_in_table_only_header() {
+    let mut d = doc_with(vec![Paragraph::with_text("Body", CharProps::default())]);
+    let t = Table::new(1, 2, 400.0);
+    let h = d.add_part(PartKind::Header, vec![Arc::new(Block::Table(t))]);
+    d.last_section.headers.default = Some(h);
+    let blocks = |d: &Document| d.parts[&d.last_section.headers.default.unwrap()].blocks.len();
+    let plain = blocks(&rt(&d));
+    d.settings.watermark = Some(Watermark::default());
+    let r = rt(&d);
+    assert_eq!(r.settings.watermark, d.settings.watermark);
+    assert_eq!(blocks(&r), plain);
+}
+
+/// #1290: with different odd and even pages, a document with only a default header gains an
+/// even-page header for the watermark; a later section stays linked to both.
+#[test]
+fn watermark_even_pages_header() {
+    let mut d = Document::new();
+    let h = d.add_part(PartKind::Header, vec![para_block(Paragraph::with_text("Head", CharProps::default()))]);
+    let mut s1 = SectionProps::default();
+    s1.headers.default = Some(h);
+    let mut p1 = Paragraph::with_text("One", CharProps::default());
+    p1.section = Some(Box::new(s1));
+    d.body = vec![para_block(p1), para_block(Paragraph::with_text("Two", CharProps::default()))];
+    d.settings.even_odd_headers = true;
+    d.settings.watermark = Some(Watermark::default());
+    let r = rt(&d);
+    assert_eq!(r.settings.watermark, d.settings.watermark);
+    let secs = r.sections();
+    assert_eq!(part_text(&r, secs[0].1.headers.default), "Head");
+    assert!(secs[0].1.headers.even.is_some() && secs[0].1.headers.first.is_none());
+    assert_eq!(secs[1].1.headers, Default::default());
+}
+
 /// #1290: a blank watermark isn't written (it wouldn't read back), and adds no header.
 #[test]
 fn blank_watermark_writes_nothing() {
