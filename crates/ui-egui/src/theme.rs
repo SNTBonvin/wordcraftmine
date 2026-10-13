@@ -224,6 +224,8 @@ pub struct Tokens {
     pub ruler_tick: Color32,
     pub status_bar: Color32,
     pub selection: Color32,
+    /// Selected interface row; document text selection uses `selection`.
+    pub ui_selection: Color32,
     /// Find › Reading Highlight.
     pub find_highlight: Color32,
     pub caret: Color32,
@@ -267,6 +269,7 @@ impl Tokens {
             ruler_tick: Color32::from_rgb(0x70, 0x70, 0x70),
             status_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
             selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
+            ui_selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
             find_highlight: Color32::from_rgba_unmultiplied(0xFF, 0xE0, 0x3D, 0x90),
             caret: Color32::BLACK,
             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x22),
@@ -280,40 +283,43 @@ impl Tokens {
         }
     }
     pub fn dark() -> Self {
+        // ArtCraft native dark roles: window/chrome/panel/raised/input and blue focus.
+        // Document page pixels, ruler, text selection and editing handles keep their own colors.
         Tokens {
             dark: true,
-            title_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            ribbon: Color32::from_rgb(0x29, 0x29, 0x29),
-            tab_strip: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            canvas: Color32::from_rgb(0x14, 0x14, 0x14),
-            panel: Color32::from_rgb(0x26, 0x26, 0x26),
-            border: Color32::from_rgb(0x3A, 0x3A, 0x3A),
-            border_strong: Color32::from_rgb(0x55, 0x55, 0x55),
-            text: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            text_dim: Color32::from_rgb(0xC8, 0xC8, 0xC8),
-            text_disabled: Color32::from_rgb(0x6A, 0x6A, 0x6A),
-            icon: Color32::from_rgb(0xDD, 0xDD, 0xDD),
-            hover: Color32::from_rgb(0x3D, 0x3D, 0x3D),
-            pressed: Color32::from_rgb(0x4A, 0x4A, 0x4A),
-            checked: Color32::from_rgb(0x2E, 0x3A, 0x66),
-            accent: Color32::from_rgb(0x7A, 0x93, 0xF0),
-            accent_text: Color32::from_rgb(0x9C, 0xB0, 0xF5),
-            // Dark text on the light dark-theme accent: white on #7a93f0 is only 2.9:1 (#655).
-            on_accent: Color32::from_rgb(0x11, 0x16, 0x2E),
-            input: Color32::from_rgb(0x1E, 0x1E, 0x1E),
-            input_border: Color32::from_rgb(0x7A, 0x7A, 0x7A),
-            group_label: Color32::from_rgb(0xA0, 0xA0, 0xA0),
+            title_bar: Color32::from_rgb(0x0a, 0x0a, 0x0c),
+            ribbon: Color32::from_rgb(0x0a, 0x0a, 0x0c),
+            tab_strip: Color32::from_rgb(0x0a, 0x0a, 0x0c),
+            canvas: Color32::from_rgb(0x12, 0x13, 0x16),
+            panel: Color32::from_rgb(0x10, 0x10, 0x14),
+            border: Color32::from_rgb(0x36, 0x37, 0x3a),
+            border_strong: Color32::from_rgb(0x77, 0x78, 0x7c),
+            text: Color32::from_rgb(0xf2, 0xf1, 0xee),
+            text_dim: Color32::from_rgb(0xa6, 0xa6, 0xa8),
+            text_disabled: Color32::from_rgb(0x71, 0x71, 0x76),
+            icon: Color32::from_rgb(0xf2, 0xf1, 0xee),
+            hover: Color32::from_rgb(0x32, 0x33, 0x37),
+            pressed: Color32::from_rgb(0x41, 0x42, 0x46),
+            checked: Color32::from_rgb(0x20, 0x3b, 0x65),
+            accent: Color32::from_rgb(0x2d, 0x81, 0xff),
+            accent_text: Color32::from_rgb(0x59, 0xa7, 0xff),
+            // Dark text on ArtCraft blue satisfies the filled-control contrast requirement.
+            on_accent: Color32::from_rgb(0x06, 0x06, 0x07),
+            input: Color32::from_rgb(0x06, 0x06, 0x07),
+            input_border: Color32::from_rgb(0x77, 0x78, 0x7c),
+            group_label: Color32::from_rgb(0xa6, 0xa6, 0xa8),
             ruler: Color32::from_rgb(0x2E, 0x2E, 0x2E),
             ruler_margin: Color32::from_rgb(0x45, 0x45, 0x45),
             ruler_tick: Color32::from_rgb(0xA0, 0xA0, 0xA0),
-            status_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
+            status_bar: Color32::from_rgb(0x0a, 0x0a, 0x0c),
             selection: Color32::from_rgba_unmultiplied(0x7A, 0x93, 0xF0, 0x55),
+            ui_selection: Color32::from_rgb(0x20, 0x3B, 0x65),
             find_highlight: Color32::from_rgba_unmultiplied(0xC8, 0xA8, 0x00, 0x70),
             caret: Color32::BLACK,
             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x60),
             handle: Color32::from_rgb(0xF2, 0xF2, 0xF2),
             handle_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x5A),
-            menu: Color32::from_rgb(0x2B, 0x2B, 0x2B),
+            menu: Color32::from_rgb(0x1e, 0x1f, 0x22),
             blue: Color32::from_rgb(0x6C, 0x9B, 0xEA),
             red: Color32::from_rgb(0xEE, 0x6A, 0x6A),
             green: Color32::from_rgb(0x5B, 0xC0, 0x8A),
@@ -607,8 +613,8 @@ fn visuals(t: &Tokens) -> Visuals {
     v.window_stroke = Stroke::new(1.0, t.border_strong);
     v.window_corner_radius = CornerRadius::same(8);
     v.menu_corner_radius = CornerRadius::same(6);
-    v.selection.bg_fill = t.selection;
-    v.selection.stroke = Stroke::new(1.0, t.accent);
+    v.selection.bg_fill = t.ui_selection;
+    v.selection.stroke = Stroke::new(1.0, if t.dark { Color32::from_rgb(0xF2, 0xF1, 0xEE) } else { t.accent });
     v.hyperlink_color = t.accent_text;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.border);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
@@ -619,7 +625,7 @@ fn visuals(t: &Tokens) -> Visuals {
     v.widgets.inactive.corner_radius = CornerRadius::same(4);
     v.widgets.hovered.bg_fill = t.hover;
     v.widgets.hovered.weak_bg_fill = t.hover;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.border_strong);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, if t.dark { Color32::from_rgb(0x74, 0xAA, 0xFF) } else { t.border_strong });
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, t.text);
     v.widgets.hovered.corner_radius = CornerRadius::same(4);
     v.widgets.active.bg_fill = t.pressed;
@@ -639,6 +645,23 @@ pub fn c32(c: wordcraft_doc::Rgb) -> Color32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn artcraft_dark_roles_preserve_document_and_light() {
+        let dark = super::Tokens::dark();
+        let light = super::Tokens::light();
+        assert_eq!(dark.ribbon, egui::Color32::from_rgb(0x0A, 0x0A, 0x0C));
+        assert_eq!(dark.panel, egui::Color32::from_rgb(0x10, 0x10, 0x14));
+        assert_eq!(dark.accent, egui::Color32::from_rgb(0x2D, 0x81, 0xFF));
+        assert_eq!(dark.on_accent, egui::Color32::from_rgb(0x06, 0x06, 0x07));
+        assert_eq!(dark.canvas, egui::Color32::from_rgb(0x12, 0x13, 0x16));
+        assert_eq!(dark.ui_selection, egui::Color32::from_rgb(0x20, 0x3B, 0x65));
+        assert_eq!(super::visuals(&dark).selection.bg_fill, dark.ui_selection);
+        assert_eq!(dark.find_highlight, egui::Color32::from_rgba_unmultiplied(0xC8, 0xA8, 0x00, 0x70));
+        assert_eq!(light.ribbon, egui::Color32::from_rgb(0xF9, 0xF9, 0xF9));
+        assert_eq!(super::Appearance::default(), super::Appearance::Light);
+        assert!(super::Appearance::System.is_dark(Some(egui::Theme::Dark)));
+    }
+
     use std::collections::BTreeSet;
 
     /// WCAG contrast ratio between two opaque colours.
