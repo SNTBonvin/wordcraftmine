@@ -109,8 +109,12 @@ pub fn combo(m: Modifiers, key: &str, with_shift: bool) -> String {
 /// a character.
 fn ui_shortcut(key: Key, m: Modifiers) -> Option<(&'static str, Value)> {
     let alt_only = m.alt && !m.command && !m.ctrl && !m.mac_cmd && !m.shift;
+    let zoom_mod = (m.ctrl || m.command) && !m.shift && !m.alt;
     match key {
         Key::Q if alt_only && !cfg!(target_os = "macos") => Some(("ui.dialog", json!({"name": "commands"}))),
+        // Ctrl+numpad + / - zooms (#1237); Ctrl+= stays subscript.
+        Key::Plus if zoom_mod => Some(("view.zoomIn", json!({}))),
+        Key::Minus if zoom_mod => Some(("view.zoomOut", json!({}))),
         _ => None,
     }
 }
@@ -422,6 +426,17 @@ mod tests {
         assert_eq!(ui_shortcut(Key::Q, m(true, false, true)), None, "Mod+Alt+Q");
         assert_eq!(ui_shortcut(Key::Q, m(false, false, false)), None, "a plain Q");
         assert_eq!(ui_shortcut(Key::W, m(true, false, false)), None);
+    }
+
+    #[test]
+    fn ctrl_plus_and_minus_zoom() {
+        // #1237: Ctrl (+/=) on the keypad zooms; Ctrl+= stays subscript.
+        let m = |ctrl, shift| egui::Modifiers { ctrl, command: ctrl, shift, ..Default::default() };
+        assert_eq!(ui_shortcut(Key::Plus, m(true, false)), Some(("view.zoomIn", json!({}))));
+        assert_eq!(ui_shortcut(Key::Minus, m(true, false)), Some(("view.zoomOut", json!({}))));
+        assert_eq!(ui_shortcut(Key::Plus, m(true, true)), None, "Ctrl+Shift+= stays subscript");
+        assert_eq!(ui_shortcut(Key::Equals, m(true, false)), None, "Ctrl+= stays subscript");
+        assert_eq!(ui_shortcut(Key::Plus, m(false, false)), None, "a plain + types");
     }
 
     #[test]
