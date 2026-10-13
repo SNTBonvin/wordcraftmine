@@ -1886,10 +1886,20 @@ fn shape_format(app: &mut WordApp, ui: &mut Ui) {
     let theme = app.session.doc.settings.theme_colors.clone();
     group(ui, "Shape Styles", None, app, |ui, app| {
         stack(ui, |ui| {
-            crate::widgets::menu_button_swatch(ui, app, "shading", Some("Shape Fill"), "Shape Fill", false, "shape.fill", Some(fill_sw), |ui, app| {
-                mi(ui, app, "No Color", "shape.fill", json!({"color": null}));
-                crate::colors::menu(ui, app, &theme, Target::cmd("shape.fill"));
-            });
+            crate::widgets::menu_button_swatch(
+                ui,
+                app,
+                "shading",
+                Some("Shape Fill"),
+                "Shape Fill",
+                false,
+                "shape.fill",
+                Some(fill_sw),
+                |ui, app| {
+                    mi(ui, app, "No Color", "shape.fill", json!({"color": null}));
+                    crate::colors::menu(ui, app, &theme, Target::cmd("shape.fill"));
+                },
+            );
             menu_button(ui, app, "pen", Some("Shape Outline"), "Shape Outline", false, "shape.outline", |ui, app| {
                 mi(ui, app, "No Color", "shape.outline", json!({"color": null}));
                 crate::colors::menu(ui, app, &theme, Target::cmd("shape.outline"));
