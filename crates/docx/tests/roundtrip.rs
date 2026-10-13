@@ -1234,10 +1234,10 @@ fn settings_core_theme_round_trip() {
     let r = rt(&d);
     assert_eq!(r.settings, d.settings);
     assert_eq!(r.core, d.core);
-    // Watermarks aren't stored in DOCX by this crate (yet).
+    // The watermark is written into the headers and read back.
     let mut w = d.clone();
     w.settings.watermark = Some(Watermark::default());
-    assert_eq!(rt(&w).settings.watermark, None);
+    assert_eq!(rt(&w).settings.watermark, Some(Watermark::default()));
 }
 
 /// A document that uses everything, for second-generation stability checks.
