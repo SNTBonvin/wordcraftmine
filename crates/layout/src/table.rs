@@ -5,10 +5,10 @@
 use wordcraft_doc::numbering::Counters;
 use wordcraft_doc::props::{Align, Border, Borders, HeightRule, Rgb, TextDirection, VAlign, VMerge};
 use wordcraft_doc::styles::{TableStyleParts, TableStyleProps};
-use wordcraft_doc::{Block, Blocks, Paragraph, StoryRef, Table};
+use wordcraft_doc::{StoryRef, Table};
 use wordcraft_geom::Rect;
 
-use crate::para::{CellText, ClKind, ParaLayout};
+use crate::para::CellText;
 use crate::{BoxLayout, Ctx, Placed, layout_box};
 
 pub struct RowLayout {
@@ -94,13 +94,24 @@ pub fn cell_margins(doc: &wordcraft_doc::Document, t: &Table, row: usize, cell: 
     t.rows.get(row).and_then(|r| r.cells.get(cell)).and_then(|c| c.props.margins).unwrap_or_else(|| default_margins(t, style.as_ref()))
 }
 
-/// The most paragraphs [`measure_table_columns`] lays out: a huge table is measured by its first
-/// rows only, so AutoFit stays quick.
-const MEASURE_BUDGET: usize = 4000;
 /// The line length paragraphs are measured at: wide enough that nothing real wraps.
 const MEASURE_WIDE: f32 = 15_840.0;
 /// What an empty cell's text needs (about a paragraph mark), points.
 const EMPTY_TEXT: f32 = 12.0;
+
+/// The layout state that changes what a paragraph contributes to an AutoFit width. It is copied
+/// from the active pagination context, but never mutated by the measurement pass.
+struct MeasureEnv<'a> {
+    fields: &'a crate::FieldCtx,
+    show_hidden: bool,
+    field_codes: bool,
+    hide_deleted: bool,
+    numeral: crate::NumeralMode,
+    read_line_spacing: Option<f32>,
+    grid: crate::para::Grid,
+    fit_objects: bool,
+    eq_number: u32,
+}
 
 /// What one paragraph needs: the longest run of text without a break opportunity (`min`) and
 /// its longest line when nothing wraps (`max`), indents included.
@@ -148,57 +159,89 @@ fn measure_para(p: &wordcraft_doc::Paragraph, env: &crate::para::ParaEnv) -> (f3
 /// with cell margins included: the narrowest fits each cell's longest word (text that can't
 /// wrap), the widest fits every paragraph on one line. A cell spanning several columns spreads
 /// what its columns lack over them. Paragraphs are laid out with the table style's formatting;
-/// after [`MEASURE_BUDGET`] paragraphs the remaining rows are skipped.
+/// All rows take part in measurement: a wide cell near the end of a long table must still widen
+/// its column exactly as it did before this fast path.
 pub fn measure_table_columns(doc: &wordcraft_doc::Document, t: &Table) -> Vec<(f32, f32)> {
+    let fields = crate::FieldCtx::default();
+    let env = MeasureEnv {
+        fields: &fields,
+        show_hidden: false,
+        field_codes: false,
+        hide_deleted: false,
+        numeral: crate::NumeralMode::default(),
+        read_line_spacing: None,
+        grid: crate::para::Grid::default(),
+        fit_objects: false,
+        eq_number: 0,
+    };
+    measure_table_columns_from(doc, t, Counters::default(), &env)
+}
+
+/// [`measure_table_columns`] continuing from the document's current list counters. Measurement
+/// owns a clone, so it never advances the counters used by the real layout pass.
+fn measure_table_columns_from(doc: &wordcraft_doc::Document, t: &Table, mut counters: Counters, measure: &MeasureEnv<'_>) -> Vec<(f32, f32)> {
     use wordcraft_doc::Block;
     let style = t.props.style.as_deref().and_then(|id| doc.styles.table_style(id));
     let margins_def = default_margins(t, style.as_ref());
     let ncols = t.cols().clamp(1, wordcraft_doc::table::MAX_COLS);
-    let fields = crate::FieldCtx::default();
+    let mut eq_number = measure.eq_number;
     let mut cols = vec![(0.0f32, 0.0f32); ncols];
+    let mut any = false;
     // Cells spanning several columns: (first column, span, min, max), applied after the others.
     let mut spanned: Vec<(usize, usize, f32, f32)> = Vec::new();
-    let mut budget = MEASURE_BUDGET;
-    'rows: for (ri, row) in t.rows.iter().enumerate() {
+    for (ri, row) in t.rows.iter().enumerate() {
         let mut g = 0usize;
         for cell in &row.cells {
             let span = cell.span();
             let margins = cell.props.margins.unwrap_or(margins_def);
             let side = margins[1].max(0.0) + margins[3].max(0.0);
             let text = style.as_ref().map(|st| region_text(st, region_of(t, style.as_ref(), ri, g, span, ncols)));
-            let env = crate::para::ParaEnv {
+            let mut env = crate::para::ParaEnv {
                 doc,
                 width: MEASURE_WIDE,
                 label: None,
-                fields: &fields,
-                show_hidden: false,
-                field_codes: false,
-                hide_deleted: false,
+                fields: measure.fields,
+                show_hidden: measure.show_hidden,
+                field_codes: measure.field_codes,
+                hide_deleted: measure.hide_deleted,
                 table: text.as_ref(),
                 proofing: None,
-                // Measurement uses a fixed environment (like show_hidden/proofing above).
-                numeral: crate::NumeralMode::default(),
+                numeral: measure.numeral,
                 exclusions: &[],
-                eq_number: 0,
-                read_line_spacing: None,
-                grid: crate::para::Grid::default(),
-                fit_objects: false,
+                eq_number,
+                read_line_spacing: measure.read_line_spacing,
+                grid: measure.grid,
+                fit_objects: measure.fit_objects,
             };
             let (mut min, mut max) = (EMPTY_TEXT, EMPTY_TEXT);
             if cell.props.vmerge != VMerge::Continue && !cell.props.text_direction.is_turned() {
                 for b in &cell.blocks {
                     match &**b {
                         Block::Para(p) => {
-                            if budget == 0 {
-                                break 'rows;
-                            }
-                            budget -= 1;
+                            any |= !p.text.is_empty() || !p.objects.is_empty();
+                            let label = p
+                                .props
+                                .numbering
+                                .or_else(|| doc.styles.resolve_para(&p.props).numbering)
+                                .filter(|n| n.num != 0)
+                                .and_then(|n| counters.next_label(&doc.numbering, n.num, n.level));
+                            env.label = label;
                             let (a, b) = measure_para(p, &env);
                             min = min.max(a);
                             max = max.max(b);
+                            let added = p
+                                .objects
+                                .iter()
+                                .map(|o| match o {
+                                    wordcraft_doc::para::InlineObject::Equation { math, display, .. } => crate::math::auto_numbers(math, *display),
+                                    _ => 0,
+                                })
+                                .sum::<u32>();
+                            eq_number = eq_number.saturating_add(added);
                         }
                         // A nested table keeps its own column widths.
                         Block::Table(inner) => {
+                            any = true;
                             let w: f32 = inner.grid.iter().filter(|w| w.is_finite()).map(|w| w.clamp(0.0, 1584.0)).sum();
                             min = min.max(w);
                             max = max.max(w);
@@ -231,13 +274,7 @@ pub fn measure_table_columns(doc: &wordcraft_doc::Document, t: &Table) -> Vec<(f
             c.1 = c.1.max(c.0);
         }
     }
-    // A column no cell starts in still needs room for its margins.
-    let floor = margins_def[1].max(0.0) + margins_def[3].max(0.0) + EMPTY_TEXT;
-    cols.iter_mut().for_each(|c| {
-        c.0 = c.0.max(floor);
-        c.1 = c.1.max(c.0);
-    });
-    cols
+    if any { cols } else { Vec::new() }
 }
 
 /// Column widths for AutoFit to Contents, the way Word shares the room: every column gets its
@@ -340,11 +377,22 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         total = avail;
     }
     if !t.props.fixed {
-        // Measuring lays paragraphs out once more; it mustn't count their equations twice.
-        let eq_count = ctx.eq_count;
-        let content = column_content(ctx, t, style.as_ref(), depth);
-        ctx.eq_count = eq_count;
-        if let Some(content) = content {
+        // AutoFit used to lay out every cell at an unbounded width before laying it out again
+        // at its final width. This direct measurement visits every row, including a late wide
+        // cell, without perturbing paragraph counters or equation numbers.
+        let measure = MeasureEnv {
+            fields: &ctx.fields,
+            show_hidden: ctx.opts.show_hidden,
+            field_codes: ctx.opts.field_codes,
+            hide_deleted: ctx.hide_deleted,
+            numeral: ctx.opts.numeral,
+            read_line_spacing: (ctx.opts.view == crate::ViewMode::Read).then_some(ctx.opts.read_line_spacing).flatten(),
+            grid: ctx.grid,
+            fit_objects: ctx.boxes.inside(),
+            eq_number: ctx.eq_count,
+        };
+        let content = measure_table_columns_from(ctx.doc, t, ctx.counters.clone(), &measure);
+        if !content.is_empty() {
             autofit(&mut grid, &content, t, avail);
             // Never wider than the room it had, however long an unbreakable word.
             let fitted: f32 = grid.iter().sum();
@@ -910,116 +958,6 @@ fn region_text(st: &TableStyleProps, (header, total, first_col, last_col, band, 
     CellText { para: st.para.clone(), chr }
 }
 
-/// Each column's narrowest and widest content, cell margins included: its longest word and its
-/// longest line. A cell spanning columns shares what they lack between them; nested tables count
-/// with their own. `None` when every cell is empty.
-fn column_content(ctx: &mut Ctx, t: &Table, style: Option<&TableStyleProps>, depth: usize) -> Option<Vec<(f32, f32)>> {
-    let margins_def = default_margins(t, style);
-    let mut cols = vec![(0.0f32, 0.0f32); t.cols().max(1)];
-    let mut spanning = Vec::new();
-    let mut any = false;
-    for (ri, row) in t.rows.iter().enumerate() {
-        let mut g = 0usize;
-        for cell in &row.cells {
-            let span = cell.span();
-            if cell.props.vmerge != VMerge::Continue {
-                let text = style.map(|st| region_text(st, region_of(t, style, ri, g, cell.span(), cols.len())));
-                let (lo, hi) = blocks_content(ctx, &cell.blocks, text.as_ref(), depth);
-                any |= hi > 0.0;
-                let m = cell.props.margins.unwrap_or(margins_def);
-                let need = (lo + m[1] + m[3], hi + m[1] + m[3]);
-                match cols.get_mut(g) {
-                    Some(col) if span == 1 => *col = (col.0.max(need.0), col.1.max(need.1)),
-                    _ => spanning.push((g, span, need)),
-                }
-            }
-            g += span;
-        }
-    }
-    for (g, span, need) in spanning {
-        let Some(cs) = cols.get_mut(g..(g + span).min(t.cols())) else { continue };
-        let n = cs.len().max(1) as f32;
-        let (have_lo, have_hi) = cs.iter().fold((0.0, 0.0), |(l, h), c| (l + c.0, h + c.1));
-        for c in cs {
-            c.0 += (need.0 - have_lo).max(0.0) / n;
-            c.1 += (need.1 - have_hi).max(0.0) / n;
-        }
-    }
-    any.then_some(cols)
-}
-
-/// The narrowest and widest a block list can be laid out.
-fn blocks_content(ctx: &mut Ctx, blocks: &Blocks, text: Option<&CellText>, depth: usize) -> (f32, f32) {
-    let (mut lo, mut hi) = (0.0f32, 0.0f32);
-    for b in blocks.iter() {
-        let (l, h) = match &**b {
-            Block::Para(p) => {
-                let label = list_level(ctx, p).map(|l| (String::new(), l));
-                para_content(&ctx.para_labelled(p, UNBOUNDED, text, &[], label))
-            }
-            // A nested table: its fixed width, else its columns' but at least its preferred width
-            // (its own, else its grid's when it has preferred widths at all).
-            Block::Table(nt) if depth < 8 => {
-                let grid = if is_automatic(nt) { 0.0 } else { nt.grid.iter().filter(|w| w.is_finite()).map(|w| w.max(0.0)).sum() };
-                let width = nt.props.width.filter(|w| w.is_finite()).unwrap_or(grid).clamp(0.0, UNBOUNDED);
-                if nt.props.fixed && width > 0.0 {
-                    (width, width)
-                } else {
-                    let style = table_style(ctx, nt);
-                    let cols = column_content(ctx, nt, style.as_ref(), depth + 1).unwrap_or_default();
-                    let (l, h) = cols.iter().fold((0.0, 0.0), |(l, h), c| (l + c.0, h + c.1));
-                    (width.max(l), width.max(h))
-                }
-            }
-            Block::Table(_) => (0.0, 0.0),
-        };
-        lo = lo.max(l);
-        hi = hi.max(h);
-    }
-    (lo, hi)
-}
-
-/// The list level `p` is in, for its indents (without counting it: measuring isn't laying out).
-fn list_level(ctx: &Ctx, p: &Paragraph) -> Option<wordcraft_doc::numbering::Level> {
-    let n = p.props.numbering.or_else(|| ctx.doc.styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0)?;
-    ctx.doc.numbering.level(n.num, n.level).cloned()
-}
-
-/// A width to lay a paragraph out in so that only its own line breaks end lines.
-const UNBOUNDED: f32 = 100_000.0;
-
-/// A paragraph's longest word and longest line (between line breaks), indents included.
-fn para_content(pl: &ParaLayout) -> (f32, f32) {
-    let indents = pl.rp.indent_left.max(0.0) + pl.rp.indent_right.max(0.0) + pl.rp.indent_first.max(0.0);
-    let (mut word, mut line, mut spaces) = (0.0f32, 0.0f32, 0.0f32);
-    let (mut lo, mut hi) = (0.0f32, 0.0f32);
-    for c in &pl.clusters {
-        let adv = if c.adv.is_finite() { c.adv.clamp(0.0, UNBOUNDED) } else { 0.0 };
-        match c.kind {
-            ClKind::Space => {
-                lo = lo.max(word);
-                word = 0.0;
-                spaces += adv;
-            }
-            ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak => {
-                lo = lo.max(word);
-                hi = hi.max(line);
-                (word, line, spaces) = (0.0, 0.0, 0.0);
-            }
-            _ => {
-                word += adv;
-                line += spaces + adv;
-                spaces = 0.0;
-                if c.break_after {
-                    lo = lo.max(word);
-                    word = 0.0;
-                }
-            }
-        }
-    }
-    (lo.max(word) + indents, hi.max(line) + indents)
-}
-
 /// Whether nothing in `t` asks for a width (its own or any cell's): its columns then follow
 /// their content alone.
 fn is_automatic(t: &Table) -> bool {
@@ -1060,5 +998,159 @@ fn autofit(grid: &mut [f32], content: &[(f32, f32)], t: &Table, avail: f32) {
     let give = (short / spare.max(0.01)).min(1.0);
     for (w, c) in grid.iter_mut().zip(content) {
         *w = if *w < c.0 { c.0 } else { *w - (*w - c.0) * give };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wordcraft_doc::para::InlineObject;
+    use wordcraft_doc::props::NumRef;
+    use wordcraft_doc::{Cell, Document, ListKind};
+
+    /// The pre-#20 AutoFit paragraph measurement. Keep this test-only reference small and use
+    /// it to pin widths rather than retaining the old production pre-layout path.
+    fn widths_before_direct_measurement(doc: &Document, t: &Table) -> Vec<(f32, f32)> {
+        let style = t.props.style.as_deref().and_then(|id| doc.styles.table_style(id));
+        let margins_def = default_margins(t, style.as_ref());
+        let ncols = t.cols().clamp(1, wordcraft_doc::table::MAX_COLS);
+        let fields = crate::FieldCtx::default();
+        let mut cols = vec![(0.0f32, 0.0f32); ncols];
+        let mut any = false;
+        for (ri, row) in t.rows.iter().enumerate() {
+            let mut g = 0usize;
+            for cell in &row.cells {
+                let span = cell.span();
+                if cell.props.vmerge != VMerge::Continue {
+                    let text = style.as_ref().map(|st| region_text(st, region_of(t, style.as_ref(), ri, g, span, ncols)));
+                    let mut lo = 0.0f32;
+                    let mut hi = 0.0f32;
+                    for block in &cell.blocks {
+                        let wordcraft_doc::Block::Para(p) = &**block else { continue };
+                        let label = p
+                            .props
+                            .numbering
+                            .or_else(|| doc.styles.resolve_para(&p.props).numbering)
+                            .filter(|n| n.num != 0)
+                            .and_then(|n| doc.numbering.level(n.num, n.level).cloned())
+                            .map(|level| (String::new(), level));
+                        let env = crate::para::ParaEnv {
+                            doc,
+                            width: 100_000.0,
+                            label,
+                            fields: &fields,
+                            show_hidden: false,
+                            field_codes: false,
+                            hide_deleted: false,
+                            table: text.as_ref(),
+                            proofing: None,
+                            numeral: crate::NumeralMode::default(),
+                            exclusions: &[],
+                            eq_number: 0,
+                            read_line_spacing: None,
+                            grid: crate::para::Grid::default(),
+                            fit_objects: false,
+                        };
+                        let measured = crate::para::layout_para(p, &env);
+                        let (a, b) = legacy_para_content(&measured);
+                        lo = lo.max(a);
+                        hi = hi.max(b);
+                    }
+                    any |= hi > 0.0;
+                    let margins = cell.props.margins.unwrap_or(margins_def);
+                    let need = (lo + margins[1] + margins[3], hi + margins[1] + margins[3]);
+                    if span == 1 {
+                        if let Some(col) = cols.get_mut(g) {
+                            col.0 = col.0.max(need.0);
+                            col.1 = col.1.max(need.1);
+                        }
+                    }
+                }
+                g = g.saturating_add(span);
+            }
+        }
+        any.then_some(cols).unwrap_or_default()
+    }
+
+    fn legacy_para_content(pl: &crate::para::ParaLayout) -> (f32, f32) {
+        use crate::para::ClKind;
+        let indents = pl.rp.indent_left.max(0.0) + pl.rp.indent_right.max(0.0) + pl.rp.indent_first.max(0.0);
+        let (mut word, mut line, mut spaces) = (0.0f32, 0.0f32, 0.0f32);
+        let (mut lo, mut hi) = (0.0f32, 0.0f32);
+        for c in &pl.clusters {
+            let adv = if c.adv.is_finite() { c.adv.clamp(0.0, 100_000.0) } else { 0.0 };
+            match c.kind {
+                ClKind::Space => {
+                    lo = lo.max(word);
+                    word = 0.0;
+                    spaces += adv;
+                }
+                ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak => {
+                    lo = lo.max(word);
+                    hi = hi.max(line);
+                    (word, line, spaces) = (0.0, 0.0, 0.0);
+                }
+                _ => {
+                    word += adv;
+                    line += spaces + adv;
+                    spaces = 0.0;
+                    if c.break_after {
+                        lo = lo.max(word);
+                        word = 0.0;
+                    }
+                }
+            }
+        }
+        (lo.max(word) + indents, hi.max(line) + indents)
+    }
+
+    #[test]
+    fn autofit_measures_a_wide_last_row_of_a_long_table() {
+        let d = Document::new();
+        let mut t = Table::new(3_000, 1, 468.0);
+        let wide = "the-last-row-has-the-only-unusually-wide-unbreakable-cell-value";
+        if let Some(row) = t.rows.last_mut().and_then(|r| r.cells.first_mut()) {
+            *row = Cell::with_text(wide);
+        }
+        let all_rows = measure_table_columns(&d, &t);
+        let mut one = Table::new(1, 1, 468.0);
+        if let Some(cell) = one.rows.first_mut().and_then(|r| r.cells.first_mut()) {
+            *cell = Cell::with_text(wide);
+        }
+        assert_eq!(all_rows, measure_table_columns(&d, &one));
+        assert_eq!(all_rows, widths_before_direct_measurement(&d, &t));
+    }
+
+    #[test]
+    fn autofit_counts_list_labels_and_field_results() {
+        let mut d = Document::new();
+        let num = d.numbering.add_list(ListKind::Numbered);
+        let mut listed = wordcraft_doc::Paragraph::with_text("item", Default::default());
+        listed.props.numbering = Some(NumRef { num, level: 0 });
+        let mut field = wordcraft_doc::Paragraph::with_text("", Default::default());
+        let result = "a-field-result-that-is-longer-than-the-cell-text";
+        assert!(
+            field
+                .insert_object(
+                    0,
+                    InlineObject::Field { instr: "AUTHOR".into(), result: result.into(), locked: false, code: false },
+                    &Default::default()
+                )
+                .is_ok()
+        );
+        let mut t = Table::new(1, 2, 468.0);
+        if let Some(c) = t.rows.first_mut().and_then(|r| r.cells.get_mut(0)) {
+            c.blocks = vec![wordcraft_doc::para_block(listed)];
+        }
+        if let Some(c) = t.rows.first_mut().and_then(|r| r.cells.get_mut(1)) {
+            c.blocks = vec![wordcraft_doc::para_block(field)];
+        }
+        let widths = measure_table_columns(&d, &t);
+        let before = widths_before_direct_measurement(&d, &t);
+        assert_eq!(widths.len(), before.len());
+        for (after, before) in widths.iter().zip(before) {
+            assert!((after.0 - before.0).abs() < 0.001, "minimum width changed: {after:?} vs {before:?}");
+            assert!((after.1 - before.1).abs() < 0.001, "maximum width changed: {after:?} vs {before:?}");
+        }
     }
 }

@@ -7,6 +7,20 @@ use wordcraft_doc::{Block, Document, Path, StoryRef};
 
 use crate::{Services, WordApp};
 
+fn page_breaks(layout: &wordcraft_layout::DocLayout) -> Vec<(usize, wordcraft_doc::Path)> {
+    layout
+        .pages
+        .iter()
+        .enumerate()
+        .filter_map(|(page, p)| {
+            p.items.iter().find_map(|item| match item {
+                wordcraft_layout::Placed::Lines { story: StoryRef::Body, path, .. } => Some((page, path.clone())),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
 /// A document with one `rows × cols` table, every cell holding a few words.
 pub(crate) fn big_table_doc(rows: usize, cols: usize) -> Document {
     let mut d = Document::from_text("Before the table\nAfter the table");
@@ -92,6 +106,19 @@ fn big_table_scroll_bench() {
     eprintln!("idle frame: median/max {:.2?}", stat(&mut idle));
     eprintln!("scroll frame: median/max {:.2?}", stat(&mut steps));
     eprintln!("scroll offset after: {:?}", h.state().canvas.scroll_offset);
+}
+
+/// AutoFit measurement is an implementation detail: a warm session and a clean layout cache must
+/// produce identical pagination for both the built-in sample and a long table.
+#[test]
+fn autofit_change_keeps_sample_and_big_table_page_breaks() {
+    for doc in [wordcraft_engine::sample::sample_document(), big_table_doc(600, 8)] {
+        let mut session = wordcraft_engine::Session::new(doc.clone());
+        let cached = session.layout();
+        let fresh = wordcraft_layout::layout(&doc, &mut wordcraft_layout::LayoutCache::new(), &wordcraft_layout::LayoutOptions::default());
+        assert_eq!(cached.pages.len(), fresh.pages.len());
+        assert_eq!(page_breaks(&cached), page_breaks(&fresh));
+    }
 }
 
 /// #811: scrolling through one very large table was slow because every frame fingerprinted every
