@@ -26,6 +26,26 @@ const ROW: f32 = 24.0;
 pub(crate) struct State {
     pub(crate) open: Option<Box<FileBrowser>>,
     last_dir: Option<PathBuf>,
+    /// The folder File › Open is showing under This computer; `None` while Recent is chosen.
+    pub(crate) page_dir: Option<PathBuf>,
+    /// That folder's documents and subfolders, read once when the page moved there.
+    pub(crate) page_listing: Option<Result<Listing, String>>,
+}
+
+impl State {
+    /// File › Open › This computer: show `dir`. The folder is read here, once, and not again on
+    /// every frame; like the browser, it lists names and never reads a file.
+    pub(crate) fn show_page_dir(&mut self, dir: PathBuf) {
+        let exts: Vec<String> = open_filters("document").first().map(|(_, exts)| exts.iter().map(|e| (*e).to_string()).collect()).unwrap_or_default();
+        self.page_listing = Some(list_dir(&dir, &exts, MAX_LISTED).map_err(|e| e.to_string()));
+        self.page_dir = Some(dir);
+    }
+
+    /// File › Open › Recent: leave the folder listing.
+    pub(crate) fn leave_page_dir(&mut self) {
+        self.page_dir = None;
+        self.page_listing = None;
+    }
 }
 
 /// One subfolder or file in the listing.

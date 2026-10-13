@@ -115,11 +115,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             });
         });
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30))).show(ui, |ui| {
+    // Open is the places panel from edge to edge, with its own scrolling: the navigation column
+    // already says "Open", so the page needs no heading of its own.
+    let open = app.ui.backstage_page == "open";
+    let margin = if open { egui::Margin::ZERO } else { egui::Margin::symmetric(40, 30) };
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(margin)).show(ui, |ui| {
+        if open {
+            open_page(app, ui);
+            return;
+        }
         egui::ScrollArea::vertical().show(ui, |ui| match app.ui.backstage_page.as_str() {
             "home" => home_page(app, ui),
             "new" => new_page(app, ui),
-            "open" => open_page(app, ui),
             "saveAs" => save_as_page(app, ui),
             "info" => info_page(app, ui),
             "print" | "export" => export_page(app, ui),
@@ -274,11 +281,11 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
 }
 
 /// File › Open: the shared places panel (storytold/craft-libs#49). Recent lists the documents
-/// opened lately, This computer is WordCraft's own file browser and Browse the system's dialog.
-/// Remote storage adds one place per account here; there is none yet.
+/// opened lately; This computer lists folders and documents right here, starting from the home
+/// folder; Browse shows the system's dialog. Remote storage adds one place per account; there is
+/// none yet.
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
     use craft_ui::places::{Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesLabels, PlacesPanel, PlacesStyle};
-    heading(ui, "Open");
     let t = Tokens::get(ui.ctx());
     let style = PlacesStyle {
         fill: t.ribbon,
@@ -289,6 +296,11 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
         selected: t.checked,
         accent: t.accent,
         icon: t.icon,
+        // The File page's own scale: its navigation is set in 14 pt on 38 pt rows.
+        rail_width: 250.0,
+        row_height: 36.0,
+        font: 14.0,
+        small_font: 12.0,
         ..PlacesStyle::from_visuals(ui.visuals())
     };
     let labels = PlacesLabels { places: tl!("Places"), add_place: tl!("Add a place"), browse: tl!("Browse…"), loading: tl!("Loading…") };
@@ -297,40 +309,74 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     if cfg!(not(target_arch = "wasm32")) {
         places.push(Place { kind: PlaceKind::Local, label: tl!("This computer"), detail: None });
     }
-    let recent: Vec<(String, String, String)> = app
-        .ui
-        .recent
-        .iter()
-        .take(app.ui.recent_shown())
-        .map(|p| {
+
+    // What the chosen place shows: (the path it opens or moves to, name, detail, is a folder).
+    let dir = app.file_browser.page_dir.clone();
+    let mut rows: Vec<(std::path::PathBuf, String, String, bool)> = Vec::new();
+    let mut failed = None;
+    match (&dir, &app.file_browser.page_listing) {
+        (Some(_), Some(Ok(listing))) => rows.extend(listing.entries.iter().map(|e| (e.path.clone(), e.name.clone(), String::new(), e.dir))),
+        (Some(_), Some(Err(why))) => failed = Some(why.clone()),
+        (Some(_), None) => {}
+        (None, _) => rows.extend(app.ui.recent.iter().take(app.ui.recent_shown()).map(|p| {
             let path = std::path::Path::new(p);
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
             let folder = path.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
-            (p.clone(), name, folder)
-        })
-        .collect();
+            (path.to_path_buf(), name, folder, false)
+        })),
+    }
     let entries: Vec<PlaceEntry<'_>> =
-        recent.iter().map(|(_, name, folder)| PlaceEntry { name, folder: false, detail: folder, attention: false, remote: false }).collect();
-    let content =
-        if entries.is_empty() { PlacesContent::Message(tl!("Documents you open will show up here.")) } else { PlacesContent::Entries(&entries) };
-    let crumbs = [tl!("Recent")];
-    match PlacesPanel::new(&places, Some(0), content, &style, labels).crumbs(&crumbs).show(ui).action {
-        Some(PlacesAction::Activate(i)) => {
-            if let Some((path, ..)) = recent.get(i) {
-                let _ = app.run("file.open", json!({"path": path}));
+        rows.iter().map(|(_, name, detail, folder)| PlaceEntry { name, folder: *folder, detail, attention: false, remote: false }).collect();
+    let content = match (&failed, entries.is_empty(), dir.is_some()) {
+        (Some(why), ..) => PlacesContent::Message(why),
+        (None, true, true) => PlacesContent::Message(tl!("This folder is empty.")),
+        (None, true, false) => PlacesContent::Message(tl!("Documents you open will show up here.")),
+        (None, false, _) => PlacesContent::Entries(&entries),
+    };
+
+    // The way back up: This computer (the home folder), then each folder of the path.
+    let mut steps: Vec<(String, std::path::PathBuf)> = Vec::new();
+    match &dir {
+        Some(dir) => {
+            steps.push((tl!("This computer").to_string(), crate::file_browser::home().unwrap_or_else(|| dir.clone())));
+            let mut at = std::path::PathBuf::new();
+            for part in dir.components() {
+                at.push(part);
+                if let std::path::Component::Normal(name) = part {
+                    steps.push((name.to_string_lossy().to_string(), at.clone()));
+                }
+            }
+        }
+        None => steps.push((tl!("Recent").to_string(), std::path::PathBuf::new())),
+    }
+    let crumbs: Vec<&str> = steps.iter().map(|(label, _)| label.as_str()).collect();
+
+    let selected = usize::from(dir.is_some());
+    match PlacesPanel::new(&places, Some(selected), content, &style, labels).crumbs(&crumbs).show(ui).action {
+        Some(PlacesAction::Select(0)) => app.file_browser.leave_page_dir(),
+        Some(PlacesAction::Select(_)) => {
+            if let Some(start) = dir.or_else(crate::file_browser::home) {
+                app.file_browser.show_page_dir(start);
+            }
+        }
+        Some(PlacesAction::Crumb(i)) => {
+            if let (true, Some((_, to))) = (app.file_browser.page_dir.is_some(), steps.get(i)) {
+                app.file_browser.show_page_dir(to.clone());
+            }
+        }
+        Some(PlacesAction::Activate(i)) => match rows.get(i) {
+            Some((path, _, _, true)) => app.file_browser.show_page_dir(path.clone()),
+            Some((path, ..)) => {
+                let _ = app.run("file.open", json!({"path": path.to_string_lossy()}));
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
-        }
-        // Recent is where the page already is; This computer opens WordCraft's own browser (#576),
-        // which also serves a desktop whose system file dialog doesn't show up.
-        Some(PlacesAction::Select(1)) => {
-            let _ = app.run("ui.fileBrowser", json!({}));
-        }
+            None => {}
+        },
         Some(PlacesAction::Browse) => {
             let _ = app.run("ui.openFileDialog", json!({}));
         }
-        _ => {}
+        Some(PlacesAction::AddPlace) | None => {}
     }
 }
 
@@ -535,7 +581,7 @@ mod tests {
     }
 
     /// File › Open is the shared places panel: Recent with the documents opened lately, This
-    /// computer for WordCraft's own browser and Browse for the system's dialog.
+    /// computer with the folders listed in the page, and Browse for the system's dialog.
     #[test]
     fn open_page_lists_places_and_recent_documents() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
@@ -556,7 +602,12 @@ mod tests {
         assert!(h.query_by_label("Add a place").is_none(), "there is no remote storage to add yet");
         h.get_by_label("This computer").click();
         h.run_steps(4);
-        assert!(h.state().file_dialog_open(), "This computer opens WordCraft's own browser");
+        assert!(h.state().file_browser.page_dir.is_some(), "This computer lists a folder in the page");
+        assert!(!h.state().file_dialog_open(), "and opens no dialog, unlike Browse");
+        assert!(h.query_by_label("Handbook.docx").is_none(), "the recent documents made way for the folder");
+        h.get_by_label("Recent").click();
+        h.run_steps(4);
+        assert!(h.state().file_browser.page_dir.is_none() && h.query_by_label("Handbook.docx").is_some(), "Recent comes back");
     }
 
     #[test]
