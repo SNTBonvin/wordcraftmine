@@ -1145,8 +1145,15 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
         });
         menu_button(ui, app, "size", Some("Size"), "Size", true, "layout.size", |ui, app| {
             for (n, w, h) in wordcraft_geom::PAPER_SIZES {
-                // In the measurement unit, written the region's way (`21 cm × 29,7 cm`, #838).
-                mi(ui, app, &format!("{n}   {} × {}", crate::options::length(*w), crate::options::length(*h)), "layout.size", json!({"name": n}));
+                // The name in the interface language (envelopes), the size in the measurement unit, written the
+                // region's way (`21 cm × 29,7 cm`, #838).
+                mi(
+                    ui,
+                    app,
+                    &format!("{}   {} × {}", tl!(n), crate::options::length(*w), crate::options::length(*h)),
+                    "layout.size",
+                    json!({"name": n}),
+                );
             }
         });
         menu_button(ui, app, "columns", Some("Columns"), "Columns", true, "layout.columns", |ui, app| {
