@@ -793,6 +793,30 @@ pub fn primary_button(ui: &Ui, text: impl Into<String>) -> egui::Button<'static>
 }
 
 /// A frameless 22 px icon button (pane close buttons): ribbon-style hover and press feedback.
+/// The interface is mirrored for a right-to-left language ([`crate::mirror`]).
+pub fn mirrored() -> bool {
+    crate::i18n::current().rtl()
+}
+
+/// Align Left, Center, Align Right and Justify. Their icons keep their direction in a mirrored
+/// interface, so there Align Right comes first (rightmost) and Align Left third, as right-to-left
+/// Word orders them: each button still does what its icon shows.
+pub fn align_buttons(ui: &mut Ui, app: &mut WordApp, align: wordcraft_doc::Align) {
+    use wordcraft_doc::Align as A;
+    let mut buttons = [
+        ("alignLeft", "Align Left", "para.alignLeft", A::Left),
+        ("alignCenter", "Center", "para.alignCenter", A::Center),
+        ("alignRight", "Align Right", "para.alignRight", A::Right),
+        ("justify", "Justify", "para.justify", A::Justify),
+    ];
+    if mirrored() {
+        buttons.swap(0, 2);
+    }
+    for (icon, tip, id, a) in buttons {
+        small(ui, app, icon, None, tip, id, serde_json::json!({}), align == a);
+    }
+}
+
 pub fn icon_button(ui: &mut Ui, icon: &str, tip: &str) -> Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());

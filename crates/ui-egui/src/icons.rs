@@ -10,7 +10,51 @@ struct Pen<'a> {
     c: Color32,
     a: Color32,
     w: f32,
+    /// Drawn pre-flipped, so a mirrored interface ([`crate::mirror`]) shows it as designed.
+    keep: bool,
 }
+
+/// Icons whose direction means the same in any interface: text direction, alignment, the page's
+/// own left and right (the document isn't mirrored), media controls, turning clockwise, and Latin
+/// letters read together (`x²`, `ab¹`, `ab-`/`cd`). A mirrored interface keeps them as drawn;
+/// every other icon (undo, indent, bullets, numbering, chevrons) mirrors with the interface, its
+/// letters moving with it, as in right-to-left Word.
+const KEEP_DIRECTION: &[&str] = &[
+    "subscript",
+    "superscript",
+    "footnote",
+    "endnote",
+    "nextFootnote",
+    "ccRichText",
+    "hyphenation",
+    "replace",
+    "translate",
+    "language",
+    "textLtr",
+    "textRtl",
+    "textDirection",
+    "alignText",
+    "alignLeft",
+    "alignCenter",
+    "alignRight",
+    "justify",
+    "cellAlign",
+    "indentLeft",
+    "indentRight",
+    "insertLeft",
+    "insertRight",
+    "rotate",
+    "replay",
+    "replayRewind",
+    "replayPlay",
+    "replayPause",
+    "replayForward",
+    "mediaPlay",
+    "mediaPause",
+    "mediaStop",
+    "mediaPrev",
+    "mediaNext",
+];
 
 impl Pen<'_> {
     fn s(&self) -> f32 {
@@ -19,7 +63,8 @@ impl Pen<'_> {
     fn pt(&self, x: f32, y: f32) -> Pos2 {
         let s = self.s();
         let o = self.r.center() - vec2(10.0 * s, 10.0 * s);
-        pos2(o.x + x * s, o.y + y * s)
+        let p = pos2(o.x + x * s, o.y + y * s);
+        if self.keep { pos2(self.r.min.x + self.r.max.x - p.x, p.y) } else { p }
     }
     fn stroke(&self, c: Color32) -> Stroke {
         Stroke::new(self.w * self.s(), c)
@@ -40,10 +85,10 @@ impl Pen<'_> {
         self.p.add(Shape::convex_polygon(v, c, Stroke::NONE));
     }
     fn rect(&self, x0: f32, y0: f32, x1: f32, y1: f32, c: Color32) {
-        self.p.rect_stroke(Rect::from_min_max(self.pt(x0, y0), self.pt(x1, y1)), 1.0, self.stroke(c), egui::StrokeKind::Middle);
+        self.p.rect_stroke(Rect::from_two_pos(self.pt(x0, y0), self.pt(x1, y1)), 1.0, self.stroke(c), egui::StrokeKind::Middle);
     }
     fn frect(&self, x0: f32, y0: f32, x1: f32, y1: f32, c: Color32) {
-        self.p.rect_filled(Rect::from_min_max(self.pt(x0, y0), self.pt(x1, y1)), 0.5, c);
+        self.p.rect_filled(Rect::from_two_pos(self.pt(x0, y0), self.pt(x1, y1)), 0.5, c);
     }
     fn circle(&self, x: f32, y: f32, r: f32, c: Color32) {
         self.p.circle_stroke(self.pt(x, y), r * self.s(), self.stroke(c));
@@ -73,7 +118,8 @@ impl Pen<'_> {
 
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
-    let pen = Pen { p, r, c, a: accent, w: 1.25 };
+    let keep = KEEP_DIRECTION.contains(&name) && crate::mirror::active(p.ctx());
+    let pen = Pen { p, r, c, a: accent, w: 1.25, keep };
     let a = accent;
     let red = Color32::from_rgb(0xD1, 0x3B, 0x3B);
     let yellow = Color32::from_rgb(0xF2, 0xC8, 0x11);
@@ -1453,6 +1499,20 @@ pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c:
                 p.circle_filled(*end, stroke.width / 2.0, c);
             }
             p.add(Shape::line(pts, stroke));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every icon kept the right way round in a mirrored interface is one the set draws (a
+    /// misspelt name would silently mirror).
+    #[test]
+    fn icons_kept_unmirrored_exist() {
+        let source = include_str!("icons.rs");
+        for name in super::KEEP_DIRECTION {
+            let arm = [format!("\"{name}\" =>"), format!("\"{name}\" |"), format!("| \"{name}\"")];
+            assert!(arm.iter().any(|a| source.contains(a.as_str())), "{name} is not an icon");
         }
     }
 }

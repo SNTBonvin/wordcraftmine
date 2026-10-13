@@ -57,6 +57,7 @@ pub mod ink;
 pub mod keys;
 pub mod keytips;
 pub mod mini_toolbar;
+pub mod mirror;
 pub mod objects;
 pub mod options;
 pub mod panes;
@@ -387,6 +388,11 @@ pub struct WordApp {
     /// CJK text is (about to be) on screen in a non-CJK interface, e.g. the language names in
     /// File ▸ Options: load the installed CJK fallback font if no embedded face covers it.
     pub(crate) want_system_cjk: bool,
+    /// The interface language whose catalog [`WordApp::ensure_language_fonts`] last checked.
+    fonts_lang: Option<&'static str>,
+    /// The language names (File ▸ Options) are on screen, in their own scripts.
+    pub(crate) want_language_name_fonts: bool,
+    fonts_language_names: bool,
     fonts_frames: u32,
     /// The effective interface theme last installed in egui ([`theme::apply`]).
     applied_theme: Option<theme::Appearance>,
@@ -487,6 +493,9 @@ impl WordApp {
             fonts_hans: false,
             fonts_system_cjk: false,
             want_system_cjk: false,
+            fonts_lang: None,
+            want_language_name_fonts: false,
+            fonts_language_names: false,
             fonts_frames: 0,
             applied_theme: None,
             // Inert until the app binary calls `watch_desktop_theme`.
@@ -1275,6 +1284,31 @@ impl WordApp {
         }
     }
 
+    /// An interface language in a script the interface faces lack (Hebrew) would draw as boxes.
+    /// Borrow the document fonts' fallback faces for its catalog, as the caption does for a file
+    /// name, once per language; and for the language names when File ▸ Options lists them.
+    fn ensure_language_fonts(&mut self, lang: i18n::Lang) {
+        let mut text = String::new();
+        if self.fonts_lang != Some(lang.code()) {
+            self.fonts_lang = Some(lang.code());
+            text.push_str(lang.catalog_text());
+        }
+        if self.want_language_name_fonts && !self.fonts_language_names {
+            self.fonts_language_names = true;
+            text.extend(i18n::Lang::all().map(i18n::Lang::name));
+        }
+        if text.is_empty() {
+            return;
+        }
+        let new = theme::faces_for_preedit(&text, &self.canvas.ime_faces, theme::interface_char_covered, |c| {
+            wordcraft_fonts::FontDb::global().fallback_for(c, u32::MAX)
+        });
+        if !new.is_empty() {
+            self.canvas.ime_faces.extend(new);
+            self.styled = false;
+        }
+    }
+
     /// Document title for the title bar (and the suggested file name). An untitled document is
     /// named in the interface language, as `Document1` is in English.
     pub fn title_stem(&self) -> String {
@@ -1322,6 +1356,7 @@ impl WordApp {
         // language names in Options, or a file name the caption is drawing. A file opened later
         // in this frame (dialog, drop, control channel) is picked up again at the end.
         self.ensure_caption_fonts();
+        self.ensure_language_fonts(lang);
         self.install_ui_fonts(ctx, lang);
         if let Some(answer) = self.desktop_theme.take_change() {
             self.desktop_dark = Some(answer);
@@ -1398,6 +1433,7 @@ impl WordApp {
         }
         // The open above may have changed the file name the caption draws.
         self.ensure_caption_fonts();
+        self.ensure_language_fonts(lang);
         self.install_ui_fonts(ctx, lang);
         self.report_dirty();
     }
@@ -1514,6 +1550,7 @@ impl WordApp {
         // Keytips are read before layout so the frame paints the new state; badges paint after
         // the ribbon so they sit on top of it.
         crate::keytips::logic(self, &ctx);
+        self.canvas.view_rect = None;
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
@@ -1525,6 +1562,15 @@ impl WordApp {
                 canvas::show(self, ui);
             });
         }
+        // A right-to-left interface is mirrored as it is painted; the page and the popups placed
+        // from it move without flipping.
+        let anchored: Vec<egui::Id> = self
+            .canvas
+            .context_menu_id
+            .into_iter()
+            .chain(["wc_mini_toolbar", "content_control_popup", "ink_replay_bar"].map(egui::Id::new))
+            .collect();
+        mirror::configure(&ctx, i18n::current().rtl(), self.canvas.view_rect, &anchored);
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]

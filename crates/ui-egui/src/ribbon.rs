@@ -689,14 +689,17 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
             });
             ui.add_space(3.0);
             crate::widgets::row(ui, |ui| {
-                use wordcraft_doc::Align as A;
-                small(ui, app, "alignLeft", None, "Align Left", "para.alignLeft", json!({}), align == A::Left);
-                small(ui, app, "alignCenter", None, "Center", "para.alignCenter", json!({}), align == A::Center);
-                small(ui, app, "alignRight", None, "Align Right", "para.alignRight", json!({}), align == A::Right);
-                small(ui, app, "justify", None, "Justify", "para.justify", json!({}), align == A::Justify);
+                crate::widgets::align_buttons(ui, app, align);
                 ui.add_space(4.0);
-                small(ui, app, "textLtr", None, "Left-to-Right Text Direction", "para.ltr", json!({}), !rtl);
-                small(ui, app, "textRtl", None, "Right-to-Left Text Direction", "para.rtl", json!({}), rtl);
+                // A mirrored interface puts right-to-left first, at the right (see `align_buttons`).
+                let mut directions =
+                    [("textLtr", "Left-to-Right Text Direction", "para.ltr", !rtl), ("textRtl", "Right-to-Left Text Direction", "para.rtl", rtl)];
+                if crate::widgets::mirrored() {
+                    directions.reverse();
+                }
+                for (icon, tip, id, on) in directions {
+                    small(ui, app, icon, None, tip, id, json!({}), on);
+                }
                 ui.add_space(4.0);
                 menu_button(ui, app, "lineSpacing", None, "Line and Paragraph Spacing", false, "para.lineSpacing", |ui, app| {
                     for v in [1.0, 1.15, 1.5, 2.0, 2.5, 3.0] {
@@ -2375,6 +2378,12 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
                 [("centerLeft", "Align Center Left"), ("center", "Align Center"), ("centerRight", "Align Center Right")],
                 [("bottomLeft", "Align Bottom Left"), ("bottomCenter", "Align Bottom Center"), ("bottomRight", "Align Bottom Right")],
             ] {
+                // The grid is a map of the cell: in a mirrored interface its right column stays
+                // the one that aligns right.
+                let mut row = row;
+                if crate::widgets::mirrored() {
+                    row.reverse();
+                }
                 for (v, tip) in row {
                     small(ui, app, "cellAlign", None, tip, "table.cellAlign", json!({"value": v}), false);
                 }
