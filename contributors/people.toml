@@ -79,3 +79,6 @@ display_name = "manucarcor"
 [people.webdevtodayjason]
 display_name = "Jason Brashear"
 sync_github_name = false
+
+[people.SyahrulBhudiF]
+sync_github_name = true
