@@ -30,56 +30,68 @@ pub struct Previews {
     math: MathAtlas,
 }
 
-/// Side of the square texture the equation pictures share, in pixels.
+/// Side of each square texture page the equation pictures share, in pixels.
 const MATH_ATLAS: usize = 2048;
+/// At most this many pages: enough for a frame's pictures at a high display scale (the 22
+/// built-in equations alone take two pages at 3×), still a handful of textures in all.
+const MATH_ATLAS_PAGES: usize = 4;
 /// Transparent pixels between pictures, so linear filtering never bleeds one into the next.
 const MATH_ATLAS_GAP: usize = 2;
 
-/// Every equation picture (gallery tiles, structure buttons, symbols) packed into a single
-/// texture, row by row, and drawn as a part of it (#1002).
+/// Every equation picture (gallery tiles, structure buttons, symbols) packed into a few shared
+/// textures ("pages"), row by row, and drawn as a part of one (#1002).
 ///
 /// They used to be a texture each: hundreds of small textures, created as galleries opened and
 /// all freed at once when the preview cache filled. On Windows (DirectX 12) the tiles then
 /// showed other textures' memory: inverted pictures, red and teal fills, and even damaged
-/// interface letters. One texture written in place is what egui does for its own glyphs; it
-/// creates and frees nothing while galleries are browsed. When it fills up it starts over.
+/// interface letters. A texture written in place is what egui does for its own glyphs; the
+/// atlas creates at most [`MATH_ATLAS_PAGES`] textures and frees none while galleries are
+/// browsed. When every page is full, the page least recently drawn from starts over, but never
+/// one drawn from in the current frame (its pictures are already on screen): a frame whose
+/// pictures don't fit shows the rest as linear text.
 #[derive(Default)]
 struct MathAtlas {
+    pages: Vec<AtlasPage>,
+    /// Picture key → its page and part of that page's texture (UV coordinates).
+    uv: HashMap<String, (usize, Rect)>,
+    /// How many times a page started over (for tests).
+    wipes: u64,
+}
+
+#[derive(Default)]
+struct AtlasPage {
     tex: Option<TextureHandle>,
-    /// Picture key → its part of the texture (UV coordinates).
-    uv: HashMap<String, Rect>,
     /// Where the next picture goes: the current row's left edge and top, and the row's height.
     x: usize,
     y: usize,
     row_h: usize,
-    /// The frame the atlas last started over in (at most once a frame, so a gallery bigger than
-    /// the atlas shows its linear text instead of re-rendering forever).
-    reset_frame: Option<u64>,
+    /// The last frame a picture of this page was handed out in.
+    used: u64,
 }
 
-impl MathAtlas {
-    /// A free spot for a `w`×`h` picture, or `None` when the atlas is full or it can't fit.
+impl AtlasPage {
+    /// A free spot for a `w`×`h` picture, or `None` when the page is full or it can't fit.
     fn place(&mut self, w: usize, h: usize) -> Option<[usize; 2]> {
         if w == 0 || h == 0 || w > MATH_ATLAS || h > MATH_ATLAS {
             return None;
         }
-        if self.x.saturating_add(w) > MATH_ATLAS {
-            self.x = 0;
-            self.y = self.y.saturating_add(self.row_h).saturating_add(MATH_ATLAS_GAP);
-            self.row_h = 0;
+        let (mut x, mut y, mut row_h) = (self.x, self.y, self.row_h);
+        if x.saturating_add(w) > MATH_ATLAS {
+            x = 0;
+            y = y.saturating_add(row_h).saturating_add(MATH_ATLAS_GAP);
+            row_h = 0;
         }
-        if self.y.saturating_add(h) > MATH_ATLAS {
+        if y.saturating_add(h) > MATH_ATLAS {
             return None;
         }
-        let at = [self.x, self.y];
-        self.x = self.x.saturating_add(w).saturating_add(MATH_ATLAS_GAP);
-        self.row_h = self.row_h.max(h);
-        Some(at)
+        self.x = x.saturating_add(w).saturating_add(MATH_ATLAS_GAP);
+        self.y = y;
+        self.row_h = row_h.max(h);
+        Some([x, y])
     }
 
-    /// Forget every picture and clear the texture.
+    /// Forget the page's layout and clear its texture.
     fn reset(&mut self) {
-        self.uv.clear();
         self.x = 0;
         self.y = 0;
         self.row_h = 0;
@@ -87,30 +99,54 @@ impl MathAtlas {
             tex.set(egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT), egui::TextureOptions::LINEAR);
         }
     }
+}
 
-    /// Add `img` under `key`; its texture and UV rectangle, or `None` if it can't be placed.
+impl MathAtlas {
+    /// The picture stored under `key`, marking its page as drawn from in `frame`.
+    fn get(&mut self, frame: u64, key: &str) -> Option<(egui::TextureId, Rect)> {
+        let (page, uv) = *self.uv.get(key)?;
+        let p = self.pages.get_mut(page)?;
+        let id = p.tex.as_ref()?.id();
+        p.used = frame;
+        Some((id, uv))
+    }
+
+    /// Add `img` under `key`; its texture and UV rectangle, or `None` if it can't be placed in
+    /// this frame without wiping pictures already handed out in it.
     fn add(&mut self, ctx: &egui::Context, frame: u64, key: &str, img: egui::ColorImage) -> Option<(egui::TextureId, Rect)> {
         let [w, h] = img.size;
-        let at = match self.place(w, h) {
-            Some(at) => at,
-            None if self.reset_frame != Some(frame) && self.tex.is_some() => {
-                self.reset_frame = Some(frame);
-                self.reset();
-                self.place(w, h)?
-            }
-            None => return None,
-        };
-        let tex = self.tex.get_or_insert_with(|| {
+        if w == 0 || h == 0 || w > MATH_ATLAS || h > MATH_ATLAS {
+            return None;
+        }
+        let mut spot = self.pages.iter_mut().enumerate().find_map(|(i, p)| p.place(w, h).map(|at| (i, at)));
+        if spot.is_none() && self.pages.len() < MATH_ATLAS_PAGES {
+            let mut p = AtlasPage::default();
+            spot = p.place(w, h).map(|at| (self.pages.len(), at));
+            self.pages.push(p);
+        }
+        if spot.is_none() {
+            // Every page is full: start over the one drawn from longest ago, unless all of them
+            // were drawn from in this frame.
+            let (i, p) = self.pages.iter_mut().enumerate().filter(|(_, p)| p.used != frame).min_by_key(|(_, p)| p.used)?;
+            p.reset();
+            self.uv.retain(|_, (page, _)| *page != i);
+            self.wipes = self.wipes.saturating_add(1);
+            spot = p.place(w, h).map(|at| (i, at));
+        }
+        let (i, at) = spot?;
+        let p = self.pages.get_mut(i)?;
+        let tex = p.tex.get_or_insert_with(|| {
             ctx.load_texture(
-                "math_atlas",
+                format!("math_atlas_{i}"),
                 egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT),
                 egui::TextureOptions::LINEAR,
             )
         });
         tex.set_partial(at, img, egui::TextureOptions::LINEAR);
+        p.used = frame;
         let s = MATH_ATLAS as f32;
         let uv = Rect::from_min_max(pos2(at[0] as f32 / s, at[1] as f32 / s), pos2((at[0] + w) as f32 / s, (at[1] + h) as f32 / s));
-        self.uv.insert(key.to_string(), uv);
+        self.uv.insert(key.to_string(), (i, uv));
         Some((tex.id(), uv))
     }
 }
@@ -284,10 +320,10 @@ pub fn math_texture(
     let ppp = ctx.pixels_per_point();
     let k = format!("math:{key}:{pt}:{}x{}:{ppp}", size.x, size.y);
     let p = &mut app.previews;
-    if let (Some(tex), Some(uv)) = (&p.math.tex, p.math.uv.get(&k)) {
-        return Some((tex.id(), *uv));
-    }
     let frame = ctx.cumulative_frame_nr();
+    if let Some(hit) = p.math.get(frame, &k) {
+        return Some(hit);
+    }
     if frame != p.frame {
         p.frame = frame;
         p.budget.set(0);
@@ -801,27 +837,85 @@ mod tests {
         }
     }
 
-    /// #1002: a full atlas starts over (once a frame), and pictures that can never fit are refused.
+    /// #1002: pictures are packed row by row, and pictures that can never fit are refused.
     #[test]
-    fn math_atlas_packs_rows_and_starts_over_when_full() {
-        let mut a = MathAtlas::default();
+    fn math_atlas_packs_rows() {
+        let mut a = AtlasPage::default();
         assert_eq!(a.place(100, 40), Some([0, 0]));
         assert_eq!(a.place(100, 20), Some([100 + MATH_ATLAS_GAP, 0]));
         assert_eq!(a.place(MATH_ATLAS, 10), Some([0, 40 + MATH_ATLAS_GAP]), "a new row under the tallest");
         assert_eq!(a.place(MATH_ATLAS + 1, 10), None);
         assert_eq!(a.place(10, 0), None);
         assert_eq!(a.place(10, MATH_ATLAS), None, "full");
+        assert_eq!(a.place(10, 10), Some([0, 40 + MATH_ATLAS_GAP + 10 + MATH_ATLAS_GAP]), "still room after a refusal");
+    }
+
+    /// #1002: a page is never wiped in a frame that handed out one of its pictures (they are
+    /// already on screen); once all pages are full, the least recently drawn page starts over.
+    #[test]
+    fn math_atlas_never_wipes_a_page_drawn_from_this_frame() {
         let ctx = egui::Context::default();
         let img = || egui::ColorImage::filled([MATH_ATLAS, MATH_ATLAS], egui::Color32::TRANSPARENT);
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             let mut a = MathAtlas::default();
-            assert!(a.add(ui.ctx(), 1, "a", img()).is_some());
-            assert!(a.add(ui.ctx(), 1, "b", img()).is_some(), "started over");
-            assert!(!a.uv.contains_key("a"), "the old pictures are forgotten");
-            assert!(a.add(ui.ctx(), 1, "c", img()).is_none(), "not twice in one frame");
-            assert!(a.add(ui.ctx(), 2, "c", img()).is_some(), "again next frame");
+            let first: Vec<_> = (0..MATH_ATLAS_PAGES).map(|i| a.add(ui.ctx(), 1, &format!("p{i}"), img())).collect();
+            assert!(first.iter().all(Option::is_some), "a page each");
+            let ids: std::collections::HashSet<_> = first.iter().flatten().map(|(id, _)| *id).collect();
+            assert_eq!(ids.len(), MATH_ATLAS_PAGES);
+            assert!(a.add(ui.ctx(), 1, "more", img()).is_none(), "every page was drawn from this frame");
+            assert_eq!(a.wipes, 0);
+            assert!(a.uv.len() == MATH_ATLAS_PAGES, "nothing forgotten");
+            // Next frame: page 0 is drawn from again, so the one drawn longest ago is page 1.
+            assert_eq!(a.get(2, "p0"), first.first().copied().flatten());
+            let (id, _) = a.add(ui.ctx(), 2, "more", img()).expect("a page starts over");
+            assert_eq!(a.wipes, 1);
+            assert_eq!(Some(id), first.get(1).copied().flatten().map(|(id, _)| id), "the least recently drawn page");
+            assert!(a.uv.contains_key("p0") && !a.uv.contains_key("p1"));
+            // Pages 0 and 1 are now in use this frame; 2 and 3 are free to start over, then none.
+            assert!(a.add(ui.ctx(), 2, "x", img()).is_some());
+            assert!(a.add(ui.ctx(), 2, "y", img()).is_some());
+            assert!(a.add(ui.ctx(), 2, "z", img()).is_none());
+            assert_eq!(a.wipes, 3);
+            assert!(a.get(2, "p0").is_some() && a.get(2, "more").is_some() && a.get(2, "x").is_some() && a.get(2, "y").is_some());
         });
         out.textures_delta.clear();
+    }
+
+    /// #1002: at a display scale of 3, the 22 built-in equations need more than one page; the
+    /// built-in menu opened again draws them all from the atlas, with nothing wiped or moved
+    /// (a single page used to start over every frame: flicker and constant re-rendering).
+    #[test]
+    fn builtin_menu_at_scale_3_fits_without_wiping() {
+        use wordcraft_doc::math::parse_linear;
+        use wordcraft_engine::math_gallery::BUILT_INS;
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(3.0);
+        let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+        let builtins: Vec<_> = BUILT_INS.iter().map(|(id, _, lin)| (format!("builtin:{id}"), parse_linear(lin))).collect();
+        let draw = |app: &mut WordApp| {
+            let mut got = Vec::new();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                assert_eq!(ui.ctx().pixels_per_point(), 3.0);
+                let ctx = ui.ctx().clone();
+                got = builtins.iter().map(|(key, nodes)| math_texture(app, &ctx, key, nodes, true, 11.0, vec2(346.0, 60.0))).collect();
+            });
+            out.textures_delta.clear();
+            got
+        };
+        // The first opening renders a few a frame.
+        let mut first = draw(&mut app);
+        for _ in 0..20 {
+            if first.iter().all(Option::is_some) {
+                break;
+            }
+            first = draw(&mut app);
+        }
+        assert!(first.iter().all(Option::is_some), "every built-in drawn");
+        let wipes = app.previews.math.wipes;
+        let again = draw(&mut app);
+        assert_eq!(again, first, "the same texture and place for each");
+        assert_eq!(app.previews.math.wipes, wipes, "nothing started over");
+        assert_eq!(wipes, 0);
     }
 
     #[test]
