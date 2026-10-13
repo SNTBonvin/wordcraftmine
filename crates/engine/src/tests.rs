@@ -5110,6 +5110,39 @@ fn new_documents_follow_the_region() {
     assert_eq!(t.prefs.region.as_deref(), Some("en-US"), "junk is saved as en-US");
 }
 
+/// File › Options owns the Normal-template formatting that each blank document starts with.
+#[test]
+fn new_documents_follow_the_saved_default_formatting() {
+    use wordcraft_doc::props::LineSpacing;
+
+    let mut session = s();
+    let formatting = json!({
+        "font": "Courier New",
+        "size": 10.0,
+        "spaceBefore": 2.0,
+        "spaceAfter": 0.0,
+        "lineSpacing": {"rule": "multiple", "value": 1.0},
+    });
+    let options = run(&mut session, "file.options", json!({"defaultFormatting": formatting}));
+    assert_eq!(options["defaultFormatting"]["font"], "Courier New");
+    run(&mut session, "file.new", json!({}));
+    assert_eq!(session.doc.styles.default_chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(session.doc.styles.default_chr.size, Some(10.0));
+    assert_eq!(session.doc.styles.default_para.space_before, Some(2.0));
+    assert_eq!(session.doc.styles.default_para.space_after, Some(0.0));
+    assert_eq!(session.doc.styles.default_para.line_spacing, Some(LineSpacing::Multiple(1.0)));
+
+    let saved = serde_json::to_value(&session.prefs).unwrap();
+    let mut restored = s();
+    restored.prefs = serde_json::from_value(saved).unwrap();
+    let doc = restored.blank_document();
+    assert_eq!(doc.styles.default_chr.font.as_deref(), Some("Courier New"));
+
+    let before = restored.prefs.default_formatting.clone();
+    assert!(restored.run("file.options", &json!({"defaultFormatting": {"font": "", "size": 10.0, "spaceBefore": 0.0, "spaceAfter": 0.0, "lineSpacing": {"rule": "multiple", "value": 1.0}}})).is_err());
+    assert_eq!(restored.prefs.default_formatting, before);
+}
+
 /// Automatic (HTML-style) paragraph spacing: `para.spacing` turns it on and off, and a number
 /// replaces it, as typing one in Word's Paragraph dialog does; Ctrl+0 and Remove Space After work
 /// on it too.
