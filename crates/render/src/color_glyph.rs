@@ -92,16 +92,19 @@ fn build(face: &FontFace, gid: u32, ppem: u32) -> Option<Drawable> {
     }
 }
 
-/// Decode a bitmap glyph's PNG, which must be exactly the `w`×`h` its strike claims (at most
+/// Decode a bitmap glyph's PNG, which may be at most the `w`×`h` its strike claims (and at most
 /// [`MAX_BITMAP_SIDE`](wordcraft_fonts::color::MAX_BITMAP_SIDE) a side): a hostile font could claim
 /// a small glyph and hand over a huge image, so the size is read from the header before decoding.
+/// A smaller, non-empty image is drawn stretched to the glyph's box: CBDT-only fonts have no
+/// outline to fall back to.
 fn decode_png(png: &[u8], w: u32, h: u32) -> Option<Pixmap> {
     let side = wordcraft_fonts::color::MAX_BITMAP_SIDE;
     if w == 0 || h == 0 || w > side || h > side {
         return None;
     }
     let reader = || image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
-    if reader().into_dimensions().ok()? != (w, h) {
+    let fits = |(iw, ih): (u32, u32)| iw > 0 && ih > 0 && iw <= w && ih <= h;
+    if !fits(reader().into_dimensions().ok()?) {
         return None;
     }
     let mut limits = image::Limits::default();
@@ -112,7 +115,7 @@ fn decode_png(png: &[u8], w: u32, h: u32) -> Option<Pixmap> {
     r.limits(limits);
     let img = r.decode().ok()?.to_rgba8();
     let (iw, ih) = img.dimensions();
-    if (iw, ih) != (w, h) {
+    if !fits((iw, ih)) {
         return None;
     }
     crate::premul_pixmap(iw, ih, img.as_raw())
@@ -420,14 +423,16 @@ mod tests {
         out
     }
 
-    /// A bitmap glyph's PNG must be the size its strike claims: a bigger one is refused before it is
-    /// decoded, so a hostile font can't claim a tiny glyph and make us decode a huge image.
+    /// A bitmap glyph's PNG may not be bigger than its strike claims: a bigger one is refused before
+    /// it is decoded, so a hostile font can't claim a tiny glyph and make us decode a huge image. A
+    /// smaller one is drawn (CBDT-only fonts have no outline to fall back to).
     #[test]
     fn bitmap_png_larger_than_its_claimed_size_is_refused() {
         assert_eq!(decode_png(&png(4, 4), 4, 4).map(|p| (p.width(), p.height())), Some((4, 4)));
+        assert_eq!(decode_png(&png(2, 2), 4, 4).map(|p| (p.width(), p.height())), Some((2, 2)), "smaller than claimed");
         assert!(decode_png(&png(8, 8), 4, 4).is_none(), "wider and taller than claimed");
         assert!(decode_png(&png(8, 4), 4, 4).is_none(), "wider than claimed");
-        assert!(decode_png(&png(2, 2), 4, 4).is_none(), "a different size than claimed");
+        assert!(decode_png(&png(4, 8), 4, 4).is_none(), "taller than claimed");
         let side = wordcraft_fonts::color::MAX_BITMAP_SIDE;
         assert!(decode_png(&png(4, 4), side + 1, 4).is_none(), "past the cap");
     }
