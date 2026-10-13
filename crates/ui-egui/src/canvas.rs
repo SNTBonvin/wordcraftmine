@@ -92,6 +92,10 @@ pub struct CanvasState {
     pub mini_anchor: Option<Rect>,
     /// A picture, shape or text box being dragged by its frame.
     pub(crate) obj_drag: Option<crate::objects::ObjectDrag>,
+    /// Crop mode (Picture Format › Crop) is on for the picture here (`crop`).
+    pub(crate) crop: Option<wordcraft_doc::Pos>,
+    /// A crop handle being dragged.
+    pub(crate) crop_drag: Option<crate::crop::CropDrag>,
     /// An ink stroke being drawn with a pen (Draw tab).
     pub(crate) ink: Option<crate::ink::InkDrag>,
     /// The eraser is down: whether it has erased anything in this drag yet.
@@ -184,6 +188,8 @@ impl Default for CanvasState {
             context_issue: None,
             context_synonyms: None,
             obj_drag: None,
+            crop: None,
+            crop_drag: None,
             ink: None,
             erasing: None,
             ink_ui: Default::default(),

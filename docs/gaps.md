@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (sample-text formulas on Enter, #1067; previously trivial: #29: copied equations as MathML, OMML open as #1297, #816; previously trivial: the Font list no longer keeps every previewed font in memory, #848; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (crop handles on the canvas landed; previously trivial: sample-text formulas on Enter, #1067; previously trivial: #29: copied equations as MathML, OMML open as #1297, #816; previously trivial: the Font list no longer keeps every previewed font in memory, #848; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -67,7 +67,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
   equation puts MathML in HTML on the clipboard (#816; pasting into Word/LibreOffice not yet
   verified; OMML on the clipboard is #1297); only copies containing an equation get HTML,
   text-only copies stay plain text.
-- **UI/UX gaps:** #7, #18, #24; crop handles on the canvas (rotation handle landed, #332); context menus for objects (the table's landed; it still lacks Border Styles); Linux title bar theming (#78); File ›
+- **UI/UX gaps:** #7, #18, #24; context menus for objects (the table's landed; it still lacks Border Styles); Linux title bar theming (#78); File ›
   Options › Animation effects › Use system setting reads macOS (Reduce motion) and the Linux/BSD
   desktops (`apps/wordcraft/src/animations.rs`) but hasn't been tried on a Mac or in a real
   GNOME or KDE session yet.
@@ -83,6 +83,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-12 | trivial | Sample-text formulas on Enter (#1067) implemented; numerical limits not compared in Word |
 | 2026-10-12 | minor | Italian proofing landed (it-IT spelling from the installed Hunspell dictionary, accent-first suggestions, conservative grammar); gap #8 narrowed to the remaining languages |
 | 2026-10-12 | trivial | #2 narrowed: direct run-level `w:contentPart` InkML survives DOCX edits and repeated saves; nested group/canvas ink and native rendering remain |
+| 2026-10-13 | trivial | Crop handles on the canvas landed: off the UI/UX gaps |
 | 2026-10-11 | trivial | Table column and row markers on the rulers landed (#700): the ruler's column markers are off the UI/UX gaps |
 | 2026-10-11 | trivial | UI/UX gaps: the table context menu landed, its items following the selection as in Word (Delete Cells, Rows, Columns or Table, Merge and Split Cells, Distribute, AutoFit, Text Direction, Insert Caption…, Table Properties…); objects' menus and Border Styles remain |
 | 2026-10-11 | trivial | Tables: ordinary drags, Shift+arrows and Shift+click over cells select a rectangle of whole cells (into or out of a table, whole rows); removed from the UI/UX gaps |
