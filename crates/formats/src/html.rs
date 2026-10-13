@@ -1026,7 +1026,8 @@ impl<'r> Builder<'r> {
             }
             _ => {}
         }
-        // `align` on a table places the table; it doesn't align the text in its cells.
+        // `align` on a table is about where the table sits (not imported); it doesn't align the
+        // text in its cells.
         if let Some(a) = attr(attrs, "align").filter(|_| kind != ElKind::Table) {
             align = match a.to_ascii_lowercase().as_str() {
                 "center" | "middle" => Some(Align::Center),
