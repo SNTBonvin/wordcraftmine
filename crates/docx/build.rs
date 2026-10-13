@@ -1,5 +1,5 @@
-//! A branded build (`WORDCRAFT_BRAND_DIR` = a folder with `brand.toml`) names its own files after
-//! the product: the brand's top-level `name = "…"`. Without it, nothing changes.
+//! A branded build (`WORDCRAFT_BRAND_DIR` = a folder with `brand.toml`) writes its own name into
+//! `docProps/app.xml`: the brand's top-level `name = "…"`. Without it, nothing changes.
 
 fn main() {
     println!("cargo::rerun-if-env-changed=WORDCRAFT_BRAND_DIR");
@@ -15,13 +15,6 @@ fn main() {
         })
     });
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("brand_name.rs");
-    let _ = std::fs::write(
-        out,
-        format!(
-            "/// The branded product name, if any.
-pub const BRAND_NAME: Option<&str> = {};
-",
-            name.map_or("None".to_string(), |n| format!("Some({n:?})"))
-        ),
-    );
+    let value = name.map_or("None".to_string(), |n| format!("Some({n:?})"));
+    let _ = std::fs::write(out, format!("/// The branded product name, if any.\npub const BRAND_NAME: Option<&str> = {value};\n"));
 }
