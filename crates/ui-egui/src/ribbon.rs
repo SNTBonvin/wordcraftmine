@@ -11,6 +11,33 @@ use crate::{WordApp, icons};
 
 pub const TABS: [&str; 13] = wordcraft_engine::ribbon::TABS;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RibbonDensity {
+    Wide,
+    Compact,
+    Overflow,
+}
+
+fn ribbon_density(width: f32) -> RibbonDensity {
+    if !width.is_finite() || width < 560.0 {
+        RibbonDensity::Overflow
+    } else if width < 900.0 {
+        RibbonDensity::Compact
+    } else {
+        RibbonDensity::Wide
+    }
+}
+
+fn tab_surface(active: bool, hovered: bool, t: Tokens) -> Option<egui::Color32> {
+    if active {
+        Some(t.ribbon)
+    } else if hovered {
+        Some(t.hover)
+    } else {
+        None
+    }
+}
+
 /// True when the caret/selection touches a picture (#147).
 pub fn has_picture_selected(s: &wordcraft_engine::Session) -> bool {
     matches!(wordcraft_engine::cmd::objects::selected(s), Some((_, wordcraft_doc::para::InlineObject::Image { .. })))
@@ -191,39 +218,67 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     // Tab strip.
     egui::Panel::top("tabs")
-        .exact_size(30.0)
+        .exact_size(32.0)
         .frame(egui::Frame::NONE.fill(t.tab_strip).inner_margin(egui::Margin { left: 8, right: 10, top: 0, bottom: 0 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                for (tab, custom) in &tabs {
-                    let (tab, custom) = (tab.as_str(), *custom);
-                    let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
-                    // A custom tab's name is the user's own text: shown as typed.
-                    let shown = if custom { tab } else { tl!(tab) };
-                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
-                    let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
-                    if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
-                        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
-                    }
-                    let active = app.ui.tab == tab && !app.ui.backstage;
-                    if resp.hovered() && !active {
-                        ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
-                    }
-                    let color = if contextual || active { t.accent_text } else { t.text };
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, shown, if active { semibold(12.5) } else { medium(12.5) }, color);
-                    if active {
-                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
-                        ui.painter().rect_filled(u, 2.0, t.accent);
-                    }
-                    if resp.clicked() {
-                        let _ = app.run("ui.tab", json!({"tab": tab}));
-                    }
-                    if resp.double_clicked() && tab != "File" {
-                        let _ = app.run("ui.collapseRibbon", json!({}));
-                    }
-                    resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
-                }
+
+                // Keep the collaboration controls visible while allowing the tab list to scroll.
+                // Custom ribbon tabs can have arbitrarily long names, and contextual tabs add to
+                // the strip dynamically, so the tab list must not compete with Share/Editing/Comments.
+                let controls_width = match ribbon_density(ui.available_width()) {
+                    RibbonDensity::Wide => 286.0,
+                    RibbonDensity::Compact => 220.0,
+                    RibbonDensity::Overflow => 196.0,
+                };
+                let tab_area_width = (ui.available_width() - controls_width).max(0.0);
+                ui.allocate_ui_with_layout(vec2(tab_area_width, 32.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    egui::ScrollArea::horizontal()
+                        .id_salt("tab-strip-scroll")
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.horizontal_centered(|ui| {
+                                ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                                for (tab, custom) in &tabs {
+                                    let (tab, custom) = (tab.as_str(), *custom);
+                                    let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
+                                    // A custom tab's name is the user's own text: shown as typed.
+                                    let shown = if custom { tab } else { tl!(tab) };
+                                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
+                                    let (r, resp) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
+                                    if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
+                                        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
+                                    }
+                                    let active = app.ui.tab == tab && !app.ui.backstage;
+                                    if let Some(fill) = tab_surface(active, resp.hovered(), t) {
+                                        let inset = if active { 2.0 } else { 3.0 };
+                                        ui.painter().rect_filled(r.shrink2(vec2(0.0, inset)), 5.0, fill);
+                                    }
+                                    let color = if contextual || active { t.accent_text } else { t.text };
+                                    ui.painter().text(
+                                        r.center(),
+                                        Align2::CENTER_CENTER,
+                                        shown,
+                                        if active { semibold(12.5) } else { medium(12.5) },
+                                        color,
+                                    );
+                                    if active {
+                                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
+                                        ui.painter().rect_filled(u, 2.0, t.accent);
+                                    }
+                                    if resp.clicked() {
+                                        let _ = app.run("ui.tab", json!({"tab": tab}));
+                                    }
+                                    if resp.double_clicked() && tab != "File" {
+                                        let _ = app.run("ui.collapseRibbon", json!({}));
+                                    }
+                                    resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
+                                }
+                            });
+                        });
+                });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Share, Editing mode, Comments.
                     let share = tl!("Share");
@@ -275,10 +330,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             // the buttons drawn over it keep their own clicks.
             let bg = ui.interact(ui.max_rect(), ui.id().with("ribbon_background"), Sense::click());
             bg.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
+            let density = ribbon_density(ui.available_width());
             let entry = user_tabs.iter().find(|e| e.name == app.ui.tab);
             let scroll = egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                 ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    ui.spacing_mut().item_spacing = match density {
+                        RibbonDensity::Wide => vec2(2.0, 2.0),
+                        RibbonDensity::Compact => vec2(1.0, 1.0),
+                        RibbonDensity::Overflow => vec2(0.0, 0.0),
+                    };
+                    if density == RibbonDensity::Overflow {
+                        let tab = app.ui.tab.clone();
+                        overflow_menu(ui, app, &tab);
+                        return;
+                    }
                     match entry {
                         // Every tab hidden: nothing to show.
                         Some(e) if e.hidden => return,
@@ -338,6 +403,53 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 state.store(ui.ctx(), scroll.id);
             }
         });
+}
+
+fn overflow_menu(ui: &mut Ui, app: &mut WordApp, tab: &str) {
+    let label = tl!("More commands");
+    let response = ui.button(label).on_hover_text(tl!("Show commands from this ribbon tab"));
+    egui::Popup::menu(&response).show(|ui| {
+        ui.set_min_width(240.0);
+        let commands = overflow_commands(app, tab);
+        if commands.is_empty() {
+            ui.label(tl!("No commands available"));
+        } else {
+            for (id, label) in commands {
+                let enabled = app.session.registry.get(id).map_or(true, |spec| (spec.enabled)(&app.session).is_none());
+                let shortcut = crate::widgets::shortcut_text(app, id);
+                let mut item = egui::Button::new(tl!(label));
+                if !shortcut.is_empty() {
+                    item = item.shortcut_text(shortcut);
+                }
+                if ui.add_enabled(enabled, item).clicked() {
+                    crate::widgets::run_from_ribbon(app, id, json!({}));
+                    ui.close();
+                }
+            }
+        }
+    });
+}
+
+fn overflow_commands(app: &WordApp, tab: &str) -> Vec<(&'static str, &'static str)> {
+    let prefix = format!("{tab} ›");
+    let mut commands: Vec<(&'static str, &'static str)> = app
+        .session
+        .registry
+        .all()
+        .iter()
+        .filter(|spec| spec.location == tab || spec.location.starts_with(&prefix))
+        .map(|spec| (spec.id, spec.label))
+        .collect();
+    if let Some(entry) = app.session.ribbon.tabs().iter().find(|entry| entry.name == tab) {
+        for id in entry.groups.iter().flat_map(|group| group.commands.iter()) {
+            if let Some(spec) = app.session.registry.get(id)
+                && !commands.iter().any(|(existing, _)| *existing == spec.id)
+            {
+                commands.push((spec.id, spec.label));
+            }
+        }
+    }
+    commands
 }
 
 /// Custom groups (Customize Ribbon, #379): up to three commands as large buttons, more as small
@@ -2398,6 +2510,35 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
 mod tests {
     use super::*;
     use wordcraft_engine::Session;
+
+    #[test]
+    fn ribbon_density_changes_only_at_stable_width_thresholds() {
+        assert_eq!(ribbon_density(1_200.0), RibbonDensity::Wide);
+        assert_eq!(ribbon_density(899.0), RibbonDensity::Compact);
+        assert_eq!(ribbon_density(560.0), RibbonDensity::Compact);
+        assert_eq!(ribbon_density(559.0), RibbonDensity::Overflow);
+        assert_eq!(ribbon_density(f32::NAN), RibbonDensity::Overflow);
+    }
+
+    #[test]
+    fn overflow_commands_keep_registered_tab_commands_in_order() {
+        let app = WordApp::new(Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        let commands = overflow_commands(&app, "Home");
+        let ids: Vec<_> = commands.iter().map(|(id, _)| *id).collect();
+        assert!(!ids.is_empty());
+        assert!(ids.iter().position(|id| *id == "format.bold").is_some());
+        assert!(ids.iter().all(|id| app.session.registry.get(id).is_some()));
+    }
+
+    #[test]
+    fn tab_surfaces_follow_hover_and_selection_in_both_themes() {
+        for t in [Tokens::light(), Tokens::dark()] {
+            assert_eq!(tab_surface(false, false, t), None);
+            assert_eq!(tab_surface(false, true, t), Some(t.hover));
+            assert_eq!(tab_surface(true, false, t), Some(t.ribbon));
+            assert_eq!(tab_surface(true, true, t), Some(t.ribbon), "selection stays visible on hover");
+        }
+    }
 
     fn png_data() -> String {
         let img = image::RgbaImage::from_fn(20, 10, |x, y| {

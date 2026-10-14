@@ -10,15 +10,18 @@ use crate::{WordApp, icons};
 pub const CONTENT_H: f32 = 66.0;
 /// Height of the group title row under the content.
 pub const LABEL_H: f32 = 18.0;
-/// Large buttons: centre of the 32 px icon, top of the first label line, and the pitch and
+/// Large buttons: centre of the 36 px icon, top of the first label line, and the pitch and
 /// height of a label line (`regular(11.5)`; a test checks the font's real line height).
-pub const BIG_ICON_Y: f32 = 18.0;
-pub const BIG_LABEL_Y: f32 = 36.0;
+pub const BIG_ICON_SIZE: f32 = 36.0;
+pub const BIG_ICON_Y: f32 = 19.0;
+pub const BIG_LABEL_Y: f32 = 39.0;
 pub const LABEL_PITCH: f32 = 13.0;
 pub const LABEL_LINE_H: f32 = 14.0;
+/// Icon artwork on compact ribbon controls.
+pub const SMALL_ICON_SIZE: f32 = 20.0;
 // #653: a two-line label ends inside the content, above the group title row.
 const _: () = assert!(BIG_LABEL_Y + LABEL_PITCH + LABEL_LINE_H <= CONTENT_H);
-const _: () = assert!(BIG_ICON_Y + 16.0 <= BIG_LABEL_Y);
+const _: () = assert!(BIG_ICON_Y + BIG_ICON_SIZE / 2.0 <= BIG_LABEL_Y);
 
 /// Shortcut text for a command (`⌘B` on macOS, `Ctrl+B` elsewhere): its first key in effect,
 /// custom keys included (Customize Keyboard).
@@ -125,7 +128,7 @@ pub(crate) fn run_from_ribbon(app: &mut WordApp, id: &str, params: Value) {
     }
 }
 
-/// A large ribbon button: 32 px icon over a (possibly two-line) label.
+/// A large ribbon button: 36 px icon over a (possibly two-line) label.
 pub fn big(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str, params: Value, menu: bool) -> Response {
     big_button(ui, app, icon, label, id, params, menu, false)
 }
@@ -164,7 +167,7 @@ fn big_button(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str,
     keytip_badge(ui, r, id, &label.replace('\n', " "));
     let on = enabled(app, id);
     bg(ui, r, &resp, checked, &t);
-    let ic = Rect::from_center_size(pos2(r.center().x, r.min.y + BIG_ICON_Y), vec2(32.0, 32.0));
+    let ic = Rect::from_center_size(pos2(r.center().x, r.min.y + BIG_ICON_Y), vec2(BIG_ICON_SIZE, BIG_ICON_SIZE));
     let (c, a) = if on { (t.icon, t.accent) } else { (t.text_disabled, t.text_disabled) };
     icons::paint(ui.painter(), ic, icon, c, a);
     let mut y = r.min.y + BIG_LABEL_Y;
@@ -181,7 +184,7 @@ fn big_button(ui: &mut Ui, app: &mut WordApp, icon: &str, label: &str, id: &str,
     resp
 }
 
-/// A small button: 16 px icon with an optional label; `checked` draws the toggled state.
+/// A small button: 20 px icon with an optional label; `checked` draws the toggled state.
 pub fn small(ui: &mut Ui, app: &mut WordApp, icon: &str, label: Option<&str>, tip: &str, id: &str, params: Value, checked: bool) -> Response {
     let (label, tip) = (label.map(|l| tl!(l)), tl!(tip));
     let t = Tokens::get(ui.ctx());
@@ -190,7 +193,7 @@ pub fn small(ui: &mut Ui, app: &mut WordApp, icon: &str, label: Option<&str>, ti
     keytip_badge(ui, r, id, tip);
     let on = enabled(app, id);
     bg(ui, r, &resp, checked, &t);
-    let ic = Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0));
+    let ic = Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(SMALL_ICON_SIZE, SMALL_ICON_SIZE));
     let (c, a) = if on { (t.icon, t.accent) } else { (t.text_disabled, t.text_disabled) };
     icons::paint(ui.painter(), ic, icon, c, a);
     if let Some(l) = label {
@@ -224,7 +227,7 @@ pub fn split(
     let (ar, aresp) = ui.allocate_exact_size(vec2(11.0, 22.0), Sense::click());
     bg(ui, r, &resp, checked, &t);
     bg(ui, ar, &aresp, false, &t);
-    let ic = Rect::from_center_size(r.center(), vec2(17.0, 17.0));
+    let ic = Rect::from_center_size(r.center(), vec2(SMALL_ICON_SIZE, SMALL_ICON_SIZE));
     icons::paint(ui.painter(), ic, icon, t.icon, t.accent);
     if let Some(sw) = swatch {
         ui.painter().rect_filled(Rect::from_min_max(pos2(r.min.x + 4.0, r.max.y - 5.0), pos2(r.max.x - 4.0, r.max.y - 2.0)), 0.0, sw);
@@ -273,7 +276,7 @@ pub fn menu_button(
         let (r, resp) = ui.allocate_exact_size(vec2(w, CONTENT_H), Sense::click());
         keytip_badge(ui, r, "menu", tip);
         bg(ui, r, &resp, false, &t);
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.min.y + BIG_ICON_Y), vec2(32.0, 32.0)), icon, c, a);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.min.y + BIG_ICON_Y), vec2(BIG_ICON_SIZE, BIG_ICON_SIZE)), icon, c, a);
         let lines: Vec<&str> = label.unwrap_or("").split('\n').collect();
         let mut y = r.min.y + BIG_LABEL_Y;
         for (i, l) in lines.iter().enumerate() {
@@ -286,7 +289,7 @@ pub fn menu_button(
         let (r, resp) = ui.allocate_exact_size(vec2(24.0 + text_w + 10.0, 22.0), Sense::click());
         keytip_badge(ui, r, "menu", tip);
         bg(ui, r, &resp, false, &t);
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(17.0, 17.0)), icon, c, a);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 12.0, r.center().y), vec2(SMALL_ICON_SIZE, SMALL_ICON_SIZE)), icon, c, a);
         if let Some(l) = label {
             ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, l, regular(11.5), text);
         }
@@ -855,6 +858,13 @@ mod tests {
         ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
         let h = ctx.fonts_mut(|f| f.layout_no_wrap("Page Number Mail Merge gjpqy".into(), crate::theme::regular(11.5), Color32::WHITE).size().y);
         assert!(h <= LABEL_LINE_H, "label line is {h} px tall");
+    }
+
+    #[test]
+    fn ribbon_icon_sizes_leave_room_for_labels_and_compact_controls() {
+        assert!(BIG_ICON_SIZE > 32.0);
+        assert!(BIG_ICON_Y + BIG_ICON_SIZE / 2.0 <= BIG_LABEL_Y);
+        assert!(SMALL_ICON_SIZE <= 22.0);
     }
 
     #[test]

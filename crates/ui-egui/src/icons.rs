@@ -13,16 +13,27 @@ struct Pen<'a> {
 }
 
 impl Pen<'_> {
+    fn pixels_per_point(&self) -> f32 {
+        let ppp = self.p.pixels_per_point();
+        if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 }
+    }
+    /// Align vector artwork to physical pixels so narrow strokes remain crisp at every UI scale.
+    fn snap(&self, value: f32) -> f32 {
+        let ppp = self.pixels_per_point();
+        (value * ppp).round() / ppp
+    }
     fn s(&self) -> f32 {
         self.r.width().min(self.r.height()) / 20.0
     }
     fn pt(&self, x: f32, y: f32) -> Pos2 {
         let s = self.s();
         let o = self.r.center() - vec2(10.0 * s, 10.0 * s);
-        pos2(o.x + x * s, o.y + y * s)
+        pos2(self.snap(o.x + x * s), self.snap(o.y + y * s))
     }
     fn stroke(&self, c: Color32) -> Stroke {
-        Stroke::new(self.w * self.s(), c)
+        let ppp = self.pixels_per_point();
+        let width = (self.w * self.s() * ppp).round().max(1.0) / ppp;
+        Stroke::new(width, c)
     }
     fn line(&self, pts: &[(f32, f32)]) {
         self.line_c(pts, self.c);
