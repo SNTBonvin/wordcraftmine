@@ -1074,6 +1074,10 @@ pub struct RowProps {
     pub header: bool,
     /// Don't let the row break across pages.
     pub cant_split: bool,
+    /// Table properties this row overrides (`w:tblPrEx`, ECMA-376 §17.4.61): width, alignment,
+    /// indent, borders, shading, layout and cell margins. `Some` when the file has the element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exceptions: Option<Box<TableProps>>,
     /// Tracked formatting change (`w:trPrChange`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fmt_change: Option<Box<PropChange<RowProps>>>,
