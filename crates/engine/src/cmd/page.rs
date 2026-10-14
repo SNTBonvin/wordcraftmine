@@ -1,8 +1,9 @@
 //! Layout tab: page setup (margins, orientation, size, columns), breaks, line numbers, hyphenation.
 
 use serde_json::{Value, json};
+use wordcraft_doc::props::{Border, Borders};
 use wordcraft_doc::section::{
-    Columns, DocGrid, DocGridType, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, MIN_GRID_PITCH, SectionProps, SectionStart,
+    Columns, DocGrid, DocGridType, LineNumbering, MAX_CHAR_SPACE, MAX_GRID_PITCH, MAX_NOTE_START, MIN_GRID_PITCH, SectionProps, SectionStart,
 };
 use wordcraft_doc::{Block, Pos, StoryRef};
 
@@ -47,7 +48,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.ui_requests.push(json!({"open": "pageSetup"}));
             Ok(serde_json::to_value(sect(s)).unwrap_or(Value::Null))
         })
-        .params(r#"{"section"?: SectionProps} (checked like Size, Margins and Columns: non-finite numbers and margins that leave no room for text are refused; page sides 72–1584 pt, 1–12 columns with 0–300 pt gaps, header/footer/gutter 0–1584 pt, line numbers start 1–32767, countBy 1–100, distance 0–1584 pt are clamped)"#),
+        .params(r#"{"section"?: SectionProps} (replaces the whole section, headers and footers included; checked like Size, Margins, Columns, Line Numbers, Footnotes and Page Borders: non-finite numbers and margins that leave no room for text are refused; page sides 7.2–1584 pt, 1–12 columns with 0–300 pt gaps, header/footer/gutter 0–1584 pt, page border width 0.25–6 pt and distance 0–31 pt, note start 1–32767, line numbers start 1–32767, countBy 1–100, distance 0–1584 pt are clamped)"#),
         CommandSpec::new("layout.verticalAlign", "Vertical Alignment", "Layout › Page Setup › Layout", |s, v| {
             let va = match p::str(v, "value") {
                 Some("center") => wordcraft_doc::props::VAlign::Center,
@@ -334,9 +335,15 @@ fn document_grid(s: &mut Session, v: &Value) -> CmdResult {
     Ok(grid_result(&sect(s), size))
 }
 
-/// Checks a whole section handed to `layout.pageSetup` by the rules of Size, Margins and
-/// Columns: a non-finite number or margins that leave no room for text is an error; the rest is
-/// clamped to the ranges those commands use.
+/// Page sides, in points: 0.1" to 22" (the range Size uses).
+pub(crate) const MIN_PAGE_SIDE: f32 = 7.2;
+pub(crate) const MAX_PAGE_SIDE: f32 = 1584.0;
+/// The room the text keeps between the margins, in points.
+pub(crate) const MIN_TEXT_ROOM: f32 = 36.0;
+
+/// Checks a whole section handed to `layout.pageSetup` by the rules of Size, Margins, Columns,
+/// Line Numbers, Footnotes and Page Borders: a non-finite number or margins that leave no room
+/// for text is an error; the rest is clamped to the ranges those commands use.
 fn validate_section(x: &mut SectionProps) -> Result<(), CmdError> {
     let bad = |what: &str| CmdError::Params(format!("section: {what} must be a finite number"));
     let finite = [x.page_w, x.page_h, x.margin_top, x.margin_bottom, x.margin_left, x.margin_right, x.header, x.footer, x.gutter, x.columns.space];
@@ -352,24 +359,37 @@ fn validate_section(x: &mut SectionProps) -> Result<(), CmdError> {
     if x.doc_grid.as_ref().is_some_and(|g| !g.line_pitch.is_finite()) {
         return Err(bad("the grid pitch"));
     }
-    x.page_w = x.page_w.clamp(72.0, 1584.0);
-    x.page_h = x.page_h.clamp(72.0, 1584.0);
+    if x.page_borders.as_ref().is_some_and(|b| border_sides(b).any(|d| !d.width.is_finite() || !d.space.is_finite())) {
+        return Err(bad("page border widths and distances"));
+    }
+    x.page_w = x.page_w.clamp(MIN_PAGE_SIDE, MAX_PAGE_SIDE);
+    x.page_h = x.page_h.clamp(MIN_PAGE_SIDE, MAX_PAGE_SIDE);
+    // Like Size, the orientation follows the sides.
+    if x.page_w != x.page_h {
+        x.landscape = x.page_w > x.page_h;
+    }
     x.margin_top = x.margin_top.max(0.0);
     x.margin_bottom = x.margin_bottom.max(0.0);
     x.margin_left = x.margin_left.max(0.0);
     x.margin_right = x.margin_right.max(0.0);
-    x.header = x.header.clamp(0.0, 1584.0);
-    x.footer = x.footer.clamp(0.0, 1584.0);
-    x.gutter = x.gutter.clamp(0.0, 1584.0);
-    if x.margin_left + x.margin_right + x.gutter > x.page_w - 36.0 || x.margin_top + x.margin_bottom > x.page_h - 36.0 {
+    x.header = x.header.clamp(0.0, x.page_h);
+    x.footer = x.footer.clamp(0.0, x.page_h);
+    x.gutter = x.gutter.clamp(0.0, MAX_PAGE_SIDE);
+    if x.margin_left + x.margin_right + x.gutter > x.page_w - MIN_TEXT_ROOM || x.margin_top + x.margin_bottom > x.page_h - MIN_TEXT_ROOM {
         return Err(CmdError::Params("margins leave no room for text".into()));
     }
-    x.columns.count = x.columns.count.clamp(1, 12);
     x.columns.space = x.columns.space.clamp(0.0, 300.0);
     x.columns.widths.truncate(12);
     for (w, sp) in &mut x.columns.widths {
-        *w = w.clamp(18.0, 1584.0);
+        *w = w.clamp(18.0, MAX_PAGE_SIDE);
         *sp = sp.clamp(0.0, 300.0);
+    }
+    // As in Columns: custom widths set the count; a single width is no custom layout.
+    if x.columns.widths.len() > 1 {
+        x.columns.count = x.columns.widths.len() as u32;
+    } else {
+        x.columns.widths.clear();
+        x.columns.count = x.columns.count.clamp(1, 12);
     }
     if let Some(l) = &mut x.line_numbers {
         l.start = l.start.clamp(1, 32_767);
@@ -381,7 +401,25 @@ fn validate_section(x: &mut SectionProps) -> Result<(), CmdError> {
         g.char_space = g.char_space.clamp(-MAX_CHAR_SPACE, MAX_CHAR_SPACE);
     }
     x.page_num_start = x.page_num_start.map(|n| n.min(100_000));
+    for n in [&mut x.footnote_pr, &mut x.endnote_pr] {
+        n.num_start = n.num_start.map(|v| v.clamp(1, MAX_NOTE_START));
+    }
+    // Page Borders: width 0.25–6 pt, distance from the text 0–31 pt.
+    if let Some(b) = &mut x.page_borders {
+        for d in border_sides_mut(b) {
+            d.width = d.width.clamp(0.25, 6.0);
+            d.space = d.space.clamp(0.0, 31.0);
+        }
+    }
     Ok(())
+}
+
+fn border_sides(b: &Borders) -> impl Iterator<Item = &Border> {
+    [&b.top, &b.left, &b.bottom, &b.right, &b.between, &b.inside_v].into_iter().flatten()
+}
+
+fn border_sides_mut(b: &mut Borders) -> impl Iterator<Item = &mut Border> {
+    [&mut b.top, &mut b.left, &mut b.bottom, &mut b.right, &mut b.between, &mut b.inside_v].into_iter().flatten()
 }
 
 fn margins(s: &mut Session, v: &Value) -> CmdResult {
@@ -608,9 +646,16 @@ mod tests {
             ("inf margin", with_section(|v| v["marginTop"] = json!(1e300))),
             ("inf header", with_section(|v| v["header"] = json!(1e300))),
             ("inf column space", with_section(|v| v["columns"]["space"] = json!(1e300))),
+            ("inf column width", with_section(|v| v["columns"]["widths"] = json!([[1e300, 0.0], [100.0, 0.0]]))),
+            ("inf line number distance", with_section(|v| v["lineNumbers"] = json!({"distance": 1e300}))),
+            ("inf grid pitch", with_section(|v| v["docGrid"] = json!({"type": "lines", "linePitch": 1e300, "charSpace": 0}))),
+            ("inf border space", with_section(|v| v["pageBorders"] = json!({"top": {"style": "single", "width": 1.0, "space": 1e300}}))),
+            ("inf border width", with_section(|v| v["pageBorders"] = json!({"top": {"style": "single", "width": 1e300, "space": 1.0}}))),
             ("margins > page", with_section(|v| v["marginLeft"] = json!(5000.0))),
             ("margins eat the height", with_section(|v| v["marginTop"] = json!(700.0))),
             ("gutter eats the width", with_section(|v| v["gutter"] = json!(600.0))),
+            ("negative page", with_section(|v| v["pageW"] = json!(-5.0))),
+            ("zero page height", with_section(|v| v["pageH"] = json!(0.0))),
         ] {
             assert!(s.run("layout.pageSetup", &p).is_err(), "{what}");
             assert_eq!(sect(&s), before, "{what}");
@@ -619,8 +664,8 @@ mod tests {
         s.run(
             "layout.pageSetup",
             &with_section(|v| {
-                v["pageW"] = json!(-5.0);
-                v["pageH"] = json!(0.0);
+                v["pageW"] = json!(100.0);
+                v["pageH"] = json!(100.0);
                 v["marginTop"] = json!(-10.0);
                 v["marginBottom"] = json!(0.0);
                 v["marginLeft"] = json!(0.0);
@@ -630,23 +675,41 @@ mod tests {
                 v["columns"]["count"] = json!(1000);
                 v["columns"]["space"] = json!(-4.0);
                 v["lineNumbers"] = json!({"countBy": 0, "start": 0, "distance": 1e6, "restart": "page"});
+                v["docGrid"] = json!({"type": "lines", "linePitch": 1e9, "charSpace": 2_000_000_000});
+                v["pageNumStart"] = json!(4_000_000_000u64);
+                v["footnotePr"] = json!({"numStart": 4_000_000_000u64});
+                v["endnotePr"] = json!({"numStart": 0});
+                v["pageBorders"] =
+                    json!({"top": {"style": "single", "width": 1e6, "space": -5.0}, "left": {"style": "single", "width": 0.0, "space": 1e6}});
             }),
         )
         .unwrap();
         let x = sect(&s);
-        assert_eq!((x.page_w, x.page_h), (72.0, 72.0));
+        assert_eq!((x.page_w, x.page_h), (100.0, 100.0));
         assert_eq!(x.margin_top, 0.0);
         assert_eq!(x.header, 0.0);
-        assert!(x.footer <= 1584.0 && x.footer >= 0.0);
+        assert_eq!(x.footer, x.page_h, "a footer distance stays on the page");
         assert_eq!(x.columns.count, 12);
         assert_eq!(x.columns.space, 0.0);
         let l = x.line_numbers.unwrap();
         assert_eq!((l.count_by, l.start, l.distance), (1, 1, 1584.0));
+        let g = x.doc_grid.unwrap();
+        assert_eq!((g.line_pitch, g.char_space), (wordcraft_doc::section::MAX_GRID_PITCH, wordcraft_doc::section::MAX_CHAR_SPACE));
+        assert_eq!(x.page_num_start, Some(100_000));
+        assert_eq!(x.footnote_pr.num_start, Some(wordcraft_doc::section::MAX_NOTE_START));
+        assert_eq!(x.endnote_pr.num_start, Some(1));
+        let b = x.page_borders.unwrap();
+        let (t, lf) = (b.top.unwrap(), b.left.unwrap());
+        assert_eq!((t.width, t.space), (6.0, 0.0));
+        assert_eq!((lf.width, lf.space), (0.25, 31.0));
+        // Huge pages clamp; columns and widths agree; orientation follows the sides.
         let mut s = doc();
         s.run(
             "layout.pageSetup",
             &with_section(|v| {
                 v["pageW"] = json!(1e5);
+                v["pageH"] = json!(792.0);
+                v["landscape"] = json!(false);
                 v["columns"]["count"] = json!(3);
                 v["columns"]["widths"] = json!(vec![json!([1.0, 1e5]); 40]);
             }),
@@ -654,7 +717,13 @@ mod tests {
         .unwrap();
         let x = sect(&s);
         assert_eq!(x.page_w, 1584.0);
-        assert!(x.columns.widths.len() <= 12 && x.columns.widths.iter().all(|(w, sp)| *w >= 18.0 && (0.0..=300.0).contains(sp)));
+        assert!(x.landscape, "wider than tall is landscape");
+        assert_eq!(x.columns.widths.len(), 12);
+        assert_eq!(x.columns.count, 12, "the count follows the widths");
+        assert!(x.columns.widths.iter().all(|(w, sp)| *w >= 18.0 && (0.0..=300.0).contains(sp)));
+        // One width is no custom layout: equal columns.
+        s.run("layout.pageSetup", &with_section(|v| v["columns"]["widths"] = json!([[200.0, 0.0]]))).unwrap();
+        assert!(sect(&s).columns.widths.is_empty());
     }
 
     /// A valid section still applies as given.
