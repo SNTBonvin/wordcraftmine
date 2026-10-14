@@ -226,6 +226,8 @@ pub struct UiState {
     #[serde(skip)]
     pub phonetic_candidates: Vec<String>,
     #[serde(skip)]
+    pub phonetic_expected_caret: Option<wordcraft_doc::Pos>,
+    #[serde(skip)]
     pub jatiya_pre_kar: Option<&'static str>,
     #[serde(skip)]
     pub jatiya_linker: bool,
@@ -312,6 +314,7 @@ impl Default for UiState {
             phonetic_buffer: String::new(),
             phonetic_rendered_len: 0,
             phonetic_candidates: Vec::new(),
+            phonetic_expected_caret: None,
             jatiya_pre_kar: None,
             jatiya_linker: false,
             jatiya_reph: false,
@@ -4980,5 +4983,37 @@ mod tests {
         });
         crate::keys::canvas_events(&mut a, &ctx);
         assert_eq!(a.session.bangla_mode, wordcraft_engine::cmd::bangla::BanglaMode::Jatiya);
+    }
+
+    #[test]
+    fn review_phonetic_composition_must_not_erase_text_after_caret_relocation() {
+        let mut a = app();
+        a.session.doc = wordcraft_doc::Document::from_text("KEEP ");
+        a.session.bangla_mode = wordcraft_engine::cmd::bangla::BanglaMode::Phonetic;
+        let ctx = egui::Context::default();
+
+        // Place caret at offset 5 (end of "KEEP ")
+        a.session.sel = wordcraft_engine::Selection::caret(wordcraft_doc::Pos {
+            story: wordcraft_doc::StoryRef::Body,
+            path: wordcraft_doc::Path(vec![0]),
+            off: 5,
+        });
+
+        // Type phonetic "ami"
+        type_keys(&mut a, &ctx, "ami");
+        assert_eq!(body_text(&a), "KEEP আমি");
+
+        // Relocate caret to offset 4 (after 'P', before ' ') without navigation keys (e.g. canvas click)
+        a.session.sel = wordcraft_engine::Selection::caret(wordcraft_doc::Pos {
+            story: wordcraft_doc::StoryRef::Body,
+            path: wordcraft_doc::Path(vec![0]),
+            off: 4,
+        });
+
+        // Type 'b' at the new caret position
+        type_keys(&mut a, &ctx, "b");
+        let text = body_text(&a);
+        assert!(!text.contains("Kআমিব আমি"), "EEP must not be erased: {text}");
+        assert_eq!(text, "KEEPব আমি");
     }
 }

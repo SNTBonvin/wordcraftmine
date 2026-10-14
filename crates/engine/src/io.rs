@@ -657,10 +657,13 @@ fn normalize_blocks_bijoy(
             wordcraft_doc::Block::Para(p) => {
                 // A paragraph is Bijoy if: doc default is Bijoy, or the paragraph mark says so,
                 // or any run has a Bijoy font, or the named paragraph style resolves to Bijoy.
-                let style_is_bijoy = p.props.style.as_deref().is_some_and(|s| bijoy_style_ids.contains(s));
+                let style_is_bijoy = match p.props.style.as_deref() {
+                    Some(s) => bijoy_style_ids.contains(s),
+                    None => default_is_bijoy,
+                };
                 let style_size = resolve_style_size(styles, p.props.style.as_deref());
 
-                let mut para_has_bijoy = default_is_bijoy || char_props_has_bijoy(&p.mark) || style_is_bijoy;
+                let mut para_has_bijoy = style_is_bijoy || char_props_has_bijoy(&p.mark);
                 if !para_has_bijoy {
                     for r in &p.runs {
                         if char_props_has_bijoy(&r.props) {
@@ -708,8 +711,7 @@ fn normalize_blocks_bijoy(
 
                         // A run is Bijoy if it explicitly says so, or if it has no font of its
                         // own and the paragraph (or its style) is known to be Bijoy.
-                        let is_bijoy = char_props_has_bijoy(&r.props)
-                            || (r.props.font.is_none() && r.props.font_cs.is_none() && (para_has_bijoy || style_is_bijoy));
+                        let is_bijoy = char_props_has_bijoy(&r.props) || (r.props.font.is_none() && r.props.font_cs.is_none() && style_is_bijoy);
                         let is_partial = !is_bijoy && has_leftover_bijoy(run_slice);
 
                         let mut props = r.props.clone();
@@ -838,6 +840,7 @@ fn normalize_blocks_bijoy(
 /// Walks each style's own `chr` and up to 32 `based_on` hops through the style sheet.
 fn bijoy_style_set(styles: &wordcraft_doc::StyleSheet) -> std::collections::HashSet<String> {
     let mut set = std::collections::HashSet::new();
+    let default_is_bijoy = char_props_has_bijoy(&styles.default_chr);
     for st in &styles.styles {
         if char_props_has_bijoy(&st.chr) {
             set.insert(st.id.clone());
@@ -846,6 +849,8 @@ fn bijoy_style_set(styles: &wordcraft_doc::StyleSheet) -> std::collections::Hash
         // Walk the based_on chain
         let mut base = st.based_on.as_deref();
         let mut hops = 0usize;
+        let mut found_bijoy = false;
+        let mut has_explicit_font = st.chr.font.is_some() || st.chr.font_cs.is_some();
         while let Some(b) = base {
             hops += 1;
             if hops > 32 {
@@ -853,10 +858,16 @@ fn bijoy_style_set(styles: &wordcraft_doc::StyleSheet) -> std::collections::Hash
             }
             let Some(parent) = styles.styles.iter().find(|s| s.id == b) else { break };
             if char_props_has_bijoy(&parent.chr) {
-                set.insert(st.id.clone());
+                found_bijoy = true;
                 break;
             }
+            if parent.chr.font.is_some() || parent.chr.font_cs.is_some() {
+                has_explicit_font = true;
+            }
             base = parent.based_on.as_deref();
+        }
+        if found_bijoy || (default_is_bijoy && !has_explicit_font) {
+            set.insert(st.id.clone());
         }
     }
     set
@@ -867,18 +878,17 @@ fn bijoy_style_set(styles: &wordcraft_doc::StyleSheet) -> std::collections::Hash
 /// a clean OpenType Unicode font ("Kalpurush") while strictly preserving character
 /// sizing, bold styling, and document colors.
 pub fn normalize_bijoy_fonts(doc: &mut Document) {
-    let default_is_bijoy = char_props_has_bijoy(&doc.styles.default_chr) || doc.styles.styles.iter().any(|s| char_props_has_bijoy(&s.chr));
+    let default_is_bijoy = char_props_has_bijoy(&doc.styles.default_chr);
+    let bijoy_style_ids = bijoy_style_set(&doc.styles);
 
-    let has_bijoy = default_is_bijoy || blocks_have_bijoy(&doc.body) || doc.parts.values().any(|part| blocks_have_bijoy(&part.blocks));
+    let has_bijoy = default_is_bijoy
+        || !bijoy_style_ids.is_empty()
+        || blocks_have_bijoy(&doc.body)
+        || doc.parts.values().any(|part| blocks_have_bijoy(&part.blocks));
 
     if !has_bijoy {
         return;
     }
-
-    // Build the set of style IDs whose font chain resolves to a Bijoy font.
-    // This lets us catch paragraphs that use a named style (e.g. "BanglaText")
-    // inheriting from SutonnyMJ even if no individual run has an explicit font.
-    let bijoy_style_ids = bijoy_style_set(&doc.styles);
 
     // Decode all body blocks recursively (including tables)
     normalize_blocks_bijoy(&mut doc.body, default_is_bijoy, &bijoy_style_ids, &doc.styles);
@@ -1055,5 +1065,50 @@ mod tests {
         assert_eq!((words[0], words[2]), ("আমি", "করি"), "{out:?}");
         assert_ne!(words[1], "šত্ন", "the leftover word is repaired: {out:?}");
         assert!(!words[1].contains('š'), "{out:?}");
+    }
+
+    #[test]
+    fn unused_bijoy_style_must_not_convert_plain_text() {
+        let mut doc = Document::from_text("Hello world");
+        doc.styles.default_chr = CharProps { font: Some("Calibri".into()), ..Default::default() };
+        doc.styles.styles.push(wordcraft_doc::Style {
+            id: "UnusedBanglaStyle".into(),
+            name: "Unused Bangla Style".into(),
+            chr: CharProps { font: Some("SutonnyMJ".into()), ..Default::default() },
+            ..Default::default()
+        });
+        normalize_bijoy_fonts(&mut doc);
+        assert_eq!(body_text(&doc), "Hello world", "plain text should not be decoded as Bijoy");
+    }
+
+    #[test]
+    fn mixed_english_and_bijoy_import_preserves_english_and_converts_bijoy() {
+        let mut doc = Document::default();
+        doc.styles.default_chr = CharProps { font: Some("Calibri".into()), ..Default::default() };
+        doc.styles.styles.push(wordcraft_doc::Style {
+            id: "BanglaStyle".into(),
+            name: "Bangla Style".into(),
+            chr: CharProps { font: Some("SutonnyMJ".into()), ..Default::default() },
+            ..Default::default()
+        });
+        let p_en = Paragraph {
+            text: "Hello world".into(),
+            props: wordcraft_doc::props::ParaProps { style: Some("Normal".into()), ..Default::default() },
+            ..Default::default()
+        };
+        let p_bn = Paragraph {
+            text: "Avgvi †mvbvi evsjv".into(),
+            props: wordcraft_doc::props::ParaProps { style: Some("BanglaStyle".into()), ..Default::default() },
+            ..Default::default()
+        };
+        doc.body = vec![std::sync::Arc::new(Block::Para(p_en)), std::sync::Arc::new(Block::Para(p_bn))];
+
+        normalize_bijoy_fonts(&mut doc);
+
+        let out_en = doc.body[0].as_para().map(|p| p.text.as_str()).unwrap_or("");
+        let out_bn = doc.body[1].as_para().map(|p| p.text.as_str()).unwrap_or("");
+        assert_eq!(out_en, "Hello world");
+        assert_eq!(out_bn, "আমার সোনার বাংলা");
+        assert_eq!(doc.body[1].as_para().and_then(|p| p.mark.font.as_deref()), Some("Kalpurush"));
     }
 }

@@ -730,6 +730,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                                 app.ui.phonetic_buffer.clear();
                                 app.ui.phonetic_rendered_len = 0;
                                 app.ui.phonetic_candidates.clear();
+                                app.ui.phonetic_expected_caret = None;
                                 for c in t.chars() {
                                     if c == '|' {
                                         // Standard Avro Dari (Shift + \)
@@ -760,6 +761,18 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                                     }
                                 }
                             } else {
+                                // Anchor composition: if the caret moved away, commit/reset previous composition
+                                if app.ui.phonetic_rendered_len > 0 {
+                                    let caret_at_composition =
+                                        app.session.sel.is_collapsed() && app.ui.phonetic_expected_caret.as_ref() == Some(&app.session.sel.focus);
+                                    if !caret_at_composition {
+                                        app.ui.phonetic_buffer.clear();
+                                        app.ui.phonetic_rendered_len = 0;
+                                        app.ui.phonetic_candidates.clear();
+                                        app.ui.phonetic_expected_caret = None;
+                                    }
+                                }
+
                                 app.ui.phonetic_buffer.push_str(&t);
                                 app.ui.phonetic_candidates = wordcraft_engine::cmd::bangla::phonetic_candidates(&app.ui.phonetic_buffer);
                                 let bn = app
@@ -773,6 +786,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                                 }
                                 let _ = app.run("text.insert", json!({"text": bn}));
                                 app.ui.phonetic_rendered_len = bn.chars().count();
+                                app.ui.phonetic_expected_caret = Some(app.session.sel.focus.clone());
                             }
                         }
                     }
@@ -810,6 +824,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     app.ui.phonetic_buffer.clear();
                     app.ui.phonetic_rendered_len = 0;
                     app.ui.phonetic_candidates.clear();
+                    app.ui.phonetic_expected_caret = None;
                     continue;
                 }
                 // Classic Bijoy shortcuts: Ctrl+Alt+B (Bijoy Classic / ANSI) and Ctrl+Alt+V (Bijoy Unicode / Jatiya)
@@ -819,6 +834,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     app.ui.phonetic_buffer.clear();
                     app.ui.phonetic_rendered_len = 0;
                     app.ui.phonetic_candidates.clear();
+                    app.ui.phonetic_expected_caret = None;
                     continue;
                 }
                 // Numeric key candidate selection (1..5) in Bangla Phonetic mode
@@ -828,25 +844,35 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     && !modifiers.command
                     && !modifiers.alt
                 {
-                    let cand_idx = match key {
-                        Key::Num1 => Some(0),
-                        Key::Num2 => Some(1),
-                        Key::Num3 => Some(2),
-                        Key::Num4 => Some(3),
-                        Key::Num5 => Some(4),
-                        _ => None,
-                    };
-                    if let Some(idx) = cand_idx
-                        && let Some(cand) = app.ui.phonetic_candidates.get(idx).cloned()
-                    {
-                        for _ in 0..app.ui.phonetic_rendered_len {
-                            let _ = app.run("text.backspace", json!({}));
-                        }
-                        let _ = app.run("text.insert", json!({"text": cand}));
+                    let caret_at_composition =
+                        app.session.sel.is_collapsed() && app.ui.phonetic_expected_caret.as_ref() == Some(&app.session.sel.focus);
+                    if !caret_at_composition {
                         app.ui.phonetic_buffer.clear();
                         app.ui.phonetic_rendered_len = 0;
                         app.ui.phonetic_candidates.clear();
-                        continue;
+                        app.ui.phonetic_expected_caret = None;
+                    } else {
+                        let cand_idx = match key {
+                            Key::Num1 => Some(0),
+                            Key::Num2 => Some(1),
+                            Key::Num3 => Some(2),
+                            Key::Num4 => Some(3),
+                            Key::Num5 => Some(4),
+                            _ => None,
+                        };
+                        if let Some(idx) = cand_idx
+                            && let Some(cand) = app.ui.phonetic_candidates.get(idx).cloned()
+                        {
+                            for _ in 0..app.ui.phonetic_rendered_len {
+                                let _ = app.run("text.backspace", json!({}));
+                            }
+                            let _ = app.run("text.insert", json!({"text": cand}));
+                            app.ui.phonetic_buffer.clear();
+                            app.ui.phonetic_rendered_len = 0;
+                            app.ui.phonetic_candidates.clear();
+                            app.ui.phonetic_expected_caret = None;
+                            continue;
+                        }
                     }
                 }
                 if key == Key::Backspace && app.session.bangla_mode == wordcraft_engine::cmd::bangla::BanglaMode::Jatiya {
@@ -858,34 +884,46 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                         continue;
                     }
                 }
-                if key == Key::Backspace
-                    && app.session.bangla_mode == wordcraft_engine::cmd::bangla::BanglaMode::Phonetic
-                    && !app.ui.phonetic_buffer.is_empty()
-                {
-                    app.ui.phonetic_buffer.pop();
-                    for _ in 0..app.ui.phonetic_rendered_len {
-                        let _ = app.run("text.backspace", json!({}));
+                if key == Key::Backspace && app.session.bangla_mode == wordcraft_engine::cmd::bangla::BanglaMode::Phonetic {
+                    if app.ui.phonetic_rendered_len > 0 {
+                        let caret_at_composition =
+                            app.session.sel.is_collapsed() && app.ui.phonetic_expected_caret.as_ref() == Some(&app.session.sel.focus);
+                        if !caret_at_composition {
+                            app.ui.phonetic_buffer.clear();
+                            app.ui.phonetic_rendered_len = 0;
+                            app.ui.phonetic_candidates.clear();
+                            app.ui.phonetic_expected_caret = None;
+                        }
                     }
                     if !app.ui.phonetic_buffer.is_empty() {
-                        app.ui.phonetic_candidates = wordcraft_engine::cmd::bangla::phonetic_candidates(&app.ui.phonetic_buffer);
-                        let bn = app
-                            .ui
-                            .phonetic_candidates
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| wordcraft_engine::cmd::bangla::phonetic_transliterate(&app.ui.phonetic_buffer));
-                        let _ = app.run("text.insert", json!({"text": bn}));
-                        app.ui.phonetic_rendered_len = bn.chars().count();
-                    } else {
-                        app.ui.phonetic_rendered_len = 0;
-                        app.ui.phonetic_candidates.clear();
+                        app.ui.phonetic_buffer.pop();
+                        for _ in 0..app.ui.phonetic_rendered_len {
+                            let _ = app.run("text.backspace", json!({}));
+                        }
+                        if !app.ui.phonetic_buffer.is_empty() {
+                            app.ui.phonetic_candidates = wordcraft_engine::cmd::bangla::phonetic_candidates(&app.ui.phonetic_buffer);
+                            let bn = app
+                                .ui
+                                .phonetic_candidates
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| wordcraft_engine::cmd::bangla::phonetic_transliterate(&app.ui.phonetic_buffer));
+                            let _ = app.run("text.insert", json!({"text": bn}));
+                            app.ui.phonetic_rendered_len = bn.chars().count();
+                            app.ui.phonetic_expected_caret = Some(app.session.sel.focus.clone());
+                        } else {
+                            app.ui.phonetic_rendered_len = 0;
+                            app.ui.phonetic_candidates.clear();
+                            app.ui.phonetic_expected_caret = None;
+                        }
+                        continue;
                     }
-                    continue;
                 }
                 if matches!(key, Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown | Key::Home | Key::End | Key::Enter) {
                     app.ui.phonetic_buffer.clear();
                     app.ui.phonetic_rendered_len = 0;
                     app.ui.phonetic_candidates.clear();
+                    app.ui.phonetic_expected_caret = None;
                     app.ui.jatiya_pre_kar = None;
                     app.ui.jatiya_linker = false;
                     app.ui.jatiya_reph = false;
@@ -898,6 +936,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     app.ui.phonetic_buffer.clear();
                     app.ui.phonetic_rendered_len = 0;
                     app.ui.phonetic_candidates.clear();
+                    app.ui.phonetic_expected_caret = None;
                     app.ui.jatiya_pre_kar = None;
                     app.ui.jatiya_linker = false;
                     app.ui.jatiya_reph = false;

@@ -1934,6 +1934,12 @@ fn cmd_bangla_transliterate(_s: &mut Session, v: &Value) -> CmdResult {
     Ok(json!({"result": result, "mode": mode}))
 }
 
+fn slice_safe(s: &str, start: usize, end: usize) -> &str {
+    let end = end.min(s.len());
+    let start = start.min(end);
+    s.get(start..end).unwrap_or("")
+}
+
 fn convert_blocks_recursive(blocks: &mut Vec<Arc<wordcraft_doc::Block>>, is_to_ansi: bool, target_font: &str) -> usize {
     let mut count = 0;
     for b in blocks {
@@ -1943,21 +1949,43 @@ fn convert_blocks_recursive(blocks: &mut Vec<Arc<wordcraft_doc::Block>>, is_to_a
                 p.mark.font = Some(target_font.into());
                 p.mark.font_cs = Some(target_font.into());
                 if !p.text.is_empty() {
-                    let converted = if is_to_ansi { unicode_to_ansi(&p.text) } else { ansi_to_unicode(&p.text) };
-                    let mut props = p.runs.first().map(|r| r.props.clone()).unwrap_or_default();
-                    props.font = Some(target_font.into());
-                    props.font_cs = Some(target_font.into());
-                    if props.size.is_some() {
-                        props.size_cs = props.size;
+                    let mut new_text = String::with_capacity(p.text.len().saturating_mul(2));
+                    let mut new_runs = Vec::with_capacity(p.runs.len().max(1));
+
+                    if p.runs.is_empty() {
+                        let converted = if is_to_ansi { unicode_to_ansi(&p.text) } else { ansi_to_unicode(&p.text) };
+                        let props =
+                            wordcraft_doc::CharProps { font: Some(target_font.into()), font_cs: Some(target_font.into()), ..Default::default() };
+                        new_runs.push(wordcraft_doc::Run { len: converted.len(), props });
+                        new_text = converted;
+                    } else {
+                        let mut offset = 0;
+                        for r in &p.runs {
+                            let end = (offset + r.len).min(p.text.len());
+                            let slice = slice_safe(&p.text, offset, end);
+                            offset = end;
+
+                            let converted = if is_to_ansi { unicode_to_ansi(slice) } else { ansi_to_unicode(slice) };
+                            let mut props = r.props.clone();
+                            props.font = Some(target_font.into());
+                            props.font_cs = Some(target_font.into());
+                            if props.size.is_some() {
+                                props.size_cs = props.size;
+                            }
+                            if props.bold.is_some() {
+                                props.bold_cs = props.bold;
+                            }
+                            if props.italic.is_some() {
+                                props.italic_cs = props.italic;
+                            }
+
+                            new_runs.push(wordcraft_doc::Run { len: converted.len(), props });
+                            new_text.push_str(&converted);
+                        }
                     }
-                    if props.bold.is_some() {
-                        props.bold_cs = props.bold;
-                    }
-                    if props.italic.is_some() {
-                        props.italic_cs = props.italic;
-                    }
-                    p.text = converted.clone();
-                    p.runs = vec![wordcraft_doc::Run { len: converted.len(), props }];
+
+                    p.text = new_text;
+                    p.runs = new_runs;
                     count += 1;
                 }
             }
@@ -1982,14 +2010,22 @@ fn cmd_bangla_convert(s: &mut Session, v: &Value) -> CmdResult {
     let is_to_ansi = dir.eq_ignore_ascii_case("unicodeToAnsi");
     let target_font = font.unwrap_or(if is_to_ansi { "SutonnyMJ" } else { "Kalpurush" });
 
-    if target == "selection" && !s.sel.is_collapsed() {
-        let current_text = s.selected_text();
-        if !current_text.is_empty() {
-            let converted = if is_to_ansi { unicode_to_ansi(&current_text) } else { ansi_to_unicode(&current_text) };
-            s.run("format.font", &json!({"name": target_font}))?;
-            s.run("text.insert", &json!({"text": converted}))?;
-            return Ok(json!({"converted": true, "count": 1, "target": "selection"}));
+    if target == "selection" {
+        if s.sel.is_collapsed() {
+            return Ok(json!({"converted": false, "reason": "empty selection", "target": "selection"}));
         }
+        let current_text = s.selected_text();
+        if current_text.is_empty() {
+            return Ok(json!({"converted": false, "reason": "empty selection", "target": "selection"}));
+        }
+        let converted = if is_to_ansi { unicode_to_ansi(&current_text) } else { ansi_to_unicode(&current_text) };
+        s.run("format.font", &json!({"name": target_font}))?;
+        s.run("text.insert", &json!({"text": converted}))?;
+        return Ok(json!({"converted": true, "count": 1, "target": "selection"}));
+    }
+
+    if target != "document" {
+        return Err(crate::CmdError::Failed(format!("unknown target `{target}`; expected `selection` or `document`")));
     }
 
     // Convert entire document (including tables, headers, footers, text boxes)
@@ -2177,6 +2213,80 @@ mod tests {
         assert_eq!(r2["converted"], true);
         assert_eq!(s.doc.body[0].as_para().unwrap().text, "আমার সোনার বাংলা");
         assert_eq!(s.doc.body[0].as_para().unwrap().runs[0].props.font.as_deref(), Some("Kalpurush"));
+    }
+
+    #[test]
+    fn collapsed_selection_conversion_does_not_mutate_document() {
+        let mut s = Session::new(wordcraft_doc::Document::from_text("আমার সোনার বাংলা"));
+        let original_text = s.doc.body[0].as_para().unwrap().text.clone();
+        let original_font = s.doc.body[0].as_para().unwrap().runs[0].props.font.clone();
+
+        // Collapsed selection
+        s.sel = crate::Selection::caret(wordcraft_doc::Pos::body(0, 0));
+
+        let r = s.run("tools.banglaConvert", &json!({"direction": "unicodeToAnsi", "target": "selection"})).unwrap();
+        assert_eq!(r["converted"], false);
+        assert_eq!(r["target"], "selection");
+
+        // Document text and formatting must be completely untouched
+        assert_eq!(s.doc.body[0].as_para().unwrap().text, original_text);
+        assert_eq!(s.doc.body[0].as_para().unwrap().runs[0].props.font, original_font);
+    }
+
+    #[test]
+    fn mixed_formatting_conversion_preserves_runs() {
+        let p = wordcraft_doc::Paragraph {
+            text: "আমার সোনার বাংলা".into(),
+            runs: vec![
+                wordcraft_doc::Run {
+                    len: "আমার ".len(),
+                    props: wordcraft_doc::CharProps {
+                        font: Some("Kalpurush".into()),
+                        bold: Some(false),
+                        color: Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(255, 0, 0))),
+                        ..Default::default()
+                    },
+                },
+                wordcraft_doc::Run {
+                    len: "সোনার বাংলা".len(),
+                    props: wordcraft_doc::CharProps {
+                        font: Some("Kalpurush".into()),
+                        bold: Some(true),
+                        color: Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(0, 0, 255))),
+                        ..Default::default()
+                    },
+                },
+            ],
+            ..Default::default()
+        };
+        let doc = wordcraft_doc::Document { body: vec![std::sync::Arc::new(wordcraft_doc::Block::Para(p))], ..Default::default() };
+        let mut s = Session::new(doc);
+
+        // Convert document to ANSI
+        let r1 = s.run("tools.banglaConvert", &json!({"direction": "unicodeToAnsi", "target": "document"})).unwrap();
+        assert_eq!(r1["converted"], true);
+        let para = s.doc.body[0].as_para().unwrap();
+        assert_eq!(para.text, "Avgvi †mvbvi evsjv");
+        assert_eq!(para.runs.len(), 2, "must keep 2 separate runs");
+        assert_eq!(para.runs[0].props.bold, Some(false));
+        assert_eq!(para.runs[0].props.color, Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(255, 0, 0))));
+        assert_eq!(para.runs[0].props.font.as_deref(), Some("SutonnyMJ"));
+        assert_eq!(para.runs[1].props.bold, Some(true));
+        assert_eq!(para.runs[1].props.color, Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(0, 0, 255))));
+        assert_eq!(para.runs[1].props.font.as_deref(), Some("SutonnyMJ"));
+
+        // Convert document back to Unicode
+        let r2 = s.run("tools.banglaConvert", &json!({"direction": "ansiToUnicode", "target": "document"})).unwrap();
+        assert_eq!(r2["converted"], true);
+        let para_back = s.doc.body[0].as_para().unwrap();
+        assert_eq!(para_back.text, "আমার সোনার বাংলা");
+        assert_eq!(para_back.runs.len(), 2, "must keep 2 separate runs");
+        assert_eq!(para_back.runs[0].props.bold, Some(false));
+        assert_eq!(para_back.runs[0].props.color, Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(255, 0, 0))));
+        assert_eq!(para_back.runs[0].props.font.as_deref(), Some("Kalpurush"));
+        assert_eq!(para_back.runs[1].props.bold, Some(true));
+        assert_eq!(para_back.runs[1].props.color, Some(wordcraft_doc::props::TextColor::Rgb(wordcraft_doc::props::Rgb(0, 0, 255))));
+        assert_eq!(para_back.runs[1].props.font.as_deref(), Some("Kalpurush"));
     }
 
     #[test]

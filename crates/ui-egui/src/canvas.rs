@@ -1866,6 +1866,10 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
     }
     let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
     if pressed {
+        app.ui.phonetic_buffer.clear();
+        app.ui.phonetic_rendered_len = 0;
+        app.ui.phonetic_candidates.clear();
+        app.ui.phonetic_expected_caret = None;
         let now = ui.input(|i| i.time);
         let (delay, dist) = ui.ctx().options(|o| (o.input_options.max_double_click_delay, o.input_options.max_click_dist));
         let clicks = press_count(app.canvas.last_press, now, p, delay, dist);

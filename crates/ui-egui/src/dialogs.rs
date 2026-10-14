@@ -2695,11 +2695,12 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     let _ = app.run("text.insert", json!({"text": result_text}));
                     close = true;
                 }
-                if ui.button(tl!("Convert Selection to Unicode")).clicked() {
+                let has_sel = !app.session.sel.is_collapsed();
+                if ui.add_enabled(has_sel, egui::Button::new(tl!("Convert Selection to Unicode"))).clicked() {
                     let _ = app.run("tools.banglaConvert", json!({"direction": "ansiToUnicode", "target": "selection"}));
                     close = true;
                 }
-                if ui.button(tl!("Convert Selection to ANSI")).clicked() {
+                if ui.add_enabled(has_sel, egui::Button::new(tl!("Convert Selection to ANSI"))).clicked() {
                     let _ = app.run("tools.banglaConvert", json!({"direction": "unicodeToAnsi", "target": "selection"}));
                     close = true;
                 }
