@@ -116,6 +116,9 @@ fn print_settings_are_visible_in_a_narrow_window() {
     harness.run_steps(5);
     assert!(!harness.get_by_label("Refresh printers").accesskit_node().is_disabled());
     assert!(!harness.get_by_label("Grayscale").accesskit_node().is_disabled());
+    // The settings column scrolls on its own; Grayscale is reached by scrolling it.
+    harness.get_by_label("Grayscale").scroll_to_me();
+    harness.run_steps(3);
     harness.get_by_label("Grayscale").click();
     harness.run_steps(2);
     assert!(harness.state().printing.settings.grayscale);
@@ -200,4 +203,82 @@ fn native_ranges_and_parity_do_not_duplicate_spooler_copies() {
     assert_eq!(jobs[0].0, expected, "the PDF contains only the two selected pages, once each");
     assert_eq!(jobs[0].1.copies, 3, "copies go to the spooler, not the PDF");
     assert!(!jobs[0].2, "uncollated copies reach the spooler");
+}
+
+/// A system print dialog that records what it was given and answers with `answer`.
+fn fake_dialog(
+    available: Option<bool>,
+    answer: Result<wordcraft_ui_egui::printing::DialogOutcome, String>,
+) -> (wordcraft_ui_egui::printing::SystemDialog, Rc<RefCell<Vec<(Vec<u8>, wordcraft_ui_egui::printing::DialogJob)>>>) {
+    let shown = Rc::new(RefCell::new(Vec::new()));
+    let observed = shown.clone();
+    let dialog = wordcraft_ui_egui::printing::SystemDialog {
+        available: Box::new(move || available),
+        print: Box::new(move |bytes, job| {
+            observed.borrow_mut().push((bytes, job));
+            let (sender, receiver) = std::sync::mpsc::channel();
+            sender.send(answer.clone()).unwrap();
+            receiver
+        }),
+    };
+    (dialog, shown)
+}
+
+#[test]
+fn the_print_button_opens_the_system_dialog_with_the_chosen_pages_and_copies() {
+    use wordcraft_ui_egui::printing::{DialogOutcome, dialog_available, print_with_dialog};
+    let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+    app.run("text.insert", json!({"text": "A document to print"})).unwrap();
+    let (dialog, shown) = fake_dialog(Some(true), Ok(DialogOutcome::Printed("Office laser".into())));
+    app.services.print_dialog = Some(dialog);
+    app.ui.print.copies = 4;
+    app.ui.print.collate = false;
+    assert!(dialog_available(&app));
+    print_with_dialog(&mut app).unwrap();
+    assert!(app.print_dialog_open());
+    assert!(!app.close_requested(), "the window stays open while the print dialog is");
+    {
+        let shown = shown.borrow();
+        assert_eq!(shown.len(), 1);
+        assert!(shown[0].0.starts_with(b"%PDF"));
+        assert_eq!((shown[0].1.copies, shown[0].1.collate), (4, false), "the dialog opens with the Print page's copies");
+        assert_eq!(shown[0].1.accept_label, "Print");
+    }
+    assert!(print_with_dialog(&mut app).is_err(), "one dialog at a time");
+    app.poll_printing(&egui::Context::default());
+    assert!(!app.print_dialog_open());
+    assert!(app.status_msg.as_ref().unwrap().0.contains("Sent to Office laser"));
+}
+
+#[test]
+fn cancelling_or_failing_in_the_system_dialog_says_so() {
+    use wordcraft_ui_egui::printing::{DialogOutcome, print_with_dialog};
+    for (answer, says) in [(Ok(DialogOutcome::Cancelled), "Printing cancelled"), (Err("no paper".to_owned()), "no paper")] {
+        let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+        app.run("text.insert", json!({"text": "x"})).unwrap();
+        app.services.print_dialog = Some(fake_dialog(Some(true), answer).0);
+        print_with_dialog(&mut app).unwrap();
+        app.poll_printing(&egui::Context::default());
+        assert!(app.status_msg.as_ref().unwrap().0.contains(says), "{says}");
+        assert!(!app.print_dialog_open(), "nothing holds the window once the dialog is closed");
+    }
+}
+
+#[test]
+fn commands_never_open_the_system_print_dialog() {
+    use wordcraft_ui_egui::printing::{DialogOutcome, dialog_available, print_with_dialog};
+    let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+    app.run("text.insert", json!({"text": "x"})).unwrap();
+    let (dialog, shown) = fake_dialog(Some(true), Ok(DialogOutcome::Cancelled));
+    app.services.print_dialog = Some(dialog);
+    let _ = app.run("ui.print", json!({}));
+    let _ = app.run("ui.printSubmit", json!({}));
+    assert!(shown.borrow().is_empty(), "programmatic printing goes to the spooler, never a dialog");
+    // While the host is still finding out, or where there is no portal, the Print page keeps
+    // its own printer list.
+    for available in [None, Some(false)] {
+        app.services.print_dialog = Some(fake_dialog(available, Ok(DialogOutcome::Cancelled)).0);
+        assert!(!dialog_available(&app));
+        assert!(print_with_dialog(&mut app).is_err());
+    }
 }

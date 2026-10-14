@@ -67,6 +67,9 @@ pub mod print_page;
 pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
+/// File › Save As: places, the folder, name and type (desktop).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod save_as_page;
 pub mod scroll;
 pub mod system_clipboard;
 pub mod table_mouse;
@@ -93,6 +96,10 @@ pub struct Services {
     pub printers: Option<printing::Discover>,
     /// Desktop: submit the PDF with the chosen settings on a worker.
     pub print_native: Option<printing::Submit>,
+    /// Desktop: the system's own print dialog, which the Print button opens where it exists.
+    pub print_dialog: Option<printing::SystemDialog>,
+    /// Desktop (Windows): the chosen printer's driver preferences.
+    pub printer_properties: Option<printing::PrinterProperties>,
     /// Pick a file to open; the argument says what for (`document`, `picture`).
     pub pick_open: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Pick a path to save to, given a suggested name.
@@ -358,6 +365,8 @@ pub struct WordApp {
     pub services: Services,
     pub printing: printing::State,
     print_feedback_seen: Option<printing::Feedback>,
+    /// The system print dialog's answer while it is open.
+    print_dialog_answer: Option<printing::DialogAnswer>,
     pub canvas: canvas::CanvasState,
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
@@ -449,6 +458,8 @@ pub struct WordApp {
     /// The built-in file browser, when it is open, and the folder it showed last (#576).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) file_browser: file_browser::State,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) save_as: save_as_page::State,
     /// File › Info: the property field being typed in and the document revision after its last
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
@@ -491,6 +502,7 @@ impl WordApp {
             services,
             printing: Default::default(),
             print_feedback_seen: None,
+            print_dialog_answer: None,
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
@@ -542,6 +554,8 @@ impl WordApp {
             file_dialog: None,
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            save_as: save_as_page::State::default(),
             info_editing: None,
             no_document: None,
         }
@@ -882,7 +896,7 @@ impl WordApp {
     /// The window's close button (or the system) asked to quit. Returns true to let the window
     /// close; with unsaved changes it asks first and returns false.
     pub fn close_requested(&mut self) -> bool {
-        if self.printing.busy() {
+        if self.printing.busy() || self.print_dialog_open() {
             self.status(tl!("Wait for the print job to finish submitting before closing."));
             return false;
         }
@@ -1213,6 +1227,15 @@ impl WordApp {
         printing::submit(self, p)
     }
 
+    /// Whether the system print dialog is open (or its job is still being handed over).
+    pub fn print_dialog_open(&self) -> bool {
+        self.print_dialog_answer.is_some()
+    }
+
+    pub(crate) fn set_print_dialog(&mut self, answer: printing::DialogAnswer) {
+        self.print_dialog_answer = Some(answer);
+    }
+
     /// File › Options › General › Make WordCraft the default…: hand over to the host's
     /// [`Services::make_default_app`] and say in the status bar what happened. An error when the
     /// host has no hook (web, macOS). Only the button calls this: it is deliberately not a
@@ -1349,6 +1372,20 @@ impl WordApp {
 
     /// Terminal feedback also reaches the normal window when printing starts through control.
     pub fn poll_printing(&mut self, ctx: &egui::Context) {
+        if let Some(receiver) = &self.print_dialog_answer {
+            let answer = match receiver.try_recv() {
+                Ok(answer) => Some(answer),
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err(tl!("the printing worker stopped.").to_owned())),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                    None
+                }
+            };
+            if let Some(answer) = answer {
+                self.print_dialog_answer = None;
+                self.status(printing::dialog_feedback(answer, |label| i18n::t(label).to_owned()));
+            }
+        }
         self.printing.poll(ctx);
         if self.printing.message == self.print_feedback_seen {
             return;
@@ -3243,12 +3280,12 @@ mod tests {
         assert_eq!(sizes.borrow().len(), 1);
     }
 
-    /// The Print page shows the Print button only when the host can print, and the button
+    /// The Print page's Print button works only when the host can print, and the button
     /// prints through `ui.print`.
     #[test]
     fn the_print_button_shows_only_with_a_print_hook() {
         use egui_kittest::kittest::Queryable;
-        const BLURB: &str = "Send the document straight to the system print dialog, or save a copy in another format below.";
+        const BLURB: &str = "Printing isn't available here. Save these pages as a PDF and print it from any viewer.";
         for hook in [false, true] {
             let printed = std::rc::Rc::new(std::cell::Cell::new(0));
             let mut a = app();
@@ -3272,8 +3309,8 @@ mod tests {
                 h.step();
             }
             assert!(h.state().ui.backstage && h.state().ui.backstage_page == "print", "the Print page is open");
-            assert_eq!(h.query_by_label(BLURB).is_some(), hook, "hook {hook}: the Print button's blurb");
-            assert!(h.query_by_label("PDF document (*.pdf)").is_some(), "hook {hook}: the page rendered its export choices");
+            assert_eq!(h.query_by_label(BLURB).is_some(), !hook, "hook {hook}: says when printing isn't available");
+            assert!(h.query_by_label("Save these pages as PDF…").is_some(), "hook {hook}: the page offers a PDF of the pages");
             if hook {
                 // The page's own Print button (the backstage list has a Print entry too): the last.
                 let buttons: Vec<_> = h.query_all(egui_kittest::kittest::By::new().role(egui::accesskit::Role::Button).label("Print")).collect();

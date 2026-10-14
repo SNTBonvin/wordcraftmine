@@ -128,6 +128,19 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             });
         });
+    // The Print page scrolls its settings and its preview separately, and its preview runs to
+    // the window's edges.
+    if app.ui.backstage_page == "saveAs" && cfg!(not(target_arch = "wasm32")) {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30)))
+            .show(ui, |ui| save_as_page(app, ui));
+        return;
+    }
+    if app.ui.backstage_page == "print" {
+        let margin = egui::Margin { left: 40, right: 0, top: 0, bottom: 0 };
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(margin)).show(ui, |ui| crate::print_page::show(app, ui));
+        return;
+    }
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30))).show(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| match app.ui.backstage_page.as_str() {
             "home" => home_page(app, ui),
@@ -135,7 +148,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             "open" => open_page(app, ui),
             "saveAs" => save_as_page(app, ui),
             "info" => info_page(app, ui),
-            "print" | "export" => export_page(app, ui),
+            "export" => export_page(app, ui),
             "options" => crate::options::page(app, ui),
             _ => home_page(app, ui),
         });
@@ -311,8 +324,15 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
     open_list(app, ui);
 }
 
-/// Save As: Browse… asks where to save. It has no recent-documents list: clicking one of those
-/// opens it, which is not what Save As is for.
+/// Save As: on the desktop, places, the folder and the file name (`save_as_page`); on the web,
+/// Browse… downloads the document. It has no recent-documents list: clicking one of those opens
+/// it, which is not what Save As is for.
+#[cfg(not(target_arch = "wasm32"))]
+fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
+    crate::save_as_page::show(app, ui);
+}
+
+#[cfg(target_arch = "wasm32")]
 fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Save As");
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
@@ -385,23 +405,6 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
 }
 
 fn export_page(app: &mut WordApp, ui: &mut Ui) {
-    if app.ui.backstage_page == "print" {
-        heading(ui, "Print");
-        // Print Markup (a print setting, as in Word): the comments beside each page.
-        let mut markup = app.session.prefs.print_markup;
-        if ui
-            .checkbox(&mut markup, tl!("Print Markup"))
-            .on_hover_text(tl!(
-                "Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text."
-            ))
-            .changed()
-        {
-            let _ = app.run("file.printMarkup", json!({"value": markup}));
-        }
-        ui.add_space(12.0);
-        crate::print_page::show(app, ui);
-        return;
-    }
     heading(ui, "Export");
     ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
     ui.add_space(12.0);
@@ -513,9 +516,15 @@ mod tests {
         assert_eq!(a.session.doc.core.title, "");
     }
 
+    /// Save As lists places and the folders of recent documents, never the documents themselves
+    /// (clicking one of those would open it); a folder takes the page there.
     #[test]
     fn save_as_page_shows_browse_and_no_open_list() {
+        let dir = std::env::temp_dir().join(format!("wordcraft-save-as-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let folder = dir.file_name().unwrap().to_string_lossy().into_owned();
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.recent = vec![dir.join("Recent letter.docx").display().to_string()];
         a.run("ui.backstage", json!({"value": true, "page": "saveAs"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -527,7 +536,15 @@ mod tests {
         );
         h.run_steps(4);
         assert!(h.query_by_label("Browse…").is_some(), "Save As has Browse button");
-        assert!(h.query_by_label("Recent").is_none(), "Save As has no list that opens documents");
+        assert!(h.query_by_label("This Computer").is_some(), "and This Computer");
+        assert!(h.query_by_label("Recent letter.docx").is_none(), "Save As has no list that opens documents");
+        h.get_by_label(&folder).click();
+        h.run_steps(4);
+        let page = &h.state().save_as;
+        assert_eq!(page.dir, dir, "the recent folder opens in the page");
+        assert!(h.state().ui.backstage && !h.state().session.dirty, "nothing was opened or saved");
+        drop(h);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
