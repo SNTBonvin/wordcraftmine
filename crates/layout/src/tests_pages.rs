@@ -154,3 +154,35 @@ fn caret_in_a_continued_footnote_is_found_on_its_page() {
         assert_eq!(para.line_of(up.off), k, "hint {hint}: {up:?}");
     }
 }
+
+#[test]
+fn widow_control_moves_a_three_line_paragraph_whole() {
+    // A three-line paragraph with room for two at the bottom of a page can't leave a widow (two
+    // and one) nor an orphan (one and two): Word moves it whole. A four-line one splits two and
+    // two. Sweep the paragraph down the page a point at a time and check every split.
+    let mut split4 = false;
+    for (want, words) in [(3usize, 45usize), (4, 55)] {
+        for (fill, shift) in (30usize..60).flat_map(|f| (0..15).step_by(2).map(move |s| (f, s))) {
+            let filler = "Filler line.\n".repeat(fill);
+            let mut d = Document::from_text(&format!("{filler}{}\nAfter.", "word ".repeat(words)));
+            d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.space_before = Some(shift as f32)).unwrap();
+            let l = lay(&d);
+            let pieces: Vec<(usize, usize)> = l
+                .pages
+                .iter()
+                .filter_map(|p| {
+                    p.items.iter().find_map(|it| match it {
+                        Placed::Lines { story: StoryRef::Body, path, para, l0, l1, .. } if *path == Path::top(fill) => {
+                            Some((l1 - l0, para.lines.len()))
+                        }
+                        _ => None,
+                    })
+                })
+                .collect();
+            assert!(pieces.iter().all(|&(_, n)| n == want), "{words} words: {pieces:?}");
+            assert!(pieces.iter().all(|&(c, _)| c >= 2), "shift {shift}, {want} lines split as {pieces:?}");
+            split4 |= want == 4 && pieces.len() == 2;
+        }
+    }
+    assert!(split4, "the sweep never took the paragraph across a page break");
+}
