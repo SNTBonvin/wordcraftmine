@@ -295,3 +295,54 @@ fn a_click_on_a_rotated_box_lands_on_the_character_drawn_there() {
     let _ = l.hit_shown(0, f32::NAN, f32::INFINITY, story, None);
     assert!(l.story_at_shown(99, 0.0, 0.0, None).is_none());
 }
+
+#[test]
+fn an_edited_turned_box_is_grabbed_on_the_straight_border_it_is_drawn_with() {
+    let mut d = Document::from_text("Body words around it.");
+    let id = turned_box(&mut d, 30.0, false, false);
+    let l = lay(&d);
+    let o = l.find_object(0, |o| o.text_box == Some(id)).unwrap();
+    // A point on the straight frame's top edge, 60 pt right of its middle: well off the turned
+    // border.
+    let (x, y) = (o.rect.x + o.rect.w / 2.0 + 60.0, o.rect.y);
+    let grabbed = |straight: Option<u32>| l.object_at_shown(0, x, y, 3.0, StoryRef::Body, straight).map(|o| o.text_box);
+    assert_eq!(grabbed(None), None, "not edited, the box is turned: no border there");
+    assert_eq!(grabbed(Some(id)), Some(Some(id)), "edited, it is drawn straight: its border is there");
+    let hit = l.object_at_shown(0, x, y, 3.0, StoryRef::Body, Some(id)).unwrap();
+    assert!((hit.spin.deg - 30.0).abs() < 0.01, "the grab keeps the box's real turn for the move");
+    // Inside the straight frame (off the border) is its text, not a grab.
+    let (cx, cy) = (o.rect.x + o.rect.w / 2.0, o.rect.y + o.rect.h / 2.0);
+    assert!(l.object_at_shown(0, cx, cy, 3.0, StoryRef::Body, Some(id)).is_none());
+}
+
+/// The PDF draws an item inside its turned text box from a page of just the box's open marker
+/// and the item: that gives the same draws as the whole page on screen (a shadow keeps its page
+/// direction in both).
+#[test]
+fn a_turned_box_shape_draws_the_same_alone_as_on_the_page() {
+    let mut d = Document::from_text("Body words around it.");
+    turned_box(&mut d, 30.0, false, false);
+    if let Some(InlineObject::Shape { effects, fill, stroke, .. }) = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().objects.first_mut() {
+        effects.shadow = Some(wordcraft_doc::effects::Shadow { distance: 8.0, angle: 0.0, ..Default::default() });
+        *fill = Some(wordcraft_doc::props::Rgb(0, 0, 255));
+        *stroke = Some(wordcraft_doc::props::Rgb::BLACK);
+    }
+    let l = lay(&d);
+    let page = &l.pages[0];
+    let opts = display::DisplayOptions::default();
+    // The shadow angle of the shape drawn inside a turn.
+    fn shadow(ds: &[Draw], turned: bool) -> Option<f32> {
+        ds.iter().find_map(|d| match d {
+            Draw::Shape { effects, .. } if turned => effects.shadow.map(|s| s.angle),
+            Draw::Rotated { items, .. } => shadow(items, true),
+            _ => None,
+        })
+    }
+    let open = page.items.iter().position(|it| matches!(it, Placed::Spun { open: true, .. })).expect("an open marker");
+    let shape = page.items.iter().skip(open).find(|it| matches!(it, Placed::Shape { .. })).expect("the box's shape").clone();
+    let one = Page { items: vec![page.items[open].clone(), shape], ..page.clone() };
+    let alone = shadow(&display::page_display(&d, &one, &opts), false).expect("drawn alone, turned, with its shadow");
+    let whole = shadow(&display::page_display(&d, page, &opts), false).expect("drawn on the page, turned, with its shadow");
+    assert_eq!(alone, whole, "the PDF's shadow matches the screen's");
+    assert!((alone - 330.0).abs() < 0.01, "cast 30° back inside the turn, so it falls to the right on the page: {alone}");
+}

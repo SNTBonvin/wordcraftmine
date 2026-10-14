@@ -686,7 +686,9 @@ impl Exporter<'_> {
                         match d {
                             Draw::Glyphs { .. } | Draw::Turned { .. } => self.tagged(s, Role::Para(idx), None, |me, s| me.draw(s, d)),
                             // A turned text box's text.
-                            Draw::Rotated { items, .. } if !turns.is_empty() && items.iter().any(|i| matches!(i, Draw::Glyphs { .. })) => {
+                            Draw::Rotated { items, .. }
+                                if !turns.is_empty() && items.iter().any(|i| matches!(i, Draw::Glyphs { .. } | Draw::Turned { .. })) =>
+                            {
                                 self.tagged(s, Role::Para(idx), None, |me, s| me.draw(s, d))
                             }
                             Draw::Image { .. } => self.tagged(s, Role::Figure, None, |me, s| me.draw(s, d)),

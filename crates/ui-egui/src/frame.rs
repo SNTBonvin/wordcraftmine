@@ -68,7 +68,7 @@ impl Handle {
 }
 
 /// Where the rotation handle of frame `f` turned `deg` is: above the middle of its top edge.
-fn rotate_handle(f: egui::Rect, deg: f32) -> Pos2 {
+pub(crate) fn rotate_handle(f: egui::Rect, deg: f32) -> Pos2 {
     turn(pos2(f.center().x, f.min.y - ROTATE_GAP), f.center(), deg)
 }
 

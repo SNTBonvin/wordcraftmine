@@ -309,10 +309,17 @@ impl DocLayout {
     /// (as before); a header/footer part looks only at that part's objects in the page's
     /// header and footer, so a header picture placed over the body never steals body clicks.
     pub fn object_at_in(&self, page: usize, x: f32, y: f32, edge: f32, story: StoryRef) -> Option<ObjectHit> {
+        self.object_at_shown(page, x, y, edge, story, None)
+    }
+
+    /// [`DocLayout::object_at_in`] as the page is shown while text box story `straight` is edited:
+    /// that box is drawn straight, so it is grabbed on its straight frame (it keeps its real turn
+    /// for the move).
+    pub fn object_at_shown(&self, page: usize, x: f32, y: f32, edge: f32, story: StoryRef, straight: Option<u32>) -> Option<ObjectHit> {
         let p = self.pages.get(page)?;
         // A rotated object is grabbed on its rotated shape: the point is taken into its frame.
         let grabs = |o: &ObjectHit| {
-            let pt = o.unspin(x, y);
+            let pt = if o.text_box.is_some() && o.text_box == straight { Point::new(x, y) } else { o.unspin(x, y) };
             o.rect.expand(edge).contains(pt) && (o.text_box.is_none() || !o.rect.expand(-edge).contains(pt) || o.rect.w.min(o.rect.h) <= edge * 3.0)
         };
         let cands: Vec<ObjectHit> = match story {
