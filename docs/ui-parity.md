@@ -10,7 +10,6 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Area | WordCraft | Word | Parity | Hours |
 |---|---|---|---|---|
-| 2026-10-14 | trivial | Inspect Document (#1344): hidden text found by effective formatting (direct, character style, paragraph style) in the body, headers, footers, notes, comments and text boxes; Remove All deletes it all in one undo step and reports a `residual` list |
 | Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation, Outlining (Outline view, #493); ribbon overflow (#43, #129). Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
 | Keytips (Alt / F10) | Ribbon badges (#43) and numbered Quick Access Toolbar badges in the user's button order (#620); File › Options › Advanced › Display switch saved per user (`ui.keytips`); Alt leaves macOS Option typing alone | ✅ | 85% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43, two rows #535) | ✅ | 80% | 1–2 |
@@ -47,6 +46,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | trivial | Inspect Document (#1344): hidden text found by effective formatting (direct, character style, paragraph style) in the body, headers, footers, notes, comments and text boxes; Remove All deletes it all in one undo step (whole hidden paragraphs with their marks, and the notes of hidden references) and reports a `residual` list, including tables whose style hides text |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |

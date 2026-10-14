@@ -387,7 +387,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("review.combine", "Combine", "Review › Compare", compare).params(COMPARE_PARAMS),
         CommandSpec::new("file.accessibility", "Check Accessibility", "Review › Accessibility", accessibility).pure(),
         CommandSpec::new("file.inspect", "Inspect Document", "File › Info", inspect_doc)
-            .params(r#"{"remove"?: ["comments", "revisions", "properties", "hidden", "headers"]} → {found: {comments, revisions, properties, hiddenText, hidden: [{story: "body|header|footer|footnote|endnote|comment|textBox", part?, text}], unsupported: [..], headers}, removed, residual: [..] (hidden text a removal couldn't reach)}"#),
+            .params(r#"{"remove"?: ["comments", "revisions", "properties", "hidden", "headers"]} → {found: {comments, revisions, properties, hiddenText, hiddenCount, hidden: [{story: "body|header|footer|footnote|endnote|comment|textBox", part?, text}] (at most 1000), truncated, unsupported: [{story, object: "table|opaque", ..}] (hidden text not inspected: table styles, verbatim objects), headers}, removed, residual: [..] (hidden text a removal couldn't reach), removedNotes: [{kind, part, text}] (notes whose hidden reference was removed)}; whole hidden paragraphs go with their marks"#),
         CommandSpec::new("file.protect", "Protect Document", "File › Info", |s, v| {
             let mode = p::str(v, "mode").unwrap_or("readOnly");
             s.run("review.restrict", &json!({"mode": mode}))
@@ -1268,10 +1268,13 @@ fn inspect_doc(s: &mut Session, v: &Value) -> CmdResult {
         "revisions": s.doc.para_paths(StoryRef::Body).iter().filter(|p| s.doc.para(StoryRef::Body, p).is_some_and(|x| x.runs.iter().any(|r| r.props.ins.is_some() || r.props.del.is_some()))).count(),
         "properties": !s.doc.core.creator.is_empty() || !s.doc.core.last_modified_by.is_empty(),
         "hiddenText": !hidden.is_empty(),
-        "hidden": hidden.iter().map(|h| h.report(&s.doc)).collect::<Vec<_>>(),
+        "hiddenCount": hidden.len(),
+        "hidden": hidden.iter().take(MAX_HIDDEN_LISTED).map(|h| h.report(&s.doc)).collect::<Vec<_>>(),
+        "truncated": hidden.len() > MAX_HIDDEN_LISTED,
         "unsupported": unsupported_hidden(&s.doc),
         "headers": s.doc.parts.values().filter(|p| matches!(p.kind, wordcraft_doc::PartKind::Header | wordcraft_doc::PartKind::Footer)).count(),
     });
+    let mut removed_notes = Vec::new();
     for r in &remove {
         match r.as_str() {
             "comments" => {
@@ -1285,13 +1288,7 @@ fn inspect_doc(s: &mut Session, v: &Value) -> CmdResult {
                 s.doc.core = Default::default();
                 s.doc.core.title = title;
             }
-            "hidden" => {
-                // Last first, so earlier offsets in the same paragraph stay valid.
-                for h in hidden_text(&s.doc).into_iter().rev() {
-                    let at = |off| Pos { story: h.story, path: h.path.clone(), off };
-                    s.doc.delete_range(&at(h.range.start), &at(h.range.end))?;
-                }
-            }
+            "hidden" => removed_notes = remove_hidden(&mut s.doc)?,
             "headers" => {
                 s.run("insert.removeHeader", &json!({}))?;
                 s.run("insert.removeFooter", &json!({}))?;
@@ -1302,20 +1299,117 @@ fn inspect_doc(s: &mut Session, v: &Value) -> CmdResult {
     s.clamp_selection();
     // What a removal couldn't reach: hidden text still there, or kept in objects we don't model.
     let residual: Vec<Value> = if remove.iter().any(|r| r == "hidden") {
-        let mut v: Vec<Value> = hidden_text(&s.doc).iter().map(|h| h.report(&s.doc)).collect();
+        let mut v: Vec<Value> = hidden_text(&s.doc).iter().take(MAX_HIDDEN_LISTED).map(|h| h.report(&s.doc)).collect();
         v.extend(unsupported_hidden(&s.doc));
         v
     } else {
         Vec::new()
     };
-    Ok(json!({"found": report, "removed": remove, "residual": residual}))
+    Ok(json!({"found": report, "removed": remove, "residual": residual, "removedNotes": removed_notes}))
 }
 
-/// A piece of hidden text: a byte range of a paragraph in a story.
+/// Most hidden pieces `file.inspect` lists (the count is always exact).
+const MAX_HIDDEN_LISTED: usize = 1000;
+
+/// A piece of hidden text: a byte range of a paragraph in a story. `whole`: the paragraph's mark
+/// is hidden too and so is all its text, so the paragraph itself goes.
 struct Hidden {
     story: StoryRef,
     path: wordcraft_doc::Path,
     range: std::ops::Range<usize>,
+    whole: bool,
+}
+
+/// Remove All for hidden text (#1344): every hidden piece, last first so earlier offsets and
+/// paths stay valid; whole hidden paragraphs with their marks; and the notes whose references
+/// were hidden, as deleting a reference deletes its note. Returns the notes removed.
+fn remove_hidden(doc: &mut Document) -> Result<Vec<Value>, CmdError> {
+    let mut refs: Vec<u32> = Vec::new();
+    for h in hidden_text(doc).into_iter().rev() {
+        if let Some(p) = doc.para(h.story, &h.path) {
+            for off in p.object_offsets() {
+                if h.range.contains(&off)
+                    && let Some(InlineObject::NoteRef { id, .. }) = p.object_at(off)
+                {
+                    refs.push(*id);
+                }
+            }
+        }
+        remove_piece(doc, &h)?;
+    }
+    if refs.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Notes still referenced from elsewhere (a note's own mark doesn't count) stay.
+    let mut kept = std::collections::BTreeSet::new();
+    for story in all_stories(doc) {
+        for path in doc.para_paths(story) {
+            let Some(p) = doc.para(story, &path) else { continue };
+            for off in p.object_offsets() {
+                if let Some(InlineObject::NoteRef { id, .. }) = p.object_at(off)
+                    && story != StoryRef::Part(*id)
+                {
+                    kept.insert(*id);
+                }
+            }
+        }
+    }
+    refs.sort_unstable();
+    refs.dedup();
+    let mut out = Vec::new();
+    for id in refs {
+        if kept.contains(&id)
+            || !doc.parts.get(&id).is_some_and(|p| matches!(p.kind, wordcraft_doc::PartKind::Footnote | wordcraft_doc::PartKind::Endnote))
+        {
+            continue;
+        }
+        let text = doc.plain_text(StoryRef::Part(id)).replace('\u{FFFC}', "").trim().to_string();
+        out.push(json!({"kind": story_kind(doc, StoryRef::Part(id)), "part": id, "text": text}));
+        doc.parts.remove(&id);
+    }
+    Ok(out)
+}
+
+/// Delete one hidden piece. Within a paragraph: straight in the paragraph, unless a content
+/// control marker is inside (then through `delete_range`, which keeps markers whose partner is
+/// outside). A whole hidden paragraph goes with its mark, unless it's the last block of its story
+/// or cell, holds a section break or zero-width markers: then it stays, emptied, its mark shown.
+fn remove_piece(doc: &mut Document, h: &Hidden) -> Result<(), CmdError> {
+    let Some(p) = doc.para(h.story, &h.path) else { return Ok(()) };
+    let has_control = p
+        .object_offsets()
+        .into_iter()
+        .any(|o| h.range.contains(&o) && matches!(p.object_at(o), Some(InlineObject::ControlStart { .. } | InlineObject::ControlEnd)));
+    let style = p.props.style.clone();
+    let mut mark = p.mark.clone();
+    if h.whole {
+        let i = h.path.last();
+        let last = doc.container(h.story, &h.path).is_none_or(|c| i + 1 >= c.len());
+        let markers = p.object_offsets().into_iter().any(|o| p.object_at(o).is_some_and(InlineObject::is_marker));
+        if !last && !markers && p.section.is_none() {
+            let blocks = doc.container_mut(h.story, &h.path)?;
+            if i < blocks.len() {
+                blocks.remove(i);
+            }
+            return Ok(());
+        }
+    }
+    if !h.range.is_empty() {
+        if has_control {
+            let at = |off| Pos { story: h.story, path: h.path.clone(), off };
+            doc.delete_range(&at(h.range.start), &at(h.range.end))?;
+        } else {
+            doc.para_mut(h.story, &h.path)?.delete(h.range.start, h.range.end)?;
+        }
+    }
+    if h.whole {
+        mark.hidden = None;
+        if doc.styles.resolve_char(style.as_deref(), &mark).hidden {
+            mark.hidden = Some(false);
+        }
+        doc.para_mut(h.story, &h.path)?.mark.hidden = mark.hidden;
+    }
+    Ok(())
 }
 
 impl Hidden {
@@ -1362,8 +1456,13 @@ fn hidden_text(doc: &Document) -> Vec<Hidden> {
             let Some(p) = doc.para(story, &path) else { continue };
             let style = p.props.style.as_deref();
             let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+            let mut all_hidden = true;
             for (r, c) in p.run_ranges() {
-                if r.is_empty() || !doc.styles.resolve_char(style, c).hidden {
+                if r.is_empty() {
+                    continue;
+                }
+                if !doc.styles.resolve_char(style, c).hidden {
+                    all_hidden = false;
                     continue;
                 }
                 match ranges.last_mut() {
@@ -1371,12 +1470,16 @@ fn hidden_text(doc: &Document) -> Vec<Hidden> {
                     _ => ranges.push(r),
                 }
             }
+            if all_hidden && doc.styles.resolve_char(style, &p.mark).hidden {
+                out.push(Hidden { story, path: path.clone(), range: 0..p.len(), whole: true });
+                continue;
+            }
             for range in ranges {
                 let content = p.text.get(range.clone()).is_some_and(|t| {
                     t.char_indices().any(|(i, ch)| ch != '\u{FFFC}' || p.object_at(range.start + i).is_some_and(|o| !o.is_marker()))
                 });
                 if content {
-                    out.push(Hidden { story, path: path.clone(), range });
+                    out.push(Hidden { story, path: path.clone(), range, whole: false });
                 }
             }
         }
@@ -1401,8 +1504,38 @@ fn unsupported_hidden(doc: &Document) -> Vec<Value> {
                 }
             }
         }
+        if let Some(blocks) = doc.story(story) {
+            tables_hiding_text(doc, story, blocks, 0, &mut out);
+        }
     }
     out
+}
+
+/// Tables whose table style (or one of its conditional parts: header row, bands, first or last
+/// column, total row) hides text. The inspector doesn't resolve table styles, so it lists them.
+fn tables_hiding_text(doc: &Document, story: StoryRef, blocks: &wordcraft_doc::Blocks, depth: usize, out: &mut Vec<Value>) {
+    if depth > 32 {
+        return;
+    }
+    for b in blocks {
+        let Block::Table(t) = &**b else { continue };
+        if let Some(id) = t.props.style.as_deref()
+            && let Some(ts) = doc.styles.table_style(id)
+        {
+            let q = &ts.parts;
+            if [&ts.chr, &q.header_chr, &q.band_chr, &q.col_band_chr, &q.first_col_chr, &q.last_col_chr, &q.total_chr]
+                .iter()
+                .any(|c| c.hidden == Some(true))
+            {
+                out.push(json!({"story": story_kind(doc, story), "object": "table", "style": id, "reason": "text hidden by a table style isn't inspected or removed"}));
+            }
+        }
+        for row in &t.rows {
+            for cell in &row.cells {
+                tables_hiding_text(doc, story, &cell.blocks, depth + 1, out);
+            }
+        }
+    }
 }
 
 fn quick_parts(s: &mut Session, v: &Value) -> CmdResult {
