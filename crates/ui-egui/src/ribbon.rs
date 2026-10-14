@@ -172,43 +172,6 @@ fn autosave_switch(ui: &mut Ui, app: &mut WordApp) {
     }
 }
 
-/// The window controls (minimize, maximize/restore, close) drawn at the top-right corner,
-/// after the account avatar. Non-macOS only: macOS keeps the system traffic lights.
-/// Drawn in code (original glyphs: a dash, a square, an X) — never copied iconography.
-fn window_controls(ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
-    let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-    for (glyph, tip, cmd) in [
-        ("min", tl!("Minimize"), egui::ViewportCommand::Minimized(true)),
-        ("max", tl!("Maximize"), egui::ViewportCommand::Maximized(!maximized)),
-        ("close", tl!("Close"), egui::ViewportCommand::Close),
-    ] {
-        let (r, resp) = ui.allocate_exact_size(vec2(30.0, 24.0), Sense::click());
-        if resp.hovered() {
-            let fill = if glyph == "close" { egui::Color32::from_rgb(0xE8, 0x11, 0x23) } else { t.hover };
-            ui.painter().rect_filled(r, 4.0, fill);
-        }
-        let ink = if resp.hovered() && glyph == "close" { egui::Color32::WHITE } else { t.text };
-        let c = r.center();
-        match glyph {
-            "min" => {
-                ui.painter().line_segment([pos2(c.x - 5.0, c.y + 1.0), pos2(c.x + 5.0, c.y + 1.0)], Stroke::new(1.5, ink));
-            }
-            "max" => {
-                let sq = Rect::from_center_size(c, vec2(10.0, 10.0));
-                ui.painter().rect_stroke(sq, 0.0, Stroke::new(1.5, ink), egui::StrokeKind::Inside);
-            }
-            _ => {
-                ui.painter().line_segment([pos2(c.x - 5.0, c.y - 5.0), pos2(c.x + 5.0, c.y + 5.0)], Stroke::new(1.5, ink));
-                ui.painter().line_segment([pos2(c.x + 5.0, c.y - 5.0), pos2(c.x - 5.0, c.y + 5.0)], Stroke::new(1.5, ink));
-            }
-        }
-        if resp.on_hover_text(tip).clicked() {
-            ui.ctx().send_viewport_cmd(cmd);
-        }
-    }
-}
-
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     if app.session.view.read_mode {
@@ -309,12 +272,6 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Window controls (non-macOS: macOS keeps the system traffic lights on
-                    // the left). Rightmost, after the account avatar.
-                    if !app.integrated_titlebar {
-                        window_controls(ui);
-                        ui.add_space(6.0);
-                    }
                     // Account avatar.
                     let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
                     ui.painter().circle_filled(r.center(), 11.0, t.accent);

@@ -21,7 +21,13 @@ pub fn shape_icon(p: &Painter, rect: Rect, kind: ShapeKind, fill: Color32, strok
 
 /// The same, with an explicit adjustment (the live preview while the adjustment handle drags).
 pub fn shape_icon_adj(p: &Painter, rect: Rect, kind: ShapeKind, adj: f32, fill: Color32, stroke: Color32) {
-    let map = |(x, y): (f32, f32)| pos2(rect.min.x + x * rect.width(), rect.min.y + y * rect.height());
+    // Clamp to the tile: geometry that escapes [0, 1] must never paint a line across
+    // the window, whatever the shape's data says.
+    let map = |(x, y): (f32, f32)| {
+        let x = x.clamp(0.0, 1.0);
+        let y = y.clamp(0.0, 1.0);
+        pos2(rect.min.x + x * rect.width(), rect.min.y + y * rect.height())
+    };
     let line = Stroke::new(1.0, stroke);
     if kind == ShapeKind::Rectangle || kind == ShapeKind::TextBox {
         p.rect(rect, 0.0, fill, line, egui::StrokeKind::Inside);

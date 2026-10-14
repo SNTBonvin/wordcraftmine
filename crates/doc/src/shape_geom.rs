@@ -1036,6 +1036,20 @@ mod tests {
         assert!(striped[1..].iter().all(|p| !p.closed && p.pts.len() == 2));
     }
 
+    /// Every shape's geometry stays inside the unit square: a point outside [0, 1]
+    /// would let a gallery icon (or a drawn shape) spill past its tile/frame.
+    #[test]
+    fn all_geometry_stays_in_unit_square() {
+        for kind in ShapeKind::ALL {
+            let Some(paths) = shape_geom(*kind, 100.0, 100.0, DEFAULT_ADJ) else { continue };
+            for path in &paths {
+                for (x, y) in &path.pts {
+                    assert!((0.0..=1.0).contains(x) && (0.0..=1.0).contains(y), "{kind:?} point ({x}, {y}) escapes the unit square");
+                }
+            }
+        }
+    }
+
     /// The smiley's face and the action buttons' glyphs are canonical geometry, so a
     /// drawn shape shows its pattern — not just its outline.
     #[test]
