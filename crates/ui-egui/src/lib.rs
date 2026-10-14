@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod autoscroll;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -448,6 +449,11 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// Started on the Start screen with nothing to open (#1129): the id of the placeholder
+    /// blank document the session holds until the user creates or opens one. While it is still
+    /// the session's document, no document is open: the window shows no page and only the File
+    /// tab, Help and settings work. See [`WordApp::has_document`].
+    no_document: Option<u64>,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -533,6 +539,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            no_document: None,
         }
     }
 
@@ -542,17 +549,25 @@ impl WordApp {
     }
 
     /// Start-up with no document to open (#766): show File › Home (Blank document, the templates
-    /// and Recent), as Word starts, when the Start screen setting is on (the default). Esc or the
-    /// back arrow leaves the empty document the app was created with. Hosts call this after
-    /// [`WordApp::apply_prefs`] when they have nothing to open; [`WordApp::new`] never does, so
-    /// tests, `ui_shot` and windows opened for a document start in the editor. Returns whether
-    /// the Start screen shows.
+    /// and Recent), as Word starts, when the Start screen setting is on (the default). No document
+    /// is open until the user picks Blank document or a template or opens a file (#1129): Esc or
+    /// the back arrow shows an empty window with the ribbon greyed out, as Word does. Hosts call
+    /// this after [`WordApp::apply_prefs`] when they have nothing to open; [`WordApp::new`] never
+    /// does, so tests, `ui_shot` and windows opened for a document start in the editor. Returns
+    /// whether the Start screen shows.
     pub fn start_screen(&mut self) -> bool {
         if self.ui.start_screen {
             self.ui.backstage = true;
             self.ui.backstage_page = "home".into();
+            self.no_document = Some(self.session.document_id());
         }
         self.ui.start_screen
+    }
+
+    /// Whether a document is open: false from a Start screen launch until the user creates or
+    /// opens one (#1129).
+    pub fn has_document(&self) -> bool {
+        self.no_document != Some(self.session.document_id())
     }
 
     /// Preferences to save between runs: the UI state plus the current user name and editing
@@ -667,6 +682,13 @@ impl WordApp {
         }
         if !matches!(id, "ui.openRecipientList" | "mailings.recipients") {
             self.recipient_list_pending = false;
+        }
+        // No document open (#1129): only the commands that open or create one, Help, and the
+        // settings work.
+        if !self.has_document() && !works_without_document(id) {
+            let e = tl!("No document is open. Create a document or open one first.").to_string();
+            self.status(e.clone());
+            return Err(e);
         }
         if let Some(r) = self.ui_command(id, &params) {
             return r;
@@ -860,7 +882,8 @@ impl WordApp {
             self.status(tl!("Wait for the print job to finish submitting before closing."));
             return false;
         }
-        if self.quit_requested || !self.session.dirty {
+        // No document open (#1129): nothing to save.
+        if self.quit_requested || !self.session.dirty || !self.has_document() {
             return true;
         }
         let _ = self.run("file.close", json!({}));
@@ -1555,6 +1578,12 @@ impl WordApp {
         crate::keytips::logic(self, &ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
+        } else if !self.has_document() {
+            // No document open (#1129): the ribbon greyed out but for Help, and no page.
+            chrome::title_bar(self, ui);
+            ribbon::show(self, ui);
+            chrome::status_bar(self, ui);
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |_| {});
         } else {
             chrome::title_bar(self, ui);
             ribbon::show(self, ui);
@@ -1573,10 +1602,15 @@ impl WordApp {
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
         keys::global_shortcuts(self, &ctx);
+        self.refocus_after_chrome_click(&ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
-        let title = format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" });
+        let title = if self.has_document() {
+            format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" })
+        } else {
+            "WordCraft".to_string()
+        };
         if title != self.sent_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;
@@ -1584,6 +1618,32 @@ impl WordApp {
         self.frame_ms = now_ms() - t0;
         // Typing and formatting land here, after `logic` has reported.
         self.report_dirty();
+    }
+
+    /// A click on the window's chrome (ribbon tabs and empty ribbon space, galleries, check
+    /// boxes, the status bar, panes) hands keyboard focus back to the document, as in Word, so the
+    /// caret keeps blinking and typing continues where it was (#1093). egui drops the page's focus
+    /// on any click elsewhere; only a click that left nothing focused counts, so a text field
+    /// (font size, zoom, command search) keeps the focus it took, and clicks on a dialog, menu or
+    /// popup, or while one is open, leave focus alone. Clicks on the page are the canvas's own.
+    fn refocus_after_chrome_click(&mut self, ctx: &egui::Context) {
+        if self.ui.backstage || self.dialog.is_some() || self.colors.is_some() {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.file_browser.open.is_some() {
+            return;
+        }
+        let Some(pos) = ctx.input(|i| if i.pointer.any_click() { i.pointer.interact_pos() } else { None }) else { return };
+        // The page handles its own clicks (comment balloons there take the keyboard themselves).
+        if self.canvas.balloon.is_some() || self.canvas.viewport.is_some_and(|v| v.contains(pos)) {
+            return;
+        }
+        let on_chrome = ctx.layer_id_at(pos).is_none_or(|l| l.order == egui::Order::Background);
+        if on_chrome && ctx.memory(|m| m.focused().is_none()) && !egui::Popup::is_any_open(ctx) {
+            self.canvas.want_focus = true;
+            ctx.request_repaint();
+        }
     }
 
     /// Files that arrived asynchronously (web picker, drops): documents open, pictures insert,
@@ -1805,6 +1865,51 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     }
 }
 
+/// Commands that work while no document is open (#1129): opening or creating one, closing the
+/// window, Help, adding fonts (a font file dropped on the empty window), and the settings (File ›
+/// Options, the view and interface preferences it sets, Customize Ribbon and Keyboard).
+/// Everything else needs a document, `ui.*` included: only the interface commands listed here
+/// (tabs, Backstage, dialogs, appearance, opening files) work without one.
+pub(crate) fn works_without_document(id: &str) -> bool {
+    matches!(
+        id,
+        "file.new"
+            | "file.open"
+            | "file.close"
+            | "file.options"
+            | "file.setAuthor"
+            | "font.add"
+            | "font.list"
+            | "font.remove"
+            | "readAloud.speed"
+            | "readAloud.skipCitations"
+            | "tools.customizeKeyboard"
+            | "tools.customizeRibbon"
+            | "view.darkMode"
+            | "view.marks"
+            | "view.ruler"
+            | "view.numeral"
+            | "ui.tab"
+            | "ui.backstage"
+            | "ui.dialog"
+            | "ui.closeDialog"
+            | "ui.collapseRibbon"
+            | "ui.keytips"
+            | "ui.dark"
+            | "ui.theme"
+            | "ui.interfaceSize"
+            | "ui.animations"
+            | "ui.language"
+            | "ui.saveChanges"
+            | "ui.openFileDialog"
+            | "ui.fileBrowser"
+            | "ui.makeDefaultApp"
+            | "ui.discord"
+            | "ui.caretAnimation"
+            | "ui.startScreen"
+    ) || id.starts_with("help.")
+}
+
 /// User commands that replace or close the document (`file.open` without a path only shows the
 /// file picker; the open that follows is checked). Envelopes, Labels and Finish & Merge make a
 /// new document in its place; a merge written to a file (`path`) and an envelope added to this
@@ -1946,39 +2051,118 @@ mod tests {
         assert_eq!(a.run("ui.caretAnimation", json!({"value": true})).unwrap()["caretAnimation"], true);
     }
 
-    /// #766: started with nothing to open, the app shows File › Home (the Start screen) as Word
-    /// does; Esc leaves the empty blank document it was created with. With the setting off it
-    /// starts in the editor, and `WordApp::new` alone (tests, ui_shot, windows opened for a
-    /// document) never shows it.
-    #[test]
-    fn start_screen_shows_file_home_and_esc_leaves_a_blank_document() {
-        use egui_kittest::kittest::Queryable;
-        let mut a = app();
-        assert!(!a.ui.backstage, "`new` starts in the editor");
-        a.ui.backstage_page = "print".into();
-        assert!(a.start_screen(), "on by default");
-        assert!(a.ui.backstage && a.ui.backstage_page == "home");
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+    fn harness(a: WordApp) -> egui_kittest::Harness<'static, WordApp> {
+        egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();
                 app.logic(&ctx);
                 app.ui(ui);
             },
             a,
-        );
+        )
+    }
+
+    /// #766: started with nothing to open, the app shows File › Home (the Start screen) as Word
+    /// does. #1129: no document is open behind it, so Esc (or Back) shows an empty window, with
+    /// no page, the ribbon greyed out but for Help, and nothing to save on close. With the setting
+    /// off it starts in the editor, and `WordApp::new` alone (tests, ui_shot, windows opened for a
+    /// document) never shows it.
+    #[test]
+    fn start_screen_shows_file_home_and_esc_leaves_no_document() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = app();
+        assert!(!a.ui.backstage, "`new` starts in the editor");
+        assert!(a.has_document());
+        a.ui.backstage_page = "print".into();
+        assert!(a.start_screen(), "on by default");
+        assert!(a.ui.backstage && a.ui.backstage_page == "home");
+        assert!(!a.has_document(), "no document behind the Start screen");
+        let mut h = harness(a);
         h.run_steps(4);
         assert!(h.query_by_label("Blank document").is_some(), "Home lists Blank document and the templates");
         assert!(h.query_by_label("Recent").is_some(), "and the Recent list");
         h.key_press(egui::Key::Escape);
         h.run_steps(4);
-        assert!(!h.state().ui.backstage, "Esc leaves the Start screen");
-        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "", "for an empty blank document");
-        assert!(!h.state().session.dirty);
+        let a = h.state_mut();
+        assert!(!a.ui.backstage, "Esc leaves the Start screen");
+        assert!(!a.has_document(), "for an empty window, not a blank document");
+        assert_eq!(a.sent_title, "WordCraft", "the window is titled with the app alone");
+        // The ribbon's commands are off, but Help, the File tab and the settings work.
+        for id in ["format.bold", "text.insert", "file.save", "file.saveAs", "file.print", "edit.paste", "insert.table", "ui.print"] {
+            assert!(!widgets::enabled(a, id), "{id} is off with no document");
+        }
+        for id in ["file.new", "file.open", "ui.backstage", "ui.tab", "ui.discord", "file.options", "ui.theme"] {
+            assert!(widgets::enabled(a, id), "{id} works with no document");
+        }
+        assert!(!chrome::qat_enabled(a, "file.save"));
+        // Only the listed interface commands work: the ones that act on the document don't.
+        for id in ["ui.contextMenu", "ui.render", "ui.linkTextBox", "ui.zotero.refresh", "ui.unlistedCommand"] {
+            assert!(!works_without_document(id), "{id} needs a document");
+        }
+        let refused = a.run("ui.zotero.status", json!({})).unwrap_err();
+        assert!(refused.contains("No document is open"), "refused before it runs: {refused}");
+        assert!(works_without_document("font.add"), "a font file dropped on the empty window is added");
+        // Neither keys nor commands reach the hidden placeholder.
+        assert!(a.run("text.insert", json!({"text": "Hello"})).is_err());
+        assert!(a.execute("format.bold", json!({})).is_err());
+        h.event(egui::Event::Text("typed".into()));
+        h.key_press(egui::Key::Enter);
+        h.run_steps(2);
+        let a = h.state_mut();
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "");
+        assert!(!a.session.dirty && !a.has_document());
+        assert!(a.close_requested(), "closing asks nothing");
+        assert!(a.dialog.is_none());
 
         let mut b = app();
         b.run("ui.startScreen", json!({"value": false})).unwrap();
         assert!(!b.start_screen(), "off: today's behaviour");
-        assert!(!b.ui.backstage);
+        assert!(!b.ui.backstage && b.has_document());
+    }
+
+    /// #1129: the empty window's File tab goes back to the Backstage with only Home, New, Open
+    /// and Options; picking Blank document there opens one, ready for typing.
+    #[test]
+    fn blank_document_opens_a_document_from_the_start_screen() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = app();
+        a.start_screen();
+        a.run("ui.backstage", json!({"value": false})).unwrap();
+        a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        let first = a.session.document_id();
+        let mut h = harness(a);
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "home", "Info needs a document");
+        h.get_by_label("Blank document").click();
+        h.run_steps(4);
+        let a = h.state_mut();
+        assert!(a.has_document() && !a.ui.backstage, "Blank document opens one");
+        assert_ne!(a.session.document_id(), first);
+        assert!(widgets::enabled(a, "format.bold"));
+        a.run("text.insert", json!({"text": "Hello"})).unwrap();
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "Hello");
+        assert!(a.sent_title.starts_with(&a.title_stem()), "{}", a.sent_title);
+    }
+
+    /// #1129: a template or a file opened from the Start screen (or handed over later) is the
+    /// document; a failed open leaves the window empty.
+    #[test]
+    fn templates_and_files_open_from_the_start_screen() {
+        let mut a = app();
+        a.start_screen();
+        a.run("file.new", json!({"template": "letter"})).unwrap();
+        assert!(a.has_document());
+
+        let dir = scratch("start-screen-open");
+        let path = docx_on_disk(&dir, "Signed copy");
+        let mut b = app();
+        b.start_screen();
+        assert!(b.run("file.open", json!({"path": dir.join("missing.docx").to_string_lossy()})).is_err());
+        assert!(!b.has_document(), "a failed open opens nothing");
+        b.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert!(b.has_document());
+        assert!(body_text(&b).contains("Signed copy"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The Start screen setting is a UI command, kept between runs; settings saved before it
@@ -2577,6 +2761,44 @@ mod tests {
         );
         assert!(!a.canvas.drag_selecting());
         assert!(!a.session.sel.is_collapsed(), "the drag left a selection");
+    }
+
+    /// The control channel's `ui.wheel` scrolls the canvas like a mouse wheel over it.
+    #[test]
+    fn control_wheel_scrolls_the_canvas() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for _ in 0..3 {
+            a.run("insert.pageBreak", json!({})).unwrap();
+        }
+        a.run("caret.docStart", json!({})).unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp| {
+            t += 1.0 / 60.0;
+            let mut input = egui::RawInput { time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            a.raw_input_hook(&mut input);
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        let top = a.canvas.page_rects[0].top();
+        let at = a.canvas.canvas_rect.unwrap().center();
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x, "y": at.y, "dy": -400.0}));
+        control::handle(&mut a, &ctx, &req);
+        for _ in 0..30 {
+            frame(&mut a);
+        }
+        let moved = top - a.canvas.page_rects[0].top();
+        assert!(moved > 100.0, "the first page moved up by {moved}");
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("ui.wheel replies at once") };
+        assert_eq!(v["ok"], false, "y is required: {v}");
     }
 
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
@@ -3189,6 +3411,111 @@ mod tests {
         h.event(egui::Event::Text(" bold".into()));
         h.step();
         assert!(body_text(h.state()).ends_with(" bold"), "Bold: typing continues in the document");
+    }
+
+    /// Types `text` after a click on `what` and checks it reached the document (#1093).
+    fn type_after_click(h: &mut egui_kittest::Harness<'_, WordApp>, what: &str, text: &str) {
+        h.step();
+        h.event(egui::Event::Text(text.into()));
+        h.step();
+        assert!(h.state().canvas.focused, "{what}: the page keeps keyboard focus");
+        assert!(body_text(h.state()).ends_with(text), "{what}: typing continues in the document");
+    }
+
+    /// #1093: clicks on ribbon and status-bar chrome that isn't a command button (gallery tiles,
+    /// tab names, empty ribbon space, View check boxes, the status bar's view buttons and
+    /// language menu) used to take keyboard focus from the page: the caret vanished and typing
+    /// went nowhere until the page was clicked again.
+    #[test]
+    fn clicks_on_ribbon_and_status_bar_chrome_keep_typing_in_the_document() {
+        use egui::accesskit::Role;
+
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            typed(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        assert!(h.state().canvas.focused, "the page starts with keyboard focus");
+
+        // A Styles gallery tile.
+        h.get_by_role_and_label(Role::Button, "Heading 1").click();
+        type_after_click(&mut h, "Heading 1 tile", " gallery");
+        let para = h.state().session.doc.para_at(&h.state().session.sel.focus).expect("caret paragraph");
+        assert_eq!(para.props.style.as_deref(), Some("Heading1"), "the tile applied its style");
+
+        // A ribbon tab name, then a View tab check box.
+        h.get_by_role_and_label(Role::Button, "View").click();
+        type_after_click(&mut h, "View tab", " tab");
+        assert_eq!(h.state().ui.tab, "View");
+        let ruler = h.state().session.view.ruler;
+        h.get_by_role_and_label(Role::CheckBox, "Ruler").click();
+        type_after_click(&mut h, "Ruler check box", " ruler");
+        assert_ne!(h.state().session.view.ruler, ruler, "the check box toggled the ruler");
+
+        // Empty space at the right end of the ribbon, under the tab strip.
+        let tab = h.get_by_role_and_label(Role::Button, "View").rect();
+        let blank = egui::pos2(1425.0, tab.max.y + 25.0);
+        for pressed in [true, false] {
+            h.hover_at(blank);
+            h.event(egui::Event::PointerButton { pos: blank, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+        type_after_click(&mut h, "empty ribbon space", " blank");
+
+        // The status bar's view buttons.
+        h.get_by_role_and_label(Role::Button, "Web Layout").click();
+        type_after_click(&mut h, "Web Layout", " web");
+        assert_eq!(h.state().session.view.mode, wordcraft_layout::ViewMode::Web);
+        h.get_by_role_and_label(Role::Button, "Print Layout").click();
+        type_after_click(&mut h, "Print Layout", " print");
+        assert_eq!(h.state().session.view.mode, wordcraft_layout::ViewMode::Print);
+
+        // The language item opens its menu; a click elsewhere on the status bar cancels it.
+        let lang_label = crate::ribbon::caret_language(h.state());
+        let lang = h.get_by_label(&lang_label).rect();
+        h.get_by_label(&lang_label).click();
+        h.step();
+        h.step();
+        assert!(egui::Popup::is_any_open(&h.ctx), "the language menu opened");
+        let elsewhere = egui::pos2(lang.max.x + 40.0, lang.center().y);
+        for pressed in [true, false] {
+            h.hover_at(elsewhere);
+            h.event(egui::Event::PointerButton { pos: elsewhere, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+        h.step();
+        assert!(!egui::Popup::is_any_open(&h.ctx), "the click closed the language menu");
+        type_after_click(&mut h, "language menu cancelled", " lang");
+
+        // Back on Home, a text field still takes the focus: the font size box.
+        h.get_by_role_and_label(Role::Button, "Home").click();
+        type_after_click(&mut h, "Home tab", " home");
+        let before = body_text(h.state());
+        let size_box = h
+            .get_all_by_role(Role::TextInput)
+            .find(|n| n.value().is_some_and(|v| v.trim().parse::<f64>().is_ok()))
+            .expect("the font size box")
+            .rect();
+        for pressed in [true, false] {
+            h.hover_at(size_box.center());
+            h.event(egui::Event::PointerButton {
+                pos: size_box.center(),
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            });
+        }
+        h.step();
+        h.step();
+        assert!(!h.state().canvas.focused, "the font size box took keyboard focus");
+        h.event(egui::Event::Text("4".into()));
+        h.step();
+        assert!(!h.state().canvas.focused, "the font size box keeps focus while edited");
+        assert_eq!(body_text(h.state()), before, "typing went into the font size box, not the page");
     }
 
     /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
@@ -4316,6 +4643,26 @@ mod tests {
         a.canvas.scroll_to_caret = false;
         a.run("text.insert", json!({"text": "x"})).unwrap();
         assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
+    }
+
+    /// #1129: with no document open (the Start screen's empty window), `document.inspect` and
+    /// `ui.render` on the control channel say so instead of reading the hidden placeholder.
+    #[test]
+    fn control_inspect_and_render_need_a_document() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.start_screen();
+        assert!(!a.has_document());
+        for (method, params) in [("document.inspect", json!({})), ("ui.render", json!({"page": 1, "scale": 0.5}))] {
+            let (req, _reply) = ControlRequest::new(method, params);
+            let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("{method} replies at once") };
+            assert_eq!(v["ok"], false, "{method}: {v}");
+            assert!(v["error"].as_str().is_some_and(|e| e.contains("no document is open")), "{method}: {v}");
+        }
+        a.run("file.new", json!({})).unwrap();
+        let (req, _reply) = ControlRequest::new("document.inspect", json!({}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("document.inspect replies at once") };
+        assert_eq!(v["ok"], true, "with a document it works: {v}");
     }
 
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of
