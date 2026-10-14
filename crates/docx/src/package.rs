@@ -61,6 +61,9 @@ pub const EMBEDDED_PARTS: &str = "wordcraft:embedded.parts";
 /// Custom XML roots kept by the package (P) or main document (D): `owner\ttype\tpart`.
 /// Their opaque bytes and related parts use the same bounded manifest as embedded objects.
 pub const CUSTOM_XML_ROOTS: &str = "wordcraft:customXml.roots";
+/// The original `word/settings.xml` when it holds settings the model doesn't (merged into on
+/// save by `write::settings_merge`). Not a package part: WordCraft's own bookkeeping.
+pub const SETTINGS_ORIG: &str = "wordcraft:settings.orig";
 /// Most parts we carry along for a file's embedded objects.
 pub const MAX_EMBEDDED_PARTS: usize = 4096;
 /// Most relationships we keep for one such part.
