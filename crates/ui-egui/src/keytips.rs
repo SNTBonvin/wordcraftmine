@@ -335,6 +335,7 @@ fn controls(tab: &str) -> Vec<Control> {
             c("Split", "view.split"),
             c("Macros", "tools.macros"),
         ],
+        "Help" if crate::brand::HIDE_DISCORD => vec![d("Help", "about"), d("Commands", "commands")],
         "Help" => vec![d("Help", "about"), c("Community Discord", "ui.discord"), d("Commands", "commands")],
         "Table Design" => {
             vec![m("Shading", "table.shading"), m("Borders", "table.borders"), c("Border Painter", "table.borderPainter")]

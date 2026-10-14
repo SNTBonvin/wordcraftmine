@@ -1096,6 +1096,13 @@ fn core_xml(doc: &Document) -> Vec<u8> {
     w.into_bytes()
 }
 
+include!(concat!(env!("OUT_DIR"), "/brand_name.rs"));
+
+/// `docProps/app.xml` Application: `WordCraft`, or a branded build's name with its version.
+fn application() -> String {
+    BRAND_NAME.map_or_else(|| "WordCraft".to_string(), |n| format!("{n} {}", env!("CARGO_PKG_VERSION")))
+}
+
 fn app_xml(doc: &Document) -> Vec<u8> {
     let mut w = W::new();
     w.open(
@@ -1105,7 +1112,7 @@ fn app_xml(doc: &Document) -> Vec<u8> {
             ("xmlns:vt", "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"),
         ],
     );
-    w.leaf("Application", &[], "WordCraft");
+    w.leaf("Application", &[], &application());
     w.leaf("Words", &[], &doc.word_count().to_string());
     w.leaf("Paragraphs", &[], &doc.paragraph_count().to_string());
     w.leaf("DocSecurity", &[], "0");

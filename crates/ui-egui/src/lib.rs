@@ -24,6 +24,7 @@ pub mod a11y;
 pub mod a11y_pane;
 pub mod autoscroll;
 pub mod backstage;
+pub mod brand;
 pub mod canvas;
 pub mod caret_glide;
 pub mod chrome;
@@ -480,7 +481,11 @@ impl SaveChoice {
 }
 
 impl WordApp {
-    pub fn new(session: Session, services: Services) -> Self {
+    pub fn new(mut session: Session, services: Services) -> Self {
+        // A branded build's own commands (its ribbon tab).
+        if brand::BRANDED {
+            std::sync::Arc::make_mut(&mut session.registry).extend(brand::commands());
+        }
         // Numeral › System follows the system locale, found here rather than in layout.
         if let Some(tag) = sys_locale::get_locale() {
             wordcraft_engine::set_system_locale(&tag);

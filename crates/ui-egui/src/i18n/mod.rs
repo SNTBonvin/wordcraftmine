@@ -333,12 +333,19 @@ pub fn has(lang: Lang, s: &str) -> bool {
 
 /// `s` in the current language ([`tr`] with [`current`]).
 pub fn t(s: &str) -> &str {
+    // A branded build's `[relabel]` entries replace a UI string in every language.
+    if let Some(to) = crate::brand::text(s) {
+        return to;
+    }
     tr(current(), s)
 }
 
 /// `s` in the current language as worded for `context` (one of `catalog::CONTEXTS`), falling
 /// back to the plain translation and then to English.
 pub fn tc<'a>(context: &str, s: &'a str) -> &'a str {
+    if let Some(to) = crate::brand::text(s) {
+        return to;
+    }
     trc(current(), context, s)
 }
 
