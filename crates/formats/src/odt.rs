@@ -636,9 +636,10 @@ struct StyleInfo {
     border_bottom: bool,
     /// `fo:background-color` of a table-cell style's `style:table-cell-properties`.
     cell_background: Option<Rgb>,
-    /// `style:master-page-name` of a paragraph style: its paragraphs start a page of that master page.
+    /// `style:master-page-name` of a paragraph or table style: its paragraphs (tables) start a
+    /// page of that master page. Empty: explicitly none, which stops the lookup up the chain.
     master_page: Option<String>,
-    /// `style:page-number` of a paragraph style: `Some(Some(n))` restarts page numbering at n,
+    /// `style:page-number` of a paragraph or table style (applied only with a master page): `Some(Some(n))` restarts page numbering at n,
     /// `Some(None)` ("auto") continues it.
     page_number: Option<Option<u32>>,
     /// `style:columns` of a section style.
@@ -770,7 +771,7 @@ impl Styles {
                             display: get(&a, "style:display-name").map(String::from),
                             auto: in_auto && auto_section_is_auto,
                             outline: get(&a, "style:default-outline-level").and_then(|v| v.parse::<u8>().ok()),
-                            master_page: get(&a, "style:master-page-name").filter(|n| !n.is_empty()).map(String::from),
+                            master_page: get(&a, "style:master-page-name").map(String::from),
                             ..Default::default()
                         };
                         cur = Some((name.to_string(), info));
@@ -815,6 +816,13 @@ impl Styles {
                                 d.font = Some(fam);
                             }
                         }
+                    }
+                }
+                "table-properties" => {
+                    if let Some((_, s)) = &mut cur
+                        && let Some(v) = get(&a, "style:page-number")
+                    {
+                        s.page_number = Some(v.trim().parse::<u32>().ok().map(|n| n.min(32_767)));
                     }
                 }
                 "table-cell-properties" => {
@@ -918,7 +926,8 @@ impl Styles {
     /// ODF 1.3 §16.2 and §17.6): the nearest master page and page-number setting in its chain.
     fn page_start<'a>(&'a self, name: &'a str) -> (Option<&'a str>, Option<Option<u32>>) {
         let chain = self.chain(name);
-        (chain.iter().find_map(|(_, s)| s.master_page.as_deref()), chain.iter().find_map(|(_, s)| s.page_number))
+        let master = chain.iter().find_map(|(_, s)| s.master_page.as_deref()).filter(|m| !m.is_empty());
+        (master, chain.iter().find_map(|(_, s)| s.page_number))
     }
 
     /// Columns of a section style (whole chain).
@@ -1060,20 +1069,20 @@ impl Body<'_> {
         true
     }
 
-    /// A body paragraph of style `name` that names a master page starts a new page with that
-    /// page's setup; one that restarts page numbering on a page break starts one with the
-    /// current page's. The section that starts there, if any.
-    fn page_section(&mut self, name: &str, page_break: bool) -> Option<SectionProps> {
+    /// A body paragraph or table of style `name` that names a master page starts a new page with
+    /// that page's setup and, when the style says so, page numbering restarted (ODF 1.3 applies
+    /// `style:page-number` only with a master page). The section that starts there, if any.
+    ///
+    /// Rare cases left simple: a master-page paragraph first inside a columned `text:section`
+    /// replaces that (still empty) column section, so the columns are lost; a columned section
+    /// nested in another is read as part of the outer one.
+    fn page_section(&mut self, name: &str) -> Option<SectionProps> {
         if !self.in_body() {
             return None;
         }
         let (master, number) = self.styles.page_start(name);
         let restart = number.flatten();
-        let page = match master.and_then(|m| self.pages.masters.get(m)) {
-            Some(p) => p.clone(),
-            None if page_break && restart.is_some() => self.page.clone(),
-            None => return None,
-        };
+        let page = master.and_then(|m| self.pages.masters.get(m))?.clone();
         self.page = page.clone();
         Some(SectionProps { start: SectionStart::NextPage, page_num_start: restart, ..page })
     }
@@ -1082,7 +1091,7 @@ impl Body<'_> {
         self.end_para();
         let (mut kind, align, mut pb, rule, base) = style.map(|s| self.styles.para(s)).unwrap_or((Kind::Normal, None, false, false, Fmt::default()));
         // The section break starts the new page; no page break besides.
-        if let Some(next) = style.and_then(|s| self.page_section(s, pb))
+        if let Some(next) = style.and_then(|s| self.page_section(s))
             && self.break_section(next)
         {
             pb = false;
@@ -1278,6 +1287,10 @@ impl Body<'_> {
             }
             "table" if q.starts_with("table:") => {
                 self.end_para();
+                // A body table whose style names a master page starts that page (ODF 1.3 §19.509).
+                if let Some(next) = get(a, "table:style-name").and_then(|s| self.page_section(s)) {
+                    self.break_section(next);
+                }
                 if self.tables.len() >= model::MAX_DEPTH {
                     self.skip = 1;
                     return;
@@ -1626,7 +1639,8 @@ fn read_pages(xml: &[u8]) -> Pages {
         let Some((a, cols)) = layouts.get(&layout) else { continue };
         let mut sec = SectionProps::default();
         apply_layout(a, &mut sec);
-        if let Some(c) = cols {
+        // A one-column layout keeps the default columns (and their gap).
+        if let Some(c) = cols.as_ref().filter(|c| c.count > 1) {
             sec.columns = c.clone();
         }
         if pages.first.is_none() {
@@ -1637,7 +1651,7 @@ fn read_pages(xml: &[u8]) -> Pages {
     pages
 }
 
-/// Read the page size, orientation and margins of the first master page in `styles.xml` into `sec`.
+/// Replace `sec` with the page setup of the first master page in `styles.xml`, if any.
 #[cfg(test)]
 fn apply_page_layout(xml: &[u8], sec: &mut SectionProps) {
     if let Some(first) = read_pages(xml).first {
@@ -1903,5 +1917,39 @@ mod tests {
         assert_eq!(secs.len(), 2);
         assert_eq!(secs[1].1.columns.count, 45);
         assert!(secs[1].1.columns.space <= 1584.0);
+    }
+
+    #[test]
+    fn master_page_on_a_table_style_starts_a_section() {
+        // Review of #1379: a table style can name a master page too (ODF 1.3 §19.509), with its
+        // page-number restart on `style:table-properties`. An empty name on a child style means
+        // "no page style here", and a page-number restart without a master page starts nothing.
+        use wordcraft_doc::section::SectionStart;
+        let styles = format!(
+            r#"<office:document-styles {NS_T}><office:styles><style:style style:name="WideParent" style:family="paragraph" style:master-page-name="Wide"/></office:styles><office:automatic-styles>
+            <style:page-layout style:name="pU"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"><style:columns fo:column-count="1" fo:column-gap="0cm"/></style:page-layout-properties></style:page-layout>
+            <style:page-layout style:name="pW"><style:page-layout-properties fo:page-width="29.7cm" fo:page-height="21cm" style:print-orientation="landscape"/></style:page-layout>
+            </office:automatic-styles><office:master-styles>
+            <style:master-page style:name="Upright" style:page-layout-name="pU"/><style:master-page style:name="Wide" style:page-layout-name="pW"/>
+            </office:master-styles></office:document-styles>"#
+        );
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:automatic-styles>
+            <style:style style:name="NoPage" style:family="paragraph" style:parent-style-name="WideParent" style:master-page-name=""/>
+            <style:style style:name="Restart" style:family="paragraph"><style:paragraph-properties fo:break-before="page" style:page-number="3"/></style:style>
+            <style:style style:name="WideTable" style:family="table" style:master-page-name="Wide"><style:table-properties style:page-number="1"/></style:style>
+            </office:automatic-styles><office:body><office:text>
+            <text:p>Intro</text:p><text:p text:style-name="NoPage">Not a new page style</text:p><text:p text:style-name="Restart">Page break only</text:p>
+            <table:table table:style-name="WideTable"><table:table-column/><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table>
+            <text:p>After</text:p>
+            </office:text></office:body></office:document-content>"#
+        );
+        let doc = import(&package(&content, Some(&styles))).unwrap();
+        let secs = doc.sections();
+        let summary: Vec<_> = secs.iter().map(|(i, s)| (*i, s.start, s.landscape, s.page_num_start)).collect();
+        assert_eq!(summary, [(2, SectionStart::NextPage, false, None), (4, SectionStart::NextPage, true, Some(1))]);
+        assert!(matches!(doc.body.get(3).map(|b| &**b), Some(wordcraft_doc::Block::Table(_))));
+        // A one-column page layout keeps the default column gap.
+        assert_eq!(secs[0].1.columns, wordcraft_doc::section::Columns::default());
     }
 }
