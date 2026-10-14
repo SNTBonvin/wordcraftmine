@@ -89,7 +89,8 @@ fn mods(p: &Value) -> egui::Modifiers {
     let cmd = b("cmd") || b("command") || b("ctrl");
     egui::Modifiers {
         alt: b("alt"),
-        ctrl: cmd && !cfg!(target_os = "macos"),
+        // "control" is the physical Control key (⌃-click on macOS, Ctrl elsewhere).
+        ctrl: b("control") || (cmd && !cfg!(target_os = "macos")),
         shift: b("shift"),
         mac_cmd: cmd && cfg!(target_os = "macos"),
         command: cmd,

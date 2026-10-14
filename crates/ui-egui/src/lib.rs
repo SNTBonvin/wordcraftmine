@@ -375,6 +375,8 @@ pub struct WordApp {
     queued_shots: Vec<(u64, f64, u32)>,
     pending_shots: Vec<(u64, Option<String>, std::sync::mpsc::Sender<Value>, f64)>,
     pub(crate) synthetic: Vec<egui::Event>,
+    /// macOS: a ⌃-click press was turned into a secondary click, so its release must be too.
+    ctrl_click_held: bool,
     /// Badge rects recorded during layout for the current keytip phase (cleared by `logic`, painted by `show`).
     pub(crate) keytip_rects: Vec<(egui::Rect, String)>,
     /// The Navigation pane's search box takes the keyboard on its next frame (Ctrl+F, #712).
@@ -481,6 +483,7 @@ impl WordApp {
             queued_shots: Vec::new(),
             pending_shots: Vec::new(),
             synthetic: Vec::new(),
+            ctrl_click_held: false,
             keytip_rects: Vec::new(),
             nav_search_focus: false,
             styled: false,
@@ -1480,18 +1483,18 @@ impl WordApp {
 
     /// Inject synthetic input events from the control channel (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
-        if self.synthetic.is_empty() {
-            return;
+        if !self.synthetic.is_empty() {
+            let n = match self.synthetic.first() {
+                Some(egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. }) => 1,
+                _ => self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(self.synthetic.len(), |i| i + 1),
+            };
+            if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = self.synthetic.first() {
+                raw.events.push(egui::Event::PointerMoved(*p));
+            }
+            let n = n.min(self.synthetic.len());
+            raw.events.extend(self.synthetic.drain(..n));
         }
-        let n = match self.synthetic.first() {
-            Some(egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. }) => 1,
-            _ => self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(self.synthetic.len(), |i| i + 1),
-        };
-        if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = self.synthetic.first() {
-            raw.events.push(egui::Event::PointerMoved(*p));
-        }
-        let n = n.min(self.synthetic.len());
-        raw.events.extend(self.synthetic.drain(..n));
+        ctrl_click_as_secondary(&mut raw.events, cfg!(target_os = "macos"), &mut self.ctrl_click_held);
     }
 
     /// Lay out the window.
@@ -1795,6 +1798,34 @@ pub fn now_ms() -> f64 {
     }
 }
 
+/// On macOS ⌃-click is the secondary click (Word's and Finder's), and winit reports it as a primary
+/// press with Control held. Rewrites such a press into a secondary press with Control cleared, so the
+/// canvas, ribbon and panes open their context menus and it never moves the caret. `held` remembers a
+/// converted press so its release converts too, even if Control was let go first. ⌘-click is left alone.
+/// Other platforms (`mac == false`) return the events untouched.
+fn ctrl_click_as_secondary(events: &mut [egui::Event], mac: bool, held: &mut bool) {
+    if !mac {
+        return;
+    }
+    for event in events {
+        let egui::Event::PointerButton { button, pressed, modifiers, .. } = event else { continue };
+        if *button != egui::PointerButton::Primary {
+            continue;
+        }
+        if *pressed {
+            *held = modifiers.ctrl && !modifiers.command;
+        }
+        if !*held {
+            continue;
+        }
+        *button = egui::PointerButton::Secondary;
+        modifiers.ctrl = false;
+        if !*pressed {
+            *held = false;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests_perf;
 
@@ -1802,6 +1833,65 @@ mod tests_perf;
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+
+    fn press(button: egui::PointerButton, pressed: bool, ctrl: bool, command: bool) -> egui::Event {
+        let modifiers = egui::Modifiers { ctrl, command, mac_cmd: command, ..Default::default() };
+        egui::Event::PointerButton { pos: egui::pos2(10.0, 10.0), button, pressed, modifiers }
+    }
+
+    /// The button and Control flag of each pointer event, for asserting the rewrite.
+    fn button_of(e: &egui::Event) -> Option<(egui::PointerButton, bool, bool)> {
+        match e {
+            egui::Event::PointerButton { button, pressed, modifiers, .. } => Some((*button, *pressed, modifiers.ctrl)),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn ctrl_click_becomes_a_secondary_click_on_macos() {
+        use egui::PointerButton::{Primary, Secondary};
+        let mut events = vec![press(Primary, true, true, false), press(Primary, false, true, false)];
+        let mut held = false;
+        ctrl_click_as_secondary(&mut events, true, &mut held);
+        assert_eq!(button_of(&events[0]), Some((Secondary, true, false)), "press is secondary, Control cleared");
+        assert_eq!(button_of(&events[1]), Some((Secondary, false, false)), "release matches the press");
+        assert!(!held, "a completed click leaves nothing held");
+    }
+
+    #[test]
+    fn release_after_control_is_let_go_still_matches_the_press() {
+        use egui::PointerButton::{Primary, Secondary};
+        let mut held = false;
+        let mut press_frame = vec![press(Primary, true, true, false)];
+        ctrl_click_as_secondary(&mut press_frame, true, &mut held);
+        assert!(held, "the converted press is remembered across frames");
+        let mut release_frame = vec![press(Primary, false, false, false)];
+        ctrl_click_as_secondary(&mut release_frame, true, &mut held);
+        assert_eq!(button_of(&release_frame[0]), Some((Secondary, false, false)));
+        assert!(!held);
+    }
+
+    #[test]
+    fn plain_click_and_command_click_are_untouched_on_macos() {
+        use egui::PointerButton::Primary;
+        let mut events = vec![press(Primary, true, false, false), press(Primary, false, false, false), press(Primary, true, true, true)];
+        let before = events.clone();
+        let mut held = false;
+        ctrl_click_as_secondary(&mut events, true, &mut held);
+        assert_eq!(events, before, "a plain click and a ⌘-click stay primary");
+        assert!(!held);
+    }
+
+    #[test]
+    fn right_click_and_other_platforms_are_untouched() {
+        use egui::PointerButton::{Primary, Secondary};
+        let mut events = vec![press(Primary, true, true, false), press(Secondary, true, true, false)];
+        let before = events.clone();
+        let mut held = false;
+        ctrl_click_as_secondary(&mut events, false, &mut held);
+        assert_eq!(events, before, "Windows and Linux keep Ctrl+click (extend / sentence select)");
+        assert!(!held);
+    }
 
     fn mod_key(key: egui::Key) -> egui::Event {
         egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND }
