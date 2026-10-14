@@ -387,7 +387,20 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
     }
     // Changing case rewrites the characters: refused in content locked against editing.
     super::controls::check_edit(s, &a, &b)?;
-    let text = s.doc.copy_range(&a, &b).plain_text();
+    // Only text that isn't a tracked deletion counts, for the mode and the conversion: after a
+    // tracked change of case the old letters are still there, deleted (#1329).
+    let text: String = s
+        .doc
+        .paths_between(&a, &b)
+        .iter()
+        .filter_map(|path| {
+            let p = s.doc.para(a.story, path)?;
+            let from = if *path == a.path { a.off } else { 0 };
+            let to = if *path == b.path { b.off } else { p.len() };
+            Some(live_chars(p, from, to).into_iter().map(|(_, c)| c).collect::<String>())
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let mode = p::str(v, "mode").map(str::to_string).unwrap_or_else(|| {
         // Shift+F3 cycles: lower → UPPER → Title → lower.
         if text.chars().any(char::is_lowercase) && text.chars().any(char::is_uppercase) && !is_title(&text) {
@@ -406,16 +419,17 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
             let Some(p) = s.doc.para(a.story, &path) else { continue };
             let from = if path == a.path { a.off } else { 0 };
             let to = if path == b.path { b.off } else { p.len() };
-            let Some(src) = p.text.get(from..to) else { continue };
-            case_groups(p, from, src, &convert_chars(src, &mode, from == 0))
+            let chars = live_chars(p, from, to);
+            let src: String = chars.iter().map(|(_, c)| c).collect();
+            case_groups(p, &chars, &convert_chars(&src, &mode, from == 0))
         };
         if groups.is_empty() {
             continue;
         }
         // With Track Changes on, a changed stretch is a tracked deletion of the old characters
         // followed by a tracked insertion of the new, so Reject All restores the old case (#1329).
-        // Text this author inserted is rewritten in place (it stays one insertion), and text
-        // already deleted is left alone.
+        // Text this author inserted is rewritten in place (it stays one insertion); text already
+        // deleted isn't in the stretches.
         let tracked = s.doc.settings.track_changes;
         let kinds: Vec<Tracked> = {
             let Some(p) = s.doc.para(a.story, &path) else { continue };
@@ -423,15 +437,8 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
                 .iter()
                 .map(|(start, _, _)| {
                     let c = p.props_of_char(*start);
-                    if !tracked {
-                        Tracked::No
-                    } else if c.del.is_some() {
-                        Tracked::Deleted
-                    } else if c.ins.and_then(|i| s.doc.revisions.get(i as usize)).is_some_and(|rv| rv.author == s.author) {
-                        Tracked::No
-                    } else {
-                        Tracked::Replace
-                    }
+                    let own = c.ins.and_then(|i| s.doc.revisions.get(i as usize)).is_some_and(|rv| rv.author == s.author);
+                    if tracked && !own { Tracked::Replace } else { Tracked::No }
                 })
                 .collect()
         };
@@ -446,7 +453,6 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
         for ((start, end, new), kind) in groups.iter().zip(&kinds).rev() {
             let old_len = end.saturating_sub(*start);
             match (kind, revs) {
-                (Tracked::Deleted, _) => spans.push((*start, *end, old_len)),
                 (Tracked::Replace, Some((del, ins))) => {
                     let mut props = para.props_of_char(*start).clone();
                     para.format(*start, *end, &|c| c.del = Some(del))?;
@@ -485,20 +491,34 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
 enum Tracked {
     /// In place: tracking is off, or the text is this author's own insertion.
     No,
-    /// Already a tracked deletion: left as it is.
-    Deleted,
     /// A tracked deletion of the old text and a tracked insertion of the new.
     Replace,
 }
 
-/// Group the characters of `src` (at `from` in `p`) whose converted form `conv` differs into
-/// stretches that stay inside one run: `(start, end, replacement)`, in text order.
-fn case_groups(p: &wordcraft_doc::Paragraph, from: usize, src: &str, conv: &[String]) -> Vec<(usize, usize, String)> {
+/// The characters of `p` in `from..to` that aren't tracked deletions, with their offsets.
+fn live_chars(p: &wordcraft_doc::Paragraph, from: usize, to: usize) -> Vec<(usize, char)> {
+    let mut out = Vec::new();
+    for (r, c) in p.run_ranges() {
+        let (x, y) = (r.start.max(from), r.end.min(to));
+        if c.del.is_some() || x >= y {
+            continue;
+        }
+        if let Some(t) = p.text.get(x..y) {
+            out.extend(t.char_indices().map(|(i, ch)| (x + i, ch)));
+        }
+    }
+    out
+}
+
+/// Group the characters `chars` (offsets in `p`) whose converted form `conv` differs into
+/// stretches of adjacent characters that stay inside one run: `(start, end, replacement)`, in
+/// text order.
+fn case_groups(p: &wordcraft_doc::Paragraph, chars: &[(usize, char)], conv: &[String]) -> Vec<(usize, usize, String)> {
     let runs: Vec<std::ops::Range<usize>> = p.run_ranges().map(|(r, _)| r).collect();
     let run_of = |off: usize| runs.iter().position(|r| r.contains(&off));
     let mut out: Vec<(usize, usize, String, Option<usize>)> = Vec::new();
-    for ((i, c), new) in src.char_indices().zip(conv) {
-        let (start, end) = (from + i, from + i + c.len_utf8());
+    for (&(start, c), new) in chars.iter().zip(conv) {
+        let end = start + c.len_utf8();
         let mut buf = [0u8; 4];
         if new.as_str() == c.encode_utf8(&mut buf) {
             continue;

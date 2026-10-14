@@ -26,15 +26,15 @@ pub fn specs() -> Vec<CommandSpec> {
         t(CommandSpec::new("table.deleteCells", "Delete Cells", "Table Layout › Rows & Columns › Delete", |s, _| {
             let (tp, r, c) = cell(s)?;
             let story = s.sel.focus.story;
-            if s.doc.table(story, &tp).and_then(|t| t.rows.get(r)).is_some_and(|row| row.cells.len() > 1 && c < row.cells.len()) {
-                let spans = text_spans(s, story, &[cell_prefix(&tp, r, c)]);
-                if let Some(done) = guard_delete(s, &spans)? {
-                    return Ok(done);
-                }
+            // A row's last cell stays.
+            if !s.doc.table(story, &tp).and_then(|t| t.rows.get(r)).is_some_and(|row| row.cells.len() > 1 && c < row.cells.len()) {
+                return fix_caret(s, &tp, r, 0);
             }
-            let t = s.doc.table_mut(story, &tp)?;
-            if let Some(row) = t.rows.get_mut(r)
-                && row.cells.len() > 1
+            let spans = text_spans(s, story, &[cell_prefix(&tp, r, c)]);
+            if let Some(done) = guard_delete(s, &spans)? {
+                return Ok(done);
+            }
+            if let Some(row) = s.doc.table_mut(story, &tp)?.rows.get_mut(r)
                 && c < row.cells.len()
             {
                 row.cells.remove(c);
@@ -539,12 +539,14 @@ fn del_col(s: &mut Session, _: &Value) -> CmdResult {
     if cols.len() >= t.grid.len() {
         return del_table(s, &Value::Null);
     }
-    // The cells in those columns, whose text goes with them.
+    // The cells that go with those columns, and their text: those all of whose columns go
+    // (a merged cell that also spans a kept column just narrows, keeping its text).
     let mut prefixes = Vec::new();
     for (rr, row) in t.rows.iter().enumerate() {
         for (cc, x) in row.cells.iter().enumerate() {
             let g = t.grid_col(rr, cc);
-            if (g..g.saturating_add(x.span())).any(|k| cols.contains(&k)) {
+            let covered = g..g.saturating_add(x.span()).min(t.grid.len());
+            if !covered.is_empty() && covered.clone().all(|k| cols.contains(&k)) {
                 prefixes.push(cell_prefix(&tp, rr, cc));
             }
         }
@@ -599,25 +601,35 @@ fn text_spans(s: &Session, story: StoryRef, prefixes: &[Vec<u32>]) -> Vec<(Pos, 
 
 /// Before a table deletion removes the text `spans`: refuse when that deletes a content control
 /// locked against deletion or edits content locked against editing (#1329). With Track Changes
-/// on, the text is marked deleted instead and the structure stays (like Word deleting a table
-/// with tracking on; the model has no tracked row or column deletion), returning the result.
+/// on, text not yet deleted is marked deleted instead and the structure stays (like Word deleting
+/// a table with tracking on; the model has no tracked row or column deletion), returning the
+/// result. When no such text is left (an empty table, or one whose deletion was accepted), there
+/// is nothing for Reject All to restore and the structure goes as without tracking.
 fn guard_delete(s: &mut Session, spans: &[(Pos, Pos)]) -> Result<Option<Value>, CmdError> {
     for (a, b) in spans {
         super::controls::check_delete(s, a, b)?;
     }
-    if !s.doc.settings.track_changes {
+    if !s.doc.settings.track_changes || !spans.iter().any(|(a, b)| has_live_text(s, a, b)) {
         return Ok(None);
     }
-    if !spans.is_empty() {
-        let rid = super::new_revision(s, RevisionKind::Delete);
-        for (a, b) in spans.iter().rev() {
-            super::track_delete_as(s, a, b, rid)?;
-        }
+    let rid = super::new_revision(s, RevisionKind::Delete);
+    for (a, b) in spans.iter().rev() {
+        super::track_delete_as(s, a, b, rid)?;
     }
     if let Some((a, _)) = spans.first() {
         s.sel = Selection::caret(s.doc.clamp(a));
     }
     sel_result(s).map(Some)
+}
+
+/// Whether `a..b` holds text that isn't a tracked deletion.
+fn has_live_text(s: &Session, a: &Pos, b: &Pos) -> bool {
+    s.doc.paths_between(a, b).iter().any(|path| {
+        let Some(p) = s.doc.para(a.story, path) else { return false };
+        let from = if *path == a.path { a.off } else { 0 };
+        let to = if *path == b.path { b.off } else { p.len() };
+        p.run_ranges().any(|(r, c)| c.del.is_none() && r.end > from && r.start < to && !r.is_empty())
+    })
 }
 
 fn merge(s: &mut Session, _: &Value) -> CmdResult {
