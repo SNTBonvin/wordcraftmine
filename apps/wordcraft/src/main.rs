@@ -19,6 +19,8 @@ mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
 mod logging;
+#[cfg(any(target_os = "macos", test))]
+mod native_menu;
 mod print;
 mod region;
 
@@ -37,6 +39,8 @@ struct App(
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
+    // The macOS menu bar (File, Edit, View, Go…), built on the first frame.
+    #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>,
 );
 
 impl eframe::App for App {
@@ -44,6 +48,9 @@ impl eframe::App for App {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.4, &mut self.0, ctx);
         self.0.logic(ctx);
+        // After `logic` has set the interface language the menu's labels follow.
+        #[cfg(target_os = "macos")]
+        native_menu::NativeMenu::frame(&mut self.5, &mut self.0, ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
         self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
@@ -71,6 +78,11 @@ impl eframe::App for App {
         }
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // Cut / Copy / Paste / Select All chosen in the menu bar arrive as the keyboard's would.
+        #[cfg(target_os = "macos")]
+        if let Some(menu) = self.5.as_mut() {
+            raw.events.append(&mut menu.input);
+        }
         self.0.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -355,6 +367,8 @@ fn main() -> eframe::Result {
                 dialogs,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                None,
             )))
         }),
     )
