@@ -3,8 +3,11 @@
 
 use egui::{Key, Modifiers};
 use serde_json::{Value, json};
+use wordcraft_engine::KeyMap;
+use wordcraft_engine::keymap::normalize;
 
 use crate::WordApp;
+use crate::mac_keys;
 
 /// The registry's name for a key.
 pub fn key_name(k: Key) -> Option<&'static str> {
@@ -136,6 +139,29 @@ fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
         return true;
     }
     false
+}
+
+/// Whether Customize Keyboard assigns or removes `key` (`Mod+Left`), so the user's choice wins over
+/// a built-in Mac key.
+fn user_customizes(keymap: &KeyMap, key: &str) -> bool {
+    normalize(key).is_some_and(|k| keymap.assigned.contains_key(&k) || keymap.removed.contains(&k))
+}
+
+/// On macOS, the Mac text keys (⌘arrows, ⌘⌫, ⌃ Emacs keys) run before the keymap, with the canvas
+/// focused. Not inside an equation, and not for a key the user customized. Returns true if handled.
+fn mac_dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
+    if !cfg!(target_os = "macos") || app.session.math.is_some() {
+        return false;
+    }
+    let (Some(name), Some(steps)) = (key_name(key), mac_keys::mac_command(key, m)) else { return false };
+    if user_customizes(&app.session.keymap, &combo(m, name, true)) {
+        return false;
+    }
+    let steps = if app.session.sel.is_collapsed() { steps } else { mac_keys::on_selection(steps) };
+    for (id, params) in steps {
+        let _ = app.run(id, params);
+    }
+    true
 }
 
 /// How a command bound to a plain key runs when Shift is also held and nothing is bound to the
@@ -369,6 +395,10 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
                     let _ = app.run("insert.closeHeader", json!({}));
                     continue;
                 }
+                // Mac text keys (⌘←, ⌃A…) before the keymap; they send no text to type.
+                if mac_dispatch(app, key, modifiers) {
+                    continue;
+                }
                 app.canvas.swallow_text = dispatch(app, key, modifiers) && modifiers.alt;
             }
             _ => {}
@@ -401,6 +431,16 @@ pub fn global_shortcuts(app: &mut WordApp, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_user_key_assignment_wins_over_the_mac_key() {
+        let km = KeyMap::from_value(&json!({"assigned": {"Ctrl+A": "format.bold"}, "removed": ["Mod+Left"]}));
+        assert!(user_customizes(&km, "Ctrl+A"), "assigned");
+        assert!(user_customizes(&km, "Mod+Left"), "removed");
+        assert!(!user_customizes(&km, "Mod+Right"));
+        assert!(!user_customizes(&km, "Mod+Shift+Left"), "a shifted key is its own key");
+        assert!(!user_customizes(&KeyMap::default(), "Ctrl+A"));
+    }
 
     #[test]
     fn shift_backspace_still_erases() {
