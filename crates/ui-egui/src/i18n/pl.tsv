@@ -2117,6 +2117,14 @@
 	Correct accidental usage of cAPS LOCK key	Poprawiaj przypadkowe użycie klawisza cAPS LOCK
 	Region:	Region:
 	Automatic ({region})	Automatycznie ({region})
+	Text of the nearest paragraph with a given style (running headers)	Tekst najbliższego akapitu o danym stylu (żywa pagina)
+	Style name:	Nazwa stylu:
+	Take the last match on the page	Weź ostatnie dopasowanie na stronie
+	Show its list number	Pokaż jego numer na liście
+	Show its number relative to this field	Pokaż jego numer względem tego pola
+	Show its number with all higher levels	Pokaż jego numer ze wszystkimi wyższymi poziomami
+	Number only, without the label's words	Tylko numer, bez słów etykiety
+	Add whether it is above or below	Dodaj, czy jest wyżej, czy niżej
 
 # Style, table style, watermark, paper size and equation gallery names, from #750 by @olekkut
 	AaBbCcDd	AaBbCcDd

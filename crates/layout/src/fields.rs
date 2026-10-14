@@ -22,6 +22,9 @@ pub struct FieldCtx {
     pub title: Arc<str>,
     pub author: Arc<str>,
     pub filename: Arc<str>,
+    /// Body paragraphs for STYLEREF fields in headers and footers, and where the page being
+    /// drawn is among them (set only while laying out headers and footers that need it).
+    pub styleref: Option<(Arc<crate::styleref::StyleIndex>, crate::styleref::At)>,
 }
 
 /// A footnote's or endnote's number, as its section's options give it.
@@ -46,6 +49,21 @@ impl FieldCtx {
     /// A key for caches: the parts of the context a page-dependent paragraph depends on.
     pub fn page_key(&self) -> (u32, u32, u32, u32) {
         (self.page, self.pages, self.section_pages, self.section)
+    }
+    /// A key for caches of paragraph `p` with STYLEREF fields (0 when they show their stored
+    /// result): a hash of the results its STYLEREF fields have on this page, so an edit to body
+    /// text that no STYLEREF shows leaves header paragraphs cached.
+    pub fn styleref_key(&self, p: &wordcraft_doc::Paragraph) -> u64 {
+        let Some((ix, at)) = &self.styleref else { return 0 };
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for o in &p.objects {
+            if let wordcraft_doc::para::InlineObject::Field { instr, .. } = o
+                && field_name(instr) == "STYLEREF"
+            {
+                std::hash::Hash::hash(&ix.eval(instr, *at), &mut h);
+            }
+        }
+        std::hash::Hasher::finish(&h).max(1)
     }
 }
 
@@ -100,6 +118,10 @@ pub fn field_text(instr: &str, result: &str, ctx: &FieldCtx) -> (String, bool) {
         "TITLE" if result.is_empty() => (ctx.title.to_string(), false),
         "AUTHOR" if result.is_empty() => (ctx.author.to_string(), false),
         "FILENAME" if result.is_empty() => (ctx.filename.to_string(), false),
+        "STYLEREF" => match &ctx.styleref {
+            Some((ix, at)) => (ix.eval(instr, *at), true),
+            None => (result.to_string(), false),
+        },
         _ => (result.to_string(), false),
     }
 }

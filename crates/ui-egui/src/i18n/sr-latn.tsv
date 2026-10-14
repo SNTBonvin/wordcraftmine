@@ -2085,6 +2085,14 @@
 	AutoFit Column by Double-Clicking	Automatsko uklapanje kolone dvostrukim klikom
 	Region:	Region:
 	Automatic ({region})	Automatski ({region})
+	Text of the nearest paragraph with a given style (running headers)	Tekst najbližeg pasusa sa zadatim stilom (tekuća zaglavlja)
+	Style name:	Naziv stila:
+	Take the last match on the page	Uzmi poslednje podudaranje na stranici
+	Show its list number	Prikaži njegov broj u listi
+	Show its number relative to this field	Prikaži njegov broj u odnosu na ovo polje
+	Show its number with all higher levels	Prikaži njegov broj sa svim višim nivoima
+	Number only, without the label's words	Samo broj, bez reči iz oznake
+	Add whether it is above or below	Dodaj da li je iznad ili ispod
 	Start-up	Pokretanje
 	Show the Start screen when WordCraft starts	Prikaži početni ekran pri pokretanju programa WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Uključeno: WordCraft se otvara na Fajl › Početak, sa praznim dokumentom, šablonima i nedavnim dokumentima. Isključeno: otvara prazan dokument.

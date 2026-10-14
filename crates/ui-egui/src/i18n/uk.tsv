@@ -2087,6 +2087,14 @@
 	AutoFit Column by Double-Clicking	Добір ширини стовпця подвійним клацанням
 	Region:	Регіон:
 	Automatic ({region})	Автоматично ({region})
+	Text of the nearest paragraph with a given style (running headers)	Текст найближчого абзацу із заданим стилем (живі колонтитули)
+	Style name:	Назва стилю:
+	Take the last match on the page	Брати останній збіг на сторінці
+	Show its list number	Показувати його номер у списку
+	Show its number relative to this field	Показувати його номер відносно цього поля
+	Show its number with all higher levels	Показувати його номер з усіма вищими рівнями
+	Number only, without the label's words	Лише номер, без слів мітки
+	Add whether it is above or below	Додавати, вище він чи нижче
 	Start-up	Запуск
 	Show the Start screen when WordCraft starts	Показувати початковий екран під час запуску WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Увімкнено: WordCraft відкривається на сторінці Файл › Основне з порожнім документом, шаблонами та нещодавніми документами. Вимкнено: відкривається порожній документ.
