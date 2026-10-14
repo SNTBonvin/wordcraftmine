@@ -126,7 +126,10 @@ const BARB_ANGLE: (f32, f32) = (15.0, 75.0);
 /// similar angles and lengths. (A stroke drawn head first is tried reversed by the caller.)
 fn arrow(p: &[[f32; 2]]) -> Option<InkShape> {
     let tail = *p.first()?;
-    let (ti, _) = p.iter().enumerate().fold((0, 0.0), |m, (i, q)| if dist(tail, *q) > m.1 { (i, dist(tail, *q)) } else { m });
+    // The tip: the first point about as far from the start as any (a return that overshoots it by
+    // a point or two must not move it).
+    let dmax = p.iter().map(|q| dist(tail, *q)).fold(0.0, f32::max);
+    let ti = p.iter().position(|q| dist(tail, *q) >= dmax - (0.03 * dmax).max(2.0))?;
     let tip = *p.get(ti)?;
     let shaft = dist(tail, tip);
     if shaft < MIN_SIZE || p.get(..=ti)?.iter().any(|q| seg_distance(tail, tip, *q) > (0.06 * shaft).max(1.5)) {
@@ -157,7 +160,7 @@ fn arrow(p: &[[f32; 2]]) -> Option<InkShape> {
     }
     let &[(l1, b1), (l2, b2)] = barbs.as_slice() else { return None };
     // The pen returns to the tip between the barbs.
-    if gap > 0.15 * shaft {
+    if gap > 0.35 * l1.min(l2) {
         return None;
     }
     // Each barb as a vector from the tip, against the direction back along the shaft.
@@ -561,5 +564,30 @@ mod tests {
         assert_eq!(recognise(hook), None);
         let zig: Vec<[f32; 2]> = (0..9).map(|i| [i as f32 * 20.0, if i % 2 == 0 { 0.0 } else { 40.0 }]).collect();
         assert_eq!(recognise(&zig), None);
+    }
+
+    #[test]
+    fn a_return_that_overshoots_the_tip_still_makes_an_arrow() {
+        let (tail, tip) = ([20.0, 100.0], [180.0, 100.0]);
+        // Shaft to the tip, first barb, back past the tip by 2 pt, then the second barb.
+        let barb = |sign: f32| {
+            let a = std::f32::consts::PI + sign * 30.0f32.to_radians();
+            [tip[0] + 25.0 * a.cos(), tip[1] + 25.0 * a.sin()]
+        };
+        let over = [tip[0] + 2.0, tip[1]];
+        let line = |a: [f32; 2], b: [f32; 2], n: usize| -> Vec<[f32; 2]> {
+            (0..n).map(|k| k as f32 / n as f32).map(|t| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]).collect()
+        };
+        let mut stroke = line(tail, tip, 24);
+        stroke.extend(line(tip, barb(1.0), 5));
+        stroke.extend(line(barb(1.0), over, 5));
+        stroke.extend(line(over, barb(-1.0), 5));
+        stroke.push(barb(-1.0));
+        let Some(InkShape::Arrow { a, b, .. }) = recognise(&stroke) else { panic!("{:?}", recognise(&stroke)) };
+        assert!(dist(a, tail) < 3.0 && dist(b, tip) < 3.0, "{a:?} {b:?}");
+        // Head first: the same stroke backwards.
+        stroke.reverse();
+        let Some(InkShape::Arrow { a, b, .. }) = recognise(&stroke) else { panic!("{:?}", recognise(&stroke)) };
+        assert!(dist(a, tail) < 3.0 && dist(b, tip) < 3.0, "{a:?} {b:?}");
     }
 }
