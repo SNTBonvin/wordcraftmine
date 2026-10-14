@@ -225,6 +225,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // No document open (#1129): nothing to share, edit or comment on.
+                    if !app.has_document() {
+                        ui.disable();
+                    }
                     // Share, Editing mode, Comments.
                     let share = tl!("Share");
                     let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
@@ -273,6 +277,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             // Right-click on the ribbon (outside a button): Customize Ribbon. Registered first, so
             // the buttons drawn over it keep their own clicks.
+            // No document open (#1129): every command is greyed out but Help's.
+            if !app.has_document() && app.ui.tab != "Help" {
+                ui.disable();
+            }
             let bg = ui.interact(ui.max_rect(), ui.id().with("ribbon_background"), Sense::click());
             bg.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
             let entry = user_tabs.iter().find(|e| e.name == app.ui.tab);
@@ -410,8 +418,14 @@ fn mi_text(ui: &mut Ui, app: &mut WordApp, text: &str, id: &str, params: Value) 
 }
 
 /// The proofing languages the Language menu offers: tag and English name (translated when drawn).
-pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 4] =
-    [("en-US", "English (United States)"), ("en-GB", "English (United Kingdom)"), ("pl-PL", "Polish"), ("pt-BR", "Portuguese (Brazil)")];
+pub(crate) const PROOFING_LANGUAGES: [(&str, &str); 6] = [
+    ("en-US", "English (United States)"),
+    ("en-GB", "English (United Kingdom)"),
+    ("pl-PL", "Polish"),
+    ("pt-BR", "Portuguese (Brazil)"),
+    ("it-IT", "Italian"),
+    ("hr-HR", "Croatian"),
+];
 
 /// The English name of a proofing language tag, as the status bar shows it (no tag: WordCraft's
 /// default, US English; a tag without a name here: the tag).
@@ -422,7 +436,9 @@ pub(crate) fn language_name(tag: Option<&str>) -> String {
     }
     match wordcraft_engine::proof::ProofLang::from_tag(Some(tag)) {
         wordcraft_engine::proof::ProofLang::Pl => "Polish".into(),
+        wordcraft_engine::proof::ProofLang::Hr => "Croatian".into(),
         wordcraft_engine::proof::ProofLang::Pt => "Portuguese (Brazil)".into(),
+        wordcraft_engine::proof::ProofLang::It => "Italian".into(),
         wordcraft_engine::proof::ProofLang::En if tag.eq_ignore_ascii_case("en") => "English (United States)".into(),
         _ => tag.to_string(),
     }
@@ -445,7 +461,8 @@ pub(crate) fn language_menu(ui: &mut Ui, app: &mut WordApp) {
     for (tag, name) in PROOFING_LANGUAGES {
         let on = current.eq_ignore_ascii_case(tag)
             || (tag == "pl-PL" && current.eq_ignore_ascii_case("pl"))
-            || (tag == "pt-BR" && current.eq_ignore_ascii_case("pt"));
+            || (tag == "pt-BR" && current.eq_ignore_ascii_case("pt"))
+            || (tag == "it-IT" && current.eq_ignore_ascii_case("it"));
         mi_check(ui, app, name, on, "review.language", json!({"lang": tag}));
     }
     ui.separator();
