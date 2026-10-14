@@ -86,7 +86,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 x => return Err(CmdError::Params(format!("unknown alignment `{x}`"))),
             };
             with_cells(s, |cl| {
-                cl.props.valign = va;
+                cl.props.valign = Some(va);
                 for b in &mut cl.blocks {
                     if let Block::Para(p) = std::sync::Arc::make_mut(b) {
                         p.props.align = Some(h);
@@ -366,7 +366,7 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
                     cl.props.width = w;
                 }
                 if let Some(va) = valign {
-                    cl.props.valign = va;
+                    cl.props.valign = Some(va);
                 }
             }
         }

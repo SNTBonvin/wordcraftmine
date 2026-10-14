@@ -1219,7 +1219,7 @@ fn table_properties_apply_in_one_step() {
     let row = &t.rows[0];
     assert_eq!((row.props.height, row.props.height_rule, row.props.cant_split, row.props.header), (Some(40.0), HeightRule::Exact, true, true));
     assert_eq!(t.grid[0], 120.0);
-    assert_eq!((row.cells[0].props.width, row.cells[0].props.valign), (Some(110.0), VAlign::Bottom));
+    assert_eq!((row.cells[0].props.width, row.cells[0].props.valign), (Some(110.0), Some(VAlign::Bottom)));
     let applied = t.clone();
     run(&mut s, "edit.undo", json!({}));
     assert_eq!(s.doc.body.iter().find_map(|b| b.as_table()).unwrap(), &t0, "one undo step per apply");
@@ -3054,6 +3054,156 @@ fn custom_table_style_applies_modifies_and_saves() {
     assert!(parts.header_borders.is_some_and(|b| b.any_visible()));
     let t = back.body.iter().find_map(|b| b.as_table()).unwrap();
     assert_eq!(t.props.style.as_deref(), Some(id.as_str()), "w:tblStyle");
+}
+
+/// #714: Modify Table Style edits one part at a time (header row, even bands, a corner cell…)
+/// with font, fill, borders and cell alignment, and every table using the style follows.
+/// #1288: a cell's own Top alignment beats a table style that centres vertically, and it
+/// survives a .docx round trip (`w:vAlign w:val="top"`).
+#[test]
+fn explicit_cell_top_beats_a_centred_table_style() {
+    use wordcraft_doc::props::VAlign;
+    fn text_y(s: &mut Session) -> f32 {
+        s.layout().pages[0]
+            .items
+            .iter()
+            .find_map(|i| match i {
+                crate::layout::Placed::Lines { para, y, .. } if para.text_len == 4 => Some(*y),
+                _ => None,
+            })
+            .unwrap()
+    }
+    let mut s = s();
+    run(&mut s, "insert.table", json!({"rows": 2, "cols": 2}));
+    run(&mut s, "text.insert", json!({"text": "Cell"}));
+    run(&mut s, "table.properties", json!({"rowHeight": 120.0, "rowHeightRule": "exact"}));
+    let top = text_y(&mut s);
+    run(&mut s, "table.newStyle", json!({"name": "Mid", "wholeTable": {"vAlign": "center"}}));
+    let centred = text_y(&mut s);
+    assert!(centred > top + 20.0, "the style centres the text: {top} {centred}");
+    run(&mut s, "table.cellAlign", json!({"value": "topLeft"}));
+    let t = s.doc.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert_eq!(t.rows[0].cells[0].props.valign, Some(VAlign::Top));
+    assert!((text_y(&mut s) - top).abs() < 0.5, "the cell's Top wins over the style");
+    // It saves and comes back as an explicit Top.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    let t = back.body.iter().find_map(|b| b.as_table()).unwrap();
+    assert_eq!((t.rows[0].cells[0].props.valign, t.rows[0].cells[1].props.valign), (Some(VAlign::Top), None));
+    let mut back = Session::new(back);
+    assert!((text_y(&mut back) - top).abs() < 0.5);
+}
+
+#[test]
+fn table_style_parts_format_every_table_using_the_style() {
+    use wordcraft_doc::props::{Align, BorderStyle, VAlign};
+    use wordcraft_doc::styles::TablePart;
+    use wordcraft_doc::{Rgb, TextColor};
+    let mut s = s();
+    let look = json!({"headerRow": true, "bandedRows": true, "firstColumn": true, "totalRow": false});
+    run(&mut s, "insert.table", json!({"rows": 4, "cols": 3}));
+    run(&mut s, "text.insert", json!({"text": "Head"}));
+    run(&mut s, "table.look", look.clone());
+    run(&mut s, "table.newStyle", json!({"name": "Parts", "basedOn": "Table Grid"}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "insert.table", json!({"rows": 4, "cols": 3}));
+    run(&mut s, "text.insert", json!({"text": "Head"}));
+    run(&mut s, "table.look", look);
+    run(&mut s, "table.style", json!({"style": "Parts"}));
+    let tables: Vec<_> = s.doc.body.iter().filter_map(|b| b.as_table()).collect();
+    assert_eq!(tables.len(), 2);
+    assert!(tables.iter().all(|t| t.props.style.as_deref() == Some("Parts")));
+
+    run(
+        &mut s,
+        "table.modifyStyle",
+        json!({"style": "Parts",
+            "firstRow": {"bold": true, "underline": true, "color": "FFFFFF", "font": "Liberation Serif", "cellAlign": "bottomCenter",
+                "borders": [{"edges": "none"}, {"edges": "bottom", "style": "double", "width": 1.5, "color": "FF0000"}]},
+            "band2Horz": {"fill": "DDEEFF"},
+            "nwCell": {"fill": "112233"},
+            "parts": [{"part": "lastCol", "italic": true}]}),
+    );
+    run(&mut s, "table.modifyStyle", json!({"style": "Parts", "part": "band1Horz", "fill": "AABBCC", "vAlign": "center"}));
+    let st = s.doc.styles.get("Parts").unwrap().clone();
+    let head = st.table_part(TablePart::FirstRow);
+    assert_eq!((head.chr.bold, head.align, head.v_align), (Some(true), Some(Align::Center), Some(VAlign::Bottom)));
+    let b = head.borders.unwrap();
+    assert_eq!(b.bottom.map(|x| (x.style, x.width, x.color)), Some((BorderStyle::Double, 1.5, Some(Rgb(0xFF, 0, 0)))));
+    assert_eq!(b.top.map(|x| x.style), Some(BorderStyle::None), "`none` clears the other edges");
+    assert_eq!(st.table_part(TablePart::LastCol).chr.italic, Some(true));
+    assert_eq!(st.table_part(TablePart::Band1Horz).v_align, Some(VAlign::Center));
+
+    let fills = |s: &mut Session, c: Rgb| {
+        s.layout().pages[0].items.iter().filter(|i| matches!(i, crate::layout::Placed::Fill { color, .. } if *color == c)).count()
+    };
+    // Per table: the top-left corner cell; odd bands are rows 1 and 3, the even band row 2.
+    assert_eq!(fills(&mut s, Rgb(0x11, 0x22, 0x33)), 2, "top left cells");
+    assert_eq!(fills(&mut s, Rgb(0xAA, 0xBB, 0xCC)), 12, "odd banded rows");
+    assert_eq!(fills(&mut s, Rgb(0xDD, 0xEE, 0xFF)), 6, "even banded rows");
+    let rules = s
+        .layout()
+        .pages[0]
+        .items
+        .iter()
+        .filter(|i| matches!(i, crate::layout::Placed::Rule { border, .. } if border.style == BorderStyle::Double && border.color == Some(Rgb(0xFF, 0, 0))))
+        .count();
+    assert!(rules >= 6, "the header rows' bottom edges in both tables: {rules}");
+    // The header text: bold, white, underlined and centred, in both tables.
+    let heads: Vec<_> = s.layout().pages[0]
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            crate::layout::Placed::Lines { para, .. } if para.text_len == 4 => Some((para.rp.align, para.styles[0].rc.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads.len(), 2, "{heads:?}");
+    for (align, rc) in heads {
+        assert_eq!(align, Align::Center);
+        assert!(rc.bold && rc.underline != wordcraft_doc::props::Underline::None, "{rc:?}");
+        assert_eq!(rc.color, TextColor::Rgb(Rgb::WHITE));
+    }
+    // It saves: the parts come back.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    let got = back.styles.get("Parts").unwrap();
+    for part in TablePart::ALL {
+        assert_eq!(got.table_part(part), st.table_part(part), "{}", part.ooxml());
+    }
+
+    // Hostile params fail cleanly and change nothing.
+    for bad in [
+        json!({"style": "Parts", "part": 5}),
+        json!({"style": "Parts", "part": "diagonal"}),
+        json!({"style": "Parts", "parts": "x"}),
+        json!({"style": "Parts", "parts": [{"fill": "FF0000"}]}),
+        json!({"style": "Parts", "firstRow": {"borders": {"edges": "diagonal"}}}),
+        json!({"style": "Parts", "firstRow": {"borders": {"style": "zigzag"}}}),
+        json!({"style": "Parts", "firstRow": {"borders": [1, 2]}}),
+        json!({"style": "Parts", "firstRow": {"cellAlign": 3}}),
+        json!({"style": "Parts", "firstRow": {"cellAlign": "middleish"}}),
+        json!({"style": "Parts", "firstRow": {"align": "up"}}),
+        json!({"style": "Parts", "firstRow": {"underline": "zigzag"}}),
+        json!({"style": "Parts", "firstRow": "bold"}),
+        // Part fields without `part` (#1288).
+        json!({"style": "Parts", "fill": "FF0000"}),
+        json!({"style": "Parts", "bold": true}),
+        json!({"style": "Parts", "borders": false}),
+        json!({"style": "Parts", "firstRow": {"font": 5}}),
+    ] {
+        assert!(s.run("table.modifyStyle", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(s.doc.styles.get("Parts"), Some(&st));
+    // Huge and odd numbers are clamped.
+    run(&mut s, "table.modifyStyle", json!({"style": "Parts", "firstRow": {"size": 1e30, "borders": {"edges": "top", "width": -5}}}));
+    let head = s.doc.styles.get("Parts").unwrap().table_part(TablePart::FirstRow);
+    assert_eq!((head.chr.size, head.borders.and_then(|b| b.top).map(|b| b.width)), (Some(1638.0), Some(0.25)));
+    // A null or empty font makes the part's font inherited again (#1288).
+    assert_eq!(head.chr.font.as_deref(), Some("Liberation Serif"));
+    run(&mut s, "table.modifyStyle", json!({"style": "Parts", "firstRow": {"font": null}}));
+    assert_eq!(s.doc.styles.get("Parts").unwrap().table_part(TablePart::FirstRow).chr.font, None);
+    run(&mut s, "table.modifyStyle", json!({"style": "Parts", "part": "lastCol", "font": "Liberation Mono"}));
+    run(&mut s, "table.modifyStyle", json!({"style": "Parts", "part": "lastCol", "font": " "}));
+    assert_eq!(s.doc.styles.get("Parts").unwrap().table_part(TablePart::LastCol).chr.font, None);
 }
 
 #[test]

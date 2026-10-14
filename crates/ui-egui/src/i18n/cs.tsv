@@ -2072,6 +2072,16 @@
 	Hindi	Hindské
 	Context	Podle kontextu
 	System	Systémové
+	Odd Banded Rows	Liché pruhované řádky
+	Even Banded Rows	Sudé pruhované řádky
+	Odd Banded Columns	Liché pruhované sloupce
+	Even Banded Columns	Sudé pruhované sloupce
+	Top Left Cell	Levá horní buňka
+	Top Right Cell	Pravá horní buňka
+	Bottom Left Cell	Levá dolní buňka
+	Bottom Right Cell	Pravá dolní buňka
+	Inside Horizontal Border	Vnitřní vodorovné ohraničení
+	Inside Vertical Border	Vnitřní svislé ohraničení
 	Show KeyTips (Alt or F10)	Zobrazit klávesové tipy (Alt nebo F10)
 	Reading	Čtení
 	Reading Column Width	Šířka sloupce pro čtení

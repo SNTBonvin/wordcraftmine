@@ -2087,6 +2087,16 @@
 	AutoFit Column by Double-Clicking	双击自动调整列宽
 	Region:	区域：
 	Automatic ({region})	自动（{region}）
+	Odd Banded Rows	奇数镶边行
+	Even Banded Rows	偶数镶边行
+	Odd Banded Columns	奇数镶边列
+	Even Banded Columns	偶数镶边列
+	Top Left Cell	左上单元格
+	Top Right Cell	右上单元格
+	Bottom Left Cell	左下单元格
+	Bottom Right Cell	右下单元格
+	Inside Horizontal Border	内部横框线
+	Inside Vertical Border	内部竖框线
 	Start-up	启动
 	Show the Start screen when WordCraft starts	启动 WordCraft 时显示开始屏幕
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	开：WordCraft 打开时显示“文件 › 开始”，其中有空白文档、模板和最近使用的文档。关：直接打开空白文档。
