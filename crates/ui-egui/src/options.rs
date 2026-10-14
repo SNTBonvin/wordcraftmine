@@ -353,6 +353,14 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
     flag(app, ui, "Typing replaces selected text", "typingReplacesSelection", pr.typing_replaces_selection);
     flag(app, ui, "Use the Insert key to switch overtype on and off", "insertKeyOvertype", pr.insert_key_overtype);
     flag(app, ui, "Overtype (typing replaces the characters after the caret)", "overtype", pr.overtype);
+    let mut guides = app.ui.alignment_guides;
+    if ui
+        .checkbox(&mut guides, tl!("Show alignment guides when moving pictures and shapes"))
+        .on_hover_text(tl!("Moved objects snap to the page's edges and centre, the margins and other objects. Hold Alt to move freely."))
+        .changed()
+    {
+        let _ = app.run("ui.alignmentGuides", json!({"value": guides}));
+    }
     ui.add_space(8.0);
     section(ui, "Display");
     egui::Grid::new("options_display").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
