@@ -13,6 +13,9 @@ use wordcraft_doc::freeform::MAX_POINTS;
 pub enum InkShape {
     /// A straight line from `a` to `b`.
     Line { a: [f32; 2], b: [f32; 2] },
+    /// A straight arrow from the tail `a` to the tip `b`; the heads are the `head_at_*` flags
+    /// (recognised strokes have one, at `b`).
+    Arrow { a: [f32; 2], b: [f32; 2], head_at_end: bool, head_at_start: bool },
     /// An upright rectangle: top-left and size (equal sides when drawn nearly square).
     Rectangle { x: f32, y: f32, w: f32, h: f32 },
     /// An upright ellipse in this box (a circle when drawn nearly round).
@@ -26,6 +29,7 @@ impl InkShape {
     pub fn name(&self) -> &'static str {
         match self {
             InkShape::Line { .. } => "line",
+            InkShape::Arrow { .. } => "arrow",
             InkShape::Rectangle { w, h, .. } if w == h => "square",
             InkShape::Rectangle { .. } => "rectangle",
             InkShape::Ellipse { w, h, .. } if w == h => "circle",
@@ -39,7 +43,7 @@ impl InkShape {
     pub fn bounds(&self) -> [f32; 4] {
         match self {
             InkShape::Rectangle { x, y, w, h } | InkShape::Ellipse { x, y, w, h } => [*x, *y, *w, *h],
-            InkShape::Line { a, b } => bbox(&[*a, *b]),
+            InkShape::Line { a, b } | InkShape::Arrow { a, b, .. } => bbox(&[*a, *b]),
             InkShape::Polygon(c) => bbox(c),
         }
     }
@@ -78,6 +82,10 @@ pub fn recognise(pts: &[[f32; 2]]) -> Option<InkShape> {
             return Some(InkShape::Line { a: first, b: last });
         }
     }
+    // An arrow: a shaft and a head with both barbs, drawn in one stroke (either end first).
+    if let Some(arrow) = arrow(&p, diag).or_else(|| arrow(&p.iter().rev().copied().collect::<Vec<_>>(), diag)) {
+        return Some(arrow);
+    }
     // Other shapes are closed: the stroke ends near where it began and goes around.
     if gap > 0.2 * size || length < 2.0 * size {
         return None;
@@ -104,6 +112,37 @@ pub fn recognise(pts: &[[f32; 2]]) -> Option<InkShape> {
         let (x, y, w, h) = snap_square(x0, y0, w, h);
         InkShape::Ellipse { x, y, w, h }
     })
+}
+
+/// Barb length limits, as a fraction of the shaft, and the angle each barb makes with the shaft
+/// (degrees).
+const BARB_LEN: (f32, f32) = (0.05, 0.5);
+const BARB_ANGLE: (f32, f32) = (15.0, 75.0);
+
+/// An arrow drawn shaft first: the simplified stroke is tail, tip, one barb, back at the tip, the
+/// other barb. The barbs must leave the tip on opposite sides of the shaft at similar angles and
+/// lengths. (A stroke drawn head first is tried reversed by the caller.)
+fn arrow(p: &[[f32; 2]], diag: f32) -> Option<InkShape> {
+    let v = rdp(p, (0.025 * diag).max(1.5));
+    let &[tail, tip, b1, tip2, b2] = v.as_slice() else { return None };
+    let shaft = dist(tail, tip);
+    if shaft < MIN_SIZE || dist(tip, tip2) > 0.15 * shaft {
+        return None;
+    }
+    // Each barb as a vector from the tip, against the direction back along the shaft.
+    let back = [tail[0] - tip[0], tail[1] - tip[1]];
+    let barb = |e: [f32; 2]| {
+        let u = [e[0] - tip[0], e[1] - tip[1]];
+        let len = u[0].hypot(u[1]);
+        let lb = back[0].hypot(back[1]);
+        let angle = if len > 0.0 && lb > 0.0 { ((back[0] * u[0] + back[1] * u[1]) / (lb * len)).clamp(-1.0, 1.0).acos().to_degrees() } else { 0.0 };
+        let side = back[0] * u[1] - back[1] * u[0];
+        (len, angle, side)
+    };
+    let ((l1, a1, s1), (l2, a2, s2)) = (barb(b1), barb(b2));
+    let ok = |l: f32, a: f32| (BARB_LEN.0 * shaft..=BARB_LEN.1 * shaft).contains(&l) && (BARB_ANGLE.0..=BARB_ANGLE.1).contains(&a);
+    let similar = l1.max(l2) <= 2.5 * l1.min(l2) && (a1 - a2).abs() <= 35.0;
+    (ok(l1, a1) && ok(l2, a2) && s1 * s2 < 0.0 && similar).then_some(InkShape::Arrow { a: tail, b: tip, head_at_end: true, head_at_start: false })
 }
 
 /// Left, top, width and height of `pts` (zero for none).
@@ -321,5 +360,87 @@ mod tests {
         junk.extend(std::iter::repeat_n([1.0, 1.0], MAX_POINTS * 3));
         assert_eq!(recognise(&junk), None);
         assert_eq!(recognise(&[]), None);
+    }
+
+    /// A stroke drawn as a shaft from `tail` to `tip`, then both barbs of a head (back to the
+    /// tip between them).
+    fn arrow_stroke(tail: [f32; 2], tip: [f32; 2], barb: f32, spread_deg: f32) -> Vec<[f32; 2]> {
+        let back = (tail[1] - tip[1]).atan2(tail[0] - tip[0]);
+        let barb_end = |sign: f32| {
+            let a = back + sign * spread_deg.to_radians();
+            [tip[0] + barb * a.cos(), tip[1] + barb * a.sin()]
+        };
+        let line = |a: [f32; 2], b: [f32; 2], n: usize| -> Vec<[f32; 2]> {
+            (0..n).map(|k| k as f32 / n as f32).map(|t| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]).collect()
+        };
+        let mut pts = line(tail, tip, 24);
+        pts.extend(line(tip, barb_end(1.0), 5));
+        pts.extend(line(barb_end(1.0), tip, 5));
+        pts.extend(line(tip, barb_end(-1.0), 5));
+        pts.push(barb_end(-1.0));
+        pts
+    }
+
+    #[test]
+    fn arrows_drawn_in_one_stroke_are_recognised_in_any_direction() {
+        for (tail, tip) in [
+            ([20.0, 100.0], [180.0, 100.0]),
+            ([180.0, 100.0], [20.0, 100.0]),
+            ([100.0, 20.0], [100.0, 180.0]),
+            ([100.0, 180.0], [100.0, 20.0]),
+            ([30.0, 30.0], [150.0, 120.0]),
+            ([150.0, 120.0], [30.0, 30.0]),
+        ] {
+            let stroke = arrow_stroke(tail, tip, 25.0, 30.0);
+            let Some(InkShape::Arrow { a, b, head_at_end, head_at_start }) = recognise(&stroke) else {
+                panic!("{tail:?}->{tip:?}: {:?}", recognise(&stroke))
+            };
+            assert!(head_at_end && !head_at_start);
+            assert!(dist(a, tail) < 3.0 && dist(b, tip) < 3.0, "{a:?} {b:?} for {tail:?} {tip:?}");
+            assert_eq!(recognise(&stroke).map(|s| s.name()), Some("arrow"));
+        }
+        // Head first, then the shaft: the same arrow.
+        let mut reversed = arrow_stroke([20.0, 100.0], [180.0, 100.0], 25.0, 30.0);
+        reversed.reverse();
+        let Some(InkShape::Arrow { a, b, .. }) = recognise(&reversed) else { panic!("{:?}", recognise(&reversed)) };
+        assert!(dist(a, [20.0, 100.0]) < 3.0 && dist(b, [180.0, 100.0]) < 3.0, "{a:?} {b:?}");
+    }
+
+    #[test]
+    fn lines_vs_barbs_hooks_and_scribbles_are_not_arrows() {
+        let stroke = arrow_stroke([20.0, 100.0], [180.0, 100.0], 25.0, 30.0);
+        // A plain line stays a line.
+        let line: Vec<[f32; 2]> = (0..=30).map(|i| [20.0 + i as f32 * 5.0, 100.0]).collect();
+        assert_eq!(recognise(&line).map(|s| s.name()), Some("line"));
+        // A "V" alone is not an arrow (nor anything).
+        let v = [[100.0, 100.0], [75.0, 87.5], [100.0, 100.0], [75.0, 112.5]];
+        assert_eq!(recognise(&v), None);
+        assert_eq!(recognise(&[[75.0, 87.5], [100.0, 100.0], [75.0, 112.5]]), None);
+        // A line with one barb (a hook) is not an arrow.
+        let hook = &stroke[..34];
+        assert!(!matches!(recognise(hook), Some(InkShape::Arrow { .. })), "{:?}", recognise(hook));
+        // Barbs outside 15..75 degrees, or too long or too short, are not heads.
+        for (barb, spread) in [(25.0, 5.0), (25.0, 88.0), (100.0, 30.0), (1.0, 30.0)] {
+            let s = arrow_stroke([20.0, 100.0], [180.0, 100.0], barb, spread);
+            assert!(!matches!(recognise(&s), Some(InkShape::Arrow { .. })), "barb {barb} spread {spread}");
+        }
+        // Both barbs on the same side are not a head.
+        let lopsided = [[20.0, 100.0], [180.0, 100.0], [155.0, 87.0], [180.0, 100.0], [158.0, 80.0]];
+        assert!(!matches!(recognise(&lopsided), Some(InkShape::Arrow { .. })));
+        // A zigzag scribble stays ink.
+        let zig: Vec<[f32; 2]> = (0..9).map(|i| [i as f32 * 20.0, if i % 2 == 0 { 0.0 } else { 40.0 }]).collect();
+        assert_eq!(recognise(&zig), None);
+    }
+
+    #[test]
+    fn hostile_arrow_points_never_panic() {
+        let mut junk = arrow_stroke([20.0, 100.0], [180.0, 100.0], 25.0, 30.0);
+        junk.insert(3, [f32::NAN, 5.0]);
+        junk.push([f32::INFINITY, 1.0]);
+        assert!(matches!(recognise(&junk), Some(InkShape::Arrow { .. })));
+        let huge: Vec<[f32; 2]> = (0..MAX_POINTS * 2).map(|i| [(i % 977) as f32, ((i * 31) % 541) as f32]).collect();
+        let _ = recognise(&huge);
+        let _ = recognise(&[[1e5, 1e5], [-1e5, 1e5], [1e5, -1e5], [-1e5, -1e5], [0.0, 0.0]]);
+        let _ = recognise(&[[0.0, 0.0]; 7]);
     }
 }

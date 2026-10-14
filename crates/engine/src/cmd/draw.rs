@@ -697,7 +697,7 @@ fn convert_selection(s: &mut Session, _: &Value) -> CmdResult {
 /// turned or flipped, or it doesn't look like a shape.
 fn convert_at(s: &mut Session, pos: &Pos) -> Result<Option<&'static str>, CmdError> {
     let para = s.doc.para_mut(pos.story, &pos.path)?;
-    let Some(InlineObject::Shape { kind, w, h, fill, float, freeform, .. }) = para.object_at_mut(pos.off) else { return Ok(None) };
+    let Some(InlineObject::Shape { kind, w, h, fill, float, freeform, extra, .. }) = para.object_at_mut(pos.off) else { return Ok(None) };
     let Some(f) = freeform.as_deref().filter(|f| matches!(f.ink, Some(InkTool::Pen | InkTool::Pencil)) && f.paths.len() == 1) else {
         return Ok(None);
     };
@@ -718,12 +718,19 @@ fn convert_at(s: &mut Session, pos: &Pos) -> Result<Option<&'static str>, CmdErr
         InkShape::Ellipse { .. } => (ShapeKind::Ellipse, None),
         InkShape::Line { a, b } => (ShapeKind::Freeform, outline(local(&[*a, *b]), false)),
         InkShape::Polygon(c) => (ShapeKind::Freeform, outline(local(c), true)),
+        // A straight connector runs from its frame's top-left to bottom-right; flips turn it.
+        InkShape::Arrow { a, b, head_at_end, head_at_start } => {
+            float.flip_h = b[0] < a[0];
+            float.flip_v = b[1] < a[1];
+            extra.arrow_end = *head_at_end;
+            extra.arrow_start = *head_at_start;
+            (ShapeKind::StraightConnector, None)
+        }
     };
     *kind = new_kind;
     *freeform = geometry;
     *fill = None;
-    *w = bw;
-    *h = bh;
+    (*w, *h) = if matches!(found, InkShape::Arrow { .. }) { (found.bounds()[2], found.bounds()[3]) } else { (bw, bh) };
     float.x += bx;
     float.y += by;
     para.touch();
@@ -973,6 +980,40 @@ mod tests {
         assert_eq!(r["converted"][0]["shape"], "ellipse");
         assert_eq!(ink(&s).len(), 1);
         assert!(!s.view.draw.ink_to_shape, "converting the selection doesn't turn the mode on");
+    }
+
+    #[test]
+    fn ink_to_shape_turns_an_arrow_stroke_into_a_line_shape_with_a_head_that_survives_docx() {
+        let mut s = session();
+        s.run("draw.inkToShape", &json!({"value": true})).unwrap();
+        // Right to left and downwards: shaft, then both barbs of the head at the tip (100, 300).
+        let tail = [300.0f32, 200.0];
+        let tip = [100.0f32, 300.0];
+        let back = (tail[1] - tip[1]).atan2(tail[0] - tip[0]);
+        let barb = |sign: f32| [tip[0] + 30.0 * (back + sign * 0.5).cos(), tip[1] + 30.0 * (back + sign * 0.5).sin()];
+        let mut pts: Vec<[f32; 2]> =
+            (0..20).map(|i| i as f32 / 20.0).map(|t| [tail[0] + (tip[0] - tail[0]) * t, tail[1] + (tip[1] - tail[1]) * t]).collect();
+        pts.extend([tip, barb(1.0), tip, barb(-1.0)]);
+        let r = s.run("draw.stroke", &json!({"page": 0, "points": pts, "color": "C00000", "width": 2})).unwrap();
+        assert_eq!(r["shape"], "arrow");
+        let at: wordcraft_doc::Pos = serde_json::from_value(r["pos"].clone()).unwrap();
+        let obj = s.doc.para_at(&at).and_then(|p| p.object_at(at.off)).cloned().unwrap();
+        let InlineObject::Shape { kind, w, h, stroke, stroke_width, freeform, extra, float, .. } = obj else { panic!("{obj:?}") };
+        assert_eq!((kind, stroke, stroke_width, freeform.is_none()), (ShapeKind::StraightConnector, Some(wordcraft_doc::Rgb(0xC0, 0, 0)), 2.0, true));
+        assert!(extra.arrow_end && !extra.arrow_start);
+        // Tail at the top right, tip at the bottom left: the frame is flipped across.
+        assert!(float.flip_h && !float.flip_v, "{float:?}");
+        assert!((w - 200.0).abs() < 1.0 && (h - 100.0).abs() < 1.0, "{w} x {h}");
+        // It survives a DOCX save and open.
+        let bytes = wordcraft_docx::write(&s.doc).unwrap();
+        let back = wordcraft_docx::read(&bytes).unwrap();
+        let again: Vec<_> = back.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).collect();
+        let Some(InlineObject::Shape { extra, float, .. }) =
+            again.iter().find(|o| matches!(o, InlineObject::Shape { kind: ShapeKind::StraightConnector, .. }))
+        else {
+            panic!("{again:?}")
+        };
+        assert!(extra.arrow_end && !extra.arrow_start && float.flip_h, "{extra:?} {float:?}");
     }
 
     #[test]
