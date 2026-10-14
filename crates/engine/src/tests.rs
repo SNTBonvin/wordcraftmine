@@ -2561,10 +2561,43 @@ fn modify_style_takes_hex_colours_like_format_color() {
     assert_eq!(color(&s), Some(red));
     assert_eq!(s.doc.styles.resolve_char(Some("Heading1"), &CharProps::default()).color, red);
 
-    for bad in [json!("1B16"), json!("not a colour"), json!({"Rgb": "1B1611"}), json!(7)] {
+    for bad in [json!("1B16"), json!("not a colour"), json!({"Rgb": "1B16"}), json!(7)] {
         let r = modify(&mut s, bad.clone());
         assert!(matches!(r, Err(crate::CmdError::Params(_))), "{bad}: {r:?}");
         assert_eq!(color(&s), Some(red), "{bad} leaves the style alone");
+    }
+    modify(&mut s, json!({"Rgb": "1B1611"})).unwrap();
+    assert_eq!(color(&s), Some(TextColor::Rgb(Rgb(0x1B, 0x16, 0x11))), "the hex string also reads inside {{\"Rgb\": …}}");
+}
+
+/// #865: the other colours in CharProps and ParaProps (`underlineColor`, `shading`, a border's
+/// `color`) take `RRGGBB` / `#RRGGBB` like `para.borders` and `table.shading`, and still `[r, g, b]`.
+#[test]
+fn props_colours_take_hex_strings() {
+    use wordcraft_doc::{Pos, Rgb};
+    let ink = Rgb(0x1B, 0x16, 0x11);
+    let mut s = s();
+    run(
+        &mut s,
+        "styles.modify",
+        json!({"style": "Heading1",
+            "chr": {"underlineColor": "1B1611", "shading": "#1b1611", "border": {"style": "single", "width": 1, "color": "1B1611"}},
+            "para": {"shading": "1B1611", "borders": {"bottom": {"style": "single", "width": 1, "color": "#1B1611"}}}}),
+    );
+    let st = s.doc.styles.get("Heading1").unwrap();
+    assert_eq!((st.chr.underline_color, st.chr.shading, st.chr.border.and_then(|b| b.color)), (Some(ink), Some(ink), Some(ink)));
+    assert_eq!((st.para.shading, st.para.borders.and_then(|b| b.bottom).and_then(|b| b.color)), (Some(ink), Some(ink)));
+
+    run(&mut s, "text.insert", json!({"text": "Hello"}));
+    run(&mut s, "para.set", json!({"props": {"shading": "C00000"}}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props.shading, Some(Rgb(0xC0, 0, 0)));
+    run(&mut s, "para.set", json!({"props": {"shading": [1, 2, 3]}}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props.shading, Some(Rgb(1, 2, 3)), "[r, g, b] still reads");
+
+    for bad in [json!("C0000"), json!("auto"), json!([1, 2]), json!([1, 2, 300]), json!(7)] {
+        let r = s.run("para.set", &json!({"props": {"shading": bad}}));
+        assert!(matches!(r, Err(crate::CmdError::Params(_))), "{bad}: {r:?}");
+        assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().props.shading, Some(Rgb(1, 2, 3)), "{bad} changes nothing");
     }
 }
 
@@ -3525,6 +3558,33 @@ fn word_xml_saves_and_opens_through_io() {
     assert!(err.contains("not a Word XML document"), "{err}");
 }
 
+/// #1081: `format: "wordml2003"` saves an `.xml` file as a Word 2003 XML Document, a plain save
+/// over such a file keeps that format, and `format: "flatopc"` converts it back.
+#[test]
+fn word_2003_xml_saves_through_the_save_commands() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Kept for old readers"}));
+    let dir = std::env::temp_dir().join(format!("wordcraft-2003-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("old.xml").to_string_lossy().to_string();
+    let kind = |p: &str| wordcraft_docx::sniff_xml(&std::fs::read(p).unwrap());
+    run(&mut s, "file.saveAs", json!({"path": path, "format": "wordml2003"}));
+    assert_eq!(kind(&path), wordcraft_docx::XmlKind::WordMl2003);
+    assert!(crate::io::open_path(std::path::Path::new(&path)).unwrap().plain_text(wordcraft_doc::StoryRef::Body).contains("Kept for old readers"));
+    run(&mut s, "file.save", json!({}));
+    assert_eq!(kind(&path), wordcraft_docx::XmlKind::WordMl2003);
+    run(&mut s, "file.save", json!({"path": path, "format": "flatopc"}));
+    assert_eq!(kind(&path), wordcraft_docx::XmlKind::FlatOpc);
+    for bad in [
+        json!({"path": dir.join("a.docx").to_string_lossy(), "format": "wordml2003"}),
+        json!({"path": path, "format": "bogus"}),
+        json!({"path": path, "format": 7}),
+    ] {
+        assert!(s.run("file.save", &bad).is_err(), "{bad}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// #146: the first/last column, total row and banded column regions apply in layout (later
 /// regions win: the total row's fill beats the first column's) and round-trip through .docx.
 #[test]
@@ -4267,6 +4327,48 @@ fn portuguese_proofing_through_the_review_commands() {
 /// Review › Language and the proofing commands work in Polish end to end: the language makes
 /// the document's words Polish, F7 and the issue list use the Polish dictionary and grammar,
 /// suggestions come from it, and a suggestion fixes the text.
+fn italian_test_dictionary() {
+    let aff = "SET UTF-8\nTRY aeiortnsclcaffèéè\nMAP 2\nMAP aà\nMAP eéè\nREP 1\nREP caffe caffè\n";
+    let dic = "6\ncasa\ncaffè\nroma\ndisse\ne\nper\n";
+    wordcraft_proof::it::install_dictionary(aff, dic).unwrap();
+}
+
+/// Review › Language and the proofing commands work in Italian end to end: the language makes
+/// the document's words Italian, F7 and the issue list use the Italian dictionary and grammar,
+/// suggestions come from it, and a suggestion fixes the text.
+#[test]
+fn italian_proofing_through_the_review_commands() {
+    italian_test_dictionary();
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Casa caffe, e roma roma disse."}));
+    // English by default: the Italian words are English misspellings.
+    assert!(run(&mut s, "review.issues", json!({})).as_array().unwrap().len() >= 3);
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "review.language", json!({"lang": "it_IT", "default": true}));
+    assert_eq!(s.doc.styles.default_chr.lang.as_deref(), Some("it-IT"), "the tag is normalized");
+    assert_eq!(run(&mut s, "format.state", json!({}))["lang"], "it-IT");
+    let issues = run(&mut s, "review.issues", json!({}));
+    let arr = issues.as_array().unwrap();
+    let has = |text: &str, kind: &str, sugg: &str| {
+        arr.iter()
+            .any(|i| i["text"] == text && i["kind"] == kind && i["lang"] == "it" && i["suggestions"].as_array().unwrap().iter().any(|x| x == sugg))
+    };
+    assert!(has("caffe", "spelling", "caffè"), "{issues}");
+    assert!(has("roma roma", "grammar", "roma"), "{issues}");
+    assert_eq!(arr.len(), 2, "{issues}");
+    assert!(arr.iter().any(|i| i["message"] == "Parola ripetuta: \"roma\""), "{issues}");
+    // F7 from the start selects the first issue; Change applies a suggestion.
+    run(&mut s, "caret.docStart", json!({}));
+    let first = run(&mut s, "review.spelling", json!({}));
+    assert_eq!(first["text"], "caffe");
+    run(&mut s, "review.applySuggestion", json!({"text": "caffè"}));
+    assert!(text(&s).starts_with("Casa caffè,"), "{}", text(&s));
+    // Add to Dictionary works for Italian words too.
+    run(&mut s, "review.addToDictionary", json!({"word": "caffe"}));
+    let left = run(&mut s, "review.issues", json!({}));
+    assert_eq!(left.as_array().unwrap().len(), 1, "{left}");
+}
+
 #[test]
 fn polish_proofing_through_the_review_commands() {
     polish_test_dictionary();
@@ -5004,5 +5106,27 @@ fn insert_picture_takes_a_windows_metafile() {
     std::fs::write(&path, b"not a picture").unwrap();
     let err = s.run("insert.picture", &json!({"path": path.to_string_lossy()})).unwrap_err();
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn exported_page_images_draw_headers_at_full_strength() {
+    // file.exportPng (and `wordcraft-cli render`) drew headers and footers dimmed, as the screen
+    // does while the body is edited; Word's exported pages and WordCraft's PDF don't.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Body"}));
+    let mut hp = wordcraft_doc::Paragraph::with_text("HEADER", wordcraft_doc::props::CharProps { size: Some(28.0), ..Default::default() });
+    hp.props.align = Some(wordcraft_doc::props::Align::Left);
+    let id = s.doc.add_part(wordcraft_doc::PartKind::Header, vec![wordcraft_doc::para_block(hp)]);
+    s.doc.last_section.headers.default = Some(id);
+    let dir = std::env::temp_dir().join(format!("wordcraft-png-header-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.png");
+    s.run("file.exportPng", &json!({"path": path.to_string_lossy(), "scale": 1.0})).unwrap();
+    let img = image::open(&path).unwrap().to_luma8();
+    // The darkest pixel in the top tenth of the page (the header) is black, not grey.
+    let top = img.height() / 10;
+    let darkest = (0..top).flat_map(|y| (0..img.width()).map(move |x| (x, y))).map(|(x, y)| img.get_pixel(x, y)[0]).min().unwrap();
+    assert!(darkest < 60, "header drawn dimmed: darkest pixel {darkest}");
     let _ = std::fs::remove_dir_all(&dir);
 }
