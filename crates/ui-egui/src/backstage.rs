@@ -6,18 +6,22 @@ use serde_json::json;
 use crate::theme::{APP_COLOR, Tokens, medium, regular, semibold};
 use crate::{WordApp, icons};
 
-const PAGES: [(&str, &str); 10] = [
-    ("home", "Home"),
-    ("new", "New"),
-    ("open", "Open"),
-    ("info", "Info"),
-    ("save", "Save"),
-    ("saveAs", "Save As"),
-    ("print", "Print"),
-    ("export", "Export"),
-    ("close", "Close"),
-    ("options", "Options"),
-];
+/// WordCraft's icon for an entry of the File page's column; `None` is Back.
+fn nav_icon(key: Option<&str>) -> &'static str {
+    match key {
+        None => "chevronLeft",
+        Some("home") => "home",
+        Some("new") => "blankPage",
+        Some("open") => "open",
+        Some("save" | "saveAs") => "save",
+        Some("print") => "print",
+        Some("export") => "export",
+        Some("close") => "close",
+        Some("options") => "options",
+        Some("discord") => "comment",
+        Some(_) => "info",
+    }
+}
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -27,112 +31,93 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.ui.backstage_page = "home".into();
     }
     let mac = app.integrated_titlebar;
+    // The column is the shared one (storytold/craft-libs#53): a labelled Back, the pages in groups,
+    // Options and About at the foot. WordCraft supplies the entries, their wording and icons.
     egui::Panel::left("backstage_nav")
         .exact_size(200.0)
         // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(APP_COLOR).inner_margin(egui::Margin { left: 0, right: 0, top: if mac { 0 } else { 12 }, bottom: 12 }))
+        .frame(egui::Frame::NONE.fill(APP_COLOR))
         .show(ui, |ui| {
-            let back = if mac {
-                // macOS (#222): the Backstage covers the title bar, so its top band is the title
-                // bar: the back button sits beside the traffic lights, centred with them and as far
-                // from them as the title bar's own controls, and the rest of the band drags the window.
-                let (band, drag) = ui.allocate_exact_size(vec2(200.0, crate::chrome::MAC_TITLE_BAR), Sense::click_and_drag());
-                if drag.drag_started() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                }
-                // The chevron's stroke starts at the content edge.
-                let c = pos2(band.min.x + crate::chrome::MAC_CONTENT_LEFT + 3.0, band.center().y);
-                let resp = ui.interact(Rect::from_center_size(c, vec2(22.0, band.height())), ui.id().with("backstage_back"), Sense::click());
-                icons::paint(ui.painter(), Rect::from_center_size(c, vec2(18.0, 18.0)), "chevronLeft", egui::Color32::WHITE, egui::Color32::WHITE);
-                resp
-            } else {
-                let (r, resp) = ui.allocate_exact_size(vec2(200.0, 40.0), Sense::click());
-                icons::paint(
-                    ui.painter(),
-                    Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(18.0, 18.0)),
-                    "chevronLeft",
-                    egui::Color32::WHITE,
-                    egui::Color32::WHITE,
-                );
-                resp
+            use craft_ui::file_nav::{FileNav, FileNavAction, FileNavItem, FileNavStyle};
+            let style =
+                FileNavStyle { font: medium(14.0), selected_font: semibold(14.0), foot_font: medium(13.0), ..FileNavStyle::on_accent(APP_COLOR) };
+            // "Home" is also the ribbon tab beside File: here it has its own wording.
+            let item = |key: &'static str, label: &'static str| FileNavItem {
+                key,
+                label: if key == "home" { crate::i18n::tc("file", label) } else { tl!(label) },
             };
+            let top = [item("home", "Home"), item("new", "New"), item("open", "Open")];
+            let rest = [
+                item("info", "Info"),
+                item("save", "Save"),
+                item("saveAs", "Save As"),
+                item("print", "Print"),
+                item("export", "Export"),
+                item("close", "Close"),
+            ];
+            // No document open (#1129): the pages that need one are greyed out, as in Word.
+            let disabled: &[&str] = if has_document { &[] } else { &["info", "save", "saveAs", "print", "export", "close"] };
+            let foot = [item("options", "Options"), item("discord", "Discord community"), item("about", "About")];
+            let paint = |key: Option<&str>, p: &egui::Painter, r: Rect, c: egui::Color32| icons::paint(p, r, nav_icon(key), c, c);
+            // macOS (#222): the File page covers the title bar, so the column's top band is the
+            // title bar. It holds only the window buttons and drags the window.
+            let band = if mac { crate::chrome::MAC_TITLE_BAR } else { 0.0 };
+            let showing = app.ui.backstage_page.clone();
+            let action = FileNav::new(tl!("Back"), &[&top, &rest], Some(showing.as_str()), &style, &paint)
+                .foot(&foot)
+                .disabled(disabled)
+                .title_band(band)
+                .show(ui)
+                .action;
             // Escape in the built-in file browser closes only the browser.
-            if back.clicked() || (!app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
+            let escape = !app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            match action {
+                Some(FileNavAction::DragWindow) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag),
+                // A document without a file goes to the Save As page (as in Word) instead of
+                // `file.save`, which would also open the native Save As dialog. In the browser a
+                // save is a download, so it saves right away.
+                Some(FileNavAction::Choose("save")) if app.session.path.is_none() && app.services.download.is_none() => {
+                    app.ui.backstage_page = "saveAs".into();
+                }
+                Some(FileNavAction::Choose("save")) => {
+                    let r = app.run("file.save", json!({}));
+                    if r.is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true) || v.get("downloaded").is_some()) {
+                        app.ui.backstage = false;
+                        app.canvas.want_focus = true;
+                    } else {
+                        app.ui.backstage_page = "saveAs".into();
+                    }
+                }
+                Some(FileNavAction::Choose("discord")) => {
+                    let _ = app.run("ui.discord", json!({}));
+                }
+                // Not a page: `file.close` asks Save / Don't Save / Cancel first when there are
+                // unsaved changes, and Cancel leaves the Backstage where it was.
+                Some(FileNavAction::Choose("close")) => {
+                    let _ = app.run("file.close", json!({}));
+                }
+                Some(FileNavAction::Choose("about")) => app.dialog = crate::dialogs::Dialog::open("about", app),
+                Some(FileNavAction::Choose(page)) => app.ui.backstage_page = page.into(),
+                Some(FileNavAction::Back) | None => {}
+            }
+            if action == Some(FileNavAction::Back) || escape {
                 app.ui.backstage = false;
                 app.canvas.want_focus = true;
             }
-            ui.add_space(if mac { 12.0 } else { 6.0 });
-            for (id, label) in PAGES {
-                // No document open (#1129): Info, Save, Save As, Print and Export are greyed out.
-                let on = has_document || works_without_document(id);
-                let (r, resp) = ui.add_enabled_ui(on, |ui| ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click())).inner;
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, on, tl!(label)));
-                let active = app.ui.backstage_page == id;
-                if active {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(46));
-                } else if on && resp.hovered() {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
-                }
-                ui.painter().text(
-                    pos2(r.min.x + 22.0, r.center().y),
-                    Align2::LEFT_CENTER,
-                    tl!(label),
-                    if active { semibold(14.0) } else { medium(14.0) },
-                    if on { egui::Color32::WHITE } else { egui::Color32::from_white_alpha(110) },
-                );
-                if resp.clicked() {
-                    match id {
-                        // A document without a file goes to the Save As page (as in Word) instead
-                        // of `file.save`, which would also open the native Save As dialog.
-                        // In the browser a save is a download, so it saves right away.
-                        "save" if app.session.path.is_none() && app.services.download.is_none() => {
-                            app.ui.backstage_page = "saveAs".into();
-                        }
-                        "save" => {
-                            let r = app.run("file.save", json!({}));
-                            if r.is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true) || v.get("downloaded").is_some()) {
-                                app.ui.backstage = false;
-                                app.canvas.want_focus = true;
-                            } else {
-                                app.ui.backstage_page = "saveAs".into();
-                            }
-                        }
-                        "saveAs" => {
-                            app.ui.backstage_page = "saveAs".into();
-                        }
-                        // Not a page: `file.close` asks Save / Don't Save / Cancel first when there
-                        // are unsaved changes, and Cancel leaves the Backstage where it was.
-                        "close" => {
-                            let _ = app.run("file.close", json!({}));
-                        }
-                        _ => app.ui.backstage_page = id.into(),
-                    }
-                }
-            }
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                for (label, id) in [("About", "about"), ("Discord community", "discord")] {
-                    let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
-                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
-                    if resp.hovered() {
-                        ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
-                    }
-                    ui.painter().text(pos2(r.min.x + 22.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
-                    if resp.clicked() {
-                        if id == "discord" {
-                            let _ = app.run("ui.discord", json!({}));
-                        } else {
-                            app.dialog = crate::dialogs::Dialog::open("about", app);
-                        }
-                    }
-                }
-            });
         });
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(egui::Margin::symmetric(40, 30))).show(ui, |ui| {
+    // Open is the places panel from edge to edge, with its own scrolling: the navigation column
+    // already says "Open", so the page needs no heading of its own.
+    let open = app.ui.backstage_page == "open";
+    let margin = if open { egui::Margin::ZERO } else { egui::Margin::symmetric(40, 30) };
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon).inner_margin(margin)).show(ui, |ui| {
+        if open {
+            open_page(app, ui);
+            return;
+        }
         egui::ScrollArea::vertical().show(ui, |ui| match app.ui.backstage_page.as_str() {
             "home" => home_page(app, ui),
             "new" => new_page(app, ui),
-            "open" => open_page(app, ui),
             "saveAs" => save_as_page(app, ui),
             "info" => info_page(app, ui),
             "print" | "export" => export_page(app, ui),
@@ -292,27 +277,123 @@ fn open_list(app: &mut WordApp, ui: &mut Ui) {
     }
 }
 
+/// File › Open: the shared places panel (storytold/craft-libs#49). Recent lists the documents
+/// opened lately; This computer lists folders and documents right here, starting from the home
+/// folder, through craft-ui's `LocalFolder`; Browse shows the system's dialog. Remote storage adds
+/// one place per account; there is none yet.
 fn open_page(app: &mut WordApp, ui: &mut Ui) {
-    heading(ui, "Open");
-    if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
-        let _ = app.run("ui.openFileDialog", json!({}));
+    use craft_ui::places::local::{LocalFolder, LocalLabels, LocalOutcome};
+    use craft_ui::places::{
+        Place, PlaceEntry, PlaceKind, PlacesAction, PlacesContent, PlacesIcon, PlacesLabels, PlacesNotice, PlacesPanel, PlacesStyle,
+    };
+    let t = Tokens::get(ui.ctx());
+    let style = PlacesStyle {
+        fill: t.ribbon,
+        border: t.border,
+        text: t.text,
+        weak: t.text_dim,
+        hover: t.hover,
+        selected: t.checked,
+        accent: t.accent,
+        icon: t.icon,
+        // The File page's own scale: its navigation is set in 14 pt on 38 pt rows.
+        rail_width: 250.0,
+        row_height: 36.0,
+        font: 14.0,
+        small_font: 12.0,
+        ..PlacesStyle::from_visuals(ui.visuals())
+    };
+    let labels = PlacesLabels { places: tl!("Places"), add_place: tl!("Add a place"), browse: tl!("Browse…"), loading: tl!("Loading…") };
+    let mut places = vec![Place { kind: PlaceKind::Recent, label: tl!("Recent"), detail: None }];
+    // The browser has no folders to list, so there the system's picker is the only way in.
+    if cfg!(not(target_arch = "wasm32")) {
+        places.push(Place { kind: PlaceKind::Local, label: tl!("This computer"), detail: None });
     }
-    // Linux and the BSDs (#576): the system dialog needs a file chooser portal or zenity; when it
-    // doesn't show up, WordCraft's own browser is always one click away.
-    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
-    if ui
-        .button(egui::RichText::new(tl!("Browse in WordCraft…")).font(medium(14.0)))
-        .on_hover_text(tl!("Open a file with WordCraft's own browser when the system file dialog doesn't appear."))
-        .clicked()
-    {
-        let _ = app.run("ui.fileBrowser", json!({}));
+
+    // A folder the system keeps closed (macOS guards Documents, Desktop and Downloads) still opens
+    // through Browse: a document the user picks there is theirs to open. macOS asks once whether
+    // the app may read such a folder, and stays silent after a No.
+    let no_access = tl!("WordCraft has no permission to read this folder. Use Browse to open a document from it.");
+    let denied = if cfg!(target_os = "macos") {
+        format!("{no_access} {}", tl!("To list it here, allow WordCraft in System Settings, under Privacy & Security, Files and Folders."))
+    } else {
+        no_access.to_string()
+    };
+    let words = LocalLabels {
+        empty: tl!("This folder is empty."),
+        no_access: tl!("No access to this folder"),
+        no_access_detail: &denied,
+        browse: tl!("Browse…"),
+        gone: tl!("This folder is no longer there."),
+        gone_detail: tl!("It may have been moved or deleted."),
+        unreadable: tl!("This folder can't be read."),
+    };
+
+    // This computer is showing a folder: the shared helper lists it and says what a choice means.
+    if let Some(folder) = app.file_browser.page.as_mut() {
+        let entries = folder.entries();
+        let crumbs = folder.crumbs(tl!("This computer"));
+        let crumbs: Vec<&str> = crumbs.iter().map(String::as_str).collect();
+        let action = PlacesPanel::new(&places, Some(1), folder.content(&entries, words), &style, labels).crumbs(&crumbs).show(ui).action;
+        match action {
+            Some(PlacesAction::Select(0)) => app.file_browser.page = None,
+            Some(action) => match folder.act(action) {
+                LocalOutcome::Open(path) => {
+                    let _ = app.run("file.open", json!({"path": path.to_string_lossy()}));
+                    app.ui.backstage = false;
+                    app.canvas.want_focus = true;
+                }
+                LocalOutcome::Browse => {
+                    let _ = app.run("ui.openFileDialog", json!({}));
+                }
+                LocalOutcome::Stay => {}
+            },
+            None => {}
+        }
+        return;
     }
-    ui.add_space(18.0);
-    open_list(app, ui);
+
+    // Recent: the documents opened lately, each with its folder.
+    let recent: Vec<(String, String, String)> = app
+        .ui
+        .recent
+        .iter()
+        .take(app.ui.recent_shown())
+        .map(|p| {
+            let path = std::path::Path::new(p);
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+            let folder = path.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+            (p.clone(), name, folder)
+        })
+        .collect();
+    let entries: Vec<PlaceEntry<'_>> =
+        recent.iter().map(|(_, name, folder)| PlaceEntry { name, folder: false, detail: folder, attention: false, remote: false }).collect();
+    let content = if entries.is_empty() {
+        PlacesContent::Notice(PlacesNotice { icon: PlacesIcon::Recent, title: tl!("Documents you open will show up here."), body: "", action: None })
+    } else {
+        PlacesContent::Entries(&entries)
+    };
+    let crumbs = [tl!("Recent")];
+    match PlacesPanel::new(&places, Some(0), content, &style, labels).crumbs(&crumbs).show(ui).action {
+        Some(PlacesAction::Activate(i)) => {
+            if let Some((path, ..)) = recent.get(i) {
+                let _ = app.run("file.open", json!({"path": path}));
+                app.ui.backstage = false;
+                app.canvas.want_focus = true;
+            }
+        }
+        Some(PlacesAction::Select(1)) => {
+            if let Some(home) = LocalFolder::home() {
+                app.file_browser.show_page_dir(home);
+            }
+        }
+        Some(PlacesAction::Browse) => {
+            let _ = app.run("ui.openFileDialog", json!({}));
+        }
+        _ => {}
+    }
 }
 
-/// Save As: Browse… asks where to save. It has no recent-documents list: clicking one of those
-/// opens it, which is not what Save As is for.
 fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Save As");
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
@@ -511,6 +592,129 @@ mod tests {
         assert_eq!((a.session.doc.core.title.as_str(), a.session.doc.core.creator.as_str()), ("ALPHA", ""));
         a.session.run("edit.undo", &json!({})).unwrap();
         assert_eq!(a.session.doc.core.title, "");
+    }
+
+    /// File › Open is the shared places panel: Recent with the documents opened lately, This
+    /// computer with the folders listed in the page, and Browse for the system's dialog.
+    #[test]
+    fn open_page_lists_places_and_recent_documents() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.recent = vec!["/home/ada/Documents/Handbook.docx".into(), "/home/ada/Desktop/Notes.docx".into()];
+        a.run("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for label in ["This computer", "Browse…", "Handbook.docx, /home/ada/Documents", "Notes.docx, /home/ada/Desktop"] {
+            assert!(h.query_by_label(label).is_some(), "{label} is on the Open page");
+        }
+        assert!(h.query_by_label("Add a place").is_none(), "there is no remote storage to add yet");
+        h.get_by_label("This computer").click();
+        h.run_steps(4);
+        assert!(h.state().file_browser.page.is_some(), "This computer lists a folder in the page");
+        assert!(!h.state().file_dialog_open(), "and opens no dialog, unlike Browse");
+        assert!(h.query_by_label("Handbook.docx, /home/ada/Documents").is_none(), "the recent documents made way for the folder");
+        h.get_by_label("Recent").click();
+        h.run_steps(4);
+        assert!(h.state().file_browser.page.is_none() && h.query_by_label("Handbook.docx, /home/ada/Documents").is_some(), "Recent comes back");
+    }
+
+    /// The File page's column (storytold/craft-libs#53): Back is a labelled first row, every page
+    /// is one click away, and Options sits at the foot.
+    #[test]
+    fn the_column_has_a_labelled_back_and_reaches_every_page() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "new"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for (label, page) in [("Options", "options"), ("Open", "open"), ("Info", "info"), ("Export", "export"), ("Home", "home")] {
+            h.get_by_label(label).click();
+            h.run_steps(4);
+            assert_eq!(h.state().ui.backstage_page, page, "{label} shows its page");
+            assert!(h.state().ui.backstage, "{label} stays on the File page");
+        }
+        h.get_by_label("Back").click();
+        h.run_steps(4);
+        assert!(!h.state().ui.backstage, "Back leaves the File page");
+    }
+
+    /// #1129: with no document open the pages that need one stay in the column, greyed out and
+    /// announced as unavailable, and choosing one does nothing.
+    #[test]
+    fn with_no_document_the_column_greys_out_the_document_pages() {
+        use egui_kittest::kittest::NodeT;
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.start_screen();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for label in ["Info", "Save", "Save As", "Print", "Export", "Close"] {
+            let entry = h.query_by_label(label).unwrap_or_else(|| panic!("{label} stays in the column"));
+            assert!(entry.accesskit_node().is_disabled(), "{label} needs a document");
+        }
+        for label in ["Home", "New", "Open", "Options"] {
+            assert!(!h.get_by_label(label).accesskit_node().is_disabled(), "{label} works without a document");
+        }
+        h.get_by_label("Info").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "home", "Info cannot be chosen");
+        h.get_by_label("Options").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "options");
+        h.get_by_label("Open").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "open");
+    }
+
+    /// The File page's Home may be worded apart from the ribbon's Home tab; a language without
+    /// such an entry uses its ordinary one.
+    #[test]
+    fn the_file_pages_home_can_have_its_own_wording() {
+        use crate::i18n::{Lang, tr, trc};
+        let (pl, de) = (Lang::from_pref("pl"), Lang::from_pref("de"));
+        assert_eq!(trc(pl, "file", "Home"), "Strona główna");
+        assert_eq!(tr(pl, "Home"), "Start", "the ribbon tab keeps its word");
+        assert_eq!(trc(de, "file", "Home"), tr(de, "Home"));
+        assert_ne!(tr(pl, "About"), tr(pl, "Info"), "two rows of one column must not read the same");
+    }
+
+    /// A folder that cannot be listed says why in the interface language, never in the system's
+    /// own error text.
+    #[test]
+    fn a_folder_that_cannot_be_read_says_so_in_words() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+        a.file_browser.show_page_dir(std::env::temp_dir().join("wordcraft-no-such-folder-for-the-open-page"));
+        assert_eq!(a.file_browser.page.as_ref().and_then(|folder| folder.failed()), Some(std::io::ErrorKind::NotFound));
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        assert!(h.query_by_label("This folder is no longer there.").is_some());
+        assert!(h.query_by_label_contains("os error").is_none(), "the system's wording stays out of the page");
     }
 
     #[test]
