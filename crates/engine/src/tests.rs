@@ -5006,3 +5006,113 @@ fn insert_picture_takes_a_windows_metafile() {
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #1344: File › Info › Inspect Document finds hidden text by its effective formatting (direct,
+/// character style, paragraph style) in every story — body, header, footer, footnote, comment,
+/// text box — and Remove All deletes exactly that text, in one undo step, through a DOCX save.
+#[test]
+fn inspect_document_hidden_text_in_every_story_and_from_styles() {
+    use wordcraft_doc::props::{CharProps, ParaProps};
+    use wordcraft_doc::styles::{Style, StyleKind};
+    use wordcraft_doc::{Paragraph, PartKind, para_block};
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Body words"}));
+    run(&mut s, "review.newComment", json!({"text": "c"}));
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "insert.textBox", json!({"text": "t"}));
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "references.footnote", json!({"text": "n"}));
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "insert.header", json!({"text": "h"}));
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    run(&mut s, "insert.footer", json!({"text": "f"}));
+    s.sel = crate::Selection::caret(Pos::body(0, 0));
+    let hidden = CharProps { hidden: Some(true), ..Default::default() };
+    s.doc.styles.upsert(Style { id: "HideC".into(), name: "Hide C".into(), kind: StyleKind::Character, chr: hidden.clone(), ..Default::default() });
+    s.doc.styles.upsert(Style {
+        id: "HideP".into(),
+        name: "Hide P".into(),
+        kind: StyleKind::Paragraph,
+        based_on: Some("Normal".into()),
+        chr: hidden.clone(),
+        ..Default::default()
+    });
+    let plain = CharProps::default();
+    let blocks = |tag: &str| {
+        let mut a = Paragraph::with_text(&format!("keep-{tag}-1 "), plain.clone());
+        for (t, c) in [
+            (format!("hide-{tag}-direct"), hidden.clone()),
+            (format!(" keep-{tag}-2 "), plain.clone()),
+            (format!("hide-{tag}-cstyle"), CharProps { style: Some("HideC".into()), ..Default::default() }),
+            (format!(" keep-{tag}-3"), plain.clone()),
+        ] {
+            let at = a.len();
+            a.insert_text(at, &t, &c).unwrap();
+        }
+        let mut b = Paragraph::with_text(&format!("hide-{tag}-pstyle"), plain.clone());
+        b.props = ParaProps { style: Some("HideP".into()), ..Default::default() };
+        // Shown again by direct formatting over the hidden paragraph style: it stays.
+        let mut c = Paragraph::with_text(&format!("keep-{tag}-4"), CharProps { hidden: Some(false), ..Default::default() });
+        c.props = ParaProps { style: Some("HideP".into()), ..Default::default() };
+        vec![para_block(a), para_block(b), para_block(c)]
+    };
+    let tag = |k: PartKind| match k {
+        PartKind::Header => "header",
+        PartKind::Footer => "footer",
+        PartKind::Footnote => "footnote",
+        PartKind::Endnote => "endnote",
+        PartKind::Comment => "comment",
+        PartKind::TextBox => "textBox",
+    };
+    s.doc.body.extend(blocks("body"));
+    let mut tags = vec!["body"];
+    for part in s.doc.parts.values_mut() {
+        part.blocks.extend(blocks(tag(part.kind)));
+        tags.push(tag(part.kind));
+    }
+    tags.sort();
+    assert_eq!(tags, ["body", "comment", "footer", "footnote", "header", "textBox"]);
+    let all_text = |d: &wordcraft_doc::Document| -> String {
+        std::iter::once(StoryRef::Body).chain(d.parts.keys().map(|k| StoryRef::Part(*k))).map(|st| d.plain_text(st)).collect::<Vec<_>>().join("\n")
+    };
+
+    // Inspect reports every hidden piece, in its story.
+    let found = run(&mut s, "file.inspect", json!({}))["found"].clone();
+    assert_eq!(found["hiddenText"], true);
+    let items = found["hidden"].as_array().cloned().unwrap_or_default();
+    for t in &tags {
+        for how in ["direct", "cstyle", "pstyle"] {
+            let want = format!("hide-{t}-{how}");
+            assert!(
+                items.iter().any(|i| i["story"] == *t && i["text"].as_str().is_some_and(|x| x.contains(&want))),
+                "{want} not reported: {items:?}"
+            );
+        }
+    }
+    assert!(!items.iter().any(|i| i["text"].as_str().is_some_and(|x| x.contains("keep-"))), "visible text reported: {items:?}");
+
+    // Remove All: every hidden piece goes, every visible one stays, in one undo step.
+    let before = all_text(&s.doc);
+    let undo_len = s.undo_labels().len();
+    let out = run(&mut s, "file.inspect", json!({"remove": ["hidden"]}));
+    assert_eq!(out["residual"], json!([]), "{out}");
+    let after = all_text(&s.doc);
+    for t in &tags {
+        for n in 1..=4 {
+            assert!(after.contains(&format!("keep-{t}-{n}")), "keep-{t}-{n} lost:\n{after}");
+        }
+    }
+    assert!(!after.contains("hide-"), "hidden text left:\n{after}");
+    assert_eq!(s.undo_labels().len(), undo_len + 1);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(all_text(&s.doc), before, "one undo brings it all back");
+    run(&mut s, "edit.redo", json!({}));
+    assert_eq!(all_text(&s.doc), after);
+    assert_eq!(run(&mut s, "file.inspect", json!({}))["found"]["hiddenText"], false);
+
+    // Save and reopen: none of the hidden strings is in the file.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    let reopened = all_text(&back);
+    assert!(!reopened.contains("hide-"), "hidden text in the saved file:\n{reopened}");
+    assert!(reopened.contains("keep-header-4") && reopened.contains("keep-comment-3"), "{reopened}");
+}
