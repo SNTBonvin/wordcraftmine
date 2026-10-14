@@ -25,6 +25,11 @@ fn nav_icon(key: Option<&str>) -> &'static str {
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    // No document open (#1129): only the pages that open or create one, and Options.
+    let has_document = app.has_document();
+    if !has_document && !works_without_document(&app.ui.backstage_page) {
+        app.ui.backstage_page = "home".into();
+    }
     let mac = app.integrated_titlebar;
     // The column is the shared one (storytold/craft-libs#53): a labelled Back, the pages in groups,
     // Options and About at the foot. WordCraft supplies the entries, their wording and icons.
@@ -51,6 +56,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 item("export", "Export"),
                 item("close", "Close"),
             ];
+            // No document open (#1129): the pages that need one are left out of the column.
+            let rest: &[FileNavItem<&str>] = if has_document { &rest } else { &[] };
             let foot = [item("options", "Options"), item("discord", "Discord community"), item("about", "About")];
             let paint = |key: Option<&str>, p: &egui::Painter, r: Rect, c: egui::Color32| icons::paint(p, r, nav_icon(key), c, c);
             // macOS (#222): the File page covers the title bar, so the column's top band is the
@@ -58,7 +65,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let band = if mac { crate::chrome::MAC_TITLE_BAR } else { 0.0 };
             let showing = app.ui.backstage_page.clone();
             let action =
-                FileNav::new(tl!("Back"), &[&top, &rest], Some(showing.as_str()), &style, &paint).foot(&foot).title_band(band).show(ui).action;
+                FileNav::new(tl!("Back"), &[&top, rest], Some(showing.as_str()), &style, &paint).foot(&foot).title_band(band).show(ui).action;
             // Escape in the built-in file browser closes only the browser.
             let escape = !app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
             match action {
@@ -116,6 +123,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+/// The Backstage pages that work while no document is open (#1129).
+fn works_without_document(page: &str) -> bool {
+    matches!(page, "home" | "new" | "open" | "options")
+}
+
 fn heading(ui: &mut Ui, s: &str) {
     ui.label(egui::RichText::new(tl!(s)).font(semibold(26.0)));
     ui.add_space(16.0);
@@ -157,8 +169,9 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
         if let Some(h) = tex {
             ui.painter().image(h.id(), r.shrink(1.0), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), egui::Color32::WHITE);
         }
-        ui.label(egui::RichText::new(tl!(label)).font(regular(12.5)));
-        if resp.clicked() {
+        // The caption opens the template too, as in Word.
+        let caption = ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5))).sense(Sense::click()));
+        if resp.clicked() || caption.clicked() {
             let _ = app.run("file.new", json!({"template": template}));
             app.ui.backstage = false;
             app.canvas.want_focus = true;
@@ -631,6 +644,31 @@ mod tests {
         h.get_by_label("Back").click();
         h.run_steps(4);
         assert!(!h.state().ui.backstage, "Back leaves the File page");
+    }
+
+    /// #1129: with no document open the column offers only what works without one.
+    #[test]
+    fn with_no_document_the_column_leaves_out_the_document_pages() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.start_screen();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        for label in ["Info", "Save As", "Print", "Export", "Close"] {
+            assert!(h.query_by_label(label).is_none(), "{label} needs a document");
+        }
+        h.get_by_label("Options").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "options");
+        h.get_by_label("Open").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "open");
     }
 
     /// The File page's Home may be worded apart from the ribbon's Home tab; a language without
