@@ -51,6 +51,9 @@ pub struct ExportOptions {
     pub markup: bool,
     /// With `markup`, show the comments (Track Changes Options › Comments).
     pub comments: bool,
+    /// An `.xml` copy is a Word 2003 XML Document (WordprocessingML 2003) instead of a Word XML
+    /// Document (Flat OPC): `format: "wordml2003"` on the save commands.
+    pub word2003: bool,
 }
 
 /// A document password: wiped from memory when dropped, never printed (`Debug` shows `***`).
@@ -373,6 +376,27 @@ fn read_regular_file(path: &std::path::Path, limit: u64) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(usize::try_from(meta.len().min(limit)).unwrap_or(0));
     file.take(limit.saturating_add(1)).read_to_end(&mut out).ok()?;
     Some(out)
+}
+
+/// Does `path` hold a Word 2003 XML Document already (so a plain save keeps that format)?
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn is_word_2003_file(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    if crate::file_access::check_read(&path.to_string_lossy()).is_err() {
+        return false;
+    }
+    let Ok(f) = std::fs::File::open(path) else { return false };
+    let mut head = Vec::new();
+    // The root element and its namespaces come first.
+    if f.take(64 * 1024).read_to_end(&mut head).is_err() {
+        return false;
+    }
+    wordcraft_docx::sniff_xml(&head) == wordcraft_docx::XmlKind::WordMl2003
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn is_word_2003_file(_path: &std::path::Path) -> bool {
+    false
 }
 
 /// The bytes of the file at `path`, for commands that take a path (pictures, mail-merge data).

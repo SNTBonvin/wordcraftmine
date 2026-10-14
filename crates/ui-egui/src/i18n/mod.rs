@@ -197,14 +197,15 @@ pub static LANGUAGES: [LangInfo; 19] = [
         editing_lang: None,
         catalog: OnceLock::new(),
     },
-    // Italian; `it-IT`, `it-CH` and `it-*` resolve here.
+    // Italian; `it-IT`, `it-CH` and `it-*` resolve here. New documents are written in
+    // Italian: `wordcraft-proof` checks it (`ProofLang::It`).
     LangInfo {
         code: "it",
         name: "Italiano",
         source: include_str!("it.tsv"),
         rtl: false,
         prefer_hans: false,
-        editing_lang: None,
+        editing_lang: Some("it-IT"),
         catalog: OnceLock::new(),
     },
     // Hungarian; `hu`, `hu-HU` and `hu_HU.UTF-8` resolve here.

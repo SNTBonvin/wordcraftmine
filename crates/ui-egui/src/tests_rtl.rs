@@ -1,7 +1,7 @@
 //! Exercise interface surfaces in both directions without changing document direction.
 use crate::{WordApp, dialogs::Dialog};
 use egui::vec2;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 
 struct LanguageGuard(crate::i18n::Lang);
@@ -20,6 +20,90 @@ fn app(language: &str) -> WordApp {
     let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), Default::default());
     app.ui.language = language.to_owned();
     app
+}
+
+/// Keep the new empty Start screen and Close routing when adopting RTL containers.
+#[test]
+fn start_screen_and_close_work_in_both_directions() {
+    let _language = LanguageGuard::new();
+    for language in ["en", "qaa-rtl-latin"] {
+        let mut state = app(language);
+        assert!(state.start_screen());
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            state,
+        );
+        h.run_steps(6);
+        assert!(!h.state().has_document(), "{language}");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(4);
+        assert!(!h.state().has_document() && !h.state().ui.backstage, "{language}");
+        assert!(h.query_by_label("Print Layout").is_none(), "{language}: no document status controls");
+        h.state_mut().run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "home", "{language}");
+        h.get_by_label("Blank document").click();
+        h.run_steps(4);
+        assert!(h.state().has_document() && !h.state().ui.backstage, "{language}");
+        assert!(h.query_by_label("Print Layout").is_some(), "{language}: status controls return");
+        h.state_mut().run("text.insert", json!({"text": "Keep this draft"})).unwrap();
+        h.state_mut().run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        h.run_steps(4);
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        assert!(matches!(h.state().dialog, Some(Dialog::SaveChanges { .. })), "{language}");
+        h.state_mut().run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        h.run_steps(4);
+        assert!(!h.state().quit_requested && h.state().has_document(), "{language}");
+        assert!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).contains("Keep this draft"));
+    }
+}
+
+/// The direction-aware combo must retain main's new Auto and absolute-size choices.
+#[test]
+fn interface_size_auto_picker_works_in_both_directions() {
+    let _language = LanguageGuard::new();
+    let open_picker = |h: &egui_kittest::Harness<'_, WordApp>, selected: &str| {
+        // Native LTR combos expose their selection as a value; our RTL wrapper labels it.
+        h.get_all_by_role(egui::accesskit::Role::ComboBox)
+            .find(|node| node.value().as_deref() == Some(selected) || node.accesskit_node().label().as_deref() == Some(selected))
+            .expect("interface size combo")
+            .click();
+    };
+    for language in ["en", "qaa-rtl-latin"] {
+        let mut state = app(language);
+        state.run("ui.interfaceSize", json!({"percent": 100})).unwrap();
+        state.run("file.options", json!({"pane": "general"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            state,
+        );
+        h.run_steps(6);
+        open_picker(&h, "100%");
+        h.run_steps(3);
+        h.get_by_label("Auto (100%)").click();
+        h.run_steps(4);
+        assert!(h.state().ui.interface_size.is_auto(), "{language}");
+        // Options' selectable labels keep their popup open; dismiss it before reopening.
+        egui::Popup::close_all(&h.ctx);
+        h.run_steps(4);
+        open_picker(&h, "Auto (100%)");
+        h.run_steps(3);
+        h.get_by_label("150%").scroll_to_me();
+        h.run_steps(8);
+        let choice = h.get_by_label("150%").rect();
+        h.get_by_label("150%").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.interface_size.percent(), Some(150), "{language}: choice at {choice:?}");
+    }
 }
 
 #[test]
@@ -408,7 +492,7 @@ fn local_direction_screenshots() {
             app(language),
         );
         h.run_steps(6);
-        for surface in ["home", "paste-menu", "insert", "options", "pane", "dialog", "font", "chart-data", "save"] {
+        for surface in ["home", "paste-menu", "insert", "options", "pane", "dialog", "font", "chart-data", "save", "start-screen", "empty-window"] {
             match surface {
                 "paste-menu" => {
                     h.state_mut().session.run("select.all", &json!({})).unwrap();
@@ -454,6 +538,11 @@ fn local_direction_screenshots() {
                     h.state_mut().dialog =
                         Some(Dialog::SaveChanges { name: "RTL sample 2026.docx".into(), then: "file.new".into(), params: json!({}), document });
                 }
+                "start-screen" => {
+                    h.state_mut().dialog = None;
+                    assert!(h.state_mut().start_screen());
+                }
+                "empty-window" => h.state_mut().run("ui.backstage", json!({"value": false})).map(|_| ()).unwrap(),
                 _ => {}
             }
             h.run_steps(20);
