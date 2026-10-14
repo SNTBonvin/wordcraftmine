@@ -332,6 +332,14 @@ fn adopt(s: &mut Session, src: Document) -> Fragment {
             s.doc.styles.upsert(st.clone());
         }
     }
+    // Tracked changes the source carries (RTF revisions) point at its own revisions: add them
+    // after ours and renumber.
+    let rev_base = u32::try_from(s.doc.revisions.len()).unwrap_or(u32::MAX);
+    let src_revs = src.revisions.len();
+    s.doc.revisions.extend(src.revisions.iter().cloned());
+    let rev = |i: &mut Option<u32>| {
+        *i = i.filter(|v| (*v as usize) < src_revs).and_then(|v| rev_base.checked_add(v));
+    };
     let mut blocks: Vec<Block> = src.body.iter().map(|b| (**b).clone()).collect();
     // Pasted pictures fit our text width, like Insert › Pictures (layout keeps their size).
     let max_w = crate::io::text_width(&s.doc);
@@ -345,6 +353,18 @@ fn adopt(s: &mut Session, src: Document) -> Fragment {
             {
                 n.num = num_map.get(&n.num).copied().unwrap_or(0);
             }
+            for r in &mut p.runs {
+                rev(&mut r.props.ins);
+                rev(&mut r.props.del);
+                let mut f = r.props.fmt_change.as_ref().map(|c| c.rev);
+                rev(&mut f);
+                match (f, r.props.fmt_change.as_mut()) {
+                    (Some(v), Some(c)) => c.rev = v,
+                    _ => r.props.fmt_change = None,
+                }
+            }
+            rev(&mut p.mark.ins);
+            rev(&mut p.mark.del);
             for o in &mut p.objects {
                 if let wordcraft_doc::InlineObject::Image { media: key, .. } = o
                     && let Some(k) = media.get(key.as_str())
