@@ -987,10 +987,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let hy = visual_sr.min.y + sect_body.y * page_scale - 4.0;
                     let fy = visual_sr.min.y + sect_body.bottom() * page_scale + 4.0;
                     for (y, label) in [(hy, "Header"), (fy, "Footer")] {
-                        dashed(&painter, pos2(visual_sr.min.x, y), pos2(visual_sr.max.x, y), Stroke::new(1.0, t.accent));
+                        dashed(&painter, pos2(visual_sr.min.x, y), pos2(visual_sr.max.x, y), Stroke::new(1.0, t.editor_accent));
                         let tr = Rect::from_min_size(pos2(visual_sr.min.x + 2.0, if label == "Header" { y } else { y - 18.0 }), vec2(52.0, 18.0));
-                        painter.rect_filled(tr, 2.0, t.checked);
-                        painter.text(tr.center(), egui::Align2::CENTER_CENTER, tl!(label), regular(11.0), t.accent_text);
+                        painter.rect_filled(tr, 2.0, t.editor_checked);
+                        painter.text(tr.center(), egui::Align2::CENTER_CENTER, tl!(label), regular(11.0), t.editor_accent_text);
                     }
                 }
             }
@@ -1101,8 +1101,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 if let Some(pr) = rects.get(pi) {
                     let sr =
                         Rect::from_min_size(pos2(pr.min.x + r.x * geo.scale, pr.min.y + r.y * geo.scale), vec2(r.w * geo.scale, r.h * geo.scale));
-                    painter.rect_filled(sr, 0.0, t.accent.gamma_multiply(0.16));
-                    painter.hline(sr.x_range(), sr.max.y - 0.5, egui::Stroke::new(1.5, t.accent));
+                    painter.rect_filled(sr, 0.0, t.editor_accent.gamma_multiply(0.16));
+                    painter.hline(sr.x_range(), sr.max.y - 0.5, egui::Stroke::new(1.5, t.editor_accent));
                 }
             }
         }
@@ -1585,7 +1585,7 @@ fn author_name(a: &str) -> String {
 fn card_shapes(painter: &egui::Painter, t: &Tokens, card: Rect, color: Color32, selected: bool, slot: Option<egui::layers::ShapeIdx>) {
     let shapes = vec![
         egui::Shape::rect_filled(card.translate(vec2(0.0, 1.0)), 4.0, t.page_shadow),
-        egui::Shape::rect_filled(card, 4.0, if selected { t.checked } else { Color32::WHITE }),
+        egui::Shape::rect_filled(card, 4.0, if selected { t.editor_checked } else { Color32::WHITE }),
         egui::Shape::rect_stroke(card, 4.0, Stroke::new(if selected { 1.5 } else { 1.0 }, color), egui::StrokeKind::Inside),
         egui::Shape::rect_filled(Rect::from_min_size(card.min, vec2(4.0, card.height())), egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, color),
     ];

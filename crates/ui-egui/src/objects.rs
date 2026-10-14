@@ -303,7 +303,7 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
         };
         for (p, on) in [(a, glued.0), (b, glued.1)] {
             if let Some(c) = point_on_screen(pages, scale, o.page, p) {
-                painter.circle(c, 4.5, if on { t.accent } else { Color32::WHITE }, egui::Stroke::new(1.2, t.accent));
+                painter.circle(c, 4.5, if on { t.editor_accent } else { Color32::WHITE }, egui::Stroke::new(1.2, t.editor_accent));
             }
         }
         return;
@@ -377,7 +377,7 @@ fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, 
                 let Some(p) = wordcraft_doc::connector::site_point(*kind, r, *spin, i as u32) else { continue };
                 let dist = ((p.0 - at.0).powi(2) + (p.1 - at.1).powi(2)).sqrt();
                 if let Some(c) = point_on_screen(pages, scale, d.object.page, p) {
-                    painter.circle_stroke(c, 3.5, egui::Stroke::new(1.0, t.accent));
+                    painter.circle_stroke(c, 3.5, egui::Stroke::new(1.0, t.editor_accent));
                 }
                 if dist <= snap && best.is_none_or(|b| dist < b.1) {
                     best = Some((p, dist));
@@ -387,8 +387,8 @@ fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, 
     }
     let to = best.map_or(at, |b| b.0);
     if let (Some(f), Some(e)) = (point_on_screen(pages, scale, d.object.page, fixed), point_on_screen(pages, scale, d.object.page, to)) {
-        painter.line_segment([f, e], egui::Stroke::new(1.5, t.accent));
-        painter.circle(e, 4.5, if best.is_some() { t.accent } else { Color32::WHITE }, egui::Stroke::new(1.2, t.accent));
+        painter.line_segment([f, e], egui::Stroke::new(1.5, t.editor_accent));
+        painter.circle(e, 4.5, if best.is_some() { t.editor_accent } else { Color32::WHITE }, egui::Stroke::new(1.2, t.editor_accent));
     }
 }
 

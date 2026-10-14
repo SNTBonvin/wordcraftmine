@@ -214,6 +214,11 @@ pub struct Tokens {
     pub checked: Color32,
     pub accent: Color32,
     pub accent_text: Color32,
+    /// Local document-editing marks; the shared accent is for interface chrome.
+    pub editor_accent: Color32,
+    pub editor_accent_text: Color32,
+    pub editor_on_accent: Color32,
+    pub editor_checked: Color32,
     /// Text/icon colour drawn on top of `accent` (e.g. keytip badge letters).
     pub on_accent: Color32,
     pub input: Color32,
@@ -260,6 +265,10 @@ impl Tokens {
             checked: Color32::from_rgb(0xDD, 0xE3, 0xF8),
             accent: APP_COLOR,
             accent_text: APP_INK,
+            editor_accent: APP_COLOR,
+            editor_accent_text: APP_INK,
+            editor_on_accent: Color32::WHITE,
+            editor_checked: Color32::from_rgb(0xDD, 0xE3, 0xF8),
             on_accent: Color32::WHITE,
             input: Color32::WHITE,
             input_border: Color32::from_rgb(0x8A, 0x8A, 0x8A),
@@ -304,6 +313,10 @@ impl Tokens {
             checked: roles.selection,
             accent: roles.accent,
             accent_text: roles.accent_hover,
+            editor_accent: Color32::from_rgb(0x7A, 0x93, 0xF0),
+            editor_accent_text: Color32::from_rgb(0x9C, 0xB0, 0xF5),
+            editor_on_accent: Color32::from_rgb(0x11, 0x16, 0x2E),
+            editor_checked: Color32::from_rgb(0x2E, 0x3A, 0x66),
             // Dark text on ArtCraft blue satisfies the filled-control contrast requirement.
             on_accent: roles.on_accent,
             input: roles.input,
@@ -666,6 +679,10 @@ mod tests {
         assert_eq!(dark.checked, roles.selection);
         assert_eq!(dark.accent, roles.accent);
         assert_eq!(dark.accent_text, roles.accent_hover);
+        assert_eq!(dark.editor_accent, egui::Color32::from_rgb(0x7A, 0x93, 0xF0));
+        assert_eq!(dark.editor_accent_text, egui::Color32::from_rgb(0x9C, 0xB0, 0xF5));
+        assert_eq!(dark.editor_on_accent, egui::Color32::from_rgb(0x11, 0x16, 0x2E));
+        assert_eq!(dark.editor_checked, egui::Color32::from_rgb(0x2E, 0x3A, 0x66));
         assert_eq!(dark.on_accent, roles.on_accent);
         assert_eq!(dark.input, roles.input);
         assert_eq!(dark.input_border, roles.border_strong);
@@ -683,6 +700,10 @@ mod tests {
         assert_eq!(dark.red, egui::Color32::from_rgb(0xEE, 0x6A, 0x6A));
         let light = super::Tokens::light();
         assert_eq!(light.accent, super::APP_COLOR);
+        assert_eq!(light.editor_accent, light.accent);
+        assert_eq!(light.editor_accent_text, light.accent_text);
+        assert_eq!(light.editor_on_accent, light.on_accent);
+        assert_eq!(light.editor_checked, light.checked);
         assert_eq!(light.input, egui::Color32::WHITE);
         assert_eq!(light.on_accent, egui::Color32::WHITE);
         assert_eq!(light.selection, light.ui_selection);
