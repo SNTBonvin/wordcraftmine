@@ -200,12 +200,12 @@ fn move_handle(painter: &egui::Painter, r: Rect, t: &Tokens) {
 /// An insert button: a circled "+" out from the table, joined to the border it inserts at,
 /// which is marked from end to end.
 fn insert_button(painter: &egui::Painter, c: Pos2, from: Pos2, to: Pos2, sc: f32, t: &Tokens) {
-    painter.line_segment([c, from], Stroke::new(1.0, t.accent));
-    painter.line_segment([from, to], Stroke::new(2.0, t.accent));
+    painter.line_segment([c, from], Stroke::new(1.0, t.editor_accent));
+    painter.line_segment([from, to], Stroke::new(2.0, t.editor_accent));
     let r = (4.5 * sc).clamp(4.0, 12.0);
     painter.circle_filled(c, r, Color32::WHITE);
-    painter.circle_stroke(c, r, Stroke::new(1.0, t.accent));
-    let (k, plus) = (r * 0.55, Stroke::new(1.5, t.accent));
+    painter.circle_stroke(c, r, Stroke::new(1.0, t.editor_accent));
+    let (k, plus) = (r * 0.55, Stroke::new(1.5, t.editor_accent));
     painter.line_segment([c - vec2(k, 0.0), c + vec2(k, 0.0)], plus);
     painter.line_segment([c - vec2(0.0, k), c + vec2(0.0, k)], plus);
 }

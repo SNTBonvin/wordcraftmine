@@ -139,7 +139,7 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
         let sc = layout.pages.get(page).filter(|pg| pg.w > 0.0).map_or(scale, |pg| r.width() / pg.w);
         Some(pos2(r.min.x + x * sc, r.min.y + y * sc))
     };
-    let ink = Stroke::new(1.5, t.accent);
+    let ink = Stroke::new(1.5, t.editor_accent);
     let hover = painter.ctx().input(|i| i.pointer.hover_pos());
     match (tool, app.canvas.table_stroke) {
         (TableTool::Draw, Some(st)) => match table_draw::stroke(layout, st.page, st.from.0, st.from.1, st.to.0, st.to.1) {
@@ -179,7 +179,7 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
     if let Some(p) = hover.filter(|p| pages.iter().any(|r| r.contains(*p))) {
         let r = Rect::from_min_size(p + vec2(8.0, 6.0), vec2(16.0, 16.0));
         let icon = if tool == TableTool::Draw { "pencil" } else { "eraser" };
-        crate::icons::paint(painter, r, icon, t.icon, t.accent);
+        crate::icons::paint(painter, r, icon, t.icon, t.editor_accent);
     }
 }
 
