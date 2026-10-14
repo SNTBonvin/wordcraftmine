@@ -241,6 +241,22 @@ fn glyph_outlines(face: &FaceRef, size: f32, glyphs: &[(u32, f32, f32)]) -> Opti
     pb.finish()
 }
 
+/// Indices of a run's glyphs in visual order, left to right: its clusters (consecutive glyphs
+/// sharing a text range, such as a base letter and its marks, or a lam-alef ligature) sorted by
+/// where they're drawn, each cluster's glyphs kept together in shaping order.
+fn visual_order(glyphs: &[(u32, f32, f32)], ranges: &[std::ops::Range<usize>]) -> Vec<usize> {
+    let mut clusters: Vec<(f32, std::ops::Range<usize>)> = Vec::new();
+    for (i, (_, x, _)) in glyphs.iter().enumerate() {
+        match clusters.last_mut() {
+            Some((_, idx)) if i > 0 && ranges.get(i).is_some() && ranges.get(i) == ranges.get(i - 1) => idx.end = i + 1,
+            _ => clusters.push((*x, i..i + 1)),
+        }
+    }
+    // Stable: clusters at the same x keep their order.
+    clusters.sort_by(|a, b| a.0.total_cmp(&b.0));
+    clusters.into_iter().flat_map(|(_, idx)| idx).collect()
+}
+
 /// A chart's or diagram's alt text: its own, else what it is ("chart", "diagram").
 fn graphic_alt(alt: &str, kind: GraphicKind) -> &str {
     if alt.trim().is_empty() { kind.noun() } else { alt }
@@ -1137,7 +1153,9 @@ impl Exporter<'_> {
         if !size.is_finite() || size <= 0.0 || size > 5000.0 {
             return;
         }
-        let Some(&(_, x0, y0)) = glyphs.first() else { return };
+        if glyphs.is_empty() {
+            return;
+        }
         if !glyphs.iter().all(|(_, x, y)| ok(*x) && ok(*y)) {
             return;
         }
@@ -1151,16 +1169,21 @@ impl Exporter<'_> {
         let valid = known.len() == glyphs.len() && known.iter().all(|r| r.start < r.end && text.get(r.clone()).is_some());
         let (txt, ranges) = if valid { (text.to_string(), known.to_vec()) } else { self.map_text(face, glyphs, text) };
         let upem = face.upem.max(1.0) as f32;
-        let kg: Vec<KrillaGlyph> = glyphs
+        // Right-to-left text is written in visual order (left to right), the convention PDF text
+        // extractors (PDFium, pdf.js, poppler) read it back from; layout gives it in logical order.
+        let order = if text.chars().any(wordcraft_fonts::is_rtl) { visual_order(glyphs, &ranges) } else { (0..glyphs.len()).collect() };
+        let placed: Vec<(u32, f32, f32, std::ops::Range<usize>)> =
+            order.iter().filter_map(|&i| Some((glyphs.get(i).copied()?, ranges.get(i).cloned()?))).map(|((g, x, y), r)| (g, x, y, r)).collect();
+        let Some(&(_, x0, y0, _)) = placed.first() else { return };
+        let kg: Vec<KrillaGlyph> = placed
             .iter()
-            .zip(ranges)
             .enumerate()
-            .map(|(k, ((g, x, y), r))| {
-                let adv = match glyphs.get(k + 1) {
-                    Some((_, nx, _)) => (nx - x) / size,
+            .map(|(k, (g, x, y, r))| {
+                let adv = match placed.get(k + 1) {
+                    Some((_, nx, _, _)) => (nx - x) / size,
                     None => face.advance(*g) as f32 / upem,
                 };
-                KrillaGlyph::new(GlyphId::new(*g), adv, 0.0, (y0 - y) / size, 0.0, r, None)
+                KrillaGlyph::new(GlyphId::new(*g), adv, 0.0, (y0 - y) / size, 0.0, r.clone(), None)
             })
             .collect();
         let pushed = italic;
