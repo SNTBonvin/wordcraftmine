@@ -126,10 +126,22 @@ const BARB_ANGLE: (f32, f32) = (15.0, 75.0);
 /// similar angles and lengths. (A stroke drawn head first is tried reversed by the caller.)
 fn arrow(p: &[[f32; 2]]) -> Option<InkShape> {
     let tail = *p.first()?;
-    // The tip: the first point about as far from the start as any (a return that overshoots it by
-    // a point or two must not move it).
+    // The tip: start at the first point about as far from the start as any (a return that
+    // overshoots it by a point or two must not move it), then follow the stroke on while it still
+    // moves away from the start (densely sampled strokes have shaft points inside that window).
+    // The first barb heads back, so the walk stops at the real tip and never reaches an overshoot;
+    // jitter of under half a point doesn't stop it early.
     let dmax = p.iter().map(|q| dist(tail, *q)).fold(0.0, f32::max);
-    let ti = p.iter().position(|q| dist(tail, *q) >= dmax - (0.03 * dmax).max(2.0))?;
+    let mut ti = p.iter().position(|q| dist(tail, *q) >= dmax - (0.03 * dmax).max(2.0))?;
+    let mut best = dist(tail, *p.get(ti)?);
+    for (i, q) in p.iter().enumerate().skip(ti + 1) {
+        let d = dist(tail, *q);
+        if d >= best {
+            (ti, best) = (i, d);
+        } else if d < best - 0.5 {
+            break;
+        }
+    }
     let tip = *p.get(ti)?;
     let shaft = dist(tail, tip);
     if shaft < MIN_SIZE || p.get(..=ti)?.iter().any(|q| seg_distance(tail, tip, *q) > (0.06 * shaft).max(1.5)) {
@@ -396,18 +408,30 @@ mod tests {
     /// A stroke drawn as a shaft from `tail` to `tip`, then both barbs of a head (back to the
     /// tip between them).
     fn arrow_stroke(tail: [f32; 2], tip: [f32; 2], barb: f32, spread_deg: f32) -> Vec<[f32; 2]> {
+        arrow_stroke_n(tail, tip, barb, spread_deg, 24, 5)
+    }
+
+    /// Points from `a` towards `b` (not including `b`), `n` of them.
+    fn line(a: [f32; 2], b: [f32; 2], n: usize) -> Vec<[f32; 2]> {
+        (0..n).map(|k| k as f32 / n as f32).map(|t| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]).collect()
+    }
+
+    /// An arrow sampled as a pen samples it: about one point per point of travel.
+    fn dense_arrow(tail: [f32; 2], tip: [f32; 2], barb: f32, spread_deg: f32) -> Vec<[f32; 2]> {
+        arrow_stroke_n(tail, tip, barb, spread_deg, dist(tail, tip).round() as usize, (barb.round() as usize).max(2))
+    }
+
+    /// `arrow_stroke` with `n` shaft points and `m` points per barb pass.
+    fn arrow_stroke_n(tail: [f32; 2], tip: [f32; 2], barb: f32, spread_deg: f32, n: usize, m: usize) -> Vec<[f32; 2]> {
         let back = (tail[1] - tip[1]).atan2(tail[0] - tip[0]);
         let barb_end = |sign: f32| {
             let a = back + sign * spread_deg.to_radians();
             [tip[0] + barb * a.cos(), tip[1] + barb * a.sin()]
         };
-        let line = |a: [f32; 2], b: [f32; 2], n: usize| -> Vec<[f32; 2]> {
-            (0..n).map(|k| k as f32 / n as f32).map(|t| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]).collect()
-        };
-        let mut pts = line(tail, tip, 24);
-        pts.extend(line(tip, barb_end(1.0), 5));
-        pts.extend(line(barb_end(1.0), tip, 5));
-        pts.extend(line(tip, barb_end(-1.0), 5));
+        let mut pts = line(tail, tip, n);
+        pts.extend(line(tip, barb_end(1.0), m));
+        pts.extend(line(barb_end(1.0), tip, m));
+        pts.extend(line(tip, barb_end(-1.0), m));
         pts.push(barb_end(-1.0));
         pts
     }
@@ -478,12 +502,17 @@ mod tests {
     /// An arrow as a hand draws it: the shaft sags by `bow` and wobbles, the tip may be rounded,
     /// and each barb has its own length and angle (`(length, degrees)`, left then right).
     fn hand_arrow(tail: [f32; 2], tip: [f32; 2], bow: f32, round_tip: bool, barbs: [(f32, f32); 2]) -> Vec<[f32; 2]> {
+        hand_arrow_n(tail, tip, bow, round_tip, barbs, 30, 6)
+    }
+
+    /// `hand_arrow` with `n` shaft points and `m` points per barb pass.
+    fn hand_arrow_n(tail: [f32; 2], tip: [f32; 2], bow: f32, round_tip: bool, barbs: [(f32, f32); 2], n: usize, m: usize) -> Vec<[f32; 2]> {
         let len = dist(tail, tip);
         let dir = [(tip[0] - tail[0]) / len, (tip[1] - tail[1]) / len];
         let normal = [-dir[1], dir[0]];
-        let mut pts: Vec<[f32; 2]> = (0..30)
+        let mut pts: Vec<[f32; 2]> = (0..n)
             .map(|i| {
-                let t = i as f32 / 30.0;
+                let t = i as f32 / n as f32;
                 let off = bow * 4.0 * t * (1.0 - t) + (i as f32 * 1.7).sin() * 0.6;
                 [tail[0] + (tip[0] - tail[0]) * t + normal[0] * off, tail[1] + (tip[1] - tail[1]) * t + normal[1] * off]
             })
@@ -502,12 +531,12 @@ mod tests {
         } else {
             pts.push(tip);
         }
-        pts.extend(seg(tip, e1, 6));
-        pts.extend(seg(e1, tip, 6));
+        pts.extend(seg(tip, e1, m));
+        pts.extend(seg(e1, tip, m));
         if round_tip {
             pts.push([tip[0] + dir[0] * 1.0 - normal[0] * 1.5, tip[1] + dir[1] * 1.0 - normal[1] * 1.5]);
         }
-        pts.extend(seg(tip, e2, 6));
+        pts.extend(seg(tip, e2, m));
         pts.push(e2);
         pts
     }
@@ -589,5 +618,72 @@ mod tests {
         stroke.reverse();
         let Some(InkShape::Arrow { a, b, .. }) = recognise(&stroke) else { panic!("{:?}", recognise(&stroke)) };
         assert!(dist(a, tail) < 3.0 && dist(b, tip) < 3.0, "{a:?} {b:?}");
+    }
+
+    #[test]
+    fn densely_sampled_arrows_keep_their_tip_and_barb_limits() {
+        // A pen samples about every point; the tip must still be where the head was drawn.
+        for (tail, tip) in [([20.0, 100.0], [180.0, 100.0]), ([100.0, 180.0], [100.0, 20.0]), ([150.0, 120.0], [30.0, 30.0])] {
+            let stroke = dense_arrow(tail, tip, 25.0, 30.0);
+            let Some(InkShape::Arrow { a, b, .. }) = recognise(&stroke) else { panic!("{tail:?}->{tip:?}: {:?}", recognise(&stroke)) };
+            assert!(dist(a, tail) < 1.0 && dist(b, tip) < 1.0, "{a:?} {b:?} for {tail:?} {tip:?}");
+            let mut rev = stroke;
+            rev.reverse();
+            let Some(InkShape::Arrow { a, b, .. }) = recognise(&rev) else { panic!("head first {tail:?}->{tip:?}: {:?}", recognise(&rev)) };
+            assert!(dist(a, tail) < 1.0 && dist(b, tip) < 1.0, "head first {a:?} {b:?}");
+        }
+        // The documented limits hold on dense strokes too: 5 to 50 % of a 160 pt shaft, 15 to 75 degrees.
+        let (tail, tip) = ([20.0, 100.0], [180.0, 100.0]);
+        let is_arrow = |l: f32, deg: f32| matches!(recognise(&dense_arrow(tail, tip, l, deg)), Some(InkShape::Arrow { .. }));
+        assert!(is_arrow(8.5, 30.0) && is_arrow(8.5, 45.0) && is_arrow(8.5, 17.0) && is_arrow(79.0, 30.0), "lengths");
+        assert!(is_arrow(12.0, 30.0) && is_arrow(12.0, 45.0), "small barbs");
+        assert!(is_arrow(25.0, 17.0) && is_arrow(25.0, 70.0) && is_arrow(25.0, 73.0), "angles");
+        assert!(!is_arrow(6.0, 30.0) && !is_arrow(88.0, 30.0));
+        assert!(!is_arrow(25.0, 11.0) && !is_arrow(25.0, 80.0));
+        // A dense line with one barb (a hook) is still not an arrow.
+        let hook = dense_arrow(tail, tip, 25.0, 30.0);
+        assert!(!matches!(recognise(&hook[..186]), Some(InkShape::Arrow { .. })), "{:?}", recognise(&hook[..186]));
+    }
+
+    #[test]
+    fn densely_sampled_hand_drawn_arrows_and_overshoots_are_arrows() {
+        let (tail, tip) = ([20.0, 100.0], [180.0, 100.0]);
+        let sym = [(25.0, 30.0), (25.0, 30.0)];
+        let dense = |bow: f32, round: bool, barbs: [(f32, f32); 2]| hand_arrow_n(tail, tip, bow, round, barbs, 160, 25);
+        let tip_of = |pts: &[[f32; 2]]| match recognise(pts) {
+            Some(InkShape::Arrow { b, .. }) => Some(b),
+            _ => None,
+        };
+        for (what, pts) in [
+            ("wobble", dense(0.0, false, sym)),
+            ("bowed", dense(4.0, false, sym)),
+            ("bowed the other way", dense(-4.0, false, sym)),
+            ("rounded tip", dense(0.0, true, sym)),
+            ("asymmetric", dense(2.0, false, [(20.0, 25.0), (30.0, 40.0)])),
+            ("small", dense(0.0, false, [(10.0, 45.0), (10.0, 45.0)])),
+            ("wide", dense(0.0, false, [(25.0, 70.0), (25.0, 70.0)])),
+        ] {
+            let b = tip_of(&pts);
+            assert!(b.is_some_and(|b| dist(b, tip) < 2.0), "{what}: {b:?}");
+            let mut rev = pts;
+            rev.reverse();
+            assert!(tip_of(&rev).is_some(), "{what} head first");
+        }
+        // Back past the tip by 2 pt between the barbs, densely sampled, both ways.
+        let barb = |sign: f32| {
+            let a = std::f32::consts::PI + sign * 30.0f32.to_radians();
+            [tip[0] + 25.0 * a.cos(), tip[1] + 25.0 * a.sin()]
+        };
+        let over = [tip[0] + 2.0, tip[1]];
+        let mut stroke = line(tail, tip, 160);
+        stroke.extend(line(tip, barb(1.0), 25));
+        stroke.extend(line(barb(1.0), over, 25));
+        stroke.extend(line(over, barb(-1.0), 25));
+        stroke.push(barb(-1.0));
+        let b = tip_of(&stroke);
+        assert!(b.is_some_and(|b| dist(b, tip) < 1.0), "overshoot: {b:?}");
+        stroke.reverse();
+        let b = tip_of(&stroke);
+        assert!(b.is_some_and(|b| dist(b, tip) < 1.0), "overshoot head first: {b:?}");
     }
 }
