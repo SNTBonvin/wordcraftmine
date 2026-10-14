@@ -903,25 +903,30 @@ fn internal_links_export_in_linear_time() {
     assert!(ratio < 9.0, "4x the paragraphs and links took {ratio:.1}x as long (quadratic would be ~16x)");
 }
 
-/// The reporter's four paragraphs from #1383: Hebrew, Arabic and mixed right-to-left paragraphs,
-/// and a Latin one.
+/// The reporter's four paragraphs from #1383 (Hebrew, Arabic and mixed right-to-left paragraphs,
+/// and a Latin one), then right-to-left words with a lam-alef ligature and with vowel marks.
 fn rtl_sample() -> Document {
-    let mut d = Document::from_text("שלום עולם\nمرحبا بالعالم\nייפוי כח מס' 123 – Power of Attorney\nHello world");
+    let mut d = Document::from_text("שלום עולם\nمرحبا بالعالم\nייפוי כח מס' 123 – Power of Attorney\nHello world\nالسلام مَرْحَبًا שָׁלוֹם");
     let (a, b) = (wordcraft_doc::Pos::body(0, 0), wordcraft_doc::Pos::body(2, 0));
+    d.format_paragraphs(&a, &b, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
+    let a = wordcraft_doc::Pos::body(4, 0);
+    d.format_paragraphs(&a, &a, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
     d.format_paragraphs(&a, &b, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
     d
 }
 
-/// Each glyph's Unicode text in content-stream order, with its baseline y; `None` for a glyph
-/// without a ToUnicode entry of its own (a cluster's extra glyph, covered by ActualText).
-fn stream_glyphs(bytes: &[u8]) -> Vec<(Option<String>, f64)> {
+/// Each glyph's Unicode text in content-stream order, with its baseline y and its outline's left
+/// and right edges (none for a space); `None` text for a glyph without a ToUnicode entry of its
+/// own (a cluster's extra glyph, covered by ActualText).
+type StreamGlyph = (Option<String>, f64, Option<(f64, f64)>);
+fn stream_glyphs(bytes: &[u8]) -> Vec<StreamGlyph> {
     use hayro_interpret::font::Glyph;
     use hayro_interpret::{
         BlendMode, ClipPath, Context, Device, GlyphDrawMode, Image, InterpreterCache, InterpreterSettings, Paint, PathDrawMode, SoftMask,
         interpret_page,
     };
     use hayro_syntax::Pdf;
-    struct Units(Vec<(Option<String>, f64)>);
+    struct Units(Vec<StreamGlyph>);
     impl Device<'_> for Units {
         fn set_soft_mask(&mut self, _: Option<SoftMask<'_>>) {}
         fn set_blend_mode(&mut self, _: BlendMode) {}
@@ -937,7 +942,15 @@ fn stream_glyphs(bytes: &[u8]) -> Vec<(Option<String>, f64)> {
                 Some(hayro_cmap::BfString::String(s)) => Some(s),
                 None => None,
             };
-            self.0.push((text, (t * gt * kurbo::Point::ZERO).y));
+            let edges = match g {
+                Glyph::Outline(o) if !o.outline().elements().is_empty() => {
+                    use kurbo::Shape;
+                    let b = (t * gt * o.outline()).bounding_box();
+                    Some((b.x0, b.x1))
+                }
+                _ => None,
+            };
+            self.0.push((text, (t * gt * kurbo::Point::ZERO).y, edges));
         }
         fn draw_image(&mut self, _: Image<'_, '_>, _: kurbo::Affine) {}
         fn pop_clip_path(&mut self) {}
@@ -955,7 +968,8 @@ fn stream_glyphs(bytes: &[u8]) -> Vec<(Option<String>, f64)> {
 
 /// Words as PDF viewers' text extraction (PDFium in Chrome and Edge, pdf.js, poppler) reads them:
 /// glyphs are taken to be in visual order, so a word in a right-to-left script is read with its
-/// glyphs reversed. Lines break where the baseline moves.
+/// glyphs reversed. Words end at spaces, at a jump back to the left, and where the
+/// baseline moves (more than a raised mark does).
 fn viewer_words(bytes: &[u8]) -> Vec<String> {
     let mut words = Vec::new();
     let mut word: Vec<String> = Vec::new();
@@ -969,11 +983,22 @@ fn viewer_words(bytes: &[u8]) -> Vec<String> {
         word.clear();
     };
     let mut last_y = None;
-    for (text, y) in stream_glyphs(bytes) {
-        if last_y.is_some_and(|l: f64| (l - y).abs() > 1.0) {
+    let mut last_edges: Option<(f64, f64)> = None;
+    for (text, y, edges) in stream_glyphs(bytes) {
+        // A new line, or a letter wholly left of the last one (a jump back): a new word. Hebrew
+        // and Arabic vowel marks sit anywhere over or under their letter.
+        let mark = text.as_deref().is_some_and(|t| t.chars().all(|c| matches!(c, '\u{591}'..='\u{5C7}' | '\u{64B}'..='\u{65F}' | '\u{670}')));
+        let edges = edges.filter(|_| !mark);
+        let apart = matches!((last_edges, edges), (Some((l0, _)), Some((_, x1))) if x1 < l0);
+        if last_y.is_some_and(|l: f64| (l - y).abs() > 6.0) || apart {
             flush(&mut word);
         }
-        last_y = Some(y);
+        if !mark {
+            last_y = Some(y);
+        }
+        if edges.is_some() {
+            last_edges = edges;
+        }
         let Some(text) = text else { continue };
         if text.chars().all(char::is_whitespace) {
             flush(&mut word);
@@ -993,7 +1018,8 @@ fn viewer_words(bytes: &[u8]) -> Vec<String> {
 fn right_to_left_text_extracts_in_logical_order() {
     let d = rtl_sample();
     let words = viewer_words(&export(&d, &PdfOptions::default()).unwrap());
-    for w in ["שלום", "עולם", "مرحبا", "بالعالم", "ייפוי", "כח", "123", "Power", "Attorney", "Hello", "world"] {
+    for w in ["שלום", "עולם", "مرحبا", "بالعالم", "ייפוי", "כח", "123", "Power", "Attorney", "Hello", "world", "السلام", "مَرْحَبًا", "שָׁלוֹם"]
+    {
         assert!(words.iter().any(|x| x == w), "{w:?} not extracted intact from {words:?}");
     }
 }
@@ -1079,4 +1105,46 @@ fn right_to_left_glyphs_stay_where_layout_put_them() {
     assert!(!want.is_empty());
     let close = got.len() == want.len() && got.iter().zip(&want).all(|(a, b)| a.iter().zip(b).all(|(p, q)| (p - q).abs() <= 2));
     assert!(close, "glyphs moved:\n got {got:?}\nwant {want:?}");
+}
+
+/// A separately formatted Latin run inside a right-to-left paragraph is written as it was, left
+/// to right, and the Hebrew around it still reads back whole.
+#[test]
+fn latin_run_in_right_to_left_paragraph_reads_back_whole() {
+    let mut p = Paragraph::with_text("שלום ", CharProps::default());
+    p.props.bidi = Some(true);
+    p.insert_text(p.len(), "Latin words", &CharProps { bold: Some(true), ..Default::default() }).unwrap();
+    p.insert_text(p.len(), " עולם", &CharProps::default()).unwrap();
+    let mut d = Document::new();
+    d.body = vec![para_block(p)];
+    let words = viewer_words(&export(&d, &PdfOptions::default()).unwrap());
+    for w in ["שלום", "Latin", "words", "עולם"] {
+        assert!(words.iter().any(|x| x == w), "{w:?} not extracted intact from {words:?}");
+    }
+}
+
+/// Glyphs already running left to right keep their order: Latin runs are written as before.
+#[test]
+fn left_to_right_glyphs_keep_their_order() {
+    let glyphs = [(1, 0.0, 10.0), (2, 5.0, 10.0), (3, 5.0, 10.0), (4, 9.0, 10.0)];
+    assert!(left_to_right(&glyphs));
+}
+
+/// Right-to-left glyphs (reading order, drawn right to left) are written left to right a
+/// cluster at a time. A letter's vowel mark takes its own character and goes before the letter,
+/// so a viewer reversing the word reads letter then mark; a lam-alef drawn as two glyphs keeps
+/// its glyphs together in shaping order, so no word comes apart.
+#[test]
+fn right_to_left_clusters_are_written_whole_left_to_right() {
+    // Reading order: shin with qamats (mark glyph 2 drawn at x 28, then the letter, glyph 1, at
+    // x 30); lam-alef as two glyphs at x 20 and 16; a one-glyph lam-alef at x 8; final mem at 0.
+    let text = "שָלالاם";
+    let glyphs = [(2, 28.0, 8.0), (1, 30.0, 10.0), (3, 20.0, 10.0), (4, 16.0, 10.0), (5, 8.0, 10.0), (6, 0.0, 10.0)];
+    let ranges = [0..4, 0..4, 4..8, 4..8, 8..12, 12..14];
+    let rev: std::collections::HashMap<u32, char> = [(1, 'ש'), (2, '\u{5B8}'), (6, 'ם')].into_iter().collect();
+    assert!(!left_to_right(&glyphs));
+    let parts = split_clusters(text, &glyphs, &ranges, &rev);
+    assert_eq!(parts, [2..4, 0..2, 4..8, 4..8, 8..12, 12..14]);
+    // Glyph by glyph by x this would be [5, 4, 3, 2, 0, 1]: the lam-alef's glyphs swapped.
+    assert_eq!(visual_order(text, &glyphs, &ranges, &parts), [5, 4, 2, 3, 0, 1]);
 }
