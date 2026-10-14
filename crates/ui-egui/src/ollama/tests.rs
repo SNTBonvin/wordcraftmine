@@ -209,6 +209,9 @@ fn live_ollama_edits_read_only_and_undo() {
         app.ollama.source = Source::LlamaCpp;
     }
     app.ollama.model = model;
+    if uses_cloud(&app.ollama) {
+        app.ollama.cloud_consent = Some(app.ollama.source);
+    }
     app.ollama.allow_edits = true;
     app.ollama.input = "Read this document, then append exactly the words 'Ollama integration verified.' at the end. Use find_commands if needed. Apply the edit now.".into();
     send(&mut app, &ctx);
@@ -1312,4 +1315,39 @@ fn linking_project_selects_all_files_and_bulk_buttons_change_the_whole_selection
     h.run_steps(3);
     assert_eq!(h.state().ollama.project_files.len(), 140);
     std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn small_native_window_can_reach_send_and_consent_without_clipping() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = app();
+    app.integrated_titlebar = true;
+    app.ollama.open = true;
+    app.ollama.source = Source::Codex;
+    app.ollama.model = "offline-test-model".into();
+    app.ollama.models = vec![app.ollama.model.clone()];
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(760.0, 480.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    let home = h.get_by_role_and_label(egui::accesskit::Role::Button, "Home").rect();
+    let comments = h.get_by_role_and_label(egui::accesskit::Role::Button, "Comments").rect();
+    assert!(home.max.x <= comments.min.x, "Tabs overlap the toolbar");
+    assert!(comments.max.x <= 760.0, "Toolbar extends outside the window");
+    assert!(command(h.state_mut(), "ui.ollamaSend", &json!({"text":"Keep the small-window draft"})).is_err());
+    h.run_steps(12);
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 480.0));
+    let send = h.get_by_role_and_label(egui::accesskit::Role::Button, "↑").rect();
+    let consent = h.get_by_role_and_label(egui::accesskit::Role::Button, "Allow cloud sharing and send").rect();
+    assert!(viewport.contains_rect(send), "Send outside the window: {send:?}");
+    assert!(viewport.contains_rect(consent), "Consent outside the window: {consent:?}");
+    assert!(!h.state().ollama.settings.open);
+    assert_eq!(h.state().ollama.input, "Keep the small-window draft");
+    assert!(!h.state().ollama.busy);
 }

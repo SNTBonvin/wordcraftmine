@@ -276,34 +276,10 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     }
 }
 
+// File associations may return proprietary application artwork. The UI uses its original
+// document line icon instead of copying an installed application's icon into a texture.
 fn document_icon_hook() -> Option<Box<dyn Fn(&str) -> Option<egui::ColorImage>>> {
-    #[cfg(target_os = "macos")]
-    {
-        Some(Box::new(|path| {
-            let _main_thread = objc2::MainThreadMarker::new()?;
-            if path.len() > 4096 {
-                return None;
-            }
-            let icon = objc2_app_kit::NSWorkspace::sharedWorkspace().iconForFile(&objc2_foundation::NSString::from_str(path));
-            icon.setSize(objc2_foundation::NSSize::new(64.0, 64.0));
-            let data = icon.TIFFRepresentation()?;
-            if data.length() > 8 * 1024 * 1024 {
-                return None;
-            }
-            let mut reader = image::ImageReader::new(std::io::Cursor::new(data.to_vec())).with_guessed_format().ok()?;
-            let mut limits = image::Limits::default();
-            limits.max_image_width = Some(2048);
-            limits.max_image_height = Some(2048);
-            limits.max_alloc = Some(32 * 1024 * 1024);
-            reader.limits(limits);
-            let image = reader.decode().ok()?.resize(64, 64, image::imageops::FilterType::Triangle).into_rgba8();
-            Some(egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize], image.as_raw()))
-        }))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
-    }
+    None
 }
 
 /// Window, Dock and taskbar icon.

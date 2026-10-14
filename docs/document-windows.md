@@ -30,8 +30,8 @@ full-path tooltips, favourites and row menus (Open, Copy path, Remove from Recen
 record successful opens, never edits or filesystem modification times. Older preference records
 without timestamps display an unknown time until reopened. Removing a Recent entry leaves its
 file intact. The start screen follows the macOS accent setting available at launch.
-Seven compact previews include original Notes and Calendar templates. Recent rows use file icons
-provided by macOS, with an original vector fallback; no installed application assets are bundled.
+Seven compact previews include original Notes and Calendar templates. Recent rows use original vector document icons; installed applications’ file-association artwork
+is not loaded or copied into textures.
 
 Control diagnostics include `documentWindows` and `viewNumber`. Window commands are
 `ui.newDocumentWindow`, `view.newWindow`, `view.arrangeAll`, `ui.focusDocumentWindow`, `ui.closeDocumentWindow` and
