@@ -4991,6 +4991,394 @@ fn automatic_spacing_drops_between_list_items() {
     }
 }
 
+/// #1352 helpers: a body paragraph with a PAGE field after each piece of `pieces` (a piece may
+/// hold a page break), after `before` paragraphs that each start a new page.
+fn page_field_doc(before: usize, pieces: &[&str]) -> Document {
+    let mut d = Document::new();
+    let mut body = Vec::new();
+    for i in 0..before {
+        let mut q = wordcraft_doc::Paragraph::with_text(&format!("Filler {i}"), Default::default());
+        q.props.page_break_before = Some(i > 0);
+        body.push(wordcraft_doc::para_block(q));
+    }
+    let mut p = wordcraft_doc::Paragraph::new();
+    for piece in pieces {
+        let n = p.len();
+        p.insert_text(n, piece, &Default::default()).unwrap();
+        let n = p.len();
+        p.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+            .unwrap();
+    }
+    p.props.page_break_before = Some(before > 0);
+    body.push(wordcraft_doc::para_block(p));
+    d.body = body;
+    d
+}
+
+/// #1352: the field results drawn on each page (only the lines placed there), and the text
+/// ranges of body paragraph `block` placed on each page, in order.
+fn shown_and_ranges(l: &DocLayout, block: u32) -> (Vec<Vec<String>>, Vec<std::ops::Range<usize>>) {
+    let mut shown = Vec::new();
+    let mut ranges = Vec::new();
+    for page in &l.pages {
+        let mut on = Vec::new();
+        for it in &page.items {
+            let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, .. } = it else { continue };
+            if path.0 != [block] {
+                continue;
+            }
+            let (Some(f), Some(e)) = (para.lines.get(*l0), l1.checked_sub(1).and_then(|k| para.lines.get(k))) else { continue };
+            on.extend(para.shown.iter().filter(|s| s.0 >= f.c0 && s.0 < e.c1).map(|s| s.1.clone()));
+            ranges.push(f.start..e.stop);
+        }
+        shown.push(on);
+    }
+    (shown, ranges)
+}
+
+/// The placed pieces of a paragraph cover its text once, in order.
+fn assert_contiguous(ranges: &[std::ops::Range<usize>], len: usize) {
+    let mut at = 0;
+    for r in ranges {
+        assert_eq!(r.start, at, "piece {r:?} doesn't follow on from {at}: {ranges:?}");
+        at = r.end;
+    }
+    assert_eq!(at, len, "the text up to {len} is placed: {ranges:?}");
+}
+
+/// #1352: a PAGE field after a page break inside its paragraph shows the page it is on.
+#[test]
+fn page_field_after_intra_paragraph_break_shows_its_page() {
+    let brk = wordcraft_doc::para::PAGE_BREAK;
+    let d = page_field_doc(0, &["A", &format!("{brk}B")]);
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2);
+    let (shown, _) = shown_and_ranges(&l, 0);
+    assert_eq!(shown, [vec!["1".to_string()], vec!["2".to_string()]]);
+}
+
+/// #1352: a paragraph running over onto the next page shows that page's number in its tail.
+#[test]
+fn page_field_in_a_split_paragraph_tail_shows_its_page() {
+    let long = "words that fill the page ".repeat(400);
+    let d = page_field_doc(0, &["Head", &long]);
+    let l = lay(&d);
+    assert!(l.pages.len() >= 2, "{} pages", l.pages.len());
+    let (shown, ranges) = shown_and_ranges(&l, 0);
+    assert_eq!(shown.first().unwrap(), &["1"]);
+    let last = l.pages.len().to_string();
+    assert_eq!(shown.last().unwrap(), &[last]);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(0)).map(|p| p.len()).unwrap_or(0));
+}
+
+/// #1352: from page 9 to page 10 every field gets a digit wider; the lines on page 10 are broken
+/// again for the wider results, and the paragraph's text is still placed exactly once.
+#[test]
+fn page_fields_from_page_nine_to_ten_rebreak_the_rest() {
+    let pieces: Vec<String> = (0..900).map(|i| format!(" word{i}")).collect();
+    let pieces: Vec<&str> = pieces.iter().map(String::as_str).collect();
+    let d = page_field_doc(8, &pieces);
+    let l = lay(&d);
+    assert!(l.pages.len() >= 10, "{} pages", l.pages.len());
+    let (shown, ranges) = shown_and_ranges(&l, 8);
+    let nine = shown.get(8).unwrap();
+    let ten = shown.get(9).unwrap();
+    assert!(!nine.is_empty() && nine.iter().all(|s| s == "9"), "page 9: {nine:?}");
+    assert!(!ten.is_empty() && ten.iter().all(|s| s == "10"), "page 10: {ten:?}");
+    assert_eq!(shown.iter().map(Vec::len).sum::<usize>(), 900, "every field drawn once");
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(8)).map(|p| p.len()).unwrap_or(0));
+    // No line overflows its column with the wider results: each ends with the space after a field
+    // (which may hang), so the field before it ends within the line's right edge.
+    for (pi, page) in l.pages.iter().enumerate() {
+        for it in &page.items {
+            let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, .. } = it else { continue };
+            if path.0 != [8] {
+                continue;
+            }
+            for line in para.lines.get(*l0..*l1).unwrap_or(&[]) {
+                let ink = line.xs.len().checked_sub(2).and_then(|k| line.xs.get(k)).copied().unwrap_or(0.0);
+                assert!(ink <= line.right + 0.5, "page {}: a line runs to {ink} past its right edge {}", pi + 1, line.right);
+            }
+        }
+    }
+}
+
+/// #1352: a footnote's PAGE field, referenced from the part of a paragraph on its second page,
+/// shows the page the footnote is on (the paragraph's own page map doesn't leak into it).
+#[test]
+fn footnote_page_field_from_a_split_paragraph_shows_its_page() {
+    let long = "words that fill the page ".repeat(200);
+    let mut d = page_field_doc(0, &["Head", &long, "Tail"]);
+    let end = d.end_of(StoryRef::Body);
+    // A custom mark, so the note marks aren't mistaken for page numbers.
+    let id = d.add_part(
+        wordcraft_doc::PartKind::Footnote,
+        vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Note on page ", Default::default()))],
+    );
+    d.insert_object(&end, InlineObject::NoteRef { kind: wordcraft_doc::para::NoteKind::Footnote, id, custom: "*".into() }, &Default::default())
+        .unwrap();
+    let note = d.para_mut(StoryRef::Part(id), &Path::top(0)).unwrap();
+    let n = note.len();
+    note.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+        .unwrap();
+    let l = lay(&d);
+    assert_eq!(l.pages.len(), 2, "the paragraph runs onto a second page");
+    // The PAGE results drawn in `story`, by page (not the "*" note marks).
+    let fields_in = |story: StoryRef| -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        for (pi, page) in l.pages.iter().enumerate() {
+            for it in page.items.iter().chain(page.footer.iter()) {
+                let Placed::Lines { story: s, para, l0, l1, .. } = it else { continue };
+                let (Some(f), Some(e)) = (para.lines.get(*l0), l1.checked_sub(1).and_then(|k| para.lines.get(k))) else { continue };
+                if *s != story {
+                    continue;
+                }
+                out.extend(para.shown.iter().filter(|x| x.0 >= f.c0 && x.0 < e.c1 && x.1 != "*").map(|x| (pi, x.1.clone())));
+            }
+        }
+        out
+    };
+    let body = fields_in(StoryRef::Body);
+    assert_eq!(body.first(), Some(&(0, "1".to_string())), "{body:?}");
+    assert!(body.iter().all(|(pi, t)| *t == (pi + 1).to_string()), "{body:?}");
+    assert_eq!(body.last().map(|x| x.0), Some(1), "{body:?}");
+    let in_note = fields_in(StoryRef::Part(id));
+    assert_eq!(in_note, [(1, "2".to_string())], "the note is on page 2 and says so");
+}
+
+/// The automatic equation numbers drawn in each body paragraph (from the layout of its last
+/// piece, the one its last lines are drawn with), in order.
+fn equation_numbers(l: &DocLayout) -> Vec<String> {
+    let mut last: Vec<(u32, Arc<ParaLayout>)> = Vec::new();
+    for it in l.pages.iter().flat_map(|p| p.items.iter()) {
+        if let Placed::Lines { story: StoryRef::Body, path, para, .. } = it
+            && let [b] = path.0[..]
+        {
+            match last.iter_mut().find(|e| e.0 == b) {
+                Some(e) => e.1 = para.clone(),
+                None => last.push((b, para.clone())),
+            }
+        }
+    }
+    last.sort_by_key(|e| e.0);
+    let mut out = Vec::new();
+    for (_, pl) in last {
+        for (_, m) in &pl.maths {
+            let all: String =
+                m.items.iter().filter_map(|it| if let crate::math::MItem::Glyphs { text, .. } = it { Some(text.as_str()) } else { None }).collect();
+            if let Some(at) = all.rfind('(') {
+                out.push(all[at..].to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Laying a paragraph out again (placed again after a page break before, or the rest of it again
+/// for a later page's PAGE fields) doesn't count its numbered equations twice: they read (1), (2), (3).
+#[test]
+fn relaid_paragraphs_keep_their_equation_numbers() {
+    let eq = |s: &str| InlineObject::Equation {
+        linear: s.into(),
+        display: true,
+        math: wordcraft_doc::math::Math { nodes: wordcraft_doc::math::parse_linear(s), ..Default::default() },
+    };
+    let mut d = Document::from_text("Before\n\nTail");
+    // Paragraph 1: a numbered equation on a new page (laid out again there).
+    let p1 = d.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
+    p1.insert_object(0, eq("a=b#"), &Default::default()).unwrap();
+    p1.props.page_break_before = Some(true);
+    // Paragraph 2: long, with a PAGE field, running onto the next page (the rest laid out again
+    // there), then a numbered equation.
+    let p2 = d.para_mut(StoryRef::Body, &Path::top(2)).unwrap();
+    let long = "words that fill the page ".repeat(400);
+    p2.insert_text(0, &long, &Default::default()).unwrap();
+    let n = p2.len();
+    p2.insert_object(n, InlineObject::Field { instr: "PAGE".into(), result: String::new(), locked: false, code: false }, &Default::default())
+        .unwrap();
+    let n = p2.len();
+    p2.insert_object(n, eq("c=d#"), &Default::default()).unwrap();
+    // Paragraph 3: one more.
+    d.body.push(wordcraft_doc::para_block(wordcraft_doc::Paragraph::new()));
+    let p3 = d.para_mut(StoryRef::Body, &Path::top(3)).unwrap();
+    p3.insert_object(0, eq("e=f#"), &Default::default()).unwrap();
+    let l = lay(&d);
+    assert!(l.pages.len() >= 3, "{} pages", l.pages.len());
+    assert_eq!(equation_numbers(&l), ["(1)", "(2)", "(3)"]);
+}
+
+/// #1374 helpers: a page-anchored, square-wrapped rectangle `w`×`h` at (`x`, `y`) on the page.
+fn page_shape(x: f32, y: f32, w: f32, h: f32) -> InlineObject {
+    use wordcraft_doc::para::{Anchor, Float, ShapeKind, Wrap};
+    let float = Float { wrap: Wrap::Square, h_rel: Anchor::Page, v_rel: Anchor::Page, x, y, dist: 9.0, ..Default::default() };
+    InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w,
+        h,
+        fill: None,
+        stroke: None,
+        stroke_width: 1.0,
+        float,
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    }
+}
+
+/// #1374: a two-column (`cols`) document: paragraph 0 holds `shape` (if any), paragraph 1 is
+/// `words` numbered words, long enough to run on from where it starts.
+fn column_wrap_doc(cols: u32, shape: Option<InlineObject>, words: usize) -> Document {
+    let text: String = (0..words).map(|i| format!("word{i} ")).collect();
+    let mut d = Document::from_text(&format!("Anchor\n{}", text.trim_end()));
+    d.last_section.columns.count = cols;
+    if let Some(s) = shape {
+        d.insert_object(&Pos::body(0, 0), s, &Default::default()).unwrap();
+    }
+    d
+}
+
+/// #1374: every line of body paragraph `block` drawn on page `page` whose x is `col_x` (one column):
+/// its page box (left, top, right, bottom).
+fn line_boxes(l: &DocLayout, page: usize, block: u32, col_x: f32) -> Vec<(f32, f32, f32, f32)> {
+    let mut v = Vec::new();
+    for it in &l.pages[page].items {
+        let Placed::Lines { story: StoryRef::Body, path, para, l0, l1, x, y, .. } = it else { continue };
+        if path.0 != [block] || (x - col_x).abs() > 1.0 {
+            continue;
+        }
+        let first = &para.lines[*l0];
+        for line in &para.lines[*l0..*l1] {
+            let top = y + (line.top - first.top);
+            v.push((x + line.left, top, x + line.right, top + line.height));
+        }
+    }
+    v
+}
+
+/// #1374: no line in `lines` runs through `r` (grown by the shape's 9 pt wrap distance at the sides).
+fn assert_clear_of(lines: &[(f32, f32, f32, f32)], r: Rect, what: &str) {
+    let mut beside = 0;
+    for &(l, t, rt, b) in lines {
+        if b <= r.y + 0.01 || t >= r.bottom() - 0.01 {
+            continue;
+        }
+        beside += 1;
+        assert!(l >= r.right() + 8.5 || rt <= r.x - 8.5, "{what}: line {l}..{rt} at {t}..{b} runs through the shape {r:?}");
+    }
+    assert!(beside > 0, "{what}: some lines are beside the shape: {lines:?}");
+}
+
+/// #1374: a paragraph that runs on from column 1 into column 2 wraps around a shape in column 2.
+#[test]
+fn paragraph_continued_into_next_column_wraps_around_a_shape_there() {
+    let r = Rect::new(340.0, 300.0, 100.0, 100.0);
+    let d = column_wrap_doc(2, Some(page_shape(r.x, r.y, r.w, r.h)), 450);
+    let l = lay(&d);
+    let (_, ranges) = shown_and_ranges(&l, 1);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(1)).map(|p| p.len()).unwrap_or(0));
+    let col2 = l.pages[0].body.x + d.last_section.column_boxes()[1].0;
+    assert!(ranges.len() >= 2, "the paragraph runs into column 2: {ranges:?}");
+    assert_clear_of(&line_boxes(&l, 0, 1, col2), r, "column 2");
+}
+
+/// #1374: a shape far to the left of the next column (in the page margin, beyond a column's width
+/// from it) doesn't make the paragraph going into that column be laid out again.
+#[test]
+fn paragraph_continued_into_next_column_ignores_shapes_well_clear_of_it() {
+    let d = column_wrap_doc(2, Some(page_shape(0.0, 300.0, 20.0, 100.0)), 450);
+    WRAP_RELAYS.with(|c| c.set(0));
+    let l = lay(&d);
+    assert_eq!(WRAP_RELAYS.with(|c| c.get()), 0, "no wrap relay");
+    let (_, ranges) = shown_and_ranges(&l, 1);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(1)).map(|p| p.len()).unwrap_or(0));
+}
+
+/// #1374: lines continued onto a new page are broken for that page: a shape on the page before
+/// (reaching below its body) doesn't push them aside there.
+#[test]
+fn paragraph_continued_onto_next_page_is_broken_for_that_page() {
+    // On page 1 from 640 down past the page bottom, at the left of the text.
+    let d = column_wrap_doc(1, Some(page_shape(72.0, 640.0, 150.0, 150.0)), 900);
+    let l = lay(&d);
+    assert!(l.pages.len() >= 2, "{} pages", l.pages.len());
+    let (_, ranges) = shown_and_ranges(&l, 1);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(1)).map(|p| p.len()).unwrap_or(0));
+    // Page 1's lines beside the shape keep clear of it; page 2 has nothing to wrap around.
+    let page1 = line_boxes(&l, 0, 1, 72.0);
+    assert_clear_of(&page1, Rect::new(72.0, 640.0, 150.0, 150.0), "page 1");
+    let page2 = line_boxes(&l, 1, 1, 72.0);
+    assert!(!page2.is_empty());
+    for (left, top, ..) in page2 {
+        assert!(left < 72.5, "page 2: the line at {top} starts at {left}, beside a shape that isn't on this page");
+    }
+}
+
+/// #1374: with nothing to wrap around, the lines going into the next column are those broken in
+/// the first: the paragraph isn't laid out again (no wrap relay), and both pieces share one layout.
+#[test]
+fn paragraph_continued_into_next_column_without_shapes_is_not_laid_out_again() {
+    let d = column_wrap_doc(2, None, 450);
+    WRAP_RELAYS.with(|c| c.set(0));
+    let l = lay(&d);
+    assert_eq!(WRAP_RELAYS.with(|c| c.get()), 0, "no wrap relay");
+    let pieces: Vec<&Arc<ParaLayout>> = l.pages[0]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            Placed::Lines { story: StoryRef::Body, path, para, .. } if path.0 == [1] => Some(para),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pieces.len(), 2, "one piece per column");
+    assert!(Arc::ptr_eq(pieces[0], pieces[1]), "the second column reuses the first column's layout");
+}
+
+/// #1374: the paragraph's own floating object stays where it was placed (at its start, in column 1)
+/// when its lines in column 2 are broken again around a shape there.
+#[test]
+fn paragraph_own_float_is_not_replaced_when_its_rest_wraps_in_the_next_column() {
+    use wordcraft_doc::para::{Anchor, Float, ShapeKind, Wrap};
+    let r = Rect::new(340.0, 300.0, 100.0, 100.0);
+    let mut d = column_wrap_doc(2, Some(page_shape(r.x, r.y, r.w, r.h)), 450);
+    let own = Float { wrap: Wrap::Square, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, dist: 9.0, ..Default::default() };
+    let own = InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 80.0,
+        h: 60.0,
+        fill: None,
+        stroke: None,
+        stroke_width: 1.0,
+        float: own,
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    d.insert_object(&Pos::body(1, 0), own, &Default::default()).unwrap();
+    let l = lay(&d);
+    let owns: Vec<(usize, Rect)> = l
+        .pages
+        .iter()
+        .enumerate()
+        .flat_map(|(pi, p)| p.items.iter().map(move |it| (pi, it)))
+        .filter_map(|(pi, it)| match it {
+            Placed::Shape { rect, .. } if (rect.w - 80.0).abs() < 0.5 => Some((pi, *rect)),
+            _ => None,
+        })
+        .collect();
+    let col2 = l.pages[0].body.x + d.last_section.column_boxes()[1].0;
+    let boxes = para_boxes(&l);
+    assert_eq!(owns.len(), 1, "the own float is drawn once: {owns:?}");
+    let (pi, own_rect) = owns[0];
+    assert_eq!(pi, 0);
+    assert!((own_rect.x - 72.0).abs() < 0.5, "in column 1: {own_rect:?}");
+    assert!((own_rect.y - boxes[1].2).abs() < 20.0, "at the paragraph's top {}: {own_rect:?}", boxes[1].2);
+    let (_, ranges) = shown_and_ranges(&l, 1);
+    assert_contiguous(&ranges, d.para(StoryRef::Body, &Path::top(1)).map(|p| p.len()).unwrap_or(0));
+    assert_clear_of(&line_boxes(&l, 0, 1, col2), r, "column 2");
+}
+
 /// #1116: a document of a top paragraph with `before` points of space before, filler lines, a
 /// paragraph of several lines (block `t`) with 6 pt after and, when `note`, a footnote on its last line.
 fn space_after_doc(before: f32, note: bool) -> (Document, usize, Option<u32>) {
