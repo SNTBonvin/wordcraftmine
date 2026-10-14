@@ -122,7 +122,11 @@ pub fn active(app: &WordApp, layout: &DocLayout) -> Option<(ObjectHit, bool)> {
         return layout.object(&pos, hint).map(|o| (o, false));
     }
     match app.session.sel.focus.story {
-        StoryRef::Part(id) if crate::canvas::in_text_box(app) => layout.text_box(id, hint).map(|o| (o, true)),
+        // A turned text box is drawn straight while its text is edited, and so is its frame.
+        StoryRef::Part(id) if crate::canvas::in_text_box(app) => layout.text_box(id, hint).map(|mut o| {
+            o.spin.deg = 0.0;
+            (o, true)
+        }),
         _ => None,
     }
 }

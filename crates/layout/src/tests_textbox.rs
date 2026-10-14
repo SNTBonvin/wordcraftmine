@@ -1,6 +1,7 @@
 //! Text boxes' text direction, alignment and linked boxes (Shape Format › Text).
 
 use super::*;
+use crate::display::Draw;
 use wordcraft_doc::props::{TextVert, VAlign};
 use wordcraft_doc::{PartKind, Pos, TextBody, para_block};
 
@@ -177,4 +178,120 @@ fn own_margins_and_resize_to_fit_keep_the_text_in_view() {
     // Hostile margins wider than the box still lay out.
     let (shown, ..) = two(20.0, TextBody { inset: Some([u32::MAX; 4]), ..Default::default() });
     assert!(shown >= 1);
+}
+
+/// A floating text box turned `deg` (flipped as given) showing "Rotated text box", in a body of a
+/// few paragraphs; its story id.
+fn turned_box(d: &mut Document, deg: f32, flip_h: bool, flip_v: bool) -> u32 {
+    let id = text_box(d, 0, "Rotated text box", 180.0, 60.0, TextBody::default());
+    let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+    for o in p.objects.iter_mut() {
+        if let InlineObject::Shape { float, .. } = o {
+            float.wrap = Wrap::Square;
+            float.rot = deg;
+            float.flip_h = flip_h;
+            float.flip_v = flip_v;
+        }
+    }
+    id
+}
+
+/// The spins of the turns around the box text's glyphs (empty: drawn upright), and how many glyph
+/// runs are drawn upright, outside any turn.
+fn glyph_turns(draws: &[Draw]) -> (Vec<Spin>, usize) {
+    fn walk(ds: &[Draw], spin: Option<Spin>, turns: &mut Vec<Spin>, plain: &mut usize) {
+        for d in ds {
+            match d {
+                Draw::Glyphs { text, .. } if text.contains("Rotated") || text.contains("box") => match spin {
+                    Some(s) => turns.push(s),
+                    None => *plain += 1,
+                },
+                Draw::Rotated { spin: s, items, .. } => walk(items, Some(*s), turns, plain),
+                Draw::Clip { items, .. } | Draw::Turned { items, .. } => walk(items, spin, turns, plain),
+                _ => {}
+            }
+        }
+    }
+    let (mut turns, mut plain) = (Vec::new(), 0);
+    walk(draws, None, &mut turns, &mut plain);
+    (turns, plain)
+}
+
+#[test]
+fn text_in_a_rotated_text_box_turns_with_the_box() {
+    let mut d = Document::from_text("Body words around it.");
+    let id = turned_box(&mut d, 30.0, false, false);
+    let l = lay(&d);
+    assert!(!lines(&l, id).is_empty(), "the box shows its text");
+    let draws = display::page_display(&d, &l.pages[0], &display::DisplayOptions::default());
+    let (turns, plain) = glyph_turns(&draws);
+    assert_eq!(plain, 0, "no glyph of the box's text is drawn upright");
+    assert!(!turns.is_empty() && turns.iter().all(|s| (s.deg - 30.0).abs() < 0.01), "the text turns 30° with the box: {turns:?}");
+}
+
+#[test]
+fn a_rotated_text_box_is_drawn_straight_while_its_text_is_edited() {
+    let mut d = Document::from_text("Body words around it.");
+    let id = turned_box(&mut d, 30.0, false, false);
+    let other = text_box(&mut d, 0, "Another one", 120.0, 40.0, TextBody::default());
+    if let Some(InlineObject::Shape { float, .. }) = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().objects.last_mut() {
+        float.wrap = Wrap::Square;
+        float.rot = 30.0;
+        float.y = 300.0;
+    }
+    let l = lay(&d);
+    let opts = display::DisplayOptions { straight: Some(id), ..Default::default() };
+    let draws = display::page_display(&d, &l.pages[0], &opts);
+    let (turns, plain) = glyph_turns(&draws);
+    assert!(turns.iter().all(|s| s.is_identity()), "the edited box's text isn't turned: {turns:?}");
+    assert!(plain > 0, "it is drawn upright");
+    // The other turned box stays turned, frame and all.
+    fn turned_text(ds: &[Draw], spin: bool) -> Vec<String> {
+        ds.iter()
+            .flat_map(|d| match d {
+                Draw::Glyphs { text, .. } if spin => vec![text.clone()],
+                Draw::Rotated { items, .. } => turned_text(items, true),
+                Draw::Clip { items, .. } => turned_text(items, spin),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+    let turned = turned_text(&draws, false).concat();
+    assert!(turned.contains("Another"), "the other box stays turned: {turned:?}");
+    let _ = other;
+}
+
+#[test]
+fn a_flipped_text_box_turns_its_text_but_does_not_mirror_it() {
+    let mut d = Document::from_text("Body words around it.");
+    turned_box(&mut d, 30.0, true, false);
+    let l = lay(&d);
+    let (turns, plain) = glyph_turns(&display::page_display(&d, &l.pages[0], &display::DisplayOptions::default()));
+    assert_eq!(plain, 0);
+    assert!(!turns.is_empty() && turns.iter().all(|s| (s.deg - 30.0).abs() < 0.01 && !s.flip_h && !s.flip_v), "{turns:?}");
+}
+
+#[test]
+fn a_click_on_a_rotated_box_lands_on_the_character_drawn_there() {
+    let mut d = Document::from_text("Body words around it.");
+    let id = turned_box(&mut d, 30.0, false, false);
+    let l = lay(&d);
+    let o = l.find_object(0, |o| o.text_box == Some(id)).unwrap();
+    let story = StoryRef::Part(id);
+    let pos = |off| Pos { story, path: Path::top(0), off };
+    // A quarter into the "b" of "box" (byte 13), unturned, and where it is drawn: turned about
+    // the frame's centre.
+    let (a, b) = (l.caret_on(&pos(13), 0).unwrap(), l.caret_on(&pos(14), 0).unwrap());
+    let (ux, uy) = (a.x + (b.x - a.x) * 0.25, a.top + a.height / 2.0);
+    let (cx, cy) = (o.rect.x + o.rect.w / 2.0, o.rect.y + o.rect.h / 2.0);
+    let (x, y) = Spin::new(30.0, false, false).apply(cx, cy, ux, uy);
+    assert_eq!(l.story_at_shown(0, x, y, None), Some(story), "the click is in the box");
+    assert_eq!(l.hit_shown(0, x, y, story, None).map(|p| p.off), Some(13), "the click starts editing on the character under it");
+    assert_ne!(l.hit(0, x, y, story).map(|p| p.off), Some(13), "(plain coordinates miss it)");
+    // While the box is edited it is drawn straight: the point is plain page coordinates.
+    assert_eq!(l.story_at_shown(0, ux, uy, Some(id)), Some(story));
+    assert_eq!(l.hit_shown(0, ux, uy, story, Some(id)).map(|p| p.off), Some(13));
+    // Hostile points stay safe.
+    let _ = l.hit_shown(0, f32::NAN, f32::INFINITY, story, None);
+    assert!(l.story_at_shown(99, 0.0, 0.0, None).is_none());
 }

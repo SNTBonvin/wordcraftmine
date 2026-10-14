@@ -559,6 +559,7 @@ fn view_key(app: &WordApp, dim_body: bool) -> u64 {
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
     dim_body.hash(&mut h);
+    edited_box(app).hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
     app.session.doc.media.len().hash(&mut h);
     h.finish()
@@ -588,6 +589,7 @@ fn page_content_key(page: &Page) -> u64 {
                     format!("{spin:?}").hash(&mut h)
                 }
                 Placed::Clip { rect, spin, items } => format!("{rect:?}{spin:?}{items:?}").hash(&mut h),
+                Placed::Spun { rect, spin, part, open } => format!("{rect:?}{spin:?}{part}{open}").hash(&mut h),
                 Placed::Cell { .. } | Placed::Object { .. } => {}
             }
         }
@@ -939,6 +941,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 opts.dark_paper = dark_paper;
                 opts.display.dim_header = !dim_body;
                 opts.display.dim_body = dim_body;
+                opts.display.straight = edited_box(app);
                 let img = wordcraft_render::render_page(&app.session.doc, page, scale_px, &opts);
                 let px = img.to_straight();
                 let ci = egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &px);
@@ -1855,7 +1858,7 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             let host = if is_box(story) { text_box_host(app, layout).unwrap_or(StoryRef::Body) } else { story };
             let in_hf = matches!(part_kind(app, host), Some(PartKind::Header | PartKind::Footer));
             let hf_box = if in_hf { layout.header_footer_text_box_at(page, x, y).map(StoryRef::Part) } else { None };
-            match (hf_box, layout.story_at(page, x, y)) {
+            match (hf_box, layout.story_at_shown(page, x, y, edited_box(app))) {
                 (Some(b), _) => b,
                 (None, Some(s)) if is_note(s) => s,
                 (None, Some(s)) if is_box(s) && !in_hf => s,
@@ -1911,7 +1914,8 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
             app.canvas.dragging = true;
             return;
         }
-        let Some(pos) = layout.hit(page, x, y, story) else { return };
+        // A turned text box not being edited is drawn turned: the click is taken into its frame.
+        let Some(pos) = layout.hit_shown(page, x, y, story, edited_box(app)) else { return };
         // Ctrl/⌘+click follows a hyperlink.
         if mods.command
             && let Some(link) = link_under(app, layout, page, x, y, &pos)
@@ -2339,6 +2343,14 @@ pub fn page_to_screen(app: &mut WordApp, page: usize, x: f32, y: f32) -> Option<
     let layout = app.session.layout();
     let scale = layout.pages.get(page).map_or(app.canvas.scale, |page_data| page_screen_scale(*r, page_data, app.canvas.scale));
     Some(to_screen(pos2(0.0, 0.0), *r, scale, x, y))
+}
+
+/// The text box story being edited: a turned text box showing it is drawn straight (Word).
+pub(crate) fn edited_box(app: &WordApp) -> Option<u32> {
+    match app.session.sel.focus.story {
+        StoryRef::Part(id) if in_text_box(app) => Some(id),
+        _ => None,
+    }
 }
 
 /// Whether the caret is in a text box's story.
