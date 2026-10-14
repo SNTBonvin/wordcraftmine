@@ -33,6 +33,8 @@ use wordcraft_doc::section::{HeaderSet, SectionProps, SectionStart};
 use wordcraft_doc::{Block, Blocks, Document, Paragraph, Path, StoryRef};
 use wordcraft_geom::{Point, Rect, Spin};
 
+mod incremental;
+
 pub use fields::FieldCtx;
 pub use hit::VisualStep;
 pub use para::{LineEnd, ParaLayout};
@@ -439,6 +441,9 @@ pub struct DocLayout {
     pub ms: f64,
     /// Text box stories laid out (each time a box's text was).
     pub text_boxes: usize,
+    /// Body blocks placed by this pass: all of them for a full layout, those from the edited
+    /// page on for an incremental one (see `incremental`).
+    pub blocks_placed: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -461,11 +466,21 @@ struct Key {
 #[derive(Default)]
 pub struct LayoutCache {
     paras: HashMap<Key, Arc<ParaLayout>>,
+    /// Keep-with-next lookahead: the room the first line of the next paragraph needs, by its key.
+    lookahead: HashMap<Key, (f32, f32, bool)>,
+    /// Hashes of the table-style cell formatting seen ([`para::CellText`]), so a cell
+    /// paragraph's key doesn't format its formatting every pass. Small: a few per table style.
+    cell_keys: Vec<(para::CellText, u64)>,
+    /// The last pass's paging, for incremental pagination.
+    pass: Option<incremental::Pass>,
     /// Outlines of pictures' opaque pixels (Tight and Through wrapping), by media key, the
     /// media's bytes (address and length) and crop.
     outlines: HashMap<(String, usize, usize, [u32; 4]), Option<Arc<Vec<(f32, f32)>>>>,
     env: u64,
     used: HashSet<Key>,
+    /// Paragraph layouts kept by the last eviction (or used by the last full pass): incremental
+    /// passes evict again when the cache has grown well past it.
+    kept: usize,
     pub hits: u64,
     pub misses: u64,
 }
@@ -482,9 +497,29 @@ impl LayoutCache {
     }
     pub fn clear(&mut self) {
         self.paras.clear();
+        self.lookahead.clear();
+        self.cell_keys.clear();
+        self.pass = None;
         self.outlines.clear();
     }
+
+    /// The cache key part for a table cell's style formatting.
+    fn cell_key(&mut self, t: &para::CellText) -> u64 {
+        if let Some((_, k)) = self.cell_keys.iter().find(|(c, _)| c == t) {
+            return *k;
+        }
+        let k = hash_of(&format!("{t:?}"));
+        // NaN never compares equal, so a pathological document could keep adding entries.
+        if self.cell_keys.len() >= MAX_CELL_KEYS {
+            self.cell_keys.clear();
+        }
+        self.cell_keys.push((t.clone(), k));
+        k
+    }
 }
+
+/// Bound on [`LayoutCache::cell_keys`].
+const MAX_CELL_KEYS: usize = 256;
 
 fn hash_of<T: Hash>(t: &T) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -673,16 +708,16 @@ impl Ctx<'_> {
         self.counters.next_label(&self.doc.numbering, n.num, n.level)
     }
 
-    /// Lay out `p` with its already counted `label`, so laying a paragraph out again (around
-    /// floating objects, or after it moved) doesn't advance the list counters twice.
-    fn para_labelled(
+    /// The cache key of `p` laid out with these inputs, and how many automatic equation numbers
+    /// it uses (it is numbered from `self.eq_count`).
+    fn para_key(
         &mut self,
         p: &Paragraph,
         width: f32,
         table: Option<&para::CellText>,
         exclusions: &[para::Exclusion],
-        label: Option<(String, Level)>,
-    ) -> Arc<ParaLayout> {
+        label: Option<&(String, Level)>,
+    ) -> (Key, u32) {
         let page = if has_page_fields(p) { Some(self.fields.page_key()) } else { None };
         if self.track_totals && !self.uses_totals && has_total_fields(p) {
             self.uses_totals = true;
@@ -696,22 +731,36 @@ impl Ctx<'_> {
                 _ => 0,
             })
             .sum();
-        let eq_number = self.eq_count;
-        self.eq_count = self.eq_count.saturating_add(eq_here);
         let key = Key {
             rev: p.rev,
             width: width.to_bits(),
-            label: label.as_ref().map(|(t, l)| format!("{t}|{}|{}|{:?}|{:?}|{:?}|{:?}", l.indent, l.hanging, l.suffix, l.align, l.tab, l.chr)),
+            label: label.map(|(t, l)| format!("{t}|{}|{}|{:?}|{:?}|{:?}|{:?}", l.indent, l.hanging, l.suffix, l.align, l.tab, l.chr)),
             page,
-            table: table.map(|t| hash_of(&format!("{t:?}"))).unwrap_or(0),
+            table: table.map(|t| self.cache.cell_key(t)).unwrap_or(0),
             notes: if p.objects.iter().any(|o| matches!(o, InlineObject::NoteRef { .. })) { self.notes_hash } else { 0 },
             excl: if exclusions.is_empty() { 0 } else { hash_of(&format!("{exclusions:?}")) },
-            eq: if eq_here > 0 { eq_number } else { 0 },
+            eq: if eq_here > 0 { self.eq_count } else { 0 },
             read_spacing: if self.opts.view == ViewMode::Read { self.opts.read_line_spacing.map(f32::to_bits) } else { None },
             grid: self.grid.key(),
             fit: self.boxes.inside(),
             hide_deleted: self.hide_deleted,
         };
+        (key, eq_here)
+    }
+
+    /// Lay out `p` with its already counted `label`, so laying a paragraph out again (around
+    /// floating objects, or after it moved) doesn't advance the list counters twice.
+    fn para_labelled(
+        &mut self,
+        p: &Paragraph,
+        width: f32,
+        table: Option<&para::CellText>,
+        exclusions: &[para::Exclusion],
+        label: Option<(String, Level)>,
+    ) -> Arc<ParaLayout> {
+        let (key, eq_here) = self.para_key(p, width, table, exclusions, label.as_ref());
+        let eq_number = self.eq_count;
+        self.eq_count = self.eq_count.saturating_add(eq_here);
         self.cache.used.insert(key.clone());
         if let Some(pl) = self.cache.paras.get(&key) {
             self.cache.hits += 1;
@@ -1763,6 +1812,7 @@ fn layout_pass(
     let env = env_hash(doc, opts);
     if env != cache.env {
         cache.paras.clear();
+        cache.lookahead.clear();
         cache.env = env;
     }
     cache.used.clear();
@@ -1880,7 +1930,6 @@ fn layout_pass(
     };
     // Text boxes laid out in balancing attempts that were thrown away.
     let mut boxes_discarded = 0usize;
-    let mut block = 0usize;
     // Vertical sections are laid out on their pages turned on their side (see `vertical`).
     let turned: Vec<Option<SectionProps>> = sections
         .iter()
@@ -1892,7 +1941,45 @@ fn layout_pass(
         })
         .collect();
     let mut prev_turn = TextDirection::Horizontal;
-    for (si, (end, sect)) in sections.iter().enumerate() {
+    // Incremental pagination: resume from the page the edit is on (see `incremental`).
+    // A repeat pass for page totals (`NUMPAGES`) lays out with other totals: never resume across them.
+    let key = incremental::PassKey::new(doc, opts, env, notes_hash ^ hash_of(&(totals.pages, &totals.sections)));
+    let prev = ctx.cache.pass.take();
+    // Balanced columns and endnotes at section ends re-lay or add pages behind the walk: those
+    // documents are paginated in full.
+    // Body text showing page totals depends on every page: such documents are laid out in full.
+    // Outline view and vertical sections are laid out in full too.
+    let can_resume = !reflow
+        && outline.is_none()
+        && turned.iter().all(Option::is_none)
+        && incremental_ok(doc, &sections)
+        && !prev.as_ref().is_some_and(|p| p.uses_totals);
+    let plan = if can_resume { prev.as_ref().and_then(|p| p.plan(&key, doc, &sections)) } else { None };
+    let mut resume = None;
+    let mut converge_after = None;
+    if let Some(plan) = plan {
+        pb.pages = plan.pages;
+        pb.behind = vec![0; pb.pages.len()];
+        if let Some(cp) = plan.from {
+            pb.pages.push(cp.page);
+            pb.behind.push(0);
+            resume = Some(cp.state);
+        }
+        converge_after = plan.converge_after;
+    }
+    let mut pass = incremental::Pass::new(key, doc, &sections);
+    if let (Some(p), Some(st)) = (&prev, &resume) {
+        pass.checkpoints = p.checkpoints.iter().filter(|c| c.state.block < st.block).cloned().collect();
+    }
+    let mut placed = 0usize;
+    let mut spliced = false;
+    let mut last_checkpoint = 0usize;
+    let mut block = resume.as_ref().map(|st| st.block).unwrap_or(0);
+    let start_si = resume.as_ref().map(|st| st.si).unwrap_or(0);
+    for (si, (end, sect)) in sections.iter().enumerate().skip(start_si) {
+        if spliced {
+            break;
+        }
         let turn = if reflow { TextDirection::Horizontal } else { sect.text_direction };
         let sect: &SectionProps = match turned.get(si) {
             Some(Some(t)) => t,
@@ -1915,6 +2002,21 @@ fn layout_pass(
         let first_top = if reflow || turn.is_turned() || !sect.title_page { body_top } else { body_top_for(&mut ctx, sect, heads.first) };
         let foot_top = if reflow || turn.is_turned() { f32::MAX } else { foot_top_for(&mut ctx, sect, feet.default) };
         let first_foot = if reflow || turn.is_turned() || !sect.title_page { foot_top } else { foot_top_for(&mut ctx, sect, feet.first) };
+        if let Some(st) = resume.take() {
+            // The section was started before the checkpoint; carry on from there.
+            st.restore(&mut pb, &mut ctx);
+            ctx.grid = para::Grid::of(doc, sect);
+            pb.foot_top = foot_top;
+            let last = (*end).min(doc.body.len().saturating_sub(1));
+            place_blocks(
+                &mut ctx,
+                &mut pb,
+                (&mut block, last, si, body_top),
+                (&mut pass, prev.as_ref(), converge_after),
+                (&mut last_checkpoint, &mut placed, &mut spliced),
+            );
+            continue;
+        }
         ctx.grid = para::Grid::of(doc, sect);
         let restart = sect.page_num_start;
         if sect.line_numbers.as_ref().is_some_and(|l| l.restart == wordcraft_doc::section::LineNumberRestart::Section) {
@@ -1965,26 +2067,37 @@ fn layout_pass(
             && pb.cols.len() > 1
             && sect.valign == wordcraft_doc::props::VAlign::Top
             && sections.get(si + 1).is_some_and(|(_, s)| s.start == SectionStart::Continuous);
-        pb.col_break_page = None;
-        let mut from = balance.then(|| (block, Snap::take(&mut pb, &ctx)));
-        while block <= last {
-            let Some(b) = doc.body.get(block) else { break };
-            let before = balance.then(|| (pb.pages.len(), Snap::take(&mut pb, &ctx)));
-            match (&**b, &outline) {
-                (Block::Para(p), Some(o)) => place_outline_para(&mut ctx, &mut pb, p, block, o),
-                (Block::Table(_), Some(o)) if o.hidden.get(block).copied().unwrap_or(false) => {}
-                (Block::Para(p), None) => place_para(&mut ctx, &mut pb, p, block, body_top),
-                (Block::Table(t), _) => place_table(&mut ctx, &mut pb, t, block, body_top),
+        if balance || outline.is_some() {
+            pb.col_break_page = None;
+            let mut from = balance.then(|| (block, Snap::take(&mut pb, &ctx)));
+            while block <= last {
+                let Some(b) = doc.body.get(block) else { break };
+                let before = balance.then(|| (pb.pages.len(), Snap::take(&mut pb, &ctx)));
+                match (&**b, &outline) {
+                    (Block::Para(p), Some(o)) => place_outline_para(&mut ctx, &mut pb, p, block, o),
+                    (Block::Table(_), Some(o)) if o.hidden.get(block).copied().unwrap_or(false) => {}
+                    (Block::Para(p), None) => place_para(&mut ctx, &mut pb, p, block, body_top),
+                    (Block::Table(t), _) => place_table(&mut ctx, &mut pb, t, block, body_top),
+                }
+                if let Some((pages, snap)) = before
+                    && pb.pages.len() != pages
+                {
+                    from = Some((block, snap));
+                }
+                placed += 1;
+                block += 1;
             }
-            if let Some((pages, snap)) = before
-                && pb.pages.len() != pages
-            {
-                from = Some((block, snap));
+            if let Some((first, snap)) = from {
+                boxes_discarded += balance_columns(&mut ctx, &mut pb, (first, block), &snap, body_top);
             }
-            block += 1;
-        }
-        if let Some((first, snap)) = from {
-            boxes_discarded += balance_columns(&mut ctx, &mut pb, (first, block), &snap, body_top);
+        } else {
+            place_blocks(
+                &mut ctx,
+                &mut pb,
+                (&mut block, last, si, body_top),
+                (&mut pass, prev.as_ref(), converge_after),
+                (&mut last_checkpoint, &mut placed, &mut spliced),
+            );
         }
         // Endnotes at the end of the section: those referenced so far.
         if end_opts.pos == wordcraft_doc::section::NotePos::SectEnd && !pb.pages.is_empty() {
@@ -1996,6 +2109,16 @@ fn layout_pass(
             place_endnotes(&mut ctx, &mut pb, here, block.saturating_sub(1));
         }
     }
+    if spliced && let Some((_, s)) = sections.get(pb.sect_idx) {
+        pb.sect = s;
+    }
+    if can_resume {
+        pass.uses_totals = ctx.uses_totals || (spliced && prev.as_ref().is_some_and(|p| p.uses_totals));
+        pass.end = incremental::PageState::take(&pb, &ctx, block, pb.sect_idx);
+        pass.end_pages = pb.pages.clone();
+        ctx.cache.pass = Some(pass);
+    }
+    let incremental = prev.is_some() && (placed < doc.body.len() || spliced);
     if pb.pages.is_empty() {
         pb.new_page(0, sect_ref.margin_top);
     }
@@ -2047,10 +2170,27 @@ fn layout_pass(
         }
     }
     // Evict paragraph layouts that weren't used this pass if the cache grew large.
-    if ctx.cache.paras.len() > 4 * ctx.cache.used.len().max(1024) {
+    if !incremental {
+        if ctx.cache.paras.len() > 4 * ctx.cache.used.len().max(1024) {
+            let used = std::mem::take(&mut ctx.cache.used);
+            ctx.cache.paras.retain(|k, _| used.contains(k));
+            ctx.cache.used = used;
+        }
+        ctx.cache.kept = ctx.cache.paras.len();
+    } else if ctx.cache.paras.len() > 4 * ctx.cache.kept.max(1024) {
+        // An incremental pass placed only the blocks near the edit; the pages it took from
+        // earlier passes hold their paragraph layouts too. Keep both (the others are the edited
+        // paragraphs' earlier versions), so a long typing session doesn't grow the cache forever.
+        let mut shown = HashSet::new();
+        for p in &pages {
+            para_ptrs(&p.items, &mut shown, 0);
+        }
         let used = std::mem::take(&mut ctx.cache.used);
-        ctx.cache.paras.retain(|k, _| used.contains(k));
+        ctx.cache.paras.retain(|k, v| used.contains(k) || shown.contains(&Arc::as_ptr(v)));
+        let paras = &ctx.cache.paras;
+        ctx.cache.lookahead.retain(|k, _| paras.contains_key(k));
         ctx.cache.used = used;
+        ctx.cache.kept = ctx.cache.paras.len();
     }
     let mut index: HashMap<(StoryRef, Path), Vec<(usize, usize)>> = HashMap::new();
     for (pi, p) in pages.iter().enumerate() {
@@ -2060,12 +2200,77 @@ fn layout_pass(
             }
         }
     }
-    let mut lay = DocLayout { pages, index, ms: 0.0, text_boxes: 0 };
+    let mut lay = DocLayout { pages, index, ms: 0.0, text_boxes: 0, blocks_placed: placed };
     if opts.comment_balloons && !web {
         balloons::add(&mut ctx, &mut lay);
     }
     lay.text_boxes = ctx.boxes.total().saturating_sub(boxes_discarded);
     Pass::Done(lay)
+}
+
+/// The paragraph layouts `items` show (into `out`), a drawing canvas's members included.
+fn para_ptrs(items: &[Placed], out: &mut HashSet<*const ParaLayout>, depth: usize) {
+    for it in items {
+        match it {
+            Placed::Lines { para, .. } => {
+                out.insert(Arc::as_ptr(para));
+            }
+            Placed::Clip { items, .. } if depth < 8 => para_ptrs(items, out, depth + 1),
+            _ => {}
+        }
+    }
+}
+
+/// Whether a later pass may resume part-way through this document (#554): not when a section's
+/// columns are balanced (its last page is laid out again) or its endnotes close the section.
+fn incremental_ok(doc: &Document, sections: &[(usize, &SectionProps)]) -> bool {
+    sections.iter().enumerate().all(|(si, (_, sect))| {
+        let balanced = sect.columns.count > 1 && sections.get(si + 1).is_some_and(|(_, s)| s.start == SectionStart::Continuous);
+        !balanced && doc.note_options(sect, true).pos != wordcraft_doc::section::NotePos::SectEnd
+    })
+}
+
+/// Place body blocks `*block..=last` of section `si`, recording a checkpoint at the first block
+/// boundary of each page; past `converge_after`, a page boundary where the state and the page so
+/// far match the previous pass's takes the rest of that pass's pages and ends the walk
+/// (`*spliced`).
+fn place_blocks(
+    ctx: &mut Ctx,
+    pb: &mut PageBuilder,
+    (block, last, si, body_top): (&mut usize, usize, usize, f32),
+    (pass, prev, converge_after): (&mut incremental::Pass, Option<&incremental::Pass>, Option<usize>),
+    (last_checkpoint, placed, spliced): (&mut usize, &mut usize, &mut bool),
+) {
+    while *block <= last {
+        let Some(b) = ctx.doc.body.get(*block) else { break };
+        if !pb.web && pb.pages.len() != *last_checkpoint {
+            *last_checkpoint = pb.pages.len();
+            let state = incremental::PageState::take(pb, ctx, *block, si);
+            if converge_after.is_some_and(|c| *block >= c)
+                && let Some(prev) = prev
+                && let Some(page) = pb.pages.last()
+                && prev.converges(&state, pb.pages.len(), page)
+            {
+                // From here on the pages come out as last time.
+                pb.pages.truncate(pb.pages.len().saturating_sub(1));
+                pb.pages.extend(prev.end_pages.iter().skip(pb.pages.len()).cloned());
+                pass.checkpoints.extend(prev.checkpoints.iter().filter(|c| c.state.block >= *block).cloned());
+                prev.end.restore(pb, ctx);
+                *block = prev.end.block;
+                *spliced = true;
+                return;
+            }
+            if let Some(page) = pb.pages.last() {
+                pass.checkpoints.push(incremental::Checkpoint { state, pages: pb.pages.len(), page: page.clone() });
+            }
+        }
+        match &**b {
+            Block::Para(p) => place_para(ctx, pb, p, *block, body_top),
+            Block::Table(t) => place_table(ctx, pb, t, *block, body_top),
+        }
+        *placed += 1;
+        *block += 1;
+    }
 }
 
 /// Pagination state saved before a block, to lay the blocks from there out again (balancing
@@ -3107,38 +3312,56 @@ fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::Resolv
 }
 
 /// Height of the first line of the block after `block` (for keep-with-next).
+/// Bound on [`LayoutCache::lookahead`] (entries are small; it starts over past this).
+const MAX_LOOKAHEAD: usize = 1 << 16;
+
 /// The room the paragraphs after `block` need on its page for keep with next: the next one's
 /// first line, or all of it and what it keeps with in turn when it is kept with the next too
 /// (a chain moves together in Word).
 fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize) -> f32 {
     match ctx.doc.body.get(block + 1).map(|b| &**b) {
         Some(Block::Para(p)) => {
-            // Don't advance list counters for a lookahead: lay out without the label.
-            let rp = ctx.doc.styles.resolve_para(&p.props);
-            let env = para::ParaEnv {
-                doc: ctx.doc,
-                width,
-                label: None,
-                fields: &ctx.fields,
-                show_hidden: ctx.opts.show_hidden,
-                field_codes: ctx.opts.field_codes,
-                hide_deleted: ctx.opts.hides_deleted(StoryRef::Body),
-                table: None,
-                proofing: None,
-                numeral: ctx.opts.numeral,
-                exclusions: &[],
-                eq_number: ctx.eq_count,
-                read_line_spacing: if ctx.opts.view == ViewMode::Read { ctx.opts.read_line_spacing } else { None },
-                grid: ctx.grid,
-                fit_objects: false,
-            };
-            let _ = rp;
-            let pl = para::layout_para(p, &env);
-            if pl.rp.keep_next && depth < 8 {
-                pl.rp.space_before + pl.height + pl.rp.space_after + next_first_line(ctx, block + 1, width, depth + 1)
+            // Don't advance list counters for a lookahead: lay out without the label. Memoised
+            // like paragraph layouts: headings keep with next, so every pass asks for these.
+            let (key, _) = ctx.para_key(p, width, None, &[], None);
+            // Cached per paragraph: (space before + first line, whole height with spacing, keep
+            // with next). A chain is summed from these, so an edit to a later paragraph can't
+            // leave a stale total behind.
+            let cached = ctx.cache.lookahead.get(&key).copied();
+            let (first, whole, keep) = if let Some(v) = cached {
+                v
             } else {
-                pl.rp.space_before + pl.lines.first().map(|l| l.height).unwrap_or(0.0)
-            }
+                let env = para::ParaEnv {
+                    doc: ctx.doc,
+                    width,
+                    label: None,
+                    fields: &ctx.fields,
+                    show_hidden: ctx.opts.show_hidden,
+                    field_codes: ctx.opts.field_codes,
+                    hide_deleted: ctx.opts.hides_deleted(StoryRef::Body),
+                    table: None,
+                    proofing: None,
+                    numeral: ctx.opts.numeral,
+                    exclusions: &[],
+                    eq_number: ctx.eq_count,
+                    read_line_spacing: if ctx.opts.view == ViewMode::Read { ctx.opts.read_line_spacing } else { None },
+                    grid: ctx.grid,
+                    fit_objects: false,
+                };
+                ctx.cache.misses += 1;
+                let pl = para::layout_para(p, &env);
+                let v = (
+                    pl.rp.space_before + pl.lines.first().map(|l| l.height).unwrap_or(0.0),
+                    pl.rp.space_before + pl.height + pl.rp.space_after,
+                    pl.rp.keep_next,
+                );
+                if ctx.cache.lookahead.len() >= MAX_LOOKAHEAD {
+                    ctx.cache.lookahead.clear();
+                }
+                ctx.cache.lookahead.insert(key, v);
+                v
+            };
+            if keep && depth < 8 { whole + next_first_line(ctx, block + 1, width, depth + 1) } else { first }
         }
         Some(Block::Table(_)) => 24.0,
         None => 0.0,

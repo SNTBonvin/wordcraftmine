@@ -1,6 +1,6 @@
 # Layout and pagination parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (a dragged floating object anchors in the column it lands in, #884; previously trivial: a paragraph ending on a page with footnotes keeps its space after above the separator, #1116; previously trivial: symbol-font text drawn as Unicode symbols, #776; previously trivial: large-table scrolling measured and fixed, #811; previously trivial: text boxes use their own margins; Resize shape to fit text never cuts text, #743; previously trivial: complex-script shaping and Myanmar line breaking, #604; previously trivial: body page totals, table-cell footnotes and bookmark link pages fixed, #450 #451 #455; previously major: first version; line breaking, pagination and object placement checked against Word's behaviour from the layout source on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (incremental pagination matches a full layout after a page-break mark, edited notes are laid out again, #1284; previously trivial: a dragged floating object anchors in the column it lands in, #884; previously trivial: a paragraph ending on a page with footnotes keeps its space after above the separator, #1116; previously trivial: symbol-font text drawn as Unicode symbols, #776; previously trivial: large-table scrolling measured and fixed, #811; previously trivial: text boxes use their own margins; Resize shape to fit text never cuts text, #743; previously trivial: complex-script shaping and Myanmar line breaking, #604; previously trivial: body page totals, table-cell footnotes and bookmark link pages fixed, #450 #451 #455; previously major: first version; line breaking, pagination and object placement checked against Word's behaviour from the layout source on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 A document only "opens correctly" if its pages break where Word breaks them: the same lines, the
 same page count, footnotes and pictures on the same pages. This checklist covers line breaking,
@@ -72,6 +72,10 @@ font can't match Word's metrics.
 | Cold layout, 188-page document | 61 ms | not measured | measured 2026-10-06 (not re-run this pass) |
 | Relayout after an edit | 1.4 ms | not measured | measured 2026-10-06 |
 | Font picker with many installed fonts | fixed freezes (#233) | instant | issue #31, #59 |
+| Large document: 511 pages, 200 pictures, 100 tables, 250 footnotes (`cargo xtask bench --pages 500`) | first layout 333 ms; open .docx 20 ms; save 33 ms; PDF export 1.06 s | not measured | measured 2026-10-11 (#554) |
+| Keystroke in that document, at its start, middle or end (command + re-layout) | 2.8–3.1 ms; re-lays out 1–2 paragraphs and places 7–10 of 2,342 blocks (14 ms before #554: every block placed again) | not measured | measured 2026-10-11 (#554); counters pinned by `engine::tests_perf` |
+| Edits that add or remove body blocks (Enter, Backspace joining paragraphs, a pasted paragraph) in that document | correct, not incremental: every block after the edit is placed again (the pages after it can't be matched to the previous pass's block by block); typing, formatting and edits in notes, headers or text boxes stop where the pages come out as before | not measured | known limit (#1284) |
+| Scrolling that document: render one page / three visible pages | 1.1 ms / 3–5 ms at 1.5× | not measured | measured 2026-10-11 (#554) |
 | Large real-world documents (500+ pages, many pictures) | not measured | | gap |
 | Scrolling a 1,096-page document that is one 5,300-row table (#811) | ~2.4 ms idle, ~4.5 ms median scroll frame (was ~600 ms); opening still lays out for ~4–8 s | not measured | measured 2026-10-12, release, headless (`tests_perf::big_table_scroll_bench`) |
 
@@ -81,6 +85,7 @@ font can't match Word's metrics.
 |---|---|---|
 | 2026-10-13 | trivial | A shape or picture dragged into another column anchors there, so the text in that column wraps around it (#884) |
 | 2026-10-13 | trivial | On a page with footnotes, a paragraph that ends there keeps its space after above the footnote separator; if it doesn't fit, its last line (and, with widow control, one more) goes to the next page with the note. Pages without notes are unchanged (#1116) |
+| 2026-10-13 | trivial | Incremental pagination (#1284): a paragraph ending in a page break no longer gives the next page's first paragraph its space before after an edit further down; a note or header changed in place is laid out again; long typing sessions evict old paragraph layouts; block-count changes noted as laid out to the end |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |
@@ -102,6 +107,7 @@ font can't match Word's metrics.
 | 2026-10-11 | trivial | Mirror indents (`w:mirrorIndents`): left/right indents swap on even pages; suppress line numbers inherited from styles (#512) |
 | 2026-10-11 | trivial | NUMPAGES/SECTIONPAGES in the body show the real totals (the body is laid out again once the page count is known, at most three extra passes, #451); footnotes referenced in table cells go to the page bottom (#450); PDF links to a bookmark go to the page its start is on, not its paragraph's first page (#455) |
 | 2026-10-11 | minor | Complex scripts: script itemisation, OpenType fallback fonts, syllable clusters, Myanmar syllable breaks (#604) |
+| 2026-10-11 | trivial | Large-document benchmark and incremental pagination: a keystroke in a 511-page document re-lays out only from the edited paragraph (#554) |
 | 2026-10-11 | trivial | Mirrored margins on even pages, tall and linked footers/headers push the body, long endnotes continue, caret in continued notes (#452, #453, #454, #456, #457) |
 | 2026-10-11 | trivial | Hyphenation zone, words in capitals and consecutive-hyphen limit follow the document settings; Manual Hyphenation (#407) |
 | 2026-10-11 | trivial | Document grid: line and character pitch (#391) |

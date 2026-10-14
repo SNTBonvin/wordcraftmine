@@ -154,3 +154,23 @@ fn caret_in_a_continued_footnote_is_found_on_its_page() {
         assert_eq!(para.line_of(up.off), k, "hint {hint}: {up:?}");
     }
 }
+
+#[test]
+fn a_long_typing_session_keeps_the_paragraph_cache_bounded() {
+    // #1284: incremental passes evict the edited paragraph's earlier layouts too.
+    let mut d = Document::from_text(&"Body line\n".repeat(90));
+    let mut c = LayoutCache::new();
+    let opts = LayoutOptions::default();
+    let first = layout(&d, &mut c, &opts);
+    assert!(first.pages.len() >= 2);
+    let last = d.body.len() - 1;
+    let mut most = 0;
+    for i in 0..4500 {
+        d.body[last] = para_block(Paragraph::with_text(&format!("Typed {i}"), Default::default()));
+        let l = layout(&d, &mut c, &opts);
+        assert!(l.blocks_placed < d.body.len(), "pass {i} laid out incrementally");
+        most = most.max(c.len());
+    }
+    assert!(most <= 4 * 1024 + 1, "the cache grew to {most} paragraph layouts");
+    assert!(c.len() < 4500);
+}
