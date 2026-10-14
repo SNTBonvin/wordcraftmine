@@ -3188,7 +3188,15 @@ fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, bl
             if pb.y + cur.height <= pb.bottom + 0.01 {
                 break;
             }
-            let split = if splittable { table::split_row(cur, pb.bottom - pb.y) } else { None };
+            let room = pb.bottom - pb.y;
+            let repeated_header_height: f32 = header_rows.iter().filter_map(|i| tl.rows.get(*i)).map(|r| r.height).sum();
+            let exact_row_fits_fresh = rest.is_none()
+                && t.rows.get(ri).is_some_and(|r| {
+                    r.props.height_rule == wordcraft_doc::props::HeightRule::Exact
+                        && r.props.height.is_some_and(|h| h > room + 0.01)
+                        && row.height <= pb.orig_bottom - pb.top - repeated_header_height + 0.01
+                });
+            let split = if splittable && !exact_row_fits_fresh { table::split_row(cur, room) } else { None };
             match split {
                 Some((a, b)) => {
                     place(pb, &a);
