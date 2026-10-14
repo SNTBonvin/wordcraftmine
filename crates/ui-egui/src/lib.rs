@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod async_saves;
 pub mod autoscroll;
 pub mod backstage;
 pub mod canvas;
@@ -110,6 +111,10 @@ pub struct Services {
     /// Web: hand bytes to the browser as a download. An error means no download started (the
     /// browser can't tell the page whether the user then kept the file).
     pub download: Option<Box<dyn Fn(&str, &[u8]) -> Result<(), String>>>,
+    /// Web: saves that `download` started and that finish later (the browser's save picker,
+    /// #1315). The hook starts a ticket for such a save and reports how it ended; until then the
+    /// document's save isn't confirmed, and a New/Open held back by the Save Changes prompt waits.
+    pub async_saves: Option<async_saves::AsyncSaves>,
     /// Web: told whether the document has unsaved changes after each pass, for the browser's
     /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
     pub on_dirty: Option<Box<dyn Fn(bool)>>,
@@ -152,6 +157,38 @@ pub struct Services {
     /// `xdg-mime`. `None` (web, macOS) hides the button; macOS shows how to do it in Finder
     /// instead. An error means nothing changed.
     pub make_default_app: Option<Box<dyn Fn() -> Result<DefaultApp, String>>>,
+}
+
+/// How Save in the Save Changes prompt went.
+enum PromptSave {
+    /// Written, keeping everything: the held-back command may run.
+    Saved,
+    /// Not saved (a format that doesn't keep everything); the command is cancelled.
+    NotSaved,
+    /// Web: the browser's save picker finishes later; its ticket ([`async_saves`]).
+    Later(u64),
+}
+
+/// Web: a save the browser's picker hasn't finished ([`async_saves`]).
+struct SaveInFlight {
+    ticket: u64,
+    /// The file name it saves as.
+    name: String,
+    /// The document it saved ([`Session::document_id`]).
+    document: u64,
+    /// Whether it marked the document saved (a Save in a format that keeps everything).
+    marked_saved: bool,
+}
+
+/// Web: the command a Save Changes prompt holds back until its picker save ends.
+struct AwaitingSave {
+    ticket: u64,
+    then: String,
+    params: Value,
+    /// The document the prompt asked about.
+    document: u64,
+    /// Its revision once the save started: a later edit isn't in that save.
+    rev: u64,
 }
 
 /// What [`Services::make_default_app`] did.
@@ -444,6 +481,10 @@ pub struct WordApp {
     /// there. A file that was merely opened isn't rewritten until the user saves it: saving drops
     /// whatever WordCraft can't represent (content controls, charts, macros…).
     autosave_path: Option<std::path::PathBuf>,
+    /// Web: saves the browser's picker hasn't finished yet ([`async_saves`], #1315).
+    saves_in_flight: Vec<SaveInFlight>,
+    /// Web: the command a Save Changes prompt held back until its picker save ends (#1315).
+    awaiting_save: Option<AwaitingSave>,
     /// The file dialog the host is showing, and what its answer is for ([`file_dialogs`]).
     file_dialog: Option<file_dialogs::PendingDialog>,
     /// The built-in file browser, when it is open, and the folder it showed last (#576).
@@ -535,6 +576,8 @@ impl WordApp {
             read_aloud_at: None,
             read_aloud_error: None,
             autosave_path: None,
+            saves_in_flight: Vec::new(),
+            awaiting_save: None,
             change_picture_target: None,
             recipient_list_pending: false,
             font_generation: wordcraft_fonts::FontDb::global().generation(),
@@ -641,10 +684,15 @@ impl WordApp {
             self.dialog = dialogs::Dialog::open(name, self);
             return Ok(json!({"pending": name}));
         }
-        if self.session.dirty && discards_document(id, &params) {
-            let name =
-                self.session.path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| self.title_stem());
-            self.dialog = Some(dialogs::Dialog::SaveChanges { name, then: id.to_string(), params, document: self.session.document_id() });
+        if (self.session.dirty || self.save_unconfirmed()) && discards_document(id, &params) {
+            let name = self.prompt_name();
+            self.dialog = Some(dialogs::Dialog::SaveChanges {
+                name,
+                then: id.to_string(),
+                params,
+                document: self.session.document_id(),
+                message: String::new(),
+            });
             return Ok(json!({"pending": "saveChanges"}));
         }
         // The ribbon and context-menu Paste commands send no text: read the system clipboard's, as
@@ -732,6 +780,11 @@ impl WordApp {
                 if matches!(id, "file.save" | "file.saveAs") { self.session.password.as_ref().map(wordcraft_engine::Password::as_str) } else { None };
             let opts = wordcraft_engine::cmd::file::export_options(&self.session, &params);
             let bytes = wordcraft_engine::io::save_bytes_with(&name, &self.session.doc, password, &opts)?;
+            // A ticket left over from an earlier call isn't this save's.
+            let saves = self.services.async_saves.clone();
+            if let Some(saves) = &saves {
+                let _ = saves.take_started();
+            }
             if let Some(d) = &self.services.download
                 && let Err(e) = d(&name, &bytes)
             {
@@ -742,8 +795,16 @@ impl WordApp {
             }
             // An export is a copy, and so is a save in a format that doesn't keep everything (a
             // page image, plain text): the document itself still has unsaved changes.
-            if matches!(id, "file.save" | "file.saveAs") && keeps_everything(&name) {
+            let marked_saved = matches!(id, "file.save" | "file.saveAs") && keeps_everything(&name);
+            if marked_saved {
                 self.session.dirty = false;
+            }
+            // The browser's picker writes the file later (#1315): until it says how that went,
+            // the document's save isn't confirmed.
+            if let Some(ticket) = saves.as_ref().and_then(async_saves::AsyncSaves::take_started) {
+                let document = self.session.document_id();
+                self.saves_in_flight.push(SaveInFlight { ticket, name: name.clone(), document, marked_saved });
+                return Ok(json!({"downloaded": name, "bytes": bytes.len(), "pendingSave": ticket}));
             }
             return Ok(json!({"downloaded": name, "bytes": bytes.len()}));
         }
@@ -834,7 +895,18 @@ impl WordApp {
                     file_dialogs::Asked::Busy => Ok(json!({"done": false})),
                 };
             }
-            SaveChoice::Save => self.save_for_prompt(),
+            SaveChoice::Save => match self.save_for_prompt() {
+                Ok(PromptSave::Saved) => true,
+                Ok(PromptSave::NotSaved) => false,
+                // The browser's picker finishes later: the command waits for it (#1315).
+                Ok(PromptSave::Later(ticket)) => {
+                    let rev = self.session.rev();
+                    self.awaiting_save = Some(AwaitingSave { ticket, then, params, document, rev });
+                    self.status(tl!("Waiting for the save to finish…"));
+                    return Ok(json!({"pending": "save"}));
+                }
+                Err(error) => return Err(self.save_failed(&error, then, params, document)),
+            },
         };
         if !go {
             return Ok(json!({"done": false}));
@@ -861,13 +933,114 @@ impl WordApp {
     /// Save before New/Open/Close (and the mailings that replace the document): true once the
     /// document is safely written. A save in a format that doesn't keep everything (a page
     /// image, plain text) writes a copy and leaves the document unsaved, so it doesn't count:
-    /// the command is cancelled and the document stays.
-    fn save_for_prompt(&mut self) -> bool {
-        let saved = match self.execute("file.save", json!({})) {
-            Ok(v) => v.get("saved").and_then(Value::as_bool) == Some(true) || v.get("downloaded").is_some(),
-            Err(_) => false,
-        };
-        self.safely_saved(saved)
+    /// the command is cancelled and the document stays. A save that fails (no permission, the
+    /// file locked by another app, a missing folder) is the save's error ([`Self::save_failed`]
+    /// tells the user).
+    /// In the browser the save picker may write the file later ([`PromptSave::Later`], #1315).
+    fn save_for_prompt(&mut self) -> Result<PromptSave, String> {
+        let v = self.execute("file.save", json!({}))?;
+        let saved = v.get("saved").and_then(Value::as_bool) == Some(true) || v.get("downloaded").is_some();
+        if !self.safely_saved(saved) {
+            return Ok(PromptSave::NotSaved);
+        }
+        Ok(match v.get("pendingSave").and_then(Value::as_u64) {
+            Some(ticket) => PromptSave::Later(ticket),
+            None => PromptSave::Saved,
+        })
+    }
+
+    /// Web: a save of this document is still in the browser's picker (#1315). The document
+    /// looks saved, but nothing is written yet, so New/Open ask first.
+    fn save_unconfirmed(&self) -> bool {
+        let document = self.session.document_id();
+        self.saves_in_flight.iter().any(|s| s.marked_saved && s.document == document)
+    }
+
+    /// The document's name as the Save Changes prompt shows it: its file's name, else its title.
+    fn prompt_name(&self) -> String {
+        self.session.path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| self.title_stem())
+    }
+
+    /// Save (or Save As) from the Save Changes prompt failed (#1445): say so plainly on the status
+    /// bar and in the prompt, which comes back for Save again, Don't Save or Cancel, with the
+    /// held-back command (`then`) still waiting. Nothing closes and nothing is discarded. Returns
+    /// the message, the prompt answer's error.
+    pub(crate) fn save_failed(&mut self, error: &str, then: String, params: Value, document: u64) -> String {
+        let name = self.prompt_name();
+        let message = i18n::fmt(tl!("Couldn't save {name}, so it is still open and nothing was lost: {error}"), &[("name", &name), ("error", error)]);
+        log::error!("save from the Save Changes prompt failed: {error}");
+        self.prompt_again(message, then, params, document)
+    }
+
+    /// The Save Changes prompt comes back with `message` (also on the status bar), the held-back
+    /// command still waiting, if the document is still the one it asked about. Returns `message`.
+    fn prompt_again(&mut self, message: String, then: String, params: Value, document: u64) -> String {
+        self.status(message.clone());
+        if document == self.session.document_id() {
+            let name = self.prompt_name();
+            self.dialog = Some(dialogs::Dialog::SaveChanges { name, then, params, document, message: message.clone() });
+        }
+        message
+    }
+
+    /// Read how the saves that finished later ended (#1315). Called every frame.
+    /// A save that didn't write the file leaves the document it was for unsaved again (only that
+    /// document: one that has replaced it since is left alone). The command a Save Changes prompt
+    /// held back runs once its save is written and closed, if the document is still the same and
+    /// unchanged since; a cancelled or failed save brings the prompt back with the reason.
+    pub(crate) fn settle_async_saves(&mut self) {
+        let Some(saves) = self.services.async_saves.clone() else { return };
+        for (ticket, outcome) in saves.take_finished() {
+            let current = self.session.document_id();
+            if let Some(i) = self.saves_in_flight.iter().position(|s| s.ticket == ticket) {
+                let save = self.saves_in_flight.swap_remove(i);
+                match &outcome {
+                    async_saves::SaveOutcome::Saved => log::info!("saved {} through the save picker", save.name),
+                    async_saves::SaveOutcome::Cancelled | async_saves::SaveOutcome::Failed(_) => {
+                        if save.marked_saved && save.document == current {
+                            self.session.dirty = true;
+                        }
+                    }
+                }
+                if let async_saves::SaveOutcome::Failed(error) = &outcome {
+                    let msg = i18n::fmt(tl!("Couldn't download {name}: {error}"), &[("name", &save.name), ("error", error)]);
+                    log::error!("the save picker couldn't save {}: {error}", save.name);
+                    self.status(msg);
+                }
+            }
+            let Some(wait) = self.awaiting_save.take_if(|w| w.ticket == ticket) else { continue };
+            if wait.document != current {
+                log::info!("the document a held-back {} was for has been replaced; dropped", wait.then);
+                continue;
+            }
+            match outcome {
+                // Only when nothing changed since and no later save of it is still unconfirmed.
+                async_saves::SaveOutcome::Saved if !self.session.dirty && self.session.rev() == wait.rev && !self.save_unconfirmed() => {
+                    if let Err(e) = self.execute_user(&wait.then, wait.params) {
+                        self.status(e);
+                    }
+                }
+                // Edited while the picker was open (those edits may not be written yet): ask again.
+                async_saves::SaveOutcome::Saved => {
+                    let name = self.prompt_name();
+                    self.dialog = Some(dialogs::Dialog::SaveChanges {
+                        name,
+                        then: wait.then,
+                        params: wait.params,
+                        document: wait.document,
+                        message: String::new(),
+                    });
+                }
+                async_saves::SaveOutcome::Cancelled => {
+                    let name = self.prompt_name();
+                    let message = i18n::fmt(tl!("Saving {name} was cancelled, so it is still open and nothing was lost."), &[("name", &name)]);
+                    self.prompt_again(message, wait.then, wait.params, wait.document);
+                }
+                async_saves::SaveOutcome::Failed(error) => {
+                    self.save_failed(&error, wait.then, wait.params, wait.document);
+                }
+            }
+        }
     }
 
     /// Whether a save before New/Open/Close counts: it happened, and kept everything.
@@ -1374,6 +1547,7 @@ impl WordApp {
             self.applied_editing = Some(lang);
         }
         options::sync(self);
+        self.settle_async_saves();
         // Chinese text wants the Chinese face before the Japanese one (one glyph style per line).
         // An installed CJK font is read only once CJK text is shown (#241): a CJK interface, the
         // language names in Options, or a file name the caption is drawing. A file opened later
@@ -2912,6 +3086,14 @@ mod tests {
         a.session.doc.plain_text(wordcraft_doc::StoryRef::Body)
     }
 
+    /// The reason the Save Changes prompt shows (a failed save), if that prompt is open.
+    fn prompt_message(a: &WordApp) -> Option<String> {
+        match &a.dialog {
+            Some(dialogs::Dialog::SaveChanges { message, .. }) => Some(message.clone()),
+            _ => None,
+        }
+    }
+
     fn prompt(a: &WordApp) -> Option<&'static str> {
         a.dialog.as_ref().map(|d| d.name())
     }
@@ -3053,6 +3235,114 @@ mod tests {
         assert!(a.quit_requested);
         assert!(a.close_requested(), "the close that follows goes ahead");
         assert!(body_text(&a).contains(UNSAVED), "nothing was replaced on the way out");
+    }
+
+    /// #1445: the window's X on an edited document with a file → Save writes the file and lets
+    /// the window close.
+    #[test]
+    fn window_close_save_writes_the_file_and_quits() {
+        let dir = scratch("close-save");
+        let path = docx_on_disk(&dir, "Draft");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        a.run("text.insert", json!({"text": "Revised "})).unwrap();
+        assert!(!a.close_requested());
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        let on_disk = wordcraft_engine::io::open_path(&path).unwrap().plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(on_disk.contains("Revised Draft"), "the edit is on disk: {on_disk:?}");
+        assert!(a.quit_requested, "the app may close");
+        assert!(a.close_requested(), "the close that follows goes ahead");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1445: when Save in the close prompt can't write the file, the prompt's answer is an error
+    /// that says so plainly, the status bar shows it, and the document stays open, still edited.
+    #[test]
+    fn window_close_save_that_fails_says_so_and_keeps_the_document() {
+        let dir = scratch("close-save-fails");
+        let folder = dir.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = docx_on_disk(&folder, "Draft");
+        let mut a = app();
+        a.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        a.run("text.insert", json!({"text": "Revised "})).unwrap();
+        // The document's folder is gone and a file has its name: nothing can be written there.
+        std::fs::remove_dir_all(&folder).unwrap();
+        std::fs::write(&folder, b"not a folder").unwrap();
+        assert!(!a.close_requested());
+        a.status_msg = None;
+        let err = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap_err();
+        assert!(err.contains("Couldn't save contract.docx") && err.contains("still open"), "{err}");
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| *m == err), "the status bar says why: {:?}", a.status_msg);
+        assert!(!a.quit_requested, "nothing closes");
+        assert!(a.session.dirty && body_text(&a).contains("Revised Draft"), "nothing was discarded");
+        assert_eq!(a.session.path.as_deref(), Some(path.as_path()));
+        // The prompt comes back with the reason in it: Save again, Don't Save or Cancel.
+        assert_eq!(prompt(&a), Some("saveChanges"), "the prompt is open again");
+        assert_eq!(prompt_message(&a).as_deref(), Some(err.as_str()), "the prompt says why");
+        assert!(a.run("ui.saveChanges", json!({"answer": "save"})).is_err(), "Save again fails again");
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        assert_eq!(prompt(&a), None);
+        assert!(!a.close_requested(), "the next close asks again");
+        assert_eq!(prompt_message(&a).as_deref(), Some(""), "a fresh prompt, no old reason");
+        a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(a.quit_requested, "Don't Save still closes");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1445: a new document → close → Save → Save As to a place that can't be written: the
+    /// same plain error, the prompt back with the reason, nothing closed or discarded.
+    #[test]
+    fn window_close_save_as_that_fails_says_so_and_keeps_the_document() {
+        let dir = scratch("close-save-as-fails");
+        let blocker = dir.join("folder");
+        std::fs::write(&blocker, b"not a folder").unwrap();
+        let picked = blocker.join("novel.docx").to_string_lossy().to_string();
+        let mut a = typed();
+        a.services.pick_save = Some(Box::new(move |_| Some(picked.clone())));
+        assert!(!a.close_requested());
+        a.status_msg = None;
+        let err = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap_err();
+        assert!(err.contains("Couldn't save") && err.contains("still open"), "{err}");
+        assert!(a.status_msg.as_ref().is_some_and(|(m, _)| *m == err), "the status bar says why: {:?}", a.status_msg);
+        assert!(!a.quit_requested, "nothing closes");
+        assert!(a.session.dirty && body_text(&a).contains(UNSAVED), "nothing was discarded");
+        assert_eq!(a.session.path, None);
+        assert_eq!(prompt(&a), Some("saveChanges"), "the prompt is open again");
+        assert_eq!(prompt_message(&a).as_deref(), Some(err.as_str()), "the prompt says why");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1445: the prompt that comes back after a failed save shows the reason on screen.
+    #[test]
+    fn save_prompt_shows_why_the_save_failed() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = typed();
+        a.run("file.close", json!({})).unwrap();
+        let reason = "Couldn't save Draft, so it is still open and nothing was lost: disk full";
+        if let Some(dialogs::Dialog::SaveChanges { message, .. }) = &mut a.dialog {
+            *message = reason.into();
+        }
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().build_ui_state(
+            move |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                if fonts {
+                    dialogs::show(app, &ctx);
+                } else {
+                    theme::install_fonts_for(&ctx, false);
+                    fonts = true;
+                }
+            },
+            a,
+        );
+        for _ in 0..3 {
+            h.step();
+        }
+        assert!(h.query_by_label(reason).is_some(), "the reason is in the prompt");
+        assert!(h.query_by_label("Save").is_some(), "Save again is offered");
     }
 
     /// Enter activates the focused prompt button; it means Save only when no button has focus.
@@ -3716,12 +4006,175 @@ mod tests {
 
         a.run("file.new", json!({})).unwrap();
         a.status_msg = None;
-        let r = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
-        assert_eq!(r["done"], false, "the New was cancelled");
+        // A failed save is an error, not a quiet Cancel (#1445); the New doesn't run.
+        let err = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap_err();
+        assert!(err.contains("still open") && err.contains("blocked by the browser"), "{err}");
         assert!(body_text(&a).contains(UNSAVED));
         assert!(a.session.dirty);
         let msg = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
         assert!(msg.contains("blocked by the browser"), "the status bar says why: {msg:?}");
+    }
+
+    /// #1315: a web app whose `download` hands the save to the browser's picker, which finishes
+    /// later. Returns the app (with unsaved typing) and the saves its download starts, plus the
+    /// last ticket started.
+    fn web_picker_app() -> (WordApp, async_saves::AsyncSaves, std::rc::Rc<std::cell::Cell<u64>>) {
+        let mut a = typed();
+        let saves = async_saves::AsyncSaves::default();
+        let last = std::rc::Rc::new(std::cell::Cell::new(0));
+        let (hook, seen) = (saves.clone(), last.clone());
+        a.services.download = Some(Box::new(move |_, _| {
+            seen.set(hook.start());
+            Ok(())
+        }));
+        a.services.async_saves = Some(saves.clone());
+        (a, saves, last)
+    }
+
+    /// #1315: Save in the prompt before New waits for the picker: New runs only once the file
+    /// is written and closed.
+    #[test]
+    fn web_save_before_new_waits_for_the_picker_to_finish() {
+        let (mut a, saves, last) = web_picker_app();
+        a.run("file.new", json!({})).unwrap();
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        let r = a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        assert_eq!(r["pending"], "save", "{r}");
+        assert_eq!(saves.pending(), 1);
+        a.settle_async_saves();
+        assert!(body_text(&a).contains(UNSAVED), "nothing is replaced while the picker is open");
+        saves.finish(last.get(), async_saves::SaveOutcome::Saved);
+        a.settle_async_saves();
+        assert!(!body_text(&a).contains(UNSAVED), "the New ran once the save finished");
+        assert!(!a.session.dirty);
+        assert_eq!(prompt(&a), None);
+    }
+
+    /// #1315: cancelling the picker, or a write/close that fails, keeps the document: its text,
+    /// its undo, still unsaved, and the prompt back with the reason. Nothing is replaced.
+    #[test]
+    fn web_save_before_new_that_is_cancelled_or_fails_keeps_the_document() {
+        for (outcome, reason) in
+            [(async_saves::SaveOutcome::Cancelled, "cancel"), (async_saves::SaveOutcome::Failed("the disk is full".into()), "the disk is full")]
+        {
+            let (mut a, saves, last) = web_picker_app();
+            a.run("file.new", json!({})).unwrap();
+            a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+            a.status_msg = None;
+            saves.finish(last.get(), outcome.clone());
+            a.settle_async_saves();
+            assert!(body_text(&a).contains(UNSAVED), "{outcome:?}: nothing was replaced");
+            assert!(a.session.dirty, "{outcome:?}: still unsaved");
+            assert_eq!(prompt(&a), Some("saveChanges"), "{outcome:?}: the prompt is back");
+            let message = prompt_message(&a).unwrap_or_default();
+            assert!(message.contains("still open") && message.contains(reason), "{outcome:?}: {message}");
+            let status = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
+            assert!(status.contains(reason), "{outcome:?}: the status bar says why: {status:?}");
+            // The undo history is still there.
+            a.execute("edit.undo", json!({})).unwrap();
+            assert!(!body_text(&a).contains(UNSAVED), "{outcome:?}: the typing can be undone");
+        }
+    }
+
+    /// #1315 review: the prompt's Save is in the picker (ticket 1), the user edits and saves
+    /// again (ticket 2, which marks the document saved at once). Ticket 1 ending doesn't let the
+    /// held-back New replace the document while ticket 2 hasn't written its edits.
+    #[test]
+    fn web_overlapping_saves_hold_the_replacement() {
+        let (mut a, saves, last) = web_picker_app();
+        a.run("file.new", json!({})).unwrap();
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        let first = last.get();
+        a.run("text.insert", json!({"text": "Later edit "})).unwrap();
+        a.execute("file.save", json!({})).unwrap();
+        assert!(!a.session.dirty, "the second save marked the document saved");
+        saves.finish(first, async_saves::SaveOutcome::Saved);
+        a.settle_async_saves();
+        assert!(body_text(&a).contains("Later edit") && body_text(&a).contains(UNSAVED), "nothing was replaced");
+        assert_eq!(prompt(&a), Some("saveChanges"), "the prompt asks again");
+    }
+
+    /// #1315 review: edited while the picker was open, then the save ends: those edits aren't
+    /// in the file, so the prompt asks again instead of running New.
+    #[test]
+    fn web_save_that_ends_after_an_edit_asks_again() {
+        let (mut a, saves, last) = web_picker_app();
+        a.run("file.new", json!({})).unwrap();
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        a.run("text.insert", json!({"text": "Later edit "})).unwrap();
+        saves.finish(last.get(), async_saves::SaveOutcome::Saved);
+        a.settle_async_saves();
+        assert!(body_text(&a).contains("Later edit"), "nothing was replaced");
+        assert!(a.session.dirty);
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        assert_eq!(prompt_message(&a).as_deref(), Some(""));
+    }
+
+    /// #1315 review: the status bar says New/Open is waiting for the save; a cancelled picker
+    /// says it was cancelled, not that saving failed.
+    #[test]
+    fn web_save_prompt_says_it_waits_and_that_a_cancel_was_a_cancel() {
+        let (mut a, saves, last) = web_picker_app();
+        a.run("file.new", json!({})).unwrap();
+        a.status_msg = None;
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        let status = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
+        assert!(status.contains("Waiting for the save"), "{status:?}");
+        saves.finish(last.get(), async_saves::SaveOutcome::Cancelled);
+        a.settle_async_saves();
+        let message = prompt_message(&a).unwrap_or_default();
+        assert!(message.contains("cancelled") && message.contains("still open"), "{message}");
+        assert!(!message.contains("Couldn't save"), "a cancel isn't a failure: {message}");
+    }
+
+    /// #1315 review: a document dropped or picked on the web (`file.open` with its bytes) waits
+    /// for the save too, then opens.
+    #[test]
+    fn web_save_before_open_opens_the_file_once_saved() {
+        let dir = scratch("web-open-after-save");
+        let bytes = std::fs::read(docx_on_disk(&dir, "Picked document")).unwrap();
+        let (mut a, saves, last) = web_picker_app();
+        let data = wordcraft_engine::cmd::insert::base64_encode(&bytes);
+        a.run("file.open", json!({"path": "picked.docx", "data": data})).unwrap();
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+        a.settle_async_saves();
+        assert!(body_text(&a).contains(UNSAVED), "nothing opened while the picker is open");
+        saves.finish(last.get(), async_saves::SaveOutcome::Saved);
+        a.settle_async_saves();
+        assert!(body_text(&a).contains("Picked document"), "the picked file opened: {:?}", body_text(&a));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1315: while the picker save is in flight the document's save isn't confirmed, so New
+    /// asks again instead of replacing it.
+    #[test]
+    fn web_new_while_a_picker_save_is_in_flight_asks_first() {
+        let (mut a, _saves, _last) = web_picker_app();
+        a.execute("file.save", json!({})).unwrap();
+        a.run("file.new", json!({})).unwrap();
+        assert_eq!(prompt(&a), Some("saveChanges"));
+        assert!(body_text(&a).contains(UNSAVED), "nothing was replaced");
+    }
+
+    /// #1315: a save that ends after the document was replaced neither runs the held-back New on
+    /// the new document nor marks it unsaved.
+    #[test]
+    fn web_picker_save_ending_after_the_document_changed_leaves_the_new_one_alone() {
+        for outcome in [async_saves::SaveOutcome::Saved, async_saves::SaveOutcome::Failed("gone".into())] {
+            let (mut a, saves, last) = web_picker_app();
+            a.run("file.new", json!({})).unwrap();
+            a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
+            // Another document replaces it (an agent's or a script's command) while the picker is open.
+            a.execute("file.new", json!({})).unwrap();
+            a.execute("text.insert", json!({"text": "Second document"})).unwrap();
+            a.session.dirty = false;
+            saves.finish(last.get(), outcome.clone());
+            a.settle_async_saves();
+            assert!(body_text(&a).contains("Second document"), "{outcome:?}: the held-back New didn't run on it");
+            assert!(!a.session.dirty, "{outcome:?}: the new document isn't marked unsaved");
+            assert_eq!(prompt(&a), None, "{outcome:?}");
+        }
     }
 
     /// A new document has no path: Save goes through Save As, and cancelling that cancels the New.
