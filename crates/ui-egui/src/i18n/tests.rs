@@ -922,10 +922,11 @@ fn polish_covers_every_key_of_every_other_catalog() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let polish = keys(lang("pl").0.source);
-    // Russian, Italian, Hungarian, Turkish, Bulgarian and Spanish also translate the built-in
-    // style names and the equation gallery, which the others don't yet; Polish matches every
-    // other catalog.
-    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "ru" | "it" | "hu" | "tr" | "bg" | "es")) {
+    // Italian and Hungarian still carry "Style: APA", which the interface no longer shows;
+    // Hungarian and Bulgarian also name the citation styles, and Bulgarian has a few one-line
+    // pieces of gallery labels. Polish matches every other catalog, including the style names and
+    // equation gallery Russian translates.
+    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg")) {
         let mut missing: Vec<String> = keys(other.0.source).difference(&polish).cloned().collect();
         missing.sort();
         assert!(missing.is_empty(), "pl lacks {}'s {missing:?}", other.code());
@@ -1001,9 +1002,29 @@ fn a_polish_interface_writes_new_documents_in_polish() {
 }
 
 #[test]
+fn an_italian_interface_writes_new_documents_in_italian() {
+    let mut app = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    let ctx = egui::Context::default();
+    let frame = |app: &mut crate::WordApp| ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx())).drop_without_applying_deltas();
+    frame(&mut app);
+    app.run("ui.language", serde_json::json!({"value": "it"})).unwrap();
+    frame(&mut app);
+    assert_eq!(app.session.editing_lang.as_deref(), Some("it-IT"));
+    assert_eq!(app.session.doc.styles.default_chr.lang.as_deref(), Some("it-IT"), "the untouched first document follows");
+    // Typing Italian then shows no English misspellings; the status bar names the language.
+    app.session.run("text.insert", &serde_json::json!({"text": "Città vecchie e caffè"})).unwrap();
+    let issues = app.session.run("review.issues", &serde_json::json!({})).unwrap();
+    assert!(issues.as_array().unwrap().iter().all(|i| i["lang"] == "it"), "{issues}");
+    set_current(lang("it"));
+    assert_eq!(crate::ribbon::caret_language(&app), "Italiano");
+    set_current(Lang::EN);
+    assert_eq!(crate::ribbon::caret_language(&app), "Italian");
+}
+
+#[test]
 fn the_editing_languages_are_the_ones_wordcraft_can_proof() {
     let with: Vec<(&str, &str)> = Lang::all().filter_map(|l| l.editing_lang().map(|e| (l.code(), e))).collect();
-    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL")]);
+    assert_eq!(with, [("pt-br", "pt-BR"), ("pl", "pl-PL"), ("it", "it-IT")]);
 }
 
 #[test]
