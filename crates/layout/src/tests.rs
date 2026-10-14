@@ -448,6 +448,27 @@ fn page_break_char_starts_new_page() {
 }
 
 #[test]
+fn a_missing_roman_font_is_drawn_as_word_draws_it() {
+    // Measured in Word: a font that isn't installed is drawn in Cambria when the font table calls
+    // it roman, in Calibri otherwise.
+    let face = |roman: bool| {
+        let mut d = Document::from_text("Serif");
+        if roman {
+            d.settings.roman_fonts = vec!["No Such Brand Font".into()];
+        }
+        let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
+        p.runs[0].props.font = Some("No Such Brand Font".into());
+        let l = lay(&d);
+        let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!("no text") };
+        let first = para.clusters.first().expect("a cluster");
+        para.styles[first.style as usize].face
+    };
+    let cambria = wordcraft_fonts::word::resolve("Cambria", false, false).face;
+    assert_eq!(face(true), cambria);
+    assert_ne!(face(false), cambria);
+}
+
+#[test]
 fn center_and_right_alignment() {
     let mut d = Document::from_text("abc\nabc\nabc");
     d.format_paragraphs(&Pos::body(1, 0), &Pos::body(1, 0), &|p| p.align = Some(Align::Center)).unwrap();
