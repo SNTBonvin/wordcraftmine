@@ -431,6 +431,13 @@ impl CommentDrafts {
     }
 }
 
+/// The pending draft of comment `id`'s text in the open document, if any.
+#[cfg(test)]
+pub(crate) fn comment_draft(app: &WordApp, id: u32) -> Option<String> {
+    let d = &app.comment_drafts;
+    if d.document == app.session.document_id() { d.edits.get(&id).cloned() } else { None }
+}
+
 fn drafts(app: &mut WordApp) -> &mut CommentDrafts {
     let document = app.session.document_id();
     app.comment_drafts.of(document)
@@ -443,7 +450,14 @@ pub(crate) fn comment_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Opti
     let Some(part) = app.session.doc.comments.get(&id).map(|c| c.part) else { return };
     let draft = drafts(app).edits.get(&id).cloned();
     let mut text = draft.unwrap_or_else(|| app.session.doc.plain_text(StoryRef::Part(part)));
-    let mut edit = egui::TextEdit::multiline(&mut text).desired_rows(1).desired_width(f32::INFINITY).hint_text(tl!("Add a comment"));
+    // Read-only where comments can't change (a protected document), so nothing is typed in vain.
+    let editable = crate::widgets::enabled(app, "review.editComment");
+    let mut edit = egui::TextEdit::multiline(&mut text)
+        .id(field_id(app, ui, "comment_edit", id))
+        .interactive(editable)
+        .desired_rows(1)
+        .desired_width(f32::INFINITY)
+        .hint_text(tl!("Add a comment"));
     if let Some(f) = font {
         edit = edit.font(f);
     }
@@ -455,9 +469,20 @@ pub(crate) fn comment_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Opti
         drafts(app).edits.insert(id, text);
     }
     if r.lost_focus() {
-        // A refusal is on the status line, and the draft stays in the field.
-        let _ = commit_comment(app, id);
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // Escape throws the draft away: the field shows the comment's text again.
+            drafts(app).edits.remove(&id);
+        } else {
+            // A refusal is on the status line, and the draft stays in the field.
+            let _ = commit_comment(app, id);
+        }
     }
+}
+
+/// A comment field's widget id, per document: egui's own state for the field (its cursor and
+/// undo history) never carries over to another document's comment with the same id.
+fn field_id(app: &WordApp, ui: &Ui, kind: &str, id: u32) -> egui::Id {
+    ui.id().with((kind, app.session.document_id(), id))
 }
 
 /// Write a comment's draft text back, when it has one that differs from the comment. The draft
@@ -486,7 +511,13 @@ fn thread_root(app: &WordApp, id: u32) -> u32 {
 /// keeps the field open with its text.
 pub(crate) fn reply_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Option<egui::FontId>, focus: bool) -> bool {
     let mut text = drafts(app).replies.get(&id).cloned().unwrap_or_default();
-    let mut edit = egui::TextEdit::multiline(&mut text).desired_rows(1).desired_width(f32::INFINITY).hint_text(tl!("Write a reply"));
+    let editable = crate::widgets::enabled(app, "review.reply");
+    let mut edit = egui::TextEdit::multiline(&mut text)
+        .id(field_id(app, ui, "comment_reply", id))
+        .interactive(editable)
+        .desired_rows(1)
+        .desired_width(f32::INFINITY)
+        .hint_text(tl!("Write a reply"));
     if let Some(f) = font {
         edit = edit.font(f);
     }
@@ -496,6 +527,11 @@ pub(crate) fn reply_editor(app: &mut WordApp, ui: &mut Ui, id: u32, font: Option
     }
     if r.changed() {
         drafts(app).replies.insert(id, text);
+    }
+    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // Escape throws the reply away and closes the field.
+        drafts(app).replies.remove(&id);
+        return true;
     }
     r.lost_focus() && commit_reply(app, id).is_ok()
 }

@@ -2961,10 +2961,7 @@ mod tests {
             h.step();
         }
         assert_eq!(h.state().session.undo_depth(), depth, "nothing is written while typing");
-        h.event(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
-        for _ in 0..3 {
-            h.step();
-        }
+        leave_field(&mut h);
         let part = h.state().session.doc.comments[&id].part;
         let text = h.state().session.doc.plain_text(StoryRef::Part(part));
         assert!(text.contains("Edited twice") && text.contains("Original"), "{text:?}");
@@ -3017,6 +3014,19 @@ mod tests {
         h.step();
     }
 
+    /// Leave the comment field by clicking on the page (which also leaves the balloon).
+    fn leave_field(h: &mut egui_kittest::Harness<'static, WordApp>) {
+        let at = h.state().canvas.page_rects[0].center();
+        h.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        for _ in 0..3 {
+            h.step();
+        }
+    }
+
     fn press_escape(h: &mut egui_kittest::Harness<'static, WordApp>) {
         h.event(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
         for _ in 0..3 {
@@ -3037,13 +3047,13 @@ mod tests {
         click_balloon(&mut h, id);
         type_in(&mut h, "Edited");
         h.state_mut().session.doc.settings.protection = Some("readOnly".into());
-        press_escape(&mut h);
+        leave_field(&mut h);
         assert_eq!(comment_text(h.state(), id), "Original", "the protected document refused the edit");
         let status = h.state().status_msg.as_ref().map(|(s, _)| s.clone()).unwrap_or_default();
         assert!(status.contains("protected"), "the refusal is shown: {status:?}");
         h.state_mut().session.doc.settings.protection = None;
         click_balloon(&mut h, id);
-        press_escape(&mut h);
+        leave_field(&mut h);
         let text = comment_text(h.state(), id);
         assert!(text.contains("Edited"), "the typed text survived the refusal: {text:?}");
     }
@@ -3067,7 +3077,7 @@ mod tests {
             h.step();
         }
         click_balloon(&mut h, fresh);
-        press_escape(&mut h);
+        leave_field(&mut h);
         assert_eq!(comment_text(h.state(), fresh), "Fresh", "the old document's draft didn't leak in");
     }
 
@@ -3097,6 +3107,80 @@ mod tests {
         type_in(&mut h, "Typed ");
         assert!(!h.state_mut().close_requested(), "the typed comment is an unsaved change");
         assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })));
+    }
+
+    /// #1348: a comment edit typed, then refused (the document became read-only).
+    fn refused_draft() -> (egui_kittest::Harness<'static, WordApp>, u32) {
+        let (mut h, id) = comment_harness();
+        h.state_mut().session.dirty = false;
+        click_balloon(&mut h, id);
+        type_in(&mut h, "Refused ");
+        h.state_mut().session.doc.settings.protection = Some("readOnly".into());
+        (h, id)
+    }
+
+    /// #1348: a draft the document refuses doesn't keep the window open: closing asks to save,
+    /// and Don't Save drops the draft and closes.
+    #[test]
+    fn a_refused_comment_draft_can_be_dropped_on_close() {
+        let (mut h, _) = refused_draft();
+        assert!(!h.state_mut().close_requested(), "the refused draft is an unsaved change");
+        assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })), "the save prompt asks about it");
+        h.state_mut().run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(h.state_mut().close_requested(), "Don't Save closes");
+    }
+
+    /// #1348: New with a refused draft asks to save; Don't Save makes the new document.
+    #[test]
+    fn a_refused_comment_draft_can_be_dropped_on_new() {
+        let (mut h, _) = refused_draft();
+        let document = h.state().session.document_id();
+        h.state_mut().run("file.new", json!({})).unwrap();
+        assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })), "the save prompt asks about it");
+        h.state_mut().run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert_ne!(h.state().session.document_id(), document, "Don't Save made the new document");
+    }
+
+    /// #1348: Save with a refused draft saves the rest of the document, keeps the draft and says why.
+    #[test]
+    fn saving_with_a_refused_comment_draft_saves_the_document() {
+        let (mut h, id) = refused_draft();
+        h.state_mut().session.dirty = true;
+        let path = std::env::temp_dir().join(format!("wordcraft-1348-refused-{}.docx", std::process::id()));
+        let r = h.state_mut().run("file.save", json!({"path": path.to_string_lossy()}));
+        let saved = wordcraft_engine::io::open_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(r.is_ok(), "{r:?}");
+        assert!(saved.is_ok(), "the document was saved");
+        assert!(!h.state().session.dirty);
+        assert!(crate::panes::comment_draft(h.state(), id).is_some_and(|d| d.contains("Refused")), "the draft stays");
+        let status = h.state().status_msg.as_ref().map(|(s, _)| s.clone()).unwrap_or_default();
+        assert!(status.contains("protected"), "the refusal is shown: {status:?}");
+    }
+
+    /// #1348: in a read-only document the comment fields can't be typed in.
+    #[test]
+    fn comment_fields_are_read_only_where_comments_cant_change() {
+        let (mut h, id) = comment_harness();
+        h.state_mut().session.doc.settings.protection = Some("readOnly".into());
+        h.step();
+        click_balloon(&mut h, id);
+        type_in(&mut h, "Typed ");
+        assert_eq!(crate::panes::comment_draft(h.state(), id), None, "nothing was typed");
+        assert_eq!(comment_text(h.state(), id), "Original");
+    }
+
+    /// #1348: Escape in a comment field throws the draft away and shows the comment's text again.
+    #[test]
+    fn escape_reverts_a_comment_draft() {
+        let (mut h, id) = comment_harness();
+        click_balloon(&mut h, id);
+        type_in(&mut h, "Discarded ");
+        press_escape(&mut h);
+        assert_eq!(crate::panes::comment_draft(h.state(), id), None, "the draft is gone");
+        assert_eq!(comment_text(h.state(), id), "Original", "nothing was written");
+        leave_field(&mut h);
+        assert_eq!(comment_text(h.state(), id), "Original", "and nothing is written later");
     }
 
     /// #513: right-clicking a picture selects it and offers Wrap Text, as in Word; choosing

@@ -10,8 +10,10 @@ use crate::{CmdError, CmdResult, CommandSpec, Selection, Session, p};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("review.newComment", "New Comment", "Review › Comments", new_comment).key("Mod+Alt+M").params(r#"{"text": string}"#),
-        CommandSpec::new("review.reply", "Reply", "Review › Comments", reply).params(r#"{"id": n, "text": string}"#),
-        CommandSpec::new("review.editComment", "Edit Comment", "Review › Comments", edit_comment).params(r#"{"id": n, "text": string}"#),
+        CommandSpec::new("review.reply", "Reply", "Review › Comments", reply).params(r#"{"id": n, "text": string}"#).when(comments_change),
+        CommandSpec::new("review.editComment", "Edit Comment", "Review › Comments", edit_comment)
+            .params(r#"{"id": n, "text": string}"#)
+            .when(comments_change),
         CommandSpec::new("review.deleteComment", "Delete", "Review › Comments", delete_comment).params(r#"{"id"?: n, "all"?: bool}"#),
         CommandSpec::new("review.resolveComment", "Resolve", "Review › Comments", |s, v| {
             let id = p::u64(v, "id").map(|x| x as u32).or_else(|| comment_at_caret(s)).ok_or_else(|| CmdError::Params("`id` required".into()))?;
@@ -152,6 +154,15 @@ fn reply(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 /// Replace a comment's (or reply's) text; each line becomes a paragraph.
+/// Comments can't be written or edited in a document protected as read only or for filling in
+/// forms (the comment fields are read-only there, #1348).
+fn comments_change(s: &Session) -> Option<&'static str> {
+    match s.doc.settings.protection.as_deref() {
+        Some("readOnly" | "forms") => Some("the document is protected"),
+        _ => None,
+    }
+}
+
 fn edit_comment(s: &mut Session, v: &Value) -> CmdResult {
     let id = p::u64(v, "id").and_then(|x| u32::try_from(x).ok()).ok_or_else(|| CmdError::Params("`id` required".into()))?;
     let text = p::req_str(v, "text")?;
