@@ -64,7 +64,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("edit.paste", "Paste", "Home › Clipboard", paste).key("Mod+V").params(r#"{"text"?: string, "html"?: string, "rtf"?: string}"#),
         CommandSpec::new("edit.pasteText", "Paste: Keep Text Only", "Home › Clipboard › Paste", paste_text)
             .params(r#"{"text"?: string}"#)
-            .key("Mod+Shift+Alt+V"),
+            .key("Mod+Shift+V / Mod+Shift+Alt+V"),
         CommandSpec::new("edit.pasteMerge", "Paste: Merge Formatting", "Home › Clipboard › Paste", paste_merge)
             .params(r#"{"text"?: string, "html"?: string, "rtf"?: string}"#),
         CommandSpec::new("edit.clipboardPane", "Clipboard Pane", "Home › Clipboard", |s, v| {
@@ -147,9 +147,9 @@ pub fn specs() -> Vec<CommandSpec> {
             painter_pick(s);
             sel_result(s)
         })
-        .key("Mod+Shift+C")
+        .key("Mod+Shift+C / Mod+Alt+C")
         .pure(),
-        CommandSpec::new("edit.pasteFormat", "Paste Formatting", "Home › Clipboard", paste_format).key("Mod+Shift+V"),
+        CommandSpec::new("edit.pasteFormat", "Paste Formatting", "Home › Clipboard", paste_format).key("Mod+Alt+Shift+V"),
     ]
 }
 

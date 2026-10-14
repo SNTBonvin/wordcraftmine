@@ -124,6 +124,9 @@ fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
     let Some(name) = key_name(key) else { return false };
     let reg = app.session.registry.clone();
     if let Some(spec) = app.session.keymap.resolve(&reg, &combo(m, name, true)) {
+        if crate::system_clipboard::is_paste(spec.id) {
+            app.canvas.pasted = true;
+        }
         let _ = app.run(spec.id, json!({}));
         return true;
     }
@@ -185,7 +188,7 @@ fn equation_key(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
 }
 
 /// Whether releasing `key` with `modifiers` is the plain Paste shortcut (Mod+V or the Paste
-/// key) — not Mod+Shift+V (Paste Formatting) or Mod+Alt+V (Paste Special) — so a clipboard
+/// key) — not Mod+Shift+V (Paste: Keep Text Only) or Mod+Alt+V (Paste Special) — so a clipboard
 /// picture may be pasted on it (#45).
 fn is_paste_release(key: Key, modifiers: egui::Modifiers) -> bool {
     (modifiers.command || key == Key::Paste) && !modifiers.alt && !modifiers.shift
@@ -194,6 +197,11 @@ fn is_paste_release(key: Key, modifiers: egui::Modifiers) -> bool {
 /// Whether releasing `key` with `modifiers` is Mod+Alt+V (Paste Special).
 fn is_paste_special_release(key: Key, modifiers: egui::Modifiers) -> bool {
     key == Key::V && modifiers.command && modifiers.alt && !modifiers.shift
+}
+
+/// Whether releasing `key` with `modifiers` is Mod+Shift+V (Paste: Keep Text Only, #1544).
+fn is_paste_text_release(key: Key, modifiers: egui::Modifiers) -> bool {
+    key == Key::V && modifiers.command && modifiers.shift && !modifiers.alt
 }
 
 /// Events for the focused canvas: text, editing keys, clipboard, IME. While keytips are showing
@@ -239,7 +247,7 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
         if let egui::Event::Paste(t) = &e {
             app.canvas.pasted = true;
             // Copied picture files arrive as their paths: insert the pictures (#45).
-            if app.session.math.is_none() && !ctx.input(|i| i.modifiers.alt) && crate::paste_picture::paste_named_files(app, t) {
+            if app.session.math.is_none() && !ctx.input(|i| i.modifiers.alt || i.modifiers.shift) && crate::paste_picture::paste_named_files(app, t) {
                 continue;
             }
         }
@@ -256,6 +264,10 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
             // is there (a picture) or saying what it holds (#687, #833).
             if !pasted && is_paste_special_release(*key, *modifiers) && app.session.math.is_none() && app.services.clipboard_picture.is_some() {
                 let _ = app.run("edit.pasteSpecial", json!({}));
+            }
+            // Mod+Shift+V with no text on the clipboard: reports that the clipboard is empty (#1544).
+            if !pasted && is_paste_text_release(*key, *modifiers) && app.session.math.is_none() {
+                let _ = app.run("edit.pasteText", json!({}));
             }
             continue;
         }
@@ -305,11 +317,12 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
             }
             egui::Event::Paste(t) => {
                 // Mod+Alt+V arrives as a paste too (the shell reads the clipboard): Paste Special.
+                // Mod+Shift+V is Paste: Keep Text Only (#1544).
                 let m = ctx.input(|i| i.modifiers);
                 let id = match (m.alt, m.shift) {
-                    (true, true) => "edit.pasteText",
+                    (false, true) | (true, true) => "edit.pasteText",
                     (true, false) => "edit.pasteSpecial",
-                    _ => "edit.paste",
+                    (false, false) => "edit.paste",
                 };
                 let _ = app.run(id, json!({"text": t}));
             }
@@ -429,11 +442,13 @@ mod tests {
         let m = |command, shift, alt| egui::Modifiers { command, shift, alt, ..Default::default() };
         assert!(is_paste_release(Key::V, m(true, false, false)), "Mod+V");
         assert!(is_paste_release(Key::Paste, m(false, false, false)), "the Paste key");
-        assert!(!is_paste_release(Key::V, m(true, true, false)), "Mod+Shift+V is Paste Formatting");
+        assert!(!is_paste_release(Key::V, m(true, true, false)), "Mod+Shift+V is Paste: Keep Text Only");
         assert!(!is_paste_release(Key::V, m(true, false, true)), "Mod+Alt+V is Paste Special");
         assert!(!is_paste_release(Key::V, m(false, false, false)), "a plain V");
         assert!(is_paste_special_release(Key::V, m(true, false, true)), "Mod+Alt+V opens Paste Special");
         assert!(!is_paste_special_release(Key::V, m(true, true, true)) && !is_paste_special_release(Key::V, m(true, false, false)));
+        assert!(is_paste_text_release(Key::V, m(true, true, false)), "Mod+Shift+V is Paste: Keep Text Only");
+        assert!(!is_paste_text_release(Key::V, m(true, false, false)) && !is_paste_text_release(Key::V, m(true, true, true)));
     }
 
     #[test]
@@ -454,5 +469,42 @@ mod tests {
         assert!(is_global_shortcut(Key::F7, m(false, false, false)), "F7");
         assert!(!is_global_shortcut(Key::Q, m(false, false, false)), "a plain letter is typing");
         assert!(!is_global_shortcut(Key::Q, m(false, false, true)), "Shift+letter is typing");
+    }
+
+    #[test]
+    fn mod_shift_v_pastes_plain_text_without_formatting() {
+        let services = crate::Services {
+            clipboard_text: Some(Box::new(|| Some("plain strong".into()))),
+            clipboard_html: Some(Box::new(|| Some("<p>plain <b>strong</b></p>".into()))),
+            ..Default::default()
+        };
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+        a.canvas.want_focus = true;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let m = egui::Modifiers { command: true, shift: true, ..Default::default() };
+        // Event::Paste with Shift held: Keep Text Only (#1544).
+        h.input_mut().events.extend([egui::Event::ModifiersChanged(m), egui::Event::Paste("plain strong".into())]);
+        h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "plain strong");
+        let focus = h.state().session.sel.focus.clone();
+        assert!(!h.state().session.doc.para_at(&focus).and_then(|p| p.props_of_char(7).bold).unwrap_or(false));
+
+        // Event::Key with Mod+Shift+V: Keep Text Only (#1544).
+        h.input_mut().events.extend([
+            egui::Event::ModifiersChanged(m),
+            egui::Event::Key { key: Key::V, physical_key: None, pressed: true, repeat: false, modifiers: m },
+        ]);
+        h.step();
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "plain strongplain strong");
+        let focus = h.state().session.sel.focus.clone();
+        assert!(!h.state().session.doc.para_at(&focus).and_then(|p| p.props_of_char(19).bold).unwrap_or(false));
     }
 }
