@@ -5171,14 +5171,33 @@ fn caps_draw_sharp_s_as_two_capitals_in_one_cluster() {
         }
         // Caret stops: one before each source character, and the end; none inside ß.
         assert_eq!(pl.line_offsets(0), vec![0, 1, 2, 3, 4, 6, 7], "{name}");
-        // A click in the middle of the second S lands before or after the ß.
-        let x = ss.3 + ss.4 * 0.75;
-        let off = pl.off_at_x(0, x);
-        assert!(off == 4 || off == 6, "{name}: hit at {x} gave {off}");
+        // A click on the first S lands before the ß, on the second S after it.
+        assert_eq!(pl.off_at_x(0, ss.3 + ss.4 * 0.25), 4, "{name}: click on the first S");
+        assert_eq!(pl.off_at_x(0, ss.3 + ss.4 * 0.75), 6, "{name}: click on the second S");
+        if name == "Small Caps" {
+            // The ß is a lowercase letter: drawn at the small-caps size, like the "t", not
+            // at the size of the capital S that starts the word.
+            let style = |off: usize| pl.clusters.iter().find(|c| c.start == off).map(|c| c.style);
+            assert_eq!(style(4), style(1), "Small Caps: ß is scaled like t");
+            assert_ne!(style(4), style(0), "Small Caps: ß is not the size of the first S");
+        }
     }
     // Without caps, ß is one glyph of its own.
     let pl = strasse_with(&|c| c.bold = Some(false));
     let cl = text_clusters(&pl);
     assert_eq!(cl.len(), 6);
     assert_eq!(cl.iter().map(|c| c.2.len()).sum::<usize>(), 6, "{cl:?}");
+}
+
+/// A caps run in a symbol font draws each code as its symbol: ß never becomes two glyphs (#1581).
+#[test]
+fn caps_in_a_symbol_font_never_expand_characters() {
+    let pl = strasse_with(&|c| {
+        c.caps = Some(true);
+        c.font = Some("Wingdings".into());
+    });
+    let cl = text_clusters(&pl);
+    assert_eq!(cl.len(), 6, "{cl:?}");
+    let ss = cl.iter().find(|c| c.0 == 4).expect("a cluster for the ß code");
+    assert_eq!((ss.1, ss.2.len()), (6, 1), "the ß code is one symbol: {cl:?}");
 }

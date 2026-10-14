@@ -802,8 +802,9 @@ impl<'a> Builder<'a> {
             let Some(st) = self.styles.get(si as usize).cloned() else { continue };
             let upper = rc.caps || small;
             // All Caps and Small Caps draw a letter's full capital, which can be several
-            // characters (ß → SS, ﬀ → FF, ŉ → ʼN), as Word does (#1581).
-            let expands = upper && sub.chars().any(|c| show(c) == c && caps_expands(c));
+            // characters (ß → SS, ﬀ → FF, ŉ → ʼN), as Word does (#1581). A symbol-font run
+            // draws its codes as symbols, never as expanded capitals.
+            let expands = sym.is_none() && upper && sub.chars().any(caps_expands);
             // Displayed text: numeral substitution is 1 char → 1 char and a capital may be
             // several; `map_starts` holds where each document char's displayed form starts and
             // `orig_of` maps it back to the char's original byte offset (+ a `sub.len()` sentinel).
@@ -817,7 +818,7 @@ impl<'a> Builder<'a> {
                     map_starts.push(mapped.len());
                     orig_of.push(i);
                     let d = self.numeral_char(&context, a + i, c, key.rtl);
-                    if expands && show(d) == d {
+                    if expands {
                         mapped.extend(d.to_uppercase());
                     } else {
                         mapped.push(d);
