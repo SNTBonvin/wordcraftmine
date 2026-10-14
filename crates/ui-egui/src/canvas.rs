@@ -726,7 +726,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     // Keys first, so this frame lays out and paints what was typed (handled after painting, a
     // keystroke showed one frame later). Focus is the canvas's from the last frame.
     // While "Save changes?" is up, keys answer it rather than edit the document behind it.
-    if app.canvas.focused && !matches!(app.dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })) {
+    if (app.canvas.focused || app.canvas.want_focus) && !matches!(app.dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })) {
         crate::keys::canvas_events(app, ui.ctx());
     }
     crate::ink::replay_tick(app, ui.ctx());
@@ -1232,16 +1232,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         deselect_balloon(app, ui.ctx());
     }
     // Focus: the canvas takes keyboard focus on click and keeps Tab/arrows.
-    if resp.clicked() || resp.drag_started() || app.canvas.want_focus {
+    let requested = resp.clicked() || resp.drag_started() || app.canvas.want_focus;
+    if requested {
         resp.request_focus();
         app.canvas.want_focus = false;
     }
-    if resp.has_focus() {
+    let focused = resp.has_focus() || requested;
+    if focused {
         ui.memory_mut(|m| {
             m.set_focus_lock_filter(resp.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true })
         });
     }
-    app.canvas.focused = resp.has_focus();
+    app.canvas.focused = focused;
     // Screen readers: the document under the canvas, with the caret (#488).
     crate::a11y::expose(app, ui.ctx(), resp.id, &layout, &rects, area);
     // The buttons that start or stop middle-click scrolling don't also click the page.

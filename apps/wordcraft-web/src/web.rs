@@ -58,13 +58,14 @@ pub fn start() {
                     let doc = if sample { wordcraft_engine::sample::sample_document() } else { wordcraft_engine::blank_document(&region) };
                     let mut session = Session::new(doc);
                     session.system_region = region;
-                    let mut app = WordApp::new(session, services(inbox.clone(), cc.egui_ctx.clone(), dirty, saves.clone()));
+                    let messages = Rc::new(RefCell::new(Vec::new()));
+                    let mut app = WordApp::new(session, services(inbox.clone(), cc.egui_ctx.clone(), dirty, saves.clone(), messages.clone()));
                     app.autosave = false;
                     // No document to show: start on File › Home, as the desktop app does (#766).
                     if !sample {
                         app.start_screen();
                     }
-                    Ok(Box::new(WebShell { app, inbox, saves }))
+                    Ok(Box::new(WebShell { app, inbox, saves, messages }))
                 }),
             )
             .await;
@@ -87,6 +88,7 @@ struct WebShell {
     app: WordApp,
     inbox: Inbox,
     saves: Rc<PickerSaves>,
+    messages: Rc<RefCell<Vec<String>>>,
 }
 
 /// Saves the browser's save picker finishes after `download` has returned (#728). The app marks
@@ -138,6 +140,10 @@ impl eframe::App for WebShell {
             });
         }
         self.settle_picker_saves();
+        let msgs = std::mem::take(&mut *self.messages.borrow_mut());
+        for msg in msgs {
+            self.app.status(msg);
+        }
         self.app.logic(ctx);
     }
 
@@ -197,9 +203,11 @@ fn listen_for_pasted_pictures(inbox: Inbox, ctx: egui::Context) -> Result<(), St
 }
 
 /// `dirty` is the flag the `beforeunload` guard reads ([`guard_unload`]).
-fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>, saves: Rc<PickerSaves>) -> Services {
+fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>, saves: Rc<PickerSaves>, messages: Rc<RefCell<Vec<String>>>) -> Services {
     let open_inbox = inbox.clone();
     let save_ctx = ctx.clone();
+    let font_ctx = ctx.clone();
+    let font_messages = messages.clone();
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
@@ -231,8 +239,92 @@ fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>, saves: Rc<P
         animations_enabled: Some(animations_enabled()),
         store_font: Some(Box::new(font_store::store)),
         forget_font: Some(Box::new(font_store::forget)),
+        load_system_fonts: Some(Box::new(move || {
+            load_system_fonts(font_ctx.clone(), font_messages.clone());
+        })),
         ..Default::default()
     }
+}
+
+/// Query the browser's Local Font Access API (`window.queryLocalFonts()`) and install the faces
+/// into the global font database.
+fn load_system_fonts(ctx: egui::Context, messages: Rc<RefCell<Vec<String>>>) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let query_fn = match js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("queryLocalFonts")) {
+            Ok(val) if val.is_function() => js_sys::Function::from(val),
+            _ => {
+                messages.borrow_mut().push(wordcraft_ui_egui::i18n::t("Local font access is not supported by your browser.").to_string());
+                ctx.request_repaint();
+                return;
+            }
+        };
+        let fonts_promise = match query_fn.call0(&window) {
+            Ok(p) => js_sys::Promise::from(p),
+            Err(e) => {
+                log::warn!("queryLocalFonts call failed: {e:?}");
+                messages.borrow_mut().push(wordcraft_ui_egui::i18n::t("Local font access was denied.").to_string());
+                ctx.request_repaint();
+                return;
+            }
+        };
+        let fonts_val = match wasm_bindgen_futures::JsFuture::from(fonts_promise).await {
+            Ok(val) => val,
+            Err(e) => {
+                log::warn!("queryLocalFonts promise rejected: {e:?}");
+                messages.borrow_mut().push(wordcraft_ui_egui::i18n::t("Local font access was denied.").to_string());
+                ctx.request_repaint();
+                return;
+            }
+        };
+        let font_list = js_sys::Array::from(&fonts_val);
+        let len = font_list.length();
+        let mut loaded = 0usize;
+        for i in 0..len {
+            let font_data = font_list.get(i);
+            let Ok(blob_fn) = js_sys::Reflect::get(&font_data, &wasm_bindgen::JsValue::from_str("blob")) else {
+                continue;
+            };
+            if !blob_fn.is_function() {
+                continue;
+            }
+            let Ok(blob_val) = js_sys::Function::from(blob_fn).call0(&font_data) else {
+                continue;
+            };
+            let Ok(blob_js) = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(blob_val)).await else {
+                continue;
+            };
+            let Ok(blob) = blob_js.dyn_into::<web_sys::Blob>() else {
+                continue;
+            };
+            let Ok(array_buffer) = wasm_bindgen_futures::JsFuture::from(blob.array_buffer()).await else {
+                continue;
+            };
+            let bytes = js_sys::Uint8Array::new(&array_buffer).to_vec();
+            if bytes.len() > wordcraft_fonts::MAX_FONT_FILE_BYTES {
+                continue;
+            }
+            let ps_name = js_sys::Reflect::get(&font_data, &wasm_bindgen::JsValue::from_str("postscriptName"))
+                .ok()
+                .and_then(|v| v.as_string())
+                .unwrap_or_else(|| format!("local-font-{i}"));
+            let name = format!("{ps_name}.ttf");
+            match wordcraft_fonts::FontDb::global().install_font(&name, &bytes) {
+                Ok(_) => loaded += 1,
+                Err(wordcraft_fonts::UserFontError::AlreadyAvailable(_)) => {}
+                Err(e) => log::warn!("local font {name} skipped: {e}"),
+            }
+        }
+        if loaded > 0 {
+            let msg = wordcraft_ui_egui::i18n::fmt(wordcraft_ui_egui::i18n::t("Loaded {count} system fonts."), &[("count", &loaded.to_string())]);
+            messages.borrow_mut().push(msg);
+        } else {
+            messages.borrow_mut().push(wordcraft_ui_egui::i18n::t("All system fonts are already available.").to_string());
+        }
+        ctx.request_repaint();
+    });
 }
 
 /// Whether the system has animation effects on, as the browser passes it on: off while the

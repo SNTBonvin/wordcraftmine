@@ -104,4 +104,8 @@ fn bad_font_input_is_an_error() {
     let r = s.run("font.add", &json!({})).unwrap();
     assert_eq!(r["pending"], true);
     assert!(s.ui_requests.iter().any(|r| r["open"] == "addFont"));
+
+    let r = s.run("font.loadSystem", &json!({})).unwrap();
+    assert_eq!(r["pending"], true);
+    assert!(s.ui_requests.iter().any(|r| r["open"] == "loadSystemFonts"));
 }
