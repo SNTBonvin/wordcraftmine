@@ -64,6 +64,34 @@ fn myanmar_without_spaces_wraps_between_syllables() {
     assert!(pl.lines[0].c1 - pl.lines[0].c0 > 10);
 }
 
+/// The paragraph from #1548: Thai with no spaces after a Latin label.
+const THAI: &str = "[A] การประชุมคณะกรรมการบริหารโครงการพัฒนาระบบสารสนเทศเพื่อการบริหารจัดการทรัพยากรบุคคลขององค์กรปกครองส่วนท้องถิ่นได้มีมติเห็นชอบให้ดำเนินการจัดซื้อจัดจ้างเครื่องคอมพิวเตอร์แม่ข่ายพร้อมอุปกรณ์จัดเก็บข้อมูลสำรองภายในปีงบประมาณพุทธศักราชสองพันห้าร้อยหกสิบเก้าเพื่อรองรับการขยายตัวของระบบงานและลดความเสี่ยงจากการสูญหายของข้อมูลสำคัญซึ่งอาจส่งผลกระทบต่อการให้บริการประชาชน";
+
+#[test]
+fn thai_without_spaces_wraps_between_dictionary_words() {
+    let l = lay(&Document::from_text(THAI));
+    let pl = para_layout(&l, 0);
+    assert!(pl.lines.len() > 1, "a long Thai paragraph wraps");
+    let words = crate::dictionary::breaks(THAI);
+    for line in pl.lines.iter().skip(1) {
+        let start = pl.clusters[line.c0].start;
+        assert!(
+            words.contains(&start),
+            "line starts between words, not at {start}: {:?}",
+            THAI.get(start..).map(|t| t.chars().take(8).collect::<String>())
+        );
+    }
+    let first_end = pl.clusters[pl.lines[0].c1 - 1].end;
+    assert!(first_end > "[A] ".len() + 30, "first line ends at {first_end}");
+    for w in ["องค์กร", "ทรัพยากร", "อุปกรณ์"] {
+        let at = THAI.find(w).unwrap();
+        for line in &pl.lines {
+            let start = pl.clusters[line.c0].start;
+            assert!(!(at < start && start < at + w.len()), "a line starts inside {w}");
+        }
+    }
+}
+
 /// A face with Myanmar letters (an installed system font), or `None` to skip.
 fn myanmar_face() -> Option<wordcraft_fonts::FaceRef> {
     wordcraft_fonts::FontDb::global().fallback_for('\u{1000}', 0).map(|f| wordcraft_fonts::FaceRef::of(&f)).filter(|f| f.has_layout_tables())

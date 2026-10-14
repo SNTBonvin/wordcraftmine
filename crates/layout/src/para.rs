@@ -1432,6 +1432,13 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         found.sort_unstable();
         found.dedup();
     }
+    // Thai, Lao and Khmer wrap between dictionary words.
+    let dict = crate::dictionary::breaks(&text);
+    if !dict.is_empty() {
+        found.extend(dict);
+        found.sort_unstable();
+        found.dedup();
+    }
     // Asian typography: kinsoku and breaking Latin words anywhere.
     crate::kinsoku::apply(&text, &mut found, rp.kinsoku, rp.word_wrap);
     let opps: std::collections::HashSet<usize> = found.into_iter().filter_map(to_para).collect();
