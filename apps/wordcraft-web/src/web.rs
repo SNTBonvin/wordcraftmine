@@ -64,7 +64,13 @@ pub fn start() {
                     if !sample {
                         app.start_screen();
                     }
-                    Ok(Box::new(WebShell { app, inbox, saves }))
+                    Ok(Box::new(WebShell {
+                        app,
+                        inbox,
+                        saves,
+                        #[cfg(feature = "self-hosted-update")]
+                        updates: crate::updates::browser(cc.egui_ctx.clone()),
+                    }))
                 }),
             )
             .await;
@@ -87,6 +93,8 @@ struct WebShell {
     app: WordApp,
     inbox: Inbox,
     saves: Rc<PickerSaves>,
+    #[cfg(feature = "self-hosted-update")]
+    updates: crate::updates::Updates<craft_update::web::Client>,
 }
 
 /// Saves the browser's save picker finishes after `download` has returned (#728). The app marks
@@ -146,6 +154,8 @@ impl eframe::App for WebShell {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(feature = "self-hosted-update")]
+        self.updates.show(ui);
         self.app.ui(ui);
     }
 }
