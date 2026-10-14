@@ -1,34 +1,34 @@
-//! Portuguese grammar and punctuation checks: cheap, rule-based and tuned to stay quiet when
+//! Spanish grammar and punctuation checks: cheap, rule-based and tuned to stay quiet when
 //! unsure (a missed mistake costs less than a wrong mark on correct text). Messages are in
-//! Portuguese.
+//! Spanish.
 //!
-//! - **Repeated word** (`ele ele`), except interjections and words Portuguese doubles on purpose
-//!   (`sim sim`, `não não`, `ora ora`).
-//! - **Space before punctuation** (`bem ,`) and **double spaces**; emoticons (` :)`) and
+//! - **Repeated word** (`él él`), except interjections and words Spanish doubles on purpose
+//!   (`sí sí`, `no no`, `ya ya`).
+//! - **Space before punctuation** (`bien ,`) and **double spaces**; emoticons (` :)`) and
 //!   ellipses are left alone.
-//! - **Capital letter at the start of a sentence**, knowing Portuguese abbreviations (`etc.`,
+//! - **Capital letter at the start of a sentence**, knowing Spanish abbreviations (`etc.`,
 //!   `pág.`, `Prof.`, `Dr.`), initials, ordinal numbers (`5. colocado`), ellipses and dialogue
-//!   dashes (`— Vai — disse`), after which lower case is correct.
+//!   dashes (`— Vamos — dijo`), after which lower case is correct.
 //! - **Doubled punctuation** (`,,`, `..`, `;;`).
 //!
 //! No comma rule (`que` opens clauses only sometimes) and no English rule (such as `a`/`an`)
-//! applies to Portuguese text.
+//! applies to Spanish text.
 
 use crate::{Issue, IssueKind, ProofLang, words};
 
-/// Words Portuguese repeats on purpose: interjections, onomatopoeia and emphatic doubling.
+/// Words Spanish repeats on purpose: interjections, onomatopoeia and emphatic doubling.
 const ALLOWED_REPEATS: &[&str] = &[
-    "sí", "no", "ya", "bien", "muy", "más", "sim", "não", "ora", "olha", "já", "bem", "muito", "vai", "lá", "cá", "aí", "ha", "he", "hi", "oh", "ah",
-    "ai", "ui", "uf", "uxa", "oba", "viva", "psiu", "olá", "tchau", "xau", "adeus", "devagar",
+    "sí", "no", "ya", "bien", "muy", "casi", "más", "va", "vamos", "dale", "mira", "oye", "ja", "je", "ji", "jo", "ju", "oh", "ah", "ay", "uy", "uf",
+    "epa", "adiós", "chau", "chao", "poco", "luego", "nunca", "jamás", "claro", "bueno", "taca", "zas", "pum", "clic",
 ];
 
 /// Abbreviations written with a final period after which a sentence goes on in lower case
 /// (lower case, without the period).
 const ABBREVIATIONS: &[&str] = &[
-    "etc", "ej", "ud", "uds", "lic", "núm", "cap", "ex", "pág", "págs", "séc", "sécs", "fl", "av", "vol", "p", "pp", "ed", "tel", "min", "max",
-    "art", "par", "prof", "profa", "dr", "dra", "sr", "sra", "srta", "eng", "arq", "op", "cit", "cf", "ibid", "id", "vide", "seg", "ter", "qua",
-    "qui", "sex", "sáb", "dom", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez", "s.a", "d.c", "a.c", "pg", "ref",
-    "cod", "dept", "univ", "inst", "lat", "ing", "esp", "fr", "it", "al", "obs", "att", "obs",
+    "etc", "ej", "pág", "págs", "sig", "sigs", "cap", "caps", "av", "avda", "vol", "vols", "p", "pp", "ed", "tel", "mín", "máx", "art", "arts",
+    "prof", "profa", "dr", "dra", "sr", "sra", "srta", "lic", "ing", "arq", "gral", "ud", "uds", "vd", "vds", "núm", "nro", "fig", "figs", "op",
+    "cit", "cf", "ibíd", "id", "lun", "mar", "mié", "jue", "vie", "sáb", "dom", "ene", "feb", "abr", "may", "jun", "jul", "ago", "sep", "set", "oct",
+    "nov", "dic", "s.a", "d.c", "a.c", "ref", "cód", "depto", "dpto", "univ", "inst", "lat", "esp", "fr", "it", "al", "obs", "atte", "aprox",
 ];
 
 fn issue(start: usize, end: usize, message: String, suggestions: Vec<String>) -> Issue {
@@ -66,7 +66,7 @@ fn ends_sentence(gap: &str, prev: &str) -> bool {
     rest.starts_with(char::is_whitespace) && rest.trim_start().chars().all(|c| OPENING.contains(&c))
 }
 
-/// Grammar issues in a paragraph of Portuguese text, in order.
+/// Grammar issues in a paragraph of Spanish text, in order.
 pub fn check(text: &str) -> Vec<Issue> {
     let ws: Vec<(usize, usize)> = words(text);
     let mut v = Vec::new();
@@ -125,7 +125,7 @@ fn spaces(text: &str, v: &mut Vec<Issue>) {
 }
 
 fn sentence_capitals(text: &str, ws: &[(usize, usize)], v: &mut Vec<Issue>) {
-    // List items (`– maçãs,`) may start in lower case.
+    // List items (`– manzanas,`) may start in lower case.
     let list_item = text.trim_end().ends_with([',', ';']);
     for (k, &(a, b)) in ws.iter().enumerate() {
         let Some(w) = text.get(a..b) else { continue };
@@ -182,54 +182,54 @@ mod tests {
 
     #[test]
     fn repeated_words() {
-        let v = check("Eu eu vi isso e ele ele saiu.");
+        let v = check("Yo yo vi eso y él él salió.");
         assert_eq!(v.len(), 2, "{v:?}");
-        assert_eq!(v[0].message, "Palabra repetida: \"eu\"");
-        assert_eq!(v[0].suggestions, ["Eu"]);
+        assert_eq!(v[0].message, "Palabra repetida: \"yo\"");
+        assert_eq!(v[0].suggestions, ["Yo"]);
         assert!(v.iter().all(|i| i.lang == ProofLang::Es && i.kind == IssueKind::Grammar));
-        clean("Sim, sim! Não, não! Ora ora, que surpresa.");
+        clean("¡Sí, sí! ¡No, no! Ya ya, qué sorpresa.");
     }
 
     #[test]
     fn spaces_and_punctuation() {
-        let m = messages("Olá , mundo .  Tudo bem ?");
+        let m = messages("Hola , mundo .  ¿Todo bien ?");
         assert!(m.contains(&"Espacio antes de la puntuación@ ,".to_string()), "{m:?}");
         assert!(m.contains(&"Espacio antes de la puntuación@ .".to_string()), "{m:?}");
         assert!(m.contains(&"Espacio antes de la puntuación@ ?".to_string()), "{m:?}");
         assert!(m.contains(&"Espacio doble@  ".to_string()), "{m:?}");
-        clean("Legal :) Muito bom :-) Ou :D Valor .5 e reticências ...");
-        let m = messages("Falou,, e saiu.. depois;; fim.");
+        clean("Genial :) Muy bien :-) O :D Valor .5 y puntos suspensivos ...");
+        let m = messages("Habló,, y salió.. después;; fin.");
         assert_eq!(m.iter().filter(|x| x.starts_with("Signo repetido")).count(), 3, "{m:?}");
-        clean("Esperei… e esperei... até ele voltar.");
+        clean("Esperé… y esperé... hasta que volvió.");
     }
 
     #[test]
     fn sentence_start_capitals() {
-        let m = messages("isso é um teste. a segunda frase! terceira? ok.");
+        let m = messages("esto es una prueba. ¡la segunda oración! ¿tercera? bien.");
         assert_eq!(m.iter().filter(|x| x.starts_with("Letra mayúscula")).count(), 4, "{m:?}");
-        assert_eq!(check("ele tem razão.")[0].suggestions, ["Ele"]);
+        assert_eq!(check("él tiene razón.")[0].suggestions, ["Él"]);
         assert_eq!(check("¿hola?")[0].suggestions, ["Hola"]);
         assert_eq!(check("¡hola!")[0].suggestions, ["Hola"]);
         assert_eq!(check("Terminó. ¿hola?")[0].suggestions, ["Hola"]);
         clean("¿Hola? ¡Hola! Terminó. ¿Hola?");
         // Abbreviations, initials, ordinals, ellipses and dialogue dashes.
-        clean("Comprei frutas, etc. e depois saímos.");
-        clean("Conheci o Dr. Silva na Av. Paulista.");
-        clean("Zhou ficou em 5. lugar no séc. XX.");
-        clean("Esperei... e ele apareceu.");
-        clean("— Vai — disse ele. — Amanhã eu volto.");
+        clean("Compré frutas, etc. y después salimos.");
+        clean("Conocí al Dr. Gómez en la Av. Libertador.");
+        clean("Zhou quedó en 5. lugar en el cap. XX.");
+        clean("Esperé... y él apareció.");
+        clean("— Vamos — dijo ele. — Amanhã eu volto.");
         clean("Ele disse: \"Volto amanhã\". E saiu.");
         // A list item may start in lower case.
-        clean("maçãs,");
+        clean("manzanas,");
     }
 
     #[test]
-    fn correct_portuguese_text_is_clean() {
+    fn correct_spanish_text_is_clean() {
         clean(
-            "O rato roeu a roupa do rei de Roma. Quem não tem cão caça com gato, \
-             e quem tem paciência colhe o que plantou.",
+            "El niño tocó la canción en español con mucha pasión. Quien madruga encuentra \
+             el camino despejado, y quien tiene paciencia cosecha lo que sembró.",
         );
-        clean("Brasília, 12 de outubro de 2026 — uma data memorável.");
+        clean("Ciudad de México, 12 de octubre de 2026 — una fecha memorable.");
     }
 
     proptest::proptest! {
@@ -239,7 +239,7 @@ mod tests {
         }
 
         #[test]
-        fn never_panics_on_portuguese_like_text(s in "[a-záàâãéêíóôõúüçA-Z ,.;:!?\"…\\-—]{0,60}") {
+        fn never_panics_on_spanish_like_text(s in "[a-záàâãéêíóôõúüçA-Z ,.;:!?\"…\\-—]{0,60}") {
             for i in check(&s) {
                 proptest::prop_assert!(i.start <= i.end && i.end <= s.len());
                 proptest::prop_assert!(s.is_char_boundary(i.start) && s.is_char_boundary(i.end));

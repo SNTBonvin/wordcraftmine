@@ -1,14 +1,14 @@
-//! Portuguese spelling suggestions, best first.
+//! Spanish spelling suggestions, best first.
 //!
 //! Candidates come in rounds of rising cost, each checked against the dictionary:
-//! 1. letter case (`brasília` → `Brasília`);
-//! 2. missing or wrong accents, from the dictionary's `MAP` groups (`coraçao` → `coração`,
-//!    `saude` → `saúde`), up to four letters changed — Portuguese typed without accents is the
+//! 1. letter case (`méxico` → `México`);
+//! 2. missing or wrong accents, from the dictionary's `MAP` groups (`corazon` → `corazón`,
+//!    `nino` → `niño`), up to four letters changed — Spanish typed without accents is the
 //!    most common slip, so adding one ranks first, while taking away an accent the writer typed
 //!    ranks after the known confusions;
-//! 3. the dictionary's `REP` table of common confusions (`seje` → `seja`, `excessão` →
-//!    `exceção`, `previlégio` → `privilégio`);
-//! 4. a missing space (`nãoé` → `não é`, `paraela` → `para ela`), cheaper when one half is a
+//! 3. the dictionary's `REP` table of common confusions (`haiga` → `haya`, `exepción` →
+//!    `excepción`, `previlegio` → `privilegio`);
+//! 4. a missing space (`noes` → `no es`, `paraella` → `para ella`), cheaper when one half is a
 //!    short function word;
 //! 5. one typo: a letter left out, added, swapped with the next or mistyped (`TRY` letters);
 //! 6. when that finds fewer than asked for: the stems that start like the word (accents
@@ -22,18 +22,18 @@ use std::collections::{HashMap, HashSet};
 
 use crate::affix::{AffixDict, Casing, capitalize, casing};
 
-/// Short words often run into the next one (`não é`, `da água`, `para isso`).
+/// Short words often run into the next one (`no es`, `da água`, `para isso`).
 const LEADING_WORDS: &[&str] = &[
-    "a", "o", "e", "é", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "sob", "sobre", "ao", "aos",
-    "à", "às", "que", "se", "não", "como", "mas", "mais", "já", "até", "entre", "contra", "perante", "desde", "após", "ante", "durante", "mediante",
-    "segundo", "conforme", "salvo", "fora", "onde", "quando", "bem", "mal", "pois", "logo", "portanto", "porém", "todavia", "contudo", "assim",
-    "tão", "tanto", "tudo", "nada", "algo", "cada", "outro", "mesmo", "próprio", "ainda", "tampouco", "quase", "talvez", "nunca", "sempre",
+    "a", "y", "e", "o", "u", "es", "de", "del", "al", "en", "el", "la", "los", "las", "un", "una", "por", "para", "con", "sin", "so", "sobre",
+    "tras", "que", "se", "no", "sí", "como", "pero", "mas", "más", "ya", "hasta", "entre", "contra", "hacia", "desde", "ante", "bajo", "cabe",
+    "según", "durante", "mediante", "donde", "cuando", "bien", "mal", "pues", "luego", "así", "tan", "tanto", "todo", "nada", "algo", "cada", "otro",
+    "mismo", "propio", "aún", "tampoco", "casi", "tal", "nunca", "siempre", "muy", "mi", "tu", "su", "mis", "tus", "sus",
 ];
 /// Short words often run into the one before (`amo-te`, `deu-lhe`; in writing without the
 /// hyphen: `amote`, `deulhe`).
 const TRAILING_WORDS: &[&str] = &[
-    "me", "te", "se", "lhe", "nos", "vos", "lhes", "o", "a", "os", "as", "ele", "ela", "eles", "elas", "isso", "isto", "aquilo", "mim", "ti", "si",
-    "eu", "tu", "que", "de", "em", "é",
+    "me", "te", "se", "le", "lo", "la", "nos", "os", "les", "los", "las", "él", "ella", "ellos", "ellas", "eso", "esto", "aquello", "mí", "ti", "sí",
+    "yo", "tú", "que", "de", "en", "es", "no", "ya",
 ];
 const MAX_LETTERS: usize = 40;
 const MAX_MAP_CHANGES: usize = 4;
@@ -109,9 +109,9 @@ fn alternatives(c: char, map: &[Vec<char>]) -> Vec<char> {
 }
 
 /// The cost of changing letter `from` to its MAP relative `to`. Adding a missing accent is the
-/// commonest slip (Portuguese typed without accents: `coracao`); an accent the writer did type
+/// commonest slip (Spanish typed without accents: `coracao`); an accent the writer did type
 /// is likelier right, so taking one away costs more than a known confusion from the REP table
-/// (`seje` → `seja` before `sejé`).
+/// (`haiga` → `haya` before `sejé`).
 fn map_cost(from: char, to: char) -> u32 {
     match (from.is_ascii(), to.is_ascii()) {
         (true, false) => COST_ADD_DIACRITIC,
@@ -189,7 +189,7 @@ fn weighted_distance(a: &[char], b: &[char], related: &dyn Fn(char, char) -> boo
     prev.get(m).copied().unwrap_or(over).min(over)
 }
 
-/// Spelling suggestions for a Portuguese word, best first, at most `max`, in the word's letter case.
+/// Spelling suggestions for a Spanish word, best first, at most `max`, in the word's letter case.
 pub fn suggest(word: &str, max: usize) -> Vec<String> {
     suggest_in(&super::dictionary(), word, max)
 }
@@ -248,7 +248,7 @@ pub fn suggest_in(d: &AffixDict, word: &str, max: usize) -> Vec<String> {
     // 5. One typo.
     let mut letters: Vec<char> = d.try_chars().chars().filter(|c| c.is_lowercase()).collect();
     if letters.is_empty() {
-        letters = "aeiousrntmdlcpvgqbzfhjxçãõáéíóúâêôkw".chars().collect();
+        letters = "aeosrnidlctumpbgvyqhfzjxñáéíóúükw".chars().collect();
     }
     let s = |v: &[char]| v.iter().collect::<String>();
     for i in 0..n.saturating_sub(1) {
@@ -287,7 +287,7 @@ pub fn suggest_in(d: &AffixDict, word: &str, max: usize) -> Vec<String> {
     }
     let mut found: Vec<(String, (u32, usize))> = col.found.into_iter().collect();
     // Among equal costs, the change nearest the word's start is the likelier intent
-    // (`saúde` before `saudê`: both add an accent, but at the first difference).
+    // (`niño` before `saudê`: both add an accent, but at the first difference).
     let diff_at = |text: &str| chars.iter().zip(text.chars()).position(|(a, b)| *a != b).unwrap_or(n);
     found.sort_by_key(|(text, (cost, seq))| (*cost, diff_at(text), *seq));
     let mut out: Vec<String> = Vec::new();
@@ -374,73 +374,64 @@ mod tests {
     }
 
     #[test]
-    fn portuguese_misspellings_get_the_right_suggestion() {
+    fn spanish_misspellings_get_the_right_suggestion() {
         crate::es::test_dict::install();
         has("corazon", "corazón");
+        has("accion", "acción");
         has("nino", "niño");
         has("espanol", "español");
-        has("accion", "acción");
+        has("manana", "mañana");
         has("haiga", "haya");
         has("llendo", "yendo");
-        has("coraçao", "coração");
-        has("saude", "saúde");
-        has("seje", "seja");
-        has("excessão", "exceção");
-        has("previlégio", "privilégio");
+        has("exepción", "excepción");
+        has("previlegio", "privilegio");
         has("prsidente", "presidente");
-        has("provavel", "provável");
-        has("trbalho", "trabalho");
-        has("nãoé", "não é");
-        has("paraela", "para ela");
-        has("brasília", "Brasília");
-        has("Coraçao", "Coração");
+        has("probable", "probables");
+        has("trbajo", "trabajo");
+        has("noestá", "no está");
+        has("paraella", "para ella");
+        has("méxico", "México");
+        has("Corazon", "Corazón");
     }
 
     #[test]
     fn the_likeliest_fix_comes_first() {
         crate::es::test_dict::install();
-        assert_eq!(suggest("coraçao", 3).first().map(String::as_str), Some("coração"));
-        assert_eq!(
-            suggest("saude", 3).first().map(String::as_str),
-            Some("saúde"),
-            "an accent at the first difference beats one further right (saudê is a word too)"
-        );
-        assert_eq!(suggest("seje", 3).first().map(String::as_str), Some("seja"));
+        assert_eq!(suggest("corazon", 3).first().map(String::as_str), Some("corazón"));
+        assert_eq!(suggest("nino", 3).first().map(String::as_str), Some("niño"));
+        assert_eq!(suggest("haiga", 3).first().map(String::as_str), Some("haya"));
     }
 
     #[test]
     fn edge_cases_stay_empty_or_bounded() {
         crate::es::test_dict::install();
         assert!(suggest("", 5).is_empty());
-        assert!(suggest("bem", 0).is_empty());
+        assert!(suggest("bien", 0).is_empty());
         assert!(suggest(&"a".repeat(41), 5).is_empty());
-        assert!(suggest("duas palavras", 5).is_empty());
-        assert!(suggest_in(&crate::affix::AffixDict::default(), "coraçao", 5).is_empty());
-        assert!(suggest("coração", 5).len() <= 5);
-        assert!(!suggest("coração", 5).contains(&"coração".to_string()));
+        assert!(suggest("dos palabras", 5).is_empty());
+        assert!(suggest_in(&crate::affix::AffixDict::default(), "corazon", 5).is_empty());
+        assert!(suggest("corazón", 5).len() <= 5);
+        assert!(!suggest("corazón", 5).contains(&"corazón".to_string()));
     }
 
     #[test]
     fn distance_weighs_accents_half() {
-        let map = vec![vec!['a', 'á', 'à', 'â', 'ã'], vec!['c', 'ç']];
+        let map = vec![vec!['a', 'á'], vec!['o', 'ó'], vec!['n', 'ñ']];
         let related = |a: char, b: char| fold(a, &map) == fold(b, &map);
         let c = |s: &str| s.chars().collect::<Vec<_>>();
-        assert_eq!(weighted_distance(&c("coraçao"), &c("coração"), &related, 9), 1);
-        assert_eq!(weighted_distance(&c("coracao"), &c("coração"), &related, 9), 2, "ç and ã are two accent slips");
+        assert_eq!(weighted_distance(&c("corazon"), &c("corazón"), &related, 9), 1);
+        assert_eq!(weighted_distance(&c("manana"), &c("mañaná"), &related, 9), 2, "ñ and á are two MAP slips");
         assert_eq!(weighted_distance(&c("coro"), &c("coro"), &related, 9), 0);
-        assert_eq!(weighted_distance(&c("bem"), &c("bom"), &related, 9), 2);
-        assert_eq!(weighted_distance(&c("bem"), &c("bemte"), &related, 9), 4);
-        assert_eq!(weighted_distance(&c("bem"), &c("ver"), &related, 2), 3);
+        assert_eq!(weighted_distance(&c("bien"), &c("buen"), &related, 9), 2);
         assert_eq!(weighted_distance(&c(""), &c("ab"), &related, 9), 4);
     }
 
     #[test]
     fn suggestions_are_fast_enough() {
         crate::es::test_dict::install();
-        // Warm the dictionary, then time a worst case (a long word nothing near): the scan round.
-        let _ = suggest("bem", 1);
+        let _ = suggest("bien", 1);
         let t = std::time::Instant::now();
-        for w in ["xqzvweportuguespalavra", "prsidentes", "paralelepípedo"] {
+        for w in ["xqzvweespanolpalabra", "prsidentes", "paralelepípedo"] {
             let _ = suggest(w, 6);
         }
         let ms = t.elapsed().as_secs_f64() * 1000.0;

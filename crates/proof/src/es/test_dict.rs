@@ -1,133 +1,124 @@
-//! A tiny synthetic Portuguese Hunspell dictionary for tests (written for these tests; not taken
-//! from any real dictionary). Real dictionaries are installed on the system, never bundled.
+//! A tiny synthetic Spanish (`es-419`) Hunspell dictionary for tests (written for these tests; not
+//! taken from any real dictionary). Real dictionaries are installed on the system, never bundled.
 //!
-//! It exercises what VERO-like dictionaries use: `FLAG UTF-8` (multi-byte flag characters —
-//! `F` marks a forbidden spelling), continuation classes (`provável` → `prováveis`), the
-//! suggestion tables (`TRY`, `MAP` for accents, `REP` for common confusions) and one prefix.
+//! It exercises what Spanish Hunspell dictionaries use: `FLAG UTF-8` (`F` marks a forbidden
+//! spelling), continuation classes (`probable` → `probables`), the suggestion tables (`TRY`, `MAP`
+//! for accents and `ñ`, `REP` for common confusions) and one prefix.
 
 pub const AFF: &str = "SET UTF-8
 FLAG UTF-8
 FORBIDDENWORD F
-TRY aeiousrntmdlcpvgqbzfhjxñçãõáéíóúüâêôkw
-MAP 7
-MAP nñ
-MAP aáàâã
-MAP eéê
+TRY aeosrnidlctumpbgvyqhfzjxñáéíóúükw
+MAP 6
+MAP aá
+MAP eé
 MAP ií
-MAP oóôõ
-MAP uú
-MAP cç
-REP 6
+MAP oó
+MAP uúü
+MAP nñ
+REP 4
 REP haiga haya
 REP llendo yendo
-REP seje seja
-REP excessão exceção
-REP previlégio privilégio
-REP analize análise
+REP exepción excepción
+REP previlegio privilegio
 SFX A Y 2
-SFX A a ava a
-SFX A a ando a
+SFX A ar aba ar
+SFX A ar ando ar
 SFX B N 1
-SFX B   0   ável/C   .
+SFX B   0   able/C   .
 SFX C N 1
-SFX C   vel   veis   vel
+SFX C   ble   bles   ble
 PFX X Y 1
 PFX X 0 des .
 ";
 
 /// Stems (the count line first, as in Hunspell files).
-pub const DIC: &str = "88
-él
-dijo
-y
-existen
-niño
-español
-mañana
+pub const DIC: &str = "76
 corazón
+canción
 acción
 accion/F
-haya
-yendo
-coração
-saudade
-saudê
-pássaro
-saúde
-árvore
-escrever
-computador
-praia
-conhecer
-Brasília
-São
-Paulo
+niño
+niña
+año
+español
+mañana
+árbol
+música
+salud
+salúd
+escribir
+computadora
+playa
+conocer
+México
+Bogotá
+Buenos
+Aires
 guarda
-roupa
-mail
+ropa
+correo
 marido
 ex
 vice
 presidente
 autoestima
-frequência
-frequencia/F
-exceção
-privilégio
-análise
-seja
-trabalho
-canta/A
-prov/B
-cobrir/X
-avião
-pássaros
-amanhã
-vocês
-coragem
-parabéns
+frecuencia
+frecuensia/F
+excepción
+privilegio
+análisis
+haya
+yendo
+trabajo
+cantar/A
+prob/B
+cubrir/X
+avión
+pájaros
+ustedes
+coraje
+felicitaciones
 está
-ele
-disse
-existem
-bem
-não
-sim
+él
+ella
+dijo
+existen
+bien
+no
+sí
 que
-com
+con
 para
-dos
-das
-pela
-pelo
-muito
-mais
+de
+del
+por
+la
+el
+los
+las
+un
+una
+muy
+más
 como
 porque
-aqui
-também
-já
+aquí
+también
+ya
 ser
-ter
+tener
 ir
 ver
 dar
-e
+y
 o
-é
-água
-ela
-da
-do
-de
-em
-no
-na
-um
-uma
+es
+agua
+en
 ";
 
-/// Make [`AFF`]/[`DIC`] the Portuguese dictionary (every test that needs one calls this; they all
+/// Make [`AFF`]/[`DIC`] the Spanish dictionary (every test that needs one calls this; they all
 /// install the same one, so tests running in parallel agree).
 pub fn install() {
     if let Err(e) = super::install_dictionary(AFF, DIC) {

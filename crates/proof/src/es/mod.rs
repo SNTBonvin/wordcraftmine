@@ -3,11 +3,11 @@
 //! - **Spelling** against the Hunspell `es_419` dictionary installed on the system
 //!   ([`dictionary`], found by [`crate::hunspell`]: `es_419.aff`/`es_419.dic` — VERO and its
 //!   derivatives — from the OS, a package manager or LibreOffice; it isn't bundled). Without it
-//!   Spanish text gets no spelling marks. Capitalized stems are names (`Brasília`); a sentence
+//!   Spanish text gets no spelling marks. Capitalized stems are names (`México`); a sentence
 //!   may start with any word and headings may be in capitals. Hyphenated compounds are checked
-//!   part by part (`guarda-roupa`, `ex-marido`), and the user dictionary applies as in English.
-//! - **Suggestions** tuned for Spanish ([`suggest`]): missing accents first (`coraçao` →
-//!   `coração`, `saude` → `saúde`), then the dictionary's `REP` confusions (`seje` → `seja`), a
+//!   part by part (`guarda-ropa`, `ex-marido`), and the user dictionary applies as in English.
+//! - **Suggestions** tuned for Spanish ([`suggest`]): missing accents first (`corazon` →
+//!   `corazón`, `nino` → `niño`), then the dictionary's `REP` confusions (`haiga` → `haya`), a
 //!   missing space, one-letter typos, and a dictionary scan for anything further off.
 //! - **Grammar** ([`grammar`]): cheap, reliable rules with Spanish messages.
 
@@ -77,7 +77,7 @@ fn is_latin_letter(c: char) -> bool {
 }
 
 /// Is `word` spelled correctly in Spanish? Numbers, single letters, short words in capitals
-/// (acronyms: `USP`, `PT`), words with digits and words in other scripts are accepted, and so
+/// (acronyms: `UNAM`, `RAE`), words with digits and words in other scripts are accepted, and so
 /// is every word when no Spanish dictionary is installed.
 pub fn is_correct(word: &str) -> bool {
     is_correct_with(&dictionary(), word)
@@ -128,54 +128,63 @@ mod tests {
     #[test]
     fn without_a_dictionary_nothing_is_flagged() {
         let none = AffixDict::default();
-        for w in ["corazon", "nino", "espanol", "accion", "coraçao", "saude", "xqzv", ""] {
+        for w in ["corazon", "nino", "xqzv", ""] {
             assert!(is_correct_with(&none, w), "{w}");
         }
-        assert!(install_dictionary("FLAG long\n", "1\nkot\n").is_err(), "unsupported files are refused");
+        assert!(
+            install_dictionary(
+                "FLAG long
+",
+                "1
+kot
+"
+            )
+            .is_err(),
+            "unsupported files are refused"
+        );
     }
 
     #[test]
-    fn portuguese_words_are_correct() {
+    fn spanish_words_are_correct() {
         test_dict::install();
         for w in [
             "corazón",
+            "canción",
+            "acción",
             "niño",
+            "niña",
+            "año",
             "español",
             "mañana",
-            "acción",
-            "coração",
-            "saudade",
-            "pássaro",
-            "saúde",
-            "árvore",
-            "escrever",
-            "computador",
-            "praia",
-            "conhecer",
-            "Brasília",
-            "São",
+            "árbol",
+            "música",
+            "escribir",
+            "computadora",
+            "playa",
+            "conocer",
+            "México",
+            "Bogotá",
             "autoestima",
-            "frequência",
-            "exceção",
-            "amanhã",
-            "vocês",
-            "coragem",
-            "parabéns",
-            "cantava",
+            "frecuencia",
+            "excepción",
+            "ustedes",
+            "coraje",
+            "felicitaciones",
+            "cantaba",
             "cantando",
-            "provável",
-            "prováveis",
-            "descobrir",
-            "trabalho",
-            "CORAGEM",
-            "USP",
+            "probable",
+            "probables",
+            "descubrir",
+            "trabajo",
+            "CORAJE",
+            "UNAM",
             "2026",
-            "e-mail",
-            "guarda-roupa",
+            "guarda-ropa",
             "ex-marido",
             "vice-presidente",
-            "e",
-            "não",
+            "y",
+            "no",
+            "sí",
         ] {
             assert!(is_correct(w), "{w}");
         }
@@ -184,8 +193,7 @@ mod tests {
     #[test]
     fn misspellings_are_flagged() {
         test_dict::install();
-        for w in ["corazon", "nino", "espanol", "accion", "coraçao", "saude", "trbalho", "excrever", "prsidente", "frequencia", "amnha", "cantaando"]
-        {
+        for w in ["corazon", "nino", "espanol", "trbajo", "excribir", "prsidente", "frecuensia", "manana", "cantaando"] {
             assert!(!is_correct(w), "{w}");
         }
     }
@@ -193,9 +201,9 @@ mod tests {
     #[test]
     fn forbidden_words_are_rejected() {
         test_dict::install();
-        // `frequencia/F` is listed with FORBIDDENWORD: the old spelling, never correct.
-        assert!(!is_correct("frequencia") && !is_correct("Frequencia") && !is_correct("FREQUENCIA"));
-        assert!(is_correct("frequência"));
+        assert!(!is_correct("frecuensia") && !is_correct("Frecuensia") && !is_correct("FRECUENSIA") && !is_correct("accion"));
+        assert!(!is_correct("frecuensia"));
+        assert!(is_correct("acción") && is_correct("frecuencia"));
     }
 
     #[test]
