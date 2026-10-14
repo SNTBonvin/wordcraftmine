@@ -2483,3 +2483,18 @@
 	Leave out the date and time of comments and tracked changes when saving	Mentéskor a megjegyzések és a követett módosítások dátumának és idejének elhagyása
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	A szerkesztett dokumentum megtartja a neveket és a dátumokat; csak a mentett fájlból maradnak ki.
 	Privacy Settings	Jelenlegi adatvédelmi beállítások
+	Saving as {name} may lose some of this document's features:	Ha {name} néven menti, a dokumentum egyes funkciói elveszhetnek:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	Folytassa a mentést ebben a formátumban, vagy mentsen Word-dokumentumot (.docx), hogy minden megmaradjon.
+	Continue	Folytatás
+	Save as Word Document	Mentés Word-dokumentumként
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Az automatikus mentés ki van kapcsolva: {name} nem tudja megőrizni a dokumentum minden részét. Mentse .docx formátumban az automatikus mentés bekapcsolásához.
+	Content controls	Tartalomvezérlők
+	Equations (written as plain text)	Egyenletek (egyszerű szövegként mentve)
+	Charts and SmartArt	Diagramok és SmartArt-ábrák
+	Shapes, text boxes and drawings	Alakzatok, szövegdobozok és rajzok
+	Embedded objects (their pictures are kept)	Beágyazott objektumok (a képük megmarad)
+	Fields (their current text is kept)	Mezők (a jelenlegi szövegük megmarad)
+	Section breaks and columns	Szakasztörések és hasábok
+	Phonetic guides	Kiejtési útmutatók
+	Other content from the original file	Egyéb tartalom az eredeti fájlból
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Az RTF által nem tárolható képek (például EMF, WMF és SVG)

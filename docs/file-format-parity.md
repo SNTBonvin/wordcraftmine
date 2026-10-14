@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-13 · **Change:** trivial (VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-14 · **Last updated:** 2026-10-14 · **Change:** trivial (save safety for RTF and ODT: a warning lists what the format can't keep, #1316; previously trivial: VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -25,8 +25,8 @@ Weights are the share of a Word user's file traffic (estimate). Read/write: ✅ 
 | `.doc` Word 97-2003 (and `.dot`) | 8% | R/W | 🟡 | ❌ | ~60% | 25–40 | `crates/docbin/src/tests.rs`, `tests/drawing.rs` (56) | Spec-based reader ([MS-DOC]): text, formatting, styles, sections, headers/footers, tables, lists, notes, fields, bookmarks; inline and floating pictures (PNG, JPEG, DIB, TIFF, EMF, WMF; Macintosh PICT as a sized placeholder) with crop, alt text, position and wrap; basic shapes, lines, groups and text boxes ([MS-ODRAW]). Freeform shapes, z-order and Word 6/95 or encrypted files are dropped or refused. No writer |
 | PDF export | 8% | W | — | ✅ | ~80% | 6–10 | `crates/pdf/src/tests.rs` | krilla: embedded subsets, selectable text incl. field results (#133), links, outline, tagging. Fonts it can't subset become outlines (#132). Print Markup (#589): comments in balloons beside each page (scaled to its paper) and tracked changes; HTML/Markdown/text copies end with a comment list. No PDF/A option, no "best for printing/online" choice |
 | PDF open (PDF Reflow, Word for Windows) | 1% | R | ❌ | — | 0% | 30–50 | — | Converting a PDF into an editable document. A sibling app (PdfCraft) may supply the parser |
-| `.rtf` Rich Text Format | 3% | R/W | 🟡 | 🟡 | ~50% | 10–15 | `crates/formats/src/tests.rs` | ~1,500 lines: text, character/paragraph formatting, styles, lists, tables, pictures (`\shppict`, #154), fields, bookmarks. 8-bit text in the document's code page (`\ansicpg`) or the current font's (`\fcharset`, `\cpg`): Cyrillic, Central European, Greek, Turkish, Hebrew, Arabic, Baltic, Vietnamese, Thai (was Windows-1252 only). Pasted from the system clipboard where the platform offers it (Windows, Wayland) when there is no HTML (#687). Thin: comments, notes, revisions, sections, RTL |
-| `.odt` OpenDocument Text | 2% | R/W | 🟡 | 🟡 | ~50% | 8–12 | `crates/formats/src/tests.rs` | Styles, lists (#87), tables, pictures, headers/footers, page breaks (#86), page size, orientation and margins (#810). No footnotes, comments, tracked changes, fields or RTL |
+| `.rtf` Rich Text Format | 3% | R/W | 🟡 | 🟡 | ~50% | 10–15 | `crates/formats/src/tests.rs` | ~1,500 lines: text, character/paragraph formatting, styles, lists, tables, pictures (`\shppict`, #154), fields, bookmarks. 8-bit text in the document's code page (`\ansicpg`) or the current font's (`\fcharset`, `\cpg`): Cyrillic, Central European, Greek, Turkish, Hebrew, Arabic, Baltic, Vietnamese, Thai (was Windows-1252 only). Pasted from the system clipboard where the platform offers it (Windows, Wayland) when there is no HTML (#687). Thin: comments, notes, revisions, sections, RTL. Save safety (#1316): saving a document with features RTF drops warns first (see below) |
+| `.odt` OpenDocument Text | 2% | R/W | 🟡 | 🟡 | ~50% | 8–12 | `crates/formats/src/tests.rs` | Styles, lists (#87), tables, pictures, headers/footers, page breaks (#86), page size, orientation and margins (#810). No footnotes, comments, tracked changes, fields or RTL. Save safety (#1316): saving a document with features ODT drops warns first (see below) |
 | `.txt` Plain text | 2% | R/W | ✅ | ✅ | ~95% | 1–2 | unit tests | Encoding detection. Files with other extensions (`.m3u`/`.m3u8` playlists, logs, config files, no extension) open as text when they are text, Word and RTF files by their signature; binary files are refused (#569). A Word or RTF extension that contradicts the content also opens by signature, as in Word: RTF saved as `.doc` (hh.ru résumés, accounting exports), a `.docx` renamed `.doc`, a Word 97-2003 file renamed `.docx`. Word's encoding choice dialog and line-ending options missing; such files save only through Save As |
 | `.htm/.html` Web Page and Web Page, Filtered | 1% | R/W | 🟡 | 🟡 | ~60% | 6–10 | `crates/formats/src/tests.rs` | Tables (#102), relative pictures embedded (#113), missing `</head>` tolerated (#154). No Word "Web Page" (with `_files` folder) round-trip. The same reader takes HTML from the system clipboard: Paste keeps another program's formatting (a Word document, a web page; Windows' "HTML Format" header understood), Merge Formatting keeps its emphasis (#687). Equations are written as MathML (with the linear format as a UnicodeMath annotation) and read back from MathML: our annotation, else the presentation elements, else a TeX annotation (#816) |
 | `.mht/.mhtml` Single File Web Page | <1% | R/W | ❌ | ❌ | 0% | 3–5 | — | |
@@ -159,10 +159,39 @@ Preservation is separate from field evaluation. Native Word reopening and
 refresh, full schema validation and company documents remain untested. Synthetic checks do not
 raise readiness estimates. No Word-derived files are fixtures.
 
+## Save safety: RTF and ODT (#1316)
+
+An .rtf or .odt save becomes the document's own file (the title bar shows it and the document counts
+as saved), but both writers keep only part of a richer document. Like Word, WordCraft says so first:
+when the user saves (Save, Save As, or Save in the "Save changes?" prompt) to RTF or ODT and the
+document has something the format drops, a warning lists it in plain words and offers **Continue**
+(save in that format; the document counts as saved), **Save as Word Document** (Save As with the
+name changed to .docx) or **Cancel**. Nothing to lose, no warning. AutoSave doesn't write an RTF or
+ODT file while it would lose something (the switch says why). Scripts, agents, the CLI and MCP never
+see a dialog: `file.save` saves as before and its result's `losses` lists the ids.
+
+The list comes from the writers (`crates/engine/src/losses.rs`): both write
+`formats::model::from_doc`'s flow, which holds only the body's paragraphs, tables, pictures,
+bookmarks and links; both write equations as their linear text and leave charts out, and RTF
+also leaves out pictures it can't re-encode as PNG (`rtf::can_write_picture`: EMF, WMF, SVG).
+Listed: tracked changes (deleted text left out, insertions written as plain text, formatting and
+page-setup changes dropped; this shrinks when RTF/ODT revisions land), comments, footnotes and
+endnotes, headers and footers, content controls, equations (written as plain text), charts and
+SmartArt, pictures RTF can't hold (RTF only), shapes/text boxes/ink, embedded OLE objects (the
+picture stays), field codes (the result stays), hidden text, section breaks and columns, phonetic
+guides, macros, and other content (kept only for round trip, custom XML parts). Not listed:
+formatting the flow model simplifies (custom styles, direct paragraph spacing and indents,
+character effects, floating pictures placed inline, right-to-left paragraph direction), cropped
+pictures (written whole, so the cropped-out part shows again), and package parts the DOCX reader
+doesn't keep anyway (building blocks, digital signatures, embedded fonts). `.json` (WordCraft's own
+serialisation) and `.xml` (Flat OPC, the DOCX writer) keep everything and never warn.
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | trivial | Save safety review fixes: RTF's unencodable pictures listed, equations described as written as text, custom XML and page-setup changes listed (#1316) |
+| 2026-10-14 | trivial | Save safety for RTF and ODT: a "may lose features" warning before saving a document with features the format drops; `file.save` returns `losses`; AutoSave skips such files (#1316) |
 | 2026-10-12 | trivial | VML text boxes keep their internal margins (`inset`), fit to their text (`mso-fit-shape-to-text`) and vertical alignment (`v-text-anchor`); hidden drawings (`visibility:hidden`, `wp:docPr/@hidden`) are kept but not shown |
 | 2026-10-13 | trivial | Remove personal information / Remove date and time settings kept and honoured on save: anonymous annotation authors, no creator or last-modified-by, no annotation dates (#1062) |
 | 2026-10-12 | trivial | Direct run-level `w:contentPart` InkML keeps its relationship, content type and bytes through DOCX edits and repeated saves; nested group/canvas ink and native rendering remain missing |
