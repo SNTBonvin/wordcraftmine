@@ -863,6 +863,22 @@ fn paste_special_lists_formats_and_pastes_text_without_formatting() {
 }
 
 #[test]
+fn pasted_rtf_tracked_changes_point_at_their_own_revisions() {
+    // Gap 19: RTF tracked changes come with revisions of their own; pasted into a document that
+    // already has revisions, they must not point at the document's (index 0 here is "Zed").
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    s.doc.revisions.push(wordcraft_doc::Revision::new(wordcraft_doc::RevisionKind::Delete, "Zed", ""));
+    run(&mut s, "caret.docEnd", json!({}));
+    let rtf = r"{\rtf1{\*\revtbl {Unknown;}{Alice;}}{\revised\revauth1 added}\par}";
+    run(&mut s, "edit.pasteSpecial", json!({"as": "rtf", "rtf": rtf}));
+    let pos = Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off: 2 };
+    let ins = s.doc.para_at(&pos).and_then(|p| p.props_of_char(2).ins);
+    let rev = ins.and_then(|i| s.doc.revisions.get(i as usize));
+    assert_eq!(rev.map(|r| (r.kind, r.author.as_str())), Some((wordcraft_doc::RevisionKind::Insert, "Alice")), "{:?}", s.doc.revisions);
+}
+
+#[test]
 fn paste_special_html_and_rtf_keep_bold() {
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "x"}));
