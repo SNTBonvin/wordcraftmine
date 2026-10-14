@@ -33,6 +33,8 @@ use story::StoryCtx;
 
 /// Most parts (headers, notes, comments, text boxes) we create from one file.
 const MAX_PARTS: usize = 50_000;
+/// Deepest chain of headers/footers whose own sections reference further headers/footers.
+const MAX_HF_DEPTH: usize = 4;
 /// Most graphic work (items plus path segments, see `story::graphic_work`) built for one file's
 /// charts and diagrams; later ones are left empty.
 const MAX_GRAPHIC_WORK: usize = 2_000_000;
@@ -62,6 +64,8 @@ pub(crate) struct Reader<'p> {
     pub moves: MoveCtx,
     media_by_path: HashMap<String, String>,
     hf_by_path: HashMap<String, u32>,
+    /// Header/footer parts being read right now (see [`MAX_HF_DEPTH`]).
+    hf_depth: usize,
     pub footnotes: HashMap<i64, u32>,
     pub endnotes: HashMap<i64, u32>,
     /// The note being read (kind, part id): its `w:footnoteRef` / `w:endnoteRef` mark is a
@@ -139,6 +143,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         moves: MoveCtx::default(),
         media_by_path: HashMap::new(),
         hf_by_path: HashMap::new(),
+        hf_depth: 0,
         footnotes: HashMap::new(),
         endnotes: HashMap::new(),
         current_note: None,
@@ -623,7 +628,7 @@ impl Reader<'_> {
         if let Some(id) = self.hf_by_path.get(path) {
             return Some(*id);
         }
-        if self.doc.parts.len() >= MAX_PARTS {
+        if self.doc.parts.len() >= MAX_PARTS || self.hf_depth >= MAX_HF_DEPTH {
             return None;
         }
         // Reserve the id first so a (malformed) self-reference can't recurse.
@@ -637,7 +642,9 @@ impl Reader<'_> {
         let rels = self.pkg.rels(path);
         let mut sc = StoryCtx::default();
         let mut blocks = Blocks::new();
+        self.hf_depth += 1;
         self.read_blocks(&mut sc, &root, &rels, &mut blocks, 0);
+        self.hf_depth = self.hf_depth.saturating_sub(1);
         self.flush_pending(&mut sc, &mut blocks);
         if let Some(p) = self.doc.parts.get_mut(&id)
             && !blocks.is_empty()
