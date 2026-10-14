@@ -2103,7 +2103,7 @@
 	Save as Word Document	Salvar como Documento do Word
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	O Salvamento Automático está desativado: {name} não consegue manter tudo deste documento. Salve como .docx para ativá-lo.
 	Content controls	Controles de conteúdo
-	Equations	Equações
+	Equations (written as plain text)	Equações (gravadas como texto sem formatação)
 	Charts and SmartArt	Gráficos e SmartArt
 	Shapes, text boxes and drawings	Formas, caixas de texto e desenhos
 	Embedded objects (their pictures are kept)	Objetos inseridos (suas imagens são mantidas)
@@ -2111,3 +2111,4 @@
 	Section breaks and columns	Quebras de seção e colunas
 	Phonetic guides	Guias fonéticos
 	Other content from the original file	Outro conteúdo do arquivo original
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Imagens que o RTF não comporta (como EMF, WMF e SVG)

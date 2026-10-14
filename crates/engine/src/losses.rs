@@ -5,8 +5,10 @@
 //!
 //! The list follows the writers, not guesses: [`wordcraft_formats::rtf::export`] and
 //! [`wordcraft_formats::odt::export`] both write [`wordcraft_formats::model::from_doc`]'s flow,
-//! which holds only the body's paragraphs, tables, pictures, bookmarks and links, and then drop
-//! its equations and charts (`Inline::Equation`, `Inline::Figure`).
+//! which holds only the body's paragraphs, tables, pictures, bookmarks and links. Both write
+//! equations as their linear text (`model::equations_as_text`) and leave charts out
+//! (`Inline::Figure`); RTF also leaves out pictures it can't re-encode
+//! ([`wordcraft_formats::rtf::can_write_picture`]).
 
 use std::collections::BTreeSet;
 
@@ -23,6 +25,7 @@ pub enum Loss {
     ContentControls,
     Equations,
     Charts,
+    Pictures,
     Shapes,
     EmbeddedObjects,
     Fields,
@@ -35,7 +38,7 @@ pub enum Loss {
 
 impl Loss {
     /// Every loss, in the order they are listed.
-    pub const ALL: [Loss; 15] = [
+    pub const ALL: [Loss; 16] = [
         Loss::TrackedChanges,
         Loss::Comments,
         Loss::Notes,
@@ -43,6 +46,7 @@ impl Loss {
         Loss::ContentControls,
         Loss::Equations,
         Loss::Charts,
+        Loss::Pictures,
         Loss::Shapes,
         Loss::EmbeddedObjects,
         Loss::Fields,
@@ -63,6 +67,7 @@ impl Loss {
             Loss::ContentControls => "contentControls",
             Loss::Equations => "equations",
             Loss::Charts => "charts",
+            Loss::Pictures => "pictures",
             Loss::Shapes => "shapes",
             Loss::EmbeddedObjects => "embeddedObjects",
             Loss::Fields => "fields",
@@ -82,8 +87,9 @@ impl Loss {
             Loss::Notes => "Footnotes and endnotes",
             Loss::HeadersFooters => "Headers and footers",
             Loss::ContentControls => "Content controls",
-            Loss::Equations => "Equations",
+            Loss::Equations => "Equations (written as plain text)",
             Loss::Charts => "Charts and SmartArt",
+            Loss::Pictures => "Pictures RTF can't hold (such as EMF, WMF and SVG)",
             Loss::Shapes => "Shapes, text boxes and drawings",
             Loss::EmbeddedObjects => "Embedded objects (their pictures are kept)",
             Loss::Fields => "Fields (their current text is kept)",
@@ -127,7 +133,16 @@ pub fn format_losses(doc: &Document, name: &str) -> Vec<Loss> {
     if doc.last_section.columns.count > 1 {
         found.insert(Loss::Sections);
     }
-    blocks(&doc.body, 0, &mut found);
+    // A tracked change of the page setup.
+    if doc.last_section.fmt_change.is_some() {
+        found.insert(Loss::TrackedChanges);
+    }
+    // Custom XML parts (data bound to content controls, add-in data) live only in Word packages.
+    if doc.passthrough.keys().any(|k| k.starts_with("customXml/")) {
+        found.insert(Loss::Other);
+    }
+    let w = Walk { doc, rtf: ext == "rtf" };
+    w.blocks(&doc.body, 0, &mut found);
     wordcraft_doc::control::walk_controls(&doc.body, &mut |_| {
         found.insert(Loss::ContentControls);
     });
@@ -140,69 +155,84 @@ const VBA_PROJECT_PART: &str = "word/vbaProject.bin";
 /// Deepest table nesting looked into (hostile documents); the writers stop at the same depth.
 const MAX_DEPTH: usize = wordcraft_formats::model::MAX_DEPTH;
 
-fn blocks(bl: &Blocks, depth: usize, found: &mut BTreeSet<Loss>) {
-    if depth > MAX_DEPTH {
-        return;
-    }
-    for b in bl {
-        match &**b {
-            Block::Para(p) => para(p, found),
-            Block::Table(t) => {
-                let changed = t.props.fmt_change.is_some()
-                    || t.rows.iter().any(|r| r.props.fmt_change.is_some() || r.cells.iter().any(|c| c.props.fmt_change.is_some()));
-                if changed {
-                    found.insert(Loss::TrackedChanges);
-                }
-                for r in &t.rows {
-                    for c in &r.cells {
-                        blocks(&c.blocks, depth + 1, found);
+/// The document being checked and the format.
+struct Walk<'a> {
+    doc: &'a Document,
+    rtf: bool,
+}
+
+impl Walk<'_> {
+    fn blocks(&self, bl: &Blocks, depth: usize, found: &mut BTreeSet<Loss>) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        for b in bl {
+            match &**b {
+                Block::Para(p) => self.para(p, found),
+                Block::Table(t) => {
+                    let changed = t.props.fmt_change.is_some()
+                        || t.rows.iter().any(|r| r.props.fmt_change.is_some() || r.cells.iter().any(|c| c.props.fmt_change.is_some()));
+                    if changed {
+                        found.insert(Loss::TrackedChanges);
+                    }
+                    for r in &t.rows {
+                        for c in &r.cells {
+                            self.blocks(&c.blocks, depth + 1, found);
+                        }
                     }
                 }
             }
         }
     }
-}
 
-fn para(p: &Paragraph, found: &mut BTreeSet<Loss>) {
-    // A paragraph that ends a section other than the last: a section break.
-    if p.section.is_some() {
-        found.insert(Loss::Sections);
-    }
-    // Deleted text is left out and inserted text written as plain text; formatting changes and
-    // paragraph mark revisions aren't written.
-    if p.props.fmt_change.is_some() || p.props.num_change.is_some() || p.mark.ins.is_some() || p.mark.del.is_some() {
-        found.insert(Loss::TrackedChanges);
-    }
-    for r in &p.runs {
-        if r.props.ins.is_some() || r.props.del.is_some() || r.props.fmt_change.is_some() {
+    fn para(&self, p: &Paragraph, found: &mut BTreeSet<Loss>) {
+        // A paragraph that ends a section other than the last: a section break.
+        if p.section.is_some() {
+            found.insert(Loss::Sections);
+        }
+        // Deleted text is left out and inserted text written as plain text; formatting changes and
+        // paragraph mark revisions aren't written.
+        if p.props.fmt_change.is_some() || p.props.num_change.is_some() || p.mark.ins.is_some() || p.mark.del.is_some() {
             found.insert(Loss::TrackedChanges);
         }
-        // Hidden text is left out.
-        if r.props.hidden == Some(true) {
-            found.insert(Loss::HiddenText);
+        for r in &p.runs {
+            if r.props.ins.is_some() || r.props.del.is_some() || r.props.fmt_change.is_some() {
+                found.insert(Loss::TrackedChanges);
+            }
+            // Hidden text is left out.
+            if r.props.hidden == Some(true) {
+                found.insert(Loss::HiddenText);
+            }
         }
-    }
-    for o in &p.objects {
-        let loss = match o {
-            // The picture is written, the object it shows isn't.
-            InlineObject::Image { ole: Some(_), .. } => Loss::EmbeddedObjects,
-            // Charts and SmartArt become alt text, which both writers leave out.
-            InlineObject::Graphic { .. } => Loss::Charts,
-            InlineObject::Shape { .. } | InlineObject::Group { .. } => Loss::Shapes,
-            // A field's current text is written; its code isn't.
-            InlineObject::Field { .. } | InlineObject::FieldStart { .. } => Loss::Fields,
-            InlineObject::ControlStart { .. } => Loss::ContentControls,
-            InlineObject::NoteRef { .. } => Loss::Notes,
-            InlineObject::CommentStart { .. } | InlineObject::CommentEnd { .. } => Loss::Comments,
-            // Both writers drop equations.
-            InlineObject::Equation { .. } => Loss::Equations,
-            // The base text is written, the ruby over it isn't.
-            InlineObject::Ruby { .. } => Loss::PhoneticGuides,
-            // Content kept from the source file only as its text.
-            InlineObject::Opaque { .. } => Loss::Other,
-            _ => continue,
-        };
-        found.insert(loss);
+        for o in &p.objects {
+            let loss = match o {
+                // The picture is written, the object it shows isn't.
+                InlineObject::Image { ole: Some(_), .. } => Loss::EmbeddedObjects,
+                // RTF leaves out pictures it can't re-encode as PNG (EMF, WMF, SVG).
+                InlineObject::Image { media, .. } if self.rtf => match self.doc.media.get(media) {
+                    Some(data) if !wordcraft_formats::rtf::can_write_picture(&wordcraft_formats::model::media_ext(media, data), data) => {
+                        Loss::Pictures
+                    }
+                    _ => continue,
+                },
+                // Charts and SmartArt become alt text, which both writers leave out.
+                InlineObject::Graphic { .. } => Loss::Charts,
+                InlineObject::Shape { .. } | InlineObject::Group { .. } => Loss::Shapes,
+                // A field's current text is written; its code isn't.
+                InlineObject::Field { .. } | InlineObject::FieldStart { .. } => Loss::Fields,
+                InlineObject::ControlStart { .. } => Loss::ContentControls,
+                InlineObject::NoteRef { .. } => Loss::Notes,
+                InlineObject::CommentStart { .. } | InlineObject::CommentEnd { .. } => Loss::Comments,
+                // Both writers write an equation's linear text: its layout is lost.
+                InlineObject::Equation { .. } => Loss::Equations,
+                // The base text is written, the ruby over it isn't.
+                InlineObject::Ruby { .. } => Loss::PhoneticGuides,
+                // Content kept from the source file only as its text.
+                InlineObject::Opaque { .. } => Loss::Other,
+                _ => continue,
+            };
+            found.insert(loss);
+        }
     }
 }
 
@@ -305,6 +335,50 @@ mod tests {
         let at = s.sel.focus.clone();
         s.doc.insert_object(&at, img, &Default::default()).unwrap();
         assert_eq!(format_losses(&s.doc, "m.odt"), vec![Loss::EmbeddedObjects]);
+    }
+
+    /// A document with one picture of these bytes.
+    fn picture(key: &str, bytes: &[u8]) -> Document {
+        let mut doc = session().doc;
+        doc.media.insert(key.into(), std::sync::Arc::new(bytes.to_vec()));
+        let img =
+            InlineObject::Image { media: key.into(), w: 10.0, h: 10.0, alt: String::new(), float: Default::default(), crop: [0.0; 4], ole: None };
+        let mut s = Session::new(doc);
+        let at = s.sel.focus.clone();
+        s.doc.insert_object(&at, img, &Default::default()).unwrap();
+        s.doc
+    }
+
+    /// RTF re-encodes pictures other than PNG and JPEG and leaves out those it can't read (EMF,
+    /// WMF, SVG); ODT stores the bytes as they are.
+    #[test]
+    fn pictures_rtf_cannot_hold_are_listed_for_rtf_only() {
+        let emf = [
+            1u8, 0, 0, 0, 0x6c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, b' ', b'E',
+            b'M', b'F',
+        ];
+        let wmf = [0xD7u8, 0xCD, 0xC6, 0x9A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"/>".to_vec();
+        for (key, bytes) in [("media/a.emf", emf.to_vec()), ("media/b.wmf", wmf.to_vec()), ("media/c.svg", svg)] {
+            let doc = picture(key, &bytes);
+            assert_eq!(format_losses(&doc, "p.rtf"), vec![Loss::Pictures], "{key}");
+            assert_eq!(format_losses(&doc, "p.odt"), Vec::<Loss>::new(), "{key}: ODT keeps the bytes");
+        }
+        // PNG goes into RTF as it is.
+        let png = [0x89u8, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
+        assert_eq!(format_losses(&picture("media/d.png", &png), "p.rtf"), Vec::<Loss>::new());
+    }
+
+    /// A tracked change of the page setup and custom XML parts aren't written either.
+    #[test]
+    fn section_changes_and_custom_xml_are_listed() {
+        let mut doc = session().doc;
+        let old = doc.last_section.clone();
+        doc.last_section.fmt_change = wordcraft_doc::props::PropChange::boxed(0, old);
+        assert_eq!(format_losses(&doc, "s.rtf"), vec![Loss::TrackedChanges]);
+        let mut doc = session().doc;
+        doc.passthrough.insert("customXml/item1.xml".into(), std::sync::Arc::new(b"<data/>".to_vec()));
+        assert_eq!(format_losses(&doc, "s.odt"), vec![Loss::Other]);
     }
 
     #[test]

@@ -222,7 +222,8 @@ impl WordApp {
                 } else {
                     self.run("file.saveAs", json!({"path": path}))
                 };
-                if r.is_ok() {
+                // Not while the RTF/ODT warning waits for an answer (#1316).
+                if r.as_ref().is_ok_and(|v| v.get("pending").is_none()) {
                     self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
                 }
                 r
@@ -246,6 +247,9 @@ impl WordApp {
                         AfterSave::Nothing | AfterSave::AutoSave => None,
                     };
                     if let Some(r) = self.ask_format_losses("file.save", &json!({"path": path}), &mut then) {
+                        if let (AfterSave::AutoSave, Some(crate::dialogs::Dialog::FormatLosses { autosave, .. })) = (&after, &mut self.dialog) {
+                            *autosave = true;
+                        }
                         return r;
                     }
                 }

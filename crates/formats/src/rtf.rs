@@ -150,6 +150,9 @@ impl Writer {
     }
 
     fn picture(&mut self, img: &model::Img, out: &mut String) {
+        if !can_write_picture(&img.ext, &img.data) {
+            return;
+        }
         let (data, blip) = match img.ext.as_str() {
             "png" => (img.data.to_vec(), "\\pngblip"),
             "jpeg" | "jpg" => (img.data.to_vec(), "\\jpegblip"),
@@ -393,6 +396,13 @@ fn rtf_date(s: &str) -> Option<String> {
     let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
     let (h, mi) = (num(11, 13).unwrap_or(0), num(14, 16).unwrap_or(0));
     Some(format!("\\yr{y}\\mo{mo}\\dy{d}\\hr{h}\\min{mi}"))
+}
+
+/// Whether the RTF writer keeps a picture with this extension ([`model::media_ext`]) and bytes:
+/// PNG and JPEG go in as they are, other formats only when they can be read to re-encode as PNG
+/// (not EMF, WMF or SVG, which are left out).
+pub fn can_write_picture(ext: &str, data: &[u8]) -> bool {
+    matches!(ext, "png" | "jpeg" | "jpg") || image::guess_format(data).is_ok_and(|f| f.reading_enabled())
 }
 
 /// RTF text of a document.

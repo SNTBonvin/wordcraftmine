@@ -2101,7 +2101,7 @@
 	Save as Word Document	Sačuvaj kao Word dokument
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Automatsko čuvanje je isključeno: {name} ne može da zadrži sve u ovom dokumentu. Sačuvajte kao .docx da biste ga uključili.
 	Content controls	Kontrole sadržaja
-	Equations	Jednačine
+	Equations (written as plain text)	Jednačine (zapisane kao običan tekst)
 	Charts and SmartArt	Grafikoni i SmartArt
 	Shapes, text boxes and drawings	Oblici, okviri za tekst i crteži
 	Embedded objects (their pictures are kept)	Ugrađeni objekti (njihove slike se zadržavaju)
@@ -2109,3 +2109,4 @@
 	Section breaks and columns	Prelomi odeljaka i kolone
 	Phonetic guides	Fonetski vodiči
 	Other content from the original file	Ostali sadržaj iz originalne datoteke
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Slike koje RTF ne podržava (npr. EMF, WMF i SVG)

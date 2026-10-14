@@ -2490,7 +2490,7 @@ preview	Title	Пример
 	Save as Word Document	Сохранить как документ Word
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Автосохранение выключено: {name} не может сохранить всё содержимое этого документа. Сохраните в формате .docx, чтобы включить автосохранение.
 	Content controls	Элементы управления содержимым
-	Equations	Уравнения
+	Equations (written as plain text)	Уравнения (записываются как обычный текст)
 	Charts and SmartArt	Диаграммы и рисунки SmartArt
 	Shapes, text boxes and drawings	Фигуры, надписи и рисунки
 	Embedded objects (their pictures are kept)	Внедрённые объекты (их изображения сохраняются)
@@ -2498,3 +2498,4 @@ preview	Title	Пример
 	Section breaks and columns	Разрывы разделов и колонки
 	Phonetic guides	Фонетические подсказки
 	Other content from the original file	Другое содержимое исходного файла
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Рисунки, которые RTF не поддерживает (например, EMF, WMF и SVG)

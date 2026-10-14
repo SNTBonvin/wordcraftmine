@@ -444,6 +444,9 @@ pub struct WordApp {
     /// there. A file that was merely opened isn't rewritten until the user saves it: saving drops
     /// whatever WordCraft can't represent (content controls, charts, macros…).
     autosave_path: Option<std::path::PathBuf>,
+    /// [`WordApp::autosave_block`]'s last loss check: (document id, revision, path) and whether
+    /// that RTF/ODT file would lose something. Asked several times a frame (#1316).
+    losses_cache: std::cell::RefCell<Option<(u64, u64, std::path::PathBuf, bool)>>,
     /// The file dialog the host is showing, and what its answer is for ([`file_dialogs`]).
     file_dialog: Option<file_dialogs::PendingDialog>,
     /// The built-in file browser, when it is open, and the folder it showed last (#576).
@@ -535,6 +538,7 @@ impl WordApp {
             read_aloud_at: None,
             read_aloud_error: None,
             autosave_path: None,
+            losses_cache: Default::default(),
             change_picture_target: None,
             recipient_list_pending: false,
             font_generation: wordcraft_fonts::FontDb::global().generation(),
@@ -884,6 +888,7 @@ impl WordApp {
             losses: ids.clone(),
             save: Value::Object(save),
             then: then.take(),
+            autosave: false,
             document: self.session.document_id(),
         });
         Some(Ok(json!({"pending": "formatLosses", "losses": ids})))
@@ -897,7 +902,7 @@ impl WordApp {
         if !matches!(answer, "continue" | "docx" | "cancel") {
             return Err("`answer` must be continue, docx or cancel".into());
         }
-        let Some(dialogs::Dialog::FormatLosses { save, then, document, .. }) = self.dialog.take() else {
+        let Some(dialogs::Dialog::FormatLosses { save, then, document, autosave, .. }) = self.dialog.take() else {
             return Err("no format warning is open".into());
         };
         if document != self.session.document_id() {
@@ -923,6 +928,8 @@ impl WordApp {
                 let name = format!("{stem}.docx");
                 let after = match then {
                     Some((then, params)) => file_dialogs::AfterSave::Continue { then, params, document },
+                    // Save As from the AutoSave switch: AutoSave comes on once the Word document is saved.
+                    None if autosave => file_dialogs::AfterSave::AutoSave,
                     None => file_dialogs::AfterSave::Nothing,
                 };
                 // In the browser a save is a download under that name.
@@ -1608,7 +1615,7 @@ impl WordApp {
             return Some(AutoSaveBlock::Format { name });
         }
         // RTF and ODT can't keep everything in some documents: AutoSave doesn't quietly drop it (#1316).
-        if !wordcraft_engine::losses::format_losses(&self.session.doc, &path.to_string_lossy()).is_empty() {
+        if self.would_lose(path) {
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             return Some(AutoSaveBlock::Losses { name });
         }
@@ -1616,6 +1623,24 @@ impl WordApp {
             return Some(AutoSaveBlock::NotSavedHere);
         }
         None
+    }
+
+    /// Whether saving the document to `path` (the document's own file) would lose something
+    /// ([`wordcraft_engine::losses::format_losses`]), remembered until the document changes.
+    fn would_lose(&self, path: &std::path::Path) -> bool {
+        let key = (self.session.document_id(), self.session.rev());
+        if let Ok(cache) = self.losses_cache.try_borrow()
+            && let Some((doc, rev, p, lose)) = cache.as_ref()
+            && (*doc, *rev) == key
+            && p == path
+        {
+            return *lose;
+        }
+        let lose = !wordcraft_engine::losses::format_losses(&self.session.doc, &path.to_string_lossy()).is_empty();
+        if let Ok(mut cache) = self.losses_cache.try_borrow_mut() {
+            *cache = Some((key.0, key.1, path.to_path_buf(), lose));
+        }
+        lose
     }
 
     /// Whether AutoSave covers the document: it is on and nothing blocks it ([`Self::autosave_block`]).
@@ -1639,7 +1664,8 @@ impl WordApp {
     /// AutoSave: write a saved document a couple of seconds after the last change. A failure is
     /// shown in the status bar and turns AutoSave off for the file until the user saves it again.
     fn autosave_tick(&mut self, now: f64) {
-        if self.autosaves() && self.session.dirty && now - self.last_autosave > 2500.0 && now - self.canvas.caret_visible_since > 1500.0 {
+        // The cheap checks first: `autosaves` may look through the document (#1316).
+        if self.session.dirty && now - self.last_autosave > 2500.0 && now - self.canvas.caret_visible_since > 1500.0 && self.autosaves() {
             self.last_autosave = now;
             if let Err(e) = self.session.run("file.save", &json!({})) {
                 log::warn!("AutoSave failed: {e}");

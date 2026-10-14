@@ -2125,7 +2125,7 @@
 	Save as Word Document	Salvesta Wordi dokumendina
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Automaatsalvestus on väljas: {name} ei suuda kõike selles dokumendis säilitada. Automaatsalvestuse sisselülitamiseks salvestage .docx-vormingus.
 	Content controls	Sisujuhtelemendid
-	Equations	Võrrandid
+	Equations (written as plain text)	Võrrandid (kirjutatakse lihttekstina)
 	Charts and SmartArt	Diagrammid ja SmartArt
 	Shapes, text boxes and drawings	Kujundid, tekstiväljad ja joonistused
 	Embedded objects (their pictures are kept)	Manustatud objektid (nende pildid säilivad)
@@ -2133,3 +2133,4 @@
 	Section breaks and columns	Jaotisepiirid ja veerud
 	Phonetic guides	Foneetilised juhendid
 	Other content from the original file	Muu sisu algsest failist
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Pildid, mida RTF ei mahuta (nt EMF, WMF ja SVG)

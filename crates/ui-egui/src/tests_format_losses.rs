@@ -198,6 +198,7 @@ fn autosave_skips_an_rtf_file_that_would_lose_something() {
     let mut a = draft(false);
     a.run("file.save", json!({"path": file.to_string_lossy()})).unwrap();
     assert_eq!(a.autosave_block(), None, "a plain RTF document can be autosaved");
+    assert_eq!(a.autosave_block(), None, "asked again (cached)");
     a.run("select.all", json!({})).unwrap();
     a.run("review.newComment", json!({"text": "Hm"})).unwrap();
     assert_eq!(a.autosave_block(), Some(AutoSaveBlock::Losses { name: "draft.rtf".into() }));
@@ -242,6 +243,91 @@ fn the_warning_answers_from_its_buttons() {
         assert_eq!(prompt(a), None, "{button}");
         assert_eq!(file.exists(), written, "{button}");
         assert_eq!(dir.join("draft.docx").exists(), docx, "{button}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// File › Export to RTF says "Exported" only once something was written: not while the warning
+/// waits, and not after Cancel.
+#[test]
+fn export_reports_nothing_until_the_warning_is_answered() {
+    let dir = scratch("export");
+    let file = dir.join("draft.rtf");
+    let mut a = draft(true);
+    pick(&mut a, vec![file.clone()]);
+    a.status_msg = None;
+    a.export_dialog("rtf");
+    assert_eq!(prompt(&a), Some("formatLosses"));
+    let said = |a: &WordApp| a.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Exported"));
+    assert!(!said(&a), "nothing exported yet");
+    a.run("ui.formatLosses", json!({"answer": "cancel"})).unwrap();
+    assert!(!said(&a), "cancelled: nothing exported");
+    assert!(!file.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The AutoSave switch on a new document asks where to save; when that is an RTF file that
+/// would lose something and the user saves a Word document instead, AutoSave comes on.
+#[test]
+fn save_as_word_from_the_autosave_switch_turns_autosave_on() {
+    let dir = scratch("autosave-docx");
+    let mut a = draft(true);
+    a.run("file.autosave", json!({"value": false})).unwrap();
+    assert!(!a.autosave);
+    pick(&mut a, vec![dir.join("draft.rtf"), dir.join("draft.docx")]);
+    let _ = a.save_as(crate::file_dialogs::AfterSave::AutoSave);
+    assert_eq!(prompt(&a), Some("formatLosses"));
+    a.run("ui.formatLosses", json!({"answer": "docx"})).unwrap();
+    assert!(dir.join("draft.docx").exists());
+    assert!(a.autosaves(), "AutoSave is on for the Word document");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Every loss the warning can list is translated in every interface language.
+#[test]
+fn every_loss_label_is_in_every_catalog() {
+    use crate::i18n::Lang;
+    for lang in Lang::all().filter(|l| *l != Lang::EN) {
+        for loss in wordcraft_engine::losses::Loss::ALL {
+            assert!(crate::i18n::has_translation(lang, loss.label()), "{}: {:?} has no translation", lang.code(), loss.label());
+        }
+    }
+}
+
+/// The keyboard answers the warning: Escape cancels, Enter on the focused Continue saves.
+#[test]
+fn the_warning_answers_from_the_keyboard() {
+    for (key, written) in [(egui::Key::Escape, false), (egui::Key::Enter, true)] {
+        let dir = scratch(&format!("keys-{key:?}"));
+        let file = dir.join("draft.rtf");
+        let mut a = draft(true);
+        pick(&mut a, vec![file.clone()]);
+        a.run("file.saveAs", json!({})).unwrap();
+        assert_eq!(prompt(&a), Some("formatLosses"));
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().build_ui_state(
+            move |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                if fonts {
+                    crate::dialogs::show(app, &ctx);
+                } else {
+                    crate::theme::install_fonts_for(&ctx, false);
+                    fonts = true;
+                }
+            },
+            a,
+        );
+        for _ in 0..3 {
+            h.step();
+        }
+        h.key_press(key);
+        for _ in 0..3 {
+            h.step();
+        }
+        let a = h.state();
+        assert_eq!(prompt(a), None, "{key:?}");
+        assert_eq!(file.exists(), written, "{key:?}");
+        assert_eq!(a.session.dirty, !written, "{key:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

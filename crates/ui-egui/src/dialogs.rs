@@ -375,6 +375,9 @@ pub enum Dialog {
         save: Value,
         #[serde(skip)]
         then: Option<(String, Value)>,
+        /// Asked from the AutoSave switch's Save As: saving a Word document instead turns AutoSave on.
+        #[serde(skip)]
+        autosave: bool,
         #[serde(skip)]
         document: u64,
     },

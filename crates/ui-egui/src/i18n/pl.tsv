@@ -2484,7 +2484,7 @@ preview	Title	Tytuł
 	Save as Word Document	Zapisz jako dokument programu Word
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Autozapis jest wyłączony: {name} nie może zachować całej zawartości tego dokumentu. Zapisz jako .docx, aby włączyć autozapis.
 	Content controls	Formanty zawartości
-	Equations	Równania
+	Equations (written as plain text)	Równania (zapisane jako zwykły tekst)
 	Charts and SmartArt	Wykresy i grafiki SmartArt
 	Shapes, text boxes and drawings	Kształty, pola tekstowe i rysunki
 	Embedded objects (their pictures are kept)	Obiekty osadzone (ich obrazy zostaną zachowane)
@@ -2492,3 +2492,4 @@ preview	Title	Tytuł
 	Section breaks and columns	Podziały sekcji i kolumny
 	Phonetic guides	Przewodniki fonetyczne
 	Other content from the original file	Inna zawartość z oryginalnego pliku
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Obrazy, których RTF nie obsługuje (np. EMF, WMF i SVG)

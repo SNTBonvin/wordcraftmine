@@ -2103,7 +2103,7 @@
 	Save as Word Document	Зберегти як документ Word
 	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Автозбереження вимкнено: {name} не може зберегти весь вміст цього документа. Збережіть як .docx, щоб увімкнути автозбереження.
 	Content controls	Елементи керування вмістом
-	Equations	Рівняння
+	Equations (written as plain text)	Рівняння (записуються як звичайний текст)
 	Charts and SmartArt	Діаграми та SmartArt
 	Shapes, text boxes and drawings	Фігури, текстові поля та малюнки
 	Embedded objects (their pictures are kept)	Вбудовані об'єкти (їхні зображення зберігаються)
@@ -2111,3 +2111,4 @@
 	Section breaks and columns	Розриви розділів і стовпці
 	Phonetic guides	Фонетичні підказки
 	Other content from the original file	Інший вміст вихідного файлу
+	Pictures RTF can't hold (such as EMF, WMF and SVG)	Зображення, які RTF не підтримує (наприклад, EMF, WMF і SVG)
