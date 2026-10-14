@@ -2087,3 +2087,52 @@
 	Start-up	启动
 	Show the Start screen when WordCraft starts	启动 WordCraft 时显示开始屏幕
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	开：WordCraft 打开时显示“文件 › 开始”，其中有空白文档、模板和最近使用的文档。关：直接打开空白文档。
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	每个智能体在读取或编辑前都需要您的批准。
+	Allow agent connection requests	允许智能体请求连接
+	Live agent connections are available in the desktop app.	智能体可以在桌面应用中连接到已打开的文档。
+	Copy MCP configuration	复制 MCP 配置
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	只需配置一次 MCP。邀请是可选的；选择文档后，在 WordCraft 中批准智能体的访问请求。
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	首次配置后，某些客户端需要重新加载工具或重启智能体会话。WordCraft 会保持打开。
+	Document: {name}	文档：{name}
+	Copy invitation	复制邀请
+	Check live connection	检查实时连接
+	Client connected as {name}	已连接的客户端：{name}
+	Agent edits are tracked. You review changes and save the document.	智能体的编辑会以修订形式记录。由您审阅更改并保存文档。
+	Disconnect agent	断开智能体连接
+	Checking MCP and this document…	正在检查 MCP 和此文档…
+	MCP and this document are reachable. Client registration is separate.	MCP 和此文档均可访问。客户端注册需另行完成。
+	Connection setup	连接设置
+	This version supports one agent per document.	此版本每个文档仅支持一个智能体。
+	Agent connection request	智能体连接请求
+	Agent {agent} wants to access {document}.	智能体 {agent} 希望访问 {document}。
+	Allow	允许
+	Deny	拒绝
+	Install matching WordCraft release	安装匹配版本的 WordCraft
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	允许请求会让本地客户端看到本文档的标题。
+	Agent connection could not be updated.	无法更新代理连接。
+	Refresh connection setup and try again.	刷新连接设置后重试。
+	Technical details	技术详情
+	Agent connection setup is ready.	代理连接设置已就绪。
+	Checking this installation…	正在检查此安装…
+	Connection setup has not been checked.	尚未检查连接设置。
+	The agent connector is missing.	缺少代理连接组件。
+	The agent connector does not match this WordCraft version.	代理连接组件与此 WordCraft 版本不匹配。
+	The installation path cannot be used for agent connections.	此安装路径不能用于代理连接。
+	The connection check timed out.	连接检查超时。
+	The connection check could not reach this document.	连接检查无法访问本文档。
+	The connection check was cancelled.	连接检查已取消。
+	The connection check failed.	连接检查失败。
+	Agent connection setup is unavailable.	代理连接设置不可用。
+	Copy the MCP configuration into your agent client.	将 MCP 配置复制到代理客户端。
+	Please wait for the check to finish.	请等待检查完成。
+	Open connection setup to check this installation.	打开连接设置以检查此安装。
+	Install the matching WordCraft release, then refresh setup.	安装匹配的 WordCraft 版本，然后刷新设置。
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	将 WordCraft 移到名称为 Unicode 的文件夹，然后刷新设置。
+	Try the connection check again. If it keeps failing, refresh setup.	再次检查连接。如果仍然失败，请刷新设置。
+	Allow requests for this document, then check the connection again.	允许本文档的请求，然后再次检查连接。
+	The requesting client supplied this name. Its identity has not been verified.	此名称由请求连接的客户端提供。其身份未经验证。
+	Deny and stop requests	拒绝并停止请求
+	Agent approval requested	代理请求批准
+	Listening for agent requests	正在等待代理请求

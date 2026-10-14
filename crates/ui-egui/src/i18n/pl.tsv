@@ -2468,3 +2468,53 @@ preview	Title	Tytuł
 	Typing	Pisanie
 	Search	Wyszukaj
 	Title Bar	Pasek tytułu
+# Live agents: connection permission, setup and attachment status.
+	Live agent connections are available in the desktop app.	Agenci mogą łączyć się z otwartym dokumentem w aplikacji komputerowej.
+	Document: {name}	Dokument: {name}
+	Agent edits are tracked. You review changes and save the document.	Zmiany agenta są śledzone. Ty je przeglądasz i zapisujesz dokument.
+	Copy invitation	Skopiuj zaproszenie
+	Copy MCP configuration	Skopiuj konfigurację MCP
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Po pierwszej konfiguracji niektóre klienty wymagają ponownego wczytania narzędzi lub ponownego uruchomienia sesji agenta. WordCraft pozostaje otwarty.
+	Client connected as {name}	Połączony klient: {name}
+	Disconnect agent	Odłącz agenta
+	Connection setup	Konfiguracja połączenia
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Każdy agent potrzebuje twojej zgody przed odczytem lub edycją.
+	Allow agent connection requests	Zezwól na żądania połączenia agentów
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Skonfiguruj MCP jeden raz. Zaproszenia są opcjonalne; wybierz dokument i zatwierdź agenta w WordCraft.
+	Check live connection	Sprawdź połączenie z otwartym dokumentem
+	Checking MCP and this document…	Sprawdzanie MCP i tego dokumentu…
+	MCP and this document are reachable. Client registration is separate.	MCP i ten dokument są dostępne. Rejestracja klienta to osobny krok.
+	This version supports one agent per document.	Ta wersja obsługuje jednego agenta na dokument.
+	Agent connection request	Żądanie połączenia agenta
+	Agent {agent} wants to access {document}.	Agent {agent} chce uzyskać dostęp do dokumentu {document}.
+	Allow	Zezwól
+	Deny	Odmów
+	Install matching WordCraft release	Zainstaluj zgodną wersję WordCraft
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Zezwolenie na żądania udostępnia tytuł tego dokumentu lokalnym klientom.
+	Agent connection could not be updated.	Nie udało się zaktualizować połączenia agenta.
+	Refresh connection setup and try again.	Odśwież konfigurację połączenia i spróbuj ponownie.
+	Technical details	Szczegóły techniczne
+	Agent connection setup is ready.	Połączenie agenta jest skonfigurowane.
+	Checking this installation…	Sprawdzanie tej instalacji…
+	Connection setup has not been checked.	Konfiguracja połączenia nie została jeszcze sprawdzona.
+	The agent connector is missing.	Brakuje łącznika agenta.
+	The agent connector does not match this WordCraft version.	Łącznik agenta nie pasuje do tej wersji WordCraft.
+	The installation path cannot be used for agent connections.	Ścieżki instalacji nie można użyć do połączeń agentów.
+	The connection check timed out.	Upłynął limit czasu sprawdzania połączenia.
+	The connection check could not reach this document.	Sprawdzenie połączenia nie mogło dotrzeć do tego dokumentu.
+	The connection check was cancelled.	Sprawdzanie połączenia zostało anulowane.
+	The connection check failed.	Sprawdzenie połączenia nie powiodło się.
+	Agent connection setup is unavailable.	Konfiguracja połączenia agenta jest niedostępna.
+	Copy the MCP configuration into your agent client.	Skopiuj konfigurację MCP do klienta agenta.
+	Please wait for the check to finish.	Poczekaj na zakończenie sprawdzania.
+	Open connection setup to check this installation.	Otwórz konfigurację połączenia, aby sprawdzić tę instalację.
+	Install the matching WordCraft release, then refresh setup.	Zainstaluj pasującą wersję WordCraft i odśwież konfigurację.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Przenieś WordCraft do folderu o nazwie Unicode i odśwież konfigurację.
+	Try the connection check again. If it keeps failing, refresh setup.	Sprawdź połączenie ponownie. Jeśli nadal się nie udaje, odśwież konfigurację.
+	Allow requests for this document, then check the connection again.	Zezwól na żądania dla tego dokumentu i ponownie sprawdź połączenie.
+	The requesting client supplied this name. Its identity has not been verified.	Tę nazwę podał klient wysyłający żądanie. Jego tożsamość nie została zweryfikowana.
+	Deny and stop requests	Odrzuć i zatrzymaj żądania
+	Agent approval requested	Agent oczekuje zatwierdzenia
+	Listening for agent requests	Oczekiwanie na żądania agentów

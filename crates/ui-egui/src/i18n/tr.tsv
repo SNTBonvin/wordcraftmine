@@ -2473,3 +2473,53 @@ preview	Title	Örnek
 	Level 7	Düzey 7
 	Level 8	Düzey 8
 	Level 9	Düzey 9
+# Live agents: connection permission, setup and attachment status.
+	Live agent connections are available in the desktop app.	Ajanlar masaüstü uygulamasında açık belgeye bağlanabilir.
+	Document: {name}	Belge: {name}
+	Agent edits are tracked. You review changes and save the document.	Ajanın düzenlemeleri izlenir. Değişiklikleri siz gözden geçirir ve belgeyi kaydedersiniz.
+	Copy invitation	Daveti Kopyala
+	Copy MCP configuration	MCP Yapılandırmasını Kopyala
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	İlk kurulumdan sonra bazı istemcilerin araçlarını yeniden yüklemesi veya ajan oturumunu yeniden başlatması gerekir. WordCraft açık kalır.
+	Client connected as {name}	Bağlı istemci: {name}
+	Disconnect agent	Ajanın Bağlantısını Kes
+	Connection setup	Bağlantı Kurulumu
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Her ajan, okumadan veya düzenlemeden önce onayınızı almalıdır.
+	Allow agent connection requests	Ajan bağlantı isteklerine izin ver
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	MCP'yi bir kez yapılandırın. Davetler isteğe bağlıdır; bir belge seçin ve ajanı WordCraft'ta onaylayın.
+	Check live connection	Açık Belge Bağlantısını Denetle
+	Checking MCP and this document…	MCP ve bu belge denetleniyor…
+	MCP and this document are reachable. Client registration is separate.	MCP ve bu belgeye erişilebiliyor. İstemci kaydı ayrı bir adımdır.
+	This version supports one agent per document.	Bu sürüm her belge için bir ajanı destekler.
+	Agent connection request	Ajan Bağlantı İsteği
+	Agent {agent} wants to access {document}.	{agent} ajanı {document} belgesine erişmek istiyor.
+	Allow	İzin Ver
+	Deny	Reddet
+	Install matching WordCraft release	Uyumlu WordCraft Sürümünü Yükle
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	İsteklere izin vermek, bu belgenin başlığını yerel istemcilere görünür kılar.
+	Agent connection could not be updated.	Aracı bağlantısı güncellenemedi.
+	Refresh connection setup and try again.	Bağlantı ayarlarını yenileyip tekrar deneyin.
+	Technical details	Teknik ayrıntılar
+	Agent connection setup is ready.	Aracı bağlantısı hazır.
+	Checking this installation…	Bu kurulum denetleniyor…
+	Connection setup has not been checked.	Bağlantı ayarları henüz denetlenmedi.
+	The agent connector is missing.	Aracı bağlantı bileşeni eksik.
+	The agent connector does not match this WordCraft version.	Aracı bağlantı bileşeni bu WordCraft sürümüyle eşleşmiyor.
+	The installation path cannot be used for agent connections.	Kurulum yolu aracı bağlantıları için kullanılamaz.
+	The connection check timed out.	Bağlantı denetimi zaman aşımına uğradı.
+	The connection check could not reach this document.	Bağlantı denetimi bu belgeye erişemedi.
+	The connection check was cancelled.	Bağlantı denetimi iptal edildi.
+	The connection check failed.	Bağlantı denetimi başarısız oldu.
+	Agent connection setup is unavailable.	Aracı bağlantı ayarları kullanılamıyor.
+	Copy the MCP configuration into your agent client.	MCP yapılandırmasını aracı istemcinize kopyalayın.
+	Please wait for the check to finish.	Denetimin tamamlanmasını bekleyin.
+	Open connection setup to check this installation.	Bu kurulumu denetlemek için bağlantı ayarlarını açın.
+	Install the matching WordCraft release, then refresh setup.	Eşleşen WordCraft sürümünü kurup ayarları yenileyin.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	WordCraft'ı Unicode adlı bir klasöre taşıyıp ayarları yenileyin.
+	Try the connection check again. If it keeps failing, refresh setup.	Bağlantı denetimini tekrar deneyin. Yine başarısız olursa ayarları yenileyin.
+	Allow requests for this document, then check the connection again.	Bu belge için isteklere izin verip bağlantıyı yeniden denetleyin.
+	The requesting client supplied this name. Its identity has not been verified.	Bu adı istekte bulunan istemci belirtti. Kimliği doğrulanmadı.
+	Deny and stop requests	Reddet ve istekleri durdur
+	Agent approval requested	Aracı onayı istendi
+	Listening for agent requests	Aracı istekleri bekleniyor

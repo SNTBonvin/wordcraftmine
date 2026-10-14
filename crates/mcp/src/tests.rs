@@ -119,3 +119,13 @@ fn headless_sessions_keep_the_dictionary_in_memory() {
     h.session.run("review.addToDictionary", &json!({"word": "zxqmcpword2"})).expect("added");
     assert!(h.session.user_dict_path.is_none());
 }
+
+#[test]
+fn oversized_stdio_framing_is_bounded_and_rejected() {
+    let mut server = Server::new(Box::new(Headless::default()));
+    let input = std::io::BufReader::new(std::io::repeat(b'x'));
+    let mut output = Vec::new();
+    let error = server.serve(input, &mut output).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(output.is_empty());
+}

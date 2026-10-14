@@ -135,7 +135,7 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
                 "language" => language(app, ui),
                 "accessibility" => accessibility(app, ui),
                 "advanced" => advanced(app, ui),
-                "agents" => agents(ui),
+                "agents" => crate::agents::show(app, ui),
                 _ => general(app, ui),
             }
         });
@@ -429,11 +429,6 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
             let _ = app.run("tools.customizeRibbon", json!({}));
         }
     });
-}
-
-fn agents(ui: &mut Ui) {
-    section(ui, "Agents");
-    ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
 }
 
 /// Interface theme: Light, Dark, or follow the system's appearance (#115).

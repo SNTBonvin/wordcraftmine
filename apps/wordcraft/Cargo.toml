@@ -11,6 +11,7 @@ description = "WordCraft desktop app"
 workspace = true
 
 [dependencies]
+wordcraft-mcp = { workspace = true }
 wordcraft-doc = { workspace = true }
 wordcraft-engine = { workspace = true }
 wordcraft-proof = { workspace = true }
@@ -77,3 +78,9 @@ pollster = "0.4"
 arboard = { workspace = true, features = ["image-data"] }
 # The control server's random key.
 getrandom = "0.3"
+# Anonymous regular-file stdout keeps CLI probes bounded even when descendants retain handles.
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+# Safe MSG_PEEK for local Unix sockets; std UnixStream::peek is not stable.
+rustix = { version = "1", features = ["net", "process"] }

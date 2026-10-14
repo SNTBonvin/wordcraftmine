@@ -6,6 +6,9 @@
 //! CLI, the JSON control channel and the MCP server all call [`Session::run`].
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod agent_selection;
+pub use agent_selection::shift_agent_selection;
+
 pub mod catalog;
 pub mod cmd;
 pub mod file_access;

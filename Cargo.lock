@@ -5114,7 +5114,9 @@ dependencies = [
  "open",
  "pollster 0.4.0",
  "rfd",
+ "rustix 1.1.5",
  "serde_json",
+ "tempfile",
  "windows",
  "winit",
  "winresource",
@@ -5123,6 +5125,7 @@ dependencies = [
  "wordcraft-doc",
  "wordcraft-engine",
  "wordcraft-fonts",
+ "wordcraft-mcp",
  "wordcraft-proof",
  "wordcraft-ui-egui",
  "zbus",
@@ -5143,6 +5146,11 @@ dependencies = [
 [[package]]
 name = "wordcraft-control-key"
 version = "0.6.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "hmac",
+ "sha2",
+]
 
 [[package]]
 name = "wordcraft-doc"
@@ -5200,6 +5208,7 @@ dependencies = [
  "image",
  "js-sys",
  "log",
+ "proptest",
  "regex",
  "regex-automata",
  "serde",
@@ -5276,6 +5285,7 @@ name = "wordcraft-mcp"
 version = "0.6.1"
 dependencies = [
  "log",
+ "rustix 1.1.5",
  "serde_json",
  "wordcraft-control-key",
  "wordcraft-doc",

@@ -5,5 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "WordCraft control-port key file: where it lives and how to read it (shared by the app and the MCP bridge)"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+
 [lints]
 workspace = true

@@ -2080,3 +2080,52 @@
 	Automatic ({region})	Automaticky ({region})
 	Search	Hledat
 	Title Bar	Záhlaví okna
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Každý agent potřebuje váš souhlas před čtením nebo úpravami.
+	Allow agent connection requests	Povolit žádosti o připojení agentů
+	Live agent connections are available in the desktop app.	Agenti se mohou připojit k otevřeným dokumentům v desktopové aplikaci.
+	Copy MCP configuration	Kopírovat konfiguraci MCP
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	MCP nastavte jednou. Pozvánky jsou volitelné; vyberte dokument a schvalte agenta ve WordCraftu.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Po prvním nastavení musí někteří klienti znovu načíst nástroje nebo restartovat relaci agenta. WordCraft zůstává otevřený.
+	Document: {name}	Dokument: {name}
+	Copy invitation	Kopírovat pozvánku
+	Check live connection	Ověřit připojení k otevřenému dokumentu
+	Client connected as {name}	Připojený klient: {name}
+	Agent edits are tracked. You review changes and save the document.	Úpravy agenta jsou sledovány. Změny kontrolujete a dokument ukládáte vy.
+	Disconnect agent	Odpojit agenta
+	Checking MCP and this document…	Kontrola MCP a tohoto dokumentu…
+	MCP and this document are reachable. Client registration is separate.	MCP a tento dokument jsou dostupné. Registrace klienta je samostatný krok.
+	Connection setup	Nastavení připojení
+	This version supports one agent per document.	Tato verze podporuje jednoho agenta na dokument.
+	Agent connection request	Žádost agenta o připojení
+	Agent {agent} wants to access {document}.	Agent {agent} žádá o přístup k dokumentu {document}.
+	Allow	Povolit
+	Deny	Odmítnout
+	Install matching WordCraft release	Nainstalovat odpovídající verzi WordCraftu
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Povolením žádostí zpřístupníte název dokumentu místním klientům.
+	Agent connection could not be updated.	Připojení agenta se nepodařilo aktualizovat.
+	Refresh connection setup and try again.	Obnovte nastavení připojení a zkuste to znovu.
+	Technical details	Technické podrobnosti
+	Agent connection setup is ready.	Připojení agenta je nastaveno.
+	Checking this installation…	Kontrola této instalace…
+	Connection setup has not been checked.	Nastavení připojení ještě nebylo zkontrolováno.
+	The agent connector is missing.	Chybí konektor agenta.
+	The agent connector does not match this WordCraft version.	Konektor agenta neodpovídá této verzi WordCraft.
+	The installation path cannot be used for agent connections.	Instalační cestu nelze použít pro připojení agentů.
+	The connection check timed out.	Vypršel časový limit kontroly připojení.
+	The connection check could not reach this document.	Kontrola připojení nedosáhla tohoto dokumentu.
+	The connection check was cancelled.	Kontrola připojení byla zrušena.
+	The connection check failed.	Kontrola připojení selhala.
+	Agent connection setup is unavailable.	Nastavení připojení agenta není dostupné.
+	Copy the MCP configuration into your agent client.	Zkopírujte konfiguraci MCP do klienta agenta.
+	Please wait for the check to finish.	Počkejte na dokončení kontroly.
+	Open connection setup to check this installation.	Otevřete nastavení připojení a zkontrolujte tuto instalaci.
+	Install the matching WordCraft release, then refresh setup.	Nainstalujte odpovídající verzi WordCraft a obnovte nastavení.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Přesuňte WordCraft do složky s názvem Unicode a obnovte nastavení.
+	Try the connection check again. If it keeps failing, refresh setup.	Zkuste kontrolu připojení znovu. Pokud stále selhává, obnovte nastavení.
+	Allow requests for this document, then check the connection again.	Povolte žádosti pro tento dokument a znovu zkontrolujte připojení.
+	The requesting client supplied this name. Its identity has not been verified.	Tento název poskytl žádající klient. Jeho identita nebyla ověřena.
+	Deny and stop requests	Odmítnout a zastavit žádosti
+	Agent approval requested	Agent žádá o schválení
+	Listening for agent requests	Čekání na žádosti agentů

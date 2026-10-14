@@ -128,6 +128,46 @@ fn bundled_catalogs_are_well_formed() {
     }
 }
 
+/// Both the Agents options and its approval modal must be translated in every language.
+/// Read the actual literal lookup keys, so adding a label also requires catalog coverage.
+#[test]
+fn every_live_agents_label_is_translated_in_every_catalog() {
+    let mut labels = std::collections::HashSet::<String>::new();
+    for tail in include_str!("../agents.rs").split("tl!(").skip(1) {
+        let literal = tail.trim_start();
+        if !literal.starts_with('"') {
+            continue;
+        }
+        let mut escaped = false;
+        let end = literal
+            .char_indices()
+            .skip(1)
+            .find_map(|(offset, ch)| {
+                if escaped {
+                    escaped = false;
+                    None
+                } else if ch == '\\' {
+                    escaped = true;
+                    None
+                } else if ch == '"' {
+                    Some(offset + 1)
+                } else {
+                    None
+                }
+            })
+            .expect("Agents translation literal is closed");
+        labels.insert(serde_json::from_str(&literal[..end]).expect("Agents translation literal parses"));
+    }
+    assert!(labels.contains("Agents"), "the Agents labels must be discovered from the source");
+    for language in LANGUAGES.iter().filter(|language| language.code != "en") {
+        let (catalog, errors) = Catalog::parse(language.source);
+        assert!(errors.is_empty(), "{}: {errors:?}", language.code);
+        for label in &labels {
+            assert!(catalog.plain(label).is_some(), "{} lacks Agents label {label:?}", language.code);
+        }
+    }
+}
+
 /// The ribbon tabs and every registered command's label and ribbon location are translated, in
 /// every language, so menus, tooltips and command search never fall back to English.
 #[test]

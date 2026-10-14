@@ -2464,3 +2464,52 @@
 	Table Properties…	Свойства на таблица…
 	Search	Търсене
 	Title Bar	Заглавна лента
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Всеки агент се нуждае от вашето одобрение преди четене или редактиране.
+	Allow agent connection requests	Разреши заявки за свързване на агенти
+	Live agent connections are available in the desktop app.	Агентите могат да се свързват с отворени документи в настолното приложение.
+	Copy MCP configuration	Копирай настройките на MCP
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Настройте MCP веднъж. Поканите са незадължителни; изберете документ и одобрете агента в WordCraft.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	След първоначалната настройка някои клиенти трябва да презаредят инструментите си или да рестартират сесията на агента. WordCraft остава отворен.
+	Document: {name}	Документ: {name}
+	Copy invitation	Копирай поканата
+	Check live connection	Провери връзката с отворения документ
+	Client connected as {name}	Свързан клиент: {name}
+	Agent edits are tracked. You review changes and save the document.	Промените на агента се проследяват. Вие преглеждате промените и записвате документа.
+	Disconnect agent	Прекъсни връзката с агента
+	Checking MCP and this document…	Проверка на MCP и този документ…
+	MCP and this document are reachable. Client registration is separate.	MCP и този документ са достъпни. Регистрацията на клиента е отделна стъпка.
+	Connection setup	Настройка на връзката
+	This version supports one agent per document.	Тази версия поддържа един агент на документ.
+	Agent connection request	Заявка за свързване на агент
+	Agent {agent} wants to access {document}.	Агентът {agent} иска достъп до {document}.
+	Allow	Разреши
+	Deny	Откажи
+	Install matching WordCraft release	Инсталирай съответната версия на WordCraft
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Разрешаването на заявки прави заглавието на документа видимо за локалните клиенти.
+	Agent connection could not be updated.	Връзката на агента не можа да бъде обновена.
+	Refresh connection setup and try again.	Обновете настройките на връзката и опитайте отново.
+	Technical details	Технически подробности
+	Agent connection setup is ready.	Връзката на агента е настроена.
+	Checking this installation…	Проверка на тази инсталация…
+	Connection setup has not been checked.	Настройките на връзката още не са проверени.
+	The agent connector is missing.	Компонентът за свързване на агента липсва.
+	The agent connector does not match this WordCraft version.	Компонентът за свързване на агента не съответства на тази версия на WordCraft.
+	The installation path cannot be used for agent connections.	Пътят на инсталацията не може да се използва за свързване на агенти.
+	The connection check timed out.	Времето за проверка на връзката изтече.
+	The connection check could not reach this document.	Проверката на връзката не успя да достигне този документ.
+	The connection check was cancelled.	Проверката на връзката е отменена.
+	The connection check failed.	Проверката на връзката е неуспешна.
+	Agent connection setup is unavailable.	Настройването на връзката на агента не е достъпно.
+	Copy the MCP configuration into your agent client.	Копирайте MCP конфигурацията в клиента на агента.
+	Please wait for the check to finish.	Изчакайте проверката да приключи.
+	Open connection setup to check this installation.	Отворете настройките на връзката, за да проверите тази инсталация.
+	Install the matching WordCraft release, then refresh setup.	Инсталирайте съответната версия на WordCraft и обновете настройките.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Преместете WordCraft в папка с име в Unicode и обновете настройките.
+	Try the connection check again. If it keeps failing, refresh setup.	Проверете връзката отново. Ако проверката пак е неуспешна, обновете настройките.
+	Allow requests for this document, then check the connection again.	Разрешете заявки за този документ и проверете връзката отново.
+	The requesting client supplied this name. Its identity has not been verified.	Това име е предоставено от заявяващия клиент. Самоличността му не е проверена.
+	Deny and stop requests	Отказ и спиране на заявките
+	Agent approval requested	Агентът иска одобрение
+	Listening for agent requests	Изчакване на заявки от агенти

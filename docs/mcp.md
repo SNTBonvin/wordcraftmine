@@ -3,6 +3,33 @@
 WordCraft speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so
 Claude and other agents can write and edit documents.
 
+## Connect to an ordinary desktop window
+
+Open a document normally. Copy the reusable MCP configuration from **File → Options → Agents**
+into your client once and enable connection requests, then let the agent choose the document
+through `list_sessions` and `connect_session`.
+WordCraft asks **Allow / Deny** before any document reads or edits. Connection requests are
+off by default; their saved switch enables discovery independently of editing permission. An optional compact invitation
+selects a document and points to `get_usage_guide`. WordCraft needs no special launch flags or
+restart. The pane displays the bridge version, provides matching-release recovery and can
+initialize MCP against this live document without registering an agent. See
+[live agents](live-agents.md) for installation differences and limits.
+
+```sh
+wordcraft-cli mcp --live   # persistent bridge; list/attach enabled live documents explicitly
+wordcraft --mcp-live      # same bridge embedded in the Unix desktop binary, no new window
+```
+
+The bridge starts even without an open window. `list_sessions`, `connect_session`,
+`get_session_status`, `get_usage_guide`, `check_session` and `disconnect_session` manage attachment. It never
+silently edits a headless document. One agent is allowed per document, using its own selection
+and author, tracked edits, and revision checks. Live mode excludes file commands and UI tools;
+the user saves through WordCraft. `--live` cannot be combined with `--connect`, `--author` or
+automation roots. The app's switch controls a separate restricted listener; the legacy developer
+listener below retains its broader capabilities.
+
+## Headless and legacy developer modes
+
 ```sh
 wordcraft-cli mcp                          # headless session (no window)
 wordcraft --control 7981 &                 # or: drive the running app…
@@ -63,7 +90,7 @@ config works across the suite) keep the agent to the folders you give it:
 - The roots must be existing folders; a missing one stops the server with an error. Each flag is
   given once (`--flag <dir>` or `--flag=<dir>`).
 
-The flags confine the headless server; `--connect` with them is an error, since the server would
+The flags confine the headless server; `--connect` or `--live` with them is an error, since the server would
 otherwise talk to an app that isn't confined. WordCraft's desktop app has no equivalent flags yet,
 so a running app (`wordcraft --control`) is not confined.
 

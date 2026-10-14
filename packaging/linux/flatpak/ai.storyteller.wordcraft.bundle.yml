@@ -30,9 +30,9 @@ finish-args:
   # line, Open Recent, "Save" next to the original) work in the usual places.
   - --filesystem=xdg-documents
   - --filesystem=xdg-pictures
-  # Deliberately not granted: network (the optional --control server listens on 127.0.0.1 in
-  # the sandbox; `flatpak override --user --share=network ai.storyteller.wordcraft` exposes it to
-  # host agents) and home/host filesystem access.
+  # Live agents use an owner-only Unix socket under this app's XDG runtime directory.
+  # The GUI and later CLI instances share it without granting general network access.
+  # Deliberately not granted: home/host filesystem access.
 modules:
   - name: wordcraft
     buildsystem: simple

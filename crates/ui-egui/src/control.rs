@@ -13,6 +13,11 @@
 //! - `ui.parity`: feature catalog parity
 
 use std::sync::mpsc::Sender;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Instant;
 
 use serde_json::{Value, json};
 
@@ -22,12 +27,32 @@ pub struct ControlRequest {
     pub method: String,
     pub params: Value,
     pub reply: Sender<Value>,
+    /// The host cancels requests when their client goes away or access is revoked.
+    pub cancelled: Arc<AtomicBool>,
+    /// A queued request must never begin after the caller's deadline.
+    pub deadline: Option<Instant>,
 }
 
 impl ControlRequest {
     pub fn new(method: impl Into<String>, params: Value) -> (Self, std::sync::mpsc::Receiver<Value>) {
         let (tx, rx) = std::sync::mpsc::channel();
-        (Self { method: method.into(), params, reply: tx }, rx)
+        (Self { method: method.into(), params, reply: tx, cancelled: Arc::new(AtomicBool::new(false)), deadline: None }, rx)
+    }
+
+    pub fn with_deadline(
+        method: impl Into<String>,
+        params: Value,
+        deadline: Instant,
+        cancelled: Arc<AtomicBool>,
+    ) -> (Self, std::sync::mpsc::Receiver<Value>) {
+        let (mut request, reply) = Self::new(method, params);
+        request.deadline = Some(deadline);
+        request.cancelled = cancelled;
+        (request, reply)
+    }
+
+    pub fn runnable(&self) -> bool {
+        !self.cancelled.load(Ordering::Acquire) && self.deadline.is_none_or(|deadline| Instant::now() < deadline)
     }
 }
 
@@ -105,6 +130,15 @@ fn click_events(app: &mut WordApp, pos: egui::Pos2, button: egui::PointerButton,
 }
 
 pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
+    if !req.runnable() {
+        return err("expired: the request was cancelled before execution");
+    }
+    if matches!(req.method.as_str(), "agent.status" | "agent.call" | "agent.disconnect" | "agent.transportClosed" | "agent.check") {
+        return match crate::agents::handle_with_connection(app, ctx, &req.method, &req.params, Some(req.cancelled.clone())) {
+            Ok(value) => ok(value),
+            Err(error) => err(error),
+        };
+    }
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     let f = |k: &str| p.get(k).and_then(Value::as_f64).map(|v| v as f32);

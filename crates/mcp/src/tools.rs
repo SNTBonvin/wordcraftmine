@@ -154,6 +154,57 @@ pub fn tool_definitions() -> Value {
     ])
 }
 
+/// Live profile exposes document operations and explicit attachment, never UI clicks or files.
+pub fn live_tool_definitions() -> Value {
+    let mut tools: Vec<Value> = tool_definitions()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| {
+            matches!(
+                v.get("name").and_then(Value::as_str),
+                Some("list_commands" | "execute" | "batch" | "type_text" | "select_text" | "get_text" | "inspect_document" | "render_page")
+            )
+        })
+        .cloned()
+        .collect();
+    for definition in &mut tools {
+        match definition.get("name").and_then(Value::as_str) {
+            Some("list_commands") => {
+                definition["description"] =
+                    json!("Commands permitted in this live document: ids, labels and parameters. Filter with query; read before editing.")
+            }
+            Some("execute") => {
+                definition["description"] = json!(
+                    "Run a command permitted by the live document's owner. Get ids and parameters from list_commands. File operations and UI interactions are unavailable."
+                )
+            }
+            _ => {}
+        }
+    }
+    tools.extend([
+        tool(
+            "list_sessions",
+            "Enabled documents",
+            "List enabled documents accepting connection requests. Missing/refused endpoints are swept within a bounded budget. Unverified entries may be busy or stale; check_session validates availability without requesting approval. Inspect truncated/sweepLimited; an invitation selects a document directly.",
+            obj(json!({}), &[]),
+            true,
+        ),
+        tool("check_session", "Check document availability", "Non-editing availability check for the intended enabled document. Never registers a client or requests approval.", obj(json!({"sessionId":s("Session id for the intended document from list_sessions or an optional invitation")}), &["sessionId"]), true),
+        tool(
+            "connect_session",
+            "Connect to document",
+            "Request access to the intended enabled document chosen from list_sessions or an optional invitation. Wait for the user to approve in WordCraft; approval_required/pending retains this target. Retry get_session_status after approval, then read and explicitly select before editing.",
+            obj(json!({"sessionId": s("Session id for the intended document from list_sessions or an optional invitation"), "agentName": {"type":"string", "description":"Your self-reported display name; WordCraft reserves the revision author independently: 1-128 ASCII letters, numbers, spaces, _, ., - or @; whitespace-only names are invalid", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9 _.@-]+$"}}), &["sessionId", "agentName"]),
+            false,
+        ),
+        tool("disconnect_session", "Disconnect", "Release the current document connection.", obj(json!({}), &[]), false),
+        tool("get_session_status", "Connection status", "Verify connected document and current permissions.", obj(json!({}), &[]), true),
+        tool("get_usage_guide", "WordCraft instructions", "Rules and workflow for editing the user's live document.", obj(json!({}), &[]), true),
+    ]);
+    Value::Array(tools)
+}
+
 fn exec(b: &mut dyn Backend, id: &str, params: Value) -> Result<Value, String> {
     b.call("engine.execute", json!({"command": id, "params": params}))
 }
@@ -166,6 +217,18 @@ fn wrap(r: Result<Value, String>) -> ToolResult {
 }
 
 pub fn call_tool(b: &mut dyn Backend, name: &str, a: &Value) -> ToolResult {
+    if b.is_live() {
+        if !live_tool_definitions().as_array().is_some_and(|defs| defs.iter().any(|d| d["name"] == name)) {
+            return ToolResult::error(format!("tool `{name}` is unavailable for live document access"));
+        }
+        match name {
+            "get_usage_guide" => return ToolResult::text(crate::live::USAGE_GUIDE),
+            "list_sessions" | "check_session" | "connect_session" | "disconnect_session" | "get_session_status" => {
+                return wrap(b.call(&format!("agent.{name}"), a.clone()));
+            }
+            _ => {}
+        }
+    }
     let st = |k: &str| a.get(k).and_then(Value::as_str);
     match name {
         "list_commands" => {
@@ -230,18 +293,31 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, a: &Value) -> ToolResult {
             let t = st("text").unwrap_or("");
             if a.get("paragraphs").and_then(Value::as_bool).unwrap_or(false) {
                 let mut last = Ok(Value::Null);
+                let mut completed = 0usize;
                 for (i, line) in t.split('\n').enumerate() {
                     if i > 0 {
                         last = exec(b, "text.newParagraph", json!({}));
+                        if last.is_err() {
+                            break;
+                        }
+                        completed = completed.saturating_add(1);
                     }
                     if !line.is_empty() {
                         last = exec(b, "text.insert", json!({"text": line, "raw": true}));
+                        if last.is_ok() {
+                            completed = completed.saturating_add(1);
+                        }
                     }
                     if last.is_err() {
                         break;
                     }
                 }
-                wrap(last)
+                match last {
+                    Ok(value) => ToolResult::json(&value),
+                    Err(error) => ToolResult::error(format!(
+                        "partial_edit: {completed} operation(s) completed; stopped at first failure. Read the document before retrying the remaining input: {error}"
+                    )),
+                }
             } else {
                 wrap(exec(b, "text.insert", json!({"text": t, "raw": true})))
             }
@@ -269,5 +345,39 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, a: &Value) -> ToolResult {
         "key" => wrap(b.call("ui.key", a.clone())),
         "ui_inspect" => wrap(b.call("ui.inspect", json!({}))),
         other => ToolResult::error(format!("unknown tool `{other}`")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ParagraphFailure {
+        commands: Vec<String>,
+    }
+    impl Backend for ParagraphFailure {
+        fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+            assert_eq!(method, "engine.execute");
+            let id = params["command"].as_str().unwrap().to_string();
+            self.commands.push(id.clone());
+            if id == "text.newParagraph" { Err("paragraph operation failed".into()) } else { Ok(json!({})) }
+        }
+        fn has_ui(&self) -> bool {
+            false
+        }
+        fn describe(&self) -> String {
+            "test paragraph failure".into()
+        }
+    }
+
+    #[test]
+    fn multi_paragraph_typing_stops_at_first_failed_operation() {
+        let mut backend = ParagraphFailure { commands: Vec::new() };
+        let result = call_tool(&mut backend, "type_text", &json!({"text":"First\nSecond\nThird", "paragraphs":true}));
+        assert!(result.is_error);
+        assert_eq!(backend.commands, ["text.insert", "text.newParagraph"]);
+        let message = result.content[0]["text"].as_str().unwrap();
+        assert!(message.contains("paragraph operation failed"));
+        assert!(message.contains("1 operation(s) completed"));
     }
 }
