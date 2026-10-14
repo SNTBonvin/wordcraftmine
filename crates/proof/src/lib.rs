@@ -35,6 +35,7 @@ pub mod lang;
 pub mod patterns;
 pub mod pl;
 pub mod pt;
+pub mod vi;
 
 use std::collections::HashSet;
 use std::ops::Range;
@@ -493,7 +494,8 @@ fn spelling_issue(text: &str, a: usize, b: usize, lang: ProofLang, opts: &Option
     let te = text.get(b..).and_then(|t| t.find(char::is_whitespace)).map(|i| b + i).unwrap_or(text.len());
     let token = text.get(ts..te).unwrap_or("");
     let internet = token.contains("://") || token.contains('@') || token.starts_with("www.");
-    if (opts.ignore_internet && internet) || is_correct_in_with(w, lang, opts) {
+    // A word with a Vietnamese-only letter (a name like Nguyễn in English text) isn't English.
+    if (opts.ignore_internet && internet) || (lang == ProofLang::En && vi::is_vietnamese_word(w)) || is_correct_in_with(w, lang, opts) {
         return None;
     }
     let message = match lang {
@@ -564,9 +566,19 @@ pub fn check_text_with(text: &str, spans: &[(Range<usize>, ProofLang)], opts: &O
             _ => merged.push((r.clone(), *l)),
         }
     }
+    // A paragraph typed in Vietnamese under the default English language is Vietnamese, which
+    // has no proofing tools: no marks (Word detects the language the same way).
+    let default = if vi::looks_vietnamese(text) {
+        for (_, l) in merged.iter_mut().filter(|(_, l)| *l == ProofLang::En) {
+            *l = ProofLang::Other;
+        }
+        ProofLang::Other
+    } else {
+        ProofLang::En
+    };
     let lang_at = |i: usize| -> ProofLang {
         let k = merged.partition_point(|(r, _)| r.end <= i);
-        merged.get(k).filter(|(r, _)| r.start <= i).map_or(ProofLang::En, |s| s.1)
+        merged.get(k).filter(|(r, _)| r.start <= i).map_or(default, |s| s.1)
     };
     let mut v: Vec<Issue> = words(text).into_iter().filter_map(|(a, b)| spelling_issue(text, a, b, lang_at(a), opts)).collect();
     if !grammar {
@@ -582,7 +594,7 @@ pub fn check_text_with(text: &str, spans: &[(Range<usize>, ProofLang)], opts: &O
         covered = covered.max(r.end);
     }
     if covered < text.len() || merged.is_empty() {
-        langs.push(ProofLang::En);
+        langs.push(default);
     }
     langs.sort();
     langs.dedup();
