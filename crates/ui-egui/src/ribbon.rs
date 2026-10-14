@@ -1127,6 +1127,54 @@ fn design(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
+// Layout › Margins, Orientation, Size and Columns: the caret section's setting has a check
+// mark, as Text Direction's does (#1206).
+fn margins_items(ui: &mut Ui, app: &mut WordApp) {
+    let current = wordcraft_engine::cmd::page::margins_preset_at(&app.session);
+    for (l, k) in [
+        ("Normal  1\" all", "normal"),
+        ("Narrow  0.5\" all", "narrow"),
+        ("Moderate", "moderate"),
+        ("Wide", "wide"),
+        ("Mirrored", "mirrored"),
+        ("Office 2003 Default", "office2003"),
+    ] {
+        mi_check(ui, app, l, current == Some(k), "layout.margins", json!({"preset": k}));
+    }
+    mi(ui, app, "Custom Margins…", "ui.dialog", json!({"name": "pageSetup"}));
+}
+
+fn orientation_items(ui: &mut Ui, app: &mut WordApp) {
+    let land = wordcraft_engine::cmd::page::sect(&app.session).landscape;
+    mi_check(ui, app, "Portrait", !land, "layout.orientation", json!({"value": "portrait"}));
+    mi_check(ui, app, "Landscape", land, "layout.orientation", json!({"value": "landscape"}));
+}
+
+fn size_items(ui: &mut Ui, app: &mut WordApp) {
+    let x = wordcraft_engine::cmd::page::sect(&app.session);
+    let current = wordcraft_geom::paper_name(x.page_w, x.page_h);
+    for (n, w, h) in wordcraft_geom::PAPER_SIZES {
+        // In the measurement unit, written the region's way (`21 cm × 29,7 cm`, #838).
+        let label = format!("{n}   {} × {}", crate::options::length(*w), crate::options::length(*h));
+        mi_check(ui, app, &label, current == Some(*n), "layout.size", json!({"name": n}));
+    }
+}
+
+fn columns_items(ui: &mut Ui, app: &mut WordApp) {
+    let current = wordcraft_engine::cmd::page::columns_preset_at(&app.session);
+    for (l, k, params) in [
+        ("One", "one", json!({"count": 1})),
+        ("Two", "two", json!({"count": 2})),
+        ("Three", "three", json!({"count": 3})),
+        ("Left", "left", json!({"preset": "left"})),
+        ("Right", "right", json!({"preset": "right"})),
+    ] {
+        mi_check(ui, app, l, current == Some(k), "layout.columns", params);
+    }
+    ui.separator();
+    mi(ui, app, "More Columns…", "ui.dialog", json!({"name": "columns"}));
+}
+
 fn layout(app: &mut WordApp, ui: &mut Ui) {
     group(ui, "Page Setup", Some("layout.pageSetup"), app, |ui, app| {
         // Text Direction works on what the caret is in: table cells, a text box, else the section.
@@ -1139,38 +1187,10 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
                 mi_check(ui, app, label, dir == d, "layout.textDirection", json!({"value": d.ooxml()}));
             }
         });
-        menu_button(ui, app, "margins", Some("Margins"), "Margins", true, "layout.margins", |ui, app| {
-            for (l, k) in [
-                ("Normal  1\" all", "normal"),
-                ("Narrow  0.5\" all", "narrow"),
-                ("Moderate", "moderate"),
-                ("Wide", "wide"),
-                ("Mirrored", "mirrored"),
-                ("Office 2003 Default", "office2003"),
-            ] {
-                mi(ui, app, l, "layout.margins", json!({"preset": k}));
-            }
-            mi(ui, app, "Custom Margins…", "ui.dialog", json!({"name": "pageSetup"}));
-        });
-        menu_button(ui, app, "orientation", Some("Orientation"), "Orientation", true, "layout.orientation", |ui, app| {
-            mi(ui, app, "Portrait", "layout.orientation", json!({"value": "portrait"}));
-            mi(ui, app, "Landscape", "layout.orientation", json!({"value": "landscape"}));
-        });
-        menu_button(ui, app, "size", Some("Size"), "Size", true, "layout.size", |ui, app| {
-            for (n, w, h) in wordcraft_geom::PAPER_SIZES {
-                // In the measurement unit, written the region's way (`21 cm × 29,7 cm`, #838).
-                mi(ui, app, &format!("{n}   {} × {}", crate::options::length(*w), crate::options::length(*h)), "layout.size", json!({"name": n}));
-            }
-        });
-        menu_button(ui, app, "columns", Some("Columns"), "Columns", true, "layout.columns", |ui, app| {
-            mi(ui, app, "One", "layout.columns", json!({"count": 1}));
-            mi(ui, app, "Two", "layout.columns", json!({"count": 2}));
-            mi(ui, app, "Three", "layout.columns", json!({"count": 3}));
-            mi(ui, app, "Left", "layout.columns", json!({"preset": "left"}));
-            mi(ui, app, "Right", "layout.columns", json!({"preset": "right"}));
-            ui.separator();
-            mi(ui, app, "More Columns…", "ui.dialog", json!({"name": "columns"}));
-        });
+        menu_button(ui, app, "margins", Some("Margins"), "Margins", true, "layout.margins", margins_items);
+        menu_button(ui, app, "orientation", Some("Orientation"), "Orientation", true, "layout.orientation", orientation_items);
+        menu_button(ui, app, "size", Some("Size"), "Size", true, "layout.size", size_items);
+        menu_button(ui, app, "columns", Some("Columns"), "Columns", true, "layout.columns", columns_items);
         stack(ui, |ui| {
             menu_button(ui, app, "breaks", Some("Breaks"), "Breaks", false, "layout.break", |ui, app| {
                 ui.label(egui::RichText::new(tl!("Page Breaks")).strong());
@@ -2461,6 +2481,34 @@ mod tests {
         for id in ["table.selectTable", "table.deleteTable", "table.autofit"] {
             assert!(menu_enabled(&a, id), "{id} is on inside a table");
         }
+    }
+
+    /// #1206: Margins, Orientation, Size and Columns mark the caret section's setting, as Word
+    /// does. Every value differs from a new document's, so a default can't satisfy it.
+    #[test]
+    fn page_setup_menus_mark_the_current_setting() {
+        use egui_kittest::kittest::{By, NodeT, Queryable};
+        let mut app = WordApp::new(Session::new(wordcraft_doc::Document::from_text("Text")), crate::Services::default());
+        app.run("layout.margins", json!({"preset": "narrow"})).unwrap();
+        app.run("layout.orientation", json!({"value": "landscape"})).unwrap();
+        app.run("layout.size", json!({"name": "A4"})).unwrap();
+        app.run("layout.columns", json!({"preset": "right"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(400.0, 1200.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                margins_items(ui, app);
+                orientation_items(ui, app);
+                size_items(ui, app);
+                columns_items(ui, app);
+            },
+            app,
+        );
+        h.run_steps(2);
+        let checked: Vec<String> = h
+            .query_all(By::new().predicate(|n| n.toggled() == Some(egui::accesskit::Toggled::True)))
+            .filter_map(|n| n.accesskit_node().label())
+            .collect();
+        let first_words: Vec<&str> = checked.iter().filter_map(|l| l.trim_start_matches('✓').split_whitespace().next()).collect();
+        assert_eq!(first_words, ["Narrow", "Landscape", "A4", "Right"], "{checked:?}");
     }
 
     #[test]
