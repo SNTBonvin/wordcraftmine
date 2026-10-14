@@ -7,6 +7,7 @@ mod safe_save;
 
 /// Formats WordCraft opens.
 pub const OPEN_EXTS: &[&str] = &[
+    "pdf",
     "docx",
     "docm",
     "dotx",
@@ -99,11 +100,36 @@ pub fn open_bytes(name: &str, bytes: &[u8]) -> Result<Document, String> {
     open_bytes_with(name, bytes, None).map(|(doc, _)| doc)
 }
 
+/// Result of opening a file, including conversion details for formats that must be saved as a copy.
+pub struct OpenedDocument {
+    pub doc: Document,
+    pub encrypted: bool,
+    pub pdf: Option<wordcraft_pdf::import::ImportSummary>,
+}
+
+/// Open a file and report a PDF conversion separately from lossless document opening.
+pub fn open_bytes_report(name: &str, bytes: &[u8], password: Option<&str>) -> Result<OpenedDocument, String> {
+    if wordcraft_pdf::import::is_pdf(bytes) || ext_of(name) == "pdf" {
+        let (doc, summary) = wordcraft_pdf::import::read(bytes, password).map_err(|e| match e {
+            wordcraft_pdf::import::ImportError::NeedsPassword => wordcraft_docx::PASSWORD_REQUIRED.to_string(),
+            wordcraft_pdf::import::ImportError::WrongPassword => wordcraft_docx::WRONG_PASSWORD.to_string(),
+            other => other.to_string(),
+        })?;
+        return Ok(OpenedDocument { doc, encrypted: false, pdf: Some(summary) });
+    }
+    let (doc, encrypted) = open_other_bytes(name, bytes, password)?;
+    Ok(OpenedDocument { doc, encrypted, pdf: None })
+}
+
 /// [`open_bytes`] for a file that may be password-protected: a Word document encrypted with a
 /// password ([MS-OFFCRYPTO] agile encryption) is decrypted with `password` first. Also says
 /// whether the file was encrypted. Without the password needed the error satisfies
 /// [`needs_password`]; with a wrong one, [`wrong_password`].
 pub fn open_bytes_with(name: &str, bytes: &[u8], password: Option<&str>) -> Result<(Document, bool), String> {
+    open_bytes_report(name, bytes, password).map(|opened| (opened.doc, opened.encrypted))
+}
+
+fn open_other_bytes(name: &str, bytes: &[u8], password: Option<&str>) -> Result<(Document, bool), String> {
     let ext = ext_of(name);
     if matches!(ext.as_str(), "docx" | "docm" | "dotx" | "dotm" | "doc" | "dot") && wordcraft_docx::is_encrypted(bytes) {
         let mut doc = wordcraft_docx::read_with_password(bytes, password).map_err(|e| e.to_string())?;
@@ -253,22 +279,41 @@ pub fn open_path(path: &std::path::Path) -> Result<Document, String> {
 /// [`open_path`] for a file that may be password-protected (see [`open_bytes_with`]).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn open_path_with(path: &std::path::Path, password: Option<&str>) -> Result<(Document, bool), String> {
+    open_path_report(path, password).map(|opened| (opened.doc, opened.encrypted))
+}
+
+/// File-system variant of [`open_bytes_report`], with the same automation read confinement.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn open_path_report(path: &std::path::Path, password: Option<&str>) -> Result<OpenedDocument, String> {
     crate::file_access::check_read(&path.to_string_lossy())?;
     let meta = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
     if meta.len() > 2 << 30 {
         return Err(format!("{}: file is larger than 2 GB", path.display()));
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    use std::io::{BufRead, Read};
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
     let name = path.to_string_lossy();
-    if matches!(ext_of(&name).as_str(), "html" | "htm" | "xhtml") {
+    let header = reader.fill_buf().map_err(|e| format!("{}: {e}", path.display()))?;
+    let pdf = ext_of(&name) == "pdf" || wordcraft_pdf::import::is_pdf(header);
+    let limit = if pdf { wordcraft_pdf::import::MAX_BYTES as u64 } else { 2 << 30 };
+    if meta.len() > limit {
+        return Err(format!("{}: file exceeds the {} MiB import limit", path.display(), limit / (1024 * 1024)));
+    }
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() as u64 > limit {
+        return Err(format!("{}: file grew beyond the import limit", path.display()));
+    }
+    if !wordcraft_pdf::import::is_pdf(&bytes) && matches!(ext_of(&name).as_str(), "html" | "htm" | "xhtml") {
         // Pictures referenced by a relative path load from beside the HTML file.
         let images = LocalImages::new(path.parent().unwrap_or(std::path::Path::new("")));
         let mut doc = wordcraft_formats::html::import_with(&wordcraft_formats::html::decode(&bytes), &|src| images.load(src));
         fit_pictures(&mut doc);
         doc.ensure_nonempty();
-        return Ok((doc, false));
+        return Ok(OpenedDocument { doc, encrypted: false, pdf: None });
     }
-    open_bytes_with(&name, &bytes, password)
+    open_bytes_report(&name, &bytes, password)
 }
 
 /// The pictures an HTML file names by a path relative to its folder.
@@ -441,4 +486,10 @@ pub fn save_path_with(path: &std::path::Path, _doc: &Document, _password: Option
 /// Windows-1252 (see [`wordcraft_formats::txt::decode`]).
 pub fn decode_text(b: &[u8]) -> String {
     wordcraft_formats::txt::decode(b)
+}
+
+/// Web callers supply bytes through [`open_bytes_report`].
+#[cfg(target_arch = "wasm32")]
+pub fn open_path_report(_path: &std::path::Path, _password: Option<&str>) -> Result<OpenedDocument, String> {
+    Err("file-system opening is unavailable in the browser; supply file bytes".into())
 }

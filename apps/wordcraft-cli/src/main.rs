@@ -44,9 +44,13 @@ USAGE:
 ";
 
 fn open(path: &str) -> Result<Session, String> {
-    let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
-    let mut s = Session::new(doc);
-    s.path = Some(path.into());
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    let result = s.run("file.open", &json!({"path": path})).map_err(|e| e.to_string())?;
+    if let Some(warnings) = result.get("import").and_then(|v| v.get("warnings")).and_then(Value::as_array) {
+        for warning in warnings.iter().filter_map(Value::as_str) {
+            eprintln!("PDF import: {warning}");
+        }
+    }
     Ok(s)
 }
 
@@ -422,6 +426,22 @@ fn main() -> ExitCode {
             eprintln!("wordcraft-cli: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod pdf_import_tests {
+    #[test]
+    fn cli_open_does_not_set_the_pdf_as_an_implicit_save_target() {
+        let path = std::env::temp_dir().join(format!("wordcraft-cli-pdf-import-{}.pdf", std::process::id()));
+        let bytes = wordcraft_engine::io::save_bytes("sample.pdf", &wordcraft_doc::Document::from_text("CLI import")).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut session = super::open(&path.to_string_lossy()).unwrap();
+        assert!(session.path.is_none() && session.dirty);
+        let result = session.run("file.save", &serde_json::json!({})).unwrap();
+        assert_eq!(result["saved"], false);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::remove_file(path).unwrap();
     }
 }
 

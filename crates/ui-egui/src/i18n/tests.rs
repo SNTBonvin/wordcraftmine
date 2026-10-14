@@ -1032,7 +1032,11 @@ fn german_covers_the_interface_catalog_and_keeps_count_labels_neutral() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let de = lang("de");
-    assert_eq!(keys(de.0.source), keys(lang("zh-hans").0.source));
+    // German also translates the PDF import report; other catalogs may add it later.
+    let german = keys(de.0.source);
+    let reference = keys(lang("zh-hans").0.source);
+    assert!(reference.is_subset(&german), "German must still cover the entire reference catalog");
+    assert_eq!(tr(de, "PDF import"), "PDF-Import");
     assert_eq!(tr(de, "Home"), "Start");
     assert_eq!(tr(de, "Save"), "Speichern");
     assert_eq!(tr(de, "Spelling & Grammar"), "Rechtschreibung und Grammatik");
