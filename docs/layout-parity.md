@@ -79,7 +79,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-14 | trivial | Text in a freely rotated text box turns with the box (screen, render, PDF; flips don't mirror it); while its text is edited the box is drawn straight, as in Word (gap 10) |
+| 2026-10-14 | trivial | Text in a freely rotated text box turns with the box (screen, render, PDF; flips don't mirror it); while its text is edited the box is drawn straight with its resize and rotation handles on the straight frame, as in Word (Word checks J and P; gap 10) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |
 | 2026-10-12 | trivial | A list label's font raises the first line's ascent but never its descent (Word keeps the text's descent below the baseline) |
 | 2026-10-12 | trivial | Hidden end-of-cell mark (`w:hideMark`): a cell's empty last paragraph takes no room, spacing and all; a row of only such empty cells is just its borders |

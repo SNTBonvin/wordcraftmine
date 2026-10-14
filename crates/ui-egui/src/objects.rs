@@ -165,7 +165,14 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
         }
         if ui.input(|i| i.pointer.primary_down()) {
             let shift = ui.input(|i| i.modifiers.shift);
-            if d.drag.grab == Grab::Rotate {
+            if d.drag.grab == Grab::Rotate && d.keep.is_some() {
+                // A straightened frame's turn adds to the box's angle: Shift snaps the sum.
+                d.drag.turn_to(at, pages, scale, false);
+                if shift {
+                    let step = frame::SNAP_DEG;
+                    d.drag.deg = wordcraft_geom::normalize_degrees(((d.base + d.drag.deg) / step).round() * step - d.base);
+                }
+            } else if d.drag.grab == Grab::Rotate {
                 d.drag.turn_to(at, pages, scale, shift);
             } else {
                 // Pictures keep their proportions from a corner unless Shift; shapes only with Shift.
@@ -324,7 +331,19 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
 
 /// Run a finished drag's command.
 fn commit(app: &mut WordApp, d: &ObjectDrag) {
-    let r = d.drag.rect;
+    let mut r = d.drag.rect;
+    // A resize of an edited turned box ran on its straight frame: once it turns back about its
+    // new centre, the edge held still would move by R·Δc − Δc. Move the frame back by that, so
+    // the held edge stays at the same page point (as a turned frame's resize does).
+    if d.keep.is_some() && matches!(d.drag.grab, Grab::Resize(_)) {
+        let s = d.drag.start;
+        let (dx, dy) = (r.x + r.w / 2.0 - (s.x + s.w / 2.0), r.y + r.h / 2.0 - (s.y + s.h / 2.0));
+        let (tx, ty) = wordcraft_geom::Spin::new(d.base, false, false).apply(0.0, 0.0, dx, dy);
+        if (tx - dx).is_finite() && (ty - dy).is_finite() {
+            r.x += tx - dx;
+            r.y += ty - dy;
+        }
+    }
     let params = match d.drag.grab {
         Grab::Rotate => {
             let deg = wordcraft_geom::normalize_degrees(d.base + d.drag.deg);
@@ -658,6 +677,13 @@ pub(crate) mod tests {
         let (w0, h0, deg0) = box_frame(&h);
         assert!((w0 - 200.0).abs() < 0.01 && (deg0 - 30.0).abs() < 0.01);
         let depth = h.state().session.undo_depth();
+        // The edge held still (the left one) where it is drawn turned, before and after.
+        let left_edge = |h: &mut H| {
+            let r = h.state_mut().session.layout().text_box(id, 0).expect("laid out").rect;
+            let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+            wordcraft_geom::Spin::new(30.0, false, false).apply(cx, cy, r.x, cy)
+        };
+        let held = left_edge(&mut h);
         let f = frame_on_screen(&mut h, id);
         let s = h.state().canvas.scale;
         drag(&mut h, f.right_center(), f.right_center() + egui::vec2(40.0 * s, 0.0));
@@ -667,6 +693,11 @@ pub(crate) mod tests {
         assert!((deg - 30.0).abs() < 0.01, "still turned 30°: {deg}");
         assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
         assert_eq!(h.state().session.sel.focus.story, wordcraft_doc::StoryRef::Part(id), "still editing its text");
+        // Clicked away, the box turns back: the edge held still is where it was.
+        h.state_mut().session.sel = wordcraft_engine::Selection::caret(Pos::body(0, 10));
+        h.step();
+        let now = left_edge(&mut h);
+        assert!((now.0 - held.0).abs() < 0.5 && (now.1 - held.1).abs() < 0.5, "the held edge stays put: {held:?} → {now:?}");
     }
 
     /// Turning an edited turned box from its straight frame adds the turn to its real angle.
@@ -680,5 +711,35 @@ pub(crate) mod tests {
         let (.., deg) = box_frame(&h);
         assert!((deg - 40.0).abs() < 1.01, "30° + 10°: {deg}");
         assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
+        assert_eq!(h.state().session.sel.focus.story, wordcraft_doc::StoryRef::Part(id), "still editing its text");
+        // A handle pressed and released without moving changes nothing.
+        let f = frame_on_screen(&mut h, id);
+        let before = box_frame(&h);
+        let depth = h.state().session.undo_depth();
+        for at in [frame::rotate_handle(f, 0.0), f.right_center()] {
+            press(&mut h, at, true);
+            press(&mut h, at, false);
+            h.step();
+        }
+        assert_eq!(box_frame(&h), before, "nothing changes");
+        assert_eq!(h.state().session.undo_depth(), depth, "no undo step");
+        assert_eq!(h.state().session.sel.focus.story, wordcraft_doc::StoryRef::Part(id));
+    }
+
+    /// Shift snaps the box's resulting angle to 15° steps (not the turn added to it).
+    #[test]
+    fn shift_snaps_the_resulting_angle_of_an_edited_turned_box() {
+        let (mut h, id) = turned_box_window();
+        let pos = h.state_mut().session.layout().text_box(id, 0).unwrap().pos();
+        let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
+        h.state_mut().run("select.range", json!({"anchor": pos, "focus": end})).unwrap();
+        h.state_mut().run("arrange.rotation", json!({"degrees": 32})).unwrap();
+        edit(&mut h, id);
+        let f = frame_on_screen(&mut h, id);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        drag(&mut h, frame::rotate_handle(f, 0.0), frame::rotate_handle(f, 10.0));
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        let (.., deg) = box_frame(&h);
+        assert!((deg - 45.0).abs() < 0.01 || (deg - 30.0).abs() < 0.01, "a 15° step: {deg}");
     }
 }

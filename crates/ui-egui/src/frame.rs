@@ -19,7 +19,7 @@ const EDGE_HANDLES_FROM: f32 = 40.0;
 /// How far the rotation handle sits above the frame's top edge (screen points), and the step
 /// Shift snaps the angle to (degrees).
 const ROTATE_GAP: f32 = 22.0;
-const SNAP_DEG: f32 = 15.0;
+pub(crate) const SNAP_DEG: f32 = 15.0;
 
 /// Screen point `p` turned `deg` degrees clockwise about `c`.
 fn turn(p: Pos2, c: Pos2, deg: f32) -> Pos2 {
