@@ -5119,3 +5119,48 @@ fn space_after_stays_clear_before_a_numbered_paragraph_without_a_label() {
         wordcraft_doc::resolve::AUTO_SPACING,
     );
 }
+
+#[test]
+fn centred_numbered_heading_centres_label_and_text_together() {
+    // A "§ 1. Title" heading: level text "§ %1.", a space after the number, the number centred
+    // and the paragraph centred. Word moves the label with the centred title (measured on Word's
+    // PDF export: "§ 1." sits a quarter of its width left of the exact centre); the label used
+    // to stay at the left indent with only the title centred.
+    use wordcraft_doc::numbering::LevelSuffix;
+    use wordcraft_doc::props::Align;
+    let build = |suffix: LevelSuffix| {
+        let mut d = Document::from_text("Definicje");
+        let id = d.numbering.add_list(wordcraft_doc::ListKind::Numbered);
+        for a in &mut d.numbering.abstracts {
+            if let Some(l) = a.levels.first_mut() {
+                l.text = "§ %1.".into();
+                l.suffix = suffix;
+                l.align = Align::Center;
+                l.indent = 0.0;
+                l.hanging = 0.0;
+            }
+        }
+        d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+            p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 });
+            p.align = Some(Align::Center);
+            p.indent_left = Some(0.0);
+            p.indent_first = Some(0.0);
+        })
+        .unwrap();
+        let l = lay(&d);
+        l.pages[0].items.iter().find_map(|it| if let Placed::Lines { para, .. } = it { Some(para.clone()) } else { None }).unwrap()
+    };
+    let para = build(LevelSuffix::Space);
+    let lab = para.label.clone().unwrap();
+    let line = &para.lines[0];
+    let text_end = *line.xs.iter().rev().find(|x| x.is_finite()).unwrap();
+    // Centred from the indent (where the centred number's middle sits) to the end of the text.
+    let mid = (lab.x + lab.width / 2.0 + text_end) / 2.0;
+    let centre = (line.left + line.right) / 2.0;
+    assert!((mid - centre).abs() < 1.0, "label {} … text end {text_end}: middle {mid} vs line centre {centre}", lab.x);
+    assert!(lab.x > line.left + 20.0, "the label moved with the text: {}", lab.x);
+    // With a tab after the number the label keeps its place (unchanged behaviour).
+    let tabbed = build(LevelSuffix::Tab);
+    let lab_t = tabbed.label.clone().unwrap();
+    assert!(lab_t.x < tabbed.lines[0].left + 20.0, "tab suffix: label at {}", lab_t.x);
+}
