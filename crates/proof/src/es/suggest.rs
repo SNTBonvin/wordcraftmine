@@ -376,6 +376,12 @@ mod tests {
     #[test]
     fn portuguese_misspellings_get_the_right_suggestion() {
         crate::es::test_dict::install();
+        has("corazon", "corazón");
+        has("nino", "niño");
+        has("espanol", "español");
+        has("accion", "acción");
+        has("haiga", "haya");
+        has("llendo", "yendo");
         has("coraçao", "coração");
         has("saude", "saúde");
         has("seje", "seja");

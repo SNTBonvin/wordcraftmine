@@ -1019,6 +1019,14 @@ mod tests {
         let v = check_text(t, &[(0..t.len(), ProofLang::Pt)]);
         assert_eq!(flagged(t, &v), ["coraçao", "frequencia"], "{v:?}");
         assert!(v.iter().all(|i| i.lang == ProofLang::Pt && i.message == "Possível erro de ortografia"), "{v:?}");
+        // Spanish (es-419) checks in its span only, with the Spanish message and suggestions.
+        assert_eq!(ProofLang::from_tag(Some("es-419")), ProofLang::Es);
+        es::test_dict::install();
+        let t_es = "Él dijo que nino y accion existen.";
+        let v_es = check_text(t_es, &[(0..t_es.len(), ProofLang::from_tag(Some("es-419")))]);
+        assert_eq!(flagged(t_es, &v_es), ["nino", "accion"], "{v_es:?}");
+        assert!(v_es.iter().all(|i| i.lang == ProofLang::Es && i.message == "Posible error de ortografía"), "{v_es:?}");
+        assert!(suggest_in("nino", 3, ProofLang::Es).contains(&"niño".to_string()));
     }
 
     proptest::proptest! {

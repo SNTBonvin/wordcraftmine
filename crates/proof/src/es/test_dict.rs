@@ -8,15 +8,18 @@
 pub const AFF: &str = "SET UTF-8
 FLAG UTF-8
 FORBIDDENWORD F
-TRY aeiousrntmdlcpvgqbzfhjxçãõáéíóúâêôkw
-MAP 6
+TRY aeiousrntmdlcpvgqbzfhjxñçãõáéíóúüâêôkw
+MAP 7
+MAP nñ
 MAP aáàâã
 MAP eéê
 MAP ií
 MAP oóôõ
 MAP uú
 MAP cç
-REP 4
+REP 6
+REP haiga haya
+REP llendo yendo
 REP seje seja
 REP excessão exceção
 REP previlégio privilégio
@@ -33,7 +36,19 @@ PFX X 0 des .
 ";
 
 /// Stems (the count line first, as in Hunspell files).
-pub const DIC: &str = "76
+pub const DIC: &str = "88
+él
+dijo
+y
+existen
+niño
+español
+mañana
+corazón
+acción
+accion/F
+haya
+yendo
 coração
 saudade
 saudê

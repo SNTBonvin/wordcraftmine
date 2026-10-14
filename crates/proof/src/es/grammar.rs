@@ -18,17 +18,17 @@ use crate::{Issue, IssueKind, ProofLang, words};
 
 /// Words Portuguese repeats on purpose: interjections, onomatopoeia and emphatic doubling.
 const ALLOWED_REPEATS: &[&str] = &[
-    "sim", "não", "ora", "olha", "já", "bem", "muito", "vai", "lá", "cá", "aí", "ha", "he", "hi", "oh", "ah", "ai", "ui", "uf", "uxa", "oba", "viva",
-    "psiu", "olá", "tchau", "xau", "adeus", "devagar",
+    "sí", "no", "ya", "bien", "muy", "más", "sim", "não", "ora", "olha", "já", "bem", "muito", "vai", "lá", "cá", "aí", "ha", "he", "hi", "oh", "ah",
+    "ai", "ui", "uf", "uxa", "oba", "viva", "psiu", "olá", "tchau", "xau", "adeus", "devagar",
 ];
 
 /// Abbreviations written with a final period after which a sentence goes on in lower case
 /// (lower case, without the period).
 const ABBREVIATIONS: &[&str] = &[
-    "etc", "ex", "pág", "págs", "séc", "sécs", "fl", "av", "vol", "p", "pp", "ed", "tel", "min", "max", "art", "par", "prof", "profa", "dr", "dra",
-    "sr", "sra", "srta", "eng", "arq", "op", "cit", "cf", "ibid", "id", "vide", "seg", "ter", "qua", "qui", "sex", "sáb", "dom", "jan", "fev", "mar",
-    "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez", "s.a", "d.c", "a.c", "pg", "ref", "cod", "dept", "univ", "inst", "lat", "ing",
-    "esp", "fr", "it", "al", "obs", "att", "obs",
+    "etc", "ej", "ud", "uds", "lic", "núm", "cap", "ex", "pág", "págs", "séc", "sécs", "fl", "av", "vol", "p", "pp", "ed", "tel", "min", "max",
+    "art", "par", "prof", "profa", "dr", "dra", "sr", "sra", "srta", "eng", "arq", "op", "cit", "cf", "ibid", "id", "vide", "seg", "ter", "qua",
+    "qui", "sex", "sáb", "dom", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez", "s.a", "d.c", "a.c", "pg", "ref",
+    "cod", "dept", "univ", "inst", "lat", "ing", "esp", "fr", "it", "al", "obs", "att", "obs",
 ];
 
 fn issue(start: usize, end: usize, message: String, suggestions: Vec<String>) -> Issue {
@@ -49,7 +49,7 @@ fn abbreviation_or_number(prev: &str) -> bool {
 }
 
 const CLOSING: [char; 8] = ['"', '”', '’', '\'', ')', '»', ']', '\u{1}'];
-const OPENING: [char; 8] = ['"', '“', '«', '(', '[', '\'', '‚', '—'];
+const OPENING: [char; 10] = ['"', '“', '«', '(', '[', '\'', '‚', '—', '¿', '¡'];
 
 /// Does the gap between two words end a sentence: a `.`, `!` or `?` (not an ellipsis, not after
 /// an abbreviation), then space, with nothing but quotes and brackets around?
@@ -88,7 +88,7 @@ fn repeated_words(text: &str, ws: &[(usize, usize)], v: &mut Vec<Issue>) {
             && w0.to_lowercase() == w1.to_lowercase()
             && !ALLOWED_REPEATS.contains(&w0.to_lowercase().as_str())
         {
-            v.push(issue(*a0, *b1, format!("Palavra repetida: \"{w1}\""), vec![w0.to_string()]));
+            v.push(issue(*a0, *b1, format!("Palabra repetida: \"{w1}\""), vec![w0.to_string()]));
         }
     }
 }
@@ -113,14 +113,14 @@ fn spaces(text: &str, v: &mut Vec<Issue>) {
             _ => false,
         };
         if flag {
-            v.push(issue(i, i + 1 + p.len_utf8(), "Espaço antes da pontuação".into(), vec![p.to_string()]));
+            v.push(issue(i, i + 1 + p.len_utf8(), "Espacio antes de la puntuación".into(), vec![p.to_string()]));
         }
     }
     for (i, _) in text.match_indices("  ") {
         if i > 0 && text.get(..i).is_some_and(|t| t.ends_with(' ')) {
             continue;
         }
-        v.push(issue(i, i + 2, "Espaço duplo".into(), vec![" ".into()]));
+        v.push(issue(i, i + 2, "Espacio doble".into(), vec![" ".into()]));
     }
 }
 
@@ -137,7 +137,7 @@ fn sentence_capitals(text: &str, ws: &[(usize, usize)], v: &mut Vec<Issue>) {
             ends_sentence(text.get(pb..a).unwrap_or(""), text.get(pa..pb).unwrap_or(""))
         };
         if starts && w.chars().next().is_some_and(char::is_lowercase) && w.chars().all(char::is_alphabetic) {
-            v.push(issue(a, b, "Letra maiúscula no início da frase".into(), vec![capitalize(w)]));
+            v.push(issue(a, b, "Letra mayúscula al inicio de la oración".into(), vec![capitalize(w)]));
         }
     }
 }
@@ -161,7 +161,7 @@ fn doubled_punctuation(text: &str, v: &mut Vec<Issue>) {
                 b'.' => vec![".".into(), "…".into()],
                 _ => vec![char::from(b).to_string()],
             };
-            v.push(issue(i, end, "Sinal repetido".into(), suggestions));
+            v.push(issue(i, end, "Signo repetido".into(), suggestions));
         }
         i += run.max(1);
     }
@@ -184,7 +184,7 @@ mod tests {
     fn repeated_words() {
         let v = check("Eu eu vi isso e ele ele saiu.");
         assert_eq!(v.len(), 2, "{v:?}");
-        assert_eq!(v[0].message, "Palavra repetida: \"eu\"");
+        assert_eq!(v[0].message, "Palabra repetida: \"eu\"");
         assert_eq!(v[0].suggestions, ["Eu"]);
         assert!(v.iter().all(|i| i.lang == ProofLang::Es && i.kind == IssueKind::Grammar));
         clean("Sim, sim! Não, não! Ora ora, que surpresa.");
@@ -193,21 +193,25 @@ mod tests {
     #[test]
     fn spaces_and_punctuation() {
         let m = messages("Olá , mundo .  Tudo bem ?");
-        assert!(m.contains(&"Espaço antes da pontuação@ ,".to_string()), "{m:?}");
-        assert!(m.contains(&"Espaço antes da pontuação@ .".to_string()), "{m:?}");
-        assert!(m.contains(&"Espaço antes da pontuação@ ?".to_string()), "{m:?}");
-        assert!(m.contains(&"Espaço duplo@  ".to_string()), "{m:?}");
+        assert!(m.contains(&"Espacio antes de la puntuación@ ,".to_string()), "{m:?}");
+        assert!(m.contains(&"Espacio antes de la puntuación@ .".to_string()), "{m:?}");
+        assert!(m.contains(&"Espacio antes de la puntuación@ ?".to_string()), "{m:?}");
+        assert!(m.contains(&"Espacio doble@  ".to_string()), "{m:?}");
         clean("Legal :) Muito bom :-) Ou :D Valor .5 e reticências ...");
         let m = messages("Falou,, e saiu.. depois;; fim.");
-        assert_eq!(m.iter().filter(|x| x.starts_with("Sinal repetido")).count(), 3, "{m:?}");
+        assert_eq!(m.iter().filter(|x| x.starts_with("Signo repetido")).count(), 3, "{m:?}");
         clean("Esperei… e esperei... até ele voltar.");
     }
 
     #[test]
     fn sentence_start_capitals() {
         let m = messages("isso é um teste. a segunda frase! terceira? ok.");
-        assert_eq!(m.iter().filter(|x| x.starts_with("Letra maiúscula")).count(), 4, "{m:?}");
+        assert_eq!(m.iter().filter(|x| x.starts_with("Letra mayúscula")).count(), 4, "{m:?}");
         assert_eq!(check("ele tem razão.")[0].suggestions, ["Ele"]);
+        assert_eq!(check("¿hola?")[0].suggestions, ["Hola"]);
+        assert_eq!(check("¡hola!")[0].suggestions, ["Hola"]);
+        assert_eq!(check("Terminó. ¿hola?")[0].suggestions, ["Hola"]);
+        clean("¿Hola? ¡Hola! Terminó. ¿Hola?");
         // Abbreviations, initials, ordinals, ellipses and dialogue dashes.
         clean("Comprei frutas, etc. e depois saímos.");
         clean("Conheci o Dr. Silva na Av. Paulista.");
