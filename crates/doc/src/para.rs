@@ -288,6 +288,8 @@ pub enum ShapeKind {
     Rectangle,
     RoundedRectangle,
     Ellipse,
+    /// Flowchart OR preset: an ellipse with horizontal and vertical spokes.
+    FlowchartOr,
     Triangle,
     Diamond,
     Line,
