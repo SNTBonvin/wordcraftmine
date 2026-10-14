@@ -348,6 +348,21 @@ pub struct Session {
     pub registry: Arc<Registry>,
     /// Author name for comments and tracked changes.
     pub author: String,
+    /// Record edits as tracked changes whatever the document's Track Changes setting
+    /// ([`Session::tracking`]): set around the commands an agent runs for the person (Ask Agent),
+    /// so its edits arrive as revisions to accept or reject. Not part of the document, so Undo
+    /// and Redo never turn the person's setting on.
+    pub force_tracking: bool,
+    /// New revision records share a record (same author, kind and second) only from this index
+    /// of `doc.revisions` on. Ask Agent raises it to the record count around each command an
+    /// agent runs for a request, so that request's revisions are records of its own: accepting or
+    /// rejecting them (`review.accept {revisions}`) never touches another request's or person's.
+    /// 0 (the default) shares as before.
+    pub revision_base: usize,
+    /// Earlier revisions this request may extend across its formatting commands.
+    pub revision_reuse: Vec<u32>,
+    /// External control cannot resolve review, including through nested macros.
+    pub human_review_only: bool,
     /// Initials for comments (File › Options › General); empty = the name's initials.
     pub initials: String,
     /// Format painter: copied formatting waiting to be applied (and whether it stays on).
@@ -580,6 +595,10 @@ impl Session {
             page_hint: 0,
             registry: Arc::new(crate::cmd::registry()),
             author: "WordCraft User".into(),
+            force_tracking: false,
+            revision_base: 0,
+            revision_reuse: Vec::new(),
+            human_review_only: false,
             initials: String::new(),
             painter: None,
             status: String::new(),
@@ -1011,6 +1030,11 @@ impl Session {
             page_hint: _,
             registry: _,
             author: _,
+            // Like `author`: who is editing, not the document or its history.
+            force_tracking: _,
+            revision_base: _,
+            revision_reuse: _,
+            human_review_only: _,
             initials: _,
             painter: _,
             status: _,
@@ -1117,6 +1141,9 @@ impl Session {
     /// control channel). Mutating commands are undoable; a failed command leaves the document as
     /// it was; a panic inside a command becomes an error.
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
+        if self.human_review_only && (id.starts_with("review.accept") || id.starts_with("review.reject")) {
+            return Err(CmdError::Disabled("HUMAN_REVIEW_REQUIRED: review requires native human interaction".into()));
+        }
         let join = std::mem::take(&mut self.join_next);
         let reg = self.registry.clone();
         let Some(spec) = reg.get(id) else { return Err(CmdError::Unknown(id.to_string())) };
@@ -1279,6 +1306,12 @@ impl Session {
     /// Words in the document, as the status bar shows them (see [`Prefs::count_notes`]).
     pub fn word_count(&self) -> usize {
         if self.prefs.count_notes { self.doc.word_count_including_notes() } else { self.doc.word_count() }
+    }
+
+    /// Whether edits are recorded as tracked changes: the document's Track Changes setting, or
+    /// [`Session::force_tracking`].
+    pub fn tracking(&self) -> bool {
+        self.doc.settings.track_changes || self.force_tracking
     }
 
     /// Selected plain text.

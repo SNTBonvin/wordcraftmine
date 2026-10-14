@@ -152,22 +152,25 @@ pub fn delete_selection(s: &mut Session) -> Result<Pos, CmdError> {
         return Ok(a);
     }
     controls::check_delete(s, &a, &b)?;
-    let at = if s.doc.settings.track_changes { track_delete(s, &a, &b)? } else { s.doc.delete_range(&a, &b)? };
+    let at = if s.tracking() { track_delete(s, &a, &b)? } else { s.doc.delete_range(&a, &b)? };
     s.sel = crate::Selection::caret(at.clone());
     Ok(at)
 }
 
-/// A revision record for the current author.
+/// A revision record for the current author: the author's record of that kind made in the same
+/// second, from [`Session::revision_base`] on, else a new one.
 pub fn new_revision(s: &mut Session, kind: RevisionKind) -> u32 {
     let date = now_iso();
     // Never one end of a move, nor the deletion a cut may still turn into one.
     let held = s.pending_move.as_ref().map(|m| m.rev);
+    let base = s.revision_base;
     if let Some((i, _)) = s
         .doc
         .revisions
         .iter()
         .enumerate()
         .rev()
+        .take_while(|(i, _)| *i >= base)
         .find(|(i, r)| r.kind == kind && r.author == s.author && r.date == date && r.move_name.is_none() && held != Some(*i as u32))
     {
         return i as u32;
@@ -274,7 +277,7 @@ fn insert_text(s: &mut Session, text: &str, enter: bool) -> Result<(), CmdError>
     delete_selection(s)?;
     // Typed text is new: never deleted, and not a formatting change of the text around it.
     props.fmt_change = None;
-    if s.doc.settings.track_changes {
+    if s.tracking() {
         props.ins = Some(new_revision(s, RevisionKind::Insert));
         props.del = None;
     } else {
@@ -376,7 +379,7 @@ fn split_para_as(s: &mut Session, at: &Pos, enter: bool) -> Result<Pos, CmdError
             p.mark = CharProps::default();
         }
     }
-    if s.doc.settings.track_changes {
+    if s.tracking() {
         let rid = new_revision(s, RevisionKind::Insert);
         let p = s.doc.para_mut(at.story, &at.path)?;
         p.mark.ins = Some(rid);

@@ -2468,3 +2468,92 @@ preview	Title	Tytuł
 	Typing	Pisanie
 	Search	Wyszukaj
 	Title Bar	Pasek tytułu
+# Ask Agent (Help › Agents, the selection chip and bubble)
+	Ask Agent	Zapytaj agenta
+	Ask\nAgent	Zapytaj\nagenta
+	Ask Agent…	Zapytaj agenta…
+	Ask agent to…	Poproś agenta, aby…
+	Send	Wyślij
+	Dismiss	Ukryj
+	Done.	Gotowe.
+	Cancelled	Anulowano
+	No agent is listening right now.	Żaden agent teraz nie nasłuchuje.
+	No text is selected: the agent gets the caret's place.	Nie zaznaczono tekstu: agent otrzyma położenie kursora.
+	The agent gets the selected text ({count} characters).	Agent otrzyma zaznaczony tekst (znaki: {count}).
+	Ask Agent isn't available in the web app: it needs the desktop app's control channel	Funkcja Zapytaj agenta nie działa w aplikacji internetowej: wymaga kanału sterowania aplikacji klasycznej
+	Ask Agent needs the control channel: start WordCraft with `--control 7981`, then connect your agent with `wordcraft-cli mcp --connect 127.0.0.1:7981`	Funkcja Zapytaj agenta wymaga kanału sterowania: uruchom WordCraft z `--control 7981`, a potem połącz agenta poleceniem `wordcraft-cli mcp --connect 127.0.0.1:7981`
+	No agent is listening: run `wordcraft-cli mcp --connect 127.0.0.1:{port}` in your agent and ask it to wait for WordCraft requests	Żaden agent nie nasłuchuje: uruchom `wordcraft-cli mcp --connect 127.0.0.1:{port}` w swoim agencie i poproś go, aby czekał na prośby z WordCraft
+	Sent to your agent…	Wysłano do agenta…
+	Waiting for an agent…	Czekam na agenta…
+	Your agent is working…	Agent pracuje…
+	{seconds} s	{seconds} s
+	Enter to send, Shift+Enter for a new line	Enter wysyła, Shift+Enter dodaje nowy wiersz
+# Ask Agent quick actions
+	Sent to {agent}…	Wysłano do: {agent}…
+	{agent} is working…	{agent} pracuje…
+	Inserts the result after the selection	Wstawia wynik za zaznaczeniem
+	Answers in the bubble; changes nothing	Odpowiada w dymku, niczego nie zmienia
+	Replaces the selection; the change is tracked	Zastępuje zaznaczenie, zmiana jest śledzona
+	Rewrite	Przeredaguj
+	Concise	Zwięzły
+	Friendly	Przyjazny
+	Confident	Pewny siebie
+	Shorten	Skróć
+	Fix spelling & grammar	Popraw pisownię i gramatykę
+	Simplify	Uprość
+	English	Angielski
+	French	Francuski
+	Spanish	Hiszpański
+	German	Niemiecki
+	Portuguese	Portugalski
+	More	Więcej
+	Bulletize	Zamień na listę punktowaną
+	Turn into table	Zamień na tabelę
+	Summarize	Streść
+	Continue writing	Pisz dalej
+	Explain	Wyjaśnij
+	Action items	Zadania do wykonania
+	Apply heading styles	Zastosuj style nagłówków
+	Tidy formatting	Ujednolić formatowanie
+	Check consistency	Sprawdź spójność
+	Follows the instruction; any changes are tracked	Postępuje zgodnie z instrukcją; wszelkie zmiany są śledzone
+
+# Ask Agent polish and reading levels
+	Final polish	Końcowe poprawki
+	Reading level	Poziom czytelnika
+	General public	Odbiorca ogólny
+	Secondary school	Szkoła średnia
+	Expert	Ekspert
+<<<<<<< HEAD
+# Ask Agent review: proposals, Accept, Discard, Retry
+	Accepted: the change is tracked as {author}.	Zaakceptowano: zmiana jest śledzona jako {author}.
+	Accepted the changes by {author}.	Zaakceptowano zmiany: {author}.
+	Nothing left to accept: the agent's changes were already accepted, rejected or undone.	Nie ma już nic do zaakceptowania: zmiany agenta zostały już zaakceptowane, odrzucone lub cofnięte.
+	Discarded: the changes by {author} are rejected.	Porzucono: zmiany ({author}) zostały odrzucone.
+	The text this request was about has changed since: select it again and ask again.	Tekst, którego dotyczyła prośba, zmienił się: zaznacz go ponownie i zapytaj jeszcze raz.
+	The agent's changes are tracked: Accept keeps them, Discard rejects them.	Zmiany agenta są śledzone: Zaakceptuj je zachowuje, Porzuć je odrzuca.
+	Discard	Porzuć
+	Retry	Ponów
+	Ask again: the same request, a new answer	Zapytaj ponownie: ta sama prośba, nowa odpowiedź
+	Put this text in the document, as a tracked change by {author}	Wstaw ten tekst do dokumentu jako śledzoną zmianę ({author})
+	Drop this proposal; the document doesn't change	Porzuć tę propozycję; dokument się nie zmieni
+	Make the agent's tracked changes final	Zatwierdź śledzone zmiany agenta
+	Reject the agent's tracked changes	Odrzuć śledzone zmiany agenta
+	Enter	Enter
+	Esc	Esc
+
+# Ask Agent attempt states and views
+	Fixed scope: {count} characters	Stały zakres: {count} znaków
+	Original	Oryginał
+	Proposal	Propozycja
+	Working	W toku
+	Ready	Gotowe
+	Failed	Niepowodzenie
+	Waiting	Oczekiwanie
+	Open request	Otwórz prośbę
+	Word comparison is unavailable for this proposal.	Porównanie słów jest niedostępne dla tej propozycji.
+=======
+
+	Failed	Niepowodzenie
+	Open request	Otwórz prośbę
+>>>>>>> origin/feat/ask-agent-quick-actions

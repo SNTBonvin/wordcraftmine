@@ -65,6 +65,8 @@ and set `WORDCRAFT_CONTROL_KEY` to that app's key.
 | `ui.render` | `path?`, `page?` (1-based), `scale?` | PNG of a page, rendered by the engine: written to `path`, or without one returned as base64 `png` in the reply (never a fixed name in the shared temporary folder) |
 | `ui.parity` | — | feature-catalog parity |
 | `ui.resize` / `ui.focus` / `app.quit` | | window control |
+| `agent.listen` | `timeoutMs?`, `agent?` | Ask Agent: the next request from the window, or `{none: true}` (see [Ask Agent](#ask-agent)) |
+| `agent.reply` | `id`, `text?`, `proposal?`, `format?`, `done?` | Ask Agent: show the agent's answer, or the text it proposes, in the window |
 
 Any other method name is treated as a command id: `{"method": "format.bold"}` works.
 
@@ -96,3 +98,137 @@ and their parameter documentation. Search is case-insensitive across IDs, labels
 and parameter descriptions. Listing commands never discovers printers, submits a job or opens
 a dialog. Settings inspection is always available; submission becomes enabled when the native
 printer is ready, or when the browser host provides its print flow.
+
+## Ask Agent
+
+The person selects text in the window and asks for something ("shorten this", "translate into
+French"): from the **Ask Agent** chip that floats beside the mini toolbar while an agent is present (presence rules below),
+Help › Agents › Ask Agent, the page's context menu (Ask Agent…), or Ctrl+Shift+O (⌘⇧O on macOS).
+An agent the person runs on the same computer takes the request through this channel, does the
+work with the usual methods and answers; the answer shows in a bubble under the selection.
+WordCraft calls no model and holds no key: the agent is whatever the person connected.
+
+| Method | Params | Result |
+|---|---|---|
+| `agent.listen` | `timeoutMs?` (default 30000, at most 60000), `agent?` (the agent's name) | the oldest waiting request, `{id, instruction, action, apply, selection: {text, anchor, focus, truncated}, document: {title, saved, language}, review, proposalFormats, retryOf}`, or `{none: true}` when none came in time |
+| `agent.reply` | `id`, `text?`, `proposal?`, `format?` (`"text"` or `"markdown"`), `done?` (default true); `text`, `proposal` or both | `{id, shown: true, done}`, or `{id, cancelled: true}` when the person cancelled the request |
+
+- Both need the key, like every other method. They are answered on the connection's own thread
+  from the window's queue, so an agent waiting in `agent.listen` holds up neither the window nor
+  other connections (they work with the screen locked, too). Each request goes to one listener.
+- The window counts an agent as there while one waits in `agent.listen`, for 60 s after an agent
+  last listened or replied, and while a request an agent took less than 10 minutes ago is still
+  open (an agent may edit for minutes without listening or replying). Then the chip shows on a
+  selection and Ask Agent is enabled. A client whose connection closes while it waits in
+  `agent.listen` stops counting within half a second. Otherwise nothing floats, and the ribbon
+  button, the menu item and the shortcut say how to connect one
+  (`wordcraft-cli mcp --connect 127.0.0.1:<port>`).
+- A request is never handed to a client whose connection has already closed, and one whose
+  `agent.listen` answer can't be written goes back in the queue: either way it waits for the next
+  agent. A client that closes just after being handed a request can't be told apart from one at
+  work, so that request stays `working` until answered or cancelled; only its presence credit expires
+  after 10 minutes. This also covers a disconnect just after the `peer_open` check.
+- `selection` is what was selected when the person asked (positions as below); they may have
+  moved since, and `select.range {anchor, focus}` selects it again. `selection.text` is cut at
+  100,000 bytes (`truncated`); `instruction` and `text` at 4,000 characters. `document.title` is
+  the file name, else the document's title, else the window's name for a new document
+  (`Document1`); `saved` says whether it has a file; `language` is the selection's language tag.
+- `done: false` shows `text` as a progress note and keeps the request open. The bubble says
+  "Sent to your agent" the moment the person sends, "Your agent is working" as soon as
+  `agent.listen` hands the request out, with the seconds since it was sent and the latest note: an
+  agent should send a short note (`"Rewriting…"`) right away, then its answer with `done: true`.
+- The selected text is document content: an agent should treat it as data, not as instructions.
+- **Quick actions.** The bubble lists one-click actions under the instruction box: Rewrite ›
+  (Professional, Concise, Friendly, Confident), Shorten, Expand, Fix spelling & grammar, Simplify,
+  Translate › (eight languages), More › (Bulletize, Turn into table, Summarize, Continue writing,
+  Explain). Each is data (`crates/ui-egui/src/agent_actions.rs`): `{id, label, menu, instruction,
+  apply}`. A request from one carries `action: {id, label}` and the action's `instruction` in plain
+  English, so an agent that knows nothing of WordCraft's ids still knows what to do; a typed
+  request has `action: null`. `apply` says where the result goes: `replace` the selection,
+  `insertBelow` (new paragraphs after it; the selection stays), `replyOnly` (change nothing,
+  answer in `agent.reply`), or `auto` (typed requests: the agent decides).
+- **The agent's edits are tracked changes.** `engine.execute` with `request: <id>` runs the
+  command for that request: what it changes is recorded as a tracked change by `Agent (<name>)`
+  (`agent.listen`'s `agent`; `Agent` without one), whatever the document's Track Changes setting,
+  which stays as the person left it (Undo and Redo never turn it on). The person accepts or rejects
+  the agent's work with the Review tab like a reviewer's. Edits for a request the person cancelled
+  or that was answered are refused, and so is any change for a `replyOnly` request (reading and
+  selecting still work). `review: "trackedChanges"` in the request says so. The MCP bridge adds
+  `request` to its calls by itself while a request it took is open, and `agent` from the MCP
+  client's name.
+- An agent command closes the typing group before and after a document edit, so Undo never
+  combines the person's typing with that edit. For `replyOnly`, window (`ui.*`) commands are
+  refused as well as mutating engine commands: window actions can initiate document changes.
+- **Proposals, streamed.** Instead of editing, the agent can send the new text: `agent.reply
+  {id, proposal}` with the whole text so far and `done: false` as it writes (each reply replaces
+  the last, so a lost or repeated reply does no harm), then the final text with `done: true`
+  (`text` stays the short note and may come with it or not). The bubble shows the text growing, at
+  most ten repaints a second, and once it is done the words it removes from the selection struck
+  through and the ones it adds underlined. `format: "markdown"` brings headings, lists, emphasis and
+  tables; plain text takes the formatting where it lands. A proposal is at most 200,000 bytes.
+  `proposalFormats` in the request lists the formats it takes (`[]` for `replyOnly`), and nothing
+  changes in the document until the person accepts.
+- **Accept, Discard, Retry.** Once a request is answered, the bubble (or the corner card) offers
+  them for its result. A proposal: Accept puts it where the person asked, in place of the
+  selection (`replace`, `auto`) or as new paragraphs after it (`insertBelow`), as one Undo step and
+  a tracked change by `Agent (<name>)`, wherever the caret is now; Discard drops it. The agent's
+  own edits: Accept makes exactly this request's tracked changes final, Discard rejects exactly
+  them (`review.accept` / `review.reject {revisions}`, one Undo step each); other authors' changes
+  and other requests' are never touched. Retry rejects the request's edits, if any, and sends the
+  same instruction or quick action about the same text again as a new request with `retryOf: <old
+  id>`, so the agent knows to try something different. Keys: Accept takes the keyboard when the
+  result arrives (Enter accepts, Tab moves to Discard and Retry), unless the person pressed a key
+  while the agent worked; then Escape closes without accepting or rejecting and Ctrl+R (⌘R) retries. Otherwise Escape, like a
+  click in the document, closes the bubble and the result waits in the corner card. Closing the
+  corner card folds it into an Ask Agent button; every retained request remains reachable there.
+- **Fixed scope.** Accept uses the original range only. If the text at that range changed or
+  moved, it refuses without changing the document, selection or Undo stack: "The text this request
+  was about has changed since: select it again and ask again." An agent's first direct edit for
+  that request checks the same range and document identity without changing its current selection.
+  Later direct edits refuse an intervening document revision, including Undo followed by a new edit.
+- **Edits or a proposal?** One or the other per request: a request the agent already edited takes
+  no proposal, and once it has a proposal, changes for it are refused (reading and selecting still
+  work). A proposal suits a rewrite of the selected text (the quick actions, "make this formal"):
+  the person sees it come and decides, and the agent needs no editing tools. Edits suit changes a
+  proposal can't express: several places in the document, comments, formatting only.
+- `ui.askAgent` (a UI command, through `engine.execute`): no params opens the bubble at the
+  selection (an error, with the reason, when no agent listens); `{"instruction": "…"}` queues a
+  request without the bubble; `{"action": "shorten"}` sends a quick action; `{"cancel": id}`
+  cancels one; `{"close": true}` closes the bubble; `{"accept": id}`, `{"discard": id}` and
+  `{"retry": id}` do what the bubble's buttons do (Retry answers the new request's `id`).
+  `ui.inspect` reports `askAgent`: `{available, reason, agentListening, bubble, history, requests:
+  [{id, state: "waiting"|"working"|"answered"|"failed"|"cancelled", action, apply, instruction, agent, reply,
+  proposal: {text, format}, revisions, review: "proposal"|"edits"|null, retryOf}], actions: [{id,
+  label, menu, apply}]}`.
+
+`wordcraft-cli mcp --connect` turns these into the tools `wait_for_request` and
+`reply_to_request` ([MCP server](mcp.md#ask-agent)).
+
+Quick actions also include **Final polish** under More (grammar, clarity and consistency, preserving facts, names, numbers, meaning and structure without additions), and **Reading level** with General public, Secondary school and Expert. All four use `apply: "replace"`.
+
+<<<<<<< HEAD
+The bubble displays the fixed scope and **Waiting / Working / Ready / Failed / Stopped** states.
+**Stop** cancels generation separately from **Discard**; replies after Stop are ignored, and a stopped or failed proposal cannot be accepted.
+**Accept** is disabled while the attempt is incomplete. The **Original / Proposal / Changes** tabs reuse the stored selection and proposal; Changes compares plain text for replacement proposals, with an explicit fallback for Markdown, insertion or truncated originals.
+**Retry** keeps the instruction, action and original selection, displays the previous proposal until the next proposal arrives, and uses a new request id. Replies to superseded attempts return `cancelled: true` and do not affect the new attempt (a bounded 40-id tombstone queue; older unknown ids are refused).
+An agent may report a failure with `agent.reply {id, error: "message"}` (MCP `reply_to_request` has the same field). The error closes the attempt as Failed and preserves its preview for Retry or Discard. A failure cannot also contain a proposal or `done: false`.
+
+Formatting commands in one request may extend only that request’s earlier formatting revisions. A later request that formats an overlapping range supersedes the earlier formatting revision there, following the existing formatting model; Accept/Discard operate on each request’s revisions that remain in the document. Paragraph-format and list-numbering revision ids are resolved independently.
+=======
+### Common Ask Agent contract
+
+See [the common contract](ask-agent-contract.md). The selection transport remains additive:
+`agent.listen` uses `timeoutMs`, and `agent.reply` uses `text` and `done`. Requests now
+also expose `status` (`pending` / `working` / `ready` / `failed` / `cancelled`), explicit
+`scope`, top-level `language`, `author`, and opaque `document.id` / `document.revision`.
+Legacy inspection `state` names `waiting` and `answered` remain aliases.
+
+Claims belong to authenticated connections, never display names. A different connection
+cannot reply or run a native command for a claim. Untagged native commands automatically
+use that connection's active claim; an unowned mutation while requests are unresolved is
+refused. Person-only review and synthetic UI review paths return `HUMAN_REVIEW_REQUIRED`.
+Lost control replies are ambiguous and never replayed. The queue and instruction drafts
+are session-only, capped at 20 retained requests without eviction of unresolved results.
+The person explicitly chooses Selection or Document in the bubble before Send. Actions
+carry all six common keys, including scope and their full instruction.
+>>>>>>> origin/feat/ask-agent-quick-actions
