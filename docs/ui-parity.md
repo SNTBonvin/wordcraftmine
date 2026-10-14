@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (no document behind the Start screen, #1129; previously trivial: equation pictures share a few textures, #1002; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (Recipient List dialog gains Filter and Sort, #778; previously trivial: no document behind the Start screen, #1129; previously trivial: equation pictures share a few textures, #1002; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -136,3 +136,4 @@ buttons, the remaining labels start with zero and use the same number of digits 
 `01`, `02` on a ten-button toolbar; `001` through `011` on a twenty-button toolbar). This keeps
 labels unambiguous. Those extra-number assignments have not been compared with Word.
 | 2026-10-11 | trivial | Draw: Lasso, Add Pen gallery, Ink to Shape and Ink Replay (#395) |
+| 2026-10-12 | trivial | Recipient List dialog: Filter and Sort section (conditions joined by And/Or, three sort keys, merge order column), .xls in the picker (#778) |
