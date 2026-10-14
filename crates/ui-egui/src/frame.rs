@@ -122,7 +122,7 @@ fn outline(f: egui::Rect, deg: f32) -> [Pos2; 5] {
 /// Draw a frame turned `deg`: its outline (dashed while what's inside is being edited) and,
 /// unless it's being dragged, its handles — `rotate` adds the rotation handle above it.
 pub fn paint(painter: &Painter, t: &Tokens, f: egui::Rect, deg: f32, dashed: bool, with_handles: bool, rotate: bool) {
-    let stroke = Stroke::new(1.25, t.accent);
+    let stroke = Stroke::new(1.25, t.editor_accent);
     let c = outline(f, deg);
     if dashed {
         painter.extend(egui::Shape::dashed_line(&c, stroke, 4.0, 3.0));
@@ -137,33 +137,39 @@ pub fn paint(painter: &Painter, t: &Tokens, f: egui::Rect, deg: f32, dashed: boo
     if rotate {
         let r = rotate_handle(f, deg);
         painter.circle_filled(r + vec2(0.0, 0.75), HANDLE_R + 2.0, t.handle_shadow);
-        painter.circle(r, HANDLE_R + 1.0, t.handle, Stroke::new(1.25, t.accent));
+        painter.circle(r, HANDLE_R + 1.0, t.handle, Stroke::new(1.25, t.editor_accent));
         // A circling arrow: three quarters of a ring and its head.
         let (rr, k) = (HANDLE_R * 0.55, std::f32::consts::PI / 12.0);
         let ring: Vec<Pos2> = (0..=10).map(|i| r + vec2((k * (i as f32 * 1.8 - 6.0)).cos(), (k * (i as f32 * 1.8 - 6.0)).sin()) * rr).collect();
         if let Some(end) = ring.last().copied() {
-            painter.add(egui::Shape::line(ring, Stroke::new(1.0, t.accent)));
-            painter.circle_filled(end, 1.3, t.accent);
+            painter.add(egui::Shape::line(ring, Stroke::new(1.0, t.editor_accent)));
+            painter.circle_filled(end, 1.3, t.editor_accent);
         }
     }
     for h in handles(f) {
         let c = h.at_turned(f, deg);
         painter.circle_filled(c + vec2(0.0, 0.75), HANDLE_R + 1.0, t.handle_shadow);
-        painter.circle(c, HANDLE_R, t.handle, Stroke::new(1.25, t.accent));
+        painter.circle(c, HANDLE_R, t.handle, Stroke::new(1.25, t.editor_accent));
     }
 }
 
 /// Where a frame turned `deg` is being dragged to: its outline, faintly filled.
 pub fn paint_outline(painter: &Painter, t: &Tokens, f: egui::Rect, deg: f32) {
     let c = outline(f, deg);
-    painter.add(egui::Shape::convex_polygon(c[..4].to_vec(), t.accent.gamma_multiply(0.08), Stroke::new(1.25, t.accent)));
+    painter.add(egui::Shape::convex_polygon(c[..4].to_vec(), t.editor_accent.gamma_multiply(0.08), Stroke::new(1.25, t.editor_accent)));
 }
 
 /// A frame being turned to `deg`: its outline and the angle beside the rotation handle.
 pub fn paint_turning(painter: &Painter, t: &Tokens, f: egui::Rect, deg: f32) {
     paint_outline(painter, t, f, deg);
     let label = format!("{:.0}°", wordcraft_geom::normalize_degrees(deg.round()));
-    painter.text(rotate_handle(f, deg) + vec2(HANDLE_R + 6.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(11.0), t.accent);
+    painter.text(
+        rotate_handle(f, deg) + vec2(HANDLE_R + 6.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(11.0),
+        t.editor_accent,
+    );
 }
 
 /// A drag of a frame in progress.

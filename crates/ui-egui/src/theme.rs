@@ -214,6 +214,11 @@ pub struct Tokens {
     pub checked: Color32,
     pub accent: Color32,
     pub accent_text: Color32,
+    /// Local document-editing marks; the shared accent is for interface chrome.
+    pub editor_accent: Color32,
+    pub editor_accent_text: Color32,
+    pub editor_on_accent: Color32,
+    pub editor_checked: Color32,
     /// Text/icon colour drawn on top of `accent` (e.g. keytip badge letters).
     pub on_accent: Color32,
     pub input: Color32,
@@ -224,6 +229,8 @@ pub struct Tokens {
     pub ruler_tick: Color32,
     pub status_bar: Color32,
     pub selection: Color32,
+    /// Selected interface row; document text selection uses `selection`.
+    pub ui_selection: Color32,
     /// Find › Reading Highlight.
     pub find_highlight: Color32,
     pub caret: Color32,
@@ -258,6 +265,10 @@ impl Tokens {
             checked: Color32::from_rgb(0xDD, 0xE3, 0xF8),
             accent: APP_COLOR,
             accent_text: APP_INK,
+            editor_accent: APP_COLOR,
+            editor_accent_text: APP_INK,
+            editor_on_accent: Color32::WHITE,
+            editor_checked: Color32::from_rgb(0xDD, 0xE3, 0xF8),
             on_accent: Color32::WHITE,
             input: Color32::WHITE,
             input_border: Color32::from_rgb(0x8A, 0x8A, 0x8A),
@@ -267,6 +278,7 @@ impl Tokens {
             ruler_tick: Color32::from_rgb(0x70, 0x70, 0x70),
             status_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
             selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
+            ui_selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
             find_highlight: Color32::from_rgba_unmultiplied(0xFF, 0xE0, 0x3D, 0x90),
             caret: Color32::BLACK,
             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x22),
@@ -280,40 +292,48 @@ impl Tokens {
         }
     }
     pub fn dark() -> Self {
+        // Shared ArtCraft standard-dark roles: window/chrome/panel/raised/input and blue focus.
+        // Document page pixels, ruler, text selection and editing handles keep their own colors.
+        let roles = craft_ui::theme::SuitePalette::ARTCRAFT_DARK;
         Tokens {
             dark: true,
-            title_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            ribbon: Color32::from_rgb(0x29, 0x29, 0x29),
-            tab_strip: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            canvas: Color32::from_rgb(0x14, 0x14, 0x14),
-            panel: Color32::from_rgb(0x26, 0x26, 0x26),
-            border: Color32::from_rgb(0x3A, 0x3A, 0x3A),
-            border_strong: Color32::from_rgb(0x55, 0x55, 0x55),
-            text: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            text_dim: Color32::from_rgb(0xC8, 0xC8, 0xC8),
-            text_disabled: Color32::from_rgb(0x6A, 0x6A, 0x6A),
-            icon: Color32::from_rgb(0xDD, 0xDD, 0xDD),
-            hover: Color32::from_rgb(0x3D, 0x3D, 0x3D),
-            pressed: Color32::from_rgb(0x4A, 0x4A, 0x4A),
-            checked: Color32::from_rgb(0x2E, 0x3A, 0x66),
-            accent: Color32::from_rgb(0x7A, 0x93, 0xF0),
-            accent_text: Color32::from_rgb(0x9C, 0xB0, 0xF5),
-            // Dark text on the light dark-theme accent: white on #7a93f0 is only 2.9:1 (#655).
-            on_accent: Color32::from_rgb(0x11, 0x16, 0x2E),
-            input: Color32::from_rgb(0x1E, 0x1E, 0x1E),
-            input_border: Color32::from_rgb(0x7A, 0x7A, 0x7A),
-            group_label: Color32::from_rgb(0xA0, 0xA0, 0xA0),
+            title_bar: roles.chrome,
+            ribbon: roles.chrome,
+            tab_strip: roles.chrome,
+            canvas: roles.window,
+            panel: roles.panel,
+            border: roles.border,
+            border_strong: roles.border_strong,
+            text: roles.text,
+            text_dim: roles.text_secondary,
+            text_disabled: roles.text_disabled,
+            icon: roles.text,
+            hover: roles.hover,
+            pressed: roles.pressed,
+            checked: roles.selection,
+            accent: roles.accent,
+            accent_text: roles.accent_hover,
+            editor_accent: Color32::from_rgb(0x7A, 0x93, 0xF0),
+            editor_accent_text: Color32::from_rgb(0x9C, 0xB0, 0xF5),
+            editor_on_accent: Color32::from_rgb(0x11, 0x16, 0x2E),
+            editor_checked: Color32::from_rgb(0x2E, 0x3A, 0x66),
+            // Dark text on ArtCraft blue satisfies the filled-control contrast requirement.
+            on_accent: roles.on_accent,
+            input: roles.input,
+            input_border: roles.border_strong,
+            group_label: roles.text_secondary,
             ruler: Color32::from_rgb(0x2E, 0x2E, 0x2E),
             ruler_margin: Color32::from_rgb(0x45, 0x45, 0x45),
             ruler_tick: Color32::from_rgb(0xA0, 0xA0, 0xA0),
-            status_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
+            status_bar: roles.chrome,
             selection: Color32::from_rgba_unmultiplied(0x7A, 0x93, 0xF0, 0x55),
+            ui_selection: roles.selection,
             find_highlight: Color32::from_rgba_unmultiplied(0xC8, 0xA8, 0x00, 0x70),
             caret: Color32::BLACK,
             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x60),
             handle: Color32::from_rgb(0xF2, 0xF2, 0xF2),
             handle_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x5A),
-            menu: Color32::from_rgb(0x2B, 0x2B, 0x2B),
+            menu: roles.raised,
             blue: Color32::from_rgb(0x6C, 0x9B, 0xEA),
             red: Color32::from_rgb(0xEE, 0x6A, 0x6A),
             green: Color32::from_rgb(0x5B, 0xC0, 0x8A),
@@ -607,8 +627,8 @@ fn visuals(t: &Tokens) -> Visuals {
     v.window_stroke = Stroke::new(1.0, t.border_strong);
     v.window_corner_radius = CornerRadius::same(8);
     v.menu_corner_radius = CornerRadius::same(6);
-    v.selection.bg_fill = t.selection;
-    v.selection.stroke = Stroke::new(1.0, t.accent);
+    v.selection.bg_fill = t.ui_selection;
+    v.selection.stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuitePalette::ARTCRAFT_DARK.selection_text } else { t.accent });
     v.hyperlink_color = t.accent_text;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.border);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
@@ -619,7 +639,7 @@ fn visuals(t: &Tokens) -> Visuals {
     v.widgets.inactive.corner_radius = CornerRadius::same(4);
     v.widgets.hovered.bg_fill = t.hover;
     v.widgets.hovered.weak_bg_fill = t.hover;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.border_strong);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuitePalette::ARTCRAFT_DARK.focus } else { t.border_strong });
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, t.text);
     v.widgets.hovered.corner_radius = CornerRadius::same(4);
     v.widgets.active.bg_fill = t.pressed;
@@ -639,6 +659,73 @@ pub fn c32(c: wordcraft_doc::Rgb) -> Color32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dark_adapter_reads_shared_roles_and_keeps_page_and_editing_colors() {
+        let roles = craft_ui::theme::SuitePalette::ARTCRAFT_DARK;
+        let dark = super::Tokens::dark();
+        assert_eq!(dark.title_bar, roles.chrome);
+        assert_eq!(dark.ribbon, roles.chrome);
+        assert_eq!(dark.tab_strip, roles.chrome);
+        assert_eq!(dark.canvas, roles.window);
+        assert_eq!(dark.panel, roles.panel);
+        assert_eq!(dark.border, roles.border);
+        assert_eq!(dark.border_strong, roles.border_strong);
+        assert_eq!(dark.text, roles.text);
+        assert_eq!(dark.text_dim, roles.text_secondary);
+        assert_eq!(dark.text_disabled, roles.text_disabled);
+        assert_eq!(dark.icon, roles.text);
+        assert_eq!(dark.hover, roles.hover);
+        assert_eq!(dark.pressed, roles.pressed);
+        assert_eq!(dark.checked, roles.selection);
+        assert_eq!(dark.accent, roles.accent);
+        assert_eq!(dark.accent_text, roles.accent_hover);
+        assert_eq!(dark.editor_accent, egui::Color32::from_rgb(0x7A, 0x93, 0xF0));
+        assert_eq!(dark.editor_accent_text, egui::Color32::from_rgb(0x9C, 0xB0, 0xF5));
+        assert_eq!(dark.editor_on_accent, egui::Color32::from_rgb(0x11, 0x16, 0x2E));
+        assert_eq!(dark.editor_checked, egui::Color32::from_rgb(0x2E, 0x3A, 0x66));
+        assert_eq!(dark.on_accent, roles.on_accent);
+        assert_eq!(dark.input, roles.input);
+        assert_eq!(dark.input_border, roles.border_strong);
+        assert_eq!(dark.group_label, roles.text_secondary);
+        assert_eq!(dark.status_bar, roles.chrome);
+        assert_eq!(dark.ui_selection, roles.selection);
+        assert_eq!(dark.menu, roles.raised);
+        assert_eq!(super::visuals(&dark).selection.stroke.color, roles.selection_text);
+        assert_eq!(super::visuals(&dark).widgets.hovered.bg_stroke.color, roles.focus);
+        assert_eq!(dark.selection, egui::Color32::from_rgba_unmultiplied(0x7A, 0x93, 0xF0, 0x55));
+        assert_eq!(dark.page_shadow, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 0x60));
+        assert_eq!(dark.caret, egui::Color32::BLACK);
+        assert_eq!(dark.handle, egui::Color32::from_rgb(0xF2, 0xF2, 0xF2));
+        assert_eq!(dark.ruler, egui::Color32::from_rgb(0x2E, 0x2E, 0x2E));
+        assert_eq!(dark.red, egui::Color32::from_rgb(0xEE, 0x6A, 0x6A));
+        let light = super::Tokens::light();
+        assert_eq!(light.accent, super::APP_COLOR);
+        assert_eq!(light.editor_accent, light.accent);
+        assert_eq!(light.editor_accent_text, light.accent_text);
+        assert_eq!(light.editor_on_accent, light.on_accent);
+        assert_eq!(light.editor_checked, light.checked);
+        assert_eq!(light.input, egui::Color32::WHITE);
+        assert_eq!(light.on_accent, egui::Color32::WHITE);
+        assert_eq!(light.selection, light.ui_selection);
+    }
+
+    #[test]
+    fn artcraft_dark_roles_preserve_document_and_light() {
+        let dark = super::Tokens::dark();
+        let light = super::Tokens::light();
+        assert_eq!(dark.ribbon, egui::Color32::from_rgb(0x0A, 0x0A, 0x0C));
+        assert_eq!(dark.panel, egui::Color32::from_rgb(0x10, 0x10, 0x14));
+        assert_eq!(dark.accent, egui::Color32::from_rgb(0x2D, 0x81, 0xFF));
+        assert_eq!(dark.on_accent, egui::Color32::from_rgb(0x06, 0x06, 0x07));
+        assert_eq!(dark.canvas, egui::Color32::from_rgb(0x12, 0x13, 0x16));
+        assert_eq!(dark.ui_selection, egui::Color32::from_rgb(0x20, 0x3B, 0x65));
+        assert_eq!(super::visuals(&dark).selection.bg_fill, dark.ui_selection);
+        assert_eq!(dark.find_highlight, egui::Color32::from_rgba_unmultiplied(0xC8, 0xA8, 0x00, 0x70));
+        assert_eq!(light.ribbon, egui::Color32::from_rgb(0xF9, 0xF9, 0xF9));
+        assert_eq!(super::Appearance::default(), super::Appearance::Light);
+        assert!(super::Appearance::System.is_dark(Some(egui::Theme::Dark)));
+    }
+
     use std::collections::BTreeSet;
 
     /// WCAG contrast ratio between two opaque colours.

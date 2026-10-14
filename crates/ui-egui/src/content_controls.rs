@@ -81,7 +81,7 @@ pub fn paint(app: &mut WordApp, painter: &egui::Painter, t: &Tokens, layout: &Do
     for r in &shown {
         let is_current = current.as_ref().is_some_and(|c| c.start == r.start);
         let fr = frames(app, layout, rects, scale, r);
-        let stroke = Stroke::new(1.0, if is_current { t.accent } else { t.accent.gamma_multiply(0.55) });
+        let stroke = Stroke::new(1.0, if is_current { t.editor_accent } else { t.editor_accent.gamma_multiply(0.55) });
         for f in &fr {
             painter.rect_stroke(*f, 1.0, stroke, egui::StrokeKind::Outside);
         }
@@ -91,10 +91,10 @@ pub fn paint(app: &mut WordApp, painter: &egui::Painter, t: &Tokens, layout: &Do
             && !title.is_empty()
         {
             let font = regular(9.5);
-            let w = painter.layout_no_wrap(title.to_string(), font.clone(), t.accent_text).size().x + 10.0;
+            let w = painter.layout_no_wrap(title.to_string(), font.clone(), t.editor_accent_text).size().x + 10.0;
             let tab = Rect::from_min_size(pos2(first.min.x, first.min.y - 14.0), vec2(w.min(320.0), 14.0));
-            painter.rect_filled(tab, egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 }, if is_current { t.accent } else { t.checked });
-            let ink = if is_current { t.on_accent } else { t.accent_text };
+            painter.rect_filled(tab, egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 }, if is_current { t.editor_accent } else { t.editor_checked });
+            let ink = if is_current { t.editor_on_accent } else { t.editor_accent_text };
             painter.with_clip_rect(tab).text(pos2(tab.min.x + 5.0, tab.center().y), Align2::LEFT_CENTER, title, font, ink);
         }
         // The list/calendar button at the right of the current one.
@@ -103,8 +103,8 @@ pub fn paint(app: &mut WordApp, painter: &egui::Painter, t: &Tokens, layout: &Do
             && let Some(last) = fr.last()
         {
             let b = Rect::from_min_size(pos2(last.max.x + 1.0, last.min.y), vec2(14.0, last.height().max(12.0)));
-            painter.rect_filled(b, 1.0, t.checked);
-            painter.rect_stroke(b, 1.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+            painter.rect_filled(b, 1.0, t.editor_checked);
+            painter.rect_stroke(b, 1.0, Stroke::new(1.0, t.editor_accent), egui::StrokeKind::Inside);
             let c = b.center();
             painter.add(egui::Shape::convex_polygon(
                 vec![pos2(c.x - 3.5, c.y - 1.5), pos2(c.x + 3.5, c.y - 1.5), pos2(c.x, c.y + 2.5)],

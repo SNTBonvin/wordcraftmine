@@ -140,7 +140,7 @@ fn undo_list(ui: &mut Ui, app: &mut WordApp) {
             .collect();
         for (i, (r, label)) in rects.iter().zip(&rows).enumerate() {
             if hovered.is_some_and(|h| i <= h) {
-                ui.painter().rect_filled(*r, 0.0, t.selection);
+                ui.painter().rect_filled(*r, 0.0, t.ui_selection);
             }
             // Clipped to its row: a long label never runs into the scroll bar.
             ui.painter_at(r.shrink2(vec2(6.0, 0.0))).text(pos2(r.min.x + 6.0, r.center().y), Align2::LEFT_CENTER, label, regular(12.0), t.text);
