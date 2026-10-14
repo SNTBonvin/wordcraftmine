@@ -41,6 +41,10 @@ const COMBO_FONT_W: f32 = ROW2_W - (COMBO_SIZE_W + GAP + 2.0 * BTN_W + 3.0 * SPA
 pub const BAR_W: f32 = PAD_X * 2.0 + ROW2_W;
 pub const BAR_H: f32 = PAD_Y * 2.0 + ROW_H * 2.0 + ROW_GAP;
 
+/// The layer the bar is drawn on. It must stay below `Order::Foreground`, where egui draws menus and
+/// dropdown popups: on `Tooltip` the bar covered the ribbon's font size list (#989).
+const BAR_ORDER: Order = Order::Middle;
+
 /// Where the bar sits for a selection line and viewport; `None` for degenerate inputs (NaN
 /// rects must never reach egui). Pure geometry, unit tested without a window.
 pub fn anchor_rect(selection_top: f32, selection_left: f32, viewport: Rect) -> Option<Rect> {
@@ -107,7 +111,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
     // pinned to the selection, so moving it would lose the association.
     // Draw the bar pinned above the selection. egui stops a click at the topmost widget, so a
     // click on the bar never reaches the document underneath.
-    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(Order::Tooltip).interactable(true).fixed_pos(bar.min);
+    let _area = egui::Area::new(egui::Id::new("wc_mini_toolbar")).order(BAR_ORDER).interactable(true).fixed_pos(bar.min);
     _area.show(ctx, |ui| {
         ui.set_clip_rect(bar);
         let painter = ui.painter();
@@ -255,6 +259,12 @@ mod tests {
 
         app.run("view.printLayout", json!({})).unwrap();
         assert!(visible(&app), "returning to editing restores the formatting bar");
+    }
+
+    #[test]
+    fn bar_is_drawn_below_menus_and_dropdown_popups() {
+        // egui draws popups (the ribbon's size list) on Foreground; the bar must not cover them.
+        assert!(BAR_ORDER < Order::Foreground);
     }
 
     #[test]
