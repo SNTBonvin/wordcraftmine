@@ -193,6 +193,9 @@ fn native_ranges_and_parity_do_not_duplicate_spooler_copies() {
     }
     assert!(jobs.borrow().is_empty(), "invalid settings do not send any job");
     let params = json!({"pages":"1-3","parity":"odd","collate":false});
+    // Without a created date the PDF writer stamps the wall clock, so the two builds below would
+    // differ in bytes whenever a second ticks over between them.
+    app.session.doc.core.created = "2026-01-01T00:00:00Z".into();
     let (expected, plan) = app.session.print_pdf(&params).unwrap();
     assert_eq!(plan.pages, vec![0, 2]);
     app.run("ui.printSubmit", params).unwrap();
