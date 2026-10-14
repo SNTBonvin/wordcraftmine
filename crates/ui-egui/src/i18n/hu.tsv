@@ -437,7 +437,7 @@
 	Multiple Pages	Több oldal
 	Name (A–Z)	Név (A–Z)
 	Name:	Név:
-	Narrow  0.5" all	Keskeny  0,5" mindenhol
+	Narrow  {size} all	Keskeny  {size} mindenhol
 	Navigation	Navigáció
 	Navigation Pane	Navigációs panel
 	New	Új
@@ -466,7 +466,7 @@
 	Nonbreaking Space	Nem törő szóköz
 	None	Nincs
 	Normal	Normál
-	Normal  1" all	Normál  1" mindenhol
+	Normal  {size} all	Normál  {size} mindenhol
 	Normal Indent	Normál behúzás
 	Normal Style	Normál stílus
 	Normal Table	Normál táblázat
@@ -1155,8 +1155,8 @@
 	Tabloid   11.00" × 17.00"	Tabloid   11,00" × 17,00"
 	B4 (JIS)   10.12" × 14.33"	B4 (JIS)   10,12" × 14,33"
 	B5 (JIS)   7.17" × 10.12"	B5 (JIS)   7,17" × 10,12"
-	Envelope #10   4.12" × 9.50"	Boríték #10   4,12" × 9,50"
-	Envelope DL   4.33" × 8.66"	Boríték DL   4,33" × 8,66"
+	Envelope #10	Boríték #10
+	Envelope DL	Boríték DL
 	Plain Table 1	Egyszerű táblázat 1
 	Grid Table 1 Light	Rácsos táblázat 1, világos
 	Grid Table 4 – Blue	Rácsos táblázat 4 – kék

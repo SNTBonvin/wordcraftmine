@@ -438,7 +438,7 @@
 	Multiple Pages	Несколько страниц
 	Name (A–Z)	Имя (А–Я)
 	Name:	Имя:
-	Narrow  0.5" all	Узкие  0,5" со всех сторон
+	Narrow  {size} all	Узкие  {size} со всех сторон
 	Navigation	Навигация
 	Navigation Pane	Область навигации
 	New	Создать
@@ -467,7 +467,7 @@
 	Nonbreaking Space	Неразрывный пробел
 	None	Нет
 	Normal	Обычный
-	Normal  1" all	Обычные  1" со всех сторон
+	Normal  {size} all	Обычные  {size} со всех сторон
 	Normal Indent	Обычный отступ
 	Normal Style	Обычный стиль
 	Normal Table	Обычная таблица
@@ -1158,8 +1158,8 @@ preview	Title	Пример
 	Tabloid   11.00" × 17.00"	Tabloid   11,00" × 17,00"
 	B4 (JIS)   10.12" × 14.33"	B4 (JIS)   10,12" × 14,33"
 	B5 (JIS)   7.17" × 10.12"	B5 (JIS)   7,17" × 10,12"
-	Envelope #10   4.12" × 9.50"	Конверт №10   4,12" × 9,50"
-	Envelope DL   4.33" × 8.66"	Конверт DL   4,33" × 8,66"
+	Envelope #10	Конверт №10
+	Envelope DL	Конверт DL
 	Plain Table 1	Простая таблица 1
 	Grid Table 1 Light	Таблица-сетка 1, светлая
 	Grid Table 4 – Blue	Таблица-сетка 4 — синяя

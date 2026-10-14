@@ -437,7 +437,7 @@
 	Multiple Pages	Birden Çok Sayfa
 	Name (A–Z)	Ad (A–Z)
 	Name:	Ad:
-	Narrow  0.5" all	Dar  her kenar 0,5 inç
+	Narrow  {size} all	Dar  her kenar {size}
 	Navigation	Gezinti
 	Navigation Pane	Gezinti Bölmesi
 	New	Yeni
@@ -466,7 +466,7 @@
 	Nonbreaking Space	Bölünemez Boşluk
 	None	Yok
 	Normal	Normal
-	Normal  1" all	Normal  her kenar 1 inç
+	Normal  {size} all	Normal  her kenar {size}
 	Normal Indent	Normal Girintili
 	Normal Style	Normal Stil
 	Normal Table	Normal Tablo
@@ -1157,8 +1157,8 @@ preview	Title	Örnek
 	Tabloid   11.00" × 17.00"	Tabloid   11,00" × 17,00"
 	B4 (JIS)   10.12" × 14.33"	B4 (JIS)   10,12" × 14,33"
 	B5 (JIS)   7.17" × 10.12"	B5 (JIS)   7,17" × 10,12"
-	Envelope #10   4.12" × 9.50"	Zarf No. 10   4,12" × 9,50"
-	Envelope DL   4.33" × 8.66"	Zarf DL   4,33" × 8,66"
+	Envelope #10	Zarf No. 10
+	Envelope DL	Zarf DL
 	Plain Table 1	Düz Tablo 1
 	Grid Table 1 Light	Kılavuz Tablo 1 Açık
 	Grid Table 4 – Blue	Kılavuz Tablo 4 – Mavi

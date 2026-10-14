@@ -1140,15 +1140,20 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
             }
         });
         menu_button(ui, app, "margins", Some("Margins"), "Margins", true, "layout.margins", |ui, app| {
-            for (l, k) in [
-                ("Normal  1\" all", "normal"),
-                ("Narrow  0.5\" all", "narrow"),
-                ("Moderate", "moderate"),
-                ("Wide", "wide"),
-                ("Mirrored", "mirrored"),
-                ("Office 2003 Default", "office2003"),
+            // The two uniform presets name their margin in the measurement unit (`2,54 cm`, #838).
+            for (l, k, uniform) in [
+                ("Normal  {size} all", "normal", Some(72.0)),
+                ("Narrow  {size} all", "narrow", Some(36.0)),
+                ("Moderate", "moderate", None),
+                ("Wide", "wide", None),
+                ("Mirrored", "mirrored", None),
+                ("Office 2003 Default", "office2003", None),
             ] {
-                mi(ui, app, l, "layout.margins", json!({"preset": k}));
+                let label = match uniform {
+                    Some(pt) => crate::i18n::fmt(tl!(l), &[("size", &crate::options::length(pt))]),
+                    None => tl!(l).to_string(),
+                };
+                mi(ui, app, &label, "layout.margins", json!({"preset": k}));
             }
             mi(ui, app, "Custom Margins…", "ui.dialog", json!({"name": "pageSetup"}));
         });
@@ -1158,8 +1163,15 @@ fn layout(app: &mut WordApp, ui: &mut Ui) {
         });
         menu_button(ui, app, "size", Some("Size"), "Size", true, "layout.size", |ui, app| {
             for (n, w, h) in wordcraft_geom::PAPER_SIZES {
-                // In the measurement unit, written the region's way (`21 cm × 29,7 cm`, #838).
-                mi(ui, app, &format!("{n}   {} × {}", crate::options::length(*w), crate::options::length(*h)), "layout.size", json!({"name": n}));
+                // The name in the interface language (envelopes), the size in the measurement unit, written the
+                // region's way (`21 cm × 29,7 cm`, #838).
+                mi(
+                    ui,
+                    app,
+                    &format!("{}   {} × {}", tl!(n), crate::options::length(*w), crate::options::length(*h)),
+                    "layout.size",
+                    json!({"name": n}),
+                );
             }
         });
         menu_button(ui, app, "columns", Some("Columns"), "Columns", true, "layout.columns", |ui, app| {
