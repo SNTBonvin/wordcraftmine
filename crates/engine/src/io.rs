@@ -30,6 +30,11 @@ pub const OPEN_EXTS: &[&str] = &[
 /// Formats WordCraft saves (Save As).
 pub const SAVE_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "pdf", "txt", "md", "html", "rtf", "odt", "tex", "png", "json", "xml"];
 
+/// Magic number for ZIP package signatures (used by .docx/.docm/.dotx/.dotm).
+const ZIP_SIG: &[u8] = b"PK\x03\x04";
+/// Magic number for OLE compound document signatures (used by .doc/.dot).
+const OLE_SIG: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+
 /// The extension of a file name or path, lower-case; empty when the file name has none (a dot
 /// in a folder name doesn't count).
 fn ext_of(name: &str) -> String {
@@ -168,11 +173,9 @@ pub(crate) fn fit_pictures(doc: &mut Document) {
 /// documents), a `.docx` package renamed `.doc` or a Word 97-2003 file renamed `.docx`: Word opens
 /// each by what it holds, so they go through [`open_by_content`] instead of failing.
 fn signature_contradicts(ext: &str, bytes: &[u8]) -> bool {
-    const ZIP: &[u8] = b"PK\x03\x04";
-    const OLE: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-    let held = if bytes.starts_with(ZIP) {
+    let held = if bytes.starts_with(ZIP_SIG) {
         "zip"
-    } else if bytes.starts_with(OLE) {
+    } else if bytes.starts_with(OLE_SIG) {
         "ole"
     } else if bytes.starts_with(b"{\\rtf") {
         "rtf"
@@ -193,13 +196,11 @@ fn signature_contradicts(ext: &str, bytes: &[u8]) -> bool {
 /// other text through the plain-text import with encoding detection (#569). Anything else is
 /// refused with a clear error rather than shown as garbage.
 fn open_by_content(name: &str, ext: &str, bytes: &[u8], password: Option<&str>) -> Result<(Document, bool), String> {
-    const ZIP: &[u8] = b"PK\x03\x04";
-    const OLE: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-    let (mut doc, encrypted) = if bytes.starts_with(OLE) && wordcraft_docx::is_encrypted(bytes) {
+    let (mut doc, encrypted) = if bytes.starts_with(OLE_SIG) && wordcraft_docx::is_encrypted(bytes) {
         (wordcraft_docx::read_with_password(bytes, password).map_err(|e| e.to_string())?, true)
-    } else if bytes.starts_with(ZIP) {
+    } else if bytes.starts_with(ZIP_SIG) {
         (wordcraft_docx::read(bytes).map_err(|e| format!("{name}: not a document WordCraft can open ({e})"))?, false)
-    } else if bytes.starts_with(OLE) {
+    } else if bytes.starts_with(OLE_SIG) {
         (wordcraft_docbin::read(bytes).map_err(|e| format!("{name}: not a document WordCraft can open ({e})"))?, false)
     } else if bytes.starts_with(b"{\\rtf") {
         (wordcraft_formats::rtf::import(bytes)?, false)
