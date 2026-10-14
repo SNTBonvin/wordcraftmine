@@ -2466,6 +2466,16 @@ preview	Title	Örnek
 	AutoFit Column by Double-Clicking	Sütunu Çift Tıklayarak Otomatik Sığdır
 	Region:	Bölge:
 	Automatic ({region})	Otomatik ({region})
+	Odd Banded Rows	Tek Şeritli Satırlar
+	Even Banded Rows	Çift Şeritli Satırlar
+	Odd Banded Columns	Tek Şeritli Sütunlar
+	Even Banded Columns	Çift Şeritli Sütunlar
+	Top Left Cell	Sol Üst Hücre
+	Top Right Cell	Sağ Üst Hücre
+	Bottom Left Cell	Sol Alt Hücre
+	Bottom Right Cell	Sağ Alt Hücre
+	Inside Horizontal Border	İç Yatay Kenarlık
+	Inside Vertical Border	İç Dikey Kenarlık
 	Start-up	Başlangıç
 	Show the Start screen when WordCraft starts	WordCraft açılırken Başlangıç ekranını göster
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Açık: WordCraft, Dosya › Giriş sayfasında boş belge, şablonlar ve son belgelerinizle açılır. Kapalı: boş bir belge açar.
