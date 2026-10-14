@@ -1,4 +1,4 @@
-//! File tab (Backstage): Home/New, Open, Info, Save As, Print, Export, Options, About.
+//! File tab (Backstage): Home/New, Open, Info, Save As, Print, Export, Close, Options, About.
 
 use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::json;
@@ -16,6 +16,7 @@ fn nav_icon(key: Option<&str>) -> &'static str {
         Some("save" | "saveAs") => "save",
         Some("print") => "print",
         Some("export") => "export",
+        Some("close") => "close",
         Some("options") => "options",
         Some("discord") => "comment",
         Some(_) => "info",
@@ -42,7 +43,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 label: if key == "home" { crate::i18n::tc("file", label) } else { tl!(label) },
             };
             let top = [item("home", "Home"), item("new", "New"), item("open", "Open")];
-            let rest = [item("info", "Info"), item("save", "Save"), item("saveAs", "Save As"), item("print", "Print"), item("export", "Export")];
+            let rest = [
+                item("info", "Info"),
+                item("save", "Save"),
+                item("saveAs", "Save As"),
+                item("print", "Print"),
+                item("export", "Export"),
+                item("close", "Close"),
+            ];
             let foot = [item("options", "Options"), item("discord", "Discord community"), item("about", "About")];
             let paint = |key: Option<&str>, p: &egui::Painter, r: Rect, c: egui::Color32| icons::paint(p, r, nav_icon(key), c, c);
             // macOS (#222): the File page covers the title bar, so the column's top band is the
@@ -72,6 +80,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
                 Some(FileNavAction::Choose("discord")) => {
                     let _ = app.run("ui.discord", json!({}));
+                }
+                // Not a page: `file.close` asks Save / Don't Save / Cancel first when there are
+                // unsaved changes, and Cancel leaves the Backstage where it was.
+                Some(FileNavAction::Choose("close")) => {
+                    let _ = app.run("file.close", json!({}));
                 }
                 Some(FileNavAction::Choose("about")) => app.dialog = crate::dialogs::Dialog::open("about", app),
                 Some(FileNavAction::Choose(page)) => app.ui.backstage_page = page.into(),
@@ -744,6 +757,60 @@ mod tests {
         h.get_by_label("Save").click();
         h.run_steps(4);
         assert!(!h.state().ui.backstage, "successful save closes backstage");
+    }
+
+    /// #1124: the side menu had no Close. It sits after Export and closes the document, asking
+    /// first when there are unsaved changes; Cancel leaves the Backstage as it was.
+    #[test]
+    fn backstage_close_asks_then_closes() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("text.insert", json!({"text": "Draft"})).unwrap();
+        a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let export = h.get_by_label("Export").rect().min.y;
+        assert!(h.get_by_label("Close").rect().min.y > export, "Close comes after Export");
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })), "unsaved changes ask first");
+        assert!(!h.state().quit_requested);
+
+        h.state_mut().run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        h.run_steps(4);
+        assert!(!h.state().quit_requested, "Cancel keeps the document open");
+        assert!(h.state().ui.backstage && h.state().ui.backstage_page == "info", "Cancel leaves the Backstage as it was");
+
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        h.state_mut().run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(h.state().quit_requested, "Don't Save closes");
+    }
+
+    /// A document without unsaved changes closes without a prompt.
+    #[test]
+    fn backstage_close_on_a_clean_document_closes_at_once() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Close").click();
+        h.run_steps(1);
+        assert!(h.state().dialog.is_none(), "no prompt");
+        assert!(h.state().quit_requested);
     }
 
     #[test]
