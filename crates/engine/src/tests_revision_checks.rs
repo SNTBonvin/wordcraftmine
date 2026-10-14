@@ -384,3 +384,20 @@ fn tracked_change_case_handles_sharp_s_and_mixed_formatting() {
     run(&mut s, "review.rejectAll", json!({}));
     assert_eq!(s.doc.plain_text(StoryRef::Body), "straße ab");
 }
+
+#[test]
+fn tracked_delete_of_struck_table_text_keeps_it_for_reject_all() {
+    for id in ["table.deleteTable", "table.deleteRow", "table.deleteColumn", "table.deleteCells"] {
+        let mut s = table_session();
+        run(&mut s, "review.trackChanges", json!({"value": true}));
+        run(&mut s, id, json!({}));
+        caret_in(&mut s, 0, 0, 0);
+        // Pressed again: the text is already struck, so nothing is removed outright.
+        let before = s.doc.clone();
+        assert!(s.run(id, &json!({})).is_err(), "{id}");
+        assert_eq!(s.doc, before, "{id}");
+        assert!(s.status.contains("already marked deleted"), "{id}: {}", s.status);
+        run(&mut s, "review.rejectAll", json!({}));
+        assert_eq!(cells(&s), [["A1", "B1"], ["A2", "B2"]], "{id}");
+    }
+}

@@ -603,13 +603,22 @@ fn text_spans(s: &Session, story: StoryRef, prefixes: &[Vec<u32>]) -> Vec<(Pos, 
 /// locked against deletion or edits content locked against editing (#1329). With Track Changes
 /// on, text not yet deleted is marked deleted instead and the structure stays (like Word deleting
 /// a table with tracking on; the model has no tracked row or column deletion), returning the
-/// result. When no such text is left (an empty table, or one whose deletion was accepted), there
-/// is nothing for Reject All to restore and the structure goes as without tracking.
+/// result. With no text at all (an empty table, or one whose deletion was accepted) there is
+/// nothing for Reject All to restore and the structure goes as without tracking; with only text
+/// already marked deleted, nothing changes (removing it would lose what Reject All restores).
 fn guard_delete(s: &mut Session, spans: &[(Pos, Pos)]) -> Result<Option<Value>, CmdError> {
     for (a, b) in spans {
         super::controls::check_delete(s, a, b)?;
     }
-    if !s.doc.settings.track_changes || !spans.iter().any(|(a, b)| has_live_text(s, a, b)) {
+    if !s.doc.settings.track_changes {
+        return Ok(None);
+    }
+    if !spans.iter().any(|(a, b)| has_text(s, a, b, true)) {
+        if spans.iter().any(|(a, b)| has_text(s, a, b, false)) {
+            let msg = "The table's text is already marked deleted; accept or reject the change first.";
+            s.status = msg.to_string();
+            return Err(CmdError::Failed(msg.to_string()));
+        }
         return Ok(None);
     }
     let rid = super::new_revision(s, RevisionKind::Delete);
@@ -622,13 +631,13 @@ fn guard_delete(s: &mut Session, spans: &[(Pos, Pos)]) -> Result<Option<Value>, 
     sel_result(s).map(Some)
 }
 
-/// Whether `a..b` holds text that isn't a tracked deletion.
-fn has_live_text(s: &Session, a: &Pos, b: &Pos) -> bool {
+/// Whether `a..b` holds text: any text, or (`live`) text that isn't a tracked deletion.
+fn has_text(s: &Session, a: &Pos, b: &Pos, live: bool) -> bool {
     s.doc.paths_between(a, b).iter().any(|path| {
         let Some(p) = s.doc.para(a.story, path) else { return false };
         let from = if *path == a.path { a.off } else { 0 };
         let to = if *path == b.path { b.off } else { p.len() };
-        p.run_ranges().any(|(r, c)| c.del.is_none() && r.end > from && r.start < to && !r.is_empty())
+        p.run_ranges().any(|(r, c)| (!live || c.del.is_none()) && r.end > from && r.start < to && !r.is_empty())
     })
 }
 
