@@ -236,7 +236,7 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
     match v.get("format").filter(|f| !f.is_null()) {
         None => {
             // Saving over a Word 2003 XML file (one opened as such, say) keeps its format.
-            opts.word2003 = ext == "xml" && is_word_2003_file(&path);
+            opts.word2003 = ext == "xml" && crate::io::is_word_2003_file(&path);
         }
         Some(f) if matches!(f.as_str(), Some(FORMAT_WORD_2003 | FORMAT_FLAT_OPC)) && ext == "xml" => {}
         Some(_) => {
@@ -252,27 +252,6 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
         s.dirty = false;
     }
     Ok(json!({"saved": true, "path": path.to_string_lossy(), "encrypted": encrypted}))
-}
-
-/// Does `path` hold a Word 2003 XML Document already (so a plain save keeps that format)?
-#[cfg(not(target_arch = "wasm32"))]
-fn is_word_2003_file(path: &std::path::Path) -> bool {
-    use std::io::Read;
-    if crate::file_access::check_read(&path.to_string_lossy()).is_err() {
-        return false;
-    }
-    let Ok(f) = std::fs::File::open(path) else { return false };
-    let mut head = Vec::new();
-    // The root element and its namespaces come first.
-    if f.take(64 * 1024).read_to_end(&mut head).is_err() {
-        return false;
-    }
-    wordcraft_docx::sniff_xml(&head) == wordcraft_docx::XmlKind::WordMl2003
-}
-
-#[cfg(target_arch = "wasm32")]
-fn is_word_2003_file(_path: &std::path::Path) -> bool {
-    false
 }
 
 fn save_as(s: &mut Session, v: &Value) -> CmdResult {

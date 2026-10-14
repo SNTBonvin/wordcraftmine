@@ -1646,6 +1646,9 @@ impl WordApp {
         let on_chrome = ctx.layer_id_at(pos).is_none_or(|l| l.order == egui::Order::Background);
         if on_chrome && ctx.memory(|m| m.focused().is_none()) && !egui::Popup::is_any_open(ctx) {
             self.canvas.want_focus = true;
+            // Keys run before the canvas applies want_focus in the next frame.
+            // Route immediate typing to the document as soon as chrome returns focus.
+            self.canvas.focused = true;
             ctx.request_repaint();
         }
     }
