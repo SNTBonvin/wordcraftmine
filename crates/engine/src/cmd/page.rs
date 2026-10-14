@@ -616,19 +616,22 @@ mod tests {
             assert_eq!(sect(&s), before, "{what}");
         }
         // Clamped.
-        s.run("layout.pageSetup", &with_section(|v| {
-            v["pageW"] = json!(-5.0);
-            v["pageH"] = json!(0.0);
-            v["marginTop"] = json!(-10.0);
-            v["marginBottom"] = json!(0.0);
-            v["marginLeft"] = json!(0.0);
-            v["marginRight"] = json!(0.0);
-            v["header"] = json!(-3.0);
-            v["footer"] = json!(1e6);
-            v["columns"]["count"] = json!(1000);
-            v["columns"]["space"] = json!(-4.0);
-            v["lineNumbers"] = json!({"countBy": 0, "start": 0, "distance": 1e6, "restart": "page"});
-        }))
+        s.run(
+            "layout.pageSetup",
+            &with_section(|v| {
+                v["pageW"] = json!(-5.0);
+                v["pageH"] = json!(0.0);
+                v["marginTop"] = json!(-10.0);
+                v["marginBottom"] = json!(0.0);
+                v["marginLeft"] = json!(0.0);
+                v["marginRight"] = json!(0.0);
+                v["header"] = json!(-3.0);
+                v["footer"] = json!(1e6);
+                v["columns"]["count"] = json!(1000);
+                v["columns"]["space"] = json!(-4.0);
+                v["lineNumbers"] = json!({"countBy": 0, "start": 0, "distance": 1e6, "restart": "page"});
+            }),
+        )
         .unwrap();
         let x = sect(&s);
         assert_eq!((x.page_w, x.page_h), (72.0, 72.0));
@@ -640,11 +643,14 @@ mod tests {
         let l = x.line_numbers.unwrap();
         assert_eq!((l.count_by, l.start, l.distance), (1, 1, 1584.0));
         let mut s = doc();
-        s.run("layout.pageSetup", &with_section(|v| {
-            v["pageW"] = json!(1e5);
-            v["columns"]["count"] = json!(3);
-            v["columns"]["widths"] = json!(vec![json!([1.0, 1e5]); 40]);
-        }))
+        s.run(
+            "layout.pageSetup",
+            &with_section(|v| {
+                v["pageW"] = json!(1e5);
+                v["columns"]["count"] = json!(3);
+                v["columns"]["widths"] = json!(vec![json!([1.0, 1e5]); 40]);
+            }),
+        )
         .unwrap();
         let x = sect(&s);
         assert_eq!(x.page_w, 1584.0);
@@ -655,12 +661,15 @@ mod tests {
     #[test]
     fn page_setup_section_applies_a_valid_one() {
         let mut s = doc();
-        s.run("layout.pageSetup", &with_section(|v| {
-            v["pageW"] = json!(595.0);
-            v["pageH"] = json!(842.0);
-            v["marginLeft"] = json!(50.0);
-            v["columns"]["count"] = json!(2);
-        }))
+        s.run(
+            "layout.pageSetup",
+            &with_section(|v| {
+                v["pageW"] = json!(595.0);
+                v["pageH"] = json!(842.0);
+                v["marginLeft"] = json!(50.0);
+                v["columns"]["count"] = json!(2);
+            }),
+        )
         .unwrap();
         let x = sect(&s);
         assert_eq!((x.page_w, x.page_h, x.margin_left, x.columns.count), (595.0, 842.0, 50.0, 2));
