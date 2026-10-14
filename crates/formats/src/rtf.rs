@@ -444,7 +444,8 @@ fn weekday(y: u32, m: u32, d: u32) -> u32 {
 
 /// An RTF revision date (DTTM, RTF 1.9.1 "Revision Marks": minute in bits 0–5, hour 6–10, day
 /// 11–15, month 16–19, year − 1900 20–28, weekday 29–31) as ISO 8601 (`2024-03-15T10:30:00Z`).
-/// Zero or an impossible date is no date.
+/// Zero or an impossible date is no date. DTTM has no time zone or seconds: times are read as
+/// UTC (`Z`).
 pub fn dttm_to_iso(v: u32) -> Option<String> {
     let (mi, h, d, mo, y) = (v & 0x3F, (v >> 6) & 0x1F, (v >> 11) & 0x1F, (v >> 16) & 0xF, 1900 + ((v >> 20) & 0x1FF));
     if v == 0 || mi > 59 || h > 23 || d == 0 || d > days_in_month(y, mo) {
@@ -454,7 +455,9 @@ pub fn dttm_to_iso(v: u32) -> Option<String> {
 }
 
 /// An ISO 8601 date (`YYYY-MM-DD`, optionally `THH:MM…`; seconds and zone ignored) as an RTF
-/// DTTM; `None` when it isn't one or falls outside DTTM's years (1900–2411).
+/// DTTM; `None` when it isn't one or falls outside DTTM's years (1900–2411). DTTM has no time
+/// zone or seconds: the clock time is written as given (WordCraft keeps UTC, `Z`), and seconds
+/// and any offset are dropped.
 pub fn iso_to_dttm(s: &str) -> Option<u32> {
     let num = |a: usize, b: usize| s.get(a..b).filter(|t| t.bytes().all(|c| c.is_ascii_digit())).and_then(|t| t.parse::<u32>().ok());
     let sep = |i: usize, c: &[&str]| s.get(i..i + 1).is_some_and(|t| c.contains(&t));
@@ -1437,7 +1440,9 @@ impl Reader {
                 }
                 return;
             }
-            Dest::RevTbl => return,
+            // Author names take Unicode escapes like the other text destinations.
+            Dest::RevTbl if !matches!(w, "u" | "uc") => return,
+            Dest::RevTbl => {}
             Dest::Pict => {
                 match w {
                     "pngblip" => self.pict_kind = 1,
@@ -1497,8 +1502,9 @@ impl Reader {
             }
             "pard" => {
                 let field = self.st.field;
-                let (dest, fmt, uc, hidden) = (self.st.dest, self.st.fmt.clone(), self.st.uc, self.st.hidden);
-                self.st = St { dest, fmt, uc, hidden, field, ..Default::default() };
+                // Revision marks are character formatting, which `\pard` leaves alone.
+                let (dest, fmt, rev, uc, hidden) = (self.st.dest, self.st.fmt.clone(), self.st.rev, self.st.uc, self.st.hidden);
+                self.st = St { dest, fmt, rev, uc, hidden, field, ..Default::default() };
             }
             "revised" => self.st.rev.ins = on,
             "deleted" => self.st.rev.del = on,
@@ -2341,6 +2347,29 @@ mod tests {
         for bad in [&br"{\rtf1{\*\revtbl {Al"[..], br"{\rtf1{\*\revtbl \revised\deleted{x}}y\par}", br"{\rtf1\revauth\revdttm\deleted"] {
             let _ = import(bad);
         }
+    }
+
+    #[test]
+    fn unicode_author_names_survive_import_and_round_trip() {
+        // `\uN` in the author table: "José" and "Дмитрий" (not "Jos?" / "???????").
+        let rtf = br"{\rtf1\uc1{\*\revtbl {Unknown;}{Jos\u233?;}{\u1044?\u1084?\u1080?\u1090?\u1088?\u1080?\u1081?;}}{\revised\revauth1 a}{\deleted\revauthdel2 b}\par}";
+        let authors = |d: &Document| tracked_runs(d).into_iter().map(|r| (r.1.map(|a| a.0), r.2.map(|a| a.0))).collect::<Vec<_>>();
+        let want = vec![(Some("José".to_string()), None), (None, Some("Дмитрий".to_string()))];
+        let doc = import(rtf).unwrap();
+        assert_eq!(authors(&doc), want);
+        let back = import(export(&doc).as_bytes()).unwrap();
+        assert_eq!(authors(&back), want);
+    }
+
+    #[test]
+    fn pard_keeps_revision_marks() {
+        // Revision marks are character formatting: `\pard` resets paragraph formatting only.
+        let rtf = br"{\rtf1{\*\revtbl {Unknown;}{Bob;}}\deleted\revauthdel1 gone\par\pard more\par}";
+        let doc = import(rtf).unwrap();
+        let Some(wordcraft_doc::Block::Para(p)) = doc.body.get(1).map(|b| &**b) else { panic!("no second paragraph") };
+        assert_eq!(p.text, "more");
+        let del = p.props_of_char(0).del.and_then(|i| doc.revisions.get(i as usize));
+        assert_eq!(del.map(|r| (r.kind, r.author.as_str())), Some((wordcraft_doc::RevisionKind::Delete, "Bob")));
     }
 
     #[test]
