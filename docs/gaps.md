@@ -49,6 +49,16 @@ Native save reliability: synthetic cases on macOS reproduced loss through the pr
 blocking gaps, and closing them lifts file formats, layout, stability and UI enough to take the
 full number from ~60% to ~75%. Everything else is depth on the way to full parity.
 
+### Native save reliability
+
+Session-owned native saves compare the destination's content with the bytes opened or last
+saved, including encrypted package bytes. Changed, missing or unreadable destinations refuse
+replacement, keeping dirty edits and the current file path. The conflict dialog offers Keep
+editing or Save Copy; AutoSave pauses on failure. Owned sibling temporary files protect the
+original during preparation failures. The check happens before rename, with a remaining
+check-to-replace race; this is not document locking or an atomic conditional write. Runtime
+qualification is synthetic macOS only. Other stability issues in gap #3 remain open.
+
 ## By kind
 
 The same gaps grouped the way the parity documents are, for agents working in one area.
@@ -84,6 +94,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 | 2026-10-11 | trivial | #8 narrowed: runs in a proofing language without a dictionary are skipped instead of flagged against the English dictionary (#100); dictionaries still English-only |
 | 2026-10-11 | trivial | #16: DOCX open/save preserves independent complex-script formatting inheritance; RTL sections, tables and typography remain open |
 | 2026-10-11 | trivial | `.doc` pictures, shapes and text boxes read (#551); gap #14 narrowed to the writer and Word 6/95 files |
+| 2026-10-11 | trivial | Native saves refuse pre-existing external changes without clearing edits; synthetic macOS checks, explicit race/platform limits; readiness unchanged |
 | 2026-10-11 | trivial | Table column and row borders and the resize handle drag on the page (#217); UI/UX gap narrowed to the ruler's column markers |
 | 2026-10-11 | trivial | UI/UX gaps list: the system's animation setting is now read on macOS and the Linux/BSD desktops; trying it on real machines remains |
 | 2026-10-11 | trivial | Animation effects setting landed (File › Options › Accessibility); UI/UX gaps list: the system's animation setting isn't read on macOS or Linux/BSD yet |

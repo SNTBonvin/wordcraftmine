@@ -709,6 +709,11 @@
 	Rules	Правила
 	Résumé	Автобиография
 	Save	Запазване
+	Save conflict	Конфликт при запазване
+	The file changed or is unavailable	Файлът е променен или недостъпен
+	Your edits are still here. Save them to a different file to keep both versions.	Вашите промени са запазени тук. Запишете ги в друг файл, за да запазите и двете версии.
+	Keep editing	Продължаване на редактирането
+	Save copy…	Запазване на копие…
 	Save As	Запазване като
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Запазване на копие в друг формат. Отпечатването минава през PDF файл, който можете да отпечатате от всяка програма за преглед.
 	Save as Template	Запазване като шаблон

@@ -42,6 +42,16 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on; the document canvas describes paragraphs, headings (level), list items, tables, links, pictures (alt text) and the caret and selection, for the pages on screen (#488); not yet tried with real screen readers | full | 50% | 5–8 |
 | Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
 
+## Native save conflicts
+
+A user-initiated native Save that detects an external change opens a short dialog: Keep editing
+retains the unsaved document; Save Copy opens the existing asynchronous picker with a distinct
+suggested name. A cancelled picker writes nothing; its answer is bound to the document that
+opened it. Picking an alias of the conflicting file is refused again. Save before Close/New/Open
+also retains edits on conflict. AutoSave pauses and reports the conflict once. Programmatic
+engine calls return the typed error without opening a dialog. The dialog uses theme tokens and
+translation lookups; new text may fall back to English pending native-language review.
+
 ## Revision history
 
 | Date | Change | Summary |
@@ -72,6 +82,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Built-in file browser when the system file dialog can't be shown on Linux/BSD; `ui.fileBrowser` (#576) |
 | 2026-10-11 | trivial | Every measurement now follows File › Options › Advanced › Measurement units: the Line Numbers "From text" distance and the Hyphenation zone were still fixed in inches (#755) |
 | 2026-10-11 | trivial | Track Changes Options › Show revisions in balloons works: tracked deletions in the body leave the text for "Deleted: …" balloons in the markup area, joined to where they were; inline again where no balloons show (Comments pane, Read Mode, side by side, Web Layout), and always inline in headers, footers, notes and text boxes |
+| 2026-10-11 | trivial | Native saves refuse pre-existing external changes without clearing edits; synthetic macOS checks, explicit race/platform limits; readiness unchanged |
 | 2026-10-11 | trivial | Mini toolbar in two rows like Word's (font, size, grow, shrink; B I U S, highlight, font colour, four alignments) with every button inside the bar; font and size lists drop from the box's left edge; dropdown arrows a readable size; font list entries take the theme's text colour in dark mode (#535) |
 | 2026-10-11 | trivial | Find and Replace: Special ▾ menu (^p, ^t, ^?, ^#, ^$, ^w, ^&, ^c … ; a shorter wildcard list), Use wildcards (`?` `*` `[a-z]` `[!x]` `{n,m}` `@` `<` `>` `( )`, `\1` in Replace with), Match prefix/suffix, Ignore punctuation and white space; `^p` matches and splits paragraphs, Replace All is one undo step (#543) |
 | 2026-10-11 | trivial | Update Style to Match Selection takes how the selection looks (its paragraph and character styles as well as direct formatting) and applies the style to it; Home › Styles gallery tiles get a right-click menu with Update to Match Selection and Modify… (#555) |

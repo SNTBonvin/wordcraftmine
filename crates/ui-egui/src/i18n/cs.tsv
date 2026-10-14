@@ -950,6 +950,13 @@
 	Rules	Pravidla
 	Résumé	Životopis
 	Save	Uložit
+
+# Save conflict dialog (#813).
+	Save conflict	Konflikt při ukládání
+	The file changed or is unavailable	Soubor byl změněn nebo není dostupný
+	Your edits are still here. Save them to a different file to keep both versions.	Vaše úpravy jsou stále zachované. Uložte je do jiného souboru, aby zůstaly zachovány obě verze.
+	Keep editing	Pokračovat v úpravách
+	Save copy…	Uložit kopii…
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Uloží kopii v jiném formátu. Tisk probíhá prostřednictvím souboru PDF, který vytisknete v libovolném prohlížeči.
 	Save As	Uložit jako
 	Save as Template	Uložit jako šablonu

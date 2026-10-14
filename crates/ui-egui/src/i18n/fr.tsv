@@ -712,6 +712,11 @@
 	Rules	Règles
 	Résumé	CV
 	Save	Enregistrer
+	Save conflict	Conflit lors de l’enregistrement
+	The file changed or is unavailable	Le fichier a été modifié ou est indisponible
+	Your edits are still here. Save them to a different file to keep both versions.	Vos modifications sont toujours ici. Enregistrez-les dans un autre fichier pour conserver les deux versions.
+	Keep editing	Continuer la modification
+	Save copy…	Enregistrer une copie…
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Enregistrez une copie dans un autre format. L’impression passe par un PDF que vous pouvez imprimer depuis n’importe quelle visionneuse.
 	Save As	Enregistrer sous
 	Save as Template	Enregistrer comme modèle

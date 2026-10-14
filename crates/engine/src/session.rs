@@ -327,6 +327,9 @@ pub struct Session {
     /// Formatting picked with a collapsed caret, applied to the next typed text.
     pub pending: Option<CharProps>,
     pub path: Option<std::path::PathBuf>,
+    /// Identity of this session's native file; never part of document JSON or undo history.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) file_version: Option<crate::io::FileVersion>,
     pub dirty: bool,
     /// Where the custom dictionary is kept on disk, if the host wired one up. Only the desktop
     /// app does: headless sessions (MCP, `wordcraft-cli run`), tests and the web build leave
@@ -569,6 +572,8 @@ impl Session {
             view: ViewState::default(),
             pending: None,
             path: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            file_version: None,
             user_dict_path: None,
             dirty: false,
             clipboard: None,
@@ -960,6 +965,10 @@ impl Session {
         self.doc = doc;
         self.doc.ensure_nonempty();
         self.password = None;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.file_version = None;
+        }
         self.sel = Selection::caret(self.doc.start_of(StoryRef::Body));
         self.pending = None;
         self.also_selected.clear();
@@ -998,6 +1007,8 @@ impl Session {
             view: _,
             pending: _,
             path: _,
+            #[cfg(not(target_arch = "wasm32"))]
+                file_version: _,
             // The custom dictionary file, like the file path: host wiring, not an edit.
             user_dict_path: _,
             dirty,

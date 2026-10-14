@@ -680,6 +680,13 @@
 	Rules	Regeln
 	Résumé	Lebenslauf
 	Save	Speichern
+
+# Save conflict dialog (#813).
+	Save conflict	Speicherkonflikt
+	The file changed or is unavailable	Die Datei wurde geändert oder ist nicht verfügbar
+	Your edits are still here. Save them to a different file to keep both versions.	Ihre Änderungen sind noch vorhanden. Speichern Sie sie in einer anderen Datei, um beide Versionen zu behalten.
+	Keep editing	Weiter bearbeiten
+	Save copy…	Kopie speichern…
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Eine Kopie in einem anderen Format speichern. Gedruckt wird über ein PDF, das sich aus jedem Betrachter drucken lässt.
 	Save As	Speichern unter
 	Save as Template	Als Vorlage speichern

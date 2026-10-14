@@ -140,11 +140,22 @@ fn open(s: &mut Session, v: &Value) -> CmdResult {
         return sel_result(s);
     };
     let password = p::str(v, "password");
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut file_version = None;
     let (mut doc, encrypted) = if let Some(data) = p::str(v, "data") {
         let bytes = super::insert::base64_decode(data).ok_or_else(|| CmdError::Params("bad base64".into()))?;
         crate::io::open_bytes_with(path, &bytes, password).map_err(CmdError::Failed)?
     } else {
-        crate::io::open_path_with(std::path::Path::new(path), password).map_err(CmdError::Failed)?
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (doc, encrypted, version) = crate::io::open_path_versioned(std::path::Path::new(path), password).map_err(CmdError::Failed)?;
+            file_version = Some(version);
+            (doc, encrypted)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            crate::io::open_path_with(std::path::Path::new(path), password).map_err(CmdError::Failed)?
+        }
     };
     // Plain text and Markdown carry no language: they are in the editing language.
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -155,6 +166,10 @@ fn open(s: &mut Session, v: &Value) -> CmdResult {
     }
     s.set_document(doc);
     s.path = Some(path.into());
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        s.file_version = file_version;
+    }
     // Like Word, a document opened with a password is saved with it again.
     if encrypted {
         s.password = password.map(crate::io::Password::new);
@@ -189,6 +204,7 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
             return Ok(json!({"saved": false}));
         }
     };
+    let mut password = s.password.clone();
     if let Some(pw) = v.get("password").filter(|pw| !pw.is_null()) {
         let Some(pw) = pw.as_str().filter(|pw| !pw.is_empty()) else {
             return Err(CmdError::Params("`password` must be a non-empty string (file.encrypt removes a password)".into()));
@@ -197,15 +213,39 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
             return Err(CmdError::Params("only Word documents (.docx, .docm, .dotx, .dotm) can be saved with a password".into()));
         }
         wordcraft_docx::check_password(pw).map_err(|e| CmdError::Params(e.to_string()))?;
-        s.password = Some(crate::io::Password::new(pw));
+        // Before recovery's password barrier (#586): a refused password change must leave
+        // the current unprotected session and its recovery copy intact.
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::io::check_save_destination(&path, s.file_version.as_ref())?;
+        password = Some(crate::io::Password::new(pw));
     }
+    // Stamp in place and put the old properties back if the save fails, so a refused save
+    // leaves the live document's metadata as it was (cheaper than cloning the document).
+    let before = s.doc.core.clone();
     s.stamp_save();
-    let password = s.password.as_ref().map(crate::io::Password::as_str);
-    crate::io::save_path_with(&path, &s.doc, password, &export_options(s, v)).map_err(CmdError::Failed)?;
-    let encrypted = password.is_some() && crate::io::can_encrypt(&path.to_string_lossy());
+    let pw = password.as_ref().map(crate::io::Password::as_str);
+    let opts = export_options(s, v);
+    #[cfg(not(target_arch = "wasm32"))]
+    let saved = crate::io::save_path_versioned(&path, &s.doc, pw, &opts, s.file_version.as_ref());
+    #[cfg(target_arch = "wasm32")]
+    let saved = crate::io::save_path_with(&path, &s.doc, pw, &opts).map_err(CmdError::Failed);
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::let_unit_value, unused_variables))]
+    let version = match saved {
+        Ok(version) => version,
+        Err(e) => {
+            s.doc.core = before;
+            return Err(e);
+        }
+    };
+    let encrypted = pw.is_some() && crate::io::can_encrypt(&path.to_string_lossy());
+    s.password = password;
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if ["docx", "docm", "dotx", "dotm", "odt", "rtf", "json", "xml"].contains(&ext.as_str()) {
         s.path = Some(path.clone());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            s.file_version = Some(version);
+        }
         s.dirty = false;
     }
     Ok(json!({"saved": true, "path": path.to_string_lossy(), "encrypted": encrypted}))

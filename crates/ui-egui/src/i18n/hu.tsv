@@ -613,6 +613,11 @@
 	Rules	Szabályok
 	Résumé	Önéletrajz
 	Save	Mentés
+	Save conflict	Mentési ütközés
+	The file changed or is unavailable	A fájl megváltozott vagy nem érhető el
+	Your edits are still here. Save them to a different file to keep both versions.	A módosításai megmaradtak. Mentse őket egy másik fájlba, hogy mindkét változat megmaradjon.
+	Keep editing	Szerkesztés folytatása
+	Save copy…	Másolat mentése…
 	Save a copy in another format. Printing goes through a PDF you can print from any viewer.	Másolat mentése más formátumban. A nyomtatás PDF-en keresztül történik, amelyet bármelyik nézegetőből kinyomtathatsz.
 	Save As	Mentés másként
 	Save as Template	Mentés sablonként
