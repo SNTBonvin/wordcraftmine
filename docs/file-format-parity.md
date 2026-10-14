@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-13 · **Change:** trivial (VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-14 · **Change:** minor (legacy DOC/DOT SummaryInformation text properties; previously trivial: VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -11,6 +11,21 @@ the work items are in [`gaps.md`](gaps.md).
 gives ~64%; we discount it to ~60% because DOCX fidelity has never been checked on real-world
 files. DOCX dominates the weight: a Word user sends and receives .docx; everything else is
 occasional.
+
+## Legacy DOC/DOT document properties
+
+The binary Word reader imports SummaryInformation text properties: title, subject, author,
+keywords, description, last editor and revision. Code-page strings use their declared
+Windows single-byte encoding, UTF-8 or UTF-16LE; UnicodeString lengths are counted in UTF-16
+units. Metadata streams are capped at 2 MiB and individual values at 64 KiB. Invalid optional
+metadata is skipped without losing the document body. Creation/modification timestamps and
+DocumentSummaryInformation/custom properties are not imported by this change; DOC/DOT
+remain read-only formats and encrypted legacy documents remain unsupported.
+
+Tests create OLE property sets in Rust and exercise the public document reader for normal
+DOCs, templates, accented/Cyrillic/Unicode properties and malformed lengths/offsets. A local
+LibreOffice-generated DOC and DOT containing an original synthetic document reproduced the
+missing-title bug before this change and retain their title after it.
 
 ## Formats
 

@@ -14,6 +14,7 @@ mod fkp;
 mod fmt;
 mod list;
 mod media;
+mod metadata;
 mod notes;
 mod officeart;
 mod piece;
@@ -115,6 +116,9 @@ pub fn read(bytes: &[u8]) -> Result<Document, DocbinError> {
     }
 
     let mut doc = Document::new();
+    if let Some(core) = metadata::read(&mut comp) {
+        doc.core = core;
+    }
     doc.body.clear();
     doc.styles = fmt::stylesheet(&raw_styles, &fonts);
     doc.numbering = list::parse(&table, &fib, &fonts);
