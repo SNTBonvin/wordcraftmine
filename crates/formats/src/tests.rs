@@ -618,6 +618,43 @@ fn hostile_importer_input_takes_linear_time() {
     }
 }
 
+/// Backtick runs that never close, each a different length, sent every code span and every link
+/// bracket scan over them looking for a closing run through the rest of the text: superlinear
+/// time on hostile Markdown.
+#[test]
+fn unmatched_backtick_runs_take_linear_time() {
+    use std::time::{Duration, Instant};
+    // Runs of 1, 2, … 2000 backticks (2 MB), none of them closed.
+    let runs = (1..=2000).map(|n| "`".repeat(n)).collect::<Vec<_>>().join(" ");
+    let cases = [runs.clone(), format!("{}{runs}{}", "[".repeat(8), "]".repeat(8)), format!("[{runs}")];
+    for text in cases {
+        let t = Instant::now();
+        let d = import("md", text.as_bytes()).unwrap().unwrap();
+        let plain = d.plain_text(Default::default());
+        let elapsed = t.elapsed();
+        eprintln!("{:?}... took {elapsed:?}", &text[..4]);
+        assert!(elapsed < Duration::from_secs(5), "{:?}... took {elapsed:?}", &text[..4]);
+        assert_eq!(plain.matches('`').count(), text.matches('`').count(), "every backtick stays text");
+    }
+}
+
+/// Code spans and brackets around backticks read as before the backtick runs were indexed.
+#[test]
+fn code_spans_and_links_around_backticks_read_as_before() {
+    // An escaped backtick before a span, a span holding a shorter run, a run nothing closes, a `]`
+    // inside a code span in link text, and link text with a backtick that nothing closes.
+    let flow = crate::markdown::parse("\\``e` `` a ` b `` then ``` and `c` [x `]` y](http://a.org) [p ` q](http://b.org) ``f");
+    let FBlock::Para(p) = &flow.blocks[0] else { panic!("{:?}", flow.blocks) };
+    let spans: Vec<(String, bool, Option<String>)> =
+        p.inlines.iter().filter_map(|i| if let model::Inline::Text(t, f) = i { Some((t.clone(), f.code, f.link.clone())) } else { None }).collect();
+    let code: Vec<&str> = spans.iter().filter(|s| s.1).map(|s| s.0.as_str()).collect();
+    assert_eq!(code, ["e", "a ` b", "c", "]"], "{spans:?}");
+    let linked = |url: &str| spans.iter().filter(|s| s.2.as_deref() == Some(url)).map(|s| s.0.as_str()).collect::<String>();
+    assert_eq!(linked("http://a.org"), "x ] y");
+    assert_eq!(linked("http://b.org"), "p ` q");
+    assert_eq!(p.text(), "`e a ` b then ``` and c x ] y p ` q ``f");
+}
+
 /// The bounded scans must not change how ordinary links, images, tags and entities read.
 #[test]
 fn bounded_scans_keep_ordinary_markdown_and_entities() {
