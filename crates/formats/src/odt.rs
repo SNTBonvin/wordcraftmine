@@ -25,6 +25,12 @@ const MAX_ENTRY: u64 = 256 << 20;
 /// Deepest element nesting handled in content.xml.
 const MAX_XML_DEPTH: usize = 512;
 
+mod flat;
+pub use flat::{export_flat, import_flat};
+
+const TEXT_MIME: &str = "application/vnd.oasis.opendocument.text";
+const TEMPLATE_MIME: &str = "application/vnd.oasis.opendocument.text-template";
+
 // ---------------------------------------------------------------------------------------------
 // Export
 
@@ -65,6 +71,8 @@ fn pt(v: f32) -> String {
 
 #[derive(Default)]
 struct Writer {
+    flat: bool,
+    image_count: usize,
     /// Automatic text styles: properties XML → name.
     text_styles: Vec<(String, String)>,
     /// Automatic paragraph styles: (parent, properties XML) → name.
@@ -153,6 +161,26 @@ impl Writer {
             Some(Align::Left) => props.push_str(" fo:text-align=\"start\""),
             None => {}
         }
+        for (key, value) in [
+            ("fo:margin-top", p.spacing.before),
+            ("fo:margin-bottom", p.spacing.after),
+            ("fo:margin-left", p.spacing.left),
+            ("fo:margin-right", p.spacing.right),
+            ("fo:text-indent", p.spacing.first),
+        ] {
+            if let Some(v) = value.filter(|v| v.is_finite()) {
+                props.push_str(&format!(" {key}=\"{}\"", pt(v)));
+            }
+        }
+        if let Some(line) = p.spacing.line {
+            use wordcraft_doc::props::LineSpacing;
+            match line {
+                LineSpacing::Multiple(v) if v.is_finite() => props.push_str(&format!(" fo:line-height=\"{}%\"", v * 100.0)),
+                LineSpacing::Exactly(v) if v.is_finite() => props.push_str(&format!(" fo:line-height=\"{}\"", pt(v))),
+                LineSpacing::AtLeast(v) if v.is_finite() => props.push_str(&format!(" style:line-height-at-least=\"{}\"", pt(v))),
+                _ => {}
+            }
+        }
         if p.page_break {
             props.push_str(" fo:break-before=\"page\"");
         }
@@ -234,13 +262,23 @@ impl Writer {
                     }
                 }
                 Inline::Image(img) => {
-                    let href = self.picture(img);
-                    let n = self.pictures.len();
+                    self.image_count += 1;
+                    let name = self.image_count;
                     out.push_str(&format!(
-                        "<draw:frame draw:name=\"Image{n}\" text:anchor-type=\"as-char\" svg:width=\"{}\" svg:height=\"{}\" draw:z-index=\"0\"><draw:image xlink:href=\"{href}\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/>",
+                        "<draw:frame draw:name=\"Image{name}\" text:anchor-type=\"as-char\" svg:width=\"{}\" svg:height=\"{}\" draw:z-index=\"0\">",
                         pt(img.w),
                         pt(img.h)
                     ));
+                    if self.flat {
+                        out.push_str("<draw:image><office:binary-data>");
+                        out.push_str(&model::base64_encode(&img.data));
+                        out.push_str("</office:binary-data></draw:image>");
+                    } else {
+                        let href = self.picture(img);
+                        out.push_str(&format!(
+                            "<draw:image xlink:href=\"{href}\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/>"
+                        ));
+                    }
                     if !img.alt.is_empty() {
                         out.push_str(&format!("<svg:desc>{}</svg:desc>", x(&img.alt)));
                     }
@@ -420,8 +458,8 @@ impl Writer {
         out.push_str("</table:table>\n");
     }
 
-    fn automatic_styles(&self) -> String {
-        let mut s = String::from("<office:automatic-styles>");
+    fn automatic_styles(&self, page: &str) -> String {
+        let mut s = format!("<office:automatic-styles>{page}");
         for (props, n) in &self.text_styles {
             s.push_str(&format!("<style:style style:name=\"{n}\" style:family=\"text\"><style:text-properties{props}/></style:style>"));
         }
@@ -478,8 +516,8 @@ impl Writer {
     }
 }
 
-fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str) -> String {
-    let mut s = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles {NS}><office:styles>");
+fn common_styles(body_font: &str) -> String {
+    let mut s = String::from("<office:styles>");
     s.push_str(&format!(
         "<style:default-style style:family=\"paragraph\"><style:paragraph-properties fo:margin-bottom=\"8pt\"/><style:text-properties fo:font-family=\"'{}'\" fo:font-size=\"12pt\"/></style:default-style>",
         x(body_font)
@@ -497,7 +535,12 @@ fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str) -> String {
     s.push_str("<style:style style:name=\"Title\" style:family=\"paragraph\" style:parent-style-name=\"Standard\" style:class=\"chapter\"><style:text-properties fo:font-size=\"28pt\"/></style:style>");
     s.push_str("<style:style style:name=\"Quotations\" style:family=\"paragraph\" style:parent-style-name=\"Standard\" style:class=\"html\"><style:paragraph-properties fo:margin-left=\"36pt\" fo:margin-right=\"36pt\"/><style:text-properties fo:font-style=\"italic\" fo:color=\"#404040\"/></style:style>");
     s.push_str(&format!("<style:style style:name=\"Preformatted_20_Text\" style:display-name=\"Preformatted Text\" style:family=\"paragraph\" style:parent-style-name=\"Standard\" style:class=\"html\"><style:paragraph-properties fo:margin-top=\"0pt\" fo:margin-bottom=\"0pt\"/><style:text-properties fo:font-family=\"'{}'\" style:font-family-generic=\"modern\" style:font-pitch=\"fixed\" fo:font-size=\"10pt\"/></style:style>", model::MONO_FONT));
-    s.push_str("</office:styles><office:automatic-styles>");
+    s.push_str("</office:styles>");
+    s
+}
+
+fn page_layout(sec: &wordcraft_doc::SectionProps) -> String {
+    let mut s = String::new();
     s.push_str(&format!(
         "<style:page-layout style:name=\"pm1\"><style:page-layout-properties fo:page-width=\"{}\" fo:page-height=\"{}\" fo:margin-top=\"{}\" fo:margin-bottom=\"{}\" fo:margin-left=\"{}\" fo:margin-right=\"{}\" style:print-orientation=\"{}\"/></style:page-layout>",
         pt(sec.page_w),
@@ -508,13 +551,27 @@ fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str) -> String {
         pt(sec.margin_right),
         if sec.page_w > sec.page_h { "landscape" } else { "portrait" }
     ));
-    s.push_str("</office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/></office:master-styles></office:document-styles>\n");
+    s
+}
+
+const MASTER_STYLES: &str =
+    "<office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/></office:master-styles>";
+
+fn styles_xml(sec: &wordcraft_doc::SectionProps, body_font: &str) -> String {
+    let s = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles {NS}>{}<office:automatic-styles>{}</office:automatic-styles>{MASTER_STYLES}</office:document-styles>\n",
+        common_styles(body_font),
+        page_layout(sec)
+    );
     s
 }
 
 fn meta_xml(m: &Meta) -> String {
-    let mut s =
-        format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-meta {NS}><office:meta><meta:generator>WordCraft</meta:generator>");
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-meta {NS}>{}</office:document-meta>\n", metadata(m))
+}
+
+fn metadata(m: &Meta) -> String {
+    let mut s = String::from("<office:meta><meta:generator>WordCraft</meta:generator>");
     if !m.title.is_empty() {
         s.push_str(&format!("<dc:title>{}</dc:title>", x(&m.title)));
     }
@@ -533,25 +590,34 @@ fn meta_xml(m: &Meta) -> String {
     if !m.created.is_empty() {
         s.push_str(&format!("<meta:creation-date>{}</meta:creation-date>", x(m.created.trim_end_matches('Z'))));
     }
-    s.push_str("</office:meta></office:document-meta>\n");
+    s.push_str("</office:meta>");
     s
 }
 
 /// Write an `.odt` package.
 pub fn export(doc: &Document) -> Result<Vec<u8>, String> {
+    export_package(doc, TEXT_MIME)
+}
+
+/// Write an OpenDocument Text template with matching package and manifest media types.
+pub fn export_template(doc: &Document) -> Result<Vec<u8>, String> {
+    export_package(doc, TEMPLATE_MIME)
+}
+
+fn export_package(doc: &Document, mime: &str) -> Result<Vec<u8>, String> {
     let flow = model::from_doc(doc);
     let mut w = Writer::default();
     let mut body = String::new();
     w.blocks(&flow.blocks, &mut body, 0);
     let content = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content {NS}>{}<office:body><office:text>\n{body}</office:text></office:body></office:document-content>\n",
-        w.automatic_styles()
+        w.automatic_styles("")
     );
     let body_font = doc.styles.default_chr.font.clone().unwrap_or_else(|| wordcraft_doc::styles::BODY_FONT.to_string());
     let styles = styles_xml(&doc.last_section, &body_font);
     let meta = meta_xml(&flow.meta);
-    let mut manifest = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.3\">\n<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"1.3\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>\n",
+    let mut manifest = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.3\">\n<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"1.3\" manifest:media-type=\"{mime}\"/>\n<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>\n",
     );
     for (name, _, mime) in &w.pictures {
         manifest.push_str(&format!("<manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{mime}\"/>\n", x(name)));
@@ -564,7 +630,7 @@ pub fn export(doc: &Document) -> Result<Vec<u8>, String> {
     let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     let deflated = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     z.start_file("mimetype", stored).map_err(err)?;
-    z.write_all(b"application/vnd.oasis.opendocument.text").map_err(ioerr)?;
+    z.write_all(mime.as_bytes()).map_err(ioerr)?;
     for (name, data) in [
         ("META-INF/manifest.xml", manifest.as_bytes()),
         ("content.xml", content.as_bytes()),
@@ -633,6 +699,7 @@ struct StyleInfo {
     border_bottom: bool,
     /// `fo:background-color` of a table-cell style's `style:table-cell-properties`.
     cell_background: Option<Rgb>,
+    spacing: model::Spacing,
 }
 
 /// Length → points.
@@ -804,6 +871,30 @@ impl Styles {
                             Some("start") | Some("left") => Some(Align::Left),
                             _ => s.align,
                         };
+                        for (key, slot, min) in [
+                            ("fo:margin-top", &mut s.spacing.before, 0.0),
+                            ("fo:margin-bottom", &mut s.spacing.after, 0.0),
+                            ("fo:margin-left", &mut s.spacing.left, -1584.0),
+                            ("fo:margin-right", &mut s.spacing.right, -1584.0),
+                            ("fo:text-indent", &mut s.spacing.first, -1584.0),
+                        ] {
+                            *slot = get(&a, key).and_then(length).filter(|v| v.is_finite()).map(|v| v.clamp(min, 1584.0));
+                        }
+                        use wordcraft_doc::props::LineSpacing;
+                        s.spacing.line = get(&a, "fo:line-height")
+                            .and_then(|v| {
+                                if let Some(pct) = v.strip_suffix('%') {
+                                    pct.parse::<f32>().ok().filter(|v| v.is_finite()).map(|v| LineSpacing::Multiple((v / 100.0).clamp(0.1, 100.0)))
+                                } else {
+                                    length(v).filter(|v| v.is_finite()).map(|v| LineSpacing::Exactly(v.clamp(1.0, 1584.0)))
+                                }
+                            })
+                            .or_else(|| {
+                                get(&a, "style:line-height-at-least")
+                                    .and_then(length)
+                                    .filter(|v| v.is_finite())
+                                    .map(|v| LineSpacing::AtLeast(v.clamp(1.0, 1584.0)))
+                            });
                         if get(&a, "fo:break-before") == Some("page") {
                             s.page_break = true;
                         }
@@ -873,6 +964,18 @@ impl Styles {
     /// Background colour of a table-cell style (whole chain).
     fn cell_background(&self, name: &str) -> Option<Rgb> {
         self.chain(name).iter().find_map(|(_, s)| s.cell_background)
+    }
+
+    fn spacing(&self, name: &str) -> model::Spacing {
+        let chain = self.chain(name);
+        model::Spacing {
+            before: chain.iter().find_map(|(_, s)| s.spacing.before),
+            after: chain.iter().find_map(|(_, s)| s.spacing.after),
+            line: chain.iter().find_map(|(_, s)| s.spacing.line),
+            left: chain.iter().find_map(|(_, s)| s.spacing.left),
+            right: chain.iter().find_map(|(_, s)| s.spacing.right),
+            first: chain.iter().find_map(|(_, s)| s.spacing.first),
+        }
     }
 
     /// Paragraph kind, alignment, page break, rule and base formatting. The text formatting of
@@ -945,6 +1048,9 @@ struct Body<'a> {
     depth: usize,
     frame: Option<(Option<f32>, Option<f32>, Option<Vec<u8>>, String)>,
     in_desc: bool,
+    binary: Option<String>,
+    binary_overflow: bool,
+    binary_remaining: usize,
 }
 
 impl Body<'_> {
@@ -966,7 +1072,7 @@ impl Body<'_> {
         if let Some(h) = heading {
             kind = Kind::Heading(h.clamp(1, 6));
         }
-        let mut p = Para { kind, align, page_break: pb, ..Default::default() };
+        let mut p = Para { kind, align, page_break: pb, spacing: style.map(|s| self.styles.spacing(s)).unwrap_or_default(), ..Default::default() };
         if rule && kind == Kind::Normal {
             p.kind = Kind::Rule;
         }
@@ -1037,6 +1143,16 @@ impl Body<'_> {
 
     fn text(&mut self, t: &str) {
         if self.skip > 0 || !self.in_text {
+            return;
+        }
+        if let Some(binary) = &mut self.binary {
+            for c in t.bytes().filter(|c| !c.is_ascii_whitespace()) {
+                if binary.len() >= self.binary_remaining.saturating_add(2) / 3 * 4 {
+                    self.binary_overflow = true;
+                    break;
+                }
+                binary.push(char::from(c));
+            }
             return;
         }
         if self.in_desc {
@@ -1201,6 +1317,10 @@ impl Body<'_> {
                     fr.2 = (self.zip)(path);
                 }
             }
+            "binary-data" if q == "office:binary-data" && self.frame.as_ref().is_some_and(|f| f.2.is_none()) => {
+                self.binary = Some(String::new());
+                self.binary_overflow = false;
+            }
             "desc" | "title" if self.frame.is_some() => self.in_desc = true,
             _ => {}
         }
@@ -1271,6 +1391,18 @@ impl Body<'_> {
                     && !t.rows.is_empty()
                 {
                     self.container().push(FBlock::Table(FTable { rows: t.rows, widths: Vec::new(), borderless: false }));
+                }
+            }
+            "binary-data" if q == "office:binary-data" => {
+                if let Some(encoded) = self.binary.take()
+                    && !self.binary_overflow
+                    && let Some(data) = model::base64_decode(&encoded)
+                    && data.len() <= self.binary_remaining
+                {
+                    self.binary_remaining -= data.len();
+                    if let Some(frame) = &mut self.frame {
+                        frame.2 = Some(data);
+                    }
                 }
             }
             "desc" | "title" => self.in_desc = false,
@@ -1350,9 +1482,13 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
         total += d.len() as u64;
         (total <= MAX_ENTRY).then_some(d)
     };
+    Ok(parse_body(&content, &styles, meta, &mut fetch))
+}
+
+fn parse_body(content: &[u8], styles: &Styles, meta: Meta, fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Flow {
     let mut body = Body {
-        styles: &styles,
-        zip: &mut fetch,
+        styles,
+        zip: fetch,
         containers: vec![Vec::new()],
         fmt: Vec::new(),
         para: None,
@@ -1367,8 +1503,11 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
         depth: 0,
         frame: None,
         in_desc: false,
+        binary: None,
+        binary_overflow: false,
+        binary_remaining: MAX_ENTRY as usize,
     };
-    events(&content, |ev| match ev {
+    events(content, |ev| match ev {
         Ev::Start(q, a) => {
             if body.depth < MAX_XML_DEPTH {
                 body.start(&q, &a);
@@ -1399,7 +1538,7 @@ pub fn parse(bytes: &[u8]) -> Result<Flow, String> {
     if blocks.is_empty() {
         blocks.push(FBlock::Para(Para::default()));
     }
-    Ok(Flow { blocks, meta })
+    Flow { blocks, meta }
 }
 
 /// Parse an `.odt` package into a document.

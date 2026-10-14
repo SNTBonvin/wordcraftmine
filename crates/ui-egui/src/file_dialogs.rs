@@ -32,7 +32,8 @@ pub enum FileDialogRequest {
 pub type FileDialogAnswer = Result<Option<String>, String>;
 
 const PICTURES: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "wmf", "emf"];
-const DOCUMENTS: &[&str] = &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json", "xml"];
+const DOCUMENTS: &[&str] =
+    &["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "ott", "fodt", "rtf", "txt", "md", "html", "htm", "tex", "json", "xml"];
 
 /// The file types Open offers, as (label, extensions; `*` is any file): pictures for Insert/Change
 /// Picture, recipient lists for Select Recipients › Use an Existing List…, documents otherwise.
@@ -535,5 +536,15 @@ mod tests {
         assert_eq!(a.session.merge.headers, vec!["Name"]);
         assert_eq!(a.session.merge.rows.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod odf_tests {
+    #[test]
+    fn writer_variants_are_offered_by_the_shared_open_dialog() {
+        for ext in ["odt", "ott", "fodt"] {
+            assert!(super::open_filters("document")[0].1.contains(&ext));
+        }
     }
 }

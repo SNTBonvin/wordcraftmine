@@ -690,3 +690,95 @@ fn hidden_drawings_are_left_out_of_exports() {
     // Two pictures, one hidden: one comes out.
     assert_eq!(crate::html::export(&d).matches("<img").count(), 1);
 }
+
+#[test]
+fn opendocument_writer_variants_round_trip() {
+    use std::io::{Cursor, Read};
+    for ext in ["odt", "ott", "fodt"] {
+        check_round_trip(ext, true);
+        let mut doc = sample();
+        doc.last_section.page_w = 700.0;
+        doc.last_section.page_h = 900.0;
+        doc.last_section.margin_left = 45.0;
+        let bytes = export(ext, &doc).unwrap().unwrap();
+        let back = import(ext, &bytes).unwrap().unwrap();
+        assert_eq!(back.media.len(), 1, "{ext}: embedded picture");
+        assert_eq!(back.core.title, doc.core.title);
+        assert_eq!(back.core.creator, doc.core.creator);
+        assert_eq!(back.last_section.page_w, 700.0);
+        assert_eq!(back.last_section.page_h, 900.0);
+        assert_eq!(back.last_section.margin_left, 45.0);
+        if ext == "fodt" {
+            let xml = String::from_utf8(bytes).unwrap();
+            assert!(xml.contains("office:binary-data"));
+            assert!(!xml.contains("Pictures/"));
+            assert_eq!(xml.matches("<office:automatic-styles>").count(), 1);
+        } else {
+            let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+            let expected = if ext == "ott" { "application/vnd.oasis.opendocument.text-template" } else { "application/vnd.oasis.opendocument.text" };
+            let mut mime = String::new();
+            let mut first = zip.by_index(0).unwrap();
+            assert_eq!(first.name(), "mimetype");
+            assert_eq!(first.compression(), zip::CompressionMethod::Stored);
+            first.read_to_string(&mut mime).unwrap();
+            assert_eq!(mime, expected);
+            drop(first);
+            let mut manifest = String::new();
+            zip.by_name("META-INF/manifest.xml").unwrap().read_to_string(&mut manifest).unwrap();
+            assert!(manifest.contains(&format!("manifest:media-type=\"{expected}\"")));
+        }
+    }
+}
+
+#[test]
+fn fodt_accepts_namespace_aliases_and_rejects_incomplete_or_wrong_documents() {
+    let original = String::from_utf8(export("fodt", &sample()).unwrap().unwrap()).unwrap();
+    let aliased = original
+        .replace("xmlns:office=", "xmlns:o=")
+        .replace("<office:", "<o:")
+        .replace("</office:", "</o:")
+        .replace(" office:", " o:")
+        .replace("xmlns:text=", "xmlns:t=")
+        .replace("<text:", "<t:")
+        .replace("</text:", "</t:")
+        .replace(" text:", " t:");
+    let parsed = import("FODT", aliased.as_bytes()).unwrap().unwrap();
+    assert!(para_texts(&parsed).iter().any(|t| t == "Main Heading"));
+    assert_eq!(parsed.media.len(), 1);
+    for invalid in [
+        original.replace("application/vnd.oasis.opendocument.text", "application/vnd.oasis.opendocument.spreadsheet"),
+        original.replace("</office:document>", ""),
+        original.replace("<office:body>", "<office:body><text:p>"),
+        format!("{original}{original}"),
+        format!("<!DOCTYPE test SYSTEM \"file:///no-network-or-files\">{original}"),
+        "<document/>".into(),
+    ] {
+        assert!(import("fodt", invalid.as_bytes()).unwrap().is_err());
+    }
+}
+
+#[test]
+fn opendocument_preserves_explicit_paragraph_spacing_and_indents() {
+    use wordcraft_doc::props::LineSpacing;
+    for line in [LineSpacing::Multiple(1.5), LineSpacing::Exactly(20.0), LineSpacing::AtLeast(18.0)] {
+        let mut doc = Document::new();
+        let mut para = Paragraph::with_text("Spaced paragraph", CharProps::default());
+        para.props.space_before = Some(15.0);
+        para.props.space_after = Some(9.0);
+        para.props.indent_left = Some(36.0);
+        para.props.indent_right = Some(24.0);
+        para.props.indent_first = Some(-12.0);
+        para.props.line_spacing = Some(line);
+        doc.body = vec![para_block(para)];
+        for ext in ["odt", "ott", "fodt"] {
+            let back = import(ext, &export(ext, &doc).unwrap().unwrap()).unwrap().unwrap();
+            let p = back.body[0].as_para().unwrap();
+            assert_eq!(p.props.space_before, Some(15.0), "{ext}");
+            assert_eq!(p.props.space_after, Some(9.0));
+            assert_eq!(p.props.indent_left, Some(36.0));
+            assert_eq!(p.props.indent_right, Some(24.0));
+            assert_eq!(p.props.indent_first, Some(-12.0));
+            assert_eq!(p.props.line_spacing, Some(line));
+        }
+    }
+}
