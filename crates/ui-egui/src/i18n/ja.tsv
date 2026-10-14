@@ -2085,3 +2085,17 @@
 	Leave out the date and time of comments and tracked changes when saving	保存時にコメントと変更履歴の日時を含めない
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	編集中のドキュメントには名前と日時が残ります。保存したファイルにだけ含まれません。
 	Privacy Settings	現在のプライバシー設定
+	Saving as {name} may lose some of this document's features:	{name} として保存すると、この文書の一部の機能が失われる可能性があります:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	この形式で保存するには続行してください。すべてを保持するには Word 文書 (.docx) として保存してください。
+	Continue	続行
+	Save as Word Document	Word 文書として保存
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	自動保存はオフです: {name} ではこの文書のすべてを保持できません。自動保存をオンにするには .docx として保存してください。
+	Content controls	コンテンツ コントロール
+	Equations	数式
+	Charts and SmartArt	グラフと SmartArt
+	Shapes, text boxes and drawings	図形、テキスト ボックス、描画
+	Embedded objects (their pictures are kept)	埋め込みオブジェクト (画像は保持されます)
+	Fields (their current text is kept)	フィールド (現在の文字列は保持されます)
+	Section breaks and columns	セクション区切りと段組み
+	Phonetic guides	ルビ
+	Other content from the original file	元のファイルのその他の内容

@@ -2084,3 +2084,17 @@
 	Leave out the date and time of comments and tracked changes when saving	Beim Speichern Datum und Uhrzeit von Kommentaren und nachverfolgten Änderungen weglassen
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Das bearbeitete Dokument behält Namen und Daten; nur die gespeicherte Datei lässt sie weg.
 	Privacy Settings	Aktuelle Datenschutzeinstellungen
+	Saving as {name} may lose some of this document's features:	Beim Speichern als {name} können einige Funktionen dieses Dokuments verloren gehen:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	Fahren Sie fort, um in diesem Format zu speichern, oder speichern Sie ein Word-Dokument (.docx), um alles zu behalten.
+	Continue	Fortfahren
+	Save as Word Document	Als Word-Dokument speichern
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	AutoSpeichern ist aus: {name} kann nicht alles in diesem Dokument behalten. Speichern Sie als .docx, um AutoSpeichern einzuschalten.
+	Content controls	Inhaltssteuerelemente
+	Equations	Formeln
+	Charts and SmartArt	Diagramme und SmartArt
+	Shapes, text boxes and drawings	Formen, Textfelder und Zeichnungen
+	Embedded objects (their pictures are kept)	Eingebettete Objekte (ihre Bilder bleiben erhalten)
+	Fields (their current text is kept)	Felder (ihr aktueller Text bleibt erhalten)
+	Section breaks and columns	Abschnittsumbrüche und Spalten
+	Phonetic guides	Aussprachehilfen
+	Other content from the original file	Weitere Inhalte aus der Originaldatei

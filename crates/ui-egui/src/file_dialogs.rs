@@ -238,6 +238,17 @@ impl WordApp {
                 r
             }
             AfterPick::SaveAs(after) => {
+                // The picked RTF or ODT file can't keep everything: say what first (#1316), and
+                // carry on with what a Save Changes prompt held back once that is answered.
+                if let Some(path) = &picked {
+                    let mut then = match &after {
+                        AfterSave::Continue { then, params, .. } => Some((then.clone(), params.clone())),
+                        AfterSave::Nothing | AfterSave::AutoSave => None,
+                    };
+                    if let Some(r) = self.ask_format_losses("file.save", &json!({"path": path}), &mut then) {
+                        return r;
+                    }
+                }
                 let saved = picked.is_some_and(|path| {
                     self.run("file.save", json!({"path": path}))
                         .is_ok_and(|v| v.get("saved").and_then(Value::as_bool) == Some(true) || v.get("downloaded").is_some())
@@ -273,6 +284,11 @@ impl WordApp {
     /// Ask where to save, save there, then do `after`.
     pub(crate) fn save_as(&mut self, after: AfterSave) -> Asked {
         let name = self.default_save_name();
+        self.save_as_named(name, after)
+    }
+
+    /// [`Self::save_as`] suggesting `name`.
+    pub(crate) fn save_as_named(&mut self, name: String, after: AfterSave) -> Asked {
         self.ask_file(FileDialogRequest::Save { name }, AfterPick::SaveAs(after))
     }
 

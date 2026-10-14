@@ -2090,3 +2090,17 @@
 	Leave out the date and time of comments and tracked changes when saving	Při ukládání vynechat datum a čas komentářů a sledovaných změn
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Upravovaný dokument si jména a data ponechá; vynechá je jen uložený soubor.
 	Privacy Settings	Aktuální nastavení soukromí
+	Saving as {name} may lose some of this document's features:	Při uložení jako {name} se mohou ztratit některé funkce tohoto dokumentu:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	Pokračujte uložením v tomto formátu, nebo uložte dokument Wordu (.docx), aby se zachovalo vše.
+	Continue	Pokračovat
+	Save as Word Document	Uložit jako dokument Wordu
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Automatické ukládání je vypnuté: {name} nedokáže zachovat vše z tohoto dokumentu. Uložte jako .docx a automatické ukládání se zapne.
+	Content controls	Ovládací prvky obsahu
+	Equations	Rovnice
+	Charts and SmartArt	Grafy a obrázky SmartArt
+	Shapes, text boxes and drawings	Obrazce, textová pole a kresby
+	Embedded objects (their pictures are kept)	Vložené objekty (jejich obrázky zůstanou)
+	Fields (their current text is kept)	Pole (zůstane jejich aktuální text)
+	Section breaks and columns	Konce oddílů a sloupce
+	Phonetic guides	Fonetické průvodce
+	Other content from the original file	Další obsah z původního souboru

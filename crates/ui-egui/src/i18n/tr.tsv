@@ -2483,3 +2483,17 @@ preview	Title	Örnek
 	Leave out the date and time of comments and tracked changes when saving	Kaydederken açıklamaların ve izlenen değişikliklerin tarih ve saatini dahil etme
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Düzenlediğiniz belge adları ve tarihleri korur; yalnızca kaydedilen dosya bunları içermez.
 	Privacy Settings	Geçerli gizlilik ayarları
+	Saving as {name} may lose some of this document's features:	{name} olarak kaydetmek bu belgenin bazı özelliklerinin kaybolmasına neden olabilir:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	Bu biçimde kaydetmek için devam edin veya her şeyi korumak için bir Word belgesi (.docx) kaydedin.
+	Continue	Devam
+	Save as Word Document	Word Belgesi Olarak Kaydet
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Otomatik Kaydet kapalı: {name} bu belgedeki her şeyi koruyamaz. Otomatik Kaydet'i açmak için .docx olarak kaydedin.
+	Content controls	İçerik denetimleri
+	Equations	Denklemler
+	Charts and SmartArt	Grafikler ve SmartArt
+	Shapes, text boxes and drawings	Şekiller, metin kutuları ve çizimler
+	Embedded objects (their pictures are kept)	Katıştırılmış nesneler (resimleri korunur)
+	Fields (their current text is kept)	Alanlar (geçerli metinleri korunur)
+	Section breaks and columns	Bölüm sonları ve sütunlar
+	Phonetic guides	Fonetik kılavuzlar
+	Other content from the original file	Özgün dosyadaki diğer içerik

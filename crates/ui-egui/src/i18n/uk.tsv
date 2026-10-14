@@ -2097,3 +2097,17 @@
 	Leave out the date and time of comments and tracked changes when saving	Не зберігати дату й час приміток і відстежуваних змін
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Документ, який ви редагуєте, зберігає імена й дати; їх не буде лише у збереженому файлі.
 	Privacy Settings	Поточні налаштування конфіденційності
+	Saving as {name} may lose some of this document's features:	Під час збереження як {name} деякі можливості цього документа може бути втрачено:
+	Continue to save in this format, or save a Word document (.docx) to keep everything.	Продовжте, щоб зберегти в цьому форматі, або збережіть документ Word (.docx), щоб зберегти все.
+	Continue	Продовжити
+	Save as Word Document	Зберегти як документ Word
+	AutoSave is off: {name} can't keep everything in this document. Save as .docx to turn on AutoSave.	Автозбереження вимкнено: {name} не може зберегти весь вміст цього документа. Збережіть як .docx, щоб увімкнути автозбереження.
+	Content controls	Елементи керування вмістом
+	Equations	Рівняння
+	Charts and SmartArt	Діаграми та SmartArt
+	Shapes, text boxes and drawings	Фігури, текстові поля та малюнки
+	Embedded objects (their pictures are kept)	Вбудовані об'єкти (їхні зображення зберігаються)
+	Fields (their current text is kept)	Поля (зберігається їхній поточний текст)
+	Section breaks and columns	Розриви розділів і стовпці
+	Phonetic guides	Фонетичні підказки
+	Other content from the original file	Інший вміст вихідного файлу
