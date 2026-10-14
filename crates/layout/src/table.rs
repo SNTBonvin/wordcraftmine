@@ -324,8 +324,11 @@ pub fn layout_table(ctx: &mut Ctx, story: StoryRef, t: &Table, path: &[u32], ava
         vec![avail / ncols as f32; ncols]
     };
     let mut total: f32 = grid.iter().sum();
+    // A top-level table in an inherited header or footer takes its share of the defining
+    // section's width (`Ctx::pct_base`).
+    let pct_base = if depth <= 1 { ctx.pct_base.unwrap_or(avail) } else { avail };
     let target = match (t.props.width_pct, t.props.width) {
-        (Some(p), _) if p > 0.0 => Some(avail * (p / 100.0).min(1.0)),
+        (Some(p), _) if p > 0.0 => Some(pct_base * (p / 100.0).min(1.0)),
         (_, Some(w)) if w > 0.0 => Some(w),
         _ => None,
     };
