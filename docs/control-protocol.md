@@ -206,6 +206,7 @@ WordCraft calls no model and holds no key: the agent is whatever the person conn
 
 Quick actions also include **Final polish** under More (grammar, clarity and consistency, preserving facts, names, numbers, meaning and structure without additions), and **Reading level** with General public, Secondary school and Expert. All four use `apply: "replace"`.
 
+<<<<<<< HEAD
 The bubble displays the fixed scope and **Waiting / Working / Ready / Failed / Stopped** states.
 **Stop** cancels generation separately from **Discard**; replies after Stop are ignored, and a stopped or failed proposal cannot be accepted.
 **Accept** is disabled while the attempt is incomplete. The **Original / Proposal / Changes** tabs reuse the stored selection and proposal; Changes compares plain text for replacement proposals, with an explicit fallback for Markdown, insertion or truncated originals.
@@ -213,3 +214,21 @@ The bubble displays the fixed scope and **Waiting / Working / Ready / Failed / S
 An agent may report a failure with `agent.reply {id, error: "message"}` (MCP `reply_to_request` has the same field). The error closes the attempt as Failed and preserves its preview for Retry or Discard. A failure cannot also contain a proposal or `done: false`.
 
 Formatting commands in one request may extend only that request’s earlier formatting revisions. A later request that formats an overlapping range supersedes the earlier formatting revision there, following the existing formatting model; Accept/Discard operate on each request’s revisions that remain in the document. Paragraph-format and list-numbering revision ids are resolved independently.
+=======
+### Common Ask Agent contract
+
+See [the common contract](ask-agent-contract.md). The selection transport remains additive:
+`agent.listen` uses `timeoutMs`, and `agent.reply` uses `text` and `done`. Requests now
+also expose `status` (`pending` / `working` / `ready` / `failed` / `cancelled`), explicit
+`scope`, top-level `language`, `author`, and opaque `document.id` / `document.revision`.
+Legacy inspection `state` names `waiting` and `answered` remain aliases.
+
+Claims belong to authenticated connections, never display names. A different connection
+cannot reply or run a native command for a claim. Untagged native commands automatically
+use that connection's active claim; an unowned mutation while requests are unresolved is
+refused. Person-only review and synthetic UI review paths return `HUMAN_REVIEW_REQUIRED`.
+Lost control replies are ambiguous and never replayed. The queue and instruction drafts
+are session-only, capped at 20 retained requests without eviction of unresolved results.
+The person explicitly chooses Selection or Document in the bubble before Send. Actions
+carry all six common keys, including scope and their full instruction.
+>>>>>>> origin/feat/ask-agent-quick-actions

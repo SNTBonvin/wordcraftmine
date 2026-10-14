@@ -2139,6 +2139,7 @@
 	General public	Grand public
 	Secondary school	Secondaire
 	Expert	Expert
+<<<<<<< HEAD
 # Ask Agent review: proposals, Accept, Discard, Retry
 	Accepted: the change is tracked as {author}.	Accepté : la modification est suivie au nom de {author}.
 	Accepted the changes by {author}.	Modifications de {author} acceptées.
@@ -2166,3 +2167,8 @@
 	Waiting	En attente
 	Open request	Ouvrir la demande
 	Word comparison is unavailable for this proposal.	La comparaison des mots est indisponible pour cette proposition.
+=======
+
+	Failed	Échec
+	Open request	Ouvrir la demande
+>>>>>>> origin/feat/ask-agent-quick-actions

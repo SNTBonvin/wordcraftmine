@@ -2524,6 +2524,7 @@ preview	Title	Tytuł
 	General public	Odbiorca ogólny
 	Secondary school	Szkoła średnia
 	Expert	Ekspert
+<<<<<<< HEAD
 # Ask Agent review: proposals, Accept, Discard, Retry
 	Accepted: the change is tracked as {author}.	Zaakceptowano: zmiana jest śledzona jako {author}.
 	Accepted the changes by {author}.	Zaakceptowano zmiany: {author}.
@@ -2551,3 +2552,8 @@ preview	Title	Tytuł
 	Waiting	Oczekiwanie
 	Open request	Otwórz prośbę
 	Word comparison is unavailable for this proposal.	Porównanie słów jest niedostępne dla tej propozycji.
+=======
+
+	Failed	Niepowodzenie
+	Open request	Otwórz prośbę
+>>>>>>> origin/feat/ask-agent-quick-actions

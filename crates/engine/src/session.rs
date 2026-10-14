@@ -361,6 +361,8 @@ pub struct Session {
     pub revision_base: usize,
     /// Earlier revisions this request may extend across its formatting commands.
     pub revision_reuse: Vec<u32>,
+    /// External control cannot resolve review, including through nested macros.
+    pub human_review_only: bool,
     /// Initials for comments (File › Options › General); empty = the name's initials.
     pub initials: String,
     /// Format painter: copied formatting waiting to be applied (and whether it stays on).
@@ -596,6 +598,7 @@ impl Session {
             force_tracking: false,
             revision_base: 0,
             revision_reuse: Vec::new(),
+            human_review_only: false,
             initials: String::new(),
             painter: None,
             status: String::new(),
@@ -1031,6 +1034,7 @@ impl Session {
             force_tracking: _,
             revision_base: _,
             revision_reuse: _,
+            human_review_only: _,
             initials: _,
             painter: _,
             status: _,
@@ -1137,6 +1141,9 @@ impl Session {
     /// control channel). Mutating commands are undoable; a failed command leaves the document as
     /// it was; a panic inside a command becomes an error.
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
+        if self.human_review_only && (id.starts_with("review.accept") || id.starts_with("review.reject")) {
+            return Err(CmdError::Disabled("HUMAN_REVIEW_REQUIRED: review requires native human interaction".into()));
+        }
         let join = std::mem::take(&mut self.join_next);
         let reg = self.registry.clone();
         let Some(spec) = reg.get(id) else { return Err(CmdError::Unknown(id.to_string())) };

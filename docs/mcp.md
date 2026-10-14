@@ -229,4 +229,16 @@ the distance from the text). Missing fields are `none`, 0, no colour and 0, so a
 | `topLinePunct` | bool | East Asian typography; unset = off |
 | `numChange`, `fmtChange` | | Track Changes bookkeeping |
 
+<<<<<<< HEAD
 `reply_to_request {id, error: "message"}` reports a failed attempt and retains its preview for Retry or Discard; it cannot also supply a proposal or `done: false`. Stop is separate from closing the bubble. Retry keeps the original selection and previous preview, and ignores replies to superseded ids.
+=======
+### Ask Agent compatibility and ownership
+
+[Common contract](ask-agent-contract.md): keep `timeout_s`, `text`, `done`, and direct
+request results. `wait_for_request` rejects negative or incorrectly typed timeouts,
+uses integral milliseconds (floor), and caps waits at 60 seconds. A claim is tied to the
+bridge connection; sharing a display name does not grant another client ownership.
+After an ambiguous transport failure, reconnect and inspect instead of replaying edits.
+Review decisions are native human controls. The application calls no model and stores no
+model credential. Requests and drafts are kept for the current application session only.
+>>>>>>> origin/feat/ask-agent-quick-actions
