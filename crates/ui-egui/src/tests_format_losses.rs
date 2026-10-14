@@ -263,6 +263,12 @@ fn export_reports_nothing_until_the_warning_is_answered() {
     a.run("ui.formatLosses", json!({"answer": "cancel"})).unwrap();
     assert!(!said(&a), "cancelled: nothing exported");
     assert!(!file.exists());
+    // Continue writes the file and says so.
+    pick(&mut a, vec![file.clone()]);
+    a.export_dialog("rtf");
+    a.run("ui.formatLosses", json!({"answer": "continue"})).unwrap();
+    assert!(file.exists());
+    assert!(said(&a), "exported after Continue");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -222,9 +222,11 @@ impl WordApp {
                 } else {
                     self.run("file.saveAs", json!({"path": path}))
                 };
-                // Not while the RTF/ODT warning waits for an answer (#1316).
+                // Not while the RTF/ODT warning waits for an answer: Continue says it (#1316).
                 if r.as_ref().is_ok_and(|v| v.get("pending").is_none()) {
                     self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
+                } else if let Some(crate::dialogs::Dialog::FormatLosses { export, .. }) = &mut self.dialog {
+                    *export = true;
                 }
                 r
             }

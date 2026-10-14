@@ -378,6 +378,9 @@ pub enum Dialog {
         /// Asked from the AutoSave switch's Save As: saving a Word document instead turns AutoSave on.
         #[serde(skip)]
         autosave: bool,
+        /// Asked from File › Export: Continue says "Exported" once the file is written.
+        #[serde(skip)]
+        export: bool,
         #[serde(skip)]
         document: u64,
     },

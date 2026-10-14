@@ -889,6 +889,7 @@ impl WordApp {
             save: Value::Object(save),
             then: then.take(),
             autosave: false,
+            export: false,
             document: self.session.document_id(),
         });
         Some(Ok(json!({"pending": "formatLosses", "losses": ids})))
@@ -902,7 +903,7 @@ impl WordApp {
         if !matches!(answer, "continue" | "docx" | "cancel") {
             return Err("`answer` must be continue, docx or cancel".into());
         }
-        let Some(dialogs::Dialog::FormatLosses { save, then, document, autosave, .. }) = self.dialog.take() else {
+        let Some(dialogs::Dialog::FormatLosses { save, then, document, autosave, export, .. }) = self.dialog.take() else {
             return Err("no format warning is open".into());
         };
         if document != self.session.document_id() {
@@ -910,11 +911,15 @@ impl WordApp {
         }
         match answer {
             "continue" => {
+                let path = save.get("path").and_then(Value::as_str).unwrap_or_default().to_string();
                 let r = self.execute("file.save", save);
                 let saved = r.as_ref().is_ok_and(|v| v.get("saved").and_then(Value::as_bool) == Some(true) || v.get("downloaded").is_some());
                 if saved {
                     self.ui.backstage = false;
                     self.canvas.want_focus = true;
+                    if export {
+                        self.status(i18n::fmt(tl!("Exported {path}"), &[("path", &path)]));
+                    }
                 }
                 let Some((then, params)) = then else { return r };
                 if !self.safely_saved(saved) {

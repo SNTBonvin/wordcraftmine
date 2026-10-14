@@ -152,7 +152,8 @@ pub fn format_losses(doc: &Document, name: &str) -> Vec<Loss> {
 /// The part name Word packages keep macros under (`wordcraft_docx::package::VBA_PROJECT_PART`).
 const VBA_PROJECT_PART: &str = "word/vbaProject.bin";
 
-/// Deepest table nesting looked into (hostile documents); the writers stop at the same depth.
+/// Deepest table nesting looked into (hostile documents). The writers write tables nested deeper
+/// flattened into their cells' paragraphs, so features that deep go unlisted (rare, odd files).
 const MAX_DEPTH: usize = wordcraft_formats::model::MAX_DEPTH;
 
 /// The document being checked and the format.
