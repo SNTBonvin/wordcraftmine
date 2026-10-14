@@ -1,12 +1,28 @@
 # Typing parity with Word
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (Correct TWo INitial CApitals, cAPS LOCK and table-cell capitals, #544; previously minor: right-to-left letters typed into an empty paragraph make it right-to-left, #713; previously trivial: grammar proofing: ellipses are not sentence boundaries; previously minor: AutoCorrect's English replacement list applies only to English text, #835; previously trivial: complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; previously trivial: outline keys in Outline view, #493) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-12 · **Change:** trivial (sample-text formulas on Enter, #1067; previously trivial: Track Changes: Accept All after a tracked delete from a paragraph end keeps the next paragraph; Reject All after typing into an empty paragraph keeps it (#864); previously minor: Correct TWo INitial CApitals, cAPS LOCK and table-cell capitals, #544; previously trivial: complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 What Word does when you type, observed black-box (same keystrokes typed into Word and
 WordCraft, results read back paragraph by paragraph) and pinned by tests in
 `crates/engine/src/tests_typing.rs`. When typing behaviour changes, change it here and in the
 tests together. Line breaking and pagination are in [`layout-parity.md`](layout-parity.md); the
 overall picture is in [`target-app-parity.md`](target-app-parity.md).
+
+## Sample text (#1067)
+
+Enter at the end of a paragraph containing exactly `=rand()` or `=lorem()` replaces
+the formula with five paragraphs of three sentences and leaves the caret in a following
+empty paragraph. `=rand(p)` / `=lorem(p)` set the paragraph count; `(p,s)` sets both
+counts. WordCraft accepts integers from 1 to 200 for each count; if either parameter
+is invalid or outside that range, both revert to 5/3. Other text, a selection or Enter
+inside the formula follows ordinary Enter behaviour. The English text is original to
+WordCraft; lorem ipsum uses traditional pseudo-Latin. This implements the issue's
+requested defaults; the exact numerical limits have not been compared in Word.
+
+The replacement and its paragraph breaks are one undo step. Typing and paragraph
+formatting use the existing editing primitives. Tests: `sample_text_formulas_expand_on_enter`,
+`sample_text_invalid_parameters_use_defaults`, `sample_text_requires_an_exact_paragraph_and_caret_at_end`,
+`sample_text_preserves_typing_and_paragraph_formatting`, `sample_text_replacement_tracks_changes`.
 
 ## Lists
 
@@ -40,6 +56,7 @@ overall picture is in [`target-app-parity.md`](target-app-parity.md).
 | Enter (tracking on) | the new paragraph mark is a tracked insertion; Reject All joins the paragraphs again, Accept All keeps them | `tracked_enter_and_backspace_track_the_paragraph_mark`, `tests::reject_all_removes_a_tracked_paragraph_break` |
 | Paste of several paragraphs (tracking on) | every paragraph mark the paste adds is a tracked insertion; Reject All restores the one paragraph, Accept All keeps the pasted ones | `reject_all_takes_out_the_paragraph_breaks_a_tracked_paste_inserted` |
 | Backspace at a paragraph start / Delete at a paragraph end (tracking on) | the paragraph mark is marked deleted (still shown); the caret moves before it (Backspace) or past it (Delete). Accept joins the paragraphs, Reject keeps them. A mark you inserted yourself is just removed | `tracked_enter_and_backspace_track_the_paragraph_mark`, `tests::tracked_backspace_and_delete_mark_a_paragraph_break_deleted` |
+| Delete a range from the end of one paragraph into a later one (tracking on) | the paragraph marks and text in the range are tracked deletions. Accept All removes exactly those, so the paragraph after the range stays a paragraph of its own; Reject All restores everything. Typing into an empty paragraph and rejecting leaves that paragraph | `tests::accept_all_after_a_tracked_delete_from_a_paragraph_end_keeps_the_next_paragraph`, `tests::reject_all_after_typing_into_an_empty_paragraph_keeps_the_paragraph` |
 
 ## Editing keys
 
@@ -167,6 +184,8 @@ Word.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | trivial | Sample-text formulas on Enter (#1067), exact matching, bounded parameters, original English and one-step undo |
+| 2026-10-12 | trivial | Track Changes: Accept All after a tracked delete from a paragraph end keeps the next paragraph; Reject All after typing into an empty paragraph keeps it (#864) |
 | 2026-10-12 | minor | AutoCorrect: Correct TWo INitial CApitals, accidental cAPS LOCK, capitalize first letter of table cells (#544) |
 | 2026-10-11 | minor | Text direction: right-to-left letters typed into an empty paragraph make it right-to-left; existing paragraphs keep theirs (#713) |
 | 2026-10-12 | trivial | AutoCorrect: untagged text follows the editing language; English decided as proofing does (#835 review) |
