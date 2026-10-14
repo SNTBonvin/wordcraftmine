@@ -1617,6 +1617,26 @@ impl PageBuilder<'_> {
             }
         }
     }
+    /// Takes back the page a page break has just started while nothing is on it, so a page start
+    /// that follows (a next-page section) doesn't leave it blank: Word keeps the break's mark on
+    /// the page before, and starts one page.
+    fn take_back_break_page(&mut self) -> bool {
+        let empty = self.after_break_mark
+            && self.at_top()
+            && self.notes.is_empty()
+            && self.pages.len() > 1
+            && self.pages.last().is_some_and(|p| p.items.len() == self.page_items_start);
+        if !empty {
+            return false;
+        }
+        self.pages.pop();
+        self.behind.pop();
+        self.number = self.number.saturating_sub(1);
+        self.after_break_mark = false;
+        // The page before was aligned when it was left: nothing on it moves again.
+        self.page_items_start = self.pages.last().map_or(0, |p| p.items.len());
+        true
+    }
     fn new_page(&mut self, first_block: usize, body_top: f32) {
         self.apply_valign();
         self.flush_notes();
@@ -1925,6 +1945,9 @@ fn layout_pass(
             // one long page
         } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
             // A page holds text running one way: a section turning the other way starts a page.
+            if !web {
+                pb.take_back_break_page();
+            }
             let s = &doc.settings;
             let (filler, restart) = section_side(start, restart, pb.number, pb.pages.len(), s.even_odd_headers, s.mirror_margins);
             // The blank page that puts the section on the right side ends the previous section.
@@ -3014,7 +3037,10 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
             _ => {}
         }
     }
-    pb.y += pl.rp.space_after;
+    // A mark kept with its page break takes its space after with it, to the page before.
+    if !pb.after_break_mark {
+        pb.y += pl.rp.space_after;
+    }
     pb.prev = Some((pl.rp.style.clone(), pl.rp.contextual_spacing, pl.rp.space_after, pl.rp.after_auto, label.is_some()));
 }
 
