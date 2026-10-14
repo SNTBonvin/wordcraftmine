@@ -22,6 +22,9 @@ pub struct FieldCtx {
     pub title: Arc<str>,
     pub author: Arc<str>,
     pub filename: Arc<str>,
+    /// Body paragraphs for STYLEREF fields in headers and footers, and where the page being
+    /// drawn is among them (set only while laying out headers and footers that need it).
+    pub styleref: Option<(Arc<crate::styleref::StyleIndex>, crate::styleref::At)>,
 }
 
 /// A footnote's or endnote's number, as its section's options give it.
@@ -46,6 +49,17 @@ impl FieldCtx {
     /// A key for caches: the parts of the context a page-dependent paragraph depends on.
     pub fn page_key(&self) -> (u32, u32, u32, u32) {
         (self.page, self.pages, self.section_pages, self.section)
+    }
+    /// A key for caches of paragraphs with STYLEREF fields (0 when they show their stored result).
+    pub fn styleref_key(&self) -> u64 {
+        match &self.styleref {
+            Some((ix, at)) => {
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                std::hash::Hash::hash(&(ix.hash(), at), &mut h);
+                std::hash::Hasher::finish(&h).max(1)
+            }
+            None => 0,
+        }
     }
 }
 
@@ -100,6 +114,10 @@ pub fn field_text(instr: &str, result: &str, ctx: &FieldCtx) -> (String, bool) {
         "TITLE" if result.is_empty() => (ctx.title.to_string(), false),
         "AUTHOR" if result.is_empty() => (ctx.author.to_string(), false),
         "FILENAME" if result.is_empty() => (ctx.filename.to_string(), false),
+        "STYLEREF" => match &ctx.styleref {
+            Some((ix, at)) => (ix.eval(instr, *at), true),
+            None => (result.to_string(), false),
+        },
         _ => (result.to_string(), false),
     }
 }
