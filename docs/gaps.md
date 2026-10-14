@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (the Font list no longer keeps every previewed font in memory, #848; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-14 · **Last updated:** 2026-10-14 · **Change:** minor (live-agent review fixes: consent, Unix transport, safe revision identity and local checks) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -10,6 +10,17 @@ wall-clock estimate, and which parity document tracks it. Agents: pick from the 
 first (`gh pr list`), and update this file and the parity doc when a gap closes.
 
 Native save reliability: synthetic cases on macOS reproduced loss through the predictable temporary-file name. Saves now use owned, exclusively created siblings, synchronize before replacement and clean up on failure; originals survive pre-replacement errors. This narrows save-path reliability under gap #3; the listed field failures and broader stability work remain open. See [save-path guarantees](file-format-parity.md#native-save-path-guarantees).
+
+Live-agent setup (#373/#374) now covers already open documents, reusable configuration,
+per-attachment Allow/Deny, saved opt-in discovery, background version/matching CLI checks and an
+in-app MCP/live-target check. Linux native integration and offscreen UI validate the flow.
+Unix transport preserves Flatpak network permissions; Windows TCP proves both endpoints.
+Bounded prompts and owner-only position recovery address repeated requests and common
+duplicate/large documents. Isolated tracked edits protect owner
+authorship; transport avoids replay (#1326) and cancels expired queued requests (#1331).
+Commands already executing can still have unknown outcomes. Built-in chat, multiple agents,
+arbitrary CLI candidate selection/download management and installed-package validation on
+Windows/macOS/AppImage/Flatpak remain; see [live agents](live-agents.md).
 
 ## Ranked
 
@@ -73,6 +84,7 @@ The same gaps grouped the way the parity documents are, for agents working in on
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Draft live-agent review fixes: opt-in discovery, bounded consent, TCP app proof, owner selection recovery and background local checks; 2,039 local tests and offscreen UI passed, installed-package verification pending |
 | 2026-10-11 | trivial | Table column and row markers on the rulers landed (#700): the ruler's column markers are off the UI/UX gaps |
 | 2026-10-11 | trivial | UI/UX gaps: the table context menu landed, its items following the selection as in Word (Delete Cells, Rows, Columns or Table, Merge and Split Cells, Distribute, AutoFit, Text Direction, Insert Caption…, Table Properties…); objects' menus and Border Styles remain |
 | 2026-10-11 | trivial | Tables: ordinary drags, Shift+arrows and Shift+click over cells select a rectangle of whole cells (into or out of a table, whole rows); removed from the UI/UX gaps |

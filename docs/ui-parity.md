@@ -1,10 +1,19 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** trivial (selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-14 · **Last updated:** 2026-10-14 · **Change:** minor (Agents review fixes: approval, saved discovery, setup checks, status navigation and 18 catalogs; Linux offscreen UI checked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
 own (`AGENTS.md`: no Microsoft iconography, ever).
+
+WordCraft-specific: File › Options › Agents provides reusable MCP setup, saved connection-request
+discovery (off by default), self-reported agent names, per-attachment Allow/Deny with Escape,
+expiry/cooldown and stop, optional invitations, background bridge version/recovery and an
+asynchronous live-target check. The status bar shows listening, pending or connected state and
+opens the Agents pane. Disconnect
+revokes the attachment without restarting. All 18 catalogs cover the new labels. Offscreen egui
+checks copy, approval, status navigation and revocation; English/Russian PNGs have been visually
+checked. See [`live-agents.md`](live-agents.md) for the workflow and platform limits.
 
 **Dimension: ~65% (estimated), 61–94 h to full** (the sum of the rows below; dialog depth is counted here, not under features).
 
@@ -46,6 +55,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Draft live-agent review fixes: opt-in discovery, bounded consent, TCP app proof, owner selection recovery and background local checks; 2,039 local tests and offscreen UI passed, installed-package verification pending |
 | 2026-10-11 | trivial | Tables on the page: Ctrl shares a column border's change among the columns right of it, the left edge moves a left-aligned table's indent (a centred or right-aligned one keeps its alignment), a border of cells selected across moves only in their rows, Alt shows the column widths on the ruler (#711); 80% → 90% |
 | 2026-10-11 | trivial | Rulers: table column and row markers drag their borders (one undo step; from the ruler only the column left of a border changes, with Shift the neighbour makes up the difference), and in a cell the indents and tabs are measured from it (#700) |
 | 2026-10-11 | trivial | Table context menu as in Word: its items follow the selection (the caret in a cell, several cells, whole columns or rows, the whole table), adding Delete Cells, Split Cells, Distribute Rows and Columns, AutoFit, Text Direction, Insert Caption… and Table Properties… to Insert, Delete and Merge Cells; a right-click beside selected cells drops them |

@@ -1,8 +1,8 @@
 # WordCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (`proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-14 · **Last updated:** 2026-10-14 · **Change:** minor (live-agent review fixes: consent, Unix transport, safe revision identity and local checks) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
-How WordCraft is built today (origin/main `40c5d51`). The longer design notes in
+How WordCraft is built today (base origin/main `159b84f` plus the live-agent implementation). The longer design notes in
 `plan/architecture.md` are gitignored and local to the original author's machine; this file is the
 committed, current summary. Rules for working in the code are in [`AGENTS.md`](../AGENTS.md).
 
@@ -60,9 +60,30 @@ winit or rfd.
 - GitHub Actions on PRs: packaging lint, and FreeBSD / Windows ARM64 when build files change;
   release builds on pushes to `release`.
 
+## Live document agents
+
+The desktop host owns `AgentRuntime`, independent of the legacy developer control port.
+Native discovery is off until the owner explicitly enables requests in File → Options → Agents.
+The saved preference is separate from Allow/Deny for each attachment. Unix uses a private filesystem socket,
+Windows mutually authenticated loopback TCP with nonce/identity-bound proofs, never a raw key. Flatpak needs no new network permission. Setup exports
+client-neutral configuration independently of discovery and compact optional invitations.
+Unix desktop binaries provide early `--mcp-live`; Windows uses the matching sibling console CLI.
+Version/probe setup is lazy and cached in a background job. A bounded asynchronous MCP initialization and `check_session` verifies the live target without
+requesting attachment or reading its text.
+
+MCP `Live` starts without a window, discovers documents and requests explicit `connect_session`.
+It never creates a headless fallback. The UI enforces consent, exact document/session identity,
+one agent, command restrictions and document revisions. Agent selection and editing state are
+isolated; the host reserves a noncolliding tracked-change author. Mapping uses retained paragraph
+identity for strict agent targeting. Ambiguous owner UI mapping relocates only the owner caret
+and returns a success warning, preserving the edit; small changes map a bounded region. Revocation closes sockets and cancels queued work;
+transport loss is never replayed. See [live agents](live-agents.md) and
+[control protocol](control-protocol.md) for guarantees and limits.
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Draft live-agent review fixes: opt-in discovery, bounded consent, TCP app proof, owner selection recovery and background local checks; 2,039 local tests and offscreen UI passed, installed-package verification pending |
 | 2026-10-10 | minor | `proof`: proofing languages (English, Polish), affix engine, Polish patterns; layout and engine route each run by its language |
 | 2026-10-10 | major | First committed architecture doc, from the crates' sources and `AGENTS.md` |
