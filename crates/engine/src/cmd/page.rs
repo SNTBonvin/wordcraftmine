@@ -335,11 +335,12 @@ fn document_grid(s: &mut Session, v: &Value) -> CmdResult {
     Ok(grid_result(&sect(s), size))
 }
 
+// PR #1496 defines the same constants: the second PR to merge must drop its duplicate.
 /// Page sides, in points: 0.1" to 22" (the range Size uses).
-pub(crate) const MIN_PAGE_SIDE: f32 = 7.2;
-pub(crate) const MAX_PAGE_SIDE: f32 = 1584.0;
+pub const MIN_PAGE_SIDE: f32 = 7.2;
+pub const MAX_PAGE_SIDE: f32 = 1584.0;
 /// The room the text keeps between the margins, in points.
-pub(crate) const MIN_TEXT_ROOM: f32 = 36.0;
+pub const MIN_TEXT_ROOM: f32 = 36.0;
 
 /// Checks a whole section handed to `layout.pageSetup` by the rules of Size, Margins, Columns,
 /// Line Numbers, Footnotes and Page Borders: a non-finite number or margins that leave no room
