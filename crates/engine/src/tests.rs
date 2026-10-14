@@ -813,6 +813,55 @@ fn clipboard_round_trip() {
     assert_eq!(text(&s), "plain\ntext");
 }
 
+/// Equations in the paragraphs of a session's body, as linear text.
+fn equations(s: &Session) -> Vec<String> {
+    let mut out = Vec::new();
+    for b in &s.doc.body {
+        if let wordcraft_doc::Block::Para(p) = &**b {
+            for o in &p.objects {
+                if let wordcraft_doc::para::InlineObject::Equation { linear, .. } = o {
+                    out.push(linear.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn copying_an_equation_puts_mathml_on_the_clipboard() {
+    // #816: other programs get the equation as MathML in HTML, beside the linear text.
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "Speed "}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "insert.equation", json!({"linear": "y=2x_s", "edit": false}));
+    run(&mut s, "select.all", json!({}));
+    let r = run(&mut s, "edit.copy", json!({}));
+    let html = r["html"].as_str().unwrap_or_default().to_string();
+    assert!(html.contains("<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"), "{html}");
+    assert!(html.contains("<msub><mrow><mi>x</mi></mrow><mrow><mi>s</mi></mrow></msub>"), "{html}");
+    assert!(html.contains("Speed"), "{html}");
+    assert_eq!(s.clipboard_html, html);
+    assert!(r["text"].as_str().unwrap_or_default().contains("y=2x_s"));
+    let clip = r["text"].as_str().unwrap_or_default().to_string();
+
+    // Pasting it into another document reads the equation back from the HTML.
+    let mut t = Session::new(wordcraft_doc::Document::new());
+    run(&mut t, "edit.paste", json!({"text": clip, "html": html}));
+    assert_eq!(equations(&t), vec!["y=2x_s".to_string()]);
+    assert!(text(&t).starts_with("Speed"), "{}", text(&t));
+
+    // And back into this one, from our own copy.
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "edit.paste", json!({"text": clip, "html": html}));
+    assert_eq!(equations(&s), vec!["y=2x_s".to_string(), "y=2x_s".to_string()]);
+
+    // A copy without an equation carries no HTML.
+    run(&mut s, "select.range", json!({"anchor": {"block": 0, "off": 0}, "focus": {"block": 0, "off": 5}}));
+    let r = run(&mut s, "edit.copy", json!({}));
+    assert!(r.get("html").is_none() && s.clipboard_html.is_empty(), "{r}");
+}
+
 #[test]
 fn copying_symbol_font_text_puts_the_unicode_symbols_on_the_clipboard() {
     let mut s = s();
@@ -1601,6 +1650,56 @@ fn set_author_names_tracked_changes_headlessly() {
 }
 
 #[test]
+fn privacy_options_strip_names_and_dates_from_the_saved_docx_only() {
+    // Issue #1062: Remove personal information / date and time apply to the saved file.
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "original"}));
+    run(&mut s, "file.setAuthor", json!({"name": "Mira Calloway"}));
+    run(&mut s, "file.properties", json!({"author": "Mira Calloway"}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "text.insert", json!({"text": " added"}));
+    run(&mut s, "select.text", json!({"text": "added"}));
+    run(&mut s, "review.newComment", json!({"text": "Tightened."}));
+    let off = run(&mut s, "file.privacy", json!({}));
+    assert_eq!(off, json!({"removePersonalInfo": false, "removeDateTime": false}));
+    let plain = wordcraft_docx::write(&s.doc).unwrap();
+    let back = wordcraft_docx::read(&plain).unwrap();
+    assert!(back.comments.values().all(|c| c.author == "Mira Calloway" && !c.date.is_empty()));
+    let on = run(&mut s, "file.privacyOptions", json!({"removePersonalInfo": true, "removeDateTime": true}));
+    assert_eq!(on, json!({"removePersonalInfo": true, "removeDateTime": true}));
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert!(back.settings.remove_personal_info && back.settings.remove_date_time);
+    assert!(back.comments.values().all(|c| c.author == "Author" && c.date.is_empty()), "{:?}", back.comments);
+    assert!(!back.revisions.is_empty());
+    assert!(back.revisions.iter().all(|r| r.author == "Author" && r.date.is_empty()), "{:?}", back.revisions);
+    assert!(back.core.creator.is_empty() && back.core.last_modified_by.is_empty());
+    // The open document keeps the real names and dates.
+    assert!(s.doc.comments.values().all(|c| c.author == "Mira Calloway" && !c.date.is_empty()));
+    assert!(s.doc.revisions.iter().any(|r| r.author == "Mira Calloway"));
+    assert_eq!(s.doc.core.creator, "Mira Calloway");
+    // Undoable like any document change.
+    run(&mut s, "edit.undo", json!({}));
+    assert!(!s.doc.settings.remove_personal_info);
+}
+
+/// Reading the privacy settings changes nothing: no undo step, no unsaved changes, and it works
+/// on a protected document. `file.privacyOptions` without a setting is refused, not a silent edit.
+#[test]
+fn reading_privacy_options_is_side_effect_free() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Draft"}));
+    s.dirty = false;
+    let undo = s.undo_depth();
+    assert_eq!(run(&mut s, "file.privacy", json!({})), json!({"removePersonalInfo": false, "removeDateTime": false}));
+    assert!(s.run("file.privacyOptions", &json!({})).is_err());
+    assert!(s.run("file.privacyOptions", &json!({"removePersonalInfo": "yes"})).is_err());
+    assert_eq!(s.undo_depth(), undo, "no undo step");
+    assert!(!s.dirty, "no unsaved changes");
+    s.doc.settings.protection = Some("readOnly".into());
+    assert_eq!(run(&mut s, "file.privacy", json!({}))["removeDateTime"], false);
+}
+
+#[test]
 fn set_author_refuses_blank_names_and_clamps_long_ones() {
     let mut s = s();
     for bad in [json!(null), json!({}), json!({"name": 5}), json!({"name": ""}), json!({"name": " \t\n "}), json!({"name": "\u{0}\u{7}"})] {
@@ -1681,6 +1780,27 @@ fn comments() {
     run(&mut s, "review.deleteComment", json!({"id": id}));
     assert!(s.doc.comments.is_empty());
     assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().objects.len(), 0);
+}
+
+/// #1085: a new comment with no text, in an empty document or on a word, goes with Review ›
+/// Delete at the caret (no id) and by id.
+#[test]
+fn empty_comments_delete() {
+    for body in ["", "Some text here"] {
+        for by_id in [false, true] {
+            let mut s = Session::new(wordcraft_doc::Document::new());
+            if !body.is_empty() {
+                run(&mut s, "text.insert", json!({"text": body}));
+                run(&mut s, "caret.set", json!({"pos": {"story": "body", "path": [0], "off": 6}}));
+            }
+            let id = run(&mut s, "review.newComment", json!({}))["id"].clone();
+            assert_eq!(run(&mut s, "review.comments", json!({}))[0]["text"], "");
+            run(&mut s, "review.deleteComment", if by_id { json!({"id": id}) } else { json!({}) });
+            assert!(s.doc.comments.is_empty(), "{body:?} by id {by_id}");
+            assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().objects.len(), 0, "{body:?}: anchors gone");
+            assert_eq!(text(&s), body);
+        }
+    }
 }
 
 #[test]
