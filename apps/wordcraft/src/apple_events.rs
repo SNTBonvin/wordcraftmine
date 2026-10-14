@@ -35,19 +35,18 @@ impl AppleEvents {
 }
 
 /// Open the documents and act on the quit requests that arrived since the last frame. A document
-/// opens like File › Open (asking about unsaved changes first); quitting closes the window, which
+/// opens in this window when it is empty, else in a new window (#1560); quitting closes the window, which
 /// asks the same.
 pub fn poll(inbox: &Inbox, app: &mut WordApp, ctx: &egui::Context) {
     for e in inbox.drain() {
         match e {
             Event::Open(paths) => {
                 for p in paths.iter().filter_map(|p| p.to_str()) {
-                    match app.run("file.open", serde_json::json!({"path": p})) {
+                    match crate::open_here_or_in_new_window(app, p) {
                         // Leave Backstage, as opening from the Open dialog does.
                         Ok(_) => app.ui.backstage = false,
                         Err(e) => {
                             log::warn!("{p}: {e}");
-                            let e = e.to_string();
                             let msg = wordcraft_ui_egui::tl!("Couldn't open {path}: {error}");
                             app.status(wordcraft_ui_egui::i18n::fmt(msg, &[("path", p), ("error", &e)]));
                         }

@@ -228,6 +228,26 @@ fn app_icon() -> Option<egui::IconData> {
     eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
 }
 
+/// Open `path` in this window when it has nothing worth keeping (the Start screen, or an untouched
+/// new document), else in a new WordCraft window, so opening a second document no longer closes
+/// the first (#1560). Only user-initiated opens (command line, Finder) come here; `file.open`
+/// itself still replaces the document, which agents and MCP rely on.
+fn open_here_or_in_new_window(app: &mut WordApp, path: &str) -> Result<(), String> {
+    let in_use = app.has_document() && (app.session.dirty || app.session.path.is_some());
+    if in_use {
+        let exe = std::env::current_exe().map_err(|e| format!("couldn't locate WordCraft: {e}"))?;
+        // The new window must not grab this window's control port.
+        std::process::Command::new(exe)
+            .arg(path)
+            .env_remove("WORDCRAFT_CONTROL_PORT")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("couldn't open {path} in a new window: {e}"))
+    } else {
+        app.run("file.open", serde_json::json!({"path": path})).map(|_| ()).map_err(|e| e.to_string())
+    }
+}
+
 /// The commit the build came from (short), or `dev`.
 fn build_sha() -> &'static str {
     option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or("dev")
@@ -344,7 +364,7 @@ fn main() -> eframe::Result {
                 app.start_screen();
             }
             for f in files {
-                if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
+                if let Err(e) = open_here_or_in_new_window(&mut app, &f) {
                     log::warn!("{f}: {e}");
                 }
             }
