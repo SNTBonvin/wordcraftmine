@@ -902,3 +902,42 @@ fn internal_links_export_in_linear_time() {
     let ratio = fastest(&big) / fastest(&small).max(1e-9);
     assert!(ratio < 9.0, "4x the paragraphs and links took {ratio:.1}x as long (quadratic would be ~16x)");
 }
+
+#[test]
+fn all_caps_and_small_caps_text_extracts_as_displayed() {
+    // #1473: All Caps / Small Caps text is drawn with capital glyphs, so it extracts in capitals
+    // (as Word's PDFs do), and later text without caps keeps its own case: a capital glyph
+    // first drawn for a lowercase letter must not make every later capital read as lowercase.
+    let mut d = Document::new();
+    d.styles.upsert(wordcraft_doc::Style {
+        id: "CapsPara".into(),
+        name: "Caps Para".into(),
+        kind: wordcraft_doc::StyleKind::Paragraph,
+        chr: CharProps { caps: Some(true), ..Default::default() },
+        ..Default::default()
+    });
+    let caps = CharProps { caps: Some(true), ..Default::default() };
+    let small = CharProps { small_caps: Some(true), ..Default::default() };
+    d.body = vec![
+        para_block(Paragraph::with_text("Employment Period. Your employment will begin on the date below.", CharProps::default()).styled("CapsPara")),
+        para_block(Paragraph::with_text("Direct caps on the run: Mixed Case Words.", caps.clone())),
+        para_block(Paragraph::with_text("Plain text, no caps: Employment Period.", CharProps::default())),
+        para_block(Paragraph::with_text("Small caps line: Quiet Words.", small)),
+        para_block(Paragraph::with_text("Straße", caps)),
+        para_block(Paragraph::with_text("Plain again: Straße, Quiet Period.", CharProps::default())),
+    ];
+    let text = extract_text(&export(&d, &PdfOptions::default()).unwrap()).concat();
+    let text = squash(&text);
+    for line in [
+        "EMPLOYMENT PERIOD. YOUR EMPLOYMENT WILL BEGIN ON THE DATE BELOW.",
+        "DIRECT CAPS ON THE RUN: MIXED CASE WORDS.",
+        "Plain text, no caps: Employment Period.",
+        "SMALL CAPS LINE: QUIET WORDS.",
+        "Plain again: Straße, Quiet Period.",
+    ] {
+        assert!(text.contains(line), "missing {line:?} in {text:?}");
+    }
+    // The capitalised ß shows a capital glyph and reads as capitals, never as a lowercase ß.
+    assert!(text.contains("STRA"), "{text:?}");
+    assert!(!text.contains("STRAß") && !text.contains("Straße Plain"), "{text:?}");
+}
