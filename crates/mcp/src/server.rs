@@ -1,11 +1,11 @@
 //! JSON-RPC 2.0 framing and the MCP lifecycle / tools / resources methods.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 
 use serde_json::{Value, json};
 
 use crate::backend::Backend;
-use crate::tools::{call_tool, tool_definitions};
+use crate::tools::{call_tool, live_tool_definitions, tool_definitions};
 
 /// The MCP revision we implement.
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -58,16 +58,29 @@ impl Server {
 
     /// Serve newline-delimited JSON-RPC until `input` closes. Logs go to stderr only (stdout is
     /// the protocol stream).
-    pub fn serve(&mut self, input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
-        for line in input.lines() {
-            let line = line?;
-            if let Some(reply) = self.handle_line(&line) {
-                output.write_all(reply.as_bytes())?;
-                output.write_all(b"\n")?;
-                output.flush()?;
+    pub fn serve(&mut self, mut input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
+        let result = (|| {
+            loop {
+                const MAX_MCP_LINE: u64 = 16 * 1024 * 1024;
+                let mut line = String::new();
+                if (&mut input).take(MAX_MCP_LINE + 1).read_line(&mut line)? == 0 {
+                    break;
+                }
+                if line.len() as u64 > MAX_MCP_LINE {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "MCP request exceeds the 16 MiB line limit"));
+                }
+                if let Some(reply) = self.handle_line(&line) {
+                    output.write_all(reply.as_bytes())?;
+                    output.write_all(b"\n")?;
+                    output.flush()?;
+                }
             }
+            Ok(())
+        })();
+        if self.backend.is_live() {
+            let _ = self.backend.call("agent.disconnect_session", json!({}));
         }
-        Ok(())
+        result
     }
 
     /// Handle one line; returns the reply line (None for notifications and blank lines).
@@ -135,13 +148,13 @@ impl Server {
                     "capabilities": {"tools": {}, "resources": {}},
                     "serverInfo": {"name": "wordcraft", "title": "WordCraft", "version": env!("CARGO_PKG_VERSION"), "websiteUrl": "https://getartcraft.com/apps/wordcraft"},
                     "instructions": format!(
-                        "{INSTRUCTIONS} Backend: {}. Community: https://discord.gg/artcraft · https://getartcraft.com/apps/wordcraft · https://github.com/storytold/wordcraft",
-                        self.backend.describe()
+                        "{} Backend: {}. Community: https://discord.gg/artcraft · https://getartcraft.com/apps/wordcraft · https://github.com/storytold/wordcraft",
+                        if self.backend.is_live() { crate::live::USAGE_GUIDE } else { INSTRUCTIONS }, self.backend.describe()
                     ),
                 }))
             }
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": tool_definitions()})),
+            "tools/list" => Ok(json!({"tools": if self.backend.is_live() { live_tool_definitions() } else { tool_definitions() }})),
             "tools/call" => {
                 let name = params.get("name").and_then(Value::as_str).ok_or((INVALID_PARAMS, "missing tool `name`".to_string()))?;
                 let args = params.get("arguments").cloned().unwrap_or(Value::Null);

@@ -5143,6 +5143,11 @@ dependencies = [
 [[package]]
 name = "wordcraft-control-key"
 version = "0.6.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "hmac",
+ "sha2",
+]
 
 [[package]]
 name = "wordcraft-doc"
@@ -5277,6 +5282,7 @@ name = "wordcraft-mcp"
 version = "0.6.1"
 dependencies = [
  "log",
+ "rustix 1.1.5",
  "serde_json",
  "wordcraft-control-key",
  "wordcraft-doc",

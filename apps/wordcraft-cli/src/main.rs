@@ -27,14 +27,16 @@ USAGE:
                                               who tracked changes and comments are by)
   wordcraft-cli commands [--json]             list every command
   wordcraft-cli parity [--markdown]           feature-catalog parity
-  wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
-                                              MCP server on stdio (headless, or bridged to the app).
+  wordcraft-cli mcp [--live | --connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
+                                              MCP server on stdio. --live waits for enabled desktop documents;
+                                              connect explicitly with tools and obtain approval in WordCraft
+                                              before reading/editing (no headless fallback).
                                               --automation-read-root / --automation-write-root confine
                                               the files the agent's commands read (open, insert text
                                               or picture, mail-merge data, templates…) and write (save,
                                               export, merge output…) to DIR, links followed; a root left
                                               out grants none of its access. They apply to the headless
-                                              server and are an error with --connect.
+                                              server and are an error with --connect or --live.
   wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
                                               run a Zotero command on a document (Zotero must be
                                               running): addEditCitation, addEditBibliography,
@@ -119,7 +121,11 @@ const RUN_OPTIONS: &[OptionSpec] = &[
 ];
 const COMMANDS_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--json", takes_value: false }];
 const PARITY_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--markdown", takes_value: false }];
-const MCP_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--connect", takes_value: true }, OptionSpec { name: "--author", takes_value: true }];
+const MCP_OPTIONS: &[OptionSpec] = &[
+    OptionSpec { name: "--connect", takes_value: true },
+    OptionSpec { name: "--author", takes_value: true },
+    OptionSpec { name: "--live", takes_value: false },
+];
 const ZOTERO_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--cmd", takes_value: true },
     OptionSpec { name: "--save", takes_value: true },
@@ -297,37 +303,49 @@ fn run(args: &[String]) -> Result<(), Failure> {
             validate_options("mcp", &rest, MCP_OPTIONS)?;
             let author = arg_value(&rest, "--author");
             let connect = arg_value(&rest, "--connect");
+            let live = rest.iter().any(|a| a == "--live");
+            if live && (connect.is_some() || author.is_some() || roots.is_some()) {
+                return Err("mcp: --live cannot be combined with --connect, --author or automation roots".into());
+            }
             if roots.is_some() && connect.is_some() {
                 return Err(
                     "mcp: --automation-read-root and --automation-write-root confine the headless server; a running app is not confined by them"
                         .into(),
                 );
             }
-            let backend: Box<dyn wordcraft_mcp::Backend> = match connect {
-                // The app's user name is the person's own setting; don't rewrite it from a flag.
-                Some(_) if author.is_some() => {
-                    return Err("mcp: --author applies to the headless server; with --connect, run file.setAuthor".into());
-                }
-                Some(addr) => {
-                    let remote = wordcraft_mcp::Remote::connect(&addr).map_err(|e| format!("can't reach the WordCraft app at {addr}: {e}"))?;
-                    if let Some(w) = remote.key_warning() {
-                        eprintln!("wordcraft-cli: {w}");
+            let backend: Box<dyn wordcraft_mcp::Backend> = if live {
+                Box::new(wordcraft_mcp::Live::new()?)
+            } else {
+                match connect {
+                    // The app's user name is the person's own setting; don't rewrite it from a flag.
+                    Some(_) if author.is_some() => {
+                        return Err("mcp: --author applies to the headless server; with --connect, run file.setAuthor".into());
                     }
-                    Box::new(remote)
-                }
-                None => {
-                    let mut headless = wordcraft_mcp::Headless::default();
-                    if let Some(roots) = roots {
-                        // Every thread of this process, not only the server's: nothing reaches past the roots.
-                        wordcraft_engine::file_access::confine_process(roots.clone());
-                        let show = |root: Option<&std::path::Path>| root.map_or_else(|| "none".to_string(), |r| r.display().to_string());
-                        eprintln!("wordcraft-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
-                        headless = headless.with_automation_roots(Some(roots));
+                    Some(addr) => {
+                        let remote = wordcraft_mcp::Remote::connect(&addr).map_err(|e| format!("can't reach the WordCraft app at {addr}: {e}"))?;
+                        if let Some(w) = remote.key_warning() {
+                            eprintln!("wordcraft-cli: {w}");
+                        }
+                        Box::new(remote)
                     }
-                    if let Some(name) = author {
-                        set_author(&mut headless.session, &name)?;
+                    None => {
+                        let mut headless = wordcraft_mcp::Headless::default();
+                        if let Some(roots) = roots {
+                            // Every thread of this process, not only the server's: nothing reaches past the roots.
+                            wordcraft_engine::file_access::confine_process(roots.clone());
+                            let show = |root: Option<&std::path::Path>| root.map_or_else(|| "none".to_string(), |r| r.display().to_string());
+                            eprintln!(
+                                "wordcraft-cli: files confined: read root {}, write root {}",
+                                show(roots.read_root()),
+                                show(roots.write_root())
+                            );
+                            headless = headless.with_automation_roots(Some(roots));
+                        }
+                        if let Some(name) = author {
+                            set_author(&mut headless.session, &name)?;
+                        }
+                        Box::new(headless)
                     }
-                    Box::new(headless)
                 }
             };
             let mut server = wordcraft_mcp::Server::new(backend);
@@ -414,9 +432,22 @@ fn parity_markdown(p: &Value) -> String {
     s
 }
 
+/// Decode native argv without `std::env::args`, which panics on a non-Unicode argument.
+/// The CLI/protocol uses Unicode strings; reject unsupported paths before starting work.
+fn unicode_args(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Vec<String>, Failure> {
+    arguments
+        .into_iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            argument.into_string().map_err(|_| {
+                Failure::Error(format!("argument {} is not valid Unicode; use Unicode arguments or rename the path", index.saturating_add(1)))
+            })
+        })
+        .collect()
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
+    match unicode_args(std::env::args_os().skip(1)).and_then(|args| run(&args)) {
         Ok(()) | Err(Failure::StdoutClosed) => ExitCode::SUCCESS,
         Err(Failure::Error(e)) => {
             eprintln!("wordcraft-cli: {e}");
@@ -431,6 +462,22 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn native_unicode_arguments_are_preserved() {
+        let arguments = [std::ffi::OsString::from("info"), std::ffi::OsString::from("Документ café.docx")];
+        assert_eq!(unicode_args(arguments).unwrap(), args(&["info", "Документ café.docx"]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_non_unicode_argument_returns_an_error_without_panicking() {
+        use std::os::unix::ffi::OsStringExt;
+        let arguments = [std::ffi::OsString::from("info"), std::ffi::OsString::from_vec(vec![b'p', b'a', b't', b'h', 0xff])];
+        let error = unicode_args(arguments).unwrap_err();
+        assert!(error.to_string().contains("argument 2 is not valid Unicode"));
+        assert_eq!(error, Failure::Error("argument 2 is not valid Unicode; use Unicode arguments or rename the path".into()));
     }
 
     #[test]
@@ -470,6 +517,15 @@ mod tests {
         assert!(run(&args(&["run", "--author", "Claude", "--cmd", "review.trackChanges={\"value\":true}"])).is_ok());
         // The app's user name is the person's own; a bridge flag must not rewrite it.
         assert!(run(&args(&["mcp", "--connect", "127.0.0.1:9", "--author", "Claude"])).is_err_and(|e| e.to_string().contains("--author")));
+    }
+
+    #[test]
+    fn live_profile_rejects_conflicting_modes_before_opening_connections() {
+        for extra in [vec!["--connect", "127.0.0.1:9"], vec!["--author", "Test"], vec!["--automation-read-root", "."]] {
+            let mut arguments = vec!["mcp", "--live"];
+            arguments.extend(extra);
+            assert!(run(&args(&arguments)).is_err_and(|e| e.to_string().contains("--live")), "{arguments:?}");
+        }
     }
 
     #[test]

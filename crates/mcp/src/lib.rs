@@ -6,10 +6,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod backend;
+pub mod live;
 pub mod server;
 pub mod tools;
 
 pub use backend::{Backend, Remote};
+pub use live::Live;
 pub use server::Server;
 
 use std::sync::Arc;
@@ -83,3 +85,8 @@ impl Backend for Headless {
 
 #[cfg(test)]
 mod tests;
+
+/// Serve live-document MCP on stdio, without starting a GUI or headless document.
+pub fn serve_live(input: impl std::io::BufRead, output: impl std::io::Write) -> Result<(), String> {
+    Server::new(Box::new(Live::new()?)).serve(input, output).map_err(|e| e.to_string())
+}
