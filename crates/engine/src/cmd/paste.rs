@@ -235,6 +235,9 @@ pub fn merge_formatting(s: &Session, frag: &mut Fragment) {
                     run.props.strike = Some(true);
                 }
                 run.props.link = src.link;
+                // Tracked changes are not formatting: text deleted in the source stays deleted.
+                run.props.ins = src.ins;
+                run.props.del = src.del;
             }
             p.touch();
         });
@@ -257,8 +260,8 @@ pub fn insert(s: &mut Session, mut frag: Fragment) -> Result<(), CmdError> {
         for b in &mut frag.blocks {
             each_para(b, 0, &mut |p| {
                 for run in &mut p.runs {
+                    // Text deleted in the source stays deleted: inserted, then deleted.
                     run.props.ins = Some(r);
-                    run.props.del = None;
                     run.props.fmt_change = None;
                 }
                 p.mark.ins = None;
@@ -298,6 +301,35 @@ pub(crate) fn each_para(b: &mut Block, depth: usize, f: &mut dyn FnMut(&mut Para
                     for cb in &mut cell.blocks {
                         each_para(Arc::make_mut(cb), depth + 1, f);
                     }
+                }
+            }
+        }
+    }
+}
+
+/// Point a tracked formatting change at its renumbered revision (dropped when it has none).
+fn remap_change<T>(c: &mut Option<Box<wordcraft_doc::props::PropChange<T>>>, rev: &dyn Fn(&mut Option<u32>)) {
+    let mut r = c.as_ref().map(|c| c.rev);
+    rev(&mut r);
+    match (r, c.as_mut()) {
+        (Some(v), Some(x)) => x.rev = v,
+        _ => *c = None,
+    }
+}
+
+/// [`remap_change`] for the table, row and cell formatting changes in `b` (bounded depth).
+fn remap_table_changes(b: &mut Block, depth: usize, rev: &dyn Fn(&mut Option<u32>)) {
+    if depth > MAX_DEPTH {
+        return;
+    }
+    if let Block::Table(t) = b {
+        remap_change(&mut t.props.fmt_change, rev);
+        for row in &mut t.rows {
+            remap_change(&mut row.props.fmt_change, rev);
+            for cell in &mut row.cells {
+                remap_change(&mut cell.props.fmt_change, rev);
+                for cb in &mut cell.blocks {
+                    remap_table_changes(Arc::make_mut(cb), depth + 1, rev);
                 }
             }
         }
@@ -356,15 +388,18 @@ fn adopt(s: &mut Session, src: Document) -> Fragment {
             for r in &mut p.runs {
                 rev(&mut r.props.ins);
                 rev(&mut r.props.del);
-                let mut f = r.props.fmt_change.as_ref().map(|c| c.rev);
-                rev(&mut f);
-                match (f, r.props.fmt_change.as_mut()) {
-                    (Some(v), Some(c)) => c.rev = v,
-                    _ => r.props.fmt_change = None,
-                }
+                remap_change(&mut r.props.fmt_change, &rev);
             }
             rev(&mut p.mark.ins);
             rev(&mut p.mark.del);
+            remap_change(&mut p.mark.fmt_change, &rev);
+            remap_change(&mut p.props.fmt_change, &rev);
+            let mut n = p.props.num_change.as_ref().map(|c| c.rev);
+            rev(&mut n);
+            match (n, p.props.num_change.as_mut()) {
+                (Some(v), Some(c)) => c.rev = v,
+                _ => p.props.num_change = None,
+            }
             for o in &mut p.objects {
                 if let wordcraft_doc::InlineObject::Image { media: key, .. } = o
                     && let Some(k) = media.get(key.as_str())
@@ -373,6 +408,9 @@ fn adopt(s: &mut Session, src: Document) -> Fragment {
                 }
             }
         });
+    }
+    for b in &mut blocks {
+        remap_table_changes(b, 0, &rev);
     }
     // Text box stories the imported shapes show; pasting gives each a new story of its own.
     let parts = src.parts.into_iter().filter(|(_, p)| p.kind == wordcraft_doc::PartKind::TextBox).collect();

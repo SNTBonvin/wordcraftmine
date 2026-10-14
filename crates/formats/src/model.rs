@@ -425,7 +425,7 @@ impl<'a> Builder<'a> {
         if let Some(i) = self.revs.get(&key) {
             return *i;
         }
-        let i = self.doc.revisions.len() as u32;
+        let i = u32::try_from(self.doc.revisions.len()).unwrap_or(u32::MAX);
         self.doc.revisions.push(Revision::new(kind, m.author.clone(), m.date.clone()));
         self.revs.insert(key, i);
         i
