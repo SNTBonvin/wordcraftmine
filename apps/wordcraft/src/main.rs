@@ -9,6 +9,7 @@
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod agent_setup;
 mod animations;
 #[cfg(target_os = "macos")]
 mod apple_events;
@@ -34,15 +35,27 @@ use wordcraft_ui_egui::{
 struct App(
     WordApp,
     Option<WindowGeometry>,
-    Option<control_server::KeyFile>,
+    Option<control_server::Server>,
     file_dialogs::Launcher,
+    std::sync::Arc<std::sync::Mutex<control_server::AgentRuntime>>,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
 );
+
+impl App {
+    fn stop_agents(&mut self) {
+        if let Ok(mut runtime) = self.4.lock() {
+            runtime.stop();
+        }
+        if let Some(server) = self.2.as_mut() {
+            server.stop();
+        }
+    }
+}
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        apple_events::poll(&self.4, &mut self.0, ctx);
+        apple_events::poll(&self.5, &mut self.0, ctx);
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -62,7 +75,8 @@ impl eframe::App for App {
             {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.0.quit_requested = false;
-                schedule_macos_terminate(&self.0, self.2.as_ref());
+                self.stop_agents();
+                schedule_macos_terminate(&self.0);
             }
             #[cfg(not(target_os = "macos"))]
             if self.0.quit_requested {
@@ -80,9 +94,7 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         print::finish_pending_jobs();
         save_prefs(&self.0);
-        if let Some(key_file) = &self.2 {
-            key_file.remove();
-        }
+        self.stop_agents();
     }
 }
 
@@ -94,7 +106,7 @@ impl eframe::App for App {
 /// removed first, as `on_exit` does, because a fallback [`std::process::exit`]
 /// skips `on_exit`. A second close while a quit is already scheduled is ignored.
 #[cfg(target_os = "macos")]
-fn schedule_macos_terminate(app: &WordApp, key_file: Option<&control_server::KeyFile>) {
+fn schedule_macos_terminate(app: &WordApp) {
     use std::sync::atomic::{AtomicBool, Ordering};
     if app.printing.busy() {
         return;
@@ -107,9 +119,6 @@ fn schedule_macos_terminate(app: &WordApp, key_file: Option<&control_server::Key
     // This path can bypass on_exit. Join the owned workers before termination and cleanup.
     print::finish_pending_jobs();
     save_prefs(app);
-    if let Some(key_file) = key_file {
-        key_file.remove();
-    }
     dispatch2::DispatchQueue::main().exec_async(|| {
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             objc2_app_kit::NSApplication::sharedApplication(mtm).terminate(None);
@@ -232,24 +241,50 @@ fn build_sha() -> &'static str {
     option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or("dev")
 }
 
+struct DesktopArgs {
+    control_port: Option<u16>,
+    sample: bool,
+    version: bool,
+    files: Vec<std::path::PathBuf>,
+}
+
+fn desktop_args(mut args: impl Iterator<Item = std::ffi::OsString>, control_port: Option<u16>) -> DesktopArgs {
+    let mut parsed = DesktopArgs { control_port, sample: false, version: false, files: Vec::new() };
+    while let Some(arg) = args.next() {
+        match arg.to_str() {
+            Some("--control") => parsed.control_port = args.next().and_then(|p| p.to_str().and_then(|s| s.parse().ok())),
+            Some("--sample") => parsed.sample = true,
+            Some("--version") => {
+                parsed.version = true;
+                break;
+            }
+            _ => parsed.files.push(std::path::PathBuf::from(arg)),
+        }
+    }
+    parsed
+}
+
 fn main() -> eframe::Result {
+    // MCP must own clean stdio, before the GUI, log redirection or preference loading.
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--mcp-live")) {
+        if std::env::args_os().nth(2).is_some() {
+            eprintln!("--mcp-live does not accept additional arguments");
+            std::process::exit(2);
+        }
+        if let Err(error) = wordcraft_mcp::serve_live(std::io::stdin().lock(), std::io::stdout()) {
+            eprintln!("WordCraft MCP: {error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     // First, so the panic hook and every start-up warning are recorded (`logging`).
     let logger = logging::install();
     logging::install_panic_hook();
-    let mut control_port: Option<u16> = std::env::var("WORDCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
-    let mut files = Vec::new();
-    let mut sample = false;
-    let mut args = std::env::args().skip(1);
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
-            "--sample" => sample = true,
-            "--version" => {
-                println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_sha());
-                return Ok(());
-            }
-            _ => files.push(a),
-        }
+    let control_port = std::env::var("WORDCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
+    let DesktopArgs { control_port, sample, version, files } = desktop_args(std::env::args_os().skip(1), control_port);
+    if version {
+        println!("wordcraft {} ({})", env!("CARGO_PKG_VERSION"), build_sha());
+        return Ok(());
     }
     // The log file lives in the settings directory, next to the preferences; opened after the
     // arguments, so `--version` leaves no file behind. Records logged until now are written to it
@@ -317,7 +352,23 @@ fn main() -> eframe::Result {
             let (file_dialog, dialogs) = file_dialogs::hook(&cc.egui_ctx);
             let mut session = Session::new(doc);
             session.system_region = region;
-            let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
+            let (control_tx, control_rx) = control_server::request_channel();
+            let runtime = std::sync::Arc::new(std::sync::Mutex::new(control_server::AgentRuntime::default()));
+            let mut services = services(file_dialog, &cc.egui_ctx);
+            let (hook_runtime, hook_tx, hook_ctx) = (runtime.clone(), control_tx.clone(), cc.egui_ctx.clone());
+            services.agent_control = Some(Box::new(move |request| {
+                if request.get("setup").and_then(serde_json::Value::as_bool) == Some(true) {
+                    return Ok(agent_setup::setup_metadata_request(request.get("refresh").and_then(serde_json::Value::as_bool) == Some(true)));
+                }
+                let settings = wordcraft_control_key::settings_dir().ok_or("WordCraft settings folder unavailable")?;
+                let mut runtime = hook_runtime.lock().map_err(|_| "agent runtime unavailable")?;
+                let mut descriptor = runtime.update(request, &hook_ctx, &settings, hook_tx.clone())?;
+                if descriptor.get("sessionId").is_some() {
+                    agent_setup::decorate_descriptor(&mut descriptor);
+                }
+                Ok(descriptor)
+            }));
+            let mut app = WordApp::new(session, services).with_control(control_rx);
             load_prefs(&mut app);
             load_user_dictionary(&mut app);
             // A region chosen in File › Options replaces the system's for the first blank
@@ -329,12 +380,15 @@ fn main() -> eframe::Result {
             app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;
             app.integrated_titlebar = cfg!(target_os = "macos");
-            let mut key_file = None;
-            if let Some(port) = control_port
-                && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
-            {
-                app = app.with_control(rx);
-                key_file = file;
+            let mut control_server = None;
+            if let Some(port) = control_port {
+                match wordcraft_control_key::settings_dir()
+                    .ok_or_else(|| "settings folder unavailable".to_string())
+                    .and_then(|dir| control_server::start(port, cc.egui_ctx.clone(), &dir, control_tx, false))
+                {
+                    Ok(server) => control_server = Some(server),
+                    Err(error) => log::error!("control channel unavailable: {error}"),
+                }
             }
             // Nothing to open (no files, no sample, no control channel driving the editor): start
             // on File › Home, as Word does (#766), unless the Start screen option is off. Files
@@ -343,18 +397,44 @@ fn main() -> eframe::Result {
                 app.start_screen();
             }
             for f in files {
-                if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
-                    log::warn!("{f}: {e}");
+                if let Some(path) = f.to_str() {
+                    if let Err(error) = app.run("file.open", serde_json::json!({"path": path})) {
+                        log::warn!("{}: {error}", f.display());
+                    }
+                } else {
+                    // The command protocol accepts Unicode paths. Native argument parsing
+                    // still avoids a startup panic; broader path support is separate work.
+                    log::warn!("Cannot open {}: the document path is not valid Unicode", f.display());
                 }
             }
             Ok(Box::new(App(
                 app,
                 restored,
-                key_file,
+                control_server,
                 dialogs,
+                runtime,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
             )))
         }),
     )
+}
+
+#[cfg(all(test, unix))]
+mod args_tests {
+    use super::*;
+    use std::os::unix::ffi::OsStringExt;
+
+    #[test]
+    fn native_arguments_preserve_non_unicode_filenames_and_reject_bad_port_without_panicking() {
+        let file = std::ffi::OsString::from_vec(vec![b'd', b'o', b'c', 0xff]);
+        let bad_port = std::ffi::OsString::from_vec(vec![0xff]);
+        let parsed = desktop_args(vec!["--sample".into(), file.clone(), "--control".into(), bad_port].into_iter(), Some(7981));
+        assert!(parsed.sample);
+        assert!(!parsed.version);
+        assert_eq!(parsed.control_port, None);
+        assert_eq!(parsed.files, vec![std::path::PathBuf::from(file)]);
+        let parsed = desktop_args(vec!["--version".into(), std::ffi::OsString::from_vec(vec![0xff])].into_iter(), None);
+        assert!(parsed.version);
+    }
 }
