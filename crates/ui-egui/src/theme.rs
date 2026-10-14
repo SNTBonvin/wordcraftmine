@@ -294,7 +294,7 @@ impl Tokens {
     pub fn dark() -> Self {
         // Shared ArtCraft standard-dark roles: window/chrome/panel/raised/input and blue focus.
         // Document page pixels, ruler, text selection and editing handles keep their own colors.
-        let roles = craft_ui::theme::SuiteDarkPalette::ARTCRAFT;
+        let roles = craft_ui::theme::SuitePalette::ARTCRAFT_DARK;
         Tokens {
             dark: true,
             title_bar: roles.chrome,
@@ -628,7 +628,7 @@ fn visuals(t: &Tokens) -> Visuals {
     v.window_corner_radius = CornerRadius::same(8);
     v.menu_corner_radius = CornerRadius::same(6);
     v.selection.bg_fill = t.ui_selection;
-    v.selection.stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuiteDarkPalette::ARTCRAFT.selection_text } else { t.accent });
+    v.selection.stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuitePalette::ARTCRAFT_DARK.selection_text } else { t.accent });
     v.hyperlink_color = t.accent_text;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.border);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
@@ -639,7 +639,7 @@ fn visuals(t: &Tokens) -> Visuals {
     v.widgets.inactive.corner_radius = CornerRadius::same(4);
     v.widgets.hovered.bg_fill = t.hover;
     v.widgets.hovered.weak_bg_fill = t.hover;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuiteDarkPalette::ARTCRAFT.focus } else { t.border_strong });
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, if t.dark { craft_ui::theme::SuitePalette::ARTCRAFT_DARK.focus } else { t.border_strong });
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, t.text);
     v.widgets.hovered.corner_radius = CornerRadius::same(4);
     v.widgets.active.bg_fill = t.pressed;
@@ -661,7 +661,7 @@ pub fn c32(c: wordcraft_doc::Rgb) -> Color32 {
 mod tests {
     #[test]
     fn dark_adapter_reads_shared_roles_and_keeps_page_and_editing_colors() {
-        let roles = craft_ui::theme::SuiteDarkPalette::ARTCRAFT;
+        let roles = craft_ui::theme::SuitePalette::ARTCRAFT_DARK;
         let dark = super::Tokens::dark();
         assert_eq!(dark.title_bar, roles.chrome);
         assert_eq!(dark.ribbon, roles.chrome);
