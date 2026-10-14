@@ -614,7 +614,8 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "Double Strikethrough", "format.doubleStrikethrough", json!({}));
                 });
                 let hl = app.canvas.last_highlight.clone();
-                split(ui, app, "highlight", "Text Highlight Color", "format.highlight", json!({"color": hl}), false, None, |ui, app| {
+                let hl_sw = wordcraft_doc::props::Highlight::ALL.iter().find(|h| h.ooxml() == hl).and_then(|h| h.rgb()).map(crate::theme::c32);
+                split(ui, app, "highlight", "Text Highlight Color", "format.highlight", json!({"color": hl}), false, hl_sw, |ui, app| {
                     let grid = wordcraft_doc::props::Highlight::ALL;
                     egui::Grid::new("hl").spacing(vec2(3.0, 3.0)).show(ui, |ui| {
                         for (i, h) in grid.iter().enumerate().skip(1) {
@@ -725,11 +726,21 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                     mi(ui, app, "Remove Space After Paragraph", "para.removeSpaceAfter", json!({}));
                     mi(ui, app, "Line Spacing Options…", "para.dialog", json!({}));
                 });
-                split(ui, app, "shading", "Shading", "para.shading", json!({"color": app.canvas.last_shading.clone()}), false, None, |ui, app| {
-                    mi(ui, app, "No Color", "para.shading", json!({"color": null}));
-                    let theme = app.session.doc.settings.theme_colors.clone();
-                    crate::colors::menu(ui, app, &theme, Target::cmd("para.shading").remember(Remember::Shading));
-                });
+                split(
+                    ui,
+                    app,
+                    "shading",
+                    "Shading",
+                    "para.shading",
+                    json!({"color": app.canvas.last_shading.clone()}),
+                    false,
+                    wordcraft_doc::Rgb::parse(&app.canvas.last_shading).map(crate::theme::c32),
+                    |ui, app| {
+                        mi(ui, app, "No Color", "para.shading", json!({"color": null}));
+                        let theme = app.session.doc.settings.theme_colors.clone();
+                        crate::colors::menu(ui, app, &theme, Target::cmd("para.shading").remember(Remember::Shading));
+                    },
+                );
                 split(ui, app, "borders", "Borders", "para.borders", json!({"kind": "bottom"}), false, None, |ui, app| {
                     for (l, k) in [
                         ("Bottom Border", "bottom"),
@@ -2246,11 +2257,21 @@ fn table_design(app: &mut WordApp, ui: &mut Ui) {
                     ui.close();
                 }
             });
-            split(ui, app, "shading", "Shading", "table.shading", json!({"color": app.canvas.last_shading.clone()}), false, None, |ui, app| {
-                mi(ui, app, "No Color", "table.shading", json!({"color": null}));
-                let theme = app.session.doc.settings.theme_colors.clone();
-                crate::colors::menu(ui, app, &theme, Target::cmd("table.shading").remember(Remember::Shading));
-            });
+            split(
+                ui,
+                app,
+                "shading",
+                "Shading",
+                "table.shading",
+                json!({"color": app.canvas.last_shading.clone()}),
+                false,
+                wordcraft_doc::Rgb::parse(&app.canvas.last_shading).map(crate::theme::c32),
+                |ui, app| {
+                    mi(ui, app, "No Color", "table.shading", json!({"color": null}));
+                    let theme = app.session.doc.settings.theme_colors.clone();
+                    crate::colors::menu(ui, app, &theme, Target::cmd("table.shading").remember(Remember::Shading));
+                },
+            );
         });
     });
     group(ui, "Borders", None, app, |ui, app| {
@@ -2394,7 +2415,7 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
                 [("bottomLeft", "Align Bottom Left"), ("bottomCenter", "Align Bottom Center"), ("bottomRight", "Align Bottom Right")],
             ] {
                 for (v, tip) in row {
-                    small(ui, app, "cellAlign", None, tip, "table.cellAlign", json!({"value": v}), false);
+                    small(ui, app, &format!("cellAlign.{v}"), None, tip, "table.cellAlign", json!({"value": v}), false);
                 }
                 ui.end_row();
             }
