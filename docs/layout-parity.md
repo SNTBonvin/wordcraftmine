@@ -79,6 +79,7 @@ font can't match Word's metrics.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | trivial | Keep with next: when widow/orphan control moves the next paragraph's first line to the next page (room for only one of its lines), the kept paragraph goes with it instead of ending the page alone (#966) |
 | 2026-10-13 | trivial | A shape or picture dragged into another column anchors there, so the text in that column wraps around it (#884) |
 | 2026-10-13 | trivial | On a page with footnotes, a paragraph that ends there keeps its space after above the footnote separator; if it doesn't fit, its last line (and, with widow control, one more) goes to the next page with the note. Pages without notes are unchanged (#1116) |
 | 2026-10-12 | trivial | Spaces, tabs and ideographic spaces don't count toward a line's height, as in Word (a line of only them takes the paragraph mark's) |

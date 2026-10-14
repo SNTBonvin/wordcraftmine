@@ -4636,6 +4636,44 @@ fn keep_with_next_moves_a_paragraph_only_when_it_would_fit() {
     assert_eq!(pages(fit - 1, kn.clone(), kn.clone()), [1, 1, 1, 1, 1, 1], "a kept chain moves together");
 }
 
+/// Keep with next when the next paragraph can't start on the page (#966): with room for only one
+/// of its lines, widow/orphan control moves its first line over, so the kept paragraph goes with
+/// it instead of ending the page alone. With room for two lines, with widow/orphan control off or
+/// with a one-line next paragraph, both stay.
+#[test]
+fn keep_with_next_follows_a_next_paragraph_moved_by_orphan_control() {
+    // Page of the kept heading and of the first two lines of the paragraph after it.
+    let pages = |fillers: usize, keep_next: bool, body: &str, widow_control: bool| {
+        let mut d = Document::new();
+        let para = |text: &str, keep_next: bool| {
+            let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
+            x.props = ParaProps {
+                space_before: Some(0.0),
+                space_after: Some(0.0),
+                line_spacing: Some(wordcraft_doc::props::LineSpacing::Multiple(1.0)),
+                keep_next: Some(keep_next),
+                widow_control: Some(widow_control),
+                ..Default::default()
+            };
+            wordcraft_doc::para_block(x)
+        };
+        d.body = (0..fillers).map(|i| para(&format!("F{i}"), false)).collect();
+        d.body.push(para("HEADING", keep_next));
+        d.body.push(para(body, false));
+        let l = lay(&d);
+        let last = body.len().min(3);
+        [Pos::body(fillers, 0), Pos::body(fillers + 1, 0), Pos::body(fillers + 1, last)].map(|p| l.caret(&p).unwrap().page)
+    };
+    let long = "Ba\nBb\nBc\nBd";
+    // Find where one line of room is left under the heading: the next paragraph starts page 2.
+    let one = (20..80).find(|n| pages(*n, false, long, true) == [0, 1, 1]).expect("a filler count that leaves one line");
+    assert_eq!(pages(one - 1, false, long, true), [0, 0, 0], "a line less leaves room for two lines");
+    assert_eq!(pages(one, true, long, true), [1, 1, 1], "room for one line: the heading moves with the next paragraph");
+    assert_eq!(pages(one - 1, true, long, true), [0, 0, 0], "room for two lines: both stay");
+    assert_eq!(pages(one, true, long, false), [0, 0, 1], "no widow/orphan control: the first line fits, both stay");
+    assert_eq!(pages(one, true, "Ba", true), [0, 0, 0], "a one-line next paragraph fits, both stay");
+}
+
 /// An empty paragraph that only carries a section break before a continuous section takes no
 /// room, measured in Word for Windows (`plan/word` R21, 10 cases): the text after it follows right
 /// on, and columns balanced above it don't count it (two one-line paragraphs in two columns sit
