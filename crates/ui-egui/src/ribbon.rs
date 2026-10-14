@@ -140,6 +140,46 @@ pub fn in_table_public(app: &WordApp) -> bool {
     app.session.sel.focus.path.cell().is_some()
 }
 
+/// Width of the tab strip's right-hand buttons as icons (Share, Editing mode, Comments).
+const RIGHT_COMPACT_W: f32 = 3.0 * 30.0;
+
+/// How the tab strip fits `avail` points: whether the right-hand buttons show as icons, and
+/// which tabs show in the strip and which go to the "»" menu (#1110).
+#[derive(Debug, PartialEq)]
+pub(crate) struct TabFit {
+    pub compact: bool,
+    pub visible: Vec<usize>,
+    pub overflow: Vec<usize>,
+}
+
+/// Fit tabs of `widths` beside the right-hand buttons (`right_full` wide with labels,
+/// `right_compact` as icons): labels when everything fits, else icons, and when the tabs still
+/// don't fit, the leading ones up to the room left (plus the active tab, always shown) and the
+/// rest in the "»" menu.
+pub(crate) fn fit_tabs(widths: &[f32], active: Option<usize>, avail: f32, right_full: f32, right_compact: f32) -> TabFit {
+    const GAP: f32 = 2.0;
+    const MORE_W: f32 = 28.0;
+    let all: f32 = widths.iter().map(|w| w + GAP).sum();
+    let compact = all + right_full > avail;
+    let room = avail - if compact { right_compact } else { right_full };
+    if all <= room {
+        return TabFit { compact, visible: (0..widths.len()).collect(), overflow: Vec::new() };
+    }
+    let mut used = MORE_W + active.and_then(|a| widths.get(a)).map_or(0.0, |w| w + GAP);
+    let (mut visible, mut overflow) = (Vec::new(), Vec::new());
+    for (i, w) in widths.iter().enumerate() {
+        if Some(i) == active {
+            visible.push(i);
+        } else if overflow.is_empty() && used + w + GAP <= room {
+            used += w + GAP;
+            visible.push(i);
+        } else {
+            overflow.push(i);
+        }
+    }
+    TabFit { compact, visible, overflow }
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     if app.session.view.read_mode {
@@ -196,13 +236,31 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                for (tab, custom) in &tabs {
+                // A narrow window (#1110): the buttons on the right turn into icons, and the tabs
+                // that still don't fit (never the active one) move into a "»" menu, rather than
+                // running under the buttons. The right group's full width is measured when drawn.
+                let widths: Vec<f32> = tabs
+                    .iter()
+                    .map(|(n, c)| {
+                        let shown = if *c { n.as_str() } else { tl!(n.as_str()) };
+                        ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0
+                    })
+                    .collect();
+                let right_id = ui.id().with("tab_strip_right_w");
+                let right_full = ui.data(|d| d.get_temp::<f32>(right_id)).unwrap_or(300.0);
+                let fit =
+                    fit_tabs(&widths, tabs.iter().position(|(n, _)| *n == app.ui.tab), ui.available_width() - 12.0, right_full, RIGHT_COMPACT_W);
+                let compact = fit.compact;
+                for &i in &fit.visible {
+                    let Some((tab, custom)) = tabs.get(i) else { continue };
                     let (tab, custom) = (tab.as_str(), *custom);
                     let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
                     // A custom tab's name is the user's own text: shown as typed.
                     let shown = if custom { tab } else { tl!(tab) };
                     let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
                     let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
+                    let active_now = app.ui.tab == tab && !app.ui.backstage;
+                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active_now, shown));
                     if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
                         crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
                     }
@@ -225,15 +283,30 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     }
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
                 }
+                if !fit.overflow.is_empty() {
+                    let more = crate::widgets::icon_button(ui, "chevronDoubleRight", tl!("More tabs"));
+                    more.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("More tabs")));
+                    egui::Popup::menu(&more).show(|ui| {
+                        for &i in &fit.overflow {
+                            let Some((tab, custom)) = tabs.get(i) else { continue };
+                            if ui.button(if *custom { tab.as_str() } else { tl!(tab.as_str()) }).clicked() {
+                                let _ = app.run("ui.tab", json!({"tab": tab}));
+                                ui.close();
+                            }
+                        }
+                    });
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // No document open (#1129): nothing to share, edit or comment on.
                     if !app.has_document() {
                         ui.disable();
                     }
-                    // Share, Editing mode, Comments.
+                    // Share, Editing mode, Comments (icons only in a narrow window).
                     let share = tl!("Share");
                     let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
-                    let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
+                    let w = if compact { 28.0 } else { (share_w + 36.0).max(74.0) };
+                    let (r, resp) = ui.allocate_exact_size(vec2(w, 24.0), Sense::click());
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, share));
                     ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
                     icons::paint(
                         ui.painter(),
@@ -242,14 +315,21 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         t.on_accent,
                         t.on_accent,
                     );
-                    ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), t.on_accent);
+                    if !compact {
+                        ui.painter().text(pos2(r.min.x + 26.0, r.center().y), Align2::LEFT_CENTER, share, medium(12.0), t.on_accent);
+                    }
                     if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
                         let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
                     }
                     ui.add_space(6.0);
                     let track = app.session.doc.settings.track_changes;
-                    let mode =
-                        crate::widgets::icon_text_menu_button(ui, "pencil", if track { tl!("Reviewing") } else { tl!("Editing") }, regular(12.0));
+                    let mode_label = if track { tl!("Reviewing") } else { tl!("Editing") };
+                    let mode = if compact {
+                        crate::widgets::icon_button(ui, "pencil", mode_label)
+                    } else {
+                        crate::widgets::icon_text_menu_button(ui, "pencil", mode_label, regular(12.0))
+                    };
+                    mode.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, mode_label));
                     egui::Popup::menu(&mode).show(|ui| {
                         if ui.selectable_label(!track, tl!(tl!("Editing — edit the document directly"))).clicked() {
                             let _ = app.run("review.trackChanges", json!({"value": false}));
@@ -261,8 +341,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         }
                     });
                     ui.add_space(4.0);
-                    if crate::widgets::icon_text_button(ui, "comment", tl!("Comments"), regular(12.0)).clicked() {
+                    let comments = if compact {
+                        crate::widgets::icon_button(ui, "comment", tl!("Comments"))
+                    } else {
+                        crate::widgets::icon_text_button(ui, "comment", tl!("Comments"), regular(12.0))
+                    };
+                    comments.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Comments")));
+                    if comments.clicked() {
                         let _ = app.run("view.commentsPane", json!({}));
+                    }
+                    if !compact {
+                        let w = ui.min_rect().width();
+                        ui.data_mut(|d| d.insert_temp(right_id, w));
                     }
                 });
             });
@@ -2424,6 +2514,59 @@ mod tests {
         let mut b = Vec::new();
         image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut b), image::ImageFormat::Png).unwrap();
         wordcraft_engine::cmd::insert::base64_encode(&b)
+    }
+
+    /// #1110: the tab strip makes room for the buttons on its right — labels, then icons, then a
+    /// "»" menu for the tabs that don't fit — and always shows the active tab.
+    #[test]
+    fn fit_tabs_shrinks_the_buttons_then_moves_tabs_into_a_menu() {
+        let w = [40.0, 50.0, 60.0, 70.0, 80.0];
+        let all = (0..5).collect::<Vec<_>>();
+        assert_eq!(fit_tabs(&w, Some(0), 1000.0, 300.0, 90.0), TabFit { compact: false, visible: all.clone(), overflow: vec![] });
+        assert_eq!(fit_tabs(&w, Some(0), 500.0, 300.0, 90.0), TabFit { compact: true, visible: all, overflow: vec![] });
+        // 250 wide: 160 for tabs and the "»" button after the icons.
+        let narrow = fit_tabs(&w, Some(4), 250.0, 300.0, 90.0);
+        assert!(narrow.compact);
+        assert!(narrow.visible.contains(&4), "the active tab stays: {narrow:?}");
+        assert_eq!(narrow.visible.len() + narrow.overflow.len(), 5);
+        assert_eq!(narrow.visible, vec![0, 4], "the leading tabs that fit, then the active one");
+        assert_eq!(narrow.overflow, vec![1, 2, 3]);
+    }
+
+    /// #1110: in a narrow window no tab runs under the Comments / Editing / Share buttons, and the
+    /// active tab is shown; the tabs left out are in the "»" menu.
+    #[test]
+    fn a_narrow_window_keeps_the_tabs_clear_of_the_buttons_on_the_right() {
+        use egui_kittest::kittest::Queryable;
+        for (width, tab) in [(1440.0, "Home"), (1024.0, "Review"), (820.0, "View"), (640.0, "Help")] {
+            let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), Default::default());
+            app.ui.tab = tab.into();
+            let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(width, 700.0)).build_ui_state(
+                |ui, app: &mut WordApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
+            for _ in 0..6 {
+                h.step();
+            }
+            let comments = h.get_by_label("Comments").rect();
+            let mut shown = Vec::new();
+            for name in ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Help"] {
+                let Some(node) = h.query_by_label(name) else { continue };
+                let r = node.rect();
+                if (r.center().y - comments.center().y).abs() > 10.0 {
+                    continue; // the same text elsewhere (a ribbon group or button)
+                }
+                assert!(r.right() <= comments.left() + 0.5, "{width} wide: {name} ({r:?}) runs under Comments ({comments:?})");
+                shown.push(name);
+            }
+            assert!(shown.contains(&tab), "{width} wide: the active tab {tab} is shown ({shown:?})");
+            let more = h.query_by_label("More tabs");
+            assert_eq!(more.is_some(), shown.len() < 11, "{width} wide: the » menu holds the rest ({shown:?})");
+        }
     }
 
     /// The style set gallery fills exactly its own box and the next control starts after a gap,
