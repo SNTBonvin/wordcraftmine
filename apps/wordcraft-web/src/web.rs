@@ -164,12 +164,7 @@ const MAX_PASTED_PICTURES: u32 = 20;
 fn listen_for_pasted_pictures(inbox: Inbox, ctx: egui::Context) -> Result<(), String> {
     let document = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;
     let on_paste = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::ClipboardEvent)>::new(move |e: web_sys::ClipboardEvent| {
-        // A paste aimed at a browser field (none today; the app draws its own) is not ours.
-        if let Some(t) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
-            if matches!(t.tag_name().as_str(), "INPUT" | "TEXTAREA") || t.has_attribute("contenteditable") {
-                return;
-            }
-        }
+        // The target is always eframe's hidden text input while the page has focus; the app decides (#1349).
         let Some(data) = e.clipboard_data() else { return };
         if !data.get_data("text").unwrap_or_default().is_empty() {
             return;
