@@ -1,6 +1,6 @@
 //! The ribbon: tab strip and every tab's groups. Each control runs a command by id.
 
-use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::colors::{Remember, Target};
@@ -189,6 +189,46 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.ui.tab = next.to_string();
         }
     }
+    // Ribbon tab transition state (smooth fade and slide when switching tabs, like Word).
+    let animations_enabled = app.animations_on() && ui.style().animation_time > 0.0;
+    let transition_id = egui::Id::new("ribbon_tab_transition");
+    let mut transition = ui.ctx().data_mut(|d| d.get_temp::<RibbonTransition>(transition_id)).unwrap_or_default();
+    let mut tab_just_switched = false;
+    if transition.current_tab.is_empty() {
+        transition.current_tab = app.ui.tab.clone();
+        transition.switch_time = 0.0;
+        transition.direction = 1.0;
+        transition.active = false;
+    } else if transition.current_tab != app.ui.tab {
+        let old_pos = tabs.iter().position(|(t, _)| t == &transition.current_tab);
+        let new_pos = tabs.iter().position(|(t, _)| t == &app.ui.tab);
+        let direction = match (old_pos, new_pos) {
+            (Some(o), Some(n)) if n < o => -1.0,
+            _ => 1.0,
+        };
+        transition.current_tab = app.ui.tab.clone();
+        transition.switch_time = ui.ctx().input(|i| i.time);
+        transition.direction = direction;
+        transition.active = true;
+        tab_just_switched = true;
+    }
+
+    let now = ui.ctx().input(|i| i.time);
+    let elapsed = (now - transition.switch_time).max(0.0);
+    let anim_duration = 0.16; // 160ms smooth transition
+    let (content_opacity, slide_offset) = if transition.active && animations_enabled && elapsed < anim_duration {
+        ui.ctx().request_repaint();
+        let t = (elapsed / anim_duration) as f32;
+        let ease = 1.0 - (1.0 - t).powi(3);
+        let opacity = (0.2 + 0.8 * ease).clamp(0.0, 1.0);
+        let offset = transition.direction * (16.0 * (1.0 - ease));
+        (opacity, offset)
+    } else {
+        transition.active = false;
+        (1.0, 0.0)
+    };
+    ui.ctx().data_mut(|d| d.insert_temp(transition_id, transition));
+
     // Tab strip.
     egui::Panel::top("tabs")
         .exact_size(30.0)
@@ -196,6 +236,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                let mut active_indicator = None;
                 for (tab, custom) in &tabs {
                     let (tab, custom) = (tab.as_str(), *custom);
                     let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
@@ -213,8 +254,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let color = if contextual || active { t.accent_text } else { t.text };
                     ui.painter().text(r.center(), Align2::CENTER_CENTER, shown, if active { semibold(12.5) } else { medium(12.5) }, color);
                     if active {
-                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
-                        ui.painter().rect_filled(u, 2.0, t.accent);
+                        active_indicator = Some((r.center().x, r.max.y - 2.0, w - 16.0));
                     }
                     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, shown));
                     if resp.clicked() {
@@ -224,6 +264,13 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         let _ = app.run("ui.collapseRibbon", json!({}));
                     }
                     resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
+                }
+                if let Some((target_x, y, target_w)) = active_indicator {
+                    let anim_time = if animations_enabled { 0.16 } else { 0.0 };
+                    let cur_x = ui.ctx().animate_value_with_time(ui.id().with("tab_indicator_x"), target_x, anim_time);
+                    let cur_w = ui.ctx().animate_value_with_time(ui.id().with("tab_indicator_w"), target_w, anim_time);
+                    let u = Rect::from_center_size(pos2(cur_x, y), vec2(cur_w, 3.0));
+                    ui.painter().rect_filled(u, 2.0, t.accent);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // No document open (#1129): nothing to share, edit or comment on.
@@ -285,43 +332,34 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             let bg = ui.interact(ui.max_rect(), ui.id().with("ribbon_background"), Sense::click());
             bg.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
             let entry = user_tabs.iter().find(|e| e.name == app.ui.tab);
-            let scroll = egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
-                    match entry {
-                        // Every tab hidden: nothing to show.
-                        Some(e) if e.hidden => return,
-                        Some(e) if e.custom => return custom_groups(app, ui, &e.groups),
-                        _ => {}
+            let scroll_id = ui.id().with("ribbon_scroll");
+            if tab_just_switched {
+                let mut state = egui::scroll_area::State::load(ui.ctx(), scroll_id).unwrap_or_default();
+                state.offset.x = 0.0;
+                state.store(ui.ctx(), scroll_id);
+            }
+            let scroll = egui::ScrollArea::horizontal()
+                .id_salt("ribbon_scroll")
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .show(ui, |ui| {
+                    if content_opacity < 1.0 {
+                        ui.set_opacity(content_opacity);
                     }
-                    match app.ui.tab.as_str() {
-                        "Home" => home(app, ui),
-                        "Insert" => insert(app, ui),
-                        "Draw" => draw(app, ui),
-                        "Design" => design(app, ui),
-                        "Layout" => layout(app, ui),
-                        "References" => references(app, ui),
-                        "Mailings" => mailings(app, ui),
-                        "Review" => review(app, ui),
-                        "View" => view(app, ui),
-                        "Developer" => developer(app, ui),
-                        "Zotero" => zotero(app, ui),
-                        "Help" => help(app, ui),
-                        "Table Design" => table_design(app, ui),
-                        "Table Layout" => table_layout(app, ui),
-                        "Equation" if app.session.math.is_some() => crate::equation_tab::show(app, ui),
-                        "Picture Format" => picture_format(app, ui),
-                        "Shape Format" => shape_format(app, ui),
-                        "SmartArt Design" => smart_art_design(app, ui),
-                        "Outlining" => outlining(app, ui),
-                        "Chart Design" => chart_design(app, ui),
-                        _ => home(app, ui),
-                    }
-                    if let Some(e) = entry {
-                        custom_groups(app, ui, &e.groups);
-                    }
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                        if slide_offset.abs() > 0.001 {
+                            let avail = ui.available_rect_before_wrap();
+                            let shifted = avail.translate(vec2(slide_offset, 0.0));
+                            let mut child_ui = ui.new_child(UiBuilder::new().max_rect(shifted));
+                            child_ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                            render_tab_content(app, &mut child_ui, entry);
+                            let final_rect = child_ui.min_rect().translate(vec2(-slide_offset, 0.0));
+                            ui.advance_cursor_after_rect(final_rect);
+                        } else {
+                            render_tab_content(app, ui, entry);
+                        }
+                    });
                 });
-            });
             // The bar is hidden, so a row wider than the window would be clipped with no sign. Edge chevrons show
             // where more is and scroll it on click. Every command also stays reachable through Search Commands.
             let r = scroll.inner_rect;
@@ -347,6 +385,49 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 state.store(ui.ctx(), scroll.id);
             }
         });
+}
+
+#[derive(Clone, Debug, Default)]
+struct RibbonTransition {
+    current_tab: String,
+    switch_time: f64,
+    direction: f32,
+    active: bool,
+}
+
+fn render_tab_content(app: &mut WordApp, ui: &mut Ui, entry: Option<&wordcraft_engine::ribbon::TabEntry>) {
+    match entry {
+        // Every tab hidden: nothing to show.
+        Some(e) if e.hidden => return,
+        Some(e) if e.custom => return custom_groups(app, ui, &e.groups),
+        _ => {}
+    }
+    match app.ui.tab.as_str() {
+        "Home" => home(app, ui),
+        "Insert" => insert(app, ui),
+        "Draw" => draw(app, ui),
+        "Design" => design(app, ui),
+        "Layout" => layout(app, ui),
+        "References" => references(app, ui),
+        "Mailings" => mailings(app, ui),
+        "Review" => review(app, ui),
+        "View" => view(app, ui),
+        "Developer" => developer(app, ui),
+        "Zotero" => zotero(app, ui),
+        "Help" => help(app, ui),
+        "Table Design" => table_design(app, ui),
+        "Table Layout" => table_layout(app, ui),
+        "Equation" if app.session.math.is_some() => crate::equation_tab::show(app, ui),
+        "Picture Format" => picture_format(app, ui),
+        "Shape Format" => shape_format(app, ui),
+        "SmartArt Design" => smart_art_design(app, ui),
+        "Outlining" => outlining(app, ui),
+        "Chart Design" => chart_design(app, ui),
+        _ => home(app, ui),
+    }
+    if let Some(e) = entry {
+        custom_groups(app, ui, &e.groups);
+    }
 }
 
 /// Custom groups (Customize Ribbon, #379): up to three commands as large buttons, more as small
@@ -2582,5 +2663,48 @@ mod tests {
         assert_eq!(resolve_tab("Picture Format", &["Home"]), "Home");
         assert_eq!(resolve_tab("Table Design", &["Home"]), "Home");
         assert_eq!(resolve_tab("Home", &["Home"]), "Home");
+    }
+
+    #[test]
+    fn ribbon_tab_switch_animation() {
+        let app = WordApp::new(Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1200.0, 700.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+
+        // Turn on animations explicitly and give animation_time.
+        assert!(h.state_mut().run("ui.animations", json!({"value": "on"})).is_ok());
+        h.ctx.all_styles_mut(|s| s.animation_time = 0.16);
+        h.run_steps(1);
+
+        // Initially on Home tab.
+        assert_eq!(h.state().ui.tab, "Home");
+
+        // Switch to Insert (moving to the right).
+        assert!(h.state_mut().run("ui.tab", json!({"tab": "Insert"})).is_ok());
+        h.run_steps(1);
+
+        let transition = h.ctx.data(|d| d.get_temp::<RibbonTransition>(egui::Id::new("ribbon_tab_transition")));
+        assert!(transition.is_some(), "transition state should be recorded");
+        if let Some(tr) = transition {
+            assert_eq!(tr.current_tab, "Insert");
+            assert_eq!(tr.direction, 1.0, "moving forward/right should have positive direction");
+        }
+
+        // Switch backward to Home (moving to the left).
+        assert!(h.state_mut().run("ui.tab", json!({"tab": "Home"})).is_ok());
+        h.run_steps(1);
+
+        let transition = h.ctx.data(|d| d.get_temp::<RibbonTransition>(egui::Id::new("ribbon_tab_transition")));
+        assert!(transition.is_some(), "transition state should be recorded");
+        if let Some(tr) = transition {
+            assert_eq!(tr.current_tab, "Home");
+            assert_eq!(tr.direction, -1.0, "moving backward/left should have negative direction");
+        }
     }
 }
