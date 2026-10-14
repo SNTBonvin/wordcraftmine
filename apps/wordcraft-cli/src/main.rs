@@ -45,6 +45,20 @@ USAGE:
   wordcraft-cli --version
 ";
 
+const MCP_USAGE: &str = "\
+wordcraft-cli mcp — MCP server on stdio (headless, or bridged to the app)
+
+USAGE:
+  wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
+
+OPTIONS:
+  --connect HOST:PORT             connect to a running WordCraft app (e.g. 127.0.0.1:7981)
+  --author NAME                   author recorded on tracked changes and comments (headless only)
+  --automation-read-root DIR      confine files the agent's commands read (headless only)
+  --automation-write-root DIR     confine files the agent's commands write (headless only)
+  -h, --help                      print help
+";
+
 fn open(path: &str) -> Result<Session, String> {
     let doc = wordcraft_engine::io::open_path(std::path::Path::new(path))?;
     let mut s = Session::new(doc);
@@ -127,7 +141,11 @@ const RUN_OPTIONS: &[OptionSpec] = &[
 ];
 const COMMANDS_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--json", takes_value: false }];
 const PARITY_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--markdown", takes_value: false }];
-const MCP_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--connect", takes_value: true }, OptionSpec { name: "--author", takes_value: true }];
+const MCP_OPTIONS: &[OptionSpec] = &[
+    OptionSpec { name: "--connect", takes_value: true },
+    OptionSpec { name: "--author", takes_value: true },
+    OptionSpec { name: "--help", takes_value: false },
+];
 const ZOTERO_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--cmd", takes_value: true },
     OptionSpec { name: "--save", takes_value: true },
@@ -317,6 +335,9 @@ fn run(args: &[String]) -> Result<(), Failure> {
         "mcp" => {
             let (roots, rest) = automation_roots("mcp", &rest)?;
             validate_options("mcp", &rest, MCP_OPTIONS)?;
+            if rest.iter().any(|a| a == "--help" || a == "-h") {
+                return write_stdout(|o| write!(o, "{MCP_USAGE}"));
+            }
             let author = arg_value(&rest, "--author");
             let connect = arg_value(&rest, "--connect");
             if roots.is_some() && connect.is_some() {
@@ -463,6 +484,7 @@ mod tests {
         assert!(validate_options("commands", &args(&["--json"]), COMMANDS_OPTIONS).is_ok());
         assert!(validate_options("parity", &args(&["--markdown"]), PARITY_OPTIONS).is_ok());
         assert!(validate_options("mcp", &args(&["--connect", "127.0.0.1:9000"]), MCP_OPTIONS).is_ok());
+        assert!(validate_options("mcp", &args(&["--help"]), MCP_OPTIONS).is_ok());
         assert!(validate_options("render", &args(&["in.docx", "out.png", "--page"]), RENDER_OPTIONS).is_ok());
         assert!(
             validate_options(
@@ -479,6 +501,7 @@ mod tests {
         assert_eq!(run(&args(&["info", "missing.docx", "--passwrod", "x"])), Err("info: unknown option --passwrod".into()));
         assert_eq!(run(&args(&["render", "missing.docx", "out.png", "--sclae", "2"])), Err("render: unknown option --sclae".into()));
         assert_eq!(run(&args(&["zotero", "refresh", "missing.docx", "--prot", "1"])), Err("zotero: unknown option --prot".into()));
+        assert_eq!(run(&args(&["mcp", "--hepl"])), Err("mcp: unknown option --hepl".into()));
     }
 
     #[test]
@@ -498,6 +521,18 @@ mod tests {
         assert!(run(&args(&["run", "--author", "Claude", "--cmd", "review.trackChanges={\"value\":true}"])).is_ok());
         // The app's user name is the person's own; a bridge flag must not rewrite it.
         assert!(run(&args(&["mcp", "--connect", "127.0.0.1:9", "--author", "Claude"])).is_err_and(|e| e.to_string().contains("--author")));
+    }
+
+    #[test]
+    fn mcp_help_flag_prints_usage_and_options() {
+        assert!(MCP_USAGE.contains("wordcraft-cli mcp"));
+        assert!(MCP_USAGE.contains("--connect"));
+        assert!(MCP_USAGE.contains("--author"));
+        assert!(MCP_USAGE.contains("--automation-read-root"));
+        assert!(MCP_USAGE.contains("--automation-write-root"));
+        assert!(MCP_USAGE.contains("-h, --help"));
+        assert_eq!(run(&args(&["mcp", "--help"])), Ok(()));
+        assert_eq!(run(&args(&["mcp", "-h"])), Ok(()));
     }
 
     #[test]
