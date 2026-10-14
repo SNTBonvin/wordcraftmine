@@ -769,6 +769,30 @@ mod tests {
         assert!(h.state().ui.start_screen, "and on again");
     }
 
+    /// File › Options › Advanced › Editing: the alignment guides checkbox is the
+    /// `ui.alignmentGuides` setting.
+    #[test]
+    fn advanced_alignment_guides_checkbox_turns_snapping_off_and_on() {
+        let mut a = app();
+        a.run("file.options", json!({"pane": "advanced"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let label = "Show alignment guides when moving pictures and shapes";
+        h.get_by_label(label).click();
+        h.run_steps(4);
+        assert!(!h.state().ui.alignment_guides, "the checkbox turns them off");
+        h.get_by_label(label).click();
+        h.run_steps(4);
+        assert!(h.state().ui.alignment_guides, "and on again");
+    }
+
     /// File › Options › Advanced › Animation: the checkbox is the `ui.caretAnimation` setting,
     /// and the section is translated.
     #[test]
