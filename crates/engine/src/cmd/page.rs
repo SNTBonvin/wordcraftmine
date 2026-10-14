@@ -40,13 +40,14 @@ pub fn specs() -> Vec<CommandSpec> {
             .pure(),
         CommandSpec::new("layout.pageSetup", "Page Setup", "Layout › Page Setup", |s, v| {
             if let Some(props) = v.get("section") {
-                let new: SectionProps = serde_json::from_value(props.clone()).map_err(|e| CmdError::Params(e.to_string()))?;
+                let mut new: SectionProps = serde_json::from_value(props.clone()).map_err(|e| CmdError::Params(e.to_string()))?;
+                validate_section(&mut new)?;
                 return with_sect(s, |x| *x = new.clone());
             }
             s.ui_requests.push(json!({"open": "pageSetup"}));
             Ok(serde_json::to_value(sect(s)).unwrap_or(Value::Null))
         })
-        .params(r#"{"section"?: SectionProps}"#),
+        .params(r#"{"section"?: SectionProps} (checked like Size, Margins and Columns: non-finite numbers and margins that leave no room for text are refused; page sides 72–1584 pt, 1–12 columns with 0–300 pt gaps, header/footer/gutter 0–1584 pt, line numbers start 1–32767, countBy 1–100, distance 0–1584 pt are clamped)"#),
         CommandSpec::new("layout.verticalAlign", "Vertical Alignment", "Layout › Page Setup › Layout", |s, v| {
             let va = match p::str(v, "value") {
                 Some("center") => wordcraft_doc::props::VAlign::Center,
@@ -333,6 +334,56 @@ fn document_grid(s: &mut Session, v: &Value) -> CmdResult {
     Ok(grid_result(&sect(s), size))
 }
 
+/// Checks a whole section handed to `layout.pageSetup` by the rules of Size, Margins and
+/// Columns: a non-finite number or margins that leave no room for text is an error; the rest is
+/// clamped to the ranges those commands use.
+fn validate_section(x: &mut SectionProps) -> Result<(), CmdError> {
+    let bad = |what: &str| CmdError::Params(format!("section: {what} must be a finite number"));
+    let finite = [x.page_w, x.page_h, x.margin_top, x.margin_bottom, x.margin_left, x.margin_right, x.header, x.footer, x.gutter, x.columns.space];
+    if finite.iter().any(|n| !n.is_finite()) {
+        return Err(bad("sizes, margins, distances and column gaps"));
+    }
+    if x.columns.widths.iter().any(|(w, sp)| !w.is_finite() || !sp.is_finite()) {
+        return Err(bad("column widths"));
+    }
+    if x.line_numbers.as_ref().is_some_and(|l| !l.distance.is_finite()) {
+        return Err(bad("the line number distance"));
+    }
+    if x.doc_grid.as_ref().is_some_and(|g| !g.line_pitch.is_finite()) {
+        return Err(bad("the grid pitch"));
+    }
+    x.page_w = x.page_w.clamp(72.0, 1584.0);
+    x.page_h = x.page_h.clamp(72.0, 1584.0);
+    x.margin_top = x.margin_top.max(0.0);
+    x.margin_bottom = x.margin_bottom.max(0.0);
+    x.margin_left = x.margin_left.max(0.0);
+    x.margin_right = x.margin_right.max(0.0);
+    x.header = x.header.clamp(0.0, 1584.0);
+    x.footer = x.footer.clamp(0.0, 1584.0);
+    x.gutter = x.gutter.clamp(0.0, 1584.0);
+    if x.margin_left + x.margin_right + x.gutter > x.page_w - 36.0 || x.margin_top + x.margin_bottom > x.page_h - 36.0 {
+        return Err(CmdError::Params("margins leave no room for text".into()));
+    }
+    x.columns.count = x.columns.count.clamp(1, 12);
+    x.columns.space = x.columns.space.clamp(0.0, 300.0);
+    x.columns.widths.truncate(12);
+    for (w, sp) in &mut x.columns.widths {
+        *w = w.clamp(18.0, 1584.0);
+        *sp = sp.clamp(0.0, 300.0);
+    }
+    if let Some(l) = &mut x.line_numbers {
+        l.start = l.start.clamp(1, 32_767);
+        l.count_by = l.count_by.clamp(1, 100);
+        l.distance = l.distance.clamp(0.0, 1584.0);
+    }
+    if let Some(g) = &mut x.doc_grid {
+        g.line_pitch = g.line_pitch.clamp(MIN_GRID_PITCH, MAX_GRID_PITCH);
+        g.char_space = g.char_space.clamp(-MAX_CHAR_SPACE, MAX_CHAR_SPACE);
+    }
+    x.page_num_start = x.page_num_start.map(|n| n.min(100_000));
+    Ok(())
+}
+
 fn margins(s: &mut Session, v: &Value) -> CmdResult {
     let preset = p::str(v, "preset");
     let (t, b, l, r) = match preset {
@@ -538,6 +589,81 @@ mod tests {
 
     fn doc() -> Session {
         Session::new(wordcraft_doc::Document::from_text("one\ntwo\nthree"))
+    }
+
+    fn with_section(f: impl Fn(&mut Value)) -> Value {
+        let mut v = serde_json::to_value(SectionProps::default()).unwrap();
+        f(&mut v);
+        json!({"section": v})
+    }
+
+    /// `layout.pageSetup {section}` checks the values like the dedicated commands do.
+    #[test]
+    fn page_setup_section_is_validated() {
+        let mut s = doc();
+        let before = sect(&s);
+        // Refused with an error, nothing changes: non-finite (overflowing), margins that leave no text room.
+        for (what, p) in [
+            ("inf width", with_section(|v| v["pageW"] = json!(1e300))),
+            ("inf margin", with_section(|v| v["marginTop"] = json!(1e300))),
+            ("inf header", with_section(|v| v["header"] = json!(1e300))),
+            ("inf column space", with_section(|v| v["columns"]["space"] = json!(1e300))),
+            ("margins > page", with_section(|v| v["marginLeft"] = json!(5000.0))),
+            ("margins eat the height", with_section(|v| v["marginTop"] = json!(700.0))),
+            ("gutter eats the width", with_section(|v| v["gutter"] = json!(600.0))),
+        ] {
+            assert!(s.run("layout.pageSetup", &p).is_err(), "{what}");
+            assert_eq!(sect(&s), before, "{what}");
+        }
+        // Clamped.
+        s.run("layout.pageSetup", &with_section(|v| {
+            v["pageW"] = json!(-5.0);
+            v["pageH"] = json!(0.0);
+            v["marginTop"] = json!(-10.0);
+            v["marginBottom"] = json!(0.0);
+            v["marginLeft"] = json!(0.0);
+            v["marginRight"] = json!(0.0);
+            v["header"] = json!(-3.0);
+            v["footer"] = json!(1e6);
+            v["columns"]["count"] = json!(1000);
+            v["columns"]["space"] = json!(-4.0);
+            v["lineNumbers"] = json!({"countBy": 0, "start": 0, "distance": 1e6, "restart": "page"});
+        }))
+        .unwrap();
+        let x = sect(&s);
+        assert_eq!((x.page_w, x.page_h), (72.0, 72.0));
+        assert_eq!(x.margin_top, 0.0);
+        assert_eq!(x.header, 0.0);
+        assert!(x.footer <= 1584.0 && x.footer >= 0.0);
+        assert_eq!(x.columns.count, 12);
+        assert_eq!(x.columns.space, 0.0);
+        let l = x.line_numbers.unwrap();
+        assert_eq!((l.count_by, l.start, l.distance), (1, 1, 1584.0));
+        let mut s = doc();
+        s.run("layout.pageSetup", &with_section(|v| {
+            v["pageW"] = json!(1e5);
+            v["columns"]["count"] = json!(3);
+            v["columns"]["widths"] = json!(vec![json!([1.0, 1e5]); 40]);
+        }))
+        .unwrap();
+        let x = sect(&s);
+        assert_eq!(x.page_w, 1584.0);
+        assert!(x.columns.widths.len() <= 12 && x.columns.widths.iter().all(|(w, sp)| *w >= 18.0 && (0.0..=300.0).contains(sp)));
+    }
+
+    /// A valid section still applies as given.
+    #[test]
+    fn page_setup_section_applies_a_valid_one() {
+        let mut s = doc();
+        s.run("layout.pageSetup", &with_section(|v| {
+            v["pageW"] = json!(595.0);
+            v["pageH"] = json!(842.0);
+            v["marginLeft"] = json!(50.0);
+            v["columns"]["count"] = json!(2);
+        }))
+        .unwrap();
+        let x = sect(&s);
+        assert_eq!((x.page_w, x.page_h, x.margin_left, x.columns.count), (595.0, 842.0, 50.0, 2));
     }
 
     /// Layout › Text Direction turns the section, or the table cell the caret is in; one undo step.
