@@ -76,6 +76,9 @@ real_name = "Manuel Carmona"
 display_name = "manucarcor"
 [people.odedigo]
 
+[people.pwimero]
+sync_github_name = true
+
 [people.webdevtodayjason]
 display_name = "Jason Brashear"
 sync_github_name = false

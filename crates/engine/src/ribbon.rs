@@ -15,8 +15,8 @@ use crate::Registry;
 
 /// The ribbon's tabs in their default order. `File` opens Backstage: it is always first and
 /// isn't part of the customizable list.
-pub const TABS: [&str; 13] =
-    ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Developer", "Zotero", "Help"];
+pub const TABS: [&str; 14] =
+    ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Developer", "Zotero", "Agents", "Help"];
 /// Tabs that come up with the selection; custom tabs can't take their names.
 pub const CONTEXTUAL_TABS: [&str; 7] =
     ["Table Design", "Table Layout", "Picture Format", "Shape Format", "Equation", "Chart Design", "SmartArt Design"];
@@ -495,7 +495,7 @@ mod tests {
         let mut j: RibbonLayout = serde_json::from_value(junk).unwrap();
         j.retain_known(&reg);
         let tabs = j.tabs();
-        assert_eq!(tabs.len(), TABS.len(), "11 built-in tabs and Mine: {tabs:?}");
+        assert_eq!(tabs.len(), TABS.len(), "13 built-in tabs and Mine: {tabs:?}");
         assert_eq!(tabs[0].groups[0].commands, ["format.bold"]);
         assert!(tabs.iter().any(|t| t.custom && t.name == "Mine" && !t.hidden));
         assert_eq!(j.qat(), ["edit.undo"]);

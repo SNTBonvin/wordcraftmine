@@ -5,8 +5,8 @@ use std::sync::Arc;
 use egui::{Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Rect, Stroke, Visuals};
 
 /// WordCraft's app colour (and its darker ink for text on light backgrounds).
-pub const APP_COLOR: Color32 = Color32::from_rgb(0x3B, 0x5B, 0xDB);
-pub const APP_INK: Color32 = Color32::from_rgb(0x2B, 0x47, 0xB5);
+pub const APP_COLOR: Color32 = Color32::from_rgb(0x2E, 0x63, 0xC8);
+pub const APP_INK: Color32 = Color32::from_rgb(0x24, 0x50, 0xA8);
 
 /// The interface theme setting (File › Options › General, View › Interface Theme): a fixed light or
 /// dark palette, or `System`, which follows the OS light/dark appearance live (#115). Dark page
@@ -235,6 +235,10 @@ pub struct Tokens {
     pub dark: bool,
     pub title_bar: Color32,
     pub ribbon: Color32,
+    pub stage_background: Color32,
+    pub stage_header: Color32,
+    pub stage_alternate: Color32,
+    pub stage_tab: Color32,
     pub tab_strip: Color32,
     pub canvas: Color32,
     pub panel: Color32,
@@ -270,16 +274,30 @@ pub struct Tokens {
     pub red: Color32,
     pub green: Color32,
     pub orange: Color32,
+    pub chat: Color32,
+    pub chat_surface: Color32,
+    pub chat_user: Color32,
+    pub chat_text: Color32,
+    pub chat_dim: Color32,
+    pub chat_send: Color32,
+    pub chat_send_text: Color32,
+    pub diff_add: Color32,
+    pub diff_remove: Color32,
+    pub diff_format: Color32,
 }
 
 impl Tokens {
     pub fn light() -> Self {
         Tokens {
             dark: false,
-            title_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
-            ribbon: Color32::from_rgb(0xF9, 0xF9, 0xF9),
-            tab_strip: Color32::from_rgb(0xF0, 0xF0, 0xF0),
-            canvas: Color32::from_rgb(0xE6, 0xE6, 0xE6),
+            title_bar: Color32::from_rgb(0xF5, 0xF5, 0xF5),
+            ribbon: Color32::from_rgb(0xF5, 0xF5, 0xF5),
+            stage_background: Color32::from_rgb(0xFA, 0xFA, 0xFA),
+            stage_header: Color32::from_rgb(0xE9, 0xE9, 0xE9),
+            stage_alternate: Color32::from_rgb(0xEE, 0xEE, 0xEE),
+            stage_tab: Color32::from_gray(220),
+            tab_strip: Color32::from_rgb(0xF5, 0xF5, 0xF5),
+            canvas: Color32::from_rgb(0xEC, 0xEC, 0xEC),
             panel: Color32::from_rgb(0xFA, 0xFA, 0xFA),
             border: Color32::from_rgb(0xE1, 0xE1, 0xE1),
             border_strong: Color32::from_rgb(0xC8, 0xC8, 0xC8),
@@ -297,10 +315,10 @@ impl Tokens {
             input_border: Color32::from_rgb(0x8A, 0x8A, 0x8A),
             group_label: Color32::from_rgb(0x70, 0x70, 0x70),
             ruler: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-            ruler_margin: Color32::from_rgb(0xD4, 0xD4, 0xD4),
+            ruler_margin: Color32::from_rgb(0xE0, 0xE0, 0xE0),
             ruler_tick: Color32::from_rgb(0x70, 0x70, 0x70),
             status_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
-            selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
+            selection: Color32::from_rgba_unmultiplied(0x2E, 0x63, 0xC8, 0x48),
             find_highlight: Color32::from_rgba_unmultiplied(0xFF, 0xE0, 0x3D, 0x90),
             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x22),
             handle: Color32::WHITE,
@@ -310,15 +328,29 @@ impl Tokens {
             red: Color32::from_rgb(0xD1, 0x3B, 0x3B),
             green: Color32::from_rgb(0x2E, 0x8B, 0x57),
             orange: Color32::from_rgb(0xE0, 0x7B, 0x1F),
+            chat: Color32::WHITE,
+            chat_surface: Color32::from_rgb(0xF3, 0xF3, 0xF3),
+            chat_user: Color32::from_rgb(0xF0, 0xF0, 0xF0),
+            chat_text: Color32::from_rgb(0x24, 0x24, 0x24),
+            chat_dim: Color32::from_rgb(0x70, 0x70, 0x70),
+            chat_send: Color32::from_rgb(0x20, 0x20, 0x20),
+            chat_send_text: Color32::WHITE,
+            diff_add: Color32::from_rgb(0x31, 0x86, 0x67),
+            diff_remove: Color32::from_rgb(0xBE, 0x57, 0x67),
+            diff_format: Color32::from_rgb(0x79, 0x6A, 0xBC),
         }
     }
     pub fn dark() -> Self {
         Tokens {
             dark: true,
-            title_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            ribbon: Color32::from_rgb(0x29, 0x29, 0x29),
-            tab_strip: Color32::from_rgb(0x1F, 0x1F, 0x1F),
-            canvas: Color32::from_rgb(0x14, 0x14, 0x14),
+            title_bar: Color32::from_rgb(0x25, 0x25, 0x25),
+            ribbon: Color32::from_rgb(0x25, 0x25, 0x25),
+            stage_background: Color32::from_rgb(0x20, 0x20, 0x20),
+            stage_header: Color32::from_rgb(0x30, 0x30, 0x30),
+            stage_alternate: Color32::from_rgb(0x29, 0x2A, 0x2A),
+            stage_tab: Color32::from_gray(160),
+            tab_strip: Color32::from_rgb(0x25, 0x25, 0x25),
+            canvas: Color32::from_rgb(0x25, 0x25, 0x25),
             panel: Color32::from_rgb(0x26, 0x26, 0x26),
             border: Color32::from_rgb(0x3A, 0x3A, 0x3A),
             border_strong: Color32::from_rgb(0x55, 0x55, 0x55),
@@ -350,6 +382,16 @@ impl Tokens {
             red: Color32::from_rgb(0xEE, 0x6A, 0x6A),
             green: Color32::from_rgb(0x5B, 0xC0, 0x8A),
             orange: Color32::from_rgb(0xF0, 0xA0, 0x50),
+            chat: Color32::BLACK,
+            chat_surface: Color32::from_rgb(0x20, 0x20, 0x20),
+            chat_user: Color32::from_rgb(0x2B, 0x2B, 0x2B),
+            chat_text: Color32::from_rgb(0xEC, 0xEC, 0xEC),
+            chat_dim: Color32::from_rgb(0xAC, 0xAC, 0xAC),
+            chat_send: Color32::from_rgb(0xF0, 0xF0, 0xF0),
+            chat_send_text: Color32::from_rgb(0x18, 0x18, 0x18),
+            diff_add: Color32::from_rgb(0x77, 0xCA, 0xA5),
+            diff_remove: Color32::from_rgb(0xEE, 0x98, 0xA4),
+            diff_format: Color32::from_rgb(0xB7, 0xA9, 0xE8),
         }
     }
     pub fn get(ctx: &egui::Context) -> Tokens {
@@ -450,6 +492,24 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     }
     fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
     fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
+    // The installed San Francisco variable face supplies real native weights. Keep the bundled
+    // faces as fallbacks when the platform font is unavailable (headless/non-Mac builds).
+    #[cfg(target_os = "macos")]
+    for (style, weight, family) in [
+        ("Regular", 400.0, FontFamily::Proportional),
+        ("Medium", 500.0, FontFamily::Name("medium".into())),
+        ("Semibold", 600.0, FontFamily::Name("semibold".into())),
+    ] {
+        if let Some(bytes) = macos_ui_font() {
+            let name = format!("macOS UI {style}");
+            let mut data = FontData::from_static(bytes);
+            data.tweak.coords = egui::epaint::text::VariationCoords::new([(b"wght", weight), (b"opsz", 14.0)]);
+            fonts.font_data.insert(name.clone(), Arc::new(data));
+            if let Some(list) = fonts.families.get_mut(&family) {
+                list.insert(0, name);
+            }
+        }
+    }
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
@@ -476,6 +536,19 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     let _ = system_cjk;
     // Symbols and emoji fall back to egui's defaults (kept in the families).
     fonts
+}
+
+#[cfg(target_os = "macos")]
+fn macos_ui_font() -> Option<&'static [u8]> {
+    use std::io::Read;
+    static FONT: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
+    FONT.get_or_init(|| {
+        let file = std::fs::File::open("/System/Library/Fonts/SFNS.ttf").ok()?;
+        let mut bytes = Vec::new();
+        file.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes).ok()?;
+        (bytes.len() <= 16 * 1024 * 1024 && !FontData::from_owned(bytes.clone()).variation_axes().is_empty()).then_some(bytes)
+    })
+    .as_deref()
 }
 
 /// The installed CJK interface font for a Chinese (`hans`) or other interface, chosen once:

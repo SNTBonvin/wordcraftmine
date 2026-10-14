@@ -9,7 +9,7 @@ use crate::theme::{Tokens, medium, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, big, big_toggle, combo, font_combo, group, menu_button, small, split};
 use crate::{WordApp, icons};
 
-pub const TABS: [&str; 13] = wordcraft_engine::ribbon::TABS;
+pub const TABS: [&str; 14] = wordcraft_engine::ribbon::TABS;
 
 /// True when the caret/selection touches a picture (#147).
 pub fn has_picture_selected(s: &wordcraft_engine::Session) -> bool {
@@ -172,7 +172,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     // contextual ones (the Outlining tab right after File). A contextual tab (Table, Picture
     // Format) may be stored while the selection moved away, and a tab may have been hidden.
     let user_tabs = app.session.ribbon.tabs().into_owned();
-    let mut tabs: Vec<(String, bool)> = vec![("File".to_string(), false)];
+    let mut tabs: Vec<(String, bool)> = if app.integrated_titlebar { Vec::new() } else { vec![("File".to_string(), false)] };
     tabs.extend(user_tabs.iter().filter(|e| !e.hidden).map(|e| (e.name.clone(), e.custom)));
     for ct in contextual_tabs(&app.session) {
         if ct == "Outlining" {
@@ -196,36 +196,63 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                for (tab, custom) in &tabs {
-                    let (tab, custom) = (tab.as_str(), *custom);
-                    let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
-                    // A custom tab's name is the user's own text: shown as typed.
-                    let shown = if custom { tab } else { tl!(tab) };
-                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
-                    let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
-                    if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
-                        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
-                    }
-                    let active = app.ui.tab == tab && !app.ui.backstage;
-                    if resp.hovered() && !active {
-                        ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
-                    }
-                    let color = if contextual || active { t.accent_text } else { t.text };
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, shown, if active { semibold(12.5) } else { medium(12.5) }, color);
-                    if active {
-                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
-                        ui.painter().rect_filled(u, 2.0, t.accent);
-                    }
-                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, shown));
-                    if resp.clicked() {
-                        let _ = app.run("ui.tab", json!({"tab": tab}));
-                    }
-                    if resp.double_clicked() && tab != "File" {
-                        let _ = app.run("ui.collapseRibbon", json!({}));
-                    }
-                    resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let toolbar_width = 300.0_f32.min(ui.available_width() * 0.45);
+                let tab_width = (ui.available_width() - toolbar_width - 2.0).max(80.0);
+                ui.allocate_ui_with_layout(vec2(tab_width, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_width(tab_width);
+                    egui::ScrollArea::horizontal()
+                        .id_salt("ribbon_tab_labels")
+                        .max_width(tab_width)
+                        .max_height(30.0)
+                        .auto_shrink([false, false])
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for (tab, custom) in &tabs {
+                                    let (tab, custom) = (tab.as_str(), *custom);
+                                    let contextual = !custom && wordcraft_engine::ribbon::CONTEXTUAL_TABS.contains(&tab);
+                                    // A custom tab's name is the user's own text: shown as typed.
+                                    let shown = if custom { tab } else { tl!(tab) };
+                                    let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
+                                    let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
+                                    if app.ui.keytips == crate::keytips::Phase::Tabs && app.ui.keytip_prefix.is_empty() {
+                                        crate::keytips::record_tab(r, tab, &mut app.keytip_rects);
+                                    }
+                                    let active = app.ui.tab == tab && !app.ui.backstage;
+                                    if resp.hovered() && !active {
+                                        ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
+                                    }
+                                    let color = if contextual || active { t.accent_text } else { t.text };
+                                    ui.painter().text(
+                                        r.center(),
+                                        Align2::CENTER_CENTER,
+                                        shown,
+                                        if active { semibold(12.5) } else { medium(12.5) },
+                                        color,
+                                    );
+                                    if active {
+                                        let seen = ui.id().with("revealed_active_tab");
+                                        if ui.ctx().data(|d| d.get_temp::<String>(seen)).as_deref() != Some(tab) {
+                                            ui.scroll_to_rect(r, Some(egui::Align::Center));
+                                            ui.ctx().data_mut(|d| d.insert_temp(seen, tab.to_string()));
+                                        }
+                                        let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
+                                        ui.painter().rect_filled(u, 2.0, t.accent);
+                                    }
+                                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, shown));
+                                    if resp.clicked() {
+                                        let _ = app.run("ui.tab", json!({"tab": tab}));
+                                    }
+                                    if resp.double_clicked() && tab != "File" {
+                                        let _ = app.run("ui.collapseRibbon", json!({}));
+                                    }
+                                    resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
+                                }
+                            });
+                        });
+                });
+                ui.allocate_ui_with_layout(vec2(toolbar_width, 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.set_width(toolbar_width);
                     // No document open (#1129): nothing to share, edit or comment on.
                     if !app.has_document() {
                         ui.disable();
@@ -234,6 +261,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let share = tl!("Share");
                     let share_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(share.to_string(), medium(12.0), t.text).size().x);
                     let (r, resp) = ui.allocate_exact_size(vec2((share_w + 36.0).max(74.0), 24.0), Sense::click());
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), share));
                     ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.accent_text } else { t.accent });
                     icons::paint(
                         ui.painter(),
@@ -306,6 +334,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "View" => view(app, ui),
                         "Developer" => developer(app, ui),
                         "Zotero" => zotero(app, ui),
+                        "Agents" => agents(app, ui),
                         "Help" => help(app, ui),
                         "Table Design" => table_design(app, ui),
                         "Table Layout" => table_layout(app, ui),
@@ -525,13 +554,22 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
             mi(ui, app, "Paste Special…", "edit.pasteSpecial", json!({}));
         });
         stack(ui, |ui| {
-            small(ui, app, "cut", Some("Cut"), "Cut", "edit.cut", json!({}), false);
-            let r = small(ui, app, "copy", Some("Copy"), "Copy", "edit.copy", json!({}), false);
+            small(ui, app, "cut", if cfg!(target_os = "macos") { None } else { Some("Cut") }, "Cut", "edit.cut", json!({}), false);
+            let r = small(ui, app, "copy", if cfg!(target_os = "macos") { None } else { Some("Copy") }, "Copy", "edit.copy", json!({}), false);
             if r.clicked() {
                 crate::system_clipboard::put(app, ui.ctx(), &app.session.clipboard_text, &app.session.clipboard_html);
             }
             let active = app.session.painter.is_some();
-            small(ui, app, "painter", Some("Format"), "Format Painter", "edit.formatPainter", json!({}), active);
+            small(
+                ui,
+                app,
+                "painter",
+                if cfg!(target_os = "macos") { None } else { Some("Format") },
+                "Format Painter",
+                "edit.formatPainter",
+                json!({}),
+                active,
+            );
         });
     });
     group(ui, "Font", Some("format.fontDialog"), app, |ui, app| {
@@ -752,6 +790,9 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Styles", Some("styles.pane"), app, |ui, app| {
         crate::previews::style_gallery(app, ui, &st);
+        if app.integrated_titlebar {
+            big(ui, app, "stylesPane", "Styles Pane", "view.stylesPane", json!({"value":true}), false);
+        }
     });
     group(ui, "Editing", None, app, |ui, app| {
         stack(ui, |ui| {
@@ -1690,6 +1731,16 @@ fn view(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "newWindow", "New\nWindow", "view.newWindow", json!({}), false);
         big(ui, app, "arrangeAll", "Arrange\nAll", "view.arrangeAll", json!({}), false);
         big(ui, app, "split", "Split", "view.split", json!({}), false);
+        if app.native_document_windows {
+            ui.menu_button("Switch Windows", |ui| {
+                for (id, title) in app.document_windows.clone() {
+                    if ui.button(title).clicked() {
+                        let _ = app.run("ui.focusDocumentWindow", json!({"id":id}));
+                        ui.close();
+                    }
+                }
+            });
+        }
     });
     group(ui, "Macros", None, app, |ui, app| {
         big(ui, app, "macros", "Macros", "tools.macros", json!({}), false);
@@ -1762,8 +1813,48 @@ fn help(app: &mut WordApp, ui: &mut Ui) {
         big(ui, app, "help", "Help", "ui.dialog", json!({"name": "about"}), false);
         big(ui, app, "discord", "Community\nDiscord", "ui.discord", json!({}), false);
     });
-    group(ui, "Agents", None, app, |ui, app| {
-        big(ui, app, "macros", "Commands", "ui.dialog", json!({"name": "commands"}), false);
+}
+
+/// Local bridge to the running WordCraft window (`wordcraft-cli mcp --connect`).
+fn agents(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    group(ui, "Codex", None, app, |ui, app| {
+        ui.add_enabled_ui(!cfg!(target_arch = "wasm32"), |ui| {
+            big(ui, app, "textPane", "Codex\nChat", "ui.codexChat", json!({}), false);
+        });
+        if app.codex_is_ready() {
+            crate::widgets::big_toggle(ui, app, "macros", "Codex\nOn", "ui.codexConnect", true);
+        } else {
+            let enabled = !cfg!(target_arch = "wasm32");
+            ui.add_enabled_ui(enabled, |ui| {
+                big(ui, app, "macros", "Connect to\nCodex", "ui.codexConnect", json!({}), false)
+                    .on_hover_text(tl!("Start the local, protected connection Codex uses to control this WordCraft window."));
+            });
+        }
+    });
+    group(ui, "Assistant", None, app, |ui, app| {
+        ui.add_enabled_ui(!cfg!(target_arch = "wasm32"), |ui| {
+            crate::widgets::big_toggle(ui, app, "textPane", "Agent\nChat", "ui.ollama", app.ollama.open);
+            crate::widgets::big_toggle(ui, app, "restrict", "Allow AI\nEditing", "ui.ollamaEdit", app.ollama.allow_edits);
+            ui.add_enabled_ui(crate::ollama::can_undo(app), |ui| {
+                big(ui, app, "undo", "Undo AI\nChange", "ui.ollamaUndo", json!({}), false);
+            });
+        });
+    });
+    group(ui, "Connection", None, app, |ui, app| {
+        ui.vertical(|ui| {
+            if let Some(port) = app.codex_port().filter(|_| app.codex_is_ready()) {
+                ui.colored_label(t.green, tl!("Ready for Codex"));
+                ui.label(format!("127.0.0.1:{port}"));
+            } else if let Some(error) = app.codex_connection_error() {
+                ui.colored_label(t.red, error);
+            } else if cfg!(target_arch = "wasm32") {
+                ui.label(tl!("Connect from the desktop app."));
+            } else {
+                ui.label(tl!("Only this computer can connect."));
+                ui.label(tl!("The private key stays on this device."));
+            }
+        });
     });
 }
 

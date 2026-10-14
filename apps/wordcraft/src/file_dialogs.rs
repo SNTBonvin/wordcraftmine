@@ -52,10 +52,20 @@ impl Launcher {
     /// Show the queued dialogs with the window as their parent, so the portal (or the system)
     /// keeps them on top of it. Call after every pass that may ask for one.
     pub fn show(&self, parent: &eframe::Frame) {
+        self.show_with_parent(Some(parent));
+    }
+    /// eframe child viewports don't expose a safe native handle. A floating native picker avoids
+    /// attaching a sheet to the wrong document window.
+    pub fn show_unparented(&self) {
+        self.show_with_parent(None);
+    }
+    fn show_with_parent(&self, parent: Option<&eframe::Frame>) {
         while let Ok((req, answer)) = self.queue.try_recv() {
             // Built here, on the UI thread: macOS shows the panel as a sheet on the window now.
-            let dialog = rfd::AsyncFileDialog::new().set_parent(parent);
+            let dialog = rfd::AsyncFileDialog::new();
+            let dialog = if let Some(parent) = parent { dialog.set_parent(parent) } else { dialog };
             let picking: Picking = match req {
+                FileDialogRequest::Folder => Box::pin(dialog.pick_folder()),
                 FileDialogRequest::Open { purpose } => Box::pin(open_filters(dialog, &purpose).pick_file()),
                 FileDialogRequest::Save { name } => {
                     let exts = save_exts(&name);

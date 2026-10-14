@@ -52,6 +52,8 @@ pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
         "view": app.session.view,
         "dialog": app.dialog.as_ref().map(|d| serde_json::to_value(d).unwrap_or_default()),
         "window": [r.width(), r.height()],
+        "documentWindows":app.document_windows,
+        "viewNumber":app.window_view_number,
         "canvasRect": app.canvas.canvas_rect.map(|c| [c.left(), c.top(), c.width(), c.height()]),
         "pages": app.canvas.page_rects.iter().map(|r| [r.left(), r.top(), r.width(), r.height()]).collect::<Vec<_>>(),
         "scale": app.canvas.scale,
@@ -59,6 +61,8 @@ pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
         "balloons": app.canvas.balloon_rects.iter().map(|(id, r)| json!({"id": id, "rect": [r.left(), r.top(), r.width(), r.height()]})).collect::<Vec<_>>(),
         "balloon": app.canvas.balloon,
         "focused": app.canvas.focused,
+        "ollama": crate::ollama::inspect(app),
+        "codex": {"ready":app.codex_is_ready(),"port":app.codex_port()},
         "title": app.title_stem(),
         "dirty": app.session.dirty,
         "perf": {"frameMs": app.frame_ms, "renderMs": app.canvas.render_ms, "layoutMs": app.session.layout().ms},
@@ -127,6 +131,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
                 .map(|c| json!({"id": c.id, "label": c.label, "location": c.location, "shortcut": c.shortcut, "params": c.params, "enabled": (c.enabled)(&app.session).is_none()}))
                 .collect();
             commands.extend(crate::printing::commands(app));
+            commands.extend(crate::ollama::commands(app));
             let search = s("search").unwrap_or("").to_ascii_lowercase();
             if !search.is_empty() {
                 commands.retain(|command| {
@@ -262,7 +267,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             ok(json!({}))
         }
         "app.quit" => {
-            app.quit_requested = true;
+            app.request_application_quit();
             ok(json!({}))
         }
         other => {

@@ -62,6 +62,9 @@ fn quick_access(ui: &mut Ui, app: &mut WordApp) {
             undo_list_button(ui, app, enabled);
         }
     }
+    if app.integrated_titlebar && !ids.iter().any(|id| id == "file.print") {
+        qat_button(ui, app, "print", tl!("Print"), "file.print", true);
+    }
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(26.0, 24.0), Sense::hover());
     let resp = ui.interact(r, qat_menu_button_id(), Sense::click());
@@ -194,8 +197,8 @@ const MAC_LIGHT_PITCH: f32 = 20.0;
 const MAC_LIGHTS_LEFT: f32 = 10.0;
 /// Where title-bar content starts to the right of the traffic lights (the title bar here, the
 /// Backstage back button, #222): the end of the three lights plus the same gap the lights keep
-/// from the top of the window.
-pub const MAC_CONTENT_LEFT: f32 = MAC_LIGHTS_LEFT + 2.0 * MAC_LIGHT_PITCH + MAC_LIGHT + (MAC_TITLE_BAR - MAC_LIGHT) / 2.0;
+/// from the top of the window, plus 16 pt of breathing room.
+pub const MAC_CONTENT_LEFT: f32 = MAC_LIGHTS_LEFT + 2.0 * MAC_LIGHT_PITCH + MAC_LIGHT + (MAC_TITLE_BAR - MAC_LIGHT) / 2.0 + 16.0;
 
 pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -253,7 +256,11 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                     }
                 }
                 ui.add_space(8.0);
+                if mac && crate::widgets::icon_button(ui, "home", "Home").clicked() {
+                    let _ = app.run("ui.backstage", json!({"value":true,"page":"home"}));
+                }
                 quick_access(ui, app);
+
                 qat_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Account / community.
@@ -321,7 +328,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
             } else {
                 format!(
                     "{} — {}",
-                    app.title_stem(),
+                    app.display_title(),
                     if app.session.dirty {
                         tl!("Edited")
                     } else if app.session.path.is_some() {
@@ -585,10 +592,10 @@ mod tests {
 
     #[test]
     fn mac_title_bar_centres_and_clears_the_traffic_lights() {
-        // The lights are centred in the bar, and content keeps the same gap after them.
+        // The lights are centred in the bar; content keeps an additional 16 pt after them.
         let margin = (MAC_TITLE_BAR - MAC_LIGHT) / 2.0;
         let lights_end = MAC_LIGHTS_LEFT + 2.0 * MAC_LIGHT_PITCH + MAC_LIGHT;
-        assert_eq!(MAC_CONTENT_LEFT - lights_end, margin);
+        assert_eq!(MAC_CONTENT_LEFT - lights_end, margin + 16.0);
         // `egui::Margin` is in `i8`.
         assert!(MAC_CONTENT_LEFT <= f32::from(i8::MAX));
     }

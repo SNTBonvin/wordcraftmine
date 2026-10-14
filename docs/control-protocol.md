@@ -1,7 +1,9 @@
 # Control protocol
 
-Start the app with a control port: `wordcraft --control 7981` (or `WORDCRAFT_CONTROL_PORT=7981`).
-It listens on `127.0.0.1` only. Send one JSON object per line, with the window's key (see
+> **Last updated:** 2026-10-13 · **Change:** Agents connection toggle and Ollama/llama.cpp task-pane commands.
+Start the app with a control port: `wordcraft --control 7981` (or `WORDCRAFT_CONTROL_PORT=7981`),
+or in the desktop app choose **Agents › Connect to Codex** to start the protected control server on
+port 7981. It listens on `127.0.0.1` only. Send one JSON object per line, with the window's key (see
 [Keys](#keys)); each gets one reply line:
 
 ```json
@@ -97,3 +99,20 @@ and their parameter documentation. Search is case-insensitive across IDs, labels
 and parameter descriptions. Listing commands never discovers printers, submits a job or opens
 a dialog. Settings inspection is always available; submission becomes enabled when the native
 printer is ready, or when the browser host provides its print flow.
+
+## Agents commands (desktop)
+
+`ui.codexConnect {"value": false}` disconnects the server and drops queued requests;
+`{"value": true}` starts it again with a fresh private key. An omitted value toggles it.
+
+[Ollama chat](ollama.md) provides `ui.ollama`, `ui.ollamaSettings`, `ui.ollamaRefresh`,
+`ui.ollamaSend {"text": "…"}`, `ui.ollamaStop`, `ui.ollamaNewChat`,
+`ui.ollamaEdit {"value": false}`, `ui.ollamaInternet {"value": false}`, and `ui.ollamaUndo`.
+`ui.inspect.ollama` reports model, provider, chat status, editing permission and messages; it
+never exposes the API key. These UI commands are excluded from the Ollama document tool scope.
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-13 | minor | Agents connection lifecycle, desktop chat commands and credential-free diagnostics |

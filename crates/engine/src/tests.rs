@@ -5228,6 +5228,23 @@ fn insert_picture_takes_a_windows_metafile() {
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+#[test]
+fn document_windows_share_edits_and_undo_but_keep_selection_and_view() {
+    let mut first = Session::new(wordcraft_doc::Document::from_text("Original"));
+    let mut second = first.fork_window();
+    second.view.zoom = 150.0;
+    first.run("caret.end", &json!({})).unwrap();
+    first.run("text.insert", &json!({"text":" shared"})).unwrap();
+    assert!(second.sync_window_document(&first));
+    assert_eq!(second.doc, first.doc);
+    assert_eq!(second.sel.focus.off, 0);
+    assert_eq!(second.view.zoom, 150.0);
+    second.run("edit.undo", &json!({})).unwrap();
+    first.sync_window_document(&second);
+    assert_eq!(first.doc.plain_text(StoryRef::Body), "Original");
+    assert_eq!(first.undo_depth(), second.undo_depth());
+    assert!(!first.sync_window_document(&second));
+}
 
 #[test]
 fn exported_page_images_draw_headers_at_full_strength() {
@@ -5249,4 +5266,16 @@ fn exported_page_images_draw_headers_at_full_strength() {
     let darkest = (0..top).flat_map(|y| (0..img.width()).map(move |x| (x, y))).map(|(x, y)| img.get_pixel(x, y)[0]).min().unwrap();
     assert!(darkest < 60, "header drawn dimmed: darkest pixel {darkest}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn shared_document_windows_preserve_upstream_privacy_options_and_undo() {
+    let mut first = Session::new(wordcraft_doc::Document::from_text("Original"));
+    let mut second = first.fork_window();
+    first.run("file.privacyOptions", &json!({"removePersonalInfo":true,"removeDateTime":true})).unwrap();
+    assert!(second.sync_window_document(&first));
+    assert!(second.doc.settings.remove_personal_info && second.doc.settings.remove_date_time);
+    second.run("edit.undo", &json!({})).unwrap();
+    first.sync_window_document(&second);
+    assert!(!first.doc.settings.remove_personal_info && !first.doc.settings.remove_date_time);
 }

@@ -25,6 +25,8 @@ pub enum FileDialogRequest {
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
     Save { name: String },
+    /// Choose a folder for read-only agent context.
+    Folder,
 }
 
 /// The host's answer to a [`FileDialogRequest`]: the picked path, `Ok(None)` when the user
@@ -50,14 +52,21 @@ pub fn open_filters(purpose: &str) -> &'static [(&'static str, &'static [&'stati
 pub(crate) enum AfterPick {
     /// Open the picked document.
     OpenDocument,
+    ProjectFolder,
+    /// Attach a selected raster image to the in-app Codex conversation.
+    AgentImage,
     /// Insert the picked picture, or replace the pending Change Picture target.
     Picture,
     /// Save the document there, then carry on.
     SaveAs(AfterSave),
     /// Save a copy there in this format (`pdf`, `docx`, `png`…).
-    Export { ext: String },
+    Export {
+        ext: String,
+    },
     /// Write the PDF of these print settings there (File › Print › Save these pages as PDF).
-    PrintPdf { settings: Value },
+    PrintPdf {
+        settings: Value,
+    },
     /// Load the picked CSV/TSV/text file or spreadsheet as the mail-merge recipients (#240, #334).
     Recipients,
     /// Add the picked font file (#582).
@@ -66,7 +75,9 @@ pub(crate) enum AfterPick {
     /// Organizer (#377).
     ForDialog,
     /// Put the picked document into the Compare dialog (original or revised, #412).
-    ComparePath { revised: bool },
+    ComparePath {
+        revised: bool,
+    },
 }
 
 /// What to do once Save As has written the document.
@@ -130,7 +141,13 @@ impl WordApp {
             // A host that answered at once (or failed to show anything) is handled right away.
             return self.poll_file_dialog().map_or(Asked::Pending, Asked::Done);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if req == FileDialogRequest::Folder {
+            self.show_file_browser(req, after, false);
+            return Asked::Pending;
+        }
         let picked = match &req {
+            FileDialogRequest::Folder => None,
             FileDialogRequest::Open { purpose } => self.services.pick_open.as_ref().and_then(|f| f(purpose)),
             FileDialogRequest::Save { name } => self.services.pick_save.as_ref().and_then(|f| f(name)),
         };
@@ -181,6 +198,21 @@ impl WordApp {
     /// Do what the dialog was for with the picked path (`None`: the user cancelled).
     pub(crate) fn finish_pick(&mut self, after: AfterPick, picked: Option<String>) -> Result<Value, String> {
         match after {
+            AfterPick::AgentImage => {
+                let Some(path) = picked else { return Ok(json!({"cancelled":true})) };
+                match crate::ollama::attach_image(self, path) {
+                    Ok(result) => Ok(result),
+                    Err(error) => {
+                        self.ollama.open = true;
+                        self.ollama.status = error.clone();
+                        Err(error)
+                    }
+                }
+            }
+            AfterPick::ProjectFolder => {
+                let Some(path) = picked else { return Ok(json!({"cancelled":true})) };
+                crate::ollama::command(self, "ui.agentProject", &json!({"path":path}))
+            }
             AfterPick::OpenDocument => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 let r = self.run("file.open", json!({"path": path}));

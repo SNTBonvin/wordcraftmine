@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~15 points (60% → 75% ready for real work) and ~150–230 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (progress log: privacy options on save, #1062; previously trivial: progress log: equation pictures in theme colours on Windows, #1002; previously trivial: symbol fonts, #776; previously trivial: the save prompt answers from the keyboard, #861; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours per audience; full number back to the additive weighted sum, 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** minor (integrated upstream privacy, empty-window and UI fixes; project linking selects all eligible files with no approval-count cutoff, background indexing, bulk selection and compact indicator; Send stays in chat with inline cloud consent; rejected commands preserve drafts and connection state; interrupted answers survive disconnect/Stop; explicit agent Settings, cloud context consent, approved project files and temporary chats; native document windows, shared Undo, San Francisco UI weights and successful-open timestamps; Codex chats now support local image attachments and stop-controlled long turns; Mac document stage, fixed icon stroke weight and editable chat branches; ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents tab adds in-app Ollama chat, document/web tools, editing control and undo, plus a stoppable Codex endpoint; previously: progress log: symbol fonts, #776; previously trivial: the save prompt answers from the keyboard, #861; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw tab ink, #307, and Draw Table and Eraser, #303, landed: catalog 402/434; previously minor: readiness table with hours for each audience; the additive weighted sum gave 60%; mainstream and essentials numbers added; alpha gate checked; previously major: full re-measure against Word for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -65,7 +65,7 @@ the two partial ones (real-world .docx, printing) complete, roughly.
 | Stability | 50% | 25–45 | [gaps.md](docs/gaps.md) (#3) |
 | Platforms | 95% (beyond Word on Linux, BSD, web) | 5–10 | this page |
 | Ecosystem and plugins | 15% | 40–80 + owner decisions | [gaps.md](docs/gaps.md) (#22) |
-| AI features | 40% (beyond Word for external agents; no in-app assistant) | 15–30 | [gaps.md](docs/gaps.md) (#25) |
+| AI features | 40% (beyond Word for external agents; in-app Ollama task pane; parity not remeasured) | 15–30 | [gaps.md](docs/gaps.md) (#25) |
 
 ## Features
 
@@ -135,6 +135,13 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | What landed |
 |---|---|
+| 2026-10-13 | [Explicit agent Settings and security](docs/agent-security.md): provider-bound cloud consent, approved project files, temporary history and recurring RustSec checks; chat/settings layout observed in ChatGPT in Opera |
+| 2026-10-13 | Native document windows, shared views and Undo, independent caret/zoom/scroll, per-document close/Quit checks; San Francisco interface weights and sortable Recent opening times |
+| 2026-10-13 | Mac start screen: neutral rail, templates and Recents/Favourites, selection footer; capped icon strokes; editable agent messages and preserved chat branches |
+| 2026-10-13 | Agent chat: native Markdown and an anchored composer; Codex thinking levels from model metadata; transient AI word/formatting highlights, removal review, undo and reduced-motion-aware document feedback |
+| 2026-10-13 | Codex subscription chat through app-server: account sign-in, model discovery, streamed replies and guarded live document/research tools; refreshed sidebar with rounded messages and composer |
+| 2026-10-13 | Agents: in-app Ollama task pane with local/cloud and direct llama.cpp model selection, verified writing, web search/fetch, live document commands, a hard editing switch and separate AI undo; Codex connection toggles its authenticated loopback server on/off; Backstage arrow gains 16 pt of clearance after macOS traffic lights |
+| 2026-10-13 | Codex chat: remove the five-minute turn deadline; add local image attachments with file, format, size and dimension checks; preserve them through saved branches |
 | 2026-10-12 | Text boxes from older Word files (VML) keep their internal margins, Resize shape to fit text and vertical alignment, so letterhead address blocks and form headers sit where Word puts them instead of 7 pt in and 4 pt down. Hidden drawings stay hidden (they were drawn as empty boxes) and are kept on save |
 | 2026-10-13 | Word's privacy options are kept and honoured when saving .docx (#1062): with Remove personal information, comments and tracked changes are saved by "Author" and the file has no creator or last-modified-by; with Remove date and time, they are saved without dates. The open document keeps the real names and dates; `file.privacyOptions` sets both |
 | 2026-10-13 | A selected comment balloon's Delete, Reply and Resolve buttons work again (#1085): pressing them no longer counts as a click on the page that closes the balloon first, so a new empty comment, or any other, can be deleted from its balloon |
@@ -287,6 +294,14 @@ Ranked, to beta (detail and remaining milestones in [docs/roadmap.md](docs/roadm
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Integrated upstream changes with agent/native-window work; fixed first-keystroke focus restoration, empty-window Recent/agent controls, clickable template captions and checked legacy-XML probing; added integration regressions |
+| 2026-10-13 | minor | Project context: all eligible files selected on link, unlimited selection/search traversal, bulk controls and compact aligned indicator |
+| 2026-10-13 | minor | Agent Send regression: inline consent, atomic settings validation, draft preservation and interrupted replies |
+| 2026-10-13 | minor | [Agent settings and security](docs/agent-security.md) add explicit provider-bound cloud consent, transient approved project files, credential filtering, temporary local history and recurring RustSec checks; ChatGPT in Opera provided the observed chat/settings layout |
+| 2026-10-13 | minor | [Native document windows](docs/document-windows.md): separate New/Open, shared views and Undo, per-document close/Quit checks; San Francisco weights and Recent opening times/search/menus |
+| 2026-10-13 | minor | Mac grey document-stage rail, selection/Create/Open footer, persisted favourites and bounded recent rows; thin original line icons; inline chat editing and saved branches with read-only restart and original-chat navigation |
+| 2026-10-13 | minor | ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; original artwork and installed interface fonts; readiness estimates unchanged |
+| 2026-10-13 | minor | Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; title-bar content gains 16 pt clearance; live synthetic-project tests passed with Codex and Ollama Cloud |
 | 2026-10-12 | trivial | Progress log: VML text box margins, fit and alignment; hidden drawings |
 | 2026-10-13 | trivial | Progress log: comment balloon buttons work, empty comments can be deleted (#1085) |
 | 2026-10-12 | trivial | Progress log: sample-text formulas on Enter (#1067) |

@@ -21,12 +21,16 @@ mod graphics;
 mod logging;
 mod print;
 mod region;
+mod windows;
 
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{
     Services, UiState, WordApp,
     window_geometry::{WindowGeometry, take_rescue},
 };
+
+/// The port the Codex MCP bridge is configured to use on this computer.
+const CODEX_CONTROL_PORT: u16 = 7981;
 
 /// The app, the restored window geometry until the first frame has checked it, the control
 /// server's key file (removed on exit), the file dialogs the app asked for and, on macOS, the
@@ -36,14 +40,25 @@ struct App(
     Option<WindowGeometry>,
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
+    windows::Windows,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
 );
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        apple_events::poll(&self.4, &mut self.0, ctx);
+        for event in apple_events::poll(&self.5) {
+            match event {
+                fmv_macos_events::Event::Open(paths) => {
+                    for path in paths.iter().filter_map(|path| path.to_str()) {
+                        self.4.queue_document(&mut self.0, "file.open", serde_json::json!({"path":path}), ctx);
+                    }
+                }
+                fmv_macos_events::Event::Quit => self.4.begin_quit(),
+            }
+        }
         self.0.logic(ctx);
+        update_control(&mut self.0, &mut self.2, ctx, CODEX_CONTROL_PORT);
         self.3.show(frame);
         let prev = self.0.ui.window;
         self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
@@ -52,9 +67,20 @@ impl eframe::App for App {
         }
         // The window's close button: with unsaved changes, ask first (`WordApp::close_requested`).
         let closing = ctx.input(|i| i.viewport().close_requested());
-        if closing && !self.0.close_requested() {
+        if !self.4.quitting && (closing || self.0.quit_requested) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        } else if (closing || self.0.quit_requested) && !self.0.printing.busy() {
+            if self.0.ui.backstage
+                && self.0.session.path.is_none()
+                && !self.0.session.dirty
+                && self.0.session.undo_depth() == 0
+                && self.0.document_windows.len() <= 1
+            {
+                self.4.begin_quit();
+            } else if self.4.has_other_root_view() || self.0.close_requested() {
+                self.4.close_root(&mut self.0, ctx);
+            }
+        }
+        if self.4.confirm_quit(&mut self.0, ctx) && !self.0.printing.busy() {
             // On macOS, letting eframe drop the window inside `-[NSApplication run]` aborts in
             // `-[_NSTouchBarFinderObservation invalidate]`. Command-Q calls `terminate:`. Once
             // the close is allowed, take that path instead of dropping the window on this turn.
@@ -62,10 +88,11 @@ impl eframe::App for App {
             {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.0.quit_requested = false;
+                self.4.shutdown();
                 schedule_macos_terminate(&self.0, self.2.as_ref());
             }
             #[cfg(not(target_os = "macos"))]
-            if self.0.quit_requested {
+            {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -74,14 +101,40 @@ impl eframe::App for App {
         self.0.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.0.ui(ui);
+        if !self.4.root_hidden {
+            self.0.ui(ui);
+        }
+        let ctx = ui.ctx().clone();
+        self.4.paint(&mut self.0, &ctx);
         self.3.show(frame);
     }
     fn on_exit(&mut self) {
         print::finish_pending_jobs();
         save_prefs(&self.0);
+        self.4.shutdown();
         if let Some(key_file) = &self.2 {
             key_file.remove();
+        }
+    }
+}
+
+/// Quit the way Command-Q does, on the next turn of the main queue.
+fn update_control(app: &mut WordApp, key: &mut Option<control_server::KeyFile>, ctx: &egui::Context, default_port: u16) {
+    if app.take_codex_disconnect_request() {
+        app.disconnect_control();
+        if let Some(server) = key.take() {
+            server.remove();
+        }
+    }
+    if app.take_codex_connect_request() && !app.codex_is_ready() {
+        let port = app.codex_port().unwrap_or(default_port);
+        match control_server::start(port, ctx.clone(), wordcraft_control_key::settings_dir().as_deref()) {
+            Some((rx, Some(key_file))) => {
+                app.connect_control(rx, port);
+                *key = Some(key_file);
+            }
+            Some((_rx, None)) => app.codex_connect_failed("WordCraft could not save its private control key."),
+            None => app.codex_connect_failed(format!("WordCraft could not open port {port}. Check whether another app is using it.")),
         }
     }
 }
@@ -188,6 +241,9 @@ fn save_prefs(app: &WordApp) {
     if !prefs_enabled() {
         return;
     }
+    if let Err(error) = app.flush_agent_history() {
+        log::warn!("Chat history: {error}");
+    }
     if let Some(p) = prefs_path() {
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -204,6 +260,7 @@ fn save_prefs(app: &WordApp) {
 /// (`animations`), and making WordCraft the default app for Word documents (`default_apps`, #295).
 fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     Services {
+        document_icon: document_icon_hook(),
         file_dialog: Some(file_dialog),
         printers: Some(print::discover()),
         print_native: Some(print::submit()),
@@ -217,6 +274,12 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         clipboard_formats: Some(Box::new(clipboard::formats)),
         ..Default::default()
     }
+}
+
+// File associations may return proprietary application artwork. The UI uses its original
+// document line icon instead of copying an installed application's icon into a texture.
+fn document_icon_hook() -> Option<Box<dyn Fn(&str) -> Option<egui::ColorImage>>> {
+    None
 }
 
 /// Window, Dock and taskbar icon.
@@ -320,6 +383,11 @@ fn main() -> eframe::Result {
             session.system_region = region;
             let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
             load_prefs(&mut app);
+            if prefs_enabled()
+                && let Some(dir) = wordcraft_control_key::settings_dir()
+            {
+                app.load_agent_history(dir.join("chat-history.json"), &cc.egui_ctx);
+            }
             load_user_dictionary(&mut app);
             // A region chosen in File › Options replaces the system's for the first blank
             // document too (#838).
@@ -334,7 +402,7 @@ fn main() -> eframe::Result {
             if let Some(port) = control_port
                 && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), wordcraft_control_key::settings_dir().as_deref())
             {
-                app = app.with_control(rx);
+                app = app.with_codex_control(rx, port);
                 key_file = file;
             }
             // Nothing to open (no files, no sample, no control channel driving the editor): start
@@ -343,16 +411,23 @@ fn main() -> eframe::Result {
             if files.is_empty() && !sample && control_port.is_none() {
                 app.start_screen();
             }
-            for f in files {
+            let mut windows = windows::Windows::default();
+            for (index, f) in files.into_iter().enumerate() {
+                if index > 0 {
+                    windows.queue_document(&mut app, "file.open", serde_json::json!({"path":f}), &cc.egui_ctx);
+                    continue;
+                }
                 if let Err(e) = app.run("file.open", serde_json::json!({"path": f})) {
                     log::warn!("{f}: {e}");
                 }
             }
+            app.native_document_windows = true;
             Ok(Box::new(App(
                 app,
                 restored,
                 key_file,
                 dialogs,
+                windows,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
             )))

@@ -684,6 +684,57 @@ impl Session {
     pub fn document_id(&self) -> u64 {
         self.document_id
     }
+    /// Another view of this document, with its own selection and layout cache.
+    pub fn fork_window(&self) -> Self {
+        let mut view = Self::new(self.doc.clone());
+        view.sync_window_document(self);
+        view.sel = self.sel.clone();
+        view.view = self.view.clone();
+        view.pending = self.pending.clone();
+        view.prefs = self.prefs.clone();
+        view.system_region = self.system_region.clone();
+        view.keymap = self.keymap.clone();
+        view.ribbon = self.ribbon.clone();
+        view.author = self.author.clone();
+        view.initials = self.initials.clone();
+        view.user_dict_path = self.user_dict_path.clone();
+        view
+    }
+
+    /// Synchronize only shared document state. Hosts call this between window callbacks, never
+    /// concurrently with a command. Undo stacks share immutable snapshots; view state stays local.
+    pub fn sync_window_document(&mut self, source: &Self) -> bool {
+        if self.rev == source.rev
+            && self.document_id == source.document_id
+            && self.dirty == source.dirty
+            && self.path == source.path
+            && self.history.len() == source.history.len()
+            && self.redo.len() == source.redo.len()
+        {
+            return false;
+        }
+        self.doc = source.doc.clone();
+        self.path.clone_from(&source.path);
+        self.dirty = source.dirty;
+        self.document_id = source.document_id;
+        self.rev = source.rev;
+        self.history.clone_from(&source.history);
+        self.redo.clone_from(&source.redo);
+        self.undo_evicted = source.undo_evicted;
+        self.typing_open = false;
+        self.join_next = false;
+        self.password.clone_from(&source.password);
+        self.originals.clone_from(&source.originals);
+        self.last_command.clone_from(&source.last_command);
+        self.versions.clone_from(&source.versions);
+        self.macros.clone_from(&source.macros);
+        self.building_blocks.clone_from(&source.building_blocks);
+        self.bib_style.clone_from(&source.bib_style);
+        self.autosave = source.autosave;
+        self.clamp_selection();
+        self.relayout();
+        true
+    }
     pub fn touch(&mut self) {
         self.rev = self.rev.wrapping_add(1);
         self.dirty = true;
@@ -1121,6 +1172,47 @@ impl Session {
     /// Run a command by id with JSON params (the single entry point for the UI, CLI, MCP and
     /// control channel). Mutating commands are undoable; a failed command leaves the document as
     /// it was; a panic inside a command becomes an error.
+    /// Run an in-document operation as one separately named undo step, even when the command
+    /// runs nested commands or follows manual typing. The caller must exclude file replacement
+    /// and other external side effects. Failed operations keep the original undo/redo history.
+    pub fn run_labeled(&mut self, id: &str, params: &Value, label: &str) -> Result<Value, CmdError> {
+        let mutates = self.registry.get(id).is_some_and(|spec| spec.mutates);
+        if !mutates {
+            return self.run(id, params);
+        }
+        let before = Arc::new(Undo {
+            label: label.chars().take(128).collect(),
+            doc: self.doc.clone(),
+            sel: self.sel.clone(),
+            pending: self.pending.clone(),
+            column: self.column.clone(),
+        });
+        let history = self.history.clone();
+        let redo = self.redo.clone();
+        let evicted = self.undo_evicted;
+        let typing = self.typing_open;
+        let join = self.join_next;
+        self.typing_open = false;
+        self.join_next = false;
+        let result = self.run(id, params);
+        self.history = history;
+        self.undo_evicted = evicted;
+        self.typing_open = false;
+        if result.is_ok() {
+            self.history.push(before);
+            if self.history.len() > MAX_UNDO {
+                self.history.remove(0);
+                self.undo_evicted = self.undo_evicted.saturating_add(1);
+            }
+            self.redo.clear();
+        } else {
+            self.redo = redo;
+            self.typing_open = typing;
+            self.join_next = join;
+        }
+        result
+    }
+
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
         let join = std::mem::take(&mut self.join_next);
         let reg = self.registry.clone();

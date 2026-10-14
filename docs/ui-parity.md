@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** trivial (no document behind the Start screen, #1129; previously trivial: equation pictures share a few textures, #1002; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** minor (integrated upstream privacy, empty-window and UI fixes; project linking selects all eligible files with no approval-count cutoff, background indexing, bulk selection and compact indicator; Send stays in chat with inline cloud consent; rejected commands preserve drafts and connection state; interrupted answers survive disconnect/Stop; explicit agent Settings, cloud context consent, approved project files and temporary chats; native document windows, shared Undo, San Francisco UI weights and successful-open timestamps; Mac document stage, fixed icon stroke weight and editable chat branches; ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; AI diff highlights, document animation, native Markdown and thinking controls; Codex subscription chat and refreshed agent sidebar; Agents adds a right-side Ollama task pane, editing/undo controls and a Codex connection toggle; Backstage arrow clears traffic lights; previously trivial: selection bar in the left margin, #856; table column and row markers on the rulers, #700; table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -10,12 +10,13 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 
 | Area | WordCraft | Word | Parity | Hours |
 |---|---|---|---|---|
-| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation, Outlining (Outline view, #493); ribbon overflow (#43, #129). Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
+| 2026-10-14 | minor | Minimum-size windows: scrollable chat reveals the draft/Send/consent controls; tab labels scroll independently of Comments/Editing/Share; original recent-file line icons |
+| Ribbon tabs and groups | All Word tabs including contextual Table Design/Layout, Picture Format, Shape Format, Header & Footer, Equation, Outlining (Outline view, #493); ribbon overflow (#43, #129); Agents tab toggles the protected Codex endpoint and opens [Ollama chat](ollama.md) in a resizable right task pane, with Codex subscription and local/cloud model selection, editing permission and AI undo; original rounded chat composer, inline model/thinking choices and local searchable history with rename/deletion. Mac ribbons omit the group-caption row, with launchers retained; interface fonts use installed Helvetica Neue where available, and fallback to Inter. Draw tab: Select, Eraser, Pen, Pencil, Highlighter with colour and thickness (#307); Lasso (drag to move, Delete, recolour), Add Pen gallery (right-click to remove), Ink to Shape, Ink Replay with play/pause/rewind/forward bar (#395); missing: Ink to Math | Same plus Draw | 85% | (Draw in features) |
 | Keytips (Alt / F10) | Ribbon badges (#43) and numbered Quick Access Toolbar badges in the user's button order (#620); File › Options › Advanced › Display switch saved per user (`ui.keytips`); Alt leaves macOS Option typing alone | ✅ | 85% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43, two rows #535) | ✅ | 80% | 1–2 |
 | Mini-toolbar on selection | ✅ (#43) | ✅ | 80% | 1–2 |
 | Colour drop-downs: theme/standard colours, Recent Colors, More Colors… → Colors dialog (Standard honeycomb, Custom hue/saturation field with lightness, RGB/HSL and hex) | ✅ Font Color (ribbon, mini toolbar, Font dialog), Shading, Page Color, Shape Fill/Outline/Glow, pen colours, dialog colour fields (#606); no Gradient or eyedropper | ✅ | 90% | 1 |
-| Quick Access Toolbar | AutoSave, then the user's commands (Save, Undo, Redo by default); add, remove and reorder from its … menu (common commands, More Commands…), right-click on any ribbon button, or Customize Ribbon; saved per user (#379, #376). Undo's ▾ list: recent steps newest first, hover highlights the steps a click undoes ("Undo 3 Actions"), one click undoes them all (#701; `edit.undoTo`, `edit.undoHistory`). Not shown below the ribbon | customizable | 90% | 0.5 |
+| Quick Access Toolbar | AutoSave and a Home control on Mac, then the user's commands (Save, Undo, Redo by default); add, remove and reorder from its … menu (common commands, More Commands…), right-click on any ribbon button, or Customize Ribbon; saved per user (#379, #376). Undo's ▾ list: recent steps newest first, hover highlights the steps a click undoes ("Undo 3 Actions"), one click undoes them all (#701; `edit.undoTo`, `edit.undoHistory`). Not shown below the ribbon | customizable | 90% | 0.5 |
 | Customize Ribbon / Customize Keyboard | Customize Keyboard (#368): categories, a command's keys, press a combination to see which command uses it, Assign / Remove / Reset All; custom keys override built-ins, removed built-ins do nothing, saved per user; `tools.customizeKeyboard` for agents. Customize Ribbon (#379): show, hide and reorder tabs, custom tabs and custom groups (on any tab) holding any commands, rename, remove, Reset; right-click on the ribbon; saved per user; `tools.customizeRibbon` for agents. Built-in tabs can't be renamed; no import/export file | ✅ | 85% | 1–2 |
 | Keyboard shortcuts | **137** commands bound in `CommandSpec::key`, 156 key combinations (measured on Linux/Windows); styles, spacing, symbols, fields, views, mail merge (#330); field keys Alt+F9, Shift+F9, Ctrl+Shift+F9, Ctrl+F11, Ctrl+Shift+F11, F11, Shift+F11 (#339); Alt+Shift+arrows (move paragraphs, promote/demote), Shift+F5 Go Back and Alt+X (#343); Outline view: Alt+Shift+Plus/Minus expand/collapse, Alt+Shift+1–9 and Alt+Shift+A Show Level (#493); Alt+Q to "Tell me" command search (#819, not on macOS). Missing: en dash on the numeric keypad | ~250 default shortcuts | ~70% | 2–4 |
 | Modal dialogs | **54** (`Dialog` enum: Font, Enclose Characters, Paragraph, Tabs, Borders and Shading, Find, Go To, Insert Table, Table Properties, Page Setup, Link, Bookmark, Word Count, Zoom, Watermark, New Style, Modify Style, Manage Styles, Table Style, Commands, Icons, Templates and Add-ins, Organizer, Compare and Combine, AutoCorrect Options, Paste Special, About, Save Changes, Password, Encrypt with Password, Define New Multilevel List, Track Changes Options; Columns, Symbol with Special Characters, Field (#321); Field code (#339); mail merge Recipients, Insert Merge Field, Find Recipient, Rules, Match Fields, Check for Errors; Caption with New Label and Numbering, Index, Mark Index Entry, Custom Table of Contents with Options and TOC styles, Source Manager, Create/Edit Source (#402); Line Numbers, Hyphenation with Manual Hyphenation, Language, Envelopes, Labels (#407)) plus panes and menus for the rest | ~100 (Options panes…) | ~45% | 11–19 |
@@ -42,10 +43,51 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | Screen readers (VoiceOver, Narrator, Orca) | AccessKit on; the document canvas describes paragraphs, headings (level), list items, tables, links, pictures (alt text) and the caret and selection, for the pages on screen (#488); not yet tried with real screen readers | full | 50% | 5–8 |
 | Right-to-left (mirrored) interface | ❌ | ✅ (Arabic, Hebrew Word) | 0% | in localization |
 
+## Mac document stage and chat branches (2026-10-13)
+
+The installed Word app was observed with an empty synthetic document and its Home stage.
+Mac WordCraft now uses a narrow neutral icon rail, Templates, Recents/Favourites, bounded
+filename/path rows and a selection-based Create/Open footer. Double-click opens or creates;
+single-click selects. Favourites persist in local UI settings. Other file actions remain in
+the rail's menu. The Mac ribbon begins with Home (File is in the native menu); its style gallery shows four
+tiles and a visible Styles Pane control. Icon stroke width is capped at 1.15 pt so large glyphs keep fine outlines.
+Chat has inline question editing, Copy and branch menus, saved parent links and navigation
+back to the original conversation. See [chat behavior](codex-chat.md#edit-messages-and-branch-conversations).
+The computer tool denied access to the ChatGPT app itself; the supplied ChatGPT image was used
+as the chat reference. These changes do not establish complete visual or functional parity.
+
+## Visual reference pass (2026-10-13)
+
+The compact Mac ribbon and neutral light/dark surfaces were compared against a
+[2026 Word for Mac ribbon screenshot](https://learn.microsoft.com/en-us/answers/questions/5766174/how-to-access-old-word-art-in-word-for-mac-2026)
+and [larger 2025 full-window references](https://medium.com/macoclock/office-on-your-mac-in-2025-essential-or-just-an-old-habit-9416ab881dce).
+These are visual observations, not a full functionality or pixel-parity assessment. The current
+Mac group layout has no bottom caption row; original line icons use lighter strokes, while
+Home/Print access, command dispatch, customization and dialog launchers remain available.
+Installed interface fonts are used at runtime; no product assets or fonts were copied or bundled.
+
+Chat has its own neutral tokens, rounded composer, readable Markdown, integrated model/thinking
+menu and local searchable conversation history. Diff additions use subtle sage tints and thin
+underlines, removals muted rose markers, and formatting lavender; the page pulse is softer and
+still respects reduced motion. Headless light/dark welcome, reply, history and diff screenshots
+are inspected, and all ribbon groups retain their layout regression coverage.
+
 ## Revision history
+
+| 2026-10-13 | minor | Ollama task pane, editing/undo controls, Codex connection toggle, and 16 pt more Backstage arrow clearance after macOS traffic lights |
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Integrated upstream changes with agent/native-window work; fixed first-keystroke focus restoration, empty-window Recent/agent controls, clickable template captions and checked legacy-XML probing; added integration regressions |
+| 2026-10-13 | minor | Project context: all eligible files selected on link, unlimited selection/search traversal, bulk controls and compact aligned indicator |
+| 2026-10-13 | minor | Agent Send regression: inline consent, atomic settings validation, draft preservation and interrupted replies |
+| 2026-10-13 | minor | [Agent settings and security](agent-security.md): explicit cloud consent, approved project files, credential filtering, temporary history and recurring RustSec checks; ChatGPT in Opera supplied the observed design reference |
+| 2026-10-13 | minor | [Native document windows](document-windows.md): separate New/Open, shared views and Undo, per-document close/Quit checks; San Francisco weights and Recent opening times/search/menus |
+| 2026-10-13 | minor | Mac grey document-stage rail, selection/Create/Open footer, persisted favourites and bounded recent rows; thin original line icons; inline chat editing and saved branches with read-only restart and original-chat navigation |
+| 2026-10-13 | minor | ChatGPT-inspired chat layout, local conversation history with deletion controls, compact Mac ribbon and softer AI diffs; original artwork and installed interface fonts; readiness estimates unchanged |
+| 2026-10-13 | minor | Live project-folder context for Codex and Ollama, numbered source citations, published reasoning summaries and bounded chat layout; title-bar content gains 16 pt clearance; live synthetic-project tests passed with Codex and Ollama Cloud |
+| 2026-10-13 | minor | Native Markdown chat, model-supported Codex thinking levels and transient document diffs/animation; no saved review markup introduced |
+| 2026-10-13 | minor | [Codex subscription chat](codex-chat.md) joins local/cloud agents with streamed replies and guarded document tools; refreshed right chat pane |
 | 2026-10-13 | trivial | The caret is black or white by contrast with the paper, page colour, dark page, shading or highlight under it (#299) |
 | 2026-10-13 | trivial | Clicks on ribbon and status-bar chrome that run no command button (Styles and style-set gallery tiles, tab names, empty ribbon space, View check boxes, the status bar's view buttons and language menu) no longer take keyboard focus from the page: the caret stays and typing continues, as in Word; text fields such as the font size box still take focus. Tabs, gallery tiles and the status bar's view buttons report their name and state to screen readers (#1093) |
 | 2026-10-13 | trivial | Interface size: a chosen size is absolute ("100%" is one screen pixel per point, even where the system reports 200 % under a bare window manager) and the new default, Auto, keeps the display scale and shows the size it draws at; 75–300 %; an old saved size becomes the size it drew at; on the web a chosen size cancels browser zoom, Auto follows it (#822) |
