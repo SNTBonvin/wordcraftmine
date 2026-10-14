@@ -20,6 +20,8 @@ pub const OPEN_EXTS: &[&str] = &[
     "htm",
     "rtf",
     "odt",
+    "ott",
+    "fodt",
     "tex",
     "latex",
     "ltx",
@@ -28,7 +30,8 @@ pub const OPEN_EXTS: &[&str] = &[
     "json",
 ];
 /// Formats WordCraft saves (Save As).
-pub const SAVE_EXTS: &[&str] = &["docx", "docm", "dotx", "dotm", "pdf", "txt", "md", "html", "rtf", "odt", "tex", "png", "json", "xml"];
+pub const SAVE_EXTS: &[&str] =
+    &["docx", "docm", "dotx", "dotm", "pdf", "txt", "md", "html", "rtf", "odt", "ott", "fodt", "tex", "png", "json", "xml"];
 
 /// The extension of a file name or path, lower-case; empty when the file name has none (a dot
 /// in a folder name doesn't count).

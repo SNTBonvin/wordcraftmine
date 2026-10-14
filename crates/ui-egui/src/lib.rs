@@ -3672,7 +3672,7 @@ mod tests {
     /// the prompt and the leave-page guard let it go.
     #[test]
     fn web_downloads_that_drop_content_leave_the_document_unsaved() {
-        for name in ["novel.png", "novel.txt", "novel.md"] {
+        for name in ["novel.png", "novel.txt", "novel.md", "novel.ott", "novel.fodt"] {
             let mut a = typed();
             a.services.download = Some(Box::new(|_, _| Ok(())));
             a.execute("file.saveAs", json!({"path": name})).unwrap();

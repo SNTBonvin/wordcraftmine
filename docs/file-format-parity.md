@@ -1,6 +1,6 @@
 # File-format parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-13 · **Change:** trivial (VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-14 · **Change:** minor (OTT and FODT import/export; explicit ODF paragraph spacing; previously trivial: VML text boxes keep their internal margins, fit to their text and vertical alignment; hidden drawings not shown; previously trivial: equations as MathML in HTML export, copy and paste, #816; previously trivial: symbol-font text exported as Unicode, #776; previously trivial: text-box margins, Resize shape to fit text and freeforms in groups, #743; previously trivial: formatted paste from the system clipboard's HTML and RTF, #687; previously trivial: independent complex-script formatting inheritance and round-trip regression tests; previously trivial: import/export fixes for TXT, RTF, ODT, HTML and LaTeX, #433–#440; previously major: first version; every format Word reads or writes, measured from the readers and writers on origin/main) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4, plus Word for Windows' extra formats
 
 Every format Word opens or saves, what WordCraft does with it, and how it's tested. Fidelity is the
 share of a typical real-world file's content and formatting that survives (read: shows correctly;
@@ -11,6 +11,29 @@ the work items are in [`gaps.md`](gaps.md).
 gives ~64%; we discount it to ~60% because DOCX fidelity has never been checked on real-world
 files. DOCX dominates the weight: a Word user sends and receives .docx; everything else is
 occasional.
+
+## OpenDocument Writer variants
+
+WordCraft opens and exports `.odt`, `.ott` (text templates) and `.fodt` (flat XML text).
+They share the ODT content model: paragraphs/headings, character styling, lists, tables,
+embedded raster pictures, bookmarks/links, metadata and the first page layout. Explicit
+paragraph spacing, line spacing and indents survive export/reopen; inherited ODF spacing
+is read from the paragraph style chain. OTT has matching template media types in the
+first, stored `mimetype` ZIP entry and the manifest. FODT embeds images as `office:binary-data`
+and resolves XML namespace aliases; external image paths and DTDs are not loaded.
+
+This is **partial content fidelity**, not full LibreOffice compatibility. Notes/comments
+(#1057/#1075), tracked changes (#1517), multiple sections (#1506) and headers/footers (#873)
+remain separate open work. The family does not add Calc/Impress documents or legacy `.sxw`.
+New OTT/FODT saves are treated as conversions: they do not clear dirty state or enable
+AutoSave. Save a DOCX copy to retain the full editable WordCraft document. ODT/RTF save-loss
+reporting is tracked separately in #1316 / #1511.
+
+Validation: generated Rust fixtures exercise all three variants, malformed/wrong-type XML,
+namespace aliases, paragraph spacing and the public engine save/reopen path. Local
+LibreOffice headless round trips (ODT → FODT, FODT → ODT, OTT → FODT) retained the synthetic
+fixture's Unicode text, table cells, raster image, indent and title. This is a small
+interoperability smoke test, not a real-world corpus or a full fidelity measurement.
 
 ## Formats
 
@@ -26,7 +49,7 @@ Weights are the share of a Word user's file traffic (estimate). Read/write: ✅ 
 | PDF export | 8% | W | — | ✅ | ~80% | 6–10 | `crates/pdf/src/tests.rs` | krilla: embedded subsets, selectable text incl. field results (#133), links, outline, tagging. Fonts it can't subset become outlines (#132). Print Markup (#589): comments in balloons beside each page (scaled to its paper) and tracked changes; HTML/Markdown/text copies end with a comment list. No PDF/A option, no "best for printing/online" choice |
 | PDF open (PDF Reflow, Word for Windows) | 1% | R | ❌ | — | 0% | 30–50 | — | Converting a PDF into an editable document. A sibling app (PdfCraft) may supply the parser |
 | `.rtf` Rich Text Format | 3% | R/W | 🟡 | 🟡 | ~50% | 10–15 | `crates/formats/src/tests.rs` | ~1,500 lines: text, character/paragraph formatting, styles, lists, tables, pictures (`\shppict`, #154), fields, bookmarks. 8-bit text in the document's code page (`\ansicpg`) or the current font's (`\fcharset`, `\cpg`): Cyrillic, Central European, Greek, Turkish, Hebrew, Arabic, Baltic, Vietnamese, Thai (was Windows-1252 only). Pasted from the system clipboard where the platform offers it (Windows, Wayland) when there is no HTML (#687). Thin: comments, notes, revisions, sections, RTL |
-| `.odt` OpenDocument Text | 2% | R/W | 🟡 | 🟡 | ~50% | 8–12 | `crates/formats/src/tests.rs` | Styles, lists (#87), tables, pictures, headers/footers, page breaks (#86), page size, orientation and margins (#810). No footnotes, comments, tracked changes, fields or RTL |
+| `.odt` / `.ott` / `.fodt` OpenDocument Text | 2% | R/W | 🟡 | 🟡 | ~50% | 8–12 | `crates/formats/src/tests.rs` | Styles, lists (#87), tables, embedded pictures, paragraph spacing/indents, page breaks (#86), page size, orientation and margins (#810). No notes, comments, tracked changes, fields, headers/footers or RTL; see Writer variants above |
 | `.txt` Plain text | 2% | R/W | ✅ | ✅ | ~95% | 1–2 | unit tests | Encoding detection. Files with other extensions (`.m3u`/`.m3u8` playlists, logs, config files, no extension) open as text when they are text, Word and RTF files by their signature; binary files are refused (#569). A Word or RTF extension that contradicts the content also opens by signature, as in Word: RTF saved as `.doc` (hh.ru résumés, accounting exports), a `.docx` renamed `.doc`, a Word 97-2003 file renamed `.docx`. Word's encoding choice dialog and line-ending options missing; such files save only through Save As |
 | `.htm/.html` Web Page and Web Page, Filtered | 1% | R/W | 🟡 | 🟡 | ~60% | 6–10 | `crates/formats/src/tests.rs` | Tables (#102), relative pictures embedded (#113), missing `</head>` tolerated (#154). No Word "Web Page" (with `_files` folder) round-trip. The same reader takes HTML from the system clipboard: Paste keeps another program's formatting (a Word document, a web page; Windows' "HTML Format" header understood), Merge Formatting keeps its emphasis (#687). Equations are written as MathML (with the linear format as a UnicodeMath annotation) and read back from MathML: our annotation, else the presentation elements, else a TeX annotation (#816) |
 | `.mht/.mhtml` Single File Web Page | <1% | R/W | ❌ | ❌ | 0% | 3–5 | — | |

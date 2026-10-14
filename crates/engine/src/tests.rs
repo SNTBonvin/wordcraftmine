@@ -5250,3 +5250,29 @@ fn exported_page_images_draw_headers_at_full_strength() {
     assert!(darkest < 60, "header drawn dimmed: darkest pixel {darkest}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn opendocument_writer_variants_use_public_io_and_keep_lossy_copies_dirty() {
+    for ext in ["ott", "fodt"] {
+        assert!(crate::io::OPEN_EXTS.contains(&ext));
+        assert!(crate::io::SAVE_EXTS.contains(&ext));
+        let mut session = s();
+        run(&mut session, "text.insert", json!({"text":"Writer import/export"}));
+        let name = format!("writer.{ext}");
+        let bytes = crate::io::save_bytes(&name, &session.doc).unwrap();
+        let mut opened = s();
+        run(&mut opened, "file.open", json!({"path":name,"data":crate::cmd::insert::base64_encode(&bytes)}));
+        assert_eq!(opened.doc.word_count(), session.doc.word_count());
+        run(&mut opened, "text.insert", json!({"text":"Edited "}));
+        let dir = std::env::temp_dir().join(format!("wordcraft-odf-{}-{ext}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(&name);
+        let result = run(&mut opened, "file.saveAs", json!({"path":path.to_string_lossy()}));
+        assert_eq!(result["saved"], true);
+        assert!(opened.dirty, "unimplemented ODF features must not be treated as a lossless save");
+        let reopened = crate::io::open_bytes(&name, &std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(reopened.word_count(), opened.doc.word_count());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+    }
+}
