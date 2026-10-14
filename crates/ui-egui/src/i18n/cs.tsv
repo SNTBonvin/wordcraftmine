@@ -2090,3 +2090,24 @@
 	Leave out the date and time of comments and tracked changes when saving	Při ukládání vynechat datum a čas komentářů a sledovaných změn
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Upravovaný dokument si jména a data ponechá; vynechá je jen uložený soubor.
 	Privacy Settings	Aktuální nastavení soukromí
+	Format Shape Pane	Podokno Formát obrazce
+	Format Shape	Formát obrazce
+	Format Shape…	Formátovat obrazec…
+	No fill	Bez výplně
+	Solid fill	Plná výplň
+	Gradient fill	Přechodová výplň
+	Preset gradients	Předdefinované přechody
+	Radial	Paprskový
+	Rectangular	Obdélníkový
+	Path	Cesta
+	Direction	Směr
+	Angle	Úhel
+	Gradient stops	Zarážky přechodu
+	Add gradient stop	Přidat zarážku přechodu
+	Remove gradient stop	Odebrat zarážku přechodu
+	Rotate with shape	Otáčet s obrazcem
+	Gradient	Přechod
+	No Gradient	Bez přechodu
+	Light Variations	Světlé varianty
+	Dark Variations	Tmavé varianty
+	More Gradients…	Další přechody…

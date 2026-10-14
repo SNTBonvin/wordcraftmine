@@ -2095,3 +2095,24 @@
 	Leave out the date and time of comments and tracked changes when saving	Izostavi datum i vreme komentara i praćenih izmena pri čuvanju
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Dokument koji uređujete zadržava imena i datume; izostavlja ih samo sačuvana datoteka.
 	Privacy Settings	Trenutna podešavanja privatnosti
+	Format Shape Pane	Okno „Format oblika“
+	Format Shape	Format oblika
+	Format Shape…	Formatiraj oblik…
+	No fill	Bez popune
+	Solid fill	Jednobojna popuna
+	Gradient fill	Prelivajuća popuna
+	Preset gradients	Unapred zadati prelivi
+	Radial	Radijalni
+	Rectangular	Pravougaoni
+	Path	Putanja
+	Direction	Smer
+	Angle	Ugao
+	Gradient stops	Tačke preliva
+	Add gradient stop	Dodaj tačku preliva
+	Remove gradient stop	Ukloni tačku preliva
+	Rotate with shape	Rotiraj sa oblikom
+	Gradient	Preliv
+	No Gradient	Bez preliva
+	Light Variations	Svetle varijante
+	Dark Variations	Tamne varijante
+	More Gradients…	Još preliva…

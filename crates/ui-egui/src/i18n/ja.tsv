@@ -2085,3 +2085,24 @@
 	Leave out the date and time of comments and tracked changes when saving	保存時にコメントと変更履歴の日時を含めない
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	編集中のドキュメントには名前と日時が残ります。保存したファイルにだけ含まれません。
 	Privacy Settings	現在のプライバシー設定
+	Format Shape Pane	図形の書式設定ウィンドウ
+	Format Shape	図形の書式設定
+	Format Shape…	図形の書式設定…
+	No fill	塗りつぶしなし
+	Solid fill	単色の塗りつぶし
+	Gradient fill	グラデーションの塗りつぶし
+	Preset gradients	グラデーションのプリセット
+	Radial	放射
+	Rectangular	四角
+	Path	パス
+	Direction	方向
+	Angle	角度
+	Gradient stops	グラデーションの分岐点
+	Add gradient stop	分岐点を追加
+	Remove gradient stop	分岐点を削除
+	Rotate with shape	図形と一緒に回転する
+	Gradient	グラデーション
+	No Gradient	グラデーションなし
+	Light Variations	明るいバリエーション
+	Dark Variations	暗いバリエーション
+	More Gradients…	その他のグラデーション…

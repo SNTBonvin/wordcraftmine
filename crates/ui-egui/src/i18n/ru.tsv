@@ -2484,3 +2484,24 @@ preview	Title	Пример
 	Leave out the date and time of comments and tracked changes when saving	Не сохранять дату и время примечаний и отслеживаемых изменений
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Редактируемый документ сохраняет имена и даты; их не будет только в сохранённом файле.
 	Privacy Settings	Текущие параметры конфиденциальности
+	Format Shape Pane	Область «Формат фигуры»
+	Format Shape	Формат фигуры
+	Format Shape…	Формат фигуры…
+	No fill	Нет заливки
+	Solid fill	Сплошная заливка
+	Gradient fill	Градиентная заливка
+	Preset gradients	Готовые градиенты
+	Radial	Радиальный
+	Rectangular	Прямоугольный
+	Path	Контур
+	Direction	Направление
+	Angle	Угол
+	Gradient stops	Точки градиента
+	Add gradient stop	Добавить точку градиента
+	Remove gradient stop	Удалить точку градиента
+	Rotate with shape	Вращать вместе с фигурой
+	Gradient	Градиент
+	No Gradient	Без градиента
+	Light Variations	Светлые варианты
+	Dark Variations	Тёмные варианты
+	More Gradients…	Другие градиенты…

@@ -2474,3 +2474,24 @@
 	Leave out the date and time of comments and tracked changes when saving	Без дата и час на коментарите и проследените промени при запазване
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Документът, който редактирате, запазва имената и датите; само записаният файл ги пропуска.
 	Privacy Settings	Текущи настройки за поверителност
+	Format Shape Pane	Екран „Форматиране на фигура“
+	Format Shape	Форматиране на фигура
+	Format Shape…	Форматиране на фигура…
+	No fill	Без запълване
+	Solid fill	Плътно запълване
+	Gradient fill	Преливащо запълване
+	Preset gradients	Готови преливания
+	Radial	Радиално
+	Rectangular	Правоъгълно
+	Path	Контур
+	Direction	Посока
+	Angle	Ъгъл
+	Gradient stops	Точки на преливането
+	Add gradient stop	Добавяне на точка на преливане
+	Remove gradient stop	Премахване на точка на преливане
+	Rotate with shape	Завъртане с фигурата
+	Gradient	Преливане
+	No Gradient	Без преливане
+	Light Variations	Светли варианти
+	Dark Variations	Тъмни варианти
+	More Gradients…	Още преливания…

@@ -2451,3 +2451,24 @@ preview	Title	Título
 	Leave out the date and time of comments and tracked changes when saving	Omitir la fecha y la hora de los comentarios y los cambios controlados al guardar
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	El documento que editas conserva los nombres y las fechas; solo el archivo guardado los omite.
 	Privacy Settings	Configuración de privacidad actual
+	Format Shape Pane	Panel Formato de forma
+	Format Shape	Formato de forma
+	Format Shape…	Formato de forma…
+	No fill	Sin relleno
+	Solid fill	Relleno sólido
+	Gradient fill	Relleno degradado
+	Preset gradients	Degradados predefinidos
+	Radial	Radial
+	Rectangular	Rectangular
+	Path	Trazado
+	Direction	Dirección
+	Angle	Ángulo
+	Gradient stops	Puntos de degradado
+	Add gradient stop	Agregar punto de degradado
+	Remove gradient stop	Quitar punto de degradado
+	Rotate with shape	Girar con la forma
+	Gradient	Degradado
+	No Gradient	Sin degradado
+	Light Variations	Variaciones claras
+	Dark Variations	Variaciones oscuras
+	More Gradients…	Más degradados…

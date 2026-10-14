@@ -2483,3 +2483,24 @@
 	Leave out the date and time of comments and tracked changes when saving	Mentéskor a megjegyzések és a követett módosítások dátumának és idejének elhagyása
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	A szerkesztett dokumentum megtartja a neveket és a dátumokat; csak a mentett fájlból maradnak ki.
 	Privacy Settings	Jelenlegi adatvédelmi beállítások
+	Format Shape Pane	Alakzat formázása munkaablak
+	Format Shape	Alakzat formázása
+	Format Shape…	Alakzat formázása…
+	No fill	Nincs kitöltés
+	Solid fill	Egyszínű kitöltés
+	Gradient fill	Színátmenetes kitöltés
+	Preset gradients	Előre beállított színátmenetek
+	Radial	Sugaras
+	Rectangular	Téglalap alakú
+	Path	Útvonal
+	Direction	Irány
+	Angle	Szög
+	Gradient stops	Színátmenet-pontok
+	Add gradient stop	Színátmenet-pont hozzáadása
+	Remove gradient stop	Színátmenet-pont eltávolítása
+	Rotate with shape	Forgatás az alakzattal
+	Gradient	Színátmenet
+	No Gradient	Nincs színátmenet
+	Light Variations	Világos változatok
+	Dark Variations	Sötét változatok
+	More Gradients…	További színátmenetek…

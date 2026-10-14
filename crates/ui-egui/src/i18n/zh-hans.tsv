@@ -2097,3 +2097,24 @@
 	Leave out the date and time of comments and tracked changes when saving	保存时不包含批注和修订的日期与时间
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	正在编辑的文档保留姓名和日期；只有保存的文件中不包含它们。
 	Privacy Settings	当前隐私设置
+	Format Shape Pane	设置形状格式窗格
+	Format Shape	设置形状格式
+	Format Shape…	设置形状格式…
+	No fill	无填充
+	Solid fill	纯色填充
+	Gradient fill	渐变填充
+	Preset gradients	预设渐变
+	Radial	径向
+	Rectangular	矩形
+	Path	路径
+	Direction	方向
+	Angle	角度
+	Gradient stops	渐变光圈
+	Add gradient stop	添加渐变光圈
+	Remove gradient stop	删除渐变光圈
+	Rotate with shape	与形状一起旋转
+	Gradient	渐变
+	No Gradient	无渐变
+	Light Variations	浅色变体
+	Dark Variations	深色变体
+	More Gradients…	其他渐变…

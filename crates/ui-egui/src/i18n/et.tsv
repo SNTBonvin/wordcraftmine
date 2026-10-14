@@ -2119,3 +2119,24 @@
 	Leave out the date and time of comments and tracked changes when saving	Jäta salvestamisel välja kommentaaride ja jälitatud muudatuste kuupäev ja kellaaeg
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Redigeeritav dokument säilitab nimed ja kuupäevad; need jäetakse välja ainult salvestatud failist.
 	Privacy Settings	Praegused privaatsussätted
+	Format Shape Pane	Kujundi vormindamise paan
+	Format Shape	Kujundi vormindamine
+	Format Shape…	Vorminda kujund…
+	No fill	Täiteta
+	Solid fill	Ühtlane täide
+	Gradient fill	Üleminekutäide
+	Preset gradients	Valmisüleminekud
+	Radial	Radiaalne
+	Rectangular	Ristkülikukujuline
+	Path	Rada
+	Direction	Suund
+	Angle	Nurk
+	Gradient stops	Ülemineku punktid
+	Add gradient stop	Lisa ülemineku punkt
+	Remove gradient stop	Eemalda ülemineku punkt
+	Rotate with shape	Pööra koos kujundiga
+	Gradient	Üleminek
+	No Gradient	Üleminekuta
+	Light Variations	Heledad variandid
+	Dark Variations	Tumedad variandid
+	More Gradients…	Veel üleminekuid…
