@@ -38,6 +38,11 @@ pub struct ObjectDrag {
     picture: bool,
     /// Dragging a connector's end (false: its start, true: its end) to this page point.
     end: Option<(bool, (f32, f32))>,
+    /// A handle of a turned text box being edited (drawn straight, Word check P): the drag works
+    /// on the straight frame, a turn adds to the box's real angle (`base`), and the text stays
+    /// edited (`keep`, the selection to go back to).
+    base: f32,
+    keep: Option<wordcraft_engine::Selection>,
 }
 
 /// How near (screen points) a press must be to a connector's end to grab it.
@@ -184,7 +189,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
     // A selected connector's end: drag it to glue it.
     if pressed && let Some((object, which)) = connector_end_at(app, layout, pages, scale, at) {
         let drag = Drag::new(Grab::Move, object.page, object.rect, 0.0, at);
-        app.canvas.obj_drag = Some(ObjectDrag { drag, object, min: 0.0, picture: false, end: Some((which, (0.0, 0.0))) });
+        app.canvas.obj_drag = Some(ObjectDrag { drag, object, min: 0.0, picture: false, end: Some((which, (0.0, 0.0))), base: 0.0, keep: None });
         return true;
     }
     let Some((object, grab)) = grab_at(app, layout, pages, scale, at) else { return false };
@@ -192,6 +197,20 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
     let adding = ui.input(|i| i.modifiers.shift || i.modifiers.command);
     if pressed && adding && grab == Grab::Move && selected(app).is_some() {
         let _ = app.run("select.addObject", json!({"pos": object.pos()}));
+        return true;
+    }
+    // A handle of a turned text box being edited: the text stays edited and the box straight.
+    let straight_handle = grab != Grab::Move && active(app, layout).is_some_and(|(o, editing)| straightened(&o, editing) && o.pos() == object.pos());
+    if pressed && straight_handle {
+        let min = app
+            .session
+            .doc
+            .para(object.story, &object.path)
+            .and_then(|p| p.object_at(object.off))
+            .map_or(0.0, wordcraft_engine::cmd::objects::min_size);
+        let drag = Drag::new(grab, object.page, object.rect, 0.0, at);
+        let (base, keep) = (object.spin.deg, Some(app.session.sel.clone()));
+        app.canvas.obj_drag = Some(ObjectDrag { drag, object, min, picture: false, end: None, base, keep });
         return true;
     }
     if pressed {
@@ -204,8 +223,15 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
         };
         // Objects in table cells can be selected and resized, not moved; charts neither.
         if !fixed(app, &object) && (grab != Grab::Move || movable(app, &object)) {
-            app.canvas.obj_drag =
-                Some(ObjectDrag { drag: Drag::new(grab, object.page, object.rect, object.spin.deg, at), object, min, picture, end: None });
+            app.canvas.obj_drag = Some(ObjectDrag {
+                drag: Drag::new(grab, object.page, object.rect, object.spin.deg, at),
+                object,
+                min,
+                picture,
+                end: None,
+                base: 0.0,
+                keep: None,
+            });
         }
     }
     true
@@ -254,12 +280,14 @@ fn grab_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Po
     let story = active_story(app, layout);
     // A turned text box being edited is drawn straight, without handles (its handles would
     // turn and size it from the straight frame); its border still moves it.
-    let handle = active(app, layout).filter(|(o, editing)| o.story == story && !fixed(app, o) && !straightened(o, *editing)).and_then(|(o, _)| {
+    // A turned text box being edited is drawn straight, its handles on the straight frame.
+    let handle = active(app, layout).filter(|(o, _)| o.story == story && !fixed(app, o)).and_then(|(o, editing)| {
         let f = screen(pages, scale, o.page, o.rect)?;
-        if frame::rotate_handle_at(f, o.spin.deg, at) {
+        let deg = if straightened(&o, editing) { 0.0 } else { o.spin.deg };
+        if frame::rotate_handle_at(f, deg, at) {
             return Some((o, Grab::Rotate));
         }
-        frame::handle_at(f, o.spin.deg, at).map(|h| (o, Grab::Resize(h)))
+        frame::handle_at(f, deg, at).map(|h| (o, Grab::Resize(h)))
     });
     handle.or_else(|| {
         let (page, x, y) = crate::canvas::page_at(pages, layout, scale, at)?;
@@ -281,10 +309,26 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
     if !d.drag.moved {
         return;
     }
+    // A handle of an edited turned box: the commands act on the box, then the text is edited
+    // again.
+    if let Some(keep) = &d.keep {
+        let pos = d.object.pos();
+        let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
+        let _ = app.run("select.range", json!({"anchor": pos, "focus": end}));
+        commit(app, d);
+        app.session.sel = keep.clone();
+        return;
+    }
+    commit(app, d);
+}
+
+/// Run a finished drag's command.
+fn commit(app: &mut WordApp, d: &ObjectDrag) {
     let r = d.drag.rect;
     let params = match d.drag.grab {
         Grab::Rotate => {
-            let _ = app.run("arrange.rotation", json!({"degrees": d.drag.deg}));
+            let deg = wordcraft_geom::normalize_degrees(d.base + d.drag.deg);
+            let _ = app.run("arrange.rotation", json!({"degrees": deg}));
             return;
         }
         Grab::Move => json!({"page": d.drag.to_page, "x": r.x, "y": r.y}),
@@ -319,7 +363,7 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
     if let Some(d) = app.canvas.obj_drag.as_ref().filter(|d| d.drag.moved) {
         let Some(to) = screen(pages, scale, d.drag.to_page, d.drag.rect) else { return };
         if d.drag.grab == Grab::Rotate {
-            frame::paint_turning(painter, t, to, d.drag.deg);
+            frame::paint_turning(painter, t, to, d.drag.deg, d.base + d.drag.deg);
             return;
         }
         // The object's own pixels, from its page's cached texture: moved, or scaled for an
@@ -355,13 +399,10 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
     {
         // Handles where it can be resized and turned (body and header/footer objects,
         // not charts): else a plain frame.
-        if straightened(&o, editing) {
-            // Drawn straight while its text is edited: a plain straight frame.
-            frame::paint(painter, t, f, 0.0, editing, false, false);
-            return;
-        }
         let handles = selectable_story(app, o.story) && !fixed(app, &o);
-        frame::paint(painter, t, f, o.spin.deg, editing, handles, handles);
+        // A turned text box being edited is drawn straight, and so is its frame (Word check P).
+        let deg = if straightened(&o, editing) { 0.0 } else { o.spin.deg };
+        frame::paint(painter, t, f, deg, editing, handles, handles);
     }
 }
 
@@ -554,18 +595,24 @@ pub(crate) mod tests {
         assert!((d.drag.deg - 30.0).abs() < 0.01, "the move keeps its real turn: {}", d.drag.deg);
     }
 
-    /// While a turned text box is edited (drawn straight) it shows no rotation or resize
-    /// handles; selected again, its handles are at its real angle and turning starts from it.
+    /// Word check P: while a turned text box is edited (drawn straight) its resize and rotation
+    /// handles are on the straight frame; selected again, they are at its real angle and turning
+    /// starts from it.
     #[test]
-    fn an_edited_turned_box_has_no_handles_and_turning_starts_from_its_angle() {
+    fn an_edited_turned_box_shows_handles_on_its_straight_frame() {
         let (mut h, id) = turned_box_window();
         edit(&mut h, id);
         let f = frame_on_screen(&mut h, id);
-        for at in [frame::rotate_handle(f, 0.0), f.right_top(), f.right_center()] {
+        for (at, want) in [(frame::rotate_handle(f, 0.0), "rotate"), (f.right_top(), "resize"), (f.right_center(), "resize")] {
             edit(&mut h, id);
             press(&mut h, at, true);
             let grab = h.state().canvas.obj_drag.as_ref().map(|d| d.drag.grab);
-            assert!(!matches!(grab, Some(Grab::Rotate | Grab::Resize(_))), "no handle at {at:?} while editing: {grab:?}");
+            let got = match grab {
+                Some(Grab::Rotate) => "rotate",
+                Some(Grab::Resize(_)) => "resize",
+                _ => "none",
+            };
+            assert_eq!(got, want, "the straight frame's handle at {at:?}");
             press(&mut h, at, false);
             h.state_mut().canvas.obj_drag = None;
         }
@@ -580,5 +627,58 @@ pub(crate) mod tests {
         let d = h.state().canvas.obj_drag.as_ref().expect("the rotation handle is grabbed");
         assert_eq!(d.drag.grab, Grab::Rotate);
         assert!((d.drag.deg - 30.0).abs() < 0.01, "turning starts from the box's angle: {}", d.drag.deg);
+    }
+
+    /// Press at `from`, move to `to` in a few steps, release.
+    fn drag(h: &mut H, from: Pos2, to: Pos2) {
+        press(h, from, true);
+        for k in 1..=4 {
+            h.event(egui::Event::PointerMoved(from + (to - from) * (k as f32 / 4.0)));
+            h.step();
+        }
+        press(h, to, false);
+        for _ in 0..2 {
+            h.step();
+        }
+    }
+
+    /// The box's size and turn in the document.
+    fn box_frame(h: &H) -> (f32, f32, f32) {
+        let o = h.state().session.doc.para(wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(0)).and_then(|p| p.object_at(0)).cloned();
+        let (w, ht, float) = o.as_ref().and_then(|o| o.frame()).map(|(w, ht, f)| (w, ht, f.spin().deg)).expect("the box");
+        (w, ht, float)
+    }
+
+    /// Resizing an edited turned box from its straight frame: one undo step, wider, still 30°,
+    /// and the text stays being edited.
+    #[test]
+    fn resizing_an_edited_turned_box_keeps_its_turn() {
+        let (mut h, id) = turned_box_window();
+        edit(&mut h, id);
+        let (w0, h0, deg0) = box_frame(&h);
+        assert!((w0 - 200.0).abs() < 0.01 && (deg0 - 30.0).abs() < 0.01);
+        let depth = h.state().session.undo_depth();
+        let f = frame_on_screen(&mut h, id);
+        let s = h.state().canvas.scale;
+        drag(&mut h, f.right_center(), f.right_center() + egui::vec2(40.0 * s, 0.0));
+        let (w, ht, deg) = box_frame(&h);
+        assert!((w - 240.0).abs() < 1.0, "40 pt wider: {w}");
+        assert!((ht - h0).abs() < 0.01, "as tall: {ht}");
+        assert!((deg - 30.0).abs() < 0.01, "still turned 30°: {deg}");
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
+        assert_eq!(h.state().session.sel.focus.story, wordcraft_doc::StoryRef::Part(id), "still editing its text");
+    }
+
+    /// Turning an edited turned box from its straight frame adds the turn to its real angle.
+    #[test]
+    fn turning_an_edited_turned_box_adds_to_its_angle() {
+        let (mut h, id) = turned_box_window();
+        edit(&mut h, id);
+        let depth = h.state().session.undo_depth();
+        let f = frame_on_screen(&mut h, id);
+        drag(&mut h, frame::rotate_handle(f, 0.0), frame::rotate_handle(f, 10.0));
+        let (.., deg) = box_frame(&h);
+        assert!((deg - 40.0).abs() < 1.01, "30° + 10°: {deg}");
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one undo step");
     }
 }
