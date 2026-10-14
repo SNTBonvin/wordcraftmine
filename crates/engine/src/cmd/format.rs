@@ -1,10 +1,10 @@
 //! Character formatting (Home › Font).
 
 use serde_json::{Value, json};
-use wordcraft_doc::Pos;
 use wordcraft_doc::eq::{EncloseShape, EncloseStyle, Enclosure};
 use wordcraft_doc::props::{Border, CharProps, Highlight, Rgb, TextColor, Underline, VertAlign};
 use wordcraft_doc::resolve::ResolvedChar;
+use wordcraft_doc::{Pos, RevisionKind};
 
 use super::sel_result;
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
@@ -385,6 +385,8 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
     if a == b {
         return sel_result(s);
     }
+    // Changing case rewrites the characters: refused in content locked against editing.
+    super::controls::check_edit(s, &a, &b)?;
     let text = s.doc.copy_range(&a, &b).plain_text();
     let mode = p::str(v, "mode").map(str::to_string).unwrap_or_else(|| {
         // Shift+F3 cycles: lower → UPPER → Title → lower.
@@ -410,22 +412,65 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
         if groups.is_empty() {
             continue;
         }
+        // With Track Changes on, a changed stretch is a tracked deletion of the old characters
+        // followed by a tracked insertion of the new, so Reject All restores the old case (#1329).
+        // Text this author inserted is rewritten in place (it stays one insertion), and text
+        // already deleted is left alone.
+        let tracked = s.doc.settings.track_changes;
+        let kinds: Vec<Tracked> = {
+            let Some(p) = s.doc.para(a.story, &path) else { continue };
+            groups
+                .iter()
+                .map(|(start, _, _)| {
+                    let c = p.props_of_char(*start);
+                    if !tracked {
+                        Tracked::No
+                    } else if c.del.is_some() {
+                        Tracked::Deleted
+                    } else if c.ins.and_then(|i| s.doc.revisions.get(i as usize)).is_some_and(|rv| rv.author == s.author) {
+                        Tracked::No
+                    } else {
+                        Tracked::Replace
+                    }
+                })
+                .collect()
+        };
+        let revs = if kinds.contains(&Tracked::Replace) {
+            Some((super::new_revision(s, RevisionKind::Delete), super::new_revision(s, RevisionKind::Insert)))
+        } else {
+            None
+        };
         // Each stretch keeps its own run's formatting (#421); right to left so offsets hold.
         let para = s.doc.para_mut(a.story, &path)?;
-        for (start, end, new) in groups.iter().rev() {
-            if new.len() == end - start {
-                if para.text.get(*start..*end).is_some() {
-                    para.text.replace_range(*start..*end, new);
+        let mut spans: Vec<(usize, usize, usize)> = Vec::with_capacity(groups.len());
+        for ((start, end, new), kind) in groups.iter().zip(&kinds).rev() {
+            let old_len = end.saturating_sub(*start);
+            match (kind, revs) {
+                (Tracked::Deleted, _) => spans.push((*start, *end, old_len)),
+                (Tracked::Replace, Some((del, ins))) => {
+                    let mut props = para.props_of_char(*start).clone();
+                    para.format(*start, *end, &|c| c.del = Some(del))?;
+                    (props.ins, props.del, props.fmt_change) = (Some(ins), None, None);
+                    para.insert_text(*end, new, &props)?;
+                    spans.push((*start, *end, old_len.saturating_add(new.len())));
                 }
-            } else {
-                let props = para.props_of_char(*start).clone();
-                para.delete(*start, *end)?;
-                para.insert_text(*start, new, &props)?;
+                _ => {
+                    if new.len() == old_len {
+                        if para.text.get(*start..*end).is_some() {
+                            para.text.replace_range(*start..*end, new);
+                        }
+                    } else {
+                        let props = para.props_of_char(*start).clone();
+                        para.delete(*start, *end)?;
+                        para.insert_text(*start, new, &props)?;
+                    }
+                    spans.push((*start, *end, new.len()));
+                }
             }
         }
+        spans.reverse();
         para.touch();
         // The selection keeps covering the converted text when its length changed (#420).
-        let spans: Vec<(usize, usize, usize)> = groups.iter().map(|(x, y, n)| (*x, *y, n.len())).collect();
         for end in [&mut s.sel.anchor, &mut s.sel.focus] {
             if end.story == a.story && end.path == path {
                 end.off = map_offset(&spans, end.off);
@@ -433,6 +478,17 @@ fn change_case(s: &mut Session, v: &Value) -> CmdResult {
         }
     }
     sel_result(s)
+}
+
+/// How Change Case rewrites one stretch under Track Changes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tracked {
+    /// In place: tracking is off, or the text is this author's own insertion.
+    No,
+    /// Already a tracked deletion: left as it is.
+    Deleted,
+    /// A tracked deletion of the old text and a tracked insertion of the new.
+    Replace,
 }
 
 /// Group the characters of `src` (at `from` in `p`) whose converted form `conv` differs into
