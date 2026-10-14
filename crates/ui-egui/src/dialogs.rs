@@ -246,6 +246,8 @@ pub enum Dialog {
         grid_was: (u8, u32, u32),
         /// Section direction: right to left (`layout.sectionRtl`).
         rtl: bool,
+        /// Vertical alignment (`layout.verticalAlign`, applied only if changed).
+        valign: wordcraft_doc::section::PageVAlign,
     },
     Link {
         url: String,
@@ -1080,6 +1082,7 @@ impl Dialog {
                     grid,
                     grid_was: grid,
                     rtl: sp.rtl,
+                    valign: sp.valign,
                 }
             }
             "link" => Dialog::Link { url: "https://".into(), text: app.session.selected_text() },
@@ -1865,7 +1868,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             }
             ok || cancel
         }
-        Dialog::PageSetup { top, bottom, left, right, landscape, rtl, grid, grid_was } => {
+        Dialog::PageSetup { top, bottom, left, right, landscape, rtl, grid, grid_was, valign } => {
             ui.label(egui::RichText::new(tl!("Margins")).font(semibold(12.5)));
             egui::Grid::new("ps").num_columns(4).show(ui, |ui| {
                 ui.label(tl!("Top:"));
@@ -1905,6 +1908,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.radio_value(rtl, false, tl!("Left-to-right"));
                 ui.radio_value(rtl, true, tl!("Right-to-left"));
             });
+            page_valign_combo(ui, valign);
             let (ok, cancel) = buttons(ui, tl!("OK"));
             if ok {
                 let _ = app.run("layout.orientation", json!({"value": if *landscape { "landscape" } else { "portrait" }}));
@@ -1923,6 +1927,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 }
                 if *rtl != wordcraft_engine::cmd::page::sect(&app.session).rtl {
                     let _ = app.run("layout.sectionRtl", json!({"value": *rtl}));
+                }
+                if *valign != wordcraft_engine::cmd::page::sect(&app.session).valign {
+                    let _ = app.run("layout.verticalAlign", json!({"value": page_valign_value(*valign)}));
                 }
             }
             ok || cancel
@@ -3273,6 +3280,33 @@ fn enclose_preview(ui: &mut Ui, style: &str, text: &str, shape: &str) {
     p.text(c + vec2(0.0, dy), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(px), ink);
 }
 
+/// Page Setup's "Vertical alignment:" box (Word's Layout tab).
+fn page_valign_combo(ui: &mut egui::Ui, valign: &mut wordcraft_doc::section::PageVAlign) {
+    use wordcraft_doc::section::PageVAlign;
+    const CHOICES: [(PageVAlign, &str); 4] =
+        [(PageVAlign::Top, "Top"), (PageVAlign::Center, "Center"), (PageVAlign::Justify, "Justified"), (PageVAlign::Bottom, "Bottom")];
+    ui.horizontal(|ui| {
+        ui.label(tl!("Vertical alignment:"));
+        let shown = CHOICES.iter().find(|(v, _)| v == valign).map_or("", |(_, l)| tl!(l));
+        egui::ComboBox::from_id_salt("ps_valign").selected_text(shown).show_ui(ui, |ui| {
+            for (v, l) in CHOICES {
+                ui.selectable_value(valign, v, tl!(l));
+            }
+        });
+    });
+}
+
+/// `layout.verticalAlign`'s name for a value.
+fn page_valign_value(v: wordcraft_doc::section::PageVAlign) -> &'static str {
+    use wordcraft_doc::section::PageVAlign;
+    match v {
+        PageVAlign::Top => "top",
+        PageVAlign::Center => "center",
+        PageVAlign::Justify => "justify",
+        PageVAlign::Bottom => "bottom",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3696,5 +3730,36 @@ mod tests {
         let after = h.ctx.memory(|m| m.area_rect(id)).expect("dialog is still open");
         assert!((after.min.x - (before.min.x - 200.0)).abs() <= 1.0, "moved left: {before:?} -> {after:?}");
         assert!((after.min.y - (before.min.y + 120.0)).abs() <= 1.0, "moved down: {before:?} -> {after:?}");
+    }
+
+    /// #1320: Page Setup shows the section's vertical alignment, and OK applies a change.
+    #[test]
+    fn page_setup_dialog_sets_vertical_alignment() {
+        use egui_kittest::kittest::Queryable;
+        use wordcraft_doc::section::PageVAlign;
+        let mut app = app_with("Some text");
+        let _ = app.run("layout.verticalAlign", json!({"value": "bottom"}));
+        app.dialog = Dialog::open("pageSetup", &mut app);
+        assert!(matches!(app.dialog, Some(Dialog::PageSetup { valign: PageVAlign::Bottom, .. })), "shows the section's value");
+        if let Some(Dialog::PageSetup { valign, .. }) = &mut app.dialog {
+            *valign = PageVAlign::Justify;
+        }
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        for _ in 0..4 {
+            h.step();
+        }
+        assert!(h.query_by_label("Vertical alignment:").is_some(), "the dialog has the control");
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "OK").click();
+        for _ in 0..4 {
+            h.step();
+        }
+        assert_eq!(wordcraft_engine::cmd::page::sect(&h.state().session).valign, PageVAlign::Justify);
     }
 }
