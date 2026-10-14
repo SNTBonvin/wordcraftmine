@@ -1535,6 +1535,7 @@
 	Use the Insert key to switch overtype on and off	Usa il tasto Ins per attivare e disattivare la sovrascrittura
 	Extend Selection by Units	Estendi selezione per unità
 	Word XML Document (*.xml)	Documento Word XML (*.xml)
+	Word 2003 XML Document (*.xml)	Documento Word 2003 XML (*.xml)
 	Deleted	Eliminato
 	Print Markup	Stampa revisioni
 	Comments beside each page and tracked changes in PDFs, prints and images; a comment list at the end of web pages, Markdown and text.	Commenti accanto a ogni pagina e revisioni in PDF, stampe e immagini; un elenco dei commenti alla fine di pagine web, Markdown e testo.
@@ -2460,3 +2461,10 @@ preview	Title	Esempio
 	Automatic ({region})	Automatico ({region})
 	Search	Cerca
 	Title Bar	Barra del titolo
+	Privacy Options	Opzioni di privacy
+	Trust Center	Centro protezione
+	Privacy for this document	Privacy di questo documento
+	Remove my name from comments, changes and file properties when saving	Rimuovi il mio nome da commenti, modifiche e proprietà del file al salvataggio
+	Leave out the date and time of comments and tracked changes when saving	Ometti data e ora di commenti e revisioni al salvataggio
+	The document you are editing keeps the names and dates; only the saved file leaves them out.	Il documento che stai modificando conserva nomi e date; solo il file salvato li omette.
+	Privacy Settings	Impostazioni di privacy attuali

@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod autoscroll;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -2694,6 +2695,44 @@ mod tests {
         );
         assert!(!a.canvas.drag_selecting());
         assert!(!a.session.sel.is_collapsed(), "the drag left a selection");
+    }
+
+    /// The control channel's `ui.wheel` scrolls the canvas like a mouse wheel over it.
+    #[test]
+    fn control_wheel_scrolls_the_canvas() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for _ in 0..3 {
+            a.run("insert.pageBreak", json!({})).unwrap();
+        }
+        a.run("caret.docStart", json!({})).unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp| {
+            t += 1.0 / 60.0;
+            let mut input = egui::RawInput { time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            a.raw_input_hook(&mut input);
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        let top = a.canvas.page_rects[0].top();
+        let at = a.canvas.canvas_rect.unwrap().center();
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x, "y": at.y, "dy": -400.0}));
+        control::handle(&mut a, &ctx, &req);
+        for _ in 0..30 {
+            frame(&mut a);
+        }
+        let moved = top - a.canvas.page_rects[0].top();
+        assert!(moved > 100.0, "the first page moved up by {moved}");
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("ui.wheel replies at once") };
+        assert_eq!(v["ok"], false, "y is required: {v}");
     }
 
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
