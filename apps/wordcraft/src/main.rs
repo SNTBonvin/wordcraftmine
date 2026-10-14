@@ -13,6 +13,8 @@ mod animations;
 #[cfg(target_os = "macos")]
 mod apple_events;
 mod clipboard;
+mod cloud;
+mod collab;
 mod control_server;
 mod default_apps;
 mod file_dialogs;
@@ -28,59 +30,78 @@ use wordcraft_ui_egui::{
     window_geometry::{WindowGeometry, take_rescue},
 };
 
-/// The app, the restored window geometry until the first frame has checked it, the control
-/// server's key file (removed on exit), the file dialogs the app asked for and, on macOS, the
-/// documents opened from Finder.
-struct App(
-    WordApp,
-    Option<WindowGeometry>,
-    Option<control_server::KeyFile>,
-    file_dialogs::Launcher,
-    #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
-);
+/// The app and what the host keeps beside it.
+struct App {
+    doc: WordApp,
+    /// The restored window geometry, until the first frame has checked it.
+    restored: Option<WindowGeometry>,
+    /// The control server's key file, removed on exit.
+    key_file: Option<control_server::KeyFile>,
+    /// The file dialogs the app asked for.
+    dialogs: file_dialogs::Launcher,
+    /// Shared editing, when a credential was configured. `None` leaves the app behaving exactly
+    /// as it did before.
+    collab: Option<collab::Link>,
+    /// macOS: the documents opened from Finder.
+    #[cfg(target_os = "macos")]
+    events: fmv_macos_events::Inbox,
+}
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        apple_events::poll(&self.4, &mut self.0, ctx);
-        self.0.logic(ctx);
-        self.3.show(frame);
-        let prev = self.0.ui.window;
-        self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
-        if let Some(pos) = ctx.input(|i| take_rescue(&mut self.1, i.viewport())) {
+        apple_events::poll(&self.events, &mut self.doc, ctx);
+        if let Some(link) = &mut self.collab {
+            link.pump(&mut self.doc.session);
+            // Who else is here, straight from the relay's roster. The whole set is handed over
+            // rather than a change, so somebody who left stops being shown without waiting for a
+            // reconnection.
+            self.doc.presence.set(link.roster.iter().map(|(id, display)| craft_ui::presence::Peer::new(id.clone(), display.clone())).collect());
+            for notice in std::mem::take(&mut link.notices) {
+                self.doc.status(notice);
+            }
+            // egui only draws when something happens locally, and another person typing is not a
+            // local event. Without this a remote edit sits in the socket until the mouse moves.
+            ctx.request_repaint_after(std::time::Duration::from_millis(120));
+        }
+        self.doc.logic(ctx);
+        self.dialogs.show(frame);
+        let prev = self.doc.ui.window;
+        self.doc.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
+        if let Some(pos) = ctx.input(|i| take_rescue(&mut self.restored, i.viewport())) {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
         }
         // The window's close button: with unsaved changes, ask first (`WordApp::close_requested`).
         let closing = ctx.input(|i| i.viewport().close_requested());
-        if closing && !self.0.close_requested() {
+        if closing && !self.doc.close_requested() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        } else if (closing || self.0.quit_requested) && !self.0.printing.busy() {
+        } else if (closing || self.doc.quit_requested) && !self.doc.printing.busy() {
             // On macOS, letting eframe drop the window inside `-[NSApplication run]` aborts in
             // `-[_NSTouchBarFinderObservation invalidate]`. Command-Q calls `terminate:`. Once
             // the close is allowed, take that path instead of dropping the window on this turn.
             #[cfg(target_os = "macos")]
             {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                self.0.quit_requested = false;
-                schedule_macos_terminate(&self.0, self.2.as_ref());
+                self.doc.quit_requested = false;
+                schedule_macos_terminate(&self.doc, self.key_file.as_ref());
             }
             #[cfg(not(target_os = "macos"))]
-            if self.0.quit_requested {
+            if self.doc.quit_requested {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        self.0.raw_input_hook(raw);
+        self.doc.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.0.ui(ui);
-        self.3.show(frame);
+        self.doc.ui(ui);
+        self.dialogs.show(frame);
     }
     fn on_exit(&mut self) {
         print::finish_pending_jobs();
-        save_prefs(&self.0);
-        if let Some(key_file) = &self.2 {
+        save_prefs(&self.doc);
+        if let Some(key_file) = &self.key_file {
             key_file.remove();
         }
     }
@@ -326,6 +347,14 @@ fn main() -> eframe::Result {
                 let doc = app.session.blank_document();
                 app.session.set_document(doc);
             }
+            // Open and Save against cloud storage, when a CollabCraft service is configured.
+            // Every call it makes blocks, so it runs on a worker and answers reach the window on a
+            // channel. Without a service the application is local-only and offers nothing
+            // cloud-shaped.
+            if let Some(backend) = cloud::service(cc.egui_ctx.clone()) {
+                app.cloud.connect(backend);
+            }
+            app.share.connect(collabcraft_share::CollabCraft::from_fn(cloud::client));
             app.watch_desktop_theme(&cc.egui_ctx);
             app.ui.window = restored;
             app.integrated_titlebar = cfg!(target_os = "macos");
@@ -347,14 +376,26 @@ fn main() -> eframe::Result {
                     log::warn!("{f}: {e}");
                 }
             }
-            Ok(Box::new(App(
-                app,
+            // Attached after the document exists, so the first remote edit has somewhere to
+            // land. A missing credential or an unreachable relay logs and yields None, and the app
+            // runs as an ordinary single-writer word processor.
+            //
+            // A document named by the launcher, reached through CollabCraft, which signs in
+            // through the browser. Otherwise the plain token in the environment, which is what a
+            // test harness supplies.
+            let link = match cloud::CloudToken::from_env() {
+                Some(source) => collab::Link::attach(&mut app.session, &source),
+                None => collab::Link::attach(&mut app.session, &collab::EnvToken),
+            };
+            Ok(Box::new(App {
+                doc: app,
                 restored,
                 key_file,
                 dialogs,
+                collab: link,
                 #[cfg(target_os = "macos")]
-                apple_events.connect(&cc.egui_ctx),
-            )))
+                events: apple_events.connect(&cc.egui_ctx),
+            }))
         }),
     )
 }
