@@ -1345,7 +1345,7 @@ fn small_native_window_can_reach_send_and_consent_without_clipping() {
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 480.0));
     let send = h.get_by_role_and_label(egui::accesskit::Role::Button, "↑").rect();
     let consent = h.get_by_role_and_label(egui::accesskit::Role::Button, "Allow cloud sharing and send").rect();
-    assert!(viewport.contains_rect(send), "Send outside the window: {send:?}");
+    assert!(viewport.contains_rect(send) && send.max.y <= 450.0, "Send outside the usable chat area: {send:?}");
     assert!(viewport.contains_rect(consent), "Consent outside the window: {consent:?}");
     assert!(!h.state().ollama.settings.open);
     assert_eq!(h.state().ollama.input, "Keep the small-window draft");

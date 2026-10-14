@@ -1455,99 +1455,100 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     );
                 }
                 ui.add_space(10.0);
-                egui::Frame::NONE.fill(t.chat_surface).stroke(Stroke::new(0.6, t.border)).corner_radius(24).inner_margin(14).show(ui, |ui| {
-                    if !app.ollama.images.is_empty() {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.small(RichText::new("Images · included with Codex turns").color(t.chat_dim));
-                            let mut remove = None;
-                            for (index, path) in app.ollama.images.iter().enumerate() {
-                                let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_else(|| "Image".into());
-                                if ui.small_button(format!("{name} ×")).on_hover_text("Remove image from this chat").clicked() {
-                                    remove = Some(index);
+                let composer =
+                    egui::Frame::NONE.fill(t.chat_surface).stroke(Stroke::new(0.6, t.border)).corner_radius(24).inner_margin(14).show(ui, |ui| {
+                        if !app.ollama.images.is_empty() {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.small(RichText::new("Images · included with Codex turns").color(t.chat_dim));
+                                let mut remove = None;
+                                for (index, path) in app.ollama.images.iter().enumerate() {
+                                    let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_else(|| "Image".into());
+                                    if ui.small_button(format!("{name} ×")).on_hover_text("Remove image from this chat").clicked() {
+                                        remove = Some(index);
+                                    }
                                 }
-                            }
-                            if let Some(index) = remove {
-                                app.ollama.images.remove(index);
-                                app.ollama.history_dirty = true;
-                                app.ollama.status = "Image removed from this chat.".into();
-                            }
-                        });
-                        ui.add_space(4.0);
-                    }
-                    let response = ui.add(
-                        egui::TextEdit::multiline(&mut app.ollama.input)
-                            .id(egui::Id::new("agent_composer"))
-                            .return_key(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter))
-                            .font(crate::theme::regular(14.0))
-                            .frame(egui::Frame::NONE)
-                            .hint_text("Ask anything about your document")
-                            .desired_rows(if welcome { 1 } else { 2 })
-                            .desired_width(f32::INFINITY)
-                            .char_limit(MAX_INPUT),
-                    );
-                    if std::mem::take(&mut app.ollama.reveal_composer) {
-                        ui.scroll_to_rect(response.rect, Some(egui::Align::Max));
-                    }
-                    let submit = response.has_focus()
-                        && app.ollama.edit_message.is_none()
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.menu_button(RichText::new("+").size(23.0), |ui| {
-                            let can_add_image = app.ollama.source == Source::Codex && app.ollama.images.len() < MAX_AGENT_IMAGES;
-                            if ui
-                                .add_enabled(can_add_image, egui::Button::new("Attach image…"))
-                                .on_hover_text("Attach up to four PNG, JPEG, GIF, WebP or BMP images (20 MiB each) to Codex chat.")
-                                .clicked()
-                            {
-                                app.ollama.image_picker_intent = true;
-                                if let Err(error) = command(app, "ui.agentPickImage", &json!({})) {
-                                    app.ollama.status = error;
+                                if let Some(index) = remove {
+                                    app.ollama.images.remove(index);
+                                    app.ollama.history_dirty = true;
+                                    app.ollama.status = "Image removed from this chat.".into();
                                 }
-                                ui.close();
-                            }
-                            if ui.button("Project files & context…").clicked() {
-                                app.ollama.settings.open = true;
-                                app.ollama.settings.tab = settings::Tab::Project;
-                                ui.close();
-                            }
-                            if ui.checkbox(&mut app.ollama.internet, "Search the web").changed() && !app.ollama.internet && app.ollama.busy {
-                                app.ollama.stop();
-                            }
-                            ui.checkbox(&mut app.ollama.allow_edits, "Allow document editing");
-                            if ui.button("Chat history").clicked() {
-                                app.ollama.history_open = true;
-                                ui.close();
-                            }
-                        });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let send_button = ui
-                                .add_enabled(
-                                    app.ollama.busy
-                                        || (app.ollama.edit_message.is_none()
-                                            && !app.ollama.model.is_empty()
-                                            && (!app.ollama.input.trim().is_empty() || !app.ollama.images.is_empty())),
-                                    egui::Button::new(RichText::new(if app.ollama.busy { "■" } else { "↑" }).size(20.0).color(t.chat_send_text))
-                                        .fill(t.chat_send)
-                                        .corner_radius(255)
-                                        .min_size(egui::vec2(32.0, 32.0)),
-                                )
-                                .on_hover_text(if app.ollama.busy { "Stop response" } else { "Send · Enter (Shift Enter for a new line)" });
-                            if send_button.clicked() && app.ollama.busy {
-                                app.ollama.stop();
-                            } else if (send_button.clicked() || submit)
-                                && (!app.ollama.input.trim().is_empty() || !app.ollama.images.is_empty())
-                                && !app.ollama.busy
-                            {
-                                #[cfg(not(target_arch = "wasm32"))]
-                                send(app, &ctx);
-                            }
-                            ui.add_enabled_ui(!app.ollama.busy, |ui| {
-                                model_menu(app, ui, &t);
+                            });
+                            ui.add_space(4.0);
+                        }
+                        let response = ui.add(
+                            egui::TextEdit::multiline(&mut app.ollama.input)
+                                .id(egui::Id::new("agent_composer"))
+                                .return_key(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter))
+                                .font(crate::theme::regular(14.0))
+                                .frame(egui::Frame::NONE)
+                                .hint_text("Ask anything about your document")
+                                .desired_rows(if welcome { 1 } else { 2 })
+                                .desired_width(f32::INFINITY)
+                                .char_limit(MAX_INPUT),
+                        );
+                        let submit = response.has_focus()
+                            && app.ollama.edit_message.is_none()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.menu_button(RichText::new("+").size(23.0), |ui| {
+                                let can_add_image = app.ollama.source == Source::Codex && app.ollama.images.len() < MAX_AGENT_IMAGES;
+                                if ui
+                                    .add_enabled(can_add_image, egui::Button::new("Attach image…"))
+                                    .on_hover_text("Attach up to four PNG, JPEG, GIF, WebP or BMP images (20 MiB each) to Codex chat.")
+                                    .clicked()
+                                {
+                                    app.ollama.image_picker_intent = true;
+                                    if let Err(error) = command(app, "ui.agentPickImage", &json!({})) {
+                                        app.ollama.status = error;
+                                    }
+                                    ui.close();
+                                }
+                                if ui.button("Project files & context…").clicked() {
+                                    app.ollama.settings.open = true;
+                                    app.ollama.settings.tab = settings::Tab::Project;
+                                    ui.close();
+                                }
+                                if ui.checkbox(&mut app.ollama.internet, "Search the web").changed() && !app.ollama.internet && app.ollama.busy {
+                                    app.ollama.stop();
+                                }
+                                ui.checkbox(&mut app.ollama.allow_edits, "Allow document editing");
+                                if ui.button("Chat history").clicked() {
+                                    app.ollama.history_open = true;
+                                    ui.close();
+                                }
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let send_button = ui
+                                    .add_enabled(
+                                        app.ollama.busy
+                                            || (app.ollama.edit_message.is_none()
+                                                && !app.ollama.model.is_empty()
+                                                && (!app.ollama.input.trim().is_empty() || !app.ollama.images.is_empty())),
+                                        egui::Button::new(RichText::new(if app.ollama.busy { "■" } else { "↑" }).size(20.0).color(t.chat_send_text))
+                                            .fill(t.chat_send)
+                                            .corner_radius(255)
+                                            .min_size(egui::vec2(32.0, 32.0)),
+                                    )
+                                    .on_hover_text(if app.ollama.busy { "Stop response" } else { "Send · Enter (Shift Enter for a new line)" });
+                                if send_button.clicked() && app.ollama.busy {
+                                    app.ollama.stop();
+                                } else if (send_button.clicked() || submit)
+                                    && (!app.ollama.input.trim().is_empty() || !app.ollama.images.is_empty())
+                                    && !app.ollama.busy
+                                {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    send(app, &ctx);
+                                }
+                                ui.add_enabled_ui(!app.ollama.busy, |ui| {
+                                    model_menu(app, ui, &t);
+                                });
                             });
                         });
                     });
-                });
+                if std::mem::take(&mut app.ollama.reveal_composer) {
+                    ui.scroll_to_rect_animation(composer.response.rect, Some(egui::Align::Max), egui::style::ScrollAnimation::none());
+                }
                 ui.add_space(8.0);
                 if welcome {
                     ui.horizontal_wrapped(|ui| {
