@@ -2109,3 +2109,52 @@
 	Start-up	Käivitamine
 	Show the Start screen when WordCraft starts	Näita WordCrafti käivitamisel avakuva
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Sees: WordCraft avaneb vaates Fail › Avaleht, kus on tühi dokument, mallid ja hiljutised dokumendid. Väljas: avaneb tühi dokument.
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Iga agent vajab enne lugemist või muutmist sinu heakskiitu.
+	Allow agent connection requests	Luba agentide ühendustaotlused
+	Live agent connections are available in the desktop app.	Agendid saavad avatud dokumentidega ühenduda töölauarakenduses.
+	Copy MCP configuration	Kopeeri MCP seadistus
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Seadista MCP üks kord. Kutsed on valikulised; vali dokument ja kiida agent WordCraftis heaks.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Pärast esmast seadistamist peavad mõned kliendid tööriistad uuesti laadima või agendi seansi taaskäivitama. WordCraft jääb avatuks.
+	Document: {name}	Dokument: {name}
+	Copy invitation	Kopeeri kutse
+	Check live connection	Kontrolli ühendust avatud dokumendiga
+	Client connected as {name}	Ühendatud klient: {name}
+	Agent edits are tracked. You review changes and save the document.	Agendi muudatusi jälgitakse. Sina vaatad muudatused üle ja salvestad dokumendi.
+	Disconnect agent	Katkesta agendi ühendus
+	Checking MCP and this document…	MCP ja selle dokumendi kontrollimine…
+	MCP and this document are reachable. Client registration is separate.	MCP ja see dokument on kättesaadavad. Kliendi registreerimine on eraldi samm.
+	Connection setup	Ühenduse seadistamine
+	This version supports one agent per document.	See versioon toetab üht agenti dokumendi kohta.
+	Agent connection request	Agendi ühendustaotlus
+	Agent {agent} wants to access {document}.	Agent {agent} soovib juurdepääsu dokumendile {document}.
+	Allow	Luba
+	Deny	Keeldu
+	Install matching WordCraft release	Paigalda sobiv WordCrafti versioon
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Taotluste lubamisel näevad kohalikud kliendid selle dokumendi pealkirja.
+	Agent connection could not be updated.	Agendi ühendust ei saanud uuendada.
+	Refresh connection setup and try again.	Värskendage ühenduse seadistust ja proovige uuesti.
+	Technical details	Tehnilised üksikasjad
+	Agent connection setup is ready.	Agendi ühendus on seadistatud.
+	Checking this installation…	Selle paigalduse kontrollimine…
+	Connection setup has not been checked.	Ühenduse seadistust pole veel kontrollitud.
+	The agent connector is missing.	Agendi ühenduskomponent puudub.
+	The agent connector does not match this WordCraft version.	Agendi ühenduskomponent ei sobi selle WordCrafti versiooniga.
+	The installation path cannot be used for agent connections.	Paigaldustee ei sobi agentide ühendamiseks.
+	The connection check timed out.	Ühenduse kontrolli ajalimiit ületati.
+	The connection check could not reach this document.	Ühenduse kontroll ei saanud selle dokumendiga ühendust.
+	The connection check was cancelled.	Ühenduse kontroll tühistati.
+	The connection check failed.	Ühenduse kontroll nurjus.
+	Agent connection setup is unavailable.	Agendi ühenduse seadistus pole saadaval.
+	Copy the MCP configuration into your agent client.	Kopeerige MCP seadistus oma agendiklienti.
+	Please wait for the check to finish.	Oodake kontrolli lõppu.
+	Open connection setup to check this installation.	Avage ühenduse seadistus selle paigalduse kontrollimiseks.
+	Install the matching WordCraft release, then refresh setup.	Paigaldage sobiv WordCrafti versioon ja värskendage seadistust.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Teisaldage WordCraft Unicode-nimega kausta ja värskendage seadistust.
+	Try the connection check again. If it keeps failing, refresh setup.	Proovige ühenduse kontrolli uuesti. Kui see ikka nurjub, värskendage seadistust.
+	Allow requests for this document, then check the connection again.	Lubage selle dokumendi taotlused ja kontrollige ühendust uuesti.
+	The requesting client supplied this name. Its identity has not been verified.	Selle nime esitas taotlev klient. Tema isikut pole kontrollitud.
+	Deny and stop requests	Keeldu ja peata taotlused
+	Agent approval requested	Agent ootab heakskiitu
+	Listening for agent requests	Agenditaotluste ootel

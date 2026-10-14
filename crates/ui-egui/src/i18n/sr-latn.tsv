@@ -2085,3 +2085,52 @@
 	Start-up	Pokretanje
 	Show the Start screen when WordCraft starts	Prikaži početni ekran pri pokretanju programa WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Uključeno: WordCraft se otvara na Fajl › Početak, sa praznim dokumentom, šablonima i nedavnim dokumentima. Isključeno: otvara prazan dokument.
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Svaki agent mora da dobije vaše odobrenje pre čitanja ili uređivanja.
+	Allow agent connection requests	Dozvoli zahteve za povezivanje agenata
+	Live agent connections are available in the desktop app.	Agenti mogu da se povežu sa otvorenim dokumentom u desktop aplikaciji.
+	Copy MCP configuration	Kopiraj MCP podešavanja
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Podesite MCP jednom. Pozivi su neobavezni; izaberite dokument i odobrite agenta u WordCraft-u.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Nakon prvog podešavanja, neki klijenti moraju ponovo da učitaju alatke ili pokrenu sesiju agenta. WordCraft ostaje otvoren.
+	Document: {name}	Dokument: {name}
+	Copy invitation	Kopiraj poziv
+	Check live connection	Proveri vezu sa otvorenim dokumentom
+	Client connected as {name}	Povezani klijent: {name}
+	Agent edits are tracked. You review changes and save the document.	Izmene agenta se prate. Vi pregledate izmene i čuvate dokument.
+	Disconnect agent	Prekini vezu sa agentom
+	Checking MCP and this document…	Provera MCP-a i ovog dokumenta…
+	MCP and this document are reachable. Client registration is separate.	MCP i ovaj dokument su dostupni. Registracija klijenta je poseban korak.
+	Connection setup	Podešavanje veze
+	This version supports one agent per document.	Ova verzija podržava jednog agenta po dokumentu.
+	Agent connection request	Zahtev za povezivanje agenta
+	Agent {agent} wants to access {document}.	Agent {agent} traži pristup dokumentu {document}.
+	Allow	Dozvoli
+	Deny	Odbij
+	Install matching WordCraft release	Instaliraj odgovarajuću verziju WordCraft-a
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Dozvoljavanje zahteva čini naslov dokumenta vidljivim lokalnim klijentima.
+	Agent connection could not be updated.	Veza agenta nije mogla da se ažurira.
+	Refresh connection setup and try again.	Osvežite podešavanja veze i pokušajte ponovo.
+	Technical details	Tehnički detalji
+	Agent connection setup is ready.	Veza agenta je podešena.
+	Checking this installation…	Provera ove instalacije…
+	Connection setup has not been checked.	Podešavanja veze još nisu proverena.
+	The agent connector is missing.	Nedostaje komponenta za povezivanje agenta.
+	The agent connector does not match this WordCraft version.	Komponenta za povezivanje agenta ne odgovara ovoj verziji WordCraft-a.
+	The installation path cannot be used for agent connections.	Putanja instalacije ne može da se koristi za povezivanje agenata.
+	The connection check timed out.	Isteklo je vreme za proveru veze.
+	The connection check could not reach this document.	Provera veze nije uspela da pristupi ovom dokumentu.
+	The connection check was cancelled.	Provera veze je otkazana.
+	The connection check failed.	Provera veze nije uspela.
+	Agent connection setup is unavailable.	Podešavanje veze agenta nije dostupno.
+	Copy the MCP configuration into your agent client.	Kopirajte MCP podešavanja u klijent agenta.
+	Please wait for the check to finish.	Sačekajte završetak provere.
+	Open connection setup to check this installation.	Otvorite podešavanja veze da proverite ovu instalaciju.
+	Install the matching WordCraft release, then refresh setup.	Instalirajte odgovarajuću verziju WordCraft-a i osvežite podešavanja.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Premestite WordCraft u fasciklu sa Unicode imenom i osvežite podešavanja.
+	Try the connection check again. If it keeps failing, refresh setup.	Ponovite proveru veze. Ako i dalje ne uspeva, osvežite podešavanja.
+	Allow requests for this document, then check the connection again.	Dozvolite zahteve za ovaj dokument i ponovo proverite vezu.
+	The requesting client supplied this name. Its identity has not been verified.	Ovo ime je naveo klijent koji traži pristup. Njegov identitet nije proveren.
+	Deny and stop requests	Odbij i zaustavi zahteve
+	Agent approval requested	Agent čeka odobrenje
+	Listening for agent requests	Čekanje zahteva agenata

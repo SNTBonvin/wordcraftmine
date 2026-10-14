@@ -2075,3 +2075,52 @@
 	Start-up	起動
 	Show the Start screen when WordCraft starts	WordCraft の起動時にスタート画面を表示する
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	オン: WordCraft は [ファイル] › [ホーム] で開き、白紙の文書、テンプレート、最近使った文書を表示します。オフ: 白紙の文書を開きます。
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	各エージェントが読み取りや編集を行うには、あなたの承認が必要です。
+	Allow agent connection requests	エージェントの接続要求を許可する
+	Live agent connections are available in the desktop app.	エージェントはデスクトップアプリで開いている文書に接続できます。
+	Copy MCP configuration	MCP 設定をコピー
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	MCP の設定は一度だけ必要です。招待は任意です。文書を選び、WordCraft でエージェントを承認してください。
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	初回設定後、一部のクライアントではツールの再読み込みやエージェントのセッションの再起動が必要です。WordCraft は開いたままです。
+	Document: {name}	文書：{name}
+	Copy invitation	招待をコピー
+	Check live connection	開いている文書への接続を確認
+	Client connected as {name}	接続中のクライアント：{name}
+	Agent edits are tracked. You review changes and save the document.	エージェントの編集は変更履歴として記録されます。変更の確認と文書の保存はあなたが行います。
+	Disconnect agent	エージェントを切断
+	Checking MCP and this document…	MCP とこの文書を確認中…
+	MCP and this document are reachable. Client registration is separate.	MCP とこの文書に接続できます。クライアントの登録は別途必要です。
+	Connection setup	接続設定
+	This version supports one agent per document.	このバージョンでは文書ごとにエージェントを1つ接続できます。
+	Agent connection request	エージェントの接続要求
+	Agent {agent} wants to access {document}.	エージェント {agent} が {document} へのアクセスを要求しています。
+	Allow	許可
+	Deny	拒否
+	Install matching WordCraft release	対応するバージョンの WordCraft をインストール
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	リクエストを許可すると、この文書のタイトルがローカルクライアントに表示されます。
+	Agent connection could not be updated.	エージェントの接続を更新できませんでした。
+	Refresh connection setup and try again.	接続設定を更新して再試行してください。
+	Technical details	技術情報
+	Agent connection setup is ready.	エージェントの接続設定が完了しました。
+	Checking this installation…	このインストールを確認中…
+	Connection setup has not been checked.	接続設定はまだ確認されていません。
+	The agent connector is missing.	エージェントの接続コンポーネントがありません。
+	The agent connector does not match this WordCraft version.	エージェントの接続コンポーネントがこの WordCraft のバージョンと一致しません。
+	The installation path cannot be used for agent connections.	このインストール先はエージェントの接続に使用できません。
+	The connection check timed out.	接続確認がタイムアウトしました。
+	The connection check could not reach this document.	接続確認でこの文書にアクセスできませんでした。
+	The connection check was cancelled.	接続確認をキャンセルしました。
+	The connection check failed.	接続確認に失敗しました。
+	Agent connection setup is unavailable.	エージェントの接続設定を利用できません。
+	Copy the MCP configuration into your agent client.	MCP 設定をエージェントクライアントにコピーしてください。
+	Please wait for the check to finish.	確認が完了するまでお待ちください。
+	Open connection setup to check this installation.	接続設定を開いてこのインストールを確認してください。
+	Install the matching WordCraft release, then refresh setup.	対応する WordCraft をインストールし、設定を更新してください。
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	WordCraft を Unicode 名のフォルダーに移動し、設定を更新してください。
+	Try the connection check again. If it keeps failing, refresh setup.	接続確認を再試行してください。再び失敗した場合は設定を更新してください。
+	Allow requests for this document, then check the connection again.	この文書へのリクエストを許可し、接続を再度確認してください。
+	The requesting client supplied this name. Its identity has not been verified.	この名前はリクエスト元のクライアントが指定したものです。その身元は確認されていません。
+	Deny and stop requests	拒否してリクエストを停止
+	Agent approval requested	エージェントが承認を要求しています
+	Listening for agent requests	エージェントのリクエストを待機中

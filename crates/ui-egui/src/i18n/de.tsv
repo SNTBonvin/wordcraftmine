@@ -2074,3 +2074,52 @@
 	Automatic ({region})	Automatisch ({region})
 	Search	Suchen
 	Title Bar	Titelleiste
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Jeder Agent benötigt Ihre Zustimmung, bevor er lesen oder bearbeiten darf.
+	Allow agent connection requests	Verbindungsanfragen von Agenten zulassen
+	Live agent connections are available in the desktop app.	Agenten können sich in der Desktop-App mit geöffneten Dokumenten verbinden.
+	Copy MCP configuration	MCP-Konfiguration kopieren
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Richten Sie MCP einmal ein. Einladungen sind optional; wählen Sie ein Dokument und genehmigen Sie den Agenten in WordCraft.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Nach der ersten Einrichtung müssen manche Clients ihre Werkzeuge neu laden oder die Agentensitzung neu starten. WordCraft bleibt geöffnet.
+	Document: {name}	Dokument: {name}
+	Copy invitation	Einladung kopieren
+	Check live connection	Verbindung zum geöffneten Dokument prüfen
+	Client connected as {name}	Verbundener Client: {name}
+	Agent edits are tracked. You review changes and save the document.	Änderungen des Agenten werden nachverfolgt. Sie prüfen die Änderungen und speichern das Dokument.
+	Disconnect agent	Agenten trennen
+	Checking MCP and this document…	MCP und dieses Dokument werden geprüft…
+	MCP and this document are reachable. Client registration is separate.	MCP und dieses Dokument sind erreichbar. Die Registrierung im Client ist ein separater Schritt.
+	Connection setup	Verbindung einrichten
+	This version supports one agent per document.	Diese Version unterstützt einen Agenten pro Dokument.
+	Agent connection request	Verbindungsanfrage eines Agenten
+	Agent {agent} wants to access {document}.	Agent {agent} möchte auf {document} zugreifen.
+	Allow	Zulassen
+	Deny	Ablehnen
+	Install matching WordCraft release	Passende WordCraft-Version installieren
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Zugelassene Anfragen machen den Titel dieses Dokuments für lokale Clients sichtbar.
+	Agent connection could not be updated.	Die Agentenverbindung konnte nicht aktualisiert werden.
+	Refresh connection setup and try again.	Aktualisieren Sie die Verbindungseinrichtung und versuchen Sie es erneut.
+	Technical details	Technische Details
+	Agent connection setup is ready.	Die Agentenverbindung ist eingerichtet.
+	Checking this installation…	Diese Installation wird geprüft…
+	Connection setup has not been checked.	Die Verbindungseinrichtung wurde noch nicht geprüft.
+	The agent connector is missing.	Der Agentenconnector fehlt.
+	The agent connector does not match this WordCraft version.	Der Agentenconnector passt nicht zu dieser WordCraft-Version.
+	The installation path cannot be used for agent connections.	Der Installationspfad kann nicht für Agentenverbindungen verwendet werden.
+	The connection check timed out.	Die Verbindungsprüfung hat das Zeitlimit überschritten.
+	The connection check could not reach this document.	Die Verbindungsprüfung konnte dieses Dokument nicht erreichen.
+	The connection check was cancelled.	Die Verbindungsprüfung wurde abgebrochen.
+	The connection check failed.	Die Verbindungsprüfung ist fehlgeschlagen.
+	Agent connection setup is unavailable.	Die Agentenverbindung kann nicht eingerichtet werden.
+	Copy the MCP configuration into your agent client.	Kopieren Sie die MCP-Konfiguration in Ihren Agentenclient.
+	Please wait for the check to finish.	Bitte warten Sie, bis die Prüfung abgeschlossen ist.
+	Open connection setup to check this installation.	Öffnen Sie die Verbindungseinrichtung, um diese Installation zu prüfen.
+	Install the matching WordCraft release, then refresh setup.	Installieren Sie die passende WordCraft-Version und aktualisieren Sie die Einrichtung.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Verschieben Sie WordCraft in einen Ordner mit Unicode-Namen und aktualisieren Sie die Einrichtung.
+	Try the connection check again. If it keeps failing, refresh setup.	Prüfen Sie die Verbindung erneut. Bei weiteren Fehlern aktualisieren Sie die Einrichtung.
+	Allow requests for this document, then check the connection again.	Lassen Sie Anfragen für dieses Dokument zu und prüfen Sie die Verbindung erneut.
+	The requesting client supplied this name. Its identity has not been verified.	Der anfragende Client hat diesen Namen angegeben. Seine Identität wurde nicht überprüft.
+	Deny and stop requests	Ablehnen und Anfragen stoppen
+	Agent approval requested	Agent wartet auf Zustimmung
+	Listening for agent requests	Warten auf Agentenanfragen

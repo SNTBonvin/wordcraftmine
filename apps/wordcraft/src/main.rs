@@ -19,6 +19,8 @@ mod default_apps;
 mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
+#[cfg(test)]
+mod live_tests;
 mod logging;
 mod print;
 mod region;

@@ -133,6 +133,12 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
     if !req.runnable() {
         return err("expired: the request was cancelled before execution");
     }
+    if matches!(req.method.as_str(), "agent.status" | "agent.call" | "agent.disconnect" | "agent.transportClosed" | "agent.check") {
+        return match crate::agents::handle_with_connection(app, ctx, &req.method, &req.params, Some(req.cancelled.clone())) {
+            Ok(value) => ok(value),
+            Err(error) => err(error),
+        };
+    }
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     let f = |k: &str| p.get(k).and_then(Value::as_f64).map(|v| v as f32);

@@ -2087,3 +2087,52 @@
 	Start-up	Запуск
 	Show the Start screen when WordCraft starts	Показувати початковий екран під час запуску WordCraft
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	Увімкнено: WordCraft відкривається на сторінці Файл › Основне з порожнім документом, шаблонами та нещодавніми документами. Вимкнено: відкривається порожній документ.
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Кожен агент має отримати ваш дозвіл перед читанням або редагуванням.
+	Allow agent connection requests	Дозволити запити на підключення агентів
+	Live agent connections are available in the desktop app.	Підключення агентів доступне в програмі для комп’ютера.
+	Copy MCP configuration	Скопіювати налаштування MCP
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Налаштуйте MCP один раз. Запрошення необов’язкові: виберіть документ і дозвольте доступ агенту у WordCraft.
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Після першого налаштування деяким клієнтам потрібно оновити інструменти або перезапустити сеанс агента. WordCraft залишається відкритим.
+	Document: {name}	Документ: {name}
+	Copy invitation	Скопіювати запрошення
+	Check live connection	Перевірити підключення до відкритого документа
+	Client connected as {name}	Підключений клієнт: {name}
+	Agent edits are tracked. You review changes and save the document.	Зміни агента відстежуються. Ви переглядаєте зміни та зберігаєте документ.
+	Disconnect agent	Відключити агента
+	Checking MCP and this document…	Перевірка MCP і цього документа…
+	MCP and this document are reachable. Client registration is separate.	MCP і цей документ доступні. Реєстрація клієнта виконується окремо.
+	Connection setup	Налаштування підключення
+	This version supports one agent per document.	Ця версія підтримує одного агента на документ.
+	Agent connection request	Запит на підключення агента
+	Agent {agent} wants to access {document}.	Агент {agent} запитує доступ до документа {document}.
+	Allow	Дозволити
+	Deny	Відхилити
+	Install matching WordCraft release	Встановити WordCraft відповідної версії
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Якщо дозволити запити, назва документа буде видима локальним клієнтам.
+	Agent connection could not be updated.	Не вдалося оновити підключення агента.
+	Refresh connection setup and try again.	Оновіть налаштування підключення та спробуйте ще раз.
+	Technical details	Технічні відомості
+	Agent connection setup is ready.	Підключення агента налаштовано.
+	Checking this installation…	Перевіряється ця інсталяція…
+	Connection setup has not been checked.	Налаштування підключення ще не перевірено.
+	The agent connector is missing.	Компонент підключення агента відсутній.
+	The agent connector does not match this WordCraft version.	Компонент підключення агента не відповідає цій версії WordCraft.
+	The installation path cannot be used for agent connections.	Шлях інсталяції не можна використовувати для підключення агентів.
+	The connection check timed out.	Час перевірки підключення минув.
+	The connection check could not reach this document.	Перевірка підключення не змогла знайти цей документ.
+	The connection check was cancelled.	Перевірку підключення скасовано.
+	The connection check failed.	Перевірка підключення завершилася помилкою.
+	Agent connection setup is unavailable.	Налаштування підключення агента недоступне.
+	Copy the MCP configuration into your agent client.	Скопіюйте конфігурацію MCP у клієнт агента.
+	Please wait for the check to finish.	Дочекайтеся завершення перевірки.
+	Open connection setup to check this installation.	Відкрийте налаштування підключення, щоб перевірити цю інсталяцію.
+	Install the matching WordCraft release, then refresh setup.	Інсталюйте відповідну версію WordCraft та оновіть налаштування.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Перемістіть WordCraft у папку з назвою в Unicode та оновіть налаштування.
+	Try the connection check again. If it keeps failing, refresh setup.	Повторіть перевірку підключення. Якщо помилка повторюється, оновіть налаштування.
+	Allow requests for this document, then check the connection again.	Дозвольте запити для цього документа та повторіть перевірку підключення.
+	The requesting client supplied this name. Its identity has not been verified.	Це ім’я вказав сам клієнт, що запитує доступ. Його справжність не перевірено.
+	Deny and stop requests	Відхилити й заборонити запити
+	Agent approval requested	Агент очікує дозволу
+	Listening for agent requests	Очікування запитів агентів

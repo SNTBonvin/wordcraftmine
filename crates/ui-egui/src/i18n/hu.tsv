@@ -2473,3 +2473,53 @@
 	Table Properties…	Táblázat tulajdonságai…
 	Search	Keresés
 	Title Bar	Címsor
+# Live agents: connection permission, setup and attachment status.
+	Live agent connections are available in the desktop app.	Ágensek az asztali alkalmazásban csatlakozhatnak a megnyitott dokumentumhoz.
+	Document: {name}	Dokumentum: {name}
+	Agent edits are tracked. You review changes and save the document.	Az ágens módosításait követjük. Te ellenőrzöd a változásokat, és te mented a dokumentumot.
+	Copy invitation	Meghívó másolása
+	Copy MCP configuration	MCP-beállítások másolása
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	Az első beállítás után egyes klienseknél újra kell tölteni az eszközöket vagy újra kell indítani az ágens munkamenetét. A WordCraft nyitva marad.
+	Client connected as {name}	Csatlakozott kliens: {name}
+	Disconnect agent	Ágens leválasztása
+	Connection setup	Csatlakozás beállítása
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Minden ágensnek a jóváhagyásod kell az olvasáshoz vagy szerkesztéshez.
+	Allow agent connection requests	Ágenscsatlakozási kérelmek engedélyezése
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Állítsd be az MCP-t egyszer. A meghívók nem kötelezők; válassz dokumentumot, és hagyd jóvá az ágenst a WordCraftban.
+	Check live connection	Élő kapcsolat ellenőrzése
+	Checking MCP and this document…	Az MCP és a dokumentum ellenőrzése…
+	MCP and this document are reachable. Client registration is separate.	Az MCP és a dokumentum elérhető. A kliens regisztrációja külön lépés.
+	This version supports one agent per document.	Ez a verzió dokumentumonként egy ágenst támogat.
+	Agent connection request	Ágens csatlakozási kérelme
+	Agent {agent} wants to access {document}.	A(z) {agent} ágens hozzáférést kér ehhez a dokumentumhoz: {document}.
+	Allow	Engedélyezés
+	Deny	Elutasítás
+	Install matching WordCraft release	Megfelelő WordCraft-verzió telepítése
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	A kérések engedélyezésével a dokumentum címe láthatóvá válik a helyi klienseknek.
+	Agent connection could not be updated.	Az ügynök kapcsolata nem frissíthető.
+	Refresh connection setup and try again.	Frissítse a kapcsolat beállításait, majd próbálja újra.
+	Technical details	Technikai részletek
+	Agent connection setup is ready.	Az ügynök kapcsolata be van állítva.
+	Checking this installation…	A telepítés ellenőrzése…
+	Connection setup has not been checked.	A kapcsolat beállításai még nincsenek ellenőrizve.
+	The agent connector is missing.	Az ügynök csatlakozója hiányzik.
+	The agent connector does not match this WordCraft version.	Az ügynök csatlakozója nem egyezik ezzel a WordCraft-verzióval.
+	The installation path cannot be used for agent connections.	A telepítési útvonal nem használható ügynökkapcsolatokhoz.
+	The connection check timed out.	A kapcsolat ellenőrzése túllépte az időkorlátot.
+	The connection check could not reach this document.	A kapcsolat ellenőrzése nem érte el ezt a dokumentumot.
+	The connection check was cancelled.	A kapcsolat ellenőrzése megszakítva.
+	The connection check failed.	A kapcsolat ellenőrzése sikertelen.
+	Agent connection setup is unavailable.	Az ügynökkapcsolat beállítása nem érhető el.
+	Copy the MCP configuration into your agent client.	Másolja az MCP-konfigurációt az ügynökkliensbe.
+	Please wait for the check to finish.	Várja meg az ellenőrzés befejezését.
+	Open connection setup to check this installation.	Nyissa meg a kapcsolat beállításait a telepítés ellenőrzéséhez.
+	Install the matching WordCraft release, then refresh setup.	Telepítse a megfelelő WordCraft-verziót, majd frissítse a beállításokat.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Helyezze a WordCraftot Unicode-nevű mappába, majd frissítse a beállításokat.
+	Try the connection check again. If it keeps failing, refresh setup.	Ellenőrizze újra a kapcsolatot. Ha továbbra is sikertelen, frissítse a beállításokat.
+	Allow requests for this document, then check the connection again.	Engedélyezze a kéréseket ehhez a dokumentumhoz, majd ellenőrizze újra a kapcsolatot.
+	The requesting client supplied this name. Its identity has not been verified.	Ezt a nevet a kérelmező kliens adta meg. A személyazonosságát nem ellenőriztük.
+	Deny and stop requests	Elutasítás és kérések leállítása
+	Agent approval requested	Ügynök jóváhagyást kér
+	Listening for agent requests	Várakozás ügynökkérésekre

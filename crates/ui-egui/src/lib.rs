@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod agents;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -249,6 +250,8 @@ pub struct UiState {
     /// File › Options › General: start on File › Home (Blank document, templates, Recent) when
     /// the app opens without a document (#766); on, as in Word. See [`WordApp::start_screen`].
     pub start_screen: bool,
+    /// Discoverable connection requests only; editing always needs per-attachment consent.
+    pub allow_agent_requests: bool,
     /// File › Options › Display: print the page colour (off, as in Word).
     pub print_backgrounds: bool,
     /// File › Options › Display: update fields (dates, page numbers, SEQ…) before printing.
@@ -301,6 +304,7 @@ impl Default for UiState {
             recent_count: 12,
             mini_toolbar: true,
             start_screen: true,
+            allow_agent_requests: false,
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
@@ -345,6 +349,7 @@ fn migrate_units(v: &mut Value) {
 /// The application.
 pub struct WordApp {
     pub session: Session,
+    pub agents: agents::State,
     pub ui: UiState,
     pub services: Services,
     pub printing: printing::State,
@@ -479,6 +484,7 @@ impl WordApp {
             previews: previews::Previews::default(),
             integrated_titlebar: false,
             control_rx: None,
+            agents: agents::State::default(),
             shot_token: 0,
             queued_shots: Vec::new(),
             pending_shots: Vec::new(),
@@ -708,6 +714,7 @@ impl WordApp {
         // When the document has been replaced (not when Open only showed its picker), a pending
         // "Save changes?" and AutoSave's go-ahead were both about the old one.
         if self.session.document_id() != document {
+            agents::revoke_document(self);
             self.autosave_path = None;
             if matches!(self.dialog, Some(dialogs::Dialog::SaveChanges { .. })) {
                 self.dialog = None;
@@ -948,6 +955,9 @@ impl WordApp {
 
     /// Commands that live in the UI layer.
     fn ui_command(&mut self, id: &str, p: &Value) -> Option<Result<Value, String>> {
+        if id == "ui.agents" {
+            return Some(agents::command(self, p));
+        }
         let s = |k: &str| p.get(k).and_then(Value::as_str);
         Some(Ok(match id {
             "ui.tab" => {
@@ -1310,6 +1320,7 @@ impl WordApp {
 
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        agents::sync(self);
         let lang = i18n::Lang::from_pref(&self.ui.language);
         i18n::set_current(lang);
         // New documents are written in the interface's language when WordCraft can proof it
@@ -1364,6 +1375,7 @@ impl WordApp {
         }
         self.poll_printing(ctx);
         self.drain_control(ctx);
+        agents::handle_escape(self, ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();
@@ -1529,6 +1541,7 @@ impl WordApp {
         }
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        agents::prompt(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         file_browser::show(self, &ctx);
         colors::show(self, &ctx);

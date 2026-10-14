@@ -2474,3 +2474,53 @@ preview	Title	Пример
 	Level 7	Уровень 7
 	Level 8	Уровень 8
 	Level 9	Уровень 9
+# Live agents: connection permission, setup and attachment status.
+	Live agent connections are available in the desktop app.	Подключение агентов доступно в приложении для компьютера.
+	Document: {name}	Документ: {name}
+	Agent edits are tracked. You review changes and save the document.	Правки агента отслеживаются. Вы проверяете изменения и сохраняете документ.
+	Copy invitation	Скопировать приглашение
+	Copy MCP configuration	Скопировать настройки MCP
+	Some clients need to reload their tools or restart the agent session after the first setup. WordCraft stays open.	После первой настройки некоторым клиентам нужно обновить список инструментов или перезапустить сессию агента. WordCraft остаётся открытым.
+	Client connected as {name}	Агент подключён: {name}
+	Disconnect agent	Отключить агента
+	Connection setup	Настройка подключения
+# Live agents: approval, setup and connection status.
+	Each agent needs your approval before reading or editing.	Каждый агент должен получить ваше разрешение перед чтением или редактированием.
+	Allow agent connection requests	Разрешить запросы на подключение агентов
+	Configure MCP once. Invitations are optional; choose a document and approve the agent in WordCraft.	Настройте MCP один раз. Приглашения необязательны: выберите документ и разрешите доступ агенту в WordCraft.
+	Check live connection	Проверить подключение к документу
+	Checking MCP and this document…	Проверка MCP и этого документа…
+	MCP and this document are reachable. Client registration is separate.	MCP и документ доступны. Регистрация MCP в клиенте выполняется отдельно.
+	This version supports one agent per document.	В этой версии к документу может подключиться один агент.
+	Agent connection request	Запрос на подключение агента
+	Agent {agent} wants to access {document}.	Агент {agent} запрашивает доступ к документу {document}.
+	Allow	Разрешить
+	Deny	Отклонить
+	Install matching WordCraft release	Установить WordCraft соответствующей версии
+# Live agents: private discovery, consent controls and recovery.
+	Allowing requests makes this document's title visible to local clients.	Если разрешить запросы, название документа будет видно локальным клиентам.
+	Agent connection could not be updated.	Не удалось обновить подключение агента.
+	Refresh connection setup and try again.	Обновите настройки подключения и повторите попытку.
+	Technical details	Технические сведения
+	Agent connection setup is ready.	Подключение агента настроено.
+	Checking this installation…	Проверяется эта установка…
+	Connection setup has not been checked.	Настройки подключения ещё не проверены.
+	The agent connector is missing.	Компонент подключения агента отсутствует.
+	The agent connector does not match this WordCraft version.	Компонент подключения агента не соответствует этой версии WordCraft.
+	The installation path cannot be used for agent connections.	Путь установки нельзя использовать для подключения агентов.
+	The connection check timed out.	Время проверки подключения истекло.
+	The connection check could not reach this document.	Проверка подключения не смогла найти этот документ.
+	The connection check was cancelled.	Проверка подключения отменена.
+	The connection check failed.	Проверка подключения завершилась ошибкой.
+	Agent connection setup is unavailable.	Настройка подключения агента недоступна.
+	Copy the MCP configuration into your agent client.	Скопируйте конфигурацию MCP в клиент агента.
+	Please wait for the check to finish.	Дождитесь завершения проверки.
+	Open connection setup to check this installation.	Откройте настройки подключения, чтобы проверить эту установку.
+	Install the matching WordCraft release, then refresh setup.	Установите соответствующую версию WordCraft и обновите настройки.
+	Move WordCraft to a folder with a Unicode name, then refresh setup.	Переместите WordCraft в папку с именем в Unicode и обновите настройки.
+	Try the connection check again. If it keeps failing, refresh setup.	Повторите проверку подключения. Если ошибка повторяется, обновите настройки.
+	Allow requests for this document, then check the connection again.	Разрешите запросы для этого документа и повторите проверку подключения.
+	The requesting client supplied this name. Its identity has not been verified.	Это имя указано самим запрашивающим клиентом. Его подлинность не проверена.
+	Deny and stop requests	Отклонить и запретить запросы
+	Agent approval requested	Агент ожидает разрешения
+	Listening for agent requests	Ожидание запросов агентов

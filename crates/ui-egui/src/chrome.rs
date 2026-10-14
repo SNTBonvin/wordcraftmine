@@ -394,6 +394,28 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                     ui.set_min_width(200.0);
                     crate::ribbon::language_menu(ui, app);
                 });
+                let agent_label = if let Some(name) = app.agents.connected_name() {
+                    Some(crate::i18n::fmt(tl!("Client connected as {name}"), &[("name", name)]))
+                } else if app.agents.waiting_for_approval() {
+                    Some(tl!("Agent approval requested").to_owned())
+                } else if app.agents.enabled() {
+                    Some(tl!("Listening for agent requests").to_owned())
+                } else {
+                    None
+                };
+                if let Some(label) = agent_label {
+                    let response = ui
+                        .scope(|ui| {
+                            ui.set_max_width(ui.available_width().min(240.0));
+                            ui.add(egui::Button::new(&label).truncate())
+                        })
+                        .inner;
+                    if response.on_hover_text(&label).clicked() {
+                        app.ui.backstage = true;
+                        app.ui.backstage_page = "options".into();
+                        app.ui.options_pane = "agents".into();
+                    }
+                }
                 if app.session.doc.settings.track_changes {
                     st(ui, tl!("Track Changes: On"));
                 }
