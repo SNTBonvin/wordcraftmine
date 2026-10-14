@@ -449,6 +449,13 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
             pb.close();
         }
         ShapeKind::Ellipse => ellipse(&mut pb, cx, cy, r.w / 2.0, r.h / 2.0),
+        ShapeKind::FlowchartOr => {
+            ellipse(&mut pb, cx, cy, r.w / 2.0, r.h / 2.0);
+            pb.move_to(x0, cy);
+            pb.line_to(x1, cy);
+            pb.move_to(cx, y0);
+            pb.line_to(cx, y1);
+        }
         ShapeKind::Triangle => poly(&mut pb, &[(cx, y0), (x1, y1), (x0, y1)]),
         ShapeKind::Diamond => poly(&mut pb, &[(cx, y0), (x1, cy), (cx, y1), (x0, cy)]),
         // DrawingML's `line`: top-left to bottom-right (flips give the other directions).
