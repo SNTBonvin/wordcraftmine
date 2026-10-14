@@ -1479,7 +1479,8 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             for g in b.glyphs.get(c.g0 as usize..c.g1 as usize).into_iter().flatten() {
                 glyphs.push(Glyph { dx: g.dx + x, ..*g });
             }
-            let chars = shown(text.get(c.start..c.end).unwrap_or(""));
+            // A label in an All Caps paragraph reads as the capitals drawn (#1473).
+            let chars: String = shown(text.get(c.start..c.end).unwrap_or("")).chars().map(|ch| caps_char(&rc, ch)).collect();
             match runs.last_mut() {
                 Some(r) if r.style == c.style => {
                     r.glyphs.end = glyphs.len();

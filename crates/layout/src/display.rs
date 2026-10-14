@@ -734,10 +734,13 @@ fn lines(
                     if let Ok(i) = pl.shown.binary_search_by_key(&k, |(i, _, _)| *i)
                         && let Some((_, s, r)) = pl.shown.get(i)
                     {
-                        // All Caps field results read as the capitals drawn, while that keeps
-                        // every byte where the glyph ranges expect it.
-                        let up: String = s.chars().map(|ch| crate::para::caps_char(&st.rc, ch)).collect();
-                        text.push_str(if up.len() == s.len() { &up } else { s });
+                        // All Caps field results read as the capitals drawn (#1473). `r` holds
+                        // byte ranges into `s`, so a character whose capital has another UTF-8
+                        // length keeps its own form and every range still lands where it did.
+                        text.extend(s.chars().map(|ch| {
+                            let up = crate::para::caps_char(&st.rc, ch);
+                            if up.len_utf8() == ch.len_utf8() { up } else { ch }
+                        }));
                         shown = Some(r);
                     } else if let Some(p) = para {
                         let t = p.text.get(c.start..c.end).unwrap_or("");

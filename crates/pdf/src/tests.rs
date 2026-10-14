@@ -937,7 +937,29 @@ fn all_caps_and_small_caps_text_extracts_as_displayed() {
     ] {
         assert!(text.contains(line), "missing {line:?} in {text:?}");
     }
-    // The capitalised ß shows a capital glyph and reads as capitals, never as a lowercase ß.
-    assert!(text.contains("STRA"), "{text:?}");
-    assert!(!text.contains("STRAß") && !text.contains("Straße Plain"), "{text:?}");
+    // An All Caps ß is drawn today as one S glyph, so it reads as that S: the text layer follows
+    // the glyph drawn. Drawing it as "SS", as Word does, is a separate display issue.
+    assert!(text.contains("STRASE"), "{text:?}");
+}
+
+#[test]
+fn caps_list_labels_extract_as_displayed() {
+    // #1473: a lowercase-letter list label in an All Caps paragraph is drawn with capital glyphs;
+    // it reads as those capitals, and a later plain capital A still reads as "A".
+    let mut d = Document::new();
+    d.styles.upsert(wordcraft_doc::Style {
+        id: "CapsPara".into(),
+        name: "Caps Para".into(),
+        kind: wordcraft_doc::StyleKind::Paragraph,
+        chr: CharProps { caps: Some(true), ..Default::default() },
+        ..Default::default()
+    });
+    let list = d.numbering.add_list(ListKind::Numbered);
+    let mut item = Paragraph::with_text("item", CharProps::default()).styled("CapsPara");
+    item.props.numbering = Some(NumRef { num: list, level: 1 });
+    d.body = vec![para_block(item), para_block(Paragraph::with_text("Plain Apple.", CharProps::default()))];
+    let text = squash(&extract_text(&export(&d, &PdfOptions::default()).unwrap()).concat());
+    assert!(text.contains("A."), "the label reads as the capital drawn: {text:?}");
+    assert!(!text.contains("a."), "no lowercase label: {text:?}");
+    assert!(text.contains("Plain Apple."), "a plain capital A keeps its case: {text:?}");
 }
