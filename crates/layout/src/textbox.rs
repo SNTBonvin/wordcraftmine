@@ -156,6 +156,7 @@ fn extent(items: &[Placed]) -> f32 {
             | Placed::Shape { rect, .. }
             | Placed::Graphic { rect, .. }
             | Placed::Clip { rect, .. }
+            | Placed::Spun { rect, .. }
             | Placed::Cell { rect, .. }
             | Placed::Object { rect, .. } => rect.bottom(),
         };
@@ -280,6 +281,7 @@ fn from_y(items: Vec<Placed>, top: f32) -> Vec<Placed> {
             | Placed::Shape { rect, .. }
             | Placed::Graphic { rect, .. }
             | Placed::Clip { rect, .. }
+            | Placed::Spun { rect, .. }
             | Placed::Cell { rect, .. }
             | Placed::Object { rect, .. }
                 if rect.y >= lim =>

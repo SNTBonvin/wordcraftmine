@@ -197,6 +197,9 @@ pub struct DisplayOptions {
     pub hide_ink: bool,
     /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
     pub revisions: MarkupOptions,
+    /// The text box story being edited: a turned text box showing it is drawn straight, so its
+    /// caret and selection sit on its text (Word). `None` in print and PDF.
+    pub straight: Option<u32>,
 }
 
 impl Default for DisplayOptions {
@@ -210,6 +213,7 @@ impl Default for DisplayOptions {
             placeholders: false,
             hide_ink: false,
             revisions: MarkupOptions::default(),
+            straight: None,
         }
     }
 }
@@ -360,14 +364,29 @@ fn stroke_of(u: Underline) -> Stroke {
 
 /// Draw items for a page.
 pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<Draw> {
-    let mut out = Vec::new();
+    let mut all = Vec::new();
     let ha = if opts.dim_header { 0.45 } else { 1.0 };
     let ba = if opts.dim_body { 0.45 } else { 1.0 };
     for (items, a) in [(&page.header, ha), (&page.footer, ha), (&page.items, ba)] {
         let warps = warped_boxes(doc, items);
         let mut done: Vec<u32> = Vec::new();
+        // Turned text boxes being drawn: what was drawn before each, and its turn (`None` when
+        // shown straight, as while its text is edited).
+        let mut turns: Vec<(Vec<Draw>, Option<(Rect, Spin)>)> = Vec::new();
+        let mut out = std::mem::take(&mut all);
         for it in items.iter() {
+            // The turn the item is drawn inside (a shape's effects follow it).
+            let outer = turns.iter().filter_map(|(_, t)| t.map(|(_, s)| s)).fold(Spin::default(), |o, s| s.within(o));
             match it {
+                Placed::Spun { rect, spin, part, open: true } => {
+                    let shown = (opts.straight != Some(*part)).then_some((*rect, *spin));
+                    turns.push((std::mem::take(&mut out), shown));
+                }
+                Placed::Spun { open: false, .. } => {
+                    if let Some((before, t)) = turns.pop() {
+                        unturn(before, t, &mut out);
+                    }
+                }
                 Placed::Lines { story: StoryRef::Part(id), .. } if warps.iter().any(|(w, ..)| w == id) => {
                     // A warped text box's lines are drawn together, bent, where its first one is.
                     if done.contains(id) {
@@ -380,14 +399,29 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
                         warped_text(doc, &lines, *rect, warp, opts, a, &mut out);
                     }
                 }
-                _ => item(doc, it, opts, a, &mut out),
+                _ => item_in(doc, it, opts, a, outer, &mut out),
             }
         }
+        while let Some((before, t)) = turns.pop() {
+            unturn(before, t, &mut out);
+        }
+        all = out;
     }
+    let mut out = all;
     if opts.markup && (opts.revisions.insertions_deletions || opts.revisions.formatting) && opts.revisions.changed_lines != ChangeBar::None {
         change_bars(doc, page, &opts.revisions, ba, &mut out);
     }
     out
+}
+
+/// Close a turned text box: what was drawn since it opened (`out`) goes inside its turn `t`
+/// (straight when `None`), after what was drawn before it.
+fn unturn(before: Vec<Draw>, t: Option<(Rect, Spin)>, out: &mut Vec<Draw>) {
+    let inner = std::mem::replace(out, before);
+    match t {
+        Some((rect, spin)) => spun(spin, rect, inner, out),
+        None => out.extend(inner),
+    }
 }
 
 /// One object drawn alone, as its page draws it: the picture, shape or group `o` in `rect` (its
@@ -571,7 +605,8 @@ fn item_in(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, outer
             }
             spun(*spin, *rect, vec![Draw::Clip { rect: *rect, items: inner }], out)
         }
-        Placed::Cell { .. } | Placed::Object { .. } => {}
+        // A turned text box's ends: the page's walk turns what is between (see `page_display`).
+        Placed::Cell { .. } | Placed::Object { .. } | Placed::Spun { .. } => {}
         Placed::Lines { story, path, para, l0, l1, x, y, turn } if turn.is_turned() => {
             let mut items = Vec::new();
             lines(doc, *story, path, para, *l0, *l1, 0.0, 0.0, opts, alpha, &mut items);
