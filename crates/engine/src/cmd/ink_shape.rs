@@ -4,7 +4,8 @@
 //! between its ends; a closed one is an ellipse when its points sit on the ellipse inscribed in
 //! its bounds (low RMS of the normalised radius), else a polygon from its corners (the closed
 //! path simplified with Ramer–Douglas–Peucker, near-straight and crowded corners merged) when
-//! that polygon stays close to every point. Anything else (scribbles, curves, letters) stays ink.
+//! that polygon stays close to every point. An arrow is a line-like shaft plus a head of two barbs
+//! drawn in the same stroke (shaft first or head first). Anything else (scribbles, curves, letters) stays ink.
 
 use wordcraft_doc::freeform::MAX_POINTS;
 
@@ -83,7 +84,7 @@ pub fn recognise(pts: &[[f32; 2]]) -> Option<InkShape> {
         }
     }
     // An arrow: a shaft and a head with both barbs, drawn in one stroke (either end first).
-    if let Some(arrow) = arrow(&p, diag).or_else(|| arrow(&p.iter().rev().copied().collect::<Vec<_>>(), diag)) {
+    if let Some(arrow) = arrow(&p).or_else(|| arrow(&p.iter().rev().copied().collect::<Vec<_>>())) {
         return Some(arrow);
     }
     // Other shapes are closed: the stroke ends near where it began and goes around.
@@ -119,27 +120,54 @@ pub fn recognise(pts: &[[f32; 2]]) -> Option<InkShape> {
 const BARB_LEN: (f32, f32) = (0.05, 0.5);
 const BARB_ANGLE: (f32, f32) = (15.0, 75.0);
 
-/// An arrow drawn shaft first: the simplified stroke is tail, tip, one barb, back at the tip, the
-/// other barb. The barbs must leave the tip on opposite sides of the shaft at similar angles and
-/// lengths. (A stroke drawn head first is tried reversed by the caller.)
-fn arrow(p: &[[f32; 2]], diag: f32) -> Option<InkShape> {
-    let v = rdp(p, (0.025 * diag).max(1.5));
-    let &[tail, tip, b1, tip2, b2] = v.as_slice() else { return None };
+/// An arrow drawn shaft first: the shaft runs from the start to the tip (the point farthest from
+/// the start) and stays near its chord like a line does; then the pen draws one barb, comes back
+/// to the tip and draws the other. The barbs must leave the tip on opposite sides of the shaft at
+/// similar angles and lengths. (A stroke drawn head first is tried reversed by the caller.)
+fn arrow(p: &[[f32; 2]]) -> Option<InkShape> {
+    let tail = *p.first()?;
+    let (ti, _) = p.iter().enumerate().fold((0, 0.0), |m, (i, q)| if dist(tail, *q) > m.1 { (i, dist(tail, *q)) } else { m });
+    let tip = *p.get(ti)?;
     let shaft = dist(tail, tip);
-    if shaft < MIN_SIZE || dist(tip, tip2) > 0.15 * shaft {
+    if shaft < MIN_SIZE || p.get(..=ti)?.iter().any(|q| seg_distance(tail, tip, *q) > (0.06 * shaft).max(1.5)) {
+        return None;
+    }
+    // The head: the stroke after the tip leaves it twice, once for each barb.
+    let head = p.get(ti..)?;
+    let reach = head.iter().map(|q| dist(tip, *q)).fold(0.0, f32::max);
+    let (mut barbs, mut out, mut gap): (Vec<(f32, [f32; 2])>, bool, f32) = (Vec::new(), false, f32::INFINITY);
+    for q in head {
+        let d = dist(tip, *q);
+        if d > 0.25 * reach {
+            if !out {
+                if barbs.len() == 2 {
+                    return None;
+                }
+                barbs.push((d, *q));
+                out = true;
+            } else if let Some(b) = barbs.last_mut().filter(|b| d > b.0) {
+                *b = (d, *q);
+            }
+        } else {
+            out = false;
+            if barbs.len() == 1 {
+                gap = gap.min(d);
+            }
+        }
+    }
+    let &[(l1, b1), (l2, b2)] = barbs.as_slice() else { return None };
+    // The pen returns to the tip between the barbs.
+    if gap > 0.15 * shaft {
         return None;
     }
     // Each barb as a vector from the tip, against the direction back along the shaft.
     let back = [tail[0] - tip[0], tail[1] - tip[1]];
-    let barb = |e: [f32; 2]| {
+    let angle_side = |e: [f32; 2], len: f32| {
         let u = [e[0] - tip[0], e[1] - tip[1]];
-        let len = u[0].hypot(u[1]);
-        let lb = back[0].hypot(back[1]);
-        let angle = if len > 0.0 && lb > 0.0 { ((back[0] * u[0] + back[1] * u[1]) / (lb * len)).clamp(-1.0, 1.0).acos().to_degrees() } else { 0.0 };
-        let side = back[0] * u[1] - back[1] * u[0];
-        (len, angle, side)
+        let angle = ((back[0] * u[0] + back[1] * u[1]) / (shaft * len)).clamp(-1.0, 1.0).acos().to_degrees();
+        (angle, back[0] * u[1] - back[1] * u[0])
     };
-    let ((l1, a1, s1), (l2, a2, s2)) = (barb(b1), barb(b2));
+    let ((a1, s1), (a2, s2)) = (angle_side(b1, l1), angle_side(b2, l2));
     let ok = |l: f32, a: f32| (BARB_LEN.0 * shaft..=BARB_LEN.1 * shaft).contains(&l) && (BARB_ANGLE.0..=BARB_ANGLE.1).contains(&a);
     let similar = l1.max(l2) <= 2.5 * l1.min(l2) && (a1 - a2).abs() <= 35.0;
     (ok(l1, a1) && ok(l2, a2) && s1 * s2 < 0.0 && similar).then_some(InkShape::Arrow { a: tail, b: tip, head_at_end: true, head_at_start: false })
@@ -442,5 +470,96 @@ mod tests {
         let _ = recognise(&huge);
         let _ = recognise(&[[1e5, 1e5], [-1e5, 1e5], [1e5, -1e5], [-1e5, -1e5], [0.0, 0.0]]);
         let _ = recognise(&[[0.0, 0.0]; 7]);
+    }
+
+    /// An arrow as a hand draws it: the shaft sags by `bow` and wobbles, the tip may be rounded,
+    /// and each barb has its own length and angle (`(length, degrees)`, left then right).
+    fn hand_arrow(tail: [f32; 2], tip: [f32; 2], bow: f32, round_tip: bool, barbs: [(f32, f32); 2]) -> Vec<[f32; 2]> {
+        let len = dist(tail, tip);
+        let dir = [(tip[0] - tail[0]) / len, (tip[1] - tail[1]) / len];
+        let normal = [-dir[1], dir[0]];
+        let mut pts: Vec<[f32; 2]> = (0..30)
+            .map(|i| {
+                let t = i as f32 / 30.0;
+                let off = bow * 4.0 * t * (1.0 - t) + (i as f32 * 1.7).sin() * 0.6;
+                [tail[0] + (tip[0] - tail[0]) * t + normal[0] * off, tail[1] + (tip[1] - tail[1]) * t + normal[1] * off]
+            })
+            .collect();
+        let back = (tail[1] - tip[1]).atan2(tail[0] - tip[0]);
+        let end = |(l, deg): (f32, f32), sign: f32| {
+            let a = back + sign * deg.to_radians();
+            [tip[0] + l * a.cos(), tip[1] + l * a.sin()]
+        };
+        let seg = |a: [f32; 2], b: [f32; 2], n: usize| -> Vec<[f32; 2]> {
+            (0..n).map(|k| k as f32 / n as f32).map(|t| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]).collect()
+        };
+        let (e1, e2) = (end(barbs[0], 1.0), end(barbs[1], -1.0));
+        if round_tip {
+            pts.extend([[tip[0] + dir[0] * 1.0 + normal[0] * 1.5, tip[1] + dir[1] * 1.0 + normal[1] * 1.5]]);
+        } else {
+            pts.push(tip);
+        }
+        pts.extend(seg(tip, e1, 6));
+        pts.extend(seg(e1, tip, 6));
+        if round_tip {
+            pts.push([tip[0] + dir[0] * 1.0 - normal[0] * 1.5, tip[1] + dir[1] * 1.0 - normal[1] * 1.5]);
+        }
+        pts.extend(seg(tip, e2, 6));
+        pts.push(e2);
+        pts
+    }
+
+    #[test]
+    fn hand_drawn_arrows_with_bowed_wobbly_shafts_rounded_tips_and_uneven_barbs_are_arrows() {
+        let (tail, tip) = ([20.0, 100.0], [180.0, 100.0]);
+        let sym = [(25.0, 30.0), (25.0, 30.0)];
+        let is_arrow = |pts: &[[f32; 2]]| matches!(recognise(pts), Some(InkShape::Arrow { .. }));
+        // Wobble alone (about 0.6 pt), a 4 pt sag over 160 pt, and both bowed the other way.
+        assert!(is_arrow(&hand_arrow(tail, tip, 0.0, false, sym)), "wobble");
+        assert!(is_arrow(&hand_arrow(tail, tip, 4.0, false, sym)), "bowed");
+        assert!(is_arrow(&hand_arrow(tail, tip, -4.0, false, sym)), "bowed the other way");
+        // A rounded tip, and slightly asymmetric barbs (20 at 25 degrees, 30 at 40).
+        assert!(is_arrow(&hand_arrow(tail, tip, 0.0, true, sym)), "rounded tip");
+        assert!(is_arrow(&hand_arrow(tail, tip, 2.0, false, [(20.0, 25.0), (30.0, 40.0)])), "asymmetric");
+        // All at once, going up and to the left, and head first.
+        let all = hand_arrow([180.0, 160.0], [40.0, 30.0], 4.0, true, [(20.0, 25.0), (30.0, 40.0)]);
+        let Some(InkShape::Arrow { a, b, .. }) = recognise(&all) else { panic!("{:?}", recognise(&all)) };
+        assert!(dist(a, [180.0, 160.0]) < 3.0 && dist(b, [40.0, 30.0]) < 3.0, "{a:?} {b:?}");
+        let mut rev = all;
+        rev.reverse();
+        assert!(is_arrow(&rev), "head first");
+    }
+
+    #[test]
+    fn the_barb_limits_are_the_ones_that_are_detected() {
+        let (tail, tip) = ([20.0, 100.0], [180.0, 100.0]); // a 160 pt shaft
+        let is_arrow = |l: f32, deg: f32| matches!(recognise(&arrow_stroke(tail, tip, l, deg)), Some(InkShape::Arrow { .. }));
+        // Length 5 to 50 % of the shaft (8 to 80 pt), angle 15 to 75 degrees.
+        assert!(is_arrow(8.5, 30.0) && is_arrow(79.0, 30.0));
+        assert!(!is_arrow(6.0, 30.0) && !is_arrow(88.0, 30.0));
+        assert!(is_arrow(25.0, 17.0) && is_arrow(25.0, 73.0));
+        assert!(!is_arrow(25.0, 11.0) && !is_arrow(25.0, 80.0));
+    }
+
+    #[test]
+    fn letters_and_hooks_are_not_arrows() {
+        // A "Y" in both orders: arm to the fork, down the stem; stem up, then the other arm.
+        let y_down = [[40.0, 0.0], [60.0, 30.0], [80.0, 0.0], [60.0, 30.0], [60.0, 90.0]];
+        assert_eq!(recognise(&y_down), None);
+        let y_up = [[60.0, 90.0], [60.0, 30.0], [40.0, 0.0], [60.0, 30.0], [80.0, 0.0]];
+        assert_eq!(recognise(&y_up), None);
+        // A print "k": stem down, up to the middle, out to the upper right, back, out to the lower right.
+        let k = [[0.0, 0.0], [0.0, 100.0], [0.0, 60.0], [40.0, 30.0], [0.0, 60.0], [40.0, 100.0]];
+        assert_eq!(recognise(&k), None);
+        // A "k" drawn top, middle, upper right, middle, lower right.
+        let k2 = [[0.0, 0.0], [0.0, 60.0], [40.0, 30.0], [0.0, 60.0], [40.0, 100.0]];
+        assert_eq!(recognise(&k2), None);
+        // A checkmark, an "L", a "V" and a line with one barb.
+        assert_eq!(recognise(&[[0.0, 40.0], [20.0, 70.0], [90.0, 0.0]]), None);
+        assert_eq!(recognise(&[[0.0, 0.0], [0.0, 80.0], [50.0, 80.0]]), None);
+        let hook = &arrow_stroke([20.0, 100.0], [180.0, 100.0], 25.0, 30.0)[..34];
+        assert_eq!(recognise(hook), None);
+        let zig: Vec<[f32; 2]> = (0..9).map(|i| [i as f32 * 20.0, if i % 2 == 0 { 0.0 } else { 40.0 }]).collect();
+        assert_eq!(recognise(&zig), None);
     }
 }

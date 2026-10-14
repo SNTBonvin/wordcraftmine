@@ -7,7 +7,7 @@
 //!
 //! Draw › Lasso Select picks the strokes (and drawings) inside a loop drawn on a page; the
 //! selection can then be moved, recoloured, deleted or turned into shapes. Ink to Shape replaces
-//! strokes that look like a line, rectangle, ellipse, triangle or polygon with that shape
+//! strokes that look like a line, arrow, rectangle, ellipse, triangle or polygon with that shape
 //! ([`ink_shape`](super::ink_shape)). Ink Replay plays the strokes back in the order they were
 //! drawn (each stroke keeps its place in that order). Add Pen keeps custom pens in a gallery.
 
@@ -730,7 +730,8 @@ fn convert_at(s: &mut Session, pos: &Pos) -> Result<Option<&'static str>, CmdErr
     *kind = new_kind;
     *freeform = geometry;
     *fill = None;
-    (*w, *h) = if matches!(found, InkShape::Arrow { .. }) { (found.bounds()[2], found.bounds()[3]) } else { (bw, bh) };
+    let [_, _, raw_w, raw_h] = found.bounds();
+    (*w, *h) = if matches!(found, InkShape::Arrow { .. }) { (raw_w, raw_h) } else { (bw, bh) };
     float.x += bx;
     float.y += by;
     para.touch();
