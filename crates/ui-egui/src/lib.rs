@@ -1479,6 +1479,11 @@ impl WordApp {
             // Mod with -, = and 0 are Word shortcuts (optional hyphen, subscript, paragraph spacing);
             // egui's keyboard zoom would also scale the whole window on them. Zoom is View › Zoom.
             ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            // Ctrl+Q is Reset Paragraph Formatting (Word's own); egui would also close the window on it
+            // (#1218). On macOS Cmd+Q still quits and the paragraph reset is Ctrl+Q, a different key.
+            if !cfg!(target_os = "macos") {
+                ctx.options_mut(|o| o.quit_shortcuts.clear());
+            }
             self.styled = true;
         }
     }
@@ -4282,6 +4287,27 @@ mod tests {
         assert_eq!(a.run("ui.theme", json!({"value": "dark"})).unwrap()["theme"], "dark");
         assert_eq!(a.run("ui.dark", json!({})).unwrap()["theme"], "light", "ui.dark toggles the manual choice");
         assert_eq!(a.run("ui.theme", json!({})).unwrap()["theme"], "light");
+    }
+
+    /// #1218: Ctrl+Q resets the paragraph formatting and must not also ask egui to close the window.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn ctrl_q_resets_the_paragraph_without_closing_the_window() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        theme_frame(&ctx, &mut a, None);
+        let ctrl_q = egui::Event::Key {
+            key: egui::Key::Q,
+            physical_key: Some(egui::Key::Q),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        let input = egui::RawInput { events: vec![ctrl_q], ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| a.logic(ui.ctx()));
+        let commands = out.viewport_output.remove(&egui::ViewportId::ROOT).map(|v| v.commands).unwrap_or_default();
+        out.drop_without_applying_deltas();
+        assert!(!commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)), "Ctrl+Q closed the window: {commands:?}");
     }
 
     /// One app frame with the OS appearance egui reports; returns the window commands it sent.
