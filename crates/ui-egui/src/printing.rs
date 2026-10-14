@@ -5,6 +5,42 @@ pub use craft_ui::printing::{Discover, Duplex, Feedback, Printer, Settings, Stat
 /// Native submission adds WordCraft's PDF-page collation setting to the shared spooler settings.
 pub type Submit = Box<dyn Fn(Vec<u8>, Settings, bool) -> std::sync::mpsc::Receiver<Result<String, String>>>;
 
+/// What the system print dialog opens with. The printer, two-sided printing, paper and the rest
+/// are chosen in the dialog itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DialogJob {
+    /// The job's name in the print queue.
+    pub title: String,
+    pub copies: u32,
+    pub collate: bool,
+    /// The dialog's confirm button, in the interface language.
+    pub accept_label: String,
+}
+
+/// How the system print dialog ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DialogOutcome {
+    /// Sent to the printer the dialog names (empty when it didn't say).
+    Printed(String),
+    Cancelled,
+}
+
+/// The answer once the dialog closes and the job is handed to the spooler.
+pub type DialogAnswer = std::sync::mpsc::Receiver<Result<DialogOutcome, String>>;
+
+/// Desktop: the system's own print dialog (on Linux and the BSDs, the desktop's through the XDG
+/// print portal). Only the Print button opens it; commands from control, MCP or macros print
+/// through [`Submit`] instead and never show a dialog.
+pub struct SystemDialog {
+    /// Whether the dialog can be shown here; `None` while the host is still finding out.
+    pub available: Box<dyn Fn() -> Option<bool>>,
+    /// Show the dialog for this PDF, then print it as chosen there. Never blocks the UI.
+    pub print: Box<dyn Fn(Vec<u8>, DialogJob) -> DialogAnswer>,
+}
+
+/// Desktop: open the chosen printer's driver preferences (Windows' Printer Properties).
+pub type PrinterProperties = Box<dyn Fn(&str) -> Result<(), String>>;
+
 /// Metadata for the app-owned commands. Inspecting it never discovers printers or submits.
 pub fn commands(app: &crate::WordApp) -> Vec<serde_json::Value> {
     use serde_json::json;
@@ -136,16 +172,7 @@ pub fn submit(app: &mut crate::WordApp, params: &serde_json::Value) -> Result<se
         // the copies twice, and duplex could put the end of one copy behind the next.
         object.insert("copies".into(), json!(1));
     }
-    if app.ui.update_fields_before_print
-        && let Err(error) = app.session.run("references.updateFields", &json!({}))
-    {
-        log::warn!("updating fields before printing: {error}");
-    }
-    let colour = if app.ui.print_backgrounds { None } else { app.session.doc.settings.page_color.take() };
-    let pdf = app.session.print_pdf(&pdf_params).map_err(|error| error.to_string());
-    if colour.is_some() {
-        app.session.doc.settings.page_color = colour;
-    }
+    let pdf = print_pdf(app, &pdf_params);
     let result = pdf.and_then(|(bytes, plan)| {
         if native && plan.chosen.checked_mul(settings.copies as usize).is_none_or(|pages| pages > wordcraft_engine::print::MAX_PRINT_PAGES) {
             return Err("the selected pages and copies exceed the print-job page limit".into());
@@ -170,5 +197,77 @@ pub fn submit(app: &mut crate::WordApp, params: &serde_json::Value) -> Result<se
             app.status(msg.clone());
             Err(msg)
         }
+    }
+}
+
+/// The print job's PDF for `params`, with fields updated first and the page colour left out
+/// when File › Options says so.
+fn print_pdf(app: &mut crate::WordApp, params: &serde_json::Value) -> Result<(Vec<u8>, wordcraft_engine::print::PrintPlan), String> {
+    if app.ui.update_fields_before_print
+        && let Err(error) = app.session.run("references.updateFields", &serde_json::json!({}))
+    {
+        log::warn!("updating fields before printing: {error}");
+    }
+    let colour = if app.ui.print_backgrounds { None } else { app.session.doc.settings.page_color.take() };
+    let pdf = app.session.print_pdf(params).map_err(|error| error.to_string());
+    if colour.is_some() {
+        app.session.doc.settings.page_color = colour;
+    }
+    pdf
+}
+
+/// Whether File › Print's Print button opens the system print dialog here.
+pub fn dialog_available(app: &crate::WordApp) -> bool {
+    app.services.print_dialog.as_ref().and_then(|dialog| (dialog.available)()) == Some(true)
+}
+
+/// The Print button where the system has a print dialog: the pages chosen on the Print page go
+/// to the dialog, where the user picks the printer and the rest. Not a command: only the button
+/// calls this, so nothing programmatic opens a dialog.
+pub fn print_with_dialog(app: &mut crate::WordApp) -> Result<(), String> {
+    if !dialog_available(app) {
+        return Err("the system print dialog isn't available here".into());
+    }
+    if app.print_dialog_open() || app.printing.busy() {
+        return Err("A print job is already being submitted.".into());
+    }
+    let mut params = app.ui.print.params();
+    // Copies and collation are chosen in the dialog and applied by the spooler.
+    params["copies"] = serde_json::json!(1);
+    let job = DialogJob {
+        title: app.title_stem(),
+        copies: app.ui.print.copies.clamp(1, wordcraft_engine::print::MAX_COPIES),
+        collate: app.ui.print.collate,
+        accept_label: crate::i18n::t("Print").to_owned(),
+    };
+    let result = print_pdf(app, &params).and_then(|(bytes, plan)| {
+        if plan.chosen.checked_mul(job.copies as usize).is_none_or(|pages| pages > wordcraft_engine::print::MAX_PRINT_PAGES) {
+            return Err("the selected pages and copies exceed the print-job page limit".to_owned());
+        }
+        let dialog = app.services.print_dialog.as_ref().ok_or("the system print dialog isn't available here")?;
+        Ok((dialog.print)(bytes, job))
+    });
+    match result {
+        Ok(answer) => {
+            app.set_print_dialog(answer);
+            app.status(tl!("Opening print dialog…"));
+            Ok(())
+        }
+        Err(error) => {
+            log::error!("print failed: {error}");
+            let msg = crate::i18n::fmt(tl!("Print failed: {error}"), &[("error", &error)]);
+            app.status(msg.clone());
+            Err(msg)
+        }
+    }
+}
+
+/// The status-bar message for how the system print dialog ended.
+pub fn dialog_feedback(answer: Result<DialogOutcome, String>, translate: impl Fn(&str) -> String) -> String {
+    match answer {
+        Ok(DialogOutcome::Printed(printer)) if printer.trim().is_empty() => translate("Print job submitted."),
+        Ok(DialogOutcome::Printed(printer)) => translate("Sent to {printer}.").replace("{printer}", printer.trim()),
+        Ok(DialogOutcome::Cancelled) => translate("Printing cancelled."),
+        Err(error) => translate("Print failed: {error}").replace("{error}", &error),
     }
 }

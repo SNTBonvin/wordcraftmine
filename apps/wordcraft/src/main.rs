@@ -20,6 +20,8 @@ mod file_dialogs;
 mod graphics;
 mod logging;
 mod print;
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
+mod print_dialog;
 mod region;
 
 use wordcraft_engine::Session;
@@ -207,6 +209,10 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         file_dialog: Some(file_dialog),
         printers: Some(print::discover()),
         print_native: Some(print::submit()),
+        #[cfg(all(unix, not(target_os = "macos")))]
+        print_dialog: Some(print_dialog::hook()),
+        #[cfg(windows)]
+        printer_properties: Some(print::properties()),
         clipboard_picture: Some(Box::new(clipboard::picture)),
         make_default_app: default_apps::hook(),
         animations_enabled: Some(animations::hook(ctx)),

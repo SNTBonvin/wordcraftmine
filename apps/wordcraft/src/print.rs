@@ -25,6 +25,19 @@ pub fn finish_pending_jobs() {
     }
 }
 
+/// Keep a print worker (a submission, or the system print dialog's) until the app exits.
+pub fn keep_until_exit(worker: std::thread::JoinHandle<()>) {
+    let mut jobs = JOBS.lock().unwrap_or_else(|poison| poison.into_inner());
+    jobs.retain(|job| !job.is_finished());
+    jobs.push(worker);
+}
+
+/// Windows: the chosen printer's Printing Preferences (Printer Properties).
+#[cfg(windows)]
+pub fn properties() -> wordcraft_ui_egui::printing::PrinterProperties {
+    Box::new(|printer| craft_print::open_printer_preferences(printer).map_err(|error| error.to_string()))
+}
+
 pub fn submit() -> Submit {
     Box::new(|bytes, settings: Settings, collate| {
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -46,9 +59,7 @@ pub fn submit() -> Submit {
             let _ = sender.send(craft_print::submit(&bytes, &job).map_err(|error| error.to_string()));
         });
         if let Ok(worker) = worker {
-            let mut jobs = JOBS.lock().unwrap_or_else(|poison| poison.into_inner());
-            jobs.retain(|job| !job.is_finished());
-            jobs.push(worker);
+            keep_until_exit(worker);
         }
         receiver
     })

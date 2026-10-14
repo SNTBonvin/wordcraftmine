@@ -1,6 +1,6 @@
 # Hardware parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** trivial (32-bit Windows starts on OpenGL; previously major: first version) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4 and Word for Windows
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-14 · **Change:** minor (File › Print opens the system print dialog on Linux and the BSDs; previously trivial: 32-bit Windows starts on OpenGL; previously major: first version) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4 and Word for Windows
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -12,7 +12,7 @@ pens, microphones (Dictate) and speakers (Read Aloud), and displays.
 
 | Hardware | Word | WordCraft macOS | Windows | Linux / BSD | Web | Parity | Hours |
 |---|---|---|---|---|---|---|---|
-| Printers: native print dialog, printer choice, copies, duplex, page ranges, tray, scaling | ✅ (`WordPDE.plugin` print-dialog extension on Mac) | 🟡 Direct CUPS printing; printer, copies, collation, duplex, ranges and grayscale | 🟡 Direct spooler printing; printer, copies, collation, duplex, ranges and grayscale | 🟡 Direct spooler printing; printer, copies, collation, duplex, ranges and grayscale | ✅ browser print dialog (#209) | 35% | 5–8 |
+| Printers: native print dialog, printer choice, copies, duplex, page ranges, tray, scaling | ✅ (`WordPDE.plugin` print-dialog extension on Mac) | 🟡 Direct CUPS printing; printer, copies, collation, duplex, ranges and grayscale (no native print panel yet) | 🟡 Direct spooler printing; printer, copies, collation, duplex, ranges, grayscale and Printer Properties | ✅ The desktop's print dialog through the XDG portal (printer, copies, duplex, paper, driver options); direct CUPS printing without a portal; printer, copies, collation, duplex, ranges and grayscale | ✅ browser print dialog (#209) | 35% | 5–8 |
 | GPU rendering, HiDPI/Retina, pixel-aligned text | ✅ | ✅ wgpu + vello_cpu rasteriser, whole-pixel text (#110, #165) | ✅ DirectX 12 default (#50), OpenGL when DirectX 12 has no GPU driver (#316) or on 32-bit; startup crash on Intel UHD (#170) | ✅ (soft text on KDE at some zooms, #140) | ✅ | 80% | 3–5 (bugs) |
 | Multiple monitors, per-monitor DPI, remembered window position | ✅ | ✅ (#38, #76) | ✅ (winit DPI fix pending, #155) | ✅ | — | 85% | 1 |
 | Pen / stylus: ink, pressure, eraser, ink to shape/math | ✅ (Draw tab, `InkRender.bundle`) | ❌ | ❌ | ❌ | ❌ | 0% | (Draw tab, 15–25) |
@@ -25,6 +25,7 @@ pens, microphones (Dictate) and speakers (Read Aloud), and displays.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | File › Print's Print button opens the desktop's own print dialog on Linux and the BSDs (XDG print portal: GNOME, KDE Plasma, Flatpak), where the printer, copies, two-sided printing and paper are chosen, as in Word; the Print page's range and odd/even shape the PDF. Without a portal the in-app printer list stays. Windows gets Printer Properties under the printer list. Commands (`ui.print`) still submit without a dialog. macOS's native print panel needs a safe wrapper in craft-libs (Objective-C interop needs unsafe) |
 | 2026-10-12 | trivial | 32-bit Windows starts on OpenGL: DirectX 12 graphics pipeline creation returns "The parameter is incorrect" and the app exited before the window appeared |
 | 2026-10-12 | minor | Desktop File > Print now discovers printers and submits PDF jobs through pinned craft-print with printer choice, copies, duplex and grayscale; browser printing and PDF export remain available. The upstream preview, page ranges, parity and Print Markup remain available. Remaining print parity includes driver-specific tray/options and pages-per-sheet UI; physical printer fidelity needs hardware validation. |
 | 2026-10-10 | trivial | Windows falls back to OpenGL when DirectX 12 offers only the software adapter (#316) |

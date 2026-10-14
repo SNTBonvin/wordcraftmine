@@ -1278,6 +1278,25 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.closed(&[(6.0, 11.5), (14.0, 11.5), (14.0, 17.5), (6.0, 17.5)], a);
             pen.fcircle(15.0, 9.5, 0.8, c);
         }
+        // File › Print's settings: which pages (a page in front of another).
+        "printPages" => {
+            pen.rect(7.0, 2.5, 17.5, 14.0, c);
+            pen.rect(3.5, 6.0, 14.0, 18.5, c);
+            pen.lines(5.5, 12.0, &[9.5, 12.0, 14.5]);
+        }
+        // Collated copies: two sets of pages, numbered in order.
+        "printCollate" => {
+            for (x, y) in [(2.5, 3.0), (10.5, 3.0)] {
+                pen.rect(x, y, x + 7.0, y + 9.0, c);
+                pen.rect(x + 2.0, y + 5.0, x + 9.0, y + 14.0, a);
+            }
+        }
+        // Two-sided: a page with its corner turned over to show the back.
+        "printDuplex" => {
+            pen.line(&[(13.0, 2.5), (4.0, 2.5), (4.0, 19.0), (17.0, 19.0), (17.0, 7.0)]);
+            pen.closed(&[(13.0, 2.5), (17.0, 7.0), (13.0, 7.0)], a);
+            pen.lines(6.5, 14.0, &[9.0, 12.0, 15.0]);
+        }
         "alignText" => {
             // A box with its text lines in the middle, arrows to the top and bottom edges.
             pen.rect(3.0, 2.5, 17.0, 17.5, c);
