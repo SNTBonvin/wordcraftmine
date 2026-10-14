@@ -98,47 +98,76 @@ fn pane_label(id: &str) -> &'static str {
 
 /// The Options page.
 pub fn page(app: &mut WordApp, ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
+    let rtl = crate::i18n::current().is_rtl();
     ui.label(RichText::new(tl!("Options")).font(semibold(26.0)));
     ui.add_space(16.0);
     let current = if PANES.contains(&app.ui.options_pane.as_str()) { app.ui.options_pane.clone() } else { "general".to_string() };
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(170.0);
-            for id in PANES {
-                let label = tl!(pane_label(id));
-                let active = current == id;
-                let (r, resp) = ui.allocate_exact_size(vec2(170.0, 30.0), egui::Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, label));
-                if active {
-                    ui.painter().rect_filled(r, 4.0, t.checked);
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(r, 4.0, t.hover);
-                }
-                let font = if active { semibold(14.0) } else { crate::theme::regular(14.0) };
-                ui.painter().text(egui::pos2(r.min.x + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, font, t.text);
-                if resp.clicked() {
-                    app.ui.options_pane = id.to_string();
-                }
+    let content_width = (ui.available_width() - 203.0).clamp(200.0, 640.0);
+    let contents = |ui: &mut Ui| {
+        nav(app, ui, &current, rtl);
+        divider(ui);
+        settings(app, ui, &current, content_width);
+    };
+    if rtl {
+        ui.horizontal(contents);
+    } else {
+        ui.horizontal_top(contents);
+    }
+}
+
+fn nav(app: &mut WordApp, ui: &mut Ui, current: &str, rtl: bool) {
+    let t = Tokens::get(ui.ctx());
+    crate::rtl::column(ui, |ui| {
+        ui.set_width(170.0);
+        for id in PANES {
+            let label = tl!(pane_label(id));
+            let active = current == id;
+            let (r, resp) = ui.allocate_exact_size(vec2(170.0, 30.0), egui::Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, label));
+            if active {
+                ui.painter().rect_filled(r, 4.0, t.checked);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(r, 4.0, t.hover);
             }
-        });
-        ui.add_space(12.0);
-        let (line, _) = ui.allocate_exact_size(vec2(1.0, 420.0), egui::Sense::hover());
-        ui.painter().rect_filled(line, 0.0, t.border);
-        ui.add_space(20.0);
-        ui.vertical(|ui| {
+            let font = if active { semibold(14.0) } else { crate::theme::regular(14.0) };
+            ui.painter().text(
+                egui::pos2(if rtl { r.max.x - 12.0 } else { r.min.x + 12.0 }, r.center().y),
+                if rtl { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
+                label,
+                font,
+                t.text,
+            );
+            if resp.clicked() {
+                app.ui.options_pane = id.to_string();
+            }
+        }
+    });
+}
+
+fn divider(ui: &mut Ui) {
+    ui.add_space(12.0);
+    let (line, _) = ui.allocate_exact_size(vec2(1.0, 420.0), egui::Sense::hover());
+    ui.painter().rect_filled(line, 0.0, Tokens::get(ui.ctx()).border);
+    ui.add_space(20.0);
+}
+
+fn settings(app: &mut WordApp, ui: &mut Ui, current: &str, width: f32) {
+    crate::rtl::column(ui, |ui| {
+        if crate::i18n::current().is_rtl() {
+            ui.set_width(width);
+        } else {
             ui.set_max_width(640.0);
-            match current.as_str() {
-                "display" => display(app, ui),
-                "proofing" => proofing(app, ui),
-                "save" => save(app, ui),
-                "language" => language(app, ui),
-                "accessibility" => accessibility(app, ui),
-                "advanced" => advanced(app, ui),
-                "agents" => agents(ui),
-                _ => general(app, ui),
-            }
-        });
+        }
+        match current {
+            "display" => display(app, ui),
+            "proofing" => proofing(app, ui),
+            "save" => save(app, ui),
+            "language" => language(app, ui),
+            "accessibility" => accessibility(app, ui),
+            "advanced" => advanced(app, ui),
+            "agents" => agents(ui),
+            _ => general(app, ui),
+        }
     });
 }
 
@@ -162,7 +191,7 @@ fn set(app: &mut WordApp, params: Value) {
 /// A checkbox for a `file.options` on/off setting.
 fn flag(app: &mut WordApp, ui: &mut Ui, label: &str, key: &str, value: bool) {
     let mut v = value;
-    if ui.checkbox(&mut v, tl!(label)).changed() {
+    if crate::rtl::checkbox(ui, &mut v, tl!(label)).changed() {
         set(app, json!({ key: v }));
     }
 }
@@ -171,22 +200,20 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     section(ui, "Interface");
     theme_picker(app, ui);
     interface_size_picker(app, ui);
-    ui.checkbox(&mut app.ui.mini_toolbar, tl!("Show the mini toolbar when text is selected"));
+    crate::rtl::checkbox(ui, &mut app.ui.mini_toolbar, tl!("Show the mini toolbar when text is selected"));
     let mut dark_page = app.session.view.dark_mode;
-    if ui
-        .checkbox(&mut dark_page, tl!("Dark page (white text on black)"))
+    if crate::rtl::checkbox(ui, &mut dark_page, tl!("Dark page (white text on black)"))
         .on_hover_text(tl!("Show documents with their colours inverted, like View › Switch Modes. Saving, printing and PDFs are unchanged."))
         .changed()
     {
         let _ = app.run("view.darkMode", json!({"value": dark_page}));
     }
-    ui.checkbox(&mut app.ui.show_discord, tl!("Show the community button in the title bar"));
+    crate::rtl::checkbox(ui, &mut app.ui.show_discord, tl!("Show the community button in the title bar"));
     default_app_button(app, ui);
     ui.add_space(8.0);
     section(ui, "Start-up");
     let mut start = app.ui.start_screen;
-    if ui
-        .checkbox(&mut start, tl!("Show the Start screen when WordCraft starts"))
+    if crate::rtl::checkbox(ui, &mut start, tl!("Show the Start screen when WordCraft starts"))
         .on_hover_text(tl!(
             "On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document."
         ))
@@ -196,26 +223,56 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     }
     ui.add_space(8.0);
     section(ui, "Personalize");
-    egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
-        ui.label(tl!("User name:"));
-        let mut n = app.session.author.clone();
-        if ui.add(egui::TextEdit::singleline(&mut n).desired_width(260.0)).changed() {
-            app.session.author = n;
-        }
-        ui.end_row();
-        ui.label(tl!("Initials:"));
-        let mut i = app.session.initials.clone();
-        let hint = app.session.user_initials();
-        if ui
-            .add(
-                egui::TextEdit::singleline(&mut i).desired_width(80.0).char_limit(wordcraft_engine::cmd::options::MAX_INITIALS_CHARS).hint_text(hint),
-            )
-            .changed()
-        {
-            set(app, json!({"initials": i}));
-        }
-        ui.end_row();
-    });
+    if crate::i18n::current().is_rtl() {
+        ui.horizontal(|ui| {
+            ui.label(tl!("User name:"));
+            let mut n = app.session.author.clone();
+            if ui.add(egui::TextEdit::singleline(&mut n).desired_width(260.0).horizontal_align(egui::Align::Max)).changed() {
+                app.session.author = n;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(tl!("Initials:"));
+            let mut initials = app.session.initials.clone();
+            let hint = app.session.user_initials();
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut initials)
+                        .desired_width(80.0)
+                        .horizontal_align(egui::Align::Max)
+                        .char_limit(wordcraft_engine::cmd::options::MAX_INITIALS_CHARS)
+                        .hint_text(hint),
+                )
+                .changed()
+            {
+                set(app, json!({"initials": initials}));
+            }
+        });
+    } else {
+        crate::rtl::grid(ui, egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)), |ui| {
+            ui.label(tl!("User name:"));
+            let mut n = app.session.author.clone();
+            if ui.add(egui::TextEdit::singleline(&mut n).desired_width(260.0)).changed() {
+                app.session.author = n;
+            }
+            ui.end_row();
+            ui.label(tl!("Initials:"));
+            let mut i = app.session.initials.clone();
+            let hint = app.session.user_initials();
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut i)
+                        .desired_width(80.0)
+                        .char_limit(wordcraft_engine::cmd::options::MAX_INITIALS_CHARS)
+                        .hint_text(hint),
+                )
+                .changed()
+            {
+                set(app, json!({"initials": i}));
+            }
+            ui.end_row();
+        });
+    }
     note(ui, "New comments and tracked changes are recorded under this name and these initials.");
 }
 
@@ -230,25 +287,25 @@ fn display(app: &mut WordApp, ui: &mut Ui) {
         ("Hidden text", "hidden", m.hidden),
     ] {
         let mut v = on;
-        if ui.checkbox(&mut v, tl!(label)).changed() {
+        if crate::rtl::checkbox(ui, &mut v, tl!(label)).changed() {
             set(app, json!({"marks": { key: v }}));
         }
     }
     let mut marks = app.session.view.marks;
-    if ui.checkbox(&mut marks, tl!("Show all formatting marks")).changed() {
+    if crate::rtl::checkbox(ui, &mut marks, tl!("Show all formatting marks")).changed() {
         let _ = app.run("view.marks", json!({"value": marks}));
     }
     ui.add_space(8.0);
     section(ui, "Page display");
     let mut ruler = app.session.view.ruler;
-    if ui.checkbox(&mut ruler, tl!("Show rulers")).changed() {
+    if crate::rtl::checkbox(ui, &mut ruler, tl!("Show rulers")).changed() {
         let _ = app.run("view.ruler", json!({"value": ruler}));
     }
     numeral_picker(app, ui);
     ui.add_space(8.0);
     section(ui, "Printing");
-    ui.checkbox(&mut app.ui.print_backgrounds, tl!("Print the page color"));
-    ui.checkbox(&mut app.ui.update_fields_before_print, tl!("Update fields before printing"));
+    crate::rtl::checkbox(ui, &mut app.ui.print_backgrounds, tl!("Print the page color"));
+    crate::rtl::checkbox(ui, &mut app.ui.update_fields_before_print, tl!("Update fields before printing"));
 }
 
 fn proofing(app: &mut WordApp, ui: &mut Ui) {
@@ -291,7 +348,7 @@ fn custom_dictionary(app: &mut WordApp, ui: &mut Ui) {
     let id = egui::Id::new("options_dictionary_new");
     let mut word = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default();
     ui.horizontal(|ui| {
-        let r = ui.add(egui::TextEdit::singleline(&mut word).desired_width(220.0).char_limit(MAX_WORD_CHARS).hint_text(tl!("New word")));
+        let r = ui.add(crate::rtl::singleline(&mut word).desired_width(220.0).char_limit(MAX_WORD_CHARS).hint_text(tl!("New word")));
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let w = word.trim().to_string();
         let ok = !w.is_empty() && !w.chars().any(char::is_whitespace);
@@ -359,7 +416,7 @@ fn accessibility(app: &mut WordApp, ui: &mut Ui) {
         }
     });
     let mut skip = app.session.read_aloud.skip_citations;
-    if ui.checkbox(&mut skip, tl!("Skip citations & bibliography")).changed() {
+    if crate::rtl::checkbox(ui, &mut skip, tl!("Skip citations & bibliography")).changed() {
         let _ = app.run("readAloud.skipCitations", json!({"value": skip}));
     }
 }
@@ -372,7 +429,7 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
     flag(app, ui, "Overtype (typing replaces the characters after the caret)", "overtype", pr.overtype);
     ui.add_space(8.0);
     section(ui, "Display");
-    egui::Grid::new("options_display").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("options_display").num_columns(2).spacing(vec2(8.0, 6.0)), |ui| {
         ui.label(tl!("Recent documents to show:"));
         let mut n = app.ui.recent_shown();
         if ui.add(egui::DragValue::new(&mut n).range(0..=crate::MAX_RECENT).speed(0.2)).changed() {
@@ -384,8 +441,15 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         let units = app.session.units();
         let auto = app.session.prefs.units.is_none();
         let name = UNITS.iter().find(|(u, _)| *u == units).map_or("Inches", |(_, n)| n);
-        let shown = if auto { format!("{} ({})", tl!("Automatic"), tl!(name)) } else { tl!(name).to_string() };
-        egui::ComboBox::from_id_salt("options_units").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+        let shown = if auto {
+            crate::i18n::fmt(
+                "{label} ({units})",
+                &[("label", crate::i18n::tr(crate::i18n::current(), "Automatic")), ("units", crate::i18n::tr(crate::i18n::current(), name))],
+            )
+        } else {
+            tl!(name).to_string()
+        };
+        crate::widgets::combo_box(ui, "options_units", &shown, 200.0, |ui| {
             if ui.selectable_label(auto, tl!("Automatic")).clicked() {
                 set(app, json!({"units": "auto"}));
             }
@@ -404,7 +468,7 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         let system_tag = if system.territory.is_empty() { system.language.clone() } else { format!("{}-{}", system.language, system.territory) };
         let automatic = crate::i18n::fmt(tl!("Automatic ({region})"), &[("region", system_tag.as_str())]);
         let shown = chosen.clone().unwrap_or_else(|| automatic.clone());
-        egui::ComboBox::from_id_salt("options_region").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "options_region", &shown, 200.0, |ui| {
             if ui.selectable_label(chosen.is_none(), automatic.as_str()).clicked() {
                 set(app, json!({"region": "auto"}));
             }
@@ -417,14 +481,13 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         ui.end_row();
     });
     let mut keytips = app.ui.keytips_enabled;
-    if ui.checkbox(&mut keytips, tl!("Show KeyTips (Alt or F10)")).changed() {
+    if crate::rtl::checkbox(ui, &mut keytips, tl!("Show KeyTips (Alt or F10)")).changed() {
         let _ = app.run("ui.keytips", json!({"value": keytips}));
     }
     ui.add_space(8.0);
     section(ui, "Animation");
     let mut caret = app.ui.caret_animation;
-    if ui
-        .checkbox(&mut caret, tl!("Animate the caret (it glides and fades)"))
+    if crate::rtl::checkbox(ui, &mut caret, tl!("Animate the caret (it glides and fades)"))
         .on_hover_text(tl!(
             "On: the caret glides to its new place when you type or use the arrow keys, and its blink fades. Off: it jumps and blinks on and off."
         ))
@@ -458,7 +521,7 @@ fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
     use crate::theme::Appearance;
     ui.horizontal(|ui| {
         ui.label(tl!("Interface theme:"));
-        egui::ComboBox::from_id_salt("interface_theme").selected_text(tl!(app.ui.theme.label())).width(220.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "interface_theme", tl!(app.ui.theme.label()), 220.0, |ui| {
             for a in Appearance::ALL {
                 if ui.selectable_label(app.ui.theme == a, tl!(a.label())).clicked() {
                     let _ = app.run("ui.theme", json!({"value": a.code()}));
@@ -478,7 +541,7 @@ fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
     let selected = size.percent().map_or_else(|| auto.clone(), |pct| format!("{pct}%"));
     ui.horizontal(|ui| {
         ui.label(tl!("Interface size:"));
-        egui::ComboBox::from_id_salt("interface_size").selected_text(selected).width(220.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "interface_size", &selected, 220.0, |ui| {
             if ui.selectable_label(size.is_auto(), auto).clicked() {
                 let _ = app.run("ui.interfaceSize", json!({"value": "auto"}));
             }
@@ -504,7 +567,7 @@ fn animations_picker(app: &mut WordApp, ui: &mut Ui) {
     use crate::theme::Animations;
     ui.horizontal(|ui| {
         ui.label(tl!("Animation effects:"));
-        egui::ComboBox::from_id_salt("animation_effects").selected_text(tl!(app.ui.animations.label())).width(220.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "animation_effects", tl!(app.ui.animations.label()), 220.0, |ui| {
             for a in Animations::ALL {
                 if ui.selectable_label(app.ui.animations == a, tl!(a.label())).clicked() {
                     let _ = app.run("ui.animations", json!({"value": a.code()}));
@@ -533,7 +596,7 @@ fn language_picker(app: &mut WordApp, ui: &mut Ui) {
     let current = if app.ui.language == AUTO { auto_label.clone() } else { Lang::from_pref(&app.ui.language).name().to_string() };
     ui.horizontal(|ui| {
         ui.label(tl!("Interface language:"));
-        egui::ComboBox::from_id_salt("interface_language").selected_text(current).width(220.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "interface_language", &current, 220.0, |ui| {
             if ui.selectable_label(app.ui.language == AUTO, auto_label.as_str()).clicked() {
                 let _ = app.run("ui.language", json!({"value": AUTO}));
             }
@@ -619,7 +682,7 @@ fn numeral_picker(app: &mut WordApp, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tl!("Numerals:"));
         let mut sel = app.session.view.numeral;
-        egui::ComboBox::from_id_salt("numerals").selected_text(tl!(sel.label())).width(220.0).show_ui(ui, |ui| {
+        crate::widgets::combo_box(ui, "numerals", tl!(sel.label()), 220.0, |ui| {
             for m in [NumeralMode::Arabic, NumeralMode::Hindi, NumeralMode::Context, NumeralMode::System] {
                 ui.selectable_value(&mut sel, m, tl!(m.label()));
             }

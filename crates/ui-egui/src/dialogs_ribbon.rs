@@ -101,7 +101,7 @@ pub fn customize_ribbon(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm) -> b
     cats.push((String::new(), tl!("All Commands").to_string()));
     let cmds: Vec<(String, String)> = commands(app, &f.category).into_iter().map(|(id, l)| (id.to_string(), l)).collect();
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Choose a command")).font(semibold(12.5)));
             ui.horizontal_top(|ui| {
                 if let Some(c) = list(ui, "rb_categories", vec2(left, h), &cats, &f.category) {
@@ -210,7 +210,7 @@ fn ribbon_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
     let sel = f.selected.clone();
     let tab_custom = app.session.ribbon.tabs().iter().any(|t| t.name == sel.tab && t.custom);
     // Add >> / << Remove.
-    ui.vertical(|ui| {
+    crate::rtl::column(ui, |ui| {
         ui.add_space(h / 2.0 - 10.0);
         let can_add = sel.group.is_some() && !f.command.is_empty();
         let add = ui.add_enabled(can_add, egui::Button::new(tl!("Add >>")).min_size(vec2(96.0, 0.0)));
@@ -236,11 +236,11 @@ fn ribbon_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
         }
     });
     ui.add_space(4.0);
-    ui.vertical(|ui| {
+    crate::rtl::column(ui, |ui| {
         ui.label(egui::RichText::new(tl!("Ribbon tabs")).font(semibold(12.5)));
         ui.horizontal_top(|ui| {
             tree(app, ui, f, &rows, h);
-            ui.vertical(|ui| {
+            crate::rtl::column(ui, |ui| {
                 ui.add_space(h / 2.0 - 10.0);
                 for (text, by) in [("Up", -1), ("Down", 1)] {
                     if ui.add(egui::Button::new(tl!(text)).min_size(vec2(56.0, 0.0))).clicked() {
@@ -321,7 +321,7 @@ fn tree_rows_ui(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, rows: &[Row]
             ui.add_space(if row.depth == 0 { 0.0 } else { 24.0 + f32::from(row.depth.saturating_sub(1)) * 16.0 });
             if let Some(shown) = row.shown {
                 let mut on = shown;
-                if ui.checkbox(&mut on, "").changed() {
+                if crate::rtl::checkbox(ui, &mut on, "").changed() {
                     let key = if on { "show" } else { "hide" };
                     change(app, f, json!({ key: row.item.tab }));
                 }
@@ -340,7 +340,7 @@ fn qat_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
     if !ids.contains(&f.qat_selected) {
         f.qat_selected = ids.first().cloned().unwrap_or_default();
     }
-    ui.vertical(|ui| {
+    crate::rtl::column(ui, |ui| {
         ui.add_space(h / 2.0 - 10.0);
         let can_add = !f.command.is_empty() && !ids.contains(&f.command);
         if ui.add_enabled(can_add, egui::Button::new(tl!("Add >>")).min_size(vec2(96.0, 0.0))).clicked()
@@ -353,14 +353,14 @@ fn qat_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
         }
     });
     ui.add_space(4.0);
-    ui.vertical(|ui| {
+    crate::rtl::column(ui, |ui| {
         ui.label(egui::RichText::new(tl!("Quick Access Toolbar")).font(semibold(12.5)));
         ui.horizontal_top(|ui| {
             let rows: Vec<(String, String)> = ids.iter().map(|id| (id.clone(), label_of(app, id))).collect();
             if let Some(id) = list(ui, "rb_qat", vec2(250.0, h), &rows, &f.qat_selected) {
                 f.qat_selected = id;
             }
-            ui.vertical(|ui| {
+            crate::rtl::column(ui, |ui| {
                 ui.add_space(h / 2.0 - 10.0);
                 for (text, by) in [("Up", -1), ("Down", 1)] {
                     if ui.add_enabled(!f.qat_selected.is_empty(), egui::Button::new(tl!(text)).min_size(vec2(56.0, 0.0))).clicked() {

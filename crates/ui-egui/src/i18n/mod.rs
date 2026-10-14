@@ -16,6 +16,7 @@
 //!    English text, clean-room: never from Microsoft Word's or another product's localisation).
 //! 2. Add one row to [`LANGUAGES`]. Set its `editing_lang` only when `wordcraft-proof` can proof
 //!    the language (Polish: `pl-PL`): new documents are then written in it.
+//!    Set `rtl` for a right-to-left interface; the display name does not control layout.
 //!
 //! The Options dropdown, the system-language match and the catalog tests pick it up from there.
 //!
@@ -41,6 +42,8 @@ pub struct LangInfo {
     pub code: &'static str,
     /// The language's name in itself, shown in the Options dropdown.
     pub name: &'static str,
+    /// Reading direction, independent of the spelling of the display name.
+    pub rtl: bool,
     /// Catalog file contents (empty for the built-in English).
     pub source: &'static str,
     /// Which CJK interface face comes first (Chinese text wants the Chinese face).
@@ -53,12 +56,13 @@ pub struct LangInfo {
 
 /// The registry. English first: it is the fallback and the source language.
 pub static LANGUAGES: [LangInfo; 19] = [
-    LangInfo { code: "en", name: "English", source: "", prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo { code: "en", name: "English", source: "", rtl: false, prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` resolve here (see `candidates`).
     LangInfo {
         code: "zh-hans",
         name: "简体中文",
         source: include_str!("zh-hans.tsv"),
+        rtl: false,
         prefer_hans: true,
         editing_lang: None,
         catalog: OnceLock::new(),
@@ -68,35 +72,68 @@ pub static LANGUAGES: [LangInfo; 19] = [
         code: "zh-hant",
         name: "繁體中文",
         source: include_str!("zh-hant.tsv"),
+        rtl: false,
         prefer_hans: true,
         editing_lang: None,
         catalog: OnceLock::new(),
     },
-    LangInfo { code: "ja", name: "日本語", source: include_str!("ja.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
     LangInfo {
-        code: "uk", name: "Українська", source: include_str!("uk.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new()
+        code: "ja",
+        name: "日本語",
+        source: include_str!("ja.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
+    LangInfo {
+        code: "uk",
+        name: "Українська",
+        source: include_str!("uk.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
     },
     // Spanish, neutral across Spain and Latin America; `es-ES`, `es-MX`, `es-419` … resolve here.
-    LangInfo { code: "es", name: "Español", source: include_str!("es.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "es",
+        name: "Español",
+        source: include_str!("es.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // Brazilian Portuguese; `pt-BR` and `pt-BR-*` resolve here. Plain `pt` and `pt-PT` have no
     // catalog yet (the European vocabulary differs), so they stay in English.
     LangInfo {
         code: "pt-br",
         name: "Português (Brasil)",
         source: include_str!("pt-br.tsv"),
+        rtl: false,
         prefer_hans: false,
         editing_lang: Some("pt-BR"),
         catalog: OnceLock::new(),
     },
     // Serbian, Cyrillic script (the default per BCP 47 when no script is given); `sr`, `sr-RS`,
     // `sr-Cyrl-*` resolve here.
-    LangInfo { code: "sr", name: "Српски", source: include_str!("sr.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "sr",
+        name: "Српски",
+        source: include_str!("sr.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // Serbian, Latin script; `sr-Latn-*` resolves here (see `candidates`'s generic prefix
     // matching — no special-casing needed, unlike Chinese's script-by-region fallback).
     LangInfo {
         code: "sr-latn",
         name: "Srpski (latinica)",
         source: include_str!("sr-latn.tsv"),
+        rtl: false,
         prefer_hans: false,
         editing_lang: None,
         catalog: OnceLock::new(),
@@ -107,49 +144,147 @@ pub static LANGUAGES: [LangInfo; 19] = [
         code: "pl",
         name: "Polski",
         source: include_str!("pl.tsv"),
+        rtl: false,
         prefer_hans: false,
         editing_lang: Some("pl-PL"),
         catalog: OnceLock::new(),
     },
-    LangInfo { code: "cs", name: "Čeština", source: include_str!("cs.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
-    LangInfo { code: "et", name: "Eesti", source: include_str!("et.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "cs",
+        name: "Čeština",
+        source: include_str!("cs.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
+    LangInfo {
+        code: "et",
+        name: "Eesti",
+        source: include_str!("et.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // German, neutral across Germany, Austria and Switzerland; `de`, `de-DE`, `de-AT`, `de-CH` …
     // resolve here.
-    LangInfo { code: "de", name: "Deutsch", source: include_str!("de.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "de",
+        name: "Deutsch",
+        source: include_str!("de.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // Russian; `ru`, `ru-RU`, `ru_RU.UTF-8` and other regions resolve here.
-    LangInfo { code: "ru", name: "Русский", source: include_str!("ru.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
-    LangInfo { code: "tr", name: "Türkçe", source: include_str!("tr.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "ru",
+        name: "Русский",
+        source: include_str!("ru.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
+    LangInfo {
+        code: "tr",
+        name: "Türkçe",
+        source: include_str!("tr.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // Italian; `it-IT`, `it-CH` and `it-*` resolve here. New documents are written in
     // Italian: `wordcraft-proof` checks it (`ProofLang::It`).
     LangInfo {
         code: "it",
         name: "Italiano",
         source: include_str!("it.tsv"),
+        rtl: false,
         prefer_hans: false,
         editing_lang: Some("it-IT"),
         catalog: OnceLock::new(),
     },
     // Hungarian; `hu`, `hu-HU` and `hu_HU.UTF-8` resolve here.
-    LangInfo { code: "hu", name: "Magyar", source: include_str!("hu.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "hu",
+        name: "Magyar",
+        source: include_str!("hu.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // French; `fr`, `fr-FR`, `fr_CA` and other regions resolve here.
-    LangInfo { code: "fr", name: "Français", source: include_str!("fr.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new() },
+    LangInfo {
+        code: "fr",
+        name: "Français",
+        source: include_str!("fr.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
+    },
     // Bulgarian; `bg`, `bg-BG` and `bg_BG.UTF-8` resolve here.
     LangInfo {
-        code: "bg", name: "Български", source: include_str!("bg.tsv"), prefer_hans: false, editing_lang: None, catalog: OnceLock::new()
+        code: "bg",
+        name: "Български",
+        source: include_str!("bg.tsv"),
+        rtl: false,
+        prefer_hans: false,
+        editing_lang: None,
+        catalog: OnceLock::new(),
     },
 ];
 
 impl LangInfo {
     fn catalog(&self) -> &Catalog {
         self.catalog.get_or_init(|| {
-            let (catalog, errors) = Catalog::parse(self.source);
+            let (mut catalog, errors) = Catalog::parse(self.source);
             for error in errors {
                 log::warn!("{} interface catalog: {error}; that entry shows in English", self.code);
+            }
+            if self.rtl {
+                catalog.prepare_rtl();
             }
             catalog
         })
     }
 }
+
+// Synthetic RTL catalog for direction tests; not a shipped translation.
+#[cfg(test)]
+static RTL_TEST: LangInfo = LangInfo {
+    code: "qaa-rtl",
+    name: "العربية",
+    source: concat!(
+        "\tHome\tالبداية\n\tInsert\tإدراج\n\tPaste\tلصق\n\tCut\tقص\n\tCopy\tنسخ\n\tClipboard\tالحافظة\n",
+        "\tOptions\tالإعدادات\n\tGeneral\tعام\n\tUser name:\tاسم المستخدم:\n\tInitials:\tالأحرف الأولى:\n\tLight\tفاتح\n",
+        "\t{group} settings\tإعدادات {group}\n\tNormal\tالنمط العادي\n\tCurrent style: {style}\tالنمط الحالي: {style}\n",
+        "\tStudio handbook (sample)\tدليل الاستوديو (نموذج)\n",
+        "\tBold\tعريض\n\tNot {name}\tليس {name}\n\t{n} pt\t{n} نقطة\n\tAt least {n}\tعلى الأقل {n}\n",
+        "\tChart Title\tواحد اثنين\n\tHeading 1\tواحد اثنين\n\tBody text in a short paragraph to show spacing.\tواحد اثنين\n"
+    ),
+    rtl: true,
+    prefer_hans: false,
+    editing_lang: None,
+    catalog: OnceLock::new(),
+};
+
+// Direction-only fixture: identical English labels isolate layout from translation length.
+#[cfg(test)]
+static RTL_LATIN_TEST: LangInfo = LangInfo {
+    code: "qaa-rtl-latin",
+    name: "RTL layout test",
+    source: "",
+    rtl: true,
+    prefer_hans: false,
+    editing_lang: None,
+    catalog: OnceLock::new(),
+};
 
 /// A language the UI can be shown in (a handle into [`LANGUAGES`]).
 #[derive(Clone, Copy)]
@@ -184,6 +319,11 @@ impl Lang {
         self.0.prefer_hans
     }
 
+    /// Whether the interface reads from right to left.
+    pub fn is_rtl(self) -> bool {
+        self.0.rtl
+    }
+
     /// The language new blank documents are written in with this interface ([`LangInfo::editing_lang`]).
     pub fn editing_lang(self) -> Option<&'static str> {
         self.0.editing_lang
@@ -204,6 +344,15 @@ impl Lang {
 
     /// A language by its exact code (any case).
     pub fn from_code(code: &str) -> Option<Lang> {
+        #[cfg(test)]
+        if code == RTL_TEST.code {
+            return Some(Lang(&RTL_TEST));
+        }
+        #[cfg(test)]
+        if code == RTL_LATIN_TEST.code {
+            return Some(Lang(&RTL_LATIN_TEST));
+        }
+
         LANGUAGES.iter().find(|l| l.code.eq_ignore_ascii_case(code)).map(Lang)
     }
 
@@ -333,7 +482,11 @@ pub fn has(lang: Lang, s: &str) -> bool {
 
 /// `s` in the current language ([`tr`] with [`current`]).
 pub fn t(s: &str) -> &str {
-    tr(current(), s)
+    #[cfg(test)]
+    if pseudo::on() {
+        return pseudo::mark(s);
+    }
+    current().catalog().visual(s).unwrap_or(s)
 }
 
 /// `s` in the current language as worded for `context` (one of `catalog::CONTEXTS`), falling
@@ -383,13 +536,22 @@ pub fn tr(lang: Lang, s: &str) -> &str {
 /// the current language, styles the author made exactly as named. Display only: the document,
 /// commands and saved files keep the English name.
 pub fn style_name(style: &wordcraft_doc::Style) -> String {
-    if style.builtin { builtin_style_name(&style.name) } else { style.name.clone() }
+    crate::ui_bidi::display(&logical_style_name(style), None)
+}
+
+/// Logical names for composition into a larger label, never an already arranged label.
+pub(crate) fn logical_style_name(style: &wordcraft_doc::Style) -> String {
+    if style.builtin { logical_builtin_style_name(&style.name) } else { style.name.clone() }
 }
 
 /// A built-in style's English name in the current language; numbered families go through one
 /// template each (`Heading {n}`), and names without a translation stay English.
 pub fn builtin_style_name(name: &str) -> String {
-    let direct = t(name);
+    crate::ui_bidi::display(&logical_builtin_style_name(name), None)
+}
+
+fn logical_builtin_style_name(name: &str) -> String {
+    let direct = tr(current(), name);
     if direct != name {
         return direct.to_string();
     }
@@ -398,7 +560,7 @@ pub fn builtin_style_name(name: &str) -> String {
             && !n.is_empty()
             && n.chars().all(|c| c.is_ascii_digit())
         {
-            return fmt(t(template), &[("n", n)]);
+            return logical_fmt(tr(current(), template), &[("n", n)]);
         }
     }
     name.to_string()
@@ -406,7 +568,13 @@ pub fn builtin_style_name(name: &str) -> String {
 
 /// A ribbon location (`Home › Font`) in the current language, segment by segment.
 pub fn location(loc: &str) -> String {
-    loc.split(" › ").map(t).collect::<Vec<_>>().join(" › ")
+    let mut segments = loc.split(" › ").map(t).collect::<Vec<_>>();
+    if current().is_rtl() {
+        segments.reverse();
+        segments.join(" ‹ ")
+    } else {
+        segments.join(" › ")
+    }
 }
 
 /// A label with an action after a fixed English prefix, e.g. `Undo Typing`: both parts translated
@@ -415,12 +583,22 @@ pub fn prefixed(prefix: &str, rest: &str) -> String {
     if rest.is_empty() {
         return t(prefix).to_string();
     }
-    fmt(t(&format!("{prefix} {{action}}")), &[("action", t(rest))])
+    fmt(t(&format!("{prefix} {{action}}")), &[("action", tr(current(), rest))])
 }
 
 /// Fill `{name}` placeholders in one pass. Unknown placeholders stay as written, and inserted
 /// values are never read as templates again, so a file name containing `{n}` stays intact.
 pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
+    if !current().is_rtl() {
+        return logical_fmt(template, args);
+    }
+    let catalog = current().catalog();
+    let text = logical_fmt(catalog.logical_display(template), args);
+    crate::ui_bidi::display(&text, Some(unicode_bidi::Level::rtl()))
+}
+
+/// Interpolate logical text for values that are stored in a document.
+pub(crate) fn logical_fmt(template: &str, args: &[(&str, &str)]) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     while let Some((before, after_open)) = rest.split_once('{') {

@@ -70,7 +70,7 @@ impl NoteForm {
 fn choice(ui: &mut Ui, id: &str, value: &mut String, options: &[(&str, &str)], tr: bool) {
     let show = |l: &str| if tr { tl!(l).to_string() } else { l.to_string() };
     let label = options.iter().find(|(v, _)| *v == value.as_str()).map(|(_, l)| show(l)).unwrap_or_default();
-    egui::ComboBox::from_id_salt(id).selected_text(label).width(170.0).show_ui(ui, |ui| {
+    crate::rtl::ComboBox::from_id_salt(id).selected_text(label).width(170.0).show_ui(ui, |ui| {
         for (v, l) in options {
             ui.selectable_value(value, v.to_string(), show(l));
         }
@@ -85,19 +85,19 @@ pub fn note_options(app: &mut WordApp, ui: &mut Ui, f: &mut NoteForm) -> bool {
     };
     heading(ui, "Location");
     let mut convert = None;
-    egui::Grid::new("notes_location").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-        ui.radio_value(&mut f.endnote, false, tl!("Footnotes"));
+    crate::rtl::grid(ui, egui::Grid::new("notes_location").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
+        crate::rtl::radio_value(ui, &mut f.endnote, false, tl!("Footnotes"));
         ui.add_enabled_ui(!f.endnote, |ui| {
             choice(ui, "notes_fpos", &mut f.pos[0], &[("pageBottom", "Bottom of Page"), ("beneathText", "Below text")], true);
         });
         ui.end_row();
-        ui.radio_value(&mut f.endnote, true, tl!("Endnotes"));
+        crate::rtl::radio_value(ui, &mut f.endnote, true, tl!("Endnotes"));
         ui.add_enabled_ui(f.endnote, |ui| {
             choice(ui, "notes_epos", &mut f.pos[1], &[("sectEnd", "End of section"), ("docEnd", "End of document")], true);
         });
         ui.end_row();
         ui.label("");
-        ui.menu_button(format!("{}…", tl!("Convert")), |ui| {
+        crate::rtl::menu_button(ui, format!("{}…", tl!("Convert")), |ui| {
             for (to, l) in [("endnote", "Footnotes to endnotes"), ("footnote", "Endnotes to footnotes"), ("swap", "Swap footnotes and endnotes")] {
                 if ui.button(tl!(l)).clicked() {
                     convert = Some(to);
@@ -114,7 +114,7 @@ pub fn note_options(app: &mut WordApp, ui: &mut Ui, f: &mut NoteForm) -> bool {
     }
     heading(ui, "Format");
     let k = usize::from(f.endnote);
-    egui::Grid::new("notes_format").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("notes_format").num_columns(2).spacing(vec2(10.0, 6.0)), |ui| {
         ui.label(tl!("Number format"));
         if let Some(v) = f.fmt.get_mut(k) {
             choice(ui, "notes_fmt", v, &FORMATS, false);

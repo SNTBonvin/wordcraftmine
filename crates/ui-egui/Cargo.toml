@@ -20,6 +20,8 @@ wordcraft-zotero = { workspace = true }
 egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+unicode-bidi = { workspace = true }
+unicode-bidi-mirroring = "0.4"
 log = { workspace = true }
 # Pictures pasted from the system clipboard arrive as pixels and are inserted as PNG (#45).
 image = { workspace = true }

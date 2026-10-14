@@ -311,8 +311,10 @@ pub(crate) fn show(app: &mut WordApp, ctx: &egui::Context) {
         .anchor(Align2::CENTER_CENTER, vec2(0.0, -20.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.set_width(620.0);
-            done = body(ui, &mut b, &t);
+            crate::rtl::root(ui, |ui| {
+                ui.set_width(620.0);
+                done = body(ui, &mut b, &t);
+            })
         });
     if !open {
         done = Some(None);
@@ -426,7 +428,7 @@ fn body(ui: &mut Ui, b: &mut FileBrowser, t: &Tokens) -> Option<Option<PathBuf>>
         }
         let before = b.filter;
         let current = b.filters.get(b.filter).map(|(l, _)| tl!(l.as_str()).to_string()).unwrap_or_default();
-        egui::ComboBox::from_id_salt("builtin_file_browser_type").selected_text(current).width(150.0).show_ui(ui, |ui| {
+        crate::rtl::ComboBox::from_id_salt("builtin_file_browser_type").selected_text(current).width(150.0).show_ui(ui, |ui| {
             for (i, (l, _)) in b.filters.iter().enumerate() {
                 ui.selectable_value(&mut b.filter, i, tl!(l.as_str()));
             }

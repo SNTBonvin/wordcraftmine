@@ -157,7 +157,7 @@ pub fn picker_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SmartArtForm) -> bool {
     let theme = app.session.doc.settings.theme_colors.clone();
     let mut chosen = None;
     ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.set_width(120.0);
             for cat in CATEGORIES {
                 if ui.selectable_label(f.category == cat, tl!(cat)).clicked() {
@@ -171,10 +171,10 @@ pub fn picker_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SmartArtForm) -> bool {
             }
         });
         ui.separator();
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.set_width(3.0 * 96.0 + 16.0);
             ui.set_min_height(2.0 * 96.0 + 8.0);
-            egui::Grid::new("smart_art_layouts").spacing(vec2(8.0, 8.0)).show(ui, |ui| {
+            crate::rtl::grid(ui, egui::Grid::new("smart_art_layouts").spacing(vec2(8.0, 8.0)), |ui| {
                 for (k, layout) in f.shown().into_iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 88.0), Sense::click());
                     let on = f.layout == layout;
@@ -215,7 +215,7 @@ pub fn picker_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SmartArtForm) -> bool {
             });
         });
         ui.separator();
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.set_width(200.0);
             let (rect, _) = ui.allocate_exact_size(vec2(200.0, 150.0), Sense::hover());
             ui.painter().rect(rect, 4.0, t.input, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);

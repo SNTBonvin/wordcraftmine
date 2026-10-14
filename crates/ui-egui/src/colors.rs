@@ -449,7 +449,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         ctx.data_mut(|m| m.insert_temp(open_flag_id(), false));
         return;
     };
-    let resp = egui::Modal::new(Id::new("wordcraft.colorsDialog")).show(ctx, |ui| body(ui, &mut d));
+    let resp = egui::Modal::new(Id::new("wordcraft.colorsDialog")).show(ctx, |ui| crate::rtl::root(ui, |ui| body(ui, &mut d)));
     let mut done = resp.inner;
     if done.is_none() && resp.should_close() {
         done = Some(false);
@@ -494,14 +494,14 @@ fn body(ui: &mut Ui, d: &mut ColorsDialog) -> Option<bool> {
     });
     ui.separator();
     ui.horizontal(|ui| {
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.set_width(330.0);
             match d.tab {
                 ColorsTab::Standard => standard(ui, d),
                 ColorsTab::Custom => custom(ui, d),
             }
         });
-        ui.vertical(|ui| {
+        crate::rtl::column(ui, |ui| {
             ui.add_space(110.0);
             preview(ui, d, &t);
         });
@@ -667,9 +667,9 @@ fn custom(ui: &mut Ui, d: &mut ColorsDialog) {
         ui.add_space(8.0);
     });
     ui.add_space(8.0);
-    egui::Grid::new("colors_custom").num_columns(2).spacing(vec2(10.0, 5.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("colors_custom").num_columns(2).spacing(vec2(10.0, 5.0)), |ui| {
         ui.label(tl!("Color model:"));
-        egui::ComboBox::from_id_salt("colors_model")
+        crate::rtl::ComboBox::from_id_salt("colors_model")
             .selected_text(match d.model {
                 Model::Rgb => "RGB",
                 Model::Hsl => "HSL",

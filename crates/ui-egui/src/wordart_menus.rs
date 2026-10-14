@@ -76,7 +76,7 @@ fn paint_style(p: &egui::Painter, r: Rect, id: &str, theme: &[Rgb]) {
 /// Our WordArt styles as a grid; a click runs `cmd` with `{"style": id}`.
 pub fn style_gallery(ui: &mut Ui, app: &mut WordApp, cmd: &str) {
     let theme = app.session.doc.settings.theme_colors.clone();
-    egui::Grid::new(("wordart-styles", cmd)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new(("wordart-styles", cmd)).spacing(vec2(4.0, 4.0)), |ui| {
         for (i, (id, label)) in ART_STYLES.iter().enumerate() {
             if cell(ui, 40.0, 36.0, label, |p, r| paint_style(p, r, id, &theme)) {
                 let _ = app.run(cmd, json!({"style": id}));
@@ -130,7 +130,7 @@ pub fn outline_menu(ui: &mut Ui, app: &mut WordApp, theme: &[Rgb], current: Opti
         ui.close();
     }
     ui.separator();
-    ui.menu_button(crate::tl!("Weight"), |ui| {
+    crate::rtl::menu_button(ui, crate::tl!("Weight"), |ui| {
         let color = current.map_or(Rgb::BLACK, |c| c.0).hex();
         for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0] {
             mi(ui, app, &format!("{w} pt"), "format.textEffects", json!({"outline": {"color": color, "width": w}}));
@@ -158,28 +158,28 @@ fn paint_warp(p: &egui::Painter, r: Rect, preset: &str, c: Color32) {
 
 /// Text Effects: Shadow, Glow and Reflection (and Transform, for a shape's text).
 pub fn effects_menu(ui: &mut Ui, app: &mut WordApp, theme: &[Rgb], transform: bool) {
-    ui.menu_button(crate::tl!("Shadow"), |ui| {
+    crate::rtl::menu_button(ui, crate::tl!("Shadow"), |ui| {
         mi(ui, app, "No Shadow", "format.textEffects", json!({"shadow": null}));
         ui.separator();
         for (id, label) in wordcraft_doc::effects::SHADOW_PRESETS {
             mi(ui, app, label, "format.textEffects", json!({"shadow": id}));
         }
     });
-    ui.menu_button(crate::tl!("Glow"), |ui| {
+    crate::rtl::menu_button(ui, crate::tl!("Glow"), |ui| {
         mi(ui, app, "No Glow", "format.textEffects", json!({"glow": null}));
         ui.separator();
         for size in [3.0, 5.0, 8.0, 11.0] {
             mi(ui, app, &format!("{size} pt"), "format.textEffects", json!({"glow": size}));
         }
         ui.separator();
-        ui.menu_button(crate::tl!("Glow Colors"), |ui| {
+        crate::rtl::menu_button(ui, crate::tl!("Glow Colors"), |ui| {
             if let Some(hex) = color_grid(ui, theme) {
                 let _ = app.run("format.textEffects", json!({"glow": {"color": hex, "size": 5.0}}));
                 ui.close();
             }
         });
     });
-    ui.menu_button(crate::tl!("Reflection"), |ui| {
+    crate::rtl::menu_button(ui, crate::tl!("Reflection"), |ui| {
         mi(ui, app, "No Reflection", "format.textEffects", json!({"reflection": null}));
         ui.separator();
         for size in [25.0, 50.0, 90.0] {
@@ -187,7 +187,7 @@ pub fn effects_menu(ui: &mut Ui, app: &mut WordApp, theme: &[Rgb], transform: bo
         }
     });
     if transform {
-        ui.menu_button(crate::tl!("Transform"), |ui| transform_menu(ui, app));
+        crate::rtl::menu_button(ui, crate::tl!("Transform"), |ui| transform_menu(ui, app));
     }
 }
 
@@ -196,7 +196,7 @@ pub fn transform_menu(ui: &mut Ui, app: &mut WordApp) {
     let t = Tokens::get(ui.ctx());
     mi(ui, app, "No Transform", "wordArt.transform", json!({"preset": "none"}));
     ui.add_space(4.0);
-    egui::Grid::new("wordart-warps").spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+    crate::rtl::grid(ui, egui::Grid::new("wordart-warps").spacing(vec2(4.0, 4.0)), |ui| {
         for (i, (id, label)) in DRAWN_WARPS.iter().enumerate() {
             if cell(ui, 46.0, 32.0, label, |p, r| paint_warp(p, r.shrink(2.0), id, t.accent)) {
                 let _ = app.run("wordArt.transform", json!({"preset": id}));
