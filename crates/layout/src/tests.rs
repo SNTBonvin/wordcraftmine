@@ -564,6 +564,36 @@ fn symbol_font_bullet_without_the_font_draws_a_bullet() {
     assert_eq!(label.glyphs.len(), 1);
 }
 
+/// A centred or right-aligned list paragraph moves its bullet or number with the text, as Word
+/// does: the gap between the label and the text stays the one of a left-aligned paragraph.
+#[test]
+fn list_label_moves_with_the_aligned_text() {
+    for kind in [wordcraft_doc::ListKind::BulletChar('\u{2022}'), wordcraft_doc::ListKind::Numbered] {
+        let placed = |align: Option<Align>| {
+            let mut d = Document::from_text("one");
+            let id = d.numbering.add_list(kind);
+            d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| {
+                p.numbering = Some(wordcraft_doc::props::NumRef { num: id, level: 0 });
+                p.align = align;
+            })
+            .unwrap();
+            let l = lay(&d);
+            let lab_x = l.pages[0]
+                .items
+                .iter()
+                .find_map(|it| if let Placed::Lines { para, x, .. } = it { para.label.as_ref().map(|lb| x + lb.x) } else { None })
+                .unwrap();
+            (lab_x, l.caret(&Pos::body(0, 0)).unwrap().x)
+        };
+        let (lab0, text0) = placed(None);
+        for align in [Align::Center, Align::Right] {
+            let (lab, text) = placed(Some(align));
+            assert!(text > text0 + 100.0, "{kind:?} {align:?}: the text moves ({text0} -> {text})");
+            assert!(((text - lab) - (text0 - lab0)).abs() < 0.5, "{kind:?} {align:?}: label at {lab}, text at {text}; left-aligned {lab0}, {text0}");
+        }
+    }
+}
+
 #[test]
 fn wingdings_text_draws_and_reads_as_its_unicode_symbols() {
     // Word stores symbol-font text both ways: plain codes ("J" = smiley) and private-use codes
