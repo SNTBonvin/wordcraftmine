@@ -231,7 +231,7 @@ pub enum Placed {
     Shape {
         rect: Rect,
         kind: wordcraft_doc::para::ShapeKind,
-        fill: Option<Rgb>,
+        fill: Option<wordcraft_doc::fill::Fill>,
         stroke: Option<Rgb>,
         stroke_width: f32,
         /// A freeform's paths (ink strokes among them).
@@ -2460,7 +2460,7 @@ fn float_items(o: &InlineObject, rect: Rect, outer: (Spin, Point), story: StoryR
             vec![Placed::Shape {
                 rect,
                 kind: *kind,
-                fill: *fill,
+                fill: fill.clone(),
                 stroke: *stroke,
                 stroke_width: *stroke_width,
                 effects: *effects,
@@ -2487,7 +2487,7 @@ fn float_items(o: &InlineObject, rect: Rect, outer: (Spin, Point), story: StoryR
                         Placed::Shape {
                             rect,
                             kind: wordcraft_doc::para::ShapeKind::Rectangle,
-                            fill: c.fill,
+                            fill: c.fill.clone(),
                             stroke: c.stroke,
                             stroke_width: c.stroke_width,
                             effects: Default::default(),
