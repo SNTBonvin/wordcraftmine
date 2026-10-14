@@ -51,6 +51,9 @@ pub struct ExportOptions {
     pub markup: bool,
     /// With `markup`, show the comments (Track Changes Options › Comments).
     pub comments: bool,
+    /// An `.xml` copy is a Word 2003 XML Document (WordprocessingML 2003) instead of a Word XML
+    /// Document (Flat OPC): `format: "wordml2003"` on the save commands.
+    pub word2003: bool,
 }
 
 /// A document password: wiped from memory when dropped, never printed (`Debug` shows `***`).
@@ -375,6 +378,19 @@ fn read_regular_file(path: &std::path::Path, limit: u64) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Inspect only the bounded prefix through the same checked I/O gateway as other reads.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn is_word_2003_file(path: &std::path::Path) -> bool {
+    if crate::file_access::check_read(&path.to_string_lossy()).is_err() {
+        return false;
+    }
+    read_regular_file(path, 64 * 1024).is_some_and(|head| wordcraft_docx::sniff_xml(&head) == wordcraft_docx::XmlKind::WordMl2003)
+}
+#[cfg(target_arch = "wasm32")]
+pub fn is_word_2003_file(_path: &std::path::Path) -> bool {
+    false
+}
+
 /// The bytes of the file at `path`, for commands that take a path (pictures, mail-merge data).
 /// Every such read goes through here so the automation read root applies ([`crate::file_access`]).
 #[cfg(not(target_arch = "wasm32"))]
@@ -441,4 +457,23 @@ pub fn save_path_with(path: &std::path::Path, _doc: &Document, _password: Option
 /// Windows-1252 (see [`wordcraft_formats::txt::decode`]).
 pub fn decode_text(b: &[u8]) -> String {
     wordcraft_formats::txt::decode(b)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod xml_probe_integration_tests {
+    use super::*;
+    #[test]
+    fn legacy_xml_probe_obeys_read_roots_and_ignores_non_files() {
+        let folder = std::env::temp_dir().join(format!("wordcraft-xml-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("legacy.xml");
+        let bytes =
+            save_bytes_with("legacy.xml", &Document::from_text("Keep this"), None, &ExportOptions { word2003: true, ..Default::default() }).unwrap();
+        std::fs::write(&path, bytes).unwrap();
+        assert!(is_word_2003_file(&path));
+        assert!(!is_word_2003_file(&folder));
+        let roots = crate::file_access::AutomationRoots::new(None, Some(&folder)).unwrap();
+        crate::file_access::confine(roots.as_ref(), || assert!(!is_word_2003_file(&path)));
+        std::fs::remove_dir_all(folder).unwrap();
+    }
 }

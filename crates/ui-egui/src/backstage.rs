@@ -1,4 +1,4 @@
-//! File tab (Backstage): Home/New, Open, Info, Save As, Print, Export, Options, About.
+//! File tab (Backstage): Home/New, Open, Info, Save As, Print, Export, Close, Options, About.
 
 use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::json;
@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::theme::{APP_COLOR, Tokens, medium, regular, semibold};
 use crate::{WordApp, icons};
 
-const PAGES: [(&str, &str); 9] = [
+const PAGES: [(&str, &str); 10] = [
     ("home", "Home"),
     ("new", "New"),
     ("open", "Open"),
@@ -15,11 +15,17 @@ const PAGES: [(&str, &str); 9] = [
     ("saveAs", "Save As"),
     ("print", "Print"),
     ("export", "Export"),
+    ("close", "Close"),
     ("options", "Options"),
 ];
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
+    // No document open (#1129): only the pages that open or create one, and Options.
+    let has_document = app.has_document();
+    if !has_document && !works_without_document(&app.ui.backstage_page) {
+        app.ui.backstage_page = "home".into();
+    }
     let mac = app.integrated_titlebar;
     if mac {
         show_mac(app, ui);
@@ -62,12 +68,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             }
             ui.add_space(if mac { 12.0 } else { 6.0 });
             for (id, label) in PAGES {
-                let (r, resp) = ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
+                // No document open (#1129): Info, Save, Save As, Print and Export are greyed out.
+                let on = has_document || works_without_document(id);
+                let (r, resp) = ui.add_enabled_ui(on, |ui| ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click())).inner;
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, on, tl!(label)));
                 let active = app.ui.backstage_page == id;
                 if active {
                     ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(46));
-                } else if resp.hovered() {
+                } else if on && resp.hovered() {
                     ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
                 }
                 ui.painter().text(
@@ -75,7 +83,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     Align2::LEFT_CENTER,
                     tl!(label),
                     if active { semibold(14.0) } else { medium(14.0) },
-                    egui::Color32::WHITE,
+                    if on { egui::Color32::WHITE } else { egui::Color32::from_white_alpha(110) },
                 );
                 if resp.clicked() {
                     match id {
@@ -96,6 +104,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         }
                         "saveAs" => {
                             app.ui.backstage_page = "saveAs".into();
+                        }
+                        // Not a page: `file.close` asks Save / Don't Save / Cancel first when there
+                        // are unsaved changes, and Cancel leaves the Backstage where it was.
+                        "close" => {
+                            let _ = app.run("file.close", json!({}));
                         }
                         _ => app.ui.backstage_page = id.into(),
                     }
@@ -206,7 +219,7 @@ fn show_mac(app: &mut WordApp, ui: &mut Ui) {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.menu_button("•••", |ui| {
                     for (page, label) in PAGES.into_iter().skip(3) {
-                        if ui.button(tl!(label)).clicked() {
+                        if ui.add_enabled(app.has_document() || works_without_document(page), egui::Button::new(tl!(label))).clicked() {
                             if page == "save" {
                                 let _ = app.run("file.save", json!({}));
                             } else {
@@ -311,6 +324,11 @@ fn row_text(ui: &Ui, text: &str, position: egui::Pos2, width: f32, font: egui::F
     ui.painter().galley(position, ui.painter().layout_job(job), colour);
 }
 
+/// The Backstage pages that work while no document is open (#1129).
+fn works_without_document(page: &str) -> bool {
+    matches!(page, "home" | "new" | "recent" | "open" | "options")
+}
+
 fn heading(ui: &mut Ui, s: &str) {
     ui.label(egui::RichText::new(tl!(s)).font(semibold(26.0)));
     ui.add_space(16.0);
@@ -357,20 +375,25 @@ fn template_tile(ui: &mut Ui, app: &mut WordApp, label: &str, template: &str) {
         if let Some(h) = tex {
             egui::Image::new((h.id(), r.size())).corner_radius(if app.integrated_titlebar { 8 } else { 1 }).paint_at(ui, r.shrink(2.0));
         }
-        if selected {
-            egui::Frame::NONE.fill(stage_accent(&t)).corner_radius(5).inner_margin(egui::Margin::symmetric(4, 1)).show(ui, |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5)).color(stage_ink(&t))).wrap());
-            });
+        let caption = if selected {
+            egui::Frame::NONE
+                .fill(stage_accent(&t))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(4, 1))
+                .show(ui, |ui| {
+                    ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5)).color(stage_ink(&t))).wrap().sense(Sense::click()))
+                })
+                .inner
         } else {
-            ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5))).wrap());
-        }
-        if app.integrated_titlebar && resp.clicked() {
+            ui.add(egui::Label::new(egui::RichText::new(tl!(label)).font(regular(12.5))).wrap().sense(Sense::click()))
+        };
+        if app.integrated_titlebar && (resp.clicked() || caption.clicked()) {
             ui.ctx().data_mut(|d| {
                 d.insert_temp(egui::Id::new("mac_selected_template"), template.to_string());
                 d.remove::<String>(egui::Id::new("mac_selected_recent"));
             });
         }
-        if resp.double_clicked() || (!app.integrated_titlebar && resp.clicked()) {
+        if resp.double_clicked() || caption.double_clicked() || (!app.integrated_titlebar && (resp.clicked() || caption.clicked())) {
             let _ = app.run("file.new", json!({"template": template}));
             app.ui.backstage = false;
             app.canvas.want_focus = true;
@@ -1007,6 +1030,60 @@ mod tests {
         assert!(!h.state().ui.backstage, "successful save closes backstage");
     }
 
+    /// #1124: the side menu had no Close. It sits after Export and closes the document, asking
+    /// first when there are unsaved changes; Cancel leaves the Backstage as it was.
+    #[test]
+    fn backstage_close_asks_then_closes() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("text.insert", json!({"text": "Draft"})).unwrap();
+        a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let export = h.get_by_label("Export").rect().min.y;
+        assert!(h.get_by_label("Close").rect().min.y > export, "Close comes after Export");
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::SaveChanges { .. })), "unsaved changes ask first");
+        assert!(!h.state().quit_requested);
+
+        h.state_mut().run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
+        h.run_steps(4);
+        assert!(!h.state().quit_requested, "Cancel keeps the document open");
+        assert!(h.state().ui.backstage && h.state().ui.backstage_page == "info", "Cancel leaves the Backstage as it was");
+
+        h.get_by_label("Close").click();
+        h.run_steps(4);
+        h.state_mut().run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
+        assert!(h.state().quit_requested, "Don't Save closes");
+    }
+
+    /// A document without unsaved changes closes without a prompt.
+    #[test]
+    fn backstage_close_on_a_clean_document_closes_at_once() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        h.get_by_label("Close").click();
+        h.run_steps(1);
+        assert!(h.state().dialog.is_none(), "no prompt");
+        assert!(h.state().quit_requested);
+    }
+
     #[test]
     fn backstage_save_as_sidebar_opens_save_as_page() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
@@ -1092,5 +1169,38 @@ mod mac_stage_tests {
         app.run("ui.favoriteDocument", params).unwrap();
         assert!(app.ui.favourite_documents.is_empty());
         assert_eq!(app.session.doc, doc);
+    }
+}
+
+#[cfg(test)]
+mod merge_integration_tests {
+    use super::*;
+    use egui_kittest::kittest::Queryable;
+    #[test]
+    fn mac_template_caption_selects_then_create_opens_and_recent_survives_empty_window() {
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        app.integrated_titlebar = true;
+        app.start_screen();
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(6);
+        h.get_by_label("Letter").click();
+        h.run_steps(3);
+        assert!(!h.state().has_document());
+        assert_eq!(h.state().ctx.as_ref().unwrap().data(|d| d.get_temp::<String>(egui::Id::new("mac_selected_template"))), Some("letter".into()));
+        h.get_by_label("Create").click();
+        h.run_steps(3);
+        assert!(h.state().has_document());
+        assert!(!h.state().ui.backstage);
+        h.state_mut().start_screen();
+        h.state_mut().ui.backstage_page = "recent".into();
+        h.run_steps(3);
+        assert_eq!(h.state().ui.backstage_page, "recent");
     }
 }

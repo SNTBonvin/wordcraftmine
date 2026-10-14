@@ -1,6 +1,6 @@
 # Agent security and data controls
 
-> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (explicit agent permissions and file approvals)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-14 · **Change:** minor (explicit agent permissions and file approvals)
 
 Agent chat → **••• → Settings** separates Models & connection, Permissions, Project files and
 Data controls. The chat composer retains model/reasoning selection, attachments and Stop. A compact project row on the
@@ -67,7 +67,7 @@ forward this port, or give its key to untrusted clients. Settings exposes its en
 
 ## Audit and PR evidence
 
-On 2026-10-13, `cargo-audit 0.22.2` with the current RustSec database found **zero reported
+On 2026-10-14, `cargo-audit 0.22.2` with the current RustSec database found **zero reported
 vulnerabilities** in `Cargo.lock`. It reported two informational unmaintained-dependency warnings:
 `rustybuzz 0.20.1` (RUSTSEC-2026-0206), and `ttf-parser 0.25.1` (RUSTSEC-2026-0192). They remain visible
 for maintainer review; no advisory is suppressed. Replacing these core font dependencies requires
@@ -85,6 +85,7 @@ personal build is ad-hoc signed.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Rechecked merged dependency lockfile: no RustSec vulnerabilities; existing font dependency warnings remain; legacy XML probing now uses the checked I/O gateway |
 | 2026-10-13 | minor | Newly linked projects select all eligible files; unlimited selection, background indexing, bulk controls and compact project indicator |
 | 2026-10-13 | minor | Inline cloud consent keeps Send in chat; atomic connection validation, busy-send draft protection and interrupted-response preservation |
 | 2026-10-13 | minor | Explicit agent Settings, cloud consent, file approvals, temporary history and recurring dependency audit |

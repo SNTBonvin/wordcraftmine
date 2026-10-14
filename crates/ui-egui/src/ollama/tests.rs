@@ -574,7 +574,10 @@ fn live_linked_project_citations_codex_and_cloud() {
     let folder = std::env::temp_dir().join(format!("wordcraft-project-live-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(folder.join("paper.md"), "# Synthetic paper\nThe study recruited 37 volunteers.\nThe project code is BLUE-731.\n").unwrap();
-    for (source, model) in [(Source::Codex, "gpt-6-luna"), (Source::Cloud, "gemma4:31b-cloud")] {
+    for (source, model) in [(Source::Codex, "gpt-6-luna"), (Source::Cloud, "gemma4:31b-cloud")].into_iter().filter(|(source, _)| {
+        std::env::var("WORDCRAFT_TEST_PROJECT_PROVIDER")
+            .map_or(true, |name| (name == "codex" && *source == Source::Codex) || (name == "cloud" && *source == Source::Cloud))
+    }) {
         let mut app = app();
         let ctx = egui::Context::default();
         app.ctx = Some(ctx.clone());
@@ -583,7 +586,12 @@ fn live_linked_project_citations_codex_and_cloud() {
         app.ollama.model = model.into();
         app.ollama.internet = false;
         command(&mut app, "ui.agentProject", &json!({"path":folder})).unwrap();
-        app.ollama.project_files = vec!["paper.md".into()];
+        let indexed = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.ollama.settings.scan.is_some() && std::time::Instant::now() < indexed {
+            poll(&mut app, &ctx);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(app.ollama.project_files, vec!["paper.md"]);
         app.ollama.input="Use project_list, then project_read on paper.md. How many volunteers were recruited and what is the project code? Cite each claim using the exact citation Markdown returned by project_read. Do not edit the document.".into();
         send(&mut app, &ctx);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);

@@ -434,4 +434,45 @@ mod tests {
         assert_eq!(root.session.doc, before);
         assert!(root.session.dirty);
     }
+    #[test]
+    fn duplicate_file_open_focuses_existing_window_and_failed_open_keeps_original() {
+        let ctx = egui::Context::default();
+        let mut root = root();
+        let original = root.session.doc.clone();
+        let mut windows = Windows::default();
+        let folder = std::env::temp_dir().join(format!("wordcraft-window-open-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let missing = folder.join("missing.docx");
+        windows.add(&mut root, None, WindowRequest::Document { command: "file.open".into(), params: json!({"path":missing}) }, &ctx);
+        assert!(windows.children.is_empty());
+        assert_eq!(root.session.doc, original);
+        let path = folder.join("synthetic.docx");
+        wordcraft_engine::io::save_path(&path, &wordcraft_doc::Document::from_text("Independent file")).unwrap();
+        for _ in 0..2 {
+            windows.add(&mut root, None, WindowRequest::Document { command: "file.open".into(), params: json!({"path":path}) }, &ctx);
+        }
+        assert_eq!(windows.children.len(), 1);
+        assert_eq!(root.session.doc, original);
+        assert!(root.session.dirty);
+        assert!(root.ui.recent_opened.contains_key(&path.to_string_lossy().into_owned()));
+        assert_eq!(windows.children[0].app.session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Independent file");
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
+    fn opening_from_empty_start_screen_reuses_root_and_all_window_limit_is_enforced() {
+        let ctx = egui::Context::default();
+        let mut root = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        root.native_document_windows = true;
+        root.start_screen();
+        assert!(!root.has_document());
+        let mut windows = Windows::default();
+        windows.queue_document(&mut root, "file.new", json!({}), &ctx);
+        assert!(root.has_document());
+        assert!(windows.children.is_empty());
+        for _ in 0..16 {
+            windows.add(&mut root, None, WindowRequest::Document { command: "file.new".into(), params: json!({}) }, &ctx);
+        }
+        assert_eq!(windows.children.len(), 15);
+        assert!(root.has_document());
+    }
 }
