@@ -56,16 +56,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 item("export", "Export"),
                 item("close", "Close"),
             ];
-            // No document open (#1129): the pages that need one are left out of the column.
-            let rest: &[FileNavItem<&str>] = if has_document { &rest } else { &[] };
+            // No document open (#1129): the pages that need one are greyed out, as in Word.
+            let disabled: &[&str] = if has_document { &[] } else { &["info", "save", "saveAs", "print", "export", "close"] };
             let foot = [item("options", "Options"), item("discord", "Discord community"), item("about", "About")];
             let paint = |key: Option<&str>, p: &egui::Painter, r: Rect, c: egui::Color32| icons::paint(p, r, nav_icon(key), c, c);
             // macOS (#222): the File page covers the title bar, so the column's top band is the
             // title bar. It holds only the window buttons and drags the window.
             let band = if mac { crate::chrome::MAC_TITLE_BAR } else { 0.0 };
             let showing = app.ui.backstage_page.clone();
-            let action =
-                FileNav::new(tl!("Back"), &[&top, rest], Some(showing.as_str()), &style, &paint).foot(&foot).title_band(band).show(ui).action;
+            let action = FileNav::new(tl!("Back"), &[&top, &rest], Some(showing.as_str()), &style, &paint)
+                .foot(&foot)
+                .disabled(disabled)
+                .title_band(band)
+                .show(ui)
+                .action;
             // Escape in the built-in file browser closes only the browser.
             let escape = !app.file_dialog_open() && ui.input(|i| i.key_pressed(egui::Key::Escape));
             match action {
@@ -646,9 +650,11 @@ mod tests {
         assert!(!h.state().ui.backstage, "Back leaves the File page");
     }
 
-    /// #1129: with no document open the column offers only what works without one.
+    /// #1129: with no document open the pages that need one stay in the column, greyed out and
+    /// announced as unavailable, and choosing one does nothing.
     #[test]
-    fn with_no_document_the_column_leaves_out_the_document_pages() {
+    fn with_no_document_the_column_greys_out_the_document_pages() {
+        use egui_kittest::kittest::NodeT;
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
         a.start_screen();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
@@ -660,9 +666,16 @@ mod tests {
             a,
         );
         h.run_steps(4);
-        for label in ["Info", "Save As", "Print", "Export", "Close"] {
-            assert!(h.query_by_label(label).is_none(), "{label} needs a document");
+        for label in ["Info", "Save", "Save As", "Print", "Export", "Close"] {
+            let entry = h.query_by_label(label).unwrap_or_else(|| panic!("{label} stays in the column"));
+            assert!(entry.accesskit_node().is_disabled(), "{label} needs a document");
         }
+        for label in ["Home", "New", "Open", "Options"] {
+            assert!(!h.get_by_label(label).accesskit_node().is_disabled(), "{label} works without a document");
+        }
+        h.get_by_label("Info").click();
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "home", "Info cannot be chosen");
         h.get_by_label("Options").click();
         h.run_steps(4);
         assert_eq!(h.state().ui.backstage_page, "options");
