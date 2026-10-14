@@ -289,9 +289,9 @@ impl Writer {
     fn items(&mut self, items: &[Item<'_>], out: &mut String) {
         let mut k = 0;
         while k < items.len() {
-            let key = items.get(k).map(|i| i.marks()).unwrap_or_default();
+            let key = items.get(k).map(Item::segment).unwrap_or_default();
             let mut j = k + 1;
-            while j < items.len() && items.get(j).map(|i| i.marks()).unwrap_or_default() == key {
+            while j < items.len() && items.get(j).map(Item::segment).unwrap_or_default() == key {
                 j += 1;
             }
             let seg = items.get(k..j).unwrap_or(&[]);
@@ -659,6 +659,15 @@ impl Item<'_> {
             Item::Inl(Inline::Text(_, f)) => (f.ins.as_ref(), f.del.as_ref()),
             Item::Inl(_) => (None, None),
             Item::Mark(p) => (p.mark_ins.as_deref(), p.mark_del.as_deref()),
+        }
+    }
+
+    /// What a run of content is written as: deleted content is one region whatever was
+    /// inserted inside it, so only its deletion counts.
+    fn segment(&self) -> (Option<&RevMark>, Option<&RevMark>) {
+        match self.marks() {
+            (_, Some(del)) => (None, Some(del)),
+            k => k,
         }
     }
 
@@ -1306,8 +1315,13 @@ impl Body<'_> {
     }
 
     fn end_para(&mut self) {
-        let Some(p) = self.para.take() else { return };
+        let Some(mut p) = self.para.take() else { return };
         self.fmt.pop();
+        // A paragraph ending inside an open insertion has an inserted mark. (Paragraphs that
+        // `place_deletion` splits off keep only the marks read inside their region.)
+        if p.mark_ins.is_none() {
+            p.mark_ins = self.open_insertion().map(Box::new);
+        }
         self.finish_para(p);
     }
 
@@ -1322,9 +1336,6 @@ impl Body<'_> {
 
     /// Add a finished paragraph to the current container.
     fn finish_para(&mut self, mut p: Para) {
-        if p.mark_ins.is_none() {
-            p.mark_ins = self.open_insertion().map(Box::new);
-        }
         // Spaces next to tracked text are part of a change.
         let tracked = self.del.is_some()
             || p.mark_ins.is_some()
@@ -2345,6 +2356,23 @@ mod tests {
         assert_eq!(marks(&doc), want);
         let back = import(&export(&doc).unwrap()).unwrap();
         assert_eq!(marks(&back), want, "both marks survive a save");
+        assert_eq!(back.revisions.len(), doc.revisions.len(), "one deletion stays one region and one revision: {:?}", back.revisions);
+    }
+
+    #[test]
+    fn a_deleted_mark_inside_an_insertion_is_not_inserted() {
+        // "A" inserted by Alice, then a paragraph break Bob deleted, then "C" inserted by Alice:
+        // the insertion range runs across the deletion point, but the deleted mark wasn't inserted.
+        let regions = region("i1", "insertion", "Alice", "2024-03-01T10:00:00", "")
+            + &region("d1", "deletion", "Bob", "2024-03-02T11:30:00", "<text:p></text:p><text:p></text:p>");
+        let body =
+            r#"<text:p><text:change-start text:change-id="i1"/>A<text:change text:change-id="d1"/>C<text:change-end text:change-id="i1"/></text:p>"#;
+        let doc = import(&tracked(&regions, body)).unwrap();
+        let s = |v: &str| v.to_string();
+        let want = vec![(vec![(s("A"), true, false)], (false, true)), (vec![(s("C"), true, false)], (false, false))];
+        assert_eq!(marks(&doc), want);
+        let back = import(&export(&doc).unwrap()).unwrap();
+        assert_eq!(marks(&back), want, "after a save");
     }
 
     #[test]
