@@ -283,10 +283,11 @@ pub struct TextBody {
     /// story; its own blocks are unused. See [`Document::text_box_chains`].
     pub next: Option<u32>,
     /// Internal margins (left, top, right, bottom), EMU, when the file gives its own
-    /// (`wps:bodyPr` `lIns`… ECMA-376 Part 1 §21.1.2.1.1); `None` is Word's defaults.
+    /// (`wps:bodyPr` `lIns`… ECMA-376 Part 1 §21.1.2.1.1, or VML `v:textbox` `inset`);
+    /// `None` is Word's defaults.
     pub inset: Option<[u32; 4]>,
-    /// Resize shape to fit text (`a:spAutoFit`): Word grows the box to its text, so none of
-    /// the text is cut.
+    /// Resize shape to fit text (`a:spAutoFit`, VML `mso-fit-shape-to-text`): Word grows the
+    /// box to its text, so none of the text is cut.
     pub auto_fit: bool,
 }
 
@@ -479,6 +480,15 @@ pub struct Settings {
     pub attached_template: Option<String>,
     /// Update the document's styles from the attached template when it is opened (`w:linkStyles`).
     pub link_styles: bool,
+    /// Remove personal information when saving (`w:removePersonalInformation`, ECMA-376
+    /// §17.15.1.70): the saved file names comment and revision authors "Author" and leaves out
+    /// the document's creator and last-modified-by. The open document keeps its real values.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub remove_personal_info: bool,
+    /// Remove date and time from annotations when saving (`w:removeDateAndTime`, §17.15.1.69):
+    /// comments and tracked changes are saved without `w:date`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub remove_date_time: bool,
 }
 
 /// Word's compatibility mode for documents that don't state one.
@@ -556,6 +566,8 @@ impl Default for Settings {
             bib_style: None,
             attached_template: None,
             link_styles: false,
+            remove_personal_info: false,
+            remove_date_time: false,
         }
     }
 }
@@ -892,14 +904,22 @@ impl Document {
         id
     }
 
-    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit).
+    /// Count words like Word's status bar (whitespace-separated tokens containing a letter or digit,
+    /// including generated numbered-list labels).
     pub fn word_count(&self) -> usize {
-        count_words(&self.plain_text(StoryRef::Body))
+        self.story_word_count(StoryRef::Body)
     }
 
     /// Word's default count: the body plus its text boxes, footnotes and endnotes.
     pub fn word_count_including_notes(&self) -> usize {
-        self.counted_stories().iter().map(|s| count_words(&self.plain_text(*s))).sum()
+        self.counted_stories().iter().map(|s| self.story_word_count(*s)).sum()
+    }
+
+    /// Word count of one story, including generated numbered-list labels.
+    pub fn story_word_count(&self, s: StoryRef) -> usize {
+        let Some(bl) = self.story(s) else { return 0 };
+        let mut counters = numbering::Counters::default();
+        story_word_count_of(bl, &self.numbering, &self.styles, &mut counters, 0)
     }
 
     /// The body, then the text boxes, footnotes and endnotes it shows (nested ones too), in
@@ -1311,6 +1331,35 @@ fn text_of(bl: &Blocks, out: &mut String, depth: usize, shown: bool) {
             }
         }
     }
+}
+
+fn story_word_count_of(bl: &Blocks, numbering: &Numbering, styles: &styles::StyleSheet, counters: &mut numbering::Counters, depth: usize) -> usize {
+    if depth > 16 {
+        return 0;
+    }
+    let mut total = 0usize;
+    for b in bl {
+        match &**b {
+            Block::Para(p) => {
+                let n = p.props.numbering.or_else(|| styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0);
+                if let Some(n) = n
+                    && let Some((label, def)) = counters.next_label(numbering, n.num, n.level)
+                    && !matches!(def.format, section::NumFormat::Bullet | section::NumFormat::None)
+                {
+                    total = total.saturating_add(count_words(&label));
+                }
+                total = total.saturating_add(count_words(&p.plain_text()));
+            }
+            Block::Table(t) => {
+                for row in &t.rows {
+                    for c in &row.cells {
+                        total = total.saturating_add(story_word_count_of(&c.blocks, numbering, styles, counters, depth + 1));
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 #[cfg(test)]
