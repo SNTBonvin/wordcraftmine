@@ -126,6 +126,24 @@ fn reset_shortcuts_remove_direct_formatting_but_keep_styles() {
 }
 
 #[test]
+fn drop_cap_button_toggles_and_explicit_lines_set() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Drop cap"}));
+
+    run(&mut s, "insert.dropCap", json!({}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).and_then(|p| p.props.drop_cap), Some(3));
+
+    run(&mut s, "insert.dropCap", json!({}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).and_then(|p| p.props.drop_cap), None);
+
+    run(&mut s, "insert.dropCap", json!({"lines": 2}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).and_then(|p| p.props.drop_cap), Some(2));
+
+    run(&mut s, "insert.dropCap", json!({"lines": 0}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).and_then(|p| p.props.drop_cap), None);
+}
+
+#[test]
 fn custom_dictionary_words_persist_through_their_file() {
     // #40: adding a word through a command writes it to the session's file, and loading
     // that file makes the word known (only the desktop app wires this up).
@@ -5108,6 +5126,58 @@ fn new_documents_follow_the_region() {
     run(&mut t, "file.options", json!({"region": "\u{0}\u{FFFF}-zz-ZZZZZZZZ"}));
     assert_eq!(t.region(), wordcraft_geom::Region::default());
     assert_eq!(t.prefs.region.as_deref(), Some("en-US"), "junk is saved as en-US");
+}
+
+/// File › Options owns the Normal-template formatting that each blank document starts with.
+#[test]
+fn new_documents_follow_the_saved_default_formatting() {
+    use wordcraft_doc::props::LineSpacing;
+
+    let mut session = s();
+    let formatting = json!({
+        "font": "Courier New",
+        "size": 10.0,
+        "spaceBefore": 2.0,
+        "spaceAfter": 0.0,
+        "lineSpacing": {"rule": "multiple", "value": 1.0},
+    });
+    let options = run(&mut session, "file.options", json!({"defaultFormatting": formatting}));
+    assert_eq!(options["defaultFormatting"]["font"], "Courier New");
+    run(&mut session, "file.new", json!({}));
+    assert_eq!(session.doc.styles.default_chr.font.as_deref(), Some("Courier New"));
+    assert_eq!(session.doc.styles.default_chr.size, Some(10.0));
+    assert_eq!(session.doc.styles.default_para.space_before, Some(2.0));
+    assert_eq!(session.doc.styles.default_para.space_after, Some(0.0));
+    assert_eq!(session.doc.styles.default_para.line_spacing, Some(LineSpacing::Multiple(1.0)));
+
+    let saved = serde_json::to_value(&session.prefs).unwrap();
+    let mut restored = s();
+    restored.prefs = serde_json::from_value(saved).unwrap();
+    let doc = restored.blank_document();
+    assert_eq!(doc.styles.default_chr.font.as_deref(), Some("Courier New"));
+
+    let before = restored.prefs.default_formatting.clone();
+    assert!(restored.run("file.options", &json!({"defaultFormatting": {"font": "", "size": 10.0, "spaceBefore": 0.0, "spaceAfter": 0.0, "lineSpacing": {"rule": "multiple", "value": 1.0}}})).is_err());
+    assert_eq!(restored.prefs.default_formatting, before);
+}
+
+#[test]
+fn current_normal_style_can_become_the_new_document_default() {
+    use wordcraft_doc::props::LineSpacing;
+
+    let mut session = s();
+    run(
+        &mut session,
+        "styles.modify",
+        json!({"style": "Normal", "chr": {"font": "Courier New", "size": 10.0}, "para": {"spaceBefore": 2.0, "spaceAfter": 0.0, "lineSpacing": {"rule": "multiple", "value": 1.0}}}),
+    );
+    run(&mut session, "file.options", json!({"useDocumentNormal": true}));
+    assert_eq!(session.prefs.default_formatting.font, "Courier New");
+    assert_eq!(session.prefs.default_formatting.line_spacing, LineSpacing::Multiple(1.0));
+
+    run(&mut session, "styles.modify", json!({"style": "Normal", "chr": {"font": "Liberation Mono", "size": 11.0}}));
+    run(&mut session, "design.setDefault", json!({}));
+    assert_eq!((session.prefs.default_formatting.font.as_str(), session.prefs.default_formatting.size), ("Liberation Mono", 11.0));
 }
 
 /// Automatic (HTML-style) paragraph spacing: `para.spacing` turns it on and off, and a number

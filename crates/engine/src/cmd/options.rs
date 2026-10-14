@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{CmdError, CmdResult, CommandSpec, Prefs, Session, p};
+use crate::{CmdError, CmdResult, CommandSpec, DefaultFormatting, Prefs, Session, p};
 
 /// Options panes, in the order the page lists them (the `pane` param of `file.options`).
 pub const PANES: [&str; 8] = ["general", "display", "proofing", "save", "language", "accessibility", "advanced", "agents"];
@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("file.options", "Options", "File", options)
             .params(
-                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL, saved: the paper File › New starts on, the default units and the decimal separator; auto: the system's), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
+                r#"{"pane"?: "general|display|proofing|save|language|accessibility|advanced|agents", "author"?: string, "initials"?: string, "defaultFormatting"?: {"font": string, "size": pt, "spaceBefore": pt, "spaceAfter": pt, "lineSpacing": {"rule": "multiple|atLeast|exactly", "value": pt}}, "useDocumentNormal"?: true (copy this document's effective Normal style), "units"?: "inches|centimeters|millimeters|points|picas|auto" (auto: the region's), "region"?: string (a locale tag like pl-PL, saved: the paper File › New starts on, the default units and the decimal separator; auto: the system's), "typingReplacesSelection"?: bool, "insertKeyOvertype"?: bool, "overtype"?: bool, "marks"?: {"tabs"?: bool, "spaces"?: bool, "paragraphs"?: bool, "hidden"?: bool}, "checkSpelling"?: bool, "markGrammar"?: bool, "ignoreUppercase"?: bool, "ignoreNumbers"?: bool, "ignoreInternet"?: bool, "addWords"?: [string], "removeWords"?: [string]} — with any setting it changes them and opens nothing; without, it opens File › Options (at `pane`). Returns the settings."#,
             )
             .pure(),
         CommandSpec::new("text.overtype", "Overtype", "File › Options › Advanced", |s, v| {
@@ -76,6 +76,14 @@ fn words_param(v: &Value, k: &str) -> Result<Vec<String>, CmdError> {
     Ok(out)
 }
 
+fn default_formatting_param(v: &Value) -> Result<Option<DefaultFormatting>, CmdError> {
+    let Some(value) = v.get("defaultFormatting").filter(|value| !value.is_null()) else { return Ok(None) };
+    let formatting: DefaultFormatting = serde_json::from_value(value.clone())
+        .map_err(|_| CmdError::Params("`defaultFormatting` must contain font, size, spaceBefore, spaceAfter, and lineSpacing".into()))?;
+    formatting.validate()?;
+    Ok(Some(formatting))
+}
+
 fn options(s: &mut Session, v: &Value) -> CmdResult {
     let pane = match p::str(v, "pane") {
         Some(name) if PANES.contains(&name) => name,
@@ -113,6 +121,11 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         }
         Some(_) => return Err(CmdError::Params("`region` must be a locale tag like pl-PL, or auto".into())),
     };
+    let default_formatting = default_formatting_param(v)?;
+    let use_document_normal = bool_param(v, "useDocumentNormal")?;
+    if default_formatting.is_some() && use_document_normal == Some(true) {
+        return Err(CmdError::Params("`defaultFormatting` and `useDocumentNormal` cannot be used together".into()));
+    }
     let mut flag_values = Vec::new();
     for (k, f) in flags() {
         if let Some(b) = bool_param(v, k)? {
@@ -139,6 +152,8 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
         || initials.is_some()
         || units.is_some()
         || region.is_some()
+        || default_formatting.is_some()
+        || use_document_normal == Some(true)
         || !flag_values.is_empty()
         || !mark_values.is_empty()
         || check_spelling.is_some()
@@ -155,6 +170,14 @@ fn options(s: &mut Session, v: &Value) -> CmdResult {
     }
     if let Some(r) = region {
         s.prefs.region = r;
+    }
+    if let Some(formatting) = default_formatting {
+        s.prefs.default_formatting = formatting;
+    }
+    if use_document_normal == Some(true) {
+        let formatting = DefaultFormatting::from_normal(&s.doc);
+        formatting.validate()?;
+        s.prefs.default_formatting = formatting;
     }
     for (f, b) in flag_values {
         *f(&mut s.prefs) = b;
@@ -198,6 +221,7 @@ pub fn current(s: &Session) -> Value {
         "unitsFromRegion": pr.units.is_none(),
         "region": {"language": region.language, "territory": region.territory, "paper": region.paper().0, "decimal": region.decimal().to_string()},
         "regionFromSystem": pr.region.is_none(),
+        "defaultFormatting": pr.default_formatting,
         "typingReplacesSelection": pr.typing_replaces_selection,
         "insertKeyOvertype": pr.insert_key_overtype,
         "overtype": pr.overtype,
