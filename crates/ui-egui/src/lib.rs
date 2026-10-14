@@ -435,6 +435,8 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// Comment and reply text typed but not yet written to the document (#1348).
+    pub(crate) comment_drafts: panes::CommentDrafts,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -518,6 +520,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            comment_drafts: Default::default(),
         }
     }
 
@@ -595,6 +598,11 @@ impl WordApp {
     /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
     /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        // Comment text still being typed is written first, so a save has it and a close, New or
+        // Open counts it as a change; a refused draft stops the command (#1348).
+        if flushes_comment_drafts(id, &params) {
+            panes::flush_comment_drafts(self)?;
+        }
         // A button whose command needs input the user hasn't given yet opens its dialog (#240).
         if let Some(name) = input_dialog(id, &params)
             && widgets::enabled(self, id)
@@ -838,6 +846,9 @@ impl WordApp {
     pub fn close_requested(&mut self) -> bool {
         if self.printing.busy() {
             self.status(tl!("Wait for the print job to finish submitting before closing."));
+            return false;
+        }
+        if !self.quit_requested && panes::flush_comment_drafts(self).is_err() {
             return false;
         }
         if self.quit_requested || !self.session.dirty {
@@ -1770,6 +1781,11 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
 /// file picker; the open that follows is checked). Envelopes, Labels and Finish & Merge make a
 /// new document in its place; a merge written to a file (`path`) and an envelope added to this
 /// document (`add`) leave it alone.
+/// Commands that save the document or replace it: comment drafts are written before them.
+fn flushes_comment_drafts(id: &str, params: &Value) -> bool {
+    matches!(id, "file.save" | "file.saveAs" | "file.open") || discards_document(id, params)
+}
+
 fn discards_document(id: &str, params: &Value) -> bool {
     match id {
         "file.new" | "file.close" | "mailings.labels" => true,
