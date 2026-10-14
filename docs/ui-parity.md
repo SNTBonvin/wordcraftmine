@@ -97,6 +97,7 @@ own (`AGENTS.md`: no Microsoft iconography, ever).
 | 2026-10-11 | trivial | Text field and combo outlines reach 3:1 against their fill and surroundings in both themes (light #8A8A8A, dark #7A7A7A); a test pins the ratios (#657) |
 | 2026-10-11 | trivial | Font dialog: Asian text font and Latin text font boxes, each with its own list and type-to-find, shown for a Chinese/Japanese interface or East Asian text in the selection; OK sets only the fonts changed; `format.font {"eastAsia"}` (#505) |
 | 2026-10-11 | trivial | References › Table of Authorities: Insert Table of Authorities is labelled and joined by Update Table (`references.updateAuthorities`), as in the Index group (#661) |
+| 2026-10-11 | trivial | Ribbon groups shrink to fit the window, from the right: small buttons drop their labels, then a group folds into one drop-down holding the whole group; groups that still fit are given back (`ribbon_fit`). At 1440 pt the Home tab fits with only Styles folded (#662) |
 | 2026-10-11 | trivial | Layout › Paragraph: Indent and Spacing fields fit above the group title, on shared label and field columns, all the same width (#654) |
 | 2026-10-11 | trivial | Two-line labels on large ribbon buttons end above the group title row (icon and label moved up, title row 18 px; shared constants with a compile-time check) (#653) |
 | 2026-10-11 | trivial | Menu buttons (Header, Page Number, Breaks, Wrap Text, table Select/Delete/AutoFit…) grey out and don't open while the command their menu is about is disabled, like the other ribbon buttons (#658) |
