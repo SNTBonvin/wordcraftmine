@@ -195,6 +195,21 @@ fn numbered_list_after_bullets_keeps_its_kind() {
 }
 
 #[test]
+fn markdown_list_items_that_start_like_blocks_keep_their_text() {
+    for text in ["---", "--", "1. Intro", "# Agenda", "ordinary item"] {
+        let mut d = Document::new();
+        let bul = d.numbering.add_list(wordcraft_doc::ListKind::Bullet);
+        let mut p = Paragraph::with_text(text, CharProps::default()).styled("ListParagraph");
+        p.props.numbering = Some(wordcraft_doc::props::NumRef { num: bul, level: 0 });
+        d.body = vec![para_block(p)];
+        let bytes = export("md", &d).unwrap().unwrap();
+        let blocks = flat(&import("md", &bytes).unwrap().unwrap());
+        let [FBlock::Para(p)] = blocks.as_slice() else { panic!("{text}: {}", String::from_utf8_lossy(&bytes)) };
+        assert_eq!((p.text().as_str(), p.kind, p.list), (text, Kind::Normal, Some(model::ListInfo { ordered: false, level: 0 })));
+    }
+}
+
+#[test]
 fn markdown_round_trip() {
     check_round_trip("md", true);
 }
@@ -278,6 +293,14 @@ fn txt_round_trip() {
     let raw: Vec<u8> = "hello world".encode_utf16().flat_map(|u| u.to_be_bytes()).collect();
     assert_eq!(import("txt", &raw).unwrap().unwrap().plain_text(Default::default()), "hello world");
     assert_eq!(import("txt", &[0x63, 0x61, 0x66, 0xE9, 0x80]).unwrap().unwrap().plain_text(Default::default()), "café€");
+}
+
+#[test]
+fn txt_export_writes_symbol_font_text_as_unicode() {
+    let mut d = Document::from_text("Done J\u{F0FC}");
+    d.format_range(&wordcraft_doc::Pos::body(0, 5), &wordcraft_doc::Pos::body(0, 9), &|c| c.font = Some("Wingdings".into())).unwrap();
+    let out = export("txt", &d).unwrap().unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "Done \u{263A}\u{2713}");
 }
 
 /// #569: a file with an extension we don't know opens as text when it is text (a playlist), and
@@ -653,4 +676,17 @@ fn exported_links_keep_only_safe_targets() {
         assert!(!html.contains(&format!(">{text}</a>")), "html: {html}");
         assert!(!md.contains(&format!("[{text}](")), "md: {md}");
     }
+}
+
+#[test]
+fn hidden_drawings_are_left_out_of_exports() {
+    let mut d = wordcraft_doc::Document::from_text("x");
+    let key = d.add_media(vec![0x89, b'P', b'N', b'G'], "png");
+    for hidden in [false, true] {
+        let float = wordcraft_doc::para::Float { hidden, ..Default::default() };
+        let image = wordcraft_doc::InlineObject::Image { media: key.clone(), w: 10.0, h: 10.0, alt: "Logo".into(), float, crop: [0.0; 4], ole: None };
+        d.insert_object(&wordcraft_doc::Pos::body(0, 0), image, &Default::default()).unwrap();
+    }
+    // Two pictures, one hidden: one comes out.
+    assert_eq!(crate::html::export(&d).matches("<img").count(), 1);
 }

@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod autoscroll;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -63,6 +64,7 @@ pub mod panes;
 pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
+pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
@@ -87,6 +89,10 @@ pub use file_dialogs::{FileDialogAnswer, FileDialogRequest, open_filters};
 /// Platform services injected by the host (file dialogs, file I/O).
 #[derive(Default)]
 pub struct Services {
+    /// Desktop: discover configured printers on a worker.
+    pub printers: Option<printing::Discover>,
+    /// Desktop: submit the PDF with the chosen settings on a worker.
+    pub print_native: Option<printing::Submit>,
     /// Pick a file to open; the argument says what for (`document`, `picture`).
     pub pick_open: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Pick a path to save to, given a suggested name.
@@ -107,9 +113,8 @@ pub struct Services {
     /// Web: told whether the document has unsaved changes after each pass, for the browser's
     /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
     pub on_dirty: Option<Box<dyn Fn(bool)>>,
-    /// Hand PDF bytes to the system's print flow. Web: the browser's print dialog on that PDF (no
-    /// download, no intermediate file). Desktop: the PDF opens in the system's viewer (a temporary
-    /// file), where the user prints (#15). An error means nothing was opened.
+    /// Web: hand PDF bytes to the browser's print dialog (no download or intermediate file).
+    /// Desktop uses `print_native` instead. An error means nothing was opened.
     pub print: Option<Box<dyn Fn(&[u8]) -> Result<(), String>>>,
     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
     /// (#45). Read when Paste finds no text; see [`paste_picture`].
@@ -126,6 +131,10 @@ pub struct Services {
     /// Desktop: the HTML on the system clipboard — another program's formatted copy (a Word
     /// document, a web page) — if any. Paste keeps its formatting (#687); see [`system_clipboard`].
     pub clipboard_html: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Desktop: put HTML on the system clipboard with its plain-text alternative (html, text), for
+    /// a copy holding an equation (as MathML, #816). `true` when both are there; otherwise the
+    /// copy's text goes through egui as usual.
+    pub set_clipboard_html: Option<Box<dyn Fn(&str, &str) -> bool>>,
     /// Desktop: the RTF on the system clipboard, where the platform offers it (#687).
     pub clipboard_rtf: Option<Box<dyn Fn() -> Option<String>>>,
     /// Desktop: the names of the formats on the system clipboard (MIME types, Windows format
@@ -175,9 +184,14 @@ pub struct UiState {
     pub recent_colors: Vec<String>,
     /// Interface theme: light, dark, or follow the OS appearance (#115).
     pub theme: theme::Appearance,
-    /// Interface size in percent (#475): scales the whole interface on top of the system's
-    /// display scale. Junk or out-of-range saved values read as 100 % or are clamped to 80–200 %.
+    /// Interface size (#475, #822): Auto (the display scale the system reports) or an absolute
+    /// size in percent. Junk saved values read as Auto; out-of-range ones are clamped to 50–300 %.
+    #[serde(rename = "uiScale")]
     pub interface_size: theme::InterfaceSize,
+    /// The interface size `ui.json` held before #822, on top of the display scale: read once to
+    /// migrate ([`theme::legacy_interface_percent`]), never written. A valid `uiScale` wins.
+    #[serde(rename = "interfaceSize", skip_serializing)]
+    pub(crate) legacy_interface_size: Option<serde_json::Value>,
     /// Animation effects (smooth scrolling, fades): on, off, or follow the system's setting, which
     /// is the default. An unknown saved value reads as the default.
     pub animations: theme::Animations,
@@ -269,6 +283,7 @@ impl Default for UiState {
             recent_colors: Vec::new(),
             theme: theme::Appearance::default(),
             interface_size: theme::InterfaceSize::default(),
+            legacy_interface_size: None,
             animations: theme::Animations::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
@@ -341,6 +356,8 @@ pub struct WordApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    pub printing: printing::State,
+    print_feedback_seen: Option<printing::Feedback>,
     pub canvas: canvas::CanvasState,
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
@@ -384,6 +401,13 @@ pub struct WordApp {
     fonts_frames: u32,
     /// The effective interface theme last installed in egui ([`theme::apply`]).
     applied_theme: Option<theme::Appearance>,
+    /// The display scale (native pixels per point) seen in the last frame, 1.0 before the first;
+    /// `ui.interfaceSize` reports the size Auto draws at with it.
+    native_scale: f32,
+    /// A pre-#822 interface size (percent on top of the display scale) waiting for the first frame
+    /// that knows the display's scale, to become the absolute size it drew at
+    /// ([`theme::migrate_legacy_interface_size`]).
+    legacy_interface_size: Option<f64>,
     /// The desktop's light/dark choice, watched while the app runs (Linux has no winit answer).
     desktop_theme: desktop_theme::DesktopTheme,
     /// The last answer [`desktop_theme`] gave, so a frame that asks costs nothing.
@@ -429,6 +453,11 @@ pub struct WordApp {
     /// keystroke, so one visit's keystrokes make a single undo step (and anything else in
     /// between, such as an Undo, starts a new one).
     pub(crate) info_editing: Option<(&'static str, u64)>,
+    /// Started on the Start screen with nothing to open (#1129): the id of the placeholder
+    /// blank document the session holds until the user creates or opens one. While it is still
+    /// the session's document, no document is open: the window shows no page and only the File
+    /// tab, Help and settings work. See [`WordApp::has_document`].
+    no_document: Option<u64>,
 }
 
 /// The answer to "Do you want to save changes?" (`ui.saveChanges`).
@@ -460,6 +489,8 @@ impl WordApp {
             session,
             ui: UiState::default(),
             services,
+            printing: Default::default(),
+            print_feedback_seen: None,
             canvas: canvas::CanvasState::default(),
             controls: Default::default(),
             dialog: None,
@@ -481,6 +512,8 @@ impl WordApp {
             want_system_cjk: false,
             fonts_frames: 0,
             applied_theme: None,
+            native_scale: 1.0,
+            legacy_interface_size: None,
             // Inert until the app binary calls `watch_desktop_theme`.
             desktop_theme: desktop_theme::DesktopTheme::default(),
             desktop_dark: None,
@@ -510,6 +543,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            no_document: None,
         }
     }
 
@@ -519,17 +553,25 @@ impl WordApp {
     }
 
     /// Start-up with no document to open (#766): show File › Home (Blank document, the templates
-    /// and Recent), as Word starts, when the Start screen setting is on (the default). Esc or the
-    /// back arrow leaves the empty document the app was created with. Hosts call this after
-    /// [`WordApp::apply_prefs`] when they have nothing to open; [`WordApp::new`] never does, so
-    /// tests, `ui_shot` and windows opened for a document start in the editor. Returns whether
-    /// the Start screen shows.
+    /// and Recent), as Word starts, when the Start screen setting is on (the default). No document
+    /// is open until the user picks Blank document or a template or opens a file (#1129): Esc or
+    /// the back arrow shows an empty window with the ribbon greyed out, as Word does. Hosts call
+    /// this after [`WordApp::apply_prefs`] when they have nothing to open; [`WordApp::new`] never
+    /// does, so tests, `ui_shot` and windows opened for a document start in the editor. Returns
+    /// whether the Start screen shows.
     pub fn start_screen(&mut self) -> bool {
         if self.ui.start_screen {
             self.ui.backstage = true;
             self.ui.backstage_page = "home".into();
+            self.no_document = Some(self.session.document_id());
         }
         self.ui.start_screen
+    }
+
+    /// Whether a document is open: false from a Start screen launch until the user creates or
+    /// opens one (#1129).
+    pub fn has_document(&self) -> bool {
+        self.no_document != Some(self.session.document_id())
     }
 
     /// Preferences to save between runs: the UI state plus the current user name and editing
@@ -557,6 +599,11 @@ impl WordApp {
         if let Some(dark) = self.ui.legacy_dark.take() {
             self.ui.theme = if dark { theme::Appearance::Dark } else { theme::Appearance::Light };
         }
+        // A `ui.json` from before #822: its interface size was on top of the display scale, so it
+        // becomes absolute on the first frame that knows that scale (`logic`). A chosen `uiScale`
+        // (the current key) wins; "auto" can't be told from a missing key, so the old size does.
+        self.legacy_interface_size =
+            self.ui.legacy_interface_size.take().filter(|_| self.ui.interface_size.is_auto()).and_then(|old| theme::legacy_interface_percent(&old));
         // The session owns the name from here on; `prefs` copies it back when saving.
         let author = std::mem::take(&mut self.ui.author);
         if !author.trim().is_empty() {
@@ -639,6 +686,13 @@ impl WordApp {
         }
         if !matches!(id, "ui.openRecipientList" | "mailings.recipients") {
             self.recipient_list_pending = false;
+        }
+        // No document open (#1129): only the commands that open or create one, Help, and the
+        // settings work.
+        if !self.has_document() && !works_without_document(id) {
+            let e = tl!("No document is open. Create a document or open one first.").to_string();
+            self.status(e.clone());
+            return Err(e);
         }
         if let Some(r) = self.ui_command(id, &params) {
             return r;
@@ -828,7 +882,12 @@ impl WordApp {
     /// The window's close button (or the system) asked to quit. Returns true to let the window
     /// close; with unsaved changes it asks first and returns false.
     pub fn close_requested(&mut self) -> bool {
-        if self.quit_requested || !self.session.dirty {
+        if self.printing.busy() {
+            self.status(tl!("Wait for the print job to finish submitting before closing."));
+            return false;
+        }
+        // No document open (#1129): nothing to save.
+        if self.quit_requested || !self.session.dirty || !self.has_document() {
             return true;
         }
         let _ = self.run("file.close", json!({}));
@@ -847,7 +906,8 @@ impl WordApp {
         if id == "view.readMode" {
             self.canvas.read_first_visible = None;
         }
-        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") {
+        // Drawing leaves the caret where it was: following it would pull the view off the ink.
+        if !id.starts_with("view.") && !id.starts_with("document.") && !id.starts_with("format.state") && !id.starts_with("draw.") {
             self.canvas.scroll_to_caret = true;
         }
         for req in std::mem::take(&mut self.session.ui_requests) {
@@ -1022,21 +1082,31 @@ impl WordApp {
                 json!({"theme": self.ui.theme.code(), "dark": self.ui_is_dark()})
             }
             "ui.interfaceSize" => {
-                // Interface size in percent, 80–200 (clamped); no value reads it. Document zoom is
-                // `view.zoom` and stays as it is.
+                // `auto` (the display scale the system reports) or an absolute size in percent,
+                // 50–300 (clamped); no value reads it. `percent` in the result is the size the
+                // interface is drawn at. Document zoom is `view.zoom` and stays as it is.
                 if let Some(v) = p.get("percent").or_else(|| p.get("value")) {
-                    match v.as_f64().and_then(theme::InterfaceSize::from_percent) {
-                        Some(size) => self.ui.interface_size = size,
+                    let size = match v.as_str() {
+                        Some(a) if a.trim().eq_ignore_ascii_case("auto") => Some(theme::InterfaceSize::AUTO),
+                        Some(t) => t.trim().trim_end_matches('%').trim().parse::<f64>().ok().and_then(theme::InterfaceSize::from_percent),
+                        None => v.as_f64().and_then(theme::InterfaceSize::from_percent),
+                    };
+                    match size {
+                        Some(size) => {
+                            self.ui.interface_size = size;
+                            self.legacy_interface_size = None;
+                        }
                         None => {
                             return Some(Err(format!(
-                                "`percent` must be a number from {} to {}",
+                                "`percent` must be \"auto\" or a number from {} to {}",
                                 theme::InterfaceSize::MIN,
                                 theme::InterfaceSize::MAX
                             )));
                         }
                     }
                 }
-                json!({"percent": self.ui.interface_size.percent()})
+                let size = self.ui.interface_size;
+                json!({"auto": size.is_auto(), "percent": size.drawn_percent(self.native_scale)})
             }
             "ui.animations" => {
                 // `system` (follow the system's animation setting), `on` or `off`; no value reads
@@ -1088,10 +1158,9 @@ impl WordApp {
                 self.pick_recipient_list();
                 json!({"pending": self.recipient_list_pending})
             }
-            // Send the document to the system print flow (web, desktop). `file.print` opens the Print
-            // page; this is the button on it, and the one programmatic call that opens system UI
-            // here, like `ui.openFileDialog` — only when the host can print.
-            "ui.print" => return Some(self.print_to_system(p)),
+            // Native printing submits the selected queue on a worker; the browser owns its dialog.
+            "ui.printSettings" => return Some(printing::settings(&mut self.printing, p, self.services.printers.as_ref())),
+            "ui.print" | "ui.printSubmit" => return Some(self.print_to_system(p)),
             // File › Options › General › Make WordCraft the default… changes the user's system
             // default apps (Linux) or opens system settings (Windows), so only a click on that
             // button does it ([`WordApp::make_default_app`]); scripts, the control channel and
@@ -1139,38 +1208,9 @@ impl WordApp {
         }))
     }
 
-    /// `ui.print`: export the document to PDF in memory and hand it to the host's print hook.
-    /// `p` holds the print settings (`range`, `pages`, `parity`, `copies`, `collate`; see
-    /// `file.printPdf`); without any, every page prints once.
-    /// An error when the host can't print (File › Print then only saves a PDF).
+    /// Submit the selected print job; the implementation lives beside its localized controls.
     fn print_to_system(&mut self, p: &Value) -> Result<Value, String> {
-        if self.services.print.is_none() {
-            return Err("printing to the system print dialog isn't available here; export a PDF instead".into());
-        }
-        // File › Options › Display: fields first, and the page colour only when asked for.
-        if self.ui.update_fields_before_print
-            && let Err(e) = self.session.run("references.updateFields", &json!({}))
-        {
-            log::warn!("updating fields before printing: {e}");
-        }
-        let colour = if self.ui.print_backgrounds { None } else { self.session.doc.settings.page_color.take() };
-        let pdf = self.session.print_pdf(p).map_err(|e| e.to_string());
-        if colour.is_some() {
-            self.session.doc.settings.page_color = colour;
-        }
-        let result = pdf.and_then(|(bytes, _)| self.services.print.as_ref().map_or(Ok(()), |print| print(&bytes)).map(|()| bytes.len()));
-        match result {
-            Ok(len) => {
-                self.status(tl!("Opening print dialog…"));
-                Ok(json!({"printing": true, "bytes": len}))
-            }
-            Err(e) => {
-                log::error!("print failed: {e}");
-                let msg = i18n::fmt(tl!("Print failed: {error}"), &[("error", &e)]);
-                self.status(msg.clone());
-                Err(msg)
-            }
-        }
+        printing::submit(self, p)
     }
 
     /// File › Options › General › Make WordCraft the default…: hand over to the host's
@@ -1307,6 +1347,22 @@ impl WordApp {
         }
     }
 
+    /// Terminal feedback also reaches the normal window when printing starts through control.
+    pub fn poll_printing(&mut self, ctx: &egui::Context) {
+        self.printing.poll(ctx);
+        if self.printing.message == self.print_feedback_seen {
+            return;
+        }
+        self.print_feedback_seen = self.printing.message.clone();
+        let Some(message @ (printing::Feedback::Submitted(_) | printing::Feedback::Failed(_) | printing::Feedback::WorkerStopped)) =
+            self.printing.message.clone()
+        else {
+            return;
+        };
+        let text = printing::feedback(&message, |label| i18n::t(label).to_owned());
+        self.status(text);
+    }
+
     /// Per-frame logic before layout: control requests, screenshots, shortcuts, file drops.
     pub fn logic(&mut self, ctx: &egui::Context) {
         let lang = i18n::Lang::from_pref(&self.ui.language);
@@ -1343,10 +1399,19 @@ impl WordApp {
             theme::apply(ctx, effective);
             self.applied_theme = Some(effective);
         }
-        // Interface size (#475): egui's zoom factor multiplies the display scale the system reports
-        // (native pixels per point), so it adds to it rather than replacing it. Keyboard zoom is
-        // off (above), so nothing else changes the factor; `set_zoom_factor` repaints only on change.
-        let zoom = self.ui.interface_size.zoom_factor();
+        // Interface size (#475, #822): egui's zoom factor multiplies the display scale the system
+        // reports (native pixels per point). Auto keeps that scale; a chosen size divides it back
+        // out, so "100%" is one screen pixel per point even where the system's scale is a guess.
+        // Recomputed every frame, so a move to a monitor with another scale keeps a chosen size.
+        // Keyboard zoom is off (above), so nothing else changes the factor; `set_zoom_factor`
+        // repaints only on change.
+        self.native_scale = theme::usable_scale(ctx.native_pixels_per_point().unwrap_or(1.0));
+        if let Some(native) = ctx.native_pixels_per_point()
+            && let Some(old) = self.legacy_interface_size.take()
+        {
+            self.ui.interface_size = theme::migrate_legacy_interface_size(old, native);
+        }
+        let zoom = self.ui.interface_size.zoom_factor(self.native_scale);
         if ctx.zoom_factor() != zoom {
             ctx.set_zoom_factor(zoom);
         }
@@ -1361,6 +1426,7 @@ impl WordApp {
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
         }
+        self.poll_printing(ctx);
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         read_aloud::poll(self, ctx);
@@ -1382,7 +1448,7 @@ impl WordApp {
             {
                 let path = f.path().to_string_lossy().to_string();
                 let lp = path.to_ascii_lowercase();
-                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lp.ends_with(e));
+                let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lp.ends_with(e));
                 let sheet = [".xlsx", ".xlsm", ".ods"].iter().any(|e| lp.ends_with(e));
                 let _ = if img {
                     self.run("insert.picture", json!({"path": path}))
@@ -1516,6 +1582,12 @@ impl WordApp {
         crate::keytips::logic(self, &ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
+        } else if !self.has_document() {
+            // No document open (#1129): the ribbon greyed out but for Help, and no page.
+            chrome::title_bar(self, ui);
+            ribbon::show(self, ui);
+            chrome::status_bar(self, ui);
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |_| {});
         } else {
             chrome::title_bar(self, ui);
             ribbon::show(self, ui);
@@ -1534,10 +1606,15 @@ impl WordApp {
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
         keys::global_shortcuts(self, &ctx);
+        self.refocus_after_chrome_click(&ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
-        let title = format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" });
+        let title = if self.has_document() {
+            format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" })
+        } else {
+            "WordCraft".to_string()
+        };
         if title != self.sent_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;
@@ -1547,6 +1624,32 @@ impl WordApp {
         self.report_dirty();
     }
 
+    /// A click on the window's chrome (ribbon tabs and empty ribbon space, galleries, check
+    /// boxes, the status bar, panes) hands keyboard focus back to the document, as in Word, so the
+    /// caret keeps blinking and typing continues where it was (#1093). egui drops the page's focus
+    /// on any click elsewhere; only a click that left nothing focused counts, so a text field
+    /// (font size, zoom, command search) keeps the focus it took, and clicks on a dialog, menu or
+    /// popup, or while one is open, leave focus alone. Clicks on the page are the canvas's own.
+    fn refocus_after_chrome_click(&mut self, ctx: &egui::Context) {
+        if self.ui.backstage || self.dialog.is_some() || self.colors.is_some() {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.file_browser.open.is_some() {
+            return;
+        }
+        let Some(pos) = ctx.input(|i| if i.pointer.any_click() { i.pointer.interact_pos() } else { None }) else { return };
+        // The page handles its own clicks (comment balloons there take the keyboard themselves).
+        if self.canvas.balloon.is_some() || self.canvas.viewport.is_some_and(|v| v.contains(pos)) {
+            return;
+        }
+        let on_chrome = ctx.layer_id_at(pos).is_none_or(|l| l.order == egui::Order::Background);
+        if on_chrome && ctx.memory(|m| m.focused().is_none()) && !egui::Popup::is_any_open(ctx) {
+            self.canvas.want_focus = true;
+            ctx.request_repaint();
+        }
+    }
+
     /// Files that arrived asynchronously (web picker, drops): documents open, pictures insert,
     /// recipient lists (CSV/TSV, spreadsheets, or a text file asked for as one) load as recipients.
     fn drain_inbox(&mut self) {
@@ -1554,7 +1657,7 @@ impl WordApp {
         let files = std::mem::take(&mut *inbox.lock().unwrap_or_else(|e| e.into_inner()));
         for (name, bytes) in files {
             let lower = name.to_ascii_lowercase();
-            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
+            let img = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".wmf", ".emf"].iter().any(|e| lower.ends_with(e));
             // Any recipient file ends the pending picker request, so a later .txt drop opens normally.
             let asked = std::mem::take(&mut self.recipient_list_pending);
             let list = lower.ends_with(".csv") || lower.ends_with(".tsv") || (lower.ends_with(".txt") && asked);
@@ -1766,6 +1869,51 @@ fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
     }
 }
 
+/// Commands that work while no document is open (#1129): opening or creating one, closing the
+/// window, Help, adding fonts (a font file dropped on the empty window), and the settings (File ›
+/// Options, the view and interface preferences it sets, Customize Ribbon and Keyboard).
+/// Everything else needs a document, `ui.*` included: only the interface commands listed here
+/// (tabs, Backstage, dialogs, appearance, opening files) work without one.
+pub(crate) fn works_without_document(id: &str) -> bool {
+    matches!(
+        id,
+        "file.new"
+            | "file.open"
+            | "file.close"
+            | "file.options"
+            | "file.setAuthor"
+            | "font.add"
+            | "font.list"
+            | "font.remove"
+            | "readAloud.speed"
+            | "readAloud.skipCitations"
+            | "tools.customizeKeyboard"
+            | "tools.customizeRibbon"
+            | "view.darkMode"
+            | "view.marks"
+            | "view.ruler"
+            | "view.numeral"
+            | "ui.tab"
+            | "ui.backstage"
+            | "ui.dialog"
+            | "ui.closeDialog"
+            | "ui.collapseRibbon"
+            | "ui.keytips"
+            | "ui.dark"
+            | "ui.theme"
+            | "ui.interfaceSize"
+            | "ui.animations"
+            | "ui.language"
+            | "ui.saveChanges"
+            | "ui.openFileDialog"
+            | "ui.fileBrowser"
+            | "ui.makeDefaultApp"
+            | "ui.discord"
+            | "ui.caretAnimation"
+            | "ui.startScreen"
+    ) || id.starts_with("help.")
+}
+
 /// User commands that replace or close the document (`file.open` without a path only shows the
 /// file picker; the open that follows is checked). Envelopes, Labels and Finish & Merge make a
 /// new document in its place; a merge written to a file (`path`) and an envelope added to this
@@ -1907,39 +2055,118 @@ mod tests {
         assert_eq!(a.run("ui.caretAnimation", json!({"value": true})).unwrap()["caretAnimation"], true);
     }
 
-    /// #766: started with nothing to open, the app shows File › Home (the Start screen) as Word
-    /// does; Esc leaves the empty blank document it was created with. With the setting off it
-    /// starts in the editor, and `WordApp::new` alone (tests, ui_shot, windows opened for a
-    /// document) never shows it.
-    #[test]
-    fn start_screen_shows_file_home_and_esc_leaves_a_blank_document() {
-        use egui_kittest::kittest::Queryable;
-        let mut a = app();
-        assert!(!a.ui.backstage, "`new` starts in the editor");
-        a.ui.backstage_page = "print".into();
-        assert!(a.start_screen(), "on by default");
-        assert!(a.ui.backstage && a.ui.backstage_page == "home");
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+    fn harness(a: WordApp) -> egui_kittest::Harness<'static, WordApp> {
+        egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();
                 app.logic(&ctx);
                 app.ui(ui);
             },
             a,
-        );
+        )
+    }
+
+    /// #766: started with nothing to open, the app shows File › Home (the Start screen) as Word
+    /// does. #1129: no document is open behind it, so Esc (or Back) shows an empty window, with
+    /// no page, the ribbon greyed out but for Help, and nothing to save on close. With the setting
+    /// off it starts in the editor, and `WordApp::new` alone (tests, ui_shot, windows opened for a
+    /// document) never shows it.
+    #[test]
+    fn start_screen_shows_file_home_and_esc_leaves_no_document() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = app();
+        assert!(!a.ui.backstage, "`new` starts in the editor");
+        assert!(a.has_document());
+        a.ui.backstage_page = "print".into();
+        assert!(a.start_screen(), "on by default");
+        assert!(a.ui.backstage && a.ui.backstage_page == "home");
+        assert!(!a.has_document(), "no document behind the Start screen");
+        let mut h = harness(a);
         h.run_steps(4);
         assert!(h.query_by_label("Blank document").is_some(), "Home lists Blank document and the templates");
         assert!(h.query_by_label("Recent").is_some(), "and the Recent list");
         h.key_press(egui::Key::Escape);
         h.run_steps(4);
-        assert!(!h.state().ui.backstage, "Esc leaves the Start screen");
-        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "", "for an empty blank document");
-        assert!(!h.state().session.dirty);
+        let a = h.state_mut();
+        assert!(!a.ui.backstage, "Esc leaves the Start screen");
+        assert!(!a.has_document(), "for an empty window, not a blank document");
+        assert_eq!(a.sent_title, "WordCraft", "the window is titled with the app alone");
+        // The ribbon's commands are off, but Help, the File tab and the settings work.
+        for id in ["format.bold", "text.insert", "file.save", "file.saveAs", "file.print", "edit.paste", "insert.table", "ui.print"] {
+            assert!(!widgets::enabled(a, id), "{id} is off with no document");
+        }
+        for id in ["file.new", "file.open", "ui.backstage", "ui.tab", "ui.discord", "file.options", "ui.theme"] {
+            assert!(widgets::enabled(a, id), "{id} works with no document");
+        }
+        assert!(!chrome::qat_enabled(a, "file.save"));
+        // Only the listed interface commands work: the ones that act on the document don't.
+        for id in ["ui.contextMenu", "ui.render", "ui.linkTextBox", "ui.zotero.refresh", "ui.unlistedCommand"] {
+            assert!(!works_without_document(id), "{id} needs a document");
+        }
+        let refused = a.run("ui.zotero.status", json!({})).unwrap_err();
+        assert!(refused.contains("No document is open"), "refused before it runs: {refused}");
+        assert!(works_without_document("font.add"), "a font file dropped on the empty window is added");
+        // Neither keys nor commands reach the hidden placeholder.
+        assert!(a.run("text.insert", json!({"text": "Hello"})).is_err());
+        assert!(a.execute("format.bold", json!({})).is_err());
+        h.event(egui::Event::Text("typed".into()));
+        h.key_press(egui::Key::Enter);
+        h.run_steps(2);
+        let a = h.state_mut();
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "");
+        assert!(!a.session.dirty && !a.has_document());
+        assert!(a.close_requested(), "closing asks nothing");
+        assert!(a.dialog.is_none());
 
         let mut b = app();
         b.run("ui.startScreen", json!({"value": false})).unwrap();
         assert!(!b.start_screen(), "off: today's behaviour");
-        assert!(!b.ui.backstage);
+        assert!(!b.ui.backstage && b.has_document());
+    }
+
+    /// #1129: the empty window's File tab goes back to the Backstage with only Home, New, Open
+    /// and Options; picking Blank document there opens one, ready for typing.
+    #[test]
+    fn blank_document_opens_a_document_from_the_start_screen() {
+        use egui_kittest::kittest::Queryable;
+        let mut a = app();
+        a.start_screen();
+        a.run("ui.backstage", json!({"value": false})).unwrap();
+        a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
+        let first = a.session.document_id();
+        let mut h = harness(a);
+        h.run_steps(4);
+        assert_eq!(h.state().ui.backstage_page, "home", "Info needs a document");
+        h.get_by_label("Blank document").click();
+        h.run_steps(4);
+        let a = h.state_mut();
+        assert!(a.has_document() && !a.ui.backstage, "Blank document opens one");
+        assert_ne!(a.session.document_id(), first);
+        assert!(widgets::enabled(a, "format.bold"));
+        a.run("text.insert", json!({"text": "Hello"})).unwrap();
+        assert_eq!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).trim(), "Hello");
+        assert!(a.sent_title.starts_with(&a.title_stem()), "{}", a.sent_title);
+    }
+
+    /// #1129: a template or a file opened from the Start screen (or handed over later) is the
+    /// document; a failed open leaves the window empty.
+    #[test]
+    fn templates_and_files_open_from_the_start_screen() {
+        let mut a = app();
+        a.start_screen();
+        a.run("file.new", json!({"template": "letter"})).unwrap();
+        assert!(a.has_document());
+
+        let dir = scratch("start-screen-open");
+        let path = docx_on_disk(&dir, "Signed copy");
+        let mut b = app();
+        b.start_screen();
+        assert!(b.run("file.open", json!({"path": dir.join("missing.docx").to_string_lossy()})).is_err());
+        assert!(!b.has_document(), "a failed open opens nothing");
+        b.run("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert!(b.has_document());
+        assert!(body_text(&b).contains("Signed copy"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The Start screen setting is a UI command, kept between runs; settings saved before it
@@ -2538,6 +2765,44 @@ mod tests {
         );
         assert!(!a.canvas.drag_selecting());
         assert!(!a.session.sel.is_collapsed(), "the drag left a selection");
+    }
+
+    /// The control channel's `ui.wheel` scrolls the canvas like a mouse wheel over it.
+    #[test]
+    fn control_wheel_scrolls_the_canvas() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        for _ in 0..3 {
+            a.run("insert.pageBreak", json!({})).unwrap();
+        }
+        a.run("caret.docStart", json!({})).unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp| {
+            t += 1.0 / 60.0;
+            let mut input = egui::RawInput { time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            a.raw_input_hook(&mut input);
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        let top = a.canvas.page_rects[0].top();
+        let at = a.canvas.canvas_rect.unwrap().center();
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x, "y": at.y, "dy": -400.0}));
+        control::handle(&mut a, &ctx, &req);
+        for _ in 0..30 {
+            frame(&mut a);
+        }
+        let moved = top - a.canvas.page_rects[0].top();
+        assert!(moved > 100.0, "the first page moved up by {moved}");
+        let (req, _reply) = ControlRequest::new("ui.wheel", json!({"x": at.x}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("ui.wheel replies at once") };
+        assert_eq!(v["ok"], false, "y is required: {v}");
     }
 
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
@@ -3150,6 +3415,111 @@ mod tests {
         h.event(egui::Event::Text(" bold".into()));
         h.step();
         assert!(body_text(h.state()).ends_with(" bold"), "Bold: typing continues in the document");
+    }
+
+    /// Types `text` after a click on `what` and checks it reached the document (#1093).
+    fn type_after_click(h: &mut egui_kittest::Harness<'_, WordApp>, what: &str, text: &str) {
+        h.step();
+        h.event(egui::Event::Text(text.into()));
+        h.step();
+        assert!(h.state().canvas.focused, "{what}: the page keeps keyboard focus");
+        assert!(body_text(h.state()).ends_with(text), "{what}: typing continues in the document");
+    }
+
+    /// #1093: clicks on ribbon and status-bar chrome that isn't a command button (gallery tiles,
+    /// tab names, empty ribbon space, View check boxes, the status bar's view buttons and
+    /// language menu) used to take keyboard focus from the page: the caret vanished and typing
+    /// went nowhere until the page was clicked again.
+    #[test]
+    fn clicks_on_ribbon_and_status_bar_chrome_keep_typing_in_the_document() {
+        use egui::accesskit::Role;
+
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            typed(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        assert!(h.state().canvas.focused, "the page starts with keyboard focus");
+
+        // A Styles gallery tile.
+        h.get_by_role_and_label(Role::Button, "Heading 1").click();
+        type_after_click(&mut h, "Heading 1 tile", " gallery");
+        let para = h.state().session.doc.para_at(&h.state().session.sel.focus).expect("caret paragraph");
+        assert_eq!(para.props.style.as_deref(), Some("Heading1"), "the tile applied its style");
+
+        // A ribbon tab name, then a View tab check box.
+        h.get_by_role_and_label(Role::Button, "View").click();
+        type_after_click(&mut h, "View tab", " tab");
+        assert_eq!(h.state().ui.tab, "View");
+        let ruler = h.state().session.view.ruler;
+        h.get_by_role_and_label(Role::CheckBox, "Ruler").click();
+        type_after_click(&mut h, "Ruler check box", " ruler");
+        assert_ne!(h.state().session.view.ruler, ruler, "the check box toggled the ruler");
+
+        // Empty space at the right end of the ribbon, under the tab strip.
+        let tab = h.get_by_role_and_label(Role::Button, "View").rect();
+        let blank = egui::pos2(1425.0, tab.max.y + 25.0);
+        for pressed in [true, false] {
+            h.hover_at(blank);
+            h.event(egui::Event::PointerButton { pos: blank, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+        type_after_click(&mut h, "empty ribbon space", " blank");
+
+        // The status bar's view buttons.
+        h.get_by_role_and_label(Role::Button, "Web Layout").click();
+        type_after_click(&mut h, "Web Layout", " web");
+        assert_eq!(h.state().session.view.mode, wordcraft_layout::ViewMode::Web);
+        h.get_by_role_and_label(Role::Button, "Print Layout").click();
+        type_after_click(&mut h, "Print Layout", " print");
+        assert_eq!(h.state().session.view.mode, wordcraft_layout::ViewMode::Print);
+
+        // The language item opens its menu; a click elsewhere on the status bar cancels it.
+        let lang_label = crate::ribbon::caret_language(h.state());
+        let lang = h.get_by_label(&lang_label).rect();
+        h.get_by_label(&lang_label).click();
+        h.step();
+        h.step();
+        assert!(egui::Popup::is_any_open(&h.ctx), "the language menu opened");
+        let elsewhere = egui::pos2(lang.max.x + 40.0, lang.center().y);
+        for pressed in [true, false] {
+            h.hover_at(elsewhere);
+            h.event(egui::Event::PointerButton { pos: elsewhere, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+        h.step();
+        assert!(!egui::Popup::is_any_open(&h.ctx), "the click closed the language menu");
+        type_after_click(&mut h, "language menu cancelled", " lang");
+
+        // Back on Home, a text field still takes the focus: the font size box.
+        h.get_by_role_and_label(Role::Button, "Home").click();
+        type_after_click(&mut h, "Home tab", " home");
+        let before = body_text(h.state());
+        let size_box = h
+            .get_all_by_role(Role::TextInput)
+            .find(|n| n.value().is_some_and(|v| v.trim().parse::<f64>().is_ok()))
+            .expect("the font size box")
+            .rect();
+        for pressed in [true, false] {
+            h.hover_at(size_box.center());
+            h.event(egui::Event::PointerButton {
+                pos: size_box.center(),
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            });
+        }
+        h.step();
+        h.step();
+        assert!(!h.state().canvas.focused, "the font size box took keyboard focus");
+        h.event(egui::Event::Text("4".into()));
+        h.step();
+        assert!(!h.state().canvas.focused, "the font size box keeps focus while edited");
+        assert_eq!(body_text(h.state()), before, "typing went into the font size box, not the page");
     }
 
     /// #330: Word's shortcuts work from the keyboard — Ctrl+Alt+1 (⌘⌥1) applies Heading 1, and
@@ -3770,50 +4140,132 @@ mod tests {
         assert_eq!((odd.theme, odd.tab.as_str()), (Appearance::Light, "Insert"));
     }
 
-    /// #475: the interface size is kept between runs; junk saved values read as 100 % and
+    /// #475, #822: the interface size is kept between runs; junk saved values read as Auto and
     /// out-of-range ones are clamped, without losing the other preferences.
     #[test]
     fn interface_size_survives_a_restart_and_clamps_junk() {
         let mut a = app();
-        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap()["percent"], 100);
-        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 150})).unwrap()["percent"], 150);
+        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap(), json!({"auto": true, "percent": 100}));
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 150})).unwrap(), json!({"auto": false, "percent": 150}));
         let saved = serde_json::to_string(&a.prefs()).unwrap();
-        assert!(saved.contains(r#""interfaceSize":150"#), "{saved}");
+        assert!(saved.contains(r#""uiScale":150"#) && !saved.contains("interfaceSize"), "{saved}");
         let mut b = app();
         b.apply_prefs(serde_json::from_str(&saved).unwrap());
-        assert_eq!(b.ui.interface_size.percent(), 150);
-        for (raw, want) in [("1000", 200), ("10", 80), ("-5", 80), ("124.6", 125), (r#""big""#, 100), ("null", 100), ("[1]", 100)] {
-            let ui: UiState = serde_json::from_str(&format!(r#"{{"interfaceSize": {raw}, "tab": "Insert"}}"#)).unwrap();
+        assert_eq!(b.ui.interface_size.percent(), Some(150));
+        for (raw, want) in [
+            ("1000", Some(300)),
+            ("10", Some(50)),
+            ("-5", Some(50)),
+            ("124.6", Some(125)),
+            (r#""auto""#, None),
+            (r#""big""#, None),
+            ("null", None),
+            ("[1]", None),
+        ] {
+            let ui: UiState = serde_json::from_str(&format!(r#"{{"uiScale": {raw}, "tab": "Insert"}}"#)).unwrap();
             assert_eq!((ui.interface_size.percent(), ui.tab.as_str()), (want, "Insert"), "{raw}");
         }
-        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 500})).unwrap()["percent"], 200);
+        assert_eq!(a.run("ui.interfaceSize", json!({"percent": 500})).unwrap()["percent"], 300);
         assert!(a.run("ui.interfaceSize", json!({"percent": "huge"})).is_err());
         assert!(a.run("ui.interfaceSize", json!({"percent": null})).is_err());
-        assert_eq!(a.ui.interface_size.percent(), 200, "a rejected value keeps the setting");
+        assert_eq!(a.ui.interface_size.percent(), Some(300), "a rejected value keeps the setting");
+        assert_eq!(a.run("ui.interfaceSize", json!({"value": "125%"})).unwrap()["percent"], 125);
+        assert_eq!(a.run("ui.interfaceSize", json!({"value": "Auto"})).unwrap()["auto"], true);
+        let saved = serde_json::to_string(&a.prefs()).unwrap();
+        assert!(saved.contains(r#""uiScale":"auto""#), "{saved}");
     }
 
-    /// #475: the interface size multiplies the display scale the system reports (egui's zoom
-    /// factor) and leaves document zoom alone.
+    /// #822: a `ui.json` from before saved `interfaceSize` on top of the display scale. Its
+    /// default, 100, becomes Auto (the same size as before); a size picked on purpose becomes the
+    /// absolute size it drew at, once the first frame says the display's scale: 125 % on a 2×
+    /// display drew at 250 % and stays there. A valid `uiScale` beside it wins.
     #[test]
-    fn interface_size_scales_on_top_of_the_system_scale() {
+    fn interface_size_from_before_822_migrates() {
+        let frame = |a: &mut WordApp, native: f32| {
+            let ctx = egui::Context::default();
+            let mut input = egui::RawInput::default();
+            input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            ctx.run_ui(input, |ui| a.logic(ui.ctx())).drop_without_applying_deltas();
+        };
+        for (json, native, want) in [
+            (r#"{"interfaceSize": 100}"#, 2.0, None),
+            (r#"{"interfaceSize": 100.2}"#, 2.0, None),
+            (r#"{"interfaceSize": "big"}"#, 2.0, None),
+            (r#"{"interfaceSize": 125}"#, 2.0, Some(250)),
+            (r#"{"interfaceSize": 150}"#, 1.0, Some(150)),
+            (r#"{"interfaceSize": 80}"#, 1.5, Some(120)),
+            (r#"{"interfaceSize": 200}"#, 2.0, Some(300)),
+            (r#"{"interfaceSize": 80}"#, 0.5, Some(50)),
+            (r#"{"interfaceSize": 150, "uiScale": 90}"#, 2.0, Some(90)),
+            (r#"{"interfaceSize": 150, "uiScale": "junk"}"#, 2.0, Some(300)),
+        ] {
+            let mut a = app();
+            a.apply_prefs(serde_json::from_str(json).unwrap());
+            frame(&mut a, native);
+            assert_eq!(a.ui.interface_size.percent(), want, "{json} on a {native}× display");
+            assert!(!serde_json::to_string(&a.prefs()).unwrap().contains("interfaceSize"), "{json}");
+        }
+        // Converted once: a later move to another display keeps the absolute size.
+        let mut a = app();
+        a.apply_prefs(serde_json::from_str(r#"{"interfaceSize": 125}"#).unwrap());
+        frame(&mut a, 2.0);
+        frame(&mut a, 1.0);
+        assert_eq!(a.ui.interface_size.percent(), Some(250));
+        // A size the user picks before the first frame isn't overwritten by the old one.
+        let mut a = app();
+        a.apply_prefs(serde_json::from_str(r#"{"interfaceSize": 125}"#).unwrap());
+        a.run("ui.interfaceSize", json!({"percent": 100})).unwrap();
+        frame(&mut a, 2.0);
+        assert_eq!(a.ui.interface_size.percent(), Some(100));
+    }
+
+    /// #822: on a display the system reports at 200 % (a 1080p screen under a bare window manager,
+    /// where winit guesses the scale from the monitor's DPI), "100%" draws at a true 100 %: one
+    /// screen pixel per point. Auto keeps the display's scale and says what it draws at. Document
+    /// zoom is a separate setting.
+    #[test]
+    fn interface_size_is_absolute_and_auto_keeps_the_system_scale() {
         let ctx = egui::Context::default();
         let mut a = app();
         let doc_zoom = a.session.view.zoom;
-        a.run("ui.interfaceSize", json!({"percent": 150})).unwrap();
         let frame = |a: &mut WordApp, native: f32| {
             let mut input = egui::RawInput::default();
             input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
             ctx.run_ui(input, |ui| a.logic(ui.ctx())).drop_without_applying_deltas();
         };
-        // The new factor applies from the next pass.
-        frame(&mut a, 2.0);
-        frame(&mut a, 2.0);
-        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (1.5, 3.0));
-        a.run("ui.interfaceSize", json!({"percent": 80})).unwrap();
-        frame(&mut a, 1.0);
-        frame(&mut a, 1.0);
-        assert_eq!((ctx.zoom_factor(), ctx.pixels_per_point()), (0.8, 0.8));
+        let ppp = |a: &mut WordApp, native: f32| {
+            // The new factor applies from the next pass.
+            frame(a, native);
+            frame(a, native);
+            ctx.pixels_per_point()
+        };
+        assert_eq!(ppp(&mut a, 2.0), 2.0, "Auto keeps the display's scale");
+        assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap(), json!({"auto": true, "percent": 200}));
+        a.run("ui.interfaceSize", json!({"percent": 100})).unwrap();
+        assert_eq!(ppp(&mut a, 2.0), 1.0, "100% is one screen pixel per point on a 2× display");
+        for native in [1.0, 1.25, 1.5, 2.0, 3.0] {
+            for pct in [75u16, 100, 150, 200, 300] {
+                a.run("ui.interfaceSize", json!({"percent": pct})).unwrap();
+                let got = ppp(&mut a, native);
+                assert!((got - f32::from(pct) / 100.0).abs() < 1e-4, "{pct}% on a {native}× display drew at {got}");
+                assert_eq!(a.run("ui.interfaceSize", json!({})).unwrap()["percent"], pct, "{pct}% on a {native}× display");
+            }
+        }
+        a.run("ui.interfaceSize", json!({"value": "auto"})).unwrap();
+        assert_eq!(ppp(&mut a, 1.5), 1.5);
         assert_eq!(a.session.view.zoom, doc_zoom, "document zoom is a separate setting");
+    }
+
+    /// #822: a display scale egui doesn't know or that is nonsense counts as 1×.
+    #[test]
+    fn interface_size_survives_an_unusable_display_scale() {
+        use theme::InterfaceSize;
+        let size = InterfaceSize::from_percent(125.0).unwrap();
+        for native in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -2.0] {
+            assert_eq!((size.zoom_factor(native), size.drawn_percent(native)), (1.25, 125), "{native}");
+            assert_eq!((InterfaceSize::AUTO.zoom_factor(native), InterfaceSize::AUTO.drawn_percent(native)), (1.0, 100), "{native}");
+        }
+        assert_eq!(InterfaceSize::AUTO.drawn_percent(f32::MAX), u16::MAX);
     }
 
     /// #115: System follows the OS appearance (light when unknown); the manual choices ignore it.
@@ -4174,6 +4626,47 @@ mod tests {
         a.run("ui.openRecipientList", json!({})).unwrap();
         a.run("format.bold", json!({})).unwrap();
         assert!(!a.recipient_list_pending);
+    }
+
+    /// Issue #859: lifting the pen jumped the view back to the caret, usually on page 1. Drawing
+    /// leaves the caret where it was, so the view stays on the ink; typing still follows the caret.
+    #[test]
+    fn drawing_ink_keeps_the_view_where_it_is() {
+        let mut a = typed();
+        let keeps_view = |a: &mut WordApp, id: &str, params: Value| {
+            a.canvas.scroll_to_caret = false;
+            let r = a.run(id, params);
+            assert!(r.is_ok(), "{id}: {r:?}");
+            assert!(!a.canvas.scroll_to_caret, "{id} scrolled to the caret");
+        };
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[100, 300], [200, 320]], "tool": "pen"}));
+        keeps_view(&mut a, "draw.lasso", json!({"page": 0, "points": [[80, 280], [220, 280], [220, 340], [80, 340]]}));
+        keeps_view(&mut a, "draw.lassoMove", json!({"dx": 10, "dy": 10}));
+        keeps_view(&mut a, "draw.stroke", json!({"page": 0, "points": [[300, 500], [400, 500]], "tool": "pencil"}));
+        keeps_view(&mut a, "draw.erase", json!({"page": 0, "x": 350, "y": 500}));
+        a.canvas.scroll_to_caret = false;
+        a.run("text.insert", json!({"text": "x"})).unwrap();
+        assert!(a.canvas.scroll_to_caret, "typing still brings the caret into view");
+    }
+
+    /// #1129: with no document open (the Start screen's empty window), `document.inspect` and
+    /// `ui.render` on the control channel say so instead of reading the hidden placeholder.
+    #[test]
+    fn control_inspect_and_render_need_a_document() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.start_screen();
+        assert!(!a.has_document());
+        for (method, params) in [("document.inspect", json!({})), ("ui.render", json!({"page": 1, "scale": 0.5}))] {
+            let (req, _reply) = ControlRequest::new(method, params);
+            let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("{method} replies at once") };
+            assert_eq!(v["ok"], false, "{method}: {v}");
+            assert!(v["error"].as_str().is_some_and(|e| e.contains("no document is open")), "{method}: {v}");
+        }
+        a.run("file.new", json!({})).unwrap();
+        let (req, _reply) = ControlRequest::new("document.inspect", json!({}));
+        let control::Outcome::Done(v) = control::handle(&mut a, &ctx, &req) else { panic!("document.inspect replies at once") };
+        assert_eq!(v["ok"], true, "with a document it works: {v}");
     }
 
     /// `ui.render` and `ui.screenshot` without a `path` return the PNG in the reply instead of

@@ -660,6 +660,14 @@ impl Ctx<'_> {
 
     /// The list label of `p`, advancing the list counters: call it once per paragraph, in
     /// document order (only for paragraphs that will show).
+    /// Whether `p` gets a list label ([`Ctx::next_label`] is `Some`), without counting it.
+    fn has_label(&self, p: &Paragraph) -> bool {
+        p.props
+            .numbering
+            .or_else(|| self.doc.styles.resolve_para(&p.props).numbering)
+            .filter(|n| n.num != 0)
+            .is_some_and(|n| self.doc.numbering.shows_label(n.num, n.level))
+    }
     fn next_label(&mut self, p: &Paragraph) -> Option<(String, Level)> {
         let n = p.props.numbering.or_else(|| self.doc.styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0)?;
         self.counters.next_label(&self.doc.numbering, n.num, n.level)
@@ -734,12 +742,13 @@ impl Ctx<'_> {
 }
 
 /// Which of `p`'s objects (by index) the layout leaves out ([`para::left_out`]): anchored in hidden
-/// text unless `show_hidden`, or in a tracked deletion with `hide_deleted`. `table_chr` is the
+/// text unless `show_hidden`, in a tracked deletion with `hide_deleted`, or a hidden drawing
+/// (`Float::hidden`, whatever is shown). `table_chr` is the
 /// cell's table-style character formatting ([`para::CellText::chr`]), resolved as the paragraph is
 /// laid out with (`StyleSheet::resolve_char_in`).
 fn left_out_objects(doc: &Document, p: &Paragraph, table_chr: Option<&CharProps>, show_hidden: bool, hide_deleted: bool) -> impl Fn(usize) -> bool {
     let mut left = Vec::new();
-    // Nothing can be left out with hidden text shown and markup on.
+    // No text left out with hidden text shown and markup on (hidden drawings still are, below).
     if (hide_deleted || !show_hidden) && !p.objects.is_empty() {
         let style = p.props.style.as_deref();
         let is_left = |c: &CharProps| {
@@ -766,7 +775,8 @@ fn left_out_objects(doc: &Document, p: &Paragraph, table_chr: Option<&CharProps>
             left.push(l);
         }
     }
-    move |k| left.get(k).copied().unwrap_or(false)
+    // A hidden drawing is left out whatever is shown (Word shows it in no view).
+    move |k| left.get(k).copied().unwrap_or(false) || p.objects.get(k).and_then(InlineObject::frame).is_some_and(|(_, _, f)| f.hidden)
 }
 
 /// Footnote and endnote numbers (each kind counted separately), in document order, as each
@@ -785,15 +795,16 @@ fn note_info(doc: &Document, hide_deleted: bool, pages: &HashMap<u32, usize>) ->
     let mut order = [0u32; 2];
     let mut si = 0usize;
     // Reading order, text boxes included where they are. A hidden reference mark still takes
-    // its number, as in Word; a deleted one (or one in a deleted text box) does not.
+    // its number, as in Word; a deleted one (or one in a deleted or hidden text box) does not,
+    // and `para_notes` doesn't place its note either.
     let mut cur: Option<(usize, Vec<bool>)> = None;
     doc.objects_in_reading_order_by_block(&mut |block, p, k| {
         let key = p as *const Paragraph as usize;
         if cur.as_ref().is_none_or(|(at, _)| *at != key) {
-            let deleted = left_out_objects(doc, p, None, true, hide_deleted);
-            cur = Some((key, (0..p.objects.len()).map(deleted).collect()));
+            let gone = left_out_objects(doc, p, None, true, hide_deleted);
+            cur = Some((key, (0..p.objects.len()).map(gone).collect()));
         }
-        if cur.as_ref().is_some_and(|(_, deleted)| deleted.get(k).copied().unwrap_or(false)) {
+        if cur.as_ref().is_some_and(|(_, gone)| gone.get(k).copied().unwrap_or(false)) {
             return false;
         }
         if let Some(InlineObject::NoteRef { kind, id, .. }) = p.objects.get(k) {
@@ -927,10 +938,9 @@ fn layout_box(
                 // space after the paragraph above (the larger one counts).
                 if pl.rp.before_auto && i == 0 {
                     before = 0.0;
-                } else if i > 0 && (pl.rp.before_auto || prev_after_auto) {
+                } else if i > 0 && before > 0.0 && prev_after > 0.0 {
                     before = (before - prev_after).max(0.0);
                 }
-                // Word: space between paragraphs is before + after (no collapsing).
                 y += if i == 0 { before } else { before.max(0.0) };
                 // Floating objects anchored here: place them, then wrap the text around them.
                 // One left out of the layout (hidden, or deleted in the final text) takes no room.
@@ -964,7 +974,7 @@ fn layout_box(
                 // Automatic space after: none after the last paragraph of a cell or box.
                 let after = if pl.rp.after_auto && i + 1 == blocks.len() { 0.0 } else { pl.rp.space_after };
                 y += pl.height + after;
-                prev_after = if same && ctxl { 0.0 } else { after };
+                prev_after = after;
                 prev_after_auto = pl.rp.after_auto;
                 prev_listed = listed;
                 prev_style = Some((pl.rp.style.clone(), ctxl));
@@ -1915,18 +1925,28 @@ fn layout_pass(
             // one long page
         } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
             // A page holds text running one way: a section turning the other way starts a page.
+            let s = &doc.settings;
+            let (filler, restart) = section_side(start, restart, pb.number, pb.pages.len(), s.even_odd_headers, s.mirror_margins);
+            // The blank page that puts the section on the right side ends the previous section.
+            if filler
+                && !web
+                && let Some((_, prev)) = si.checked_sub(1).and_then(|k| sections.get(k))
+            {
+                pb.sect = prev;
+                pb.sect_idx = si - 1;
+                let (ph, pf) = (linked(&sections, si - 1, |s| s.headers), linked(&sections, si - 1, |s| s.footers));
+                let top = body_top_for(&mut ctx, prev, ph.default);
+                pb.foot_top = foot_top_for(&mut ctx, prev, pf.default);
+                pb.new_page(block, top);
+                pb.sect = sect;
+                pb.sect_idx = si;
+            }
             if let Some(n) = restart {
                 pb.number = n.saturating_sub(1);
             }
             pb.foot_top = first_foot;
             pb.new_page(block, first_top);
             pb.foot_top = foot_top;
-            if !web && matches!(start, SectionStart::EvenPage | SectionStart::OddPage) {
-                let want_even = start == SectionStart::EvenPage;
-                if pb.number.is_multiple_of(2) != want_even {
-                    pb.new_page(block, body_top);
-                }
-            }
         } else {
             // Continuous: new column layout below the current text (its tallest column).
             pb.cols = sect.column_boxes();
@@ -2278,6 +2298,33 @@ fn item_bottom(y: f32, para: &ParaLayout, l0: usize, l1: usize) -> Option<f32> {
     Some(y + l.top + l.height - f.top)
 }
 
+/// Whether a section that starts on a new page needs a blank page first so it lands on the right
+/// side, and the page number it restarts at. `last` is the number of the page before it and
+/// `pages` how many pages there are so far.
+/// - An odd- or even-page break counts on from the previous section's numbers. A section that
+///   restarts its numbering gets no blank page unless the document prints both sides (different
+///   odd and even headers, or mirror margins); a restart at the wrong parity takes the next number.
+/// - With different odd and even headers, a next-page break that restarts the numbers at an odd
+///   (even) number starts on an odd (even) sheet.
+///
+/// (Word's output for docxide-pdf's fixtures: bush_fires_act_comparison has a blank page 2.)
+fn section_side(start: SectionStart, restart: Option<u32>, last: u32, pages: usize, even_odd: bool, mirror: bool) -> (bool, Option<u32>) {
+    match start {
+        SectionStart::OddPage | SectionStart::EvenPage => {
+            let want_odd = start == SectionStart::OddPage;
+            let continuing_odd = last.saturating_add(1) % 2 == 1;
+            let filler = pages > 0 && continuing_odd != want_odd && (restart.is_none() || even_odd || mirror);
+            let restart = restart.map(|n| if (n % 2 == 1) == want_odd { n } else { n.saturating_add(1) });
+            (filler, restart)
+        }
+        SectionStart::NextPage => {
+            let filler = even_odd && pages > 0 && restart.is_some_and(|n| (n % 2 == 1) != ((pages + 1) % 2 == 1));
+            (filler, restart)
+        }
+        SectionStart::Continuous | SectionStart::NextColumn => (false, restart),
+    }
+}
+
 /// Where body text starts: the top margin, or below the header if it's taller.
 fn body_top_for(ctx: &mut Ctx, sect: &SectionProps, header: Option<u32>) -> f32 {
     let Some(id) = header else { return sect.margin_top };
@@ -2468,7 +2515,12 @@ fn carried(rect: Rect, spin: Spin, centre: Point) -> Rect {
 }
 
 fn group_members(o: &InlineObject, rect: Rect) -> Vec<(Rect, &InlineObject)> {
-    o.group_rects(rect.x, rect.y, rect.w, rect.h).into_iter().map(|([x, y, w, h], c)| (Rect::new(x, y, w, h), c)).collect()
+    // Hidden members aren't placed (nor their text boxes laid out).
+    o.group_rects(rect.x, rect.y, rect.w, rect.h)
+        .into_iter()
+        .filter(|(_, c)| !c.frame().is_some_and(|(_, _, f)| f.hidden))
+        .map(|([x, y, w, h], c)| (Rect::new(x, y, w, h), c))
+        .collect()
 }
 
 /// Position the floating objects anchored in `p` for a paragraph whose text starts at `y0` in
@@ -2615,7 +2667,7 @@ fn para_notes(doc: &Document, p: &Paragraph, pl: &ParaLayout) -> Vec<(usize, u32
     if p.objects.iter().any(|o| !o.text_boxes().is_empty()) {
         for (ci, c) in pl.clusters.iter().enumerate() {
             if let para::ClKind::Object(oi) = c.kind
-                && let Some(o) = p.objects.get(oi)
+                && let Some(o) = p.objects.get(oi).filter(|o| !o.frame().is_some_and(|(_, _, f)| f.hidden))
             {
                 for id in o.text_boxes() {
                     notes.extend(doc.notes_in_text_box(id).into_iter().map(|n| (ci, n)));
@@ -2662,7 +2714,6 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
     if broke_before {
         pb.new_page(block, body_top);
     }
-    // Contextual spacing: no space between paragraphs of the same style when either asks for it.
     let mut before = pl.rp.space_before;
     let prev_para = pb.prev.clone();
     // At the top of a page, measured in Word for Windows: no space before after a paragraph that
@@ -2679,42 +2730,39 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
         // off the space before here (Word: 24 pt before after 10 pt after leaves 14 pt).
         before = (before - after.max(0.0)).max(0.0);
     }
-    let mut prev = pb.prev.take();
-    if let Some((style, ctxl, after, _, _)) = &mut prev
-        && *style == pl.rp.style
+    if let Some((style, ctxl, mut after, after_auto, listed)) = pb.prev.take()
         && !pb.at_top()
     {
-        if *ctxl {
-            pb.y -= *after;
-            *after = 0.0;
+        // Contextual spacing: no space between paragraphs of the same style when either asks for it.
+        if style == pl.rp.style {
+            if ctxl {
+                pb.y -= after;
+                after = 0.0;
+            }
+            if pl.rp.contextual_spacing {
+                before = 0.0;
+            }
         }
-        if pl.rp.contextual_spacing {
-            before = 0.0;
+        // Automatic spacing: none between two list items (as in an HTML list; measured in Word:
+        // any two items, of one list or two, at any level).
+        if listed && label.is_some() {
+            if after_auto {
+                pb.y -= after;
+                after = 0.0;
+            }
+            if pl.rp.before_auto {
+                before = 0.0;
+            }
+        }
+        // The space between two paragraphs is the larger of the first's space after and the
+        // second's space before, not their sum.
+        if before > 0.0 && after > 0.0 {
+            before = (before - after).max(0.0);
         }
     }
-    // Automatic spacing: none between two list items (as in an HTML list; measured in Word: any
-    // two items, of one list or two, at any level).
-    if let Some((_, _, after, after_auto, true)) = &mut prev
-        && label.is_some()
-        && !pb.at_top()
-    {
-        if *after_auto {
-            pb.y -= *after;
-            *after = 0.0;
-        }
-        if pl.rp.before_auto {
-            before = 0.0;
-        }
-    }
-    // Automatic spacing: none at the top of the document, and it collapses with the space after
-    // the paragraph above (the larger one counts).
+    // Automatic spacing: none at the top of the document.
     if pl.rp.before_auto && block == 0 {
         before = 0.0;
-    } else if let Some((_, _, after, after_auto, _)) = prev
-        && (pl.rp.before_auto || after_auto)
-        && !pb.at_top()
-    {
-        before = (before - after).max(0.0);
     }
     pb.y += before;
     let mut applied_before = before;
@@ -2737,6 +2785,8 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
         anchor_y = y0 - applied_before;
     }
     let mut n = pl.lines.len();
+    // Worked out only for a last line on a page with notes.
+    let mut after_on_page: Option<f32> = None;
     let mut l0 = 0;
     while l0 < n {
         // How many lines fit?
@@ -2775,6 +2825,17 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 - if pb.notes.is_empty() && !new_notes.is_empty() { pb.seps.sep_h(false) } else { 0.0 }
                 - extra;
             let bottom = pb.y + lead + (l.top + l.height - first.top);
+            // On a page with footnotes the paragraph's last line keeps its space after clear of
+            // the separator (Word): if the space doesn't fit, the line goes to the next page (and,
+            // with widow control, one more with it). Without notes the space after may run past
+            // the bottom margin as usual.
+            let has_notes = !pb.notes.is_empty() || !new_notes.is_empty() || !line_notes.is_empty();
+            let tail = if has_notes && l1 + 1 == n {
+                *after_on_page.get_or_insert_with(|| space_after_kept(ctx, block, &pl.rp, label.is_some()))
+            } else {
+                0.0
+            };
+            let over = bottom + tail > limit + 0.01;
             // Notes too long for the rest of the page continue on the next one: the line still
             // fits if the notes before its last one, and that one's first line, fit below it.
             // The notes then take the rest of the page.
@@ -2784,7 +2845,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                     let sep = pb.seps.sep_h(pb.notes.first().is_some_and(|n| n.cont));
                     pb.body_floor().max(bottom) + sep + before + last.first_piece() + pb.seps.notice_h() <= pb.orig_bottom + 0.01
                 });
-            if bottom > limit + 0.01 && l1 > l0 && !split {
+            if over && l1 > l0 && !split {
                 break;
             }
             // A line holding nothing but a page or column break stays at the bottom of the page
@@ -2794,7 +2855,7 @@ fn place_para_in_flow(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block:
                 && p.text
                     .get(l.start..l.stop)
                     .is_some_and(|t| t.chars().all(|c| matches!(c, wordcraft_doc::para::PAGE_BREAK | wordcraft_doc::para::COLUMN_BREAK)));
-            if bottom > limit + 0.01 && l1 == l0 && !pb.at_top() && !split && !only_break {
+            if over && l1 == l0 && !pb.at_top() && !split && !only_break {
                 break;
             }
             new_notes.extend(line_notes);
@@ -3021,6 +3082,28 @@ fn mirror_shift(rp: &wordcraft_doc::resolve::ResolvedPara, number: u32, web: boo
     }
     let (left, right) = rp.visual_indents();
     right - left
+}
+
+/// The space after body paragraph `block` (resolved as `rp`) that is really left below it: none
+/// when contextual spacing or automatic spacing between list items drops it before the next
+/// paragraph. Same tests as the spacing between paragraphs in `place_para_in_flow`: contextual
+/// spacing removes this paragraph's space after only when this one asks for it, and the next
+/// counts as a list item when it gets a label.
+fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::ResolvedPara, listed: bool) -> f32 {
+    let after = rp.space_after.max(0.0);
+    if after <= 0.0 {
+        return 0.0;
+    }
+    if let Some(Block::Para(next)) = ctx.doc.body.get(block + 1).map(|b| &**b) {
+        let nrp = ctx.doc.styles.resolve_para(&next.props);
+        if nrp.style == rp.style && rp.contextual_spacing {
+            return 0.0;
+        }
+        if listed && rp.after_auto && ctx.has_label(next) {
+            return 0.0;
+        }
+    }
+    after
 }
 
 /// Height of the first line of the block after `block` (for keep-with-next).

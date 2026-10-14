@@ -390,6 +390,23 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
     out
 }
 
+/// One object drawn alone, as its page draws it: the picture, shape or group `o` in `rect` (its
+/// unturned frame) and the text of the text box story `text_box` on `page`. A dragged object's
+/// preview, which mustn't show what was behind it (#1010).
+pub fn object_display(doc: &Document, page: &Page, o: &InlineObject, rect: Rect, text_box: Option<u32>, opts: &DisplayOptions) -> Vec<Draw> {
+    let mut out = Vec::new();
+    object_draws(o, rect, Spin::default(), 1.0, opts, &mut out);
+    let Some(id) = text_box else { return out };
+    for items in [&page.items, &page.header, &page.footer] {
+        let lines: Vec<&Placed> = items.iter().filter(|i| matches!(i, Placed::Lines { story: StoryRef::Part(s), .. } if *s == id)).collect();
+        match warped_boxes(doc, items).into_iter().find(|(w, ..)| *w == id) {
+            Some((_, rect, warp)) if !lines.is_empty() => warped_text(doc, &lines, rect, &warp, opts, 1.0, &mut out),
+            _ => lines.into_iter().for_each(|it| item(doc, it, opts, 1.0, &mut out)),
+        }
+    }
+    out
+}
+
 /// The text boxes among `items` whose text is warped (Text Effects › Transform, drawn bent): their
 /// story, frame and warp. Empty, without a walk of the document, when none is.
 fn warped_boxes(doc: &Document, items: &[Placed]) -> Vec<(u32, Rect, wordcraft_doc::wordart::TextWarp)> {
@@ -720,7 +737,13 @@ fn lines(
                         text.push_str(s);
                         shown = Some(r);
                     } else if let Some(p) = para {
-                        text.push_str(p.text.get(c.start..c.end).unwrap_or(""));
+                        let t = p.text.get(c.start..c.end).unwrap_or("");
+                        // Symbol-font characters (Wingdings…) read as the Unicode symbols drawn.
+                        if wordcraft_doc::symbol_fonts::is_symbol_font(&st.rc.font) {
+                            text.push_str(&wordcraft_doc::symbol_fonts::map_text(&st.rc.font, t));
+                        } else {
+                            text.push_str(t);
+                        }
                     }
                     let b = text.len();
                     let cg = pl.glyphs.get(c.g0 as usize..c.g1 as usize).unwrap_or(&[]);
@@ -1453,6 +1476,9 @@ fn object_draws(o: &InlineObject, rect: Rect, outer: Spin, alpha: f32, opts: &Di
         InlineObject::Group { .. } => {
             let mut members = Vec::new();
             for ([x, y, w, h], c) in o.group_rects(rect.x, rect.y, rect.w, rect.h) {
+                if c.frame().is_some_and(|(_, _, f)| f.hidden) {
+                    continue;
+                }
                 object_draws(c, Rect::new(x, y, w, h), own.within(outer), alpha, opts, &mut members);
             }
             match o.canvas_style() {
