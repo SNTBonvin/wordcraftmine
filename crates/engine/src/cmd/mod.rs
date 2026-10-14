@@ -271,6 +271,38 @@ fn insert_text(s: &mut Session, text: &str, enter: bool) -> Result<(), CmdError>
     if let Some(p) = controls::prepare_edit(s)? {
         props = p;
     }
+    // Typing with a shape selected goes into the shape (Word: a selected shape takes text),
+    // not into the body over the shape's character. Pictures, groups and charts keep the
+    // replace behaviour. Only when the selection spans exactly the shape's character.
+    {
+        let (a, b) = s.sel.ordered();
+        if a != b
+            && let Some((pos, obj)) = objects::selected(s)
+            && a.story == pos.story
+            && a.path == pos.path
+            && a.off == pos.off
+            && b.off == pos.off + wordcraft_doc::para::OBJ.len_utf8()
+            && let wordcraft_doc::para::InlineObject::Shape { kind, story, .. } = &obj
+            && !kind.is_open()
+        {
+            let id = match story {
+                Some(id) => *id,
+                None => {
+                    let id = s.doc.add_part(
+                        wordcraft_doc::PartKind::TextBox,
+                        vec![wordcraft_doc::para_block(wordcraft_doc::para::Paragraph::with_text("", Default::default()))],
+                    );
+                    objects::edit_obj(s, &pos, |o| {
+                        if let wordcraft_doc::para::InlineObject::Shape { story: st, .. } = o {
+                            *st = Some(id);
+                        }
+                    })?;
+                    id
+                }
+            };
+            s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Part(id)));
+        }
+    }
     delete_selection(s)?;
     // Typed text is new: never deleted, and not a formatting change of the text around it.
     props.fmt_change = None;

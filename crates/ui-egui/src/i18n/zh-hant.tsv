@@ -2076,3 +2076,7 @@
 	Start-up	啟動
 	Show the Start screen when WordCraft starts	啟動 WordCraft 時顯示開始畫面
 	On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document.	開：WordCraft 開啟時顯示「檔案 › 常用」，其中有空白文件、範本和最近使用的文件。關：直接開啟空白文件。
+	Adjust Shape	調整形狀
+	Draw Shape	繪製形狀
+	Edit Text	編輯文字
+	Shape	形狀

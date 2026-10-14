@@ -1553,6 +1553,60 @@ fn ink_and_freeforms_round_trip_as_custom_geometry() {
 
 /// Shape effects (#275): `a:effectLst` with an outer shadow, a glow and soft edges round-trips,
 /// and the effect extent leaves room for them.
+/// A rounded rectangle's adjustment rides along: written as `<a:gd name="adj" fmla="val
+/// 16667"/>` (Word's units: 16667/100000 of the shorter side) and read back to the same
+/// fraction; a shape without one writes an empty `avLst` as before.
+#[test]
+fn rounded_rectangle_adjustment_round_trips() {
+    use wordcraft_doc::connector::ShapeExtra;
+    let shape = InlineObject::Shape {
+        kind: ShapeKind::RoundedRectangle,
+        w: 100.0,
+        h: 50.0,
+        fill: Some(Rgb(0x15, 0x60, 0x82)),
+        stroke: None,
+        stroke_width: 0.0,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: ShapeExtra { adj: Some(0.16667), ..Default::default() },
+    };
+    let mut p = Paragraph::with_text("x", CharProps::default());
+    p.insert_object(1, shape, &CharProps::default()).unwrap();
+    let bytes = wordcraft_docx::write(&doc_with(vec![p])).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains(r#"<a:gd name="adj" fmla="val 16667"/>"#), "{xml}");
+    let r = wordcraft_docx::read(&bytes).expect("read");
+    match paras(&r)[0].objects.first() {
+        Some(InlineObject::Shape { extra, .. }) => assert!((extra.adj.unwrap_or(0.0) - 0.16667).abs() < 1e-5, "{extra:?}"),
+        o => panic!("{o:?}"),
+    }
+    // Without an adjustment, the `avLst` stays empty.
+    let shape = InlineObject::Shape {
+        kind: ShapeKind::RoundedRectangle,
+        w: 100.0,
+        h: 50.0,
+        fill: Some(Rgb(0x15, 0x60, 0x82)),
+        stroke: None,
+        stroke_width: 0.0,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let mut p = Paragraph::with_text("x", CharProps::default());
+    p.insert_object(1, shape, &CharProps::default()).unwrap();
+    let bytes = wordcraft_docx::write(&doc_with(vec![p])).expect("write");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains("<a:avLst/>"), "{xml}");
+}
+
 #[test]
 fn shape_effects_round_trip() {
     use wordcraft_doc::effects::{Glow, Shadow, ShapeEffects};
@@ -1926,7 +1980,7 @@ fn wrap_polygons_round_trip() {
     let got = paras(&r)[0];
     let floats: Vec<Float> = got.objects.iter().filter_map(|o| o.frame().map(|(_, _, f)| f.clone())).collect();
     assert_eq!(floats[0], edited);
-    let ellipse = WrapPolygon::from_unit(false, &shape_outline(ShapeKind::Ellipse, 80.0, 40.0).unwrap());
+    let ellipse = WrapPolygon::from_unit(false, &shape_outline(ShapeKind::Ellipse, 80.0, 40.0, wordcraft_doc::shape_geom::DEFAULT_ADJ).unwrap());
     assert_eq!(floats[1].wrap, Wrap::Through);
     assert_eq!(floats[1].wrap_polygon.as_deref(), ellipse.as_ref());
 }
@@ -2213,4 +2267,40 @@ fn replace_part(zip_bytes: &[u8], name: &str, data: &[u8]) -> Vec<u8> {
         }
     }
     out.finish().unwrap().into_inner()
+}
+
+/// NoSmoking round-trips as preset `noSmoking` with its adjustment (bar thickness) and
+/// No Fill: the bar is canonical geometry, not a gallery-only mark, so a file that
+/// stores it keeps the shape whole.
+#[test]
+fn no_smoking_shape_round_trip() {
+    use wordcraft_doc::connector::ShapeExtra;
+    let shape = InlineObject::Shape {
+        kind: ShapeKind::NoSmoking,
+        w: 72.0,
+        h: 72.0,
+        fill: None,
+        stroke: Some(Rgb(200, 0, 0)),
+        stroke_width: 1.5,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: ShapeExtra { adj: Some(0.25), ..Default::default() },
+    };
+    let mut p = Paragraph::with_text("x", CharProps::default());
+    p.insert_object(1, shape, &CharProps::default()).unwrap();
+    let r = rt(&doc_with(vec![p]));
+    let got = paras(&r);
+    assert_eq!(got.len(), 1);
+    match &got[0].objects[0] {
+        InlineObject::Shape { kind, fill, stroke, stroke_width, extra, .. } => {
+            assert_eq!(*kind, ShapeKind::NoSmoking, "preset noSmoking survives");
+            assert_eq!(*fill, None, "No Fill survives");
+            assert_eq!(*stroke, Some(Rgb(200, 0, 0)));
+            assert_eq!(*stroke_width, 1.5);
+            assert_eq!(extra.adj, Some(0.25), "bar-thickness adjustment survives");
+        }
+        o => panic!("{o:?}"),
+    }
 }

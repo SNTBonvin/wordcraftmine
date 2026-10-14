@@ -618,9 +618,10 @@ impl Writer<'_> {
                 }
                 // Tight and Through wrapping need a polygon: the shape's outline unless it has one.
                 if matches!(float.wrap, Wrap::Tight | Wrap::Through) && float.wrap_polygon.is_none() {
-                    float.wrap_polygon = wordcraft_doc::wrap::shape_outline(*kind, *sw, *sh)
-                        .and_then(|pts| wordcraft_doc::wrap::WrapPolygon::from_unit(false, &pts))
-                        .map(std::sync::Arc::new);
+                    float.wrap_polygon =
+                        wordcraft_doc::wrap::shape_outline(*kind, *sw, *sh, extra.adj.unwrap_or(wordcraft_doc::shape_geom::default_adj(*kind)))
+                            .and_then(|pts| wordcraft_doc::wrap::WrapPolygon::from_unit(false, &pts))
+                            .map(std::sync::Arc::new);
                 }
                 let float = &float;
                 self.drawing_open(w, float, *sw, *sh, &docpr, &name, o.alt_text());
@@ -941,25 +942,20 @@ impl Writer<'_> {
         }
         w.open("wps:spPr", &[]);
         xfrm(w, off, *sw, *sh, float.spin());
-        let prst = match kind {
-            ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => "rect",
-            ShapeKind::RoundedRectangle => "roundRect",
-            ShapeKind::Ellipse => "ellipse",
-            ShapeKind::Triangle => "triangle",
-            ShapeKind::Diamond => "diamond",
-            ShapeKind::Line => "line",
-            ShapeKind::StraightConnector => "straightConnector1",
-            ShapeKind::ElbowConnector => "bentConnector3",
-            ShapeKind::CurvedConnector => "curvedConnector3",
-            ShapeKind::Arrow => "rightArrow",
-            ShapeKind::Star => "star5",
-            ShapeKind::Heart => "heart",
-        };
+        let prst = kind.preset();
+        let prst = if prst.is_empty() { "rect" } else { prst };
         match geom {
             Some(f) => cust_geom(w, f, *sw, *sh),
             None => {
                 w.open("a:prstGeom", &[("prst", prst)]);
-                w.empty("a:avLst", &[]);
+                match extra.adj.filter(|v| v.is_finite()) {
+                    Some(adj) => {
+                        w.open("a:avLst", &[]);
+                        w.empty("a:gd", &[("name", "adj"), ("fmla", &format!("val {}", (adj.clamp(0.0, 1.0) * 100000.0).round() as i64))]);
+                        w.close("a:avLst");
+                    }
+                    None => w.empty("a:avLst", &[]),
+                }
                 w.close("a:prstGeom");
             }
         }

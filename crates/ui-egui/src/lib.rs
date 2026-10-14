@@ -67,6 +67,7 @@ pub mod printing;
 pub mod read_aloud;
 pub mod ribbon;
 pub mod scroll;
+pub mod shapes_gallery;
 pub mod system_clipboard;
 pub mod table_mouse;
 pub mod table_pen;
@@ -1517,7 +1518,9 @@ impl WordApp {
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
-            chrome::title_bar(self, ui);
+            // No separate title bar: the document name, search, account and window
+            // controls live in the ribbon's tab strip (see ribbon::show), so the
+            // document starts at the top of the window.
             ribbon::show(self, ui);
             chrome::status_bar(self, ui);
             panes::show(self, ui);

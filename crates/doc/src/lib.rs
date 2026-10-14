@@ -36,6 +36,7 @@ pub mod para;
 pub mod props;
 pub mod resolve;
 pub mod section;
+pub mod shape_geom;
 pub mod smart_art;
 pub mod styles;
 pub mod symbol_fonts;

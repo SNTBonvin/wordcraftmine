@@ -1250,6 +1250,18 @@ impl Reader<'_> {
             self.glued.extend(extra.start.iter().chain(extra.end.iter()).map(|e| e.id));
         }
         extra.warp = wsp.child("wps:bodyPr").and_then(|b| b.child("a:prstTxWarp")).and_then(text_warp);
+        // The shape's adjustment (`a:prstGeom/a:avLst/a:gd[@name="adj"]`, `fmla="val N"`, N in
+        // 1/100000): kept verbatim so it round-trips. The round- and snip-corner rectangles
+        // use it as the corner radius (a fraction of the shorter side); other shapes ignore it.
+        extra.adj = sppr
+            .and_then(|s| s.child("a:prstGeom"))
+            .and_then(|g| g.child("a:avLst"))
+            .and_then(|l| l.children("a:gd").find(|d| d.attr("name") == Some("adj")))
+            .and_then(|d| d.attr("fmla"))
+            .and_then(|f| f.strip_prefix("val "))
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v / 100000.0);
         // A freeform: its custom geometry (#743: in a group too).
         let freeform = sppr.and_then(|s| super::freeform::cust_geom(s, w, h)).map(|mut f| {
             f.alpha = super::freeform::line_alpha(ln);

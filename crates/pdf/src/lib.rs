@@ -371,18 +371,27 @@ fn grown(r: &Rect, g: f32, dx: f32, dy: f32) -> Rect {
 
 /// A shape's shadow and glow, behind it: bands of its silhouette (the same approximation of a
 /// blur as the raster renderer, see [`wordcraft_doc::effects::bands`]).
-fn shape_effects(s: &mut Surface, kind: ShapeKind, rect: &Rect, fx: &wordcraft_doc::effects::ShapeEffects, filled: bool, stroked: bool, sw: f32) {
+fn shape_effects(
+    s: &mut Surface,
+    kind: ShapeKind,
+    rect: &Rect,
+    adj: f32,
+    fx: &wordcraft_doc::effects::ShapeEffects,
+    filled: bool,
+    stroked: bool,
+    sw: f32,
+) {
     let sw = if sw.is_finite() { sw.clamp(0.25, 200.0) } else { 0.75 };
     let silhouette = |s: &mut Surface, c: Rgb, a: f32, g: f32, dx: f32, dy: f32| {
         if filled {
             let grow = g + if stroked { sw / 2.0 } else { 0.0 };
-            if let Some(p) = shape_path(kind, &grown(rect, grow, dx, dy)) {
+            if let Some(p) = shape_path(kind, &grown(rect, grow, dx, dy), adj) {
                 s.set_stroke(None);
                 s.set_fill(Some(fill(c, a)));
                 s.draw_path(&p);
             }
         } else if sw + 2.0 * g > 0.05
-            && let Some(p) = shape_path(kind, &grown(rect, 0.0, dx, dy))
+            && let Some(p) = shape_path(kind, &grown(rect, 0.0, dx, dy), adj)
         {
             s.set_fill(None);
             s.set_stroke(Some(Stroke { paint: rgb::Color::new(c.0, c.1, c.2).into(), width: sw + 2.0 * g, opacity: norm(a), ..Default::default() }));
@@ -404,8 +413,10 @@ fn shape_effects(s: &mut Surface, kind: ShapeKind, rect: &Rect, fx: &wordcraft_d
     s.set_stroke(None);
 }
 
-/// Outline of a basic shape in a rectangle (same geometry as the raster renderer).
-fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
+/// Outline of a basic shape in a rectangle (same geometry as the raster renderer). `adj` is
+/// the corner radius as a fraction of the shorter side, for the round/snip family
+/// (`DEFAULT_ADJ` when the shape stores none).
+fn shape_path(kind: ShapeKind, r: &Rect, adj: f32) -> Option<Path> {
     if !(ok(r.x) && ok(r.y) && ok(r.w) && ok(r.h)) || r.w <= 0.0 || r.h <= 0.0 {
         return None;
     }
@@ -435,7 +446,7 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
         // A freeform is drawn from its own paths; without them, its frame.
         ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => poly(&mut pb, &[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
         ShapeKind::RoundedRectangle => {
-            let rad = r.w.min(r.h) * 0.16;
+            let rad = r.w.min(r.h) * adj.clamp(0.0, 0.5);
             let k = rad * (1.0 - K);
             pb.move_to(x0 + rad, y0);
             pb.line_to(x1 - rad, y0);
@@ -494,6 +505,25 @@ fn shape_path(kind: ShapeKind, r: &Rect) -> Option<Path> {
             pb.cubic_to(cx + w * 0.1, y0 + h * 0.75, x1, y0 + h * 0.6, x1, y0 + h * 0.3);
             pb.cubic_to(x1, y0, cx, y0, cx, y0 + h * 0.3);
             pb.close();
+        }
+        // Everything else takes its outline from the shared geometry, as one path with a
+        // sub-path per outline piece (open pieces are left open, so they stroke only).
+        _ => {
+            if let Some(paths) = wordcraft_doc::shape_geom::shape_geom(kind, r.w, r.h, adj) {
+                for path in paths {
+                    for (i, (x, y)) in path.pts.iter().enumerate() {
+                        let pt = (x0 + x * r.w, y0 + y * r.h);
+                        if i == 0 {
+                            pb.move_to(pt.0, pt.1);
+                        } else {
+                            pb.line_to(pt.0, pt.1);
+                        }
+                    }
+                    if path.closed {
+                        pb.close();
+                    }
+                }
+            }
         }
     }
     pb.finish()
@@ -839,19 +869,20 @@ impl Exporter<'_> {
                 s.draw_path(&p);
                 s.set_stroke(None);
             }
-            Draw::Shape { rect, kind, fill: f, stroke, stroke_width, effects } => {
-                let Some(p) = shape_path(*kind, rect) else { return };
-                let can_fill = *kind != ShapeKind::Line;
+            Draw::Shape { rect, kind, fill: f, stroke, stroke_width, effects, adj } => {
+                let Some(p) = shape_path(*kind, rect, *adj) else { return };
+                // Open shapes (lines, connectors, brackets, braces, arcs) are stroked, never filled.
+                let can_fill = !kind.is_open();
                 let fx = effects.sanitized();
                 if !fx.is_empty() && (f.is_some() && can_fill || stroke.is_some()) {
-                    shape_effects(s, *kind, rect, &fx, f.is_some() && can_fill, stroke.is_some(), *stroke_width);
+                    shape_effects(s, *kind, rect, *adj, &fx, f.is_some() && can_fill, stroke.is_some(), *stroke_width);
                 }
                 // Soft edges: the fill fades out toward the outline (which fades with it).
                 if let (Some(rad), Some(c), true) = (fx.soft_edge, f, can_fill) {
                     let rad = rad.min(rect.w.min(rect.h) / 2.0).max(0.0);
                     s.set_stroke(None);
                     for (g, a) in wordcraft_doc::effects::bands(-rad, 0.0, 1.0) {
-                        if let Some(p) = shape_path(*kind, &grown(rect, g, 0.0, 0.0)) {
+                        if let Some(p) = shape_path(*kind, &grown(rect, g, 0.0, 0.0), *adj) {
                             s.set_fill(Some(fill(*c, a)));
                             s.draw_path(&p);
                         }

@@ -11,7 +11,7 @@
 //! glues it to the nearest connection site there (`shape.connect`), elsewhere leaves it free.
 
 use egui::{Color32, Painter, Pos2, Rect, Ui};
-use serde_json::json;
+use serde_json::{Value, json};
 use wordcraft_doc::para::{InlineObject, OBJ};
 use wordcraft_doc::{PartKind, Pos, StoryRef};
 use wordcraft_layout::DocLayout;
@@ -38,6 +38,17 @@ pub struct ObjectDrag {
     picture: bool,
     /// Dragging a connector's end (false: its start, true: its end) to this page point.
     end: Option<(bool, (f32, f32))>,
+    /// Dragging the adjustment handle: the live corner radius (a fraction of the shorter
+    /// side) under the pointer.
+    adjust: Option<f32>,
+    /// The drag has live-committed at least once: the object already sits at the drag
+    /// position in the document, so the layout (and text wrapping) follows it live and
+    /// the paint must not draw the object's pixels a second time. The whole drag is
+    /// one undo step (every commit after the first joins it).
+    live: bool,
+    /// The (page, rect) of the last live commit: a frame whose rect hasn't moved past
+    /// this commits nothing.
+    committed: Option<(usize, wordcraft_geom::Rect)>,
 }
 
 /// How near (screen points) a press must be to a connector's end to grab it.
@@ -59,7 +70,17 @@ fn point_on_screen(pages: &[Rect], scale: f32, page: usize, (x, y): (f32, f32)) 
     pages.get(page).map(|p| egui::pos2(p.min.x + x * scale, p.min.y + y * scale))
 }
 
-/// The selected connector's end under `at` (screen): which (false: start), and the connector.
+/// The adjustment handle's screen position for a selected rounded rectangle, if `o` is one:
+/// on the top edge, the corner radius from the left corner.
+fn adjust_handle_pos(app: &WordApp, o: &ObjectHit, f: Rect) -> Option<Pos2> {
+    let pos = o.pos();
+    let InlineObject::Shape { kind, extra, .. } = app.session.doc.para_at(&pos)?.object_at(pos.off)? else { return None };
+    if *kind != wordcraft_doc::para::ShapeKind::RoundedRectangle {
+        return None;
+    }
+    let adj = extra.adj.unwrap_or(wordcraft_doc::shape_geom::DEFAULT_ADJ).clamp(0.0, 0.5);
+    Some(frame::adjust_handle(f, o.spin.deg, adj * f.width().min(f.height())))
+}
 fn connector_end_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Pos2) -> Option<(ObjectHit, bool)> {
     let (o, a, b) = connector_ends(app, layout)?;
     let near = |p: (f32, f32)| point_on_screen(pages, scale, o.page, p).is_some_and(|s| s.distance(at) <= END_GRAB);
@@ -136,7 +157,12 @@ fn screen(pages: &[Rect], scale: f32, page: usize, r: wordcraft_geom::Rect) -> O
 pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect], layout: &DocLayout, scale: f32, at: Pos2) -> bool {
     if let Some(mut d) = app.canvas.obj_drag.take() {
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            return true; // cancelled: dropped without a change
+            // Cancelled: a live-committed drag already moved the object in the document,
+            // so undo the drag's single undo step to put it back.
+            if d.live {
+                let _ = app.run("edit.undo", json!({}));
+            }
+            return true;
         }
         if let Some((which, _)) = d.end {
             if ui.input(|i| i.pointer.primary_down()) {
@@ -157,9 +183,22 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             let shift = ui.input(|i| i.modifiers.shift);
             if d.drag.grab == Grab::Rotate {
                 d.drag.turn_to(at, pages, scale, shift);
+            } else if d.drag.grab == Grab::Adjust {
+                // The adjustment handle slides along the top edge: its distance from the
+                // left corner over the shorter side is the corner radius.
+                if let Some(f) = screen(pages, scale, d.object.page, d.object.rect) {
+                    let side = d.object.rect.w.min(d.object.rect.h) * scale;
+                    if side > 0.0 {
+                        d.adjust = Some((frame::adjust_along(f, d.object.spin.deg, at) / side).clamp(0.0, 0.5));
+                        d.drag.moved = true;
+                    }
+                }
             } else {
                 // Pictures keep their proportions from a corner unless Shift; shapes only with Shift.
                 d.drag.update(at, pages, scale, d.min, d.picture != shift);
+                // Live: the object follows the pointer in the document, so the text
+                // re-wraps around its current position every frame.
+                live_commit(app, &mut d);
             }
             app.canvas.obj_drag = Some(d);
         } else {
@@ -179,7 +218,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
     // A selected connector's end: drag it to glue it.
     if pressed && let Some((object, which)) = connector_end_at(app, layout, pages, scale, at) {
         let drag = Drag::new(Grab::Move, object.page, object.rect, 0.0, at);
-        app.canvas.obj_drag = Some(ObjectDrag { drag, object, min: 0.0, picture: false, end: Some((which, (0.0, 0.0))) });
+        app.canvas.obj_drag =
+            Some(ObjectDrag { drag, object, min: 0.0, picture: false, end: Some((which, (0.0, 0.0))), adjust: None, live: false, committed: None });
         return true;
     }
     let Some((object, grab)) = grab_at(app, layout, pages, scale, at) else { return false };
@@ -199,8 +239,16 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
         };
         // Objects in table cells can be selected and resized, not moved; charts neither.
         if !fixed(app, &object) && (grab != Grab::Move || movable(app, &object)) {
-            app.canvas.obj_drag =
-                Some(ObjectDrag { drag: Drag::new(grab, object.page, object.rect, object.spin.deg, at), object, min, picture, end: None });
+            app.canvas.obj_drag = Some(ObjectDrag {
+                drag: Drag::new(grab, object.page, object.rect, object.spin.deg, at),
+                object,
+                min,
+                picture,
+                end: None,
+                adjust: None,
+                live: false,
+                committed: None,
+            });
         }
     }
     true
@@ -249,6 +297,12 @@ fn grab_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Po
     let story = active_story(app, layout);
     let handle = active(app, layout).filter(|(o, _)| o.story == story && !fixed(app, o)).and_then(|(o, _)| {
         let f = screen(pages, scale, o.page, o.rect)?;
+        // The yellow adjustment handle of a rounded rectangle, before the other handles.
+        if let Some(h) = adjust_handle_pos(app, &o, f)
+            && h.distance(at) <= 8.0
+        {
+            return Some((o, Grab::Adjust));
+        }
         if frame::rotate_handle_at(f, o.spin.deg, at) {
             return Some((o, Grab::Rotate));
         }
@@ -269,24 +323,58 @@ fn movable(app: &WordApp, o: &ObjectHit) -> bool {
 }
 
 /// Commit a finished drag as one command.
+/// The `arrange.bounds` / `arrange.rotation` / `shape.adjust` params for the drag's
+/// current rect: the same values the drop commits, so a live commit and the drop agree.
+fn drag_params(app: &WordApp, d: &ObjectDrag) -> Option<(String, Value)> {
+    let r = d.drag.rect;
+    match d.drag.grab {
+        Grab::Rotate => Some(("arrange.rotation".into(), json!({"degrees": d.drag.deg}))),
+        Grab::Adjust => d.adjust.map(|adj| ("shape.adjust".into(), json!({"adj": adj}))),
+        Grab::Move => Some(("arrange.bounds".into(), json!({"page": d.drag.to_page, "x": r.x, "y": r.y, "keepWrap": true}))),
+        // An inline object stays in the text; a floating one keeps its far edges put.
+        Grab::Resize(_) if d.object.floating() && movable(app, &d.object) => {
+            Some(("arrange.bounds".into(), json!({"width": r.w, "height": r.h, "page": d.drag.page, "x": r.x, "y": r.y})))
+        }
+        Grab::Resize(_) => Some(("arrange.bounds".into(), json!({"width": r.w, "height": r.h}))),
+    }
+}
+
+/// Commit the drag's current rect to the document, so the layout — and the text wrapping
+/// around the object — follows the pointer live. Move and Resize only: Rotate and
+/// Adjust keep their frame/outline previews (they don't move the object's anchor).
+/// Commits past the first join the drag's single undo step; a frame whose rect hasn't
+/// moved past the last commit commits nothing.
+fn live_commit(app: &mut WordApp, d: &mut ObjectDrag) {
+    if !d.drag.moved || !matches!(d.drag.grab, Grab::Move | Grab::Resize(_)) {
+        return;
+    }
+    let key = (d.drag.to_page, d.drag.rect);
+    let same = d.committed.is_some_and(|(p, r)| {
+        p == key.0 && (r.x - key.1.x).abs() < 0.5 && (r.y - key.1.y).abs() < 0.5 && (r.w - key.1.w).abs() < 0.5 && (r.h - key.1.h).abs() < 0.5
+    });
+    if same {
+        return;
+    }
+    let Some((id, params)) = drag_params(app, d) else { return };
+    if d.live {
+        app.session.join_next_undo();
+    }
+    if app.run(&id, params).is_ok() {
+        d.live = true;
+        d.committed = Some(key);
+    }
+}
+
 fn drop(app: &mut WordApp, d: &ObjectDrag) {
     if !d.drag.moved {
         return;
     }
-    let r = d.drag.rect;
-    let params = match d.drag.grab {
-        Grab::Rotate => {
-            let _ = app.run("arrange.rotation", json!({"degrees": d.drag.deg}));
-            return;
-        }
-        Grab::Move => json!({"page": d.drag.to_page, "x": r.x, "y": r.y}),
-        // An inline object stays in the text; a floating one keeps its far edges put.
-        Grab::Resize(_) if d.object.floating() && movable(app, &d.object) => {
-            json!({"width": r.w, "height": r.h, "page": d.drag.page, "x": r.x, "y": r.y})
-        }
-        Grab::Resize(_) => json!({"width": r.w, "height": r.h}),
-    };
-    let _ = app.run("arrange.bounds", params);
+    // Already live-committed at this rect: the document already holds the final position.
+    if d.live {
+        return;
+    }
+    let Some((id, params)) = drag_params(app, d) else { return };
+    let _ = app.run(&id, params);
 }
 
 /// Draw the frame of the active object, or the drag preview.
@@ -312,6 +400,24 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
         let Some(to) = screen(pages, scale, d.drag.to_page, d.drag.rect) else { return };
         if d.drag.grab == Grab::Rotate {
             frame::paint_turning(painter, t, to, d.drag.deg);
+            return;
+        }
+        if d.drag.grab == Grab::Adjust {
+            // The live preview: the shape's outline with the radius under the pointer, plus
+            // the frame and the handle at its new place.
+            if let Some(adj) = d.adjust {
+                crate::shapes_gallery::shape_icon_adj(painter, to, wordcraft_doc::para::ShapeKind::RoundedRectangle, adj, t.input, t.accent);
+                let handle = frame::adjust_handle(to, d.object.spin.deg, adj * to.width().min(to.height()));
+                painter.circle(handle, 4.5, Color32::from_rgb(0xff, 0xd4, 0x00), egui::Stroke::new(1.0, t.accent));
+            }
+            frame::paint(painter, t, to, d.drag.deg, false, false, false);
+            return;
+        }
+        if d.live {
+            // Live-committed: the object already sits at the drag position in the
+            // freshly laid-out page, so only the frame is drawn — drawing its pixels
+            // again would double it.
+            frame::paint(painter, t, to, d.drag.deg, false, false, false);
             return;
         }
         // The object's own pixels, from its page's cached texture: moved, or scaled for an
@@ -349,6 +455,13 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
         // not charts): else a plain frame.
         let handles = selectable_story(app, o.story) && !fixed(app, &o);
         frame::paint(painter, t, f, o.spin.deg, editing, handles, handles);
+        // A rounded rectangle's yellow adjustment handle, on the top edge at the corner radius.
+        if handles
+            && !editing
+            && let Some(h) = adjust_handle_pos(app, &o, f)
+        {
+            painter.circle(h, 4.5, Color32::from_rgb(0xff, 0xd4, 0x00), egui::Stroke::new(1.0, t.accent));
+        }
     }
 }
 
@@ -422,13 +535,17 @@ pub fn key(app: &mut WordApp, key: egui::Key, m: egui::Modifiers) -> bool {
     app.run("arrange.nudge", json!({"dx": dx, "dy": dy})).is_ok()
 }
 
-/// With a text box selected, put the caret at the end of its text (typing goes there).
+/// With a text box selected, put the caret at the end of its text (typing goes there); with
+/// a shape selected, give it a story when it has none and put the caret in it, so typing
+/// goes into the shape instead of deleting it.
 pub fn enter_text_box(app: &mut WordApp) -> bool {
-    let Some(id) = selected_text_box(app) else { return false };
-    // A box linked from another shows (and edits) the first box's story.
-    let id = app.session.doc.text_box_chain(id).and_then(|c| c.first().copied()).unwrap_or(id);
-    let end = app.session.doc.end_of(StoryRef::Part(id));
-    app.run("caret.set", json!({"pos": end})).is_ok()
+    if let Some(id) = selected_text_box(app) {
+        // A box linked from another shows (and edits) the first box's story.
+        let id = app.session.doc.text_box_chain(id).and_then(|c| c.first().copied()).unwrap_or(id);
+        let end = app.session.doc.end_of(StoryRef::Part(id));
+        return app.run("caret.set", json!({"pos": end})).is_ok();
+    }
+    app.run("shape.editText", json!({})).is_ok()
 }
 
 #[cfg(test)]

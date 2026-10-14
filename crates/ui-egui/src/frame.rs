@@ -77,6 +77,34 @@ pub fn rotate_handle_at(f: egui::Rect, deg: f32, p: Pos2) -> bool {
     rotate_handle(f, deg).distance(p) <= GRAB_R
 }
 
+/// Where the adjustment handle of frame `f` turned `deg` is: on the top edge, `radius`
+/// (screen points) from the left corner.
+pub fn adjust_handle(f: egui::Rect, deg: f32, radius: f32) -> Pos2 {
+    let c = f.center();
+    let tl = turn(f.left_top(), c, deg);
+    let tr = turn(f.right_top(), c, deg);
+    let d = tr - tl;
+    let len = d.length();
+    if len <= 0.0 {
+        return tl;
+    }
+    tl + d / len * radius
+}
+
+/// How far along the top edge of frame `f` turned `deg` screen point `p` is (screen points
+/// from the left corner), for the adjustment handle.
+pub fn adjust_along(f: egui::Rect, deg: f32, p: Pos2) -> f32 {
+    let c = f.center();
+    let tl = turn(f.left_top(), c, deg);
+    let tr = turn(f.right_top(), c, deg);
+    let d = tr - tl;
+    let len = d.length();
+    if len <= 0.0 {
+        return 0.0;
+    }
+    (p - tl).dot(d / len)
+}
+
 /// What a press grabbed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grab {
@@ -84,6 +112,8 @@ pub enum Grab {
     Resize(Handle),
     /// The rotation handle.
     Rotate,
+    /// A shape's yellow adjustment handle (a rounded rectangle's corner radius).
+    Adjust,
 }
 
 impl Grab {
@@ -92,6 +122,7 @@ impl Grab {
             Grab::Move => CursorIcon::Move,
             Grab::Resize(h) => h.cursor(),
             Grab::Rotate => CursorIcon::Crosshair,
+            Grab::Adjust => CursorIcon::Crosshair,
         }
     }
 }
@@ -234,6 +265,9 @@ impl Drag {
                 self.rect = resized_turned(self.start, self.deg, h, d.x, d.y, min, keep_aspect);
             }
             Grab::Rotate => {}
+            // The adjustment handle never goes through a frame drag: its caller tracks the
+            // radius itself.
+            Grab::Adjust => {}
         }
     }
 }

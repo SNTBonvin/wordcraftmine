@@ -4,9 +4,9 @@
 //! caret). Picture adjustments re-encode the bitmap (originals are kept for Reset Picture).
 
 use serde_json::{Value, json};
-use wordcraft_doc::para::{Float, InlineObject, Wrap, WrapText};
+use wordcraft_doc::para::{Float, InlineObject, Paragraph, Wrap, WrapText};
 use wordcraft_doc::props::{Rgb, TextVert, VAlign};
-use wordcraft_doc::{Pos, StoryRef, TextBody};
+use wordcraft_doc::{PartKind, Pos, StoryRef, TextBody, para_block};
 use wordcraft_geom::Spin;
 
 use super::sel_result;
@@ -315,7 +315,7 @@ pub fn specs() -> Vec<CommandSpec> {
         .when(has_movable),
         CommandSpec::new("arrange.selectionPane", "Selection Pane", "Layout › Arrange", objects_list).pure(),
         CommandSpec::new("arrange.bounds", "Move or Resize", "Layout › Arrange", bounds)
-            .params(r#"{"width"?: pt, "height"?: pt, "x"?: pt, "y"?: pt, "page"?: n}  (x/y: the top-left on page `page` (0-based, default its page); moving an inline object floats it)"#)
+            .params(r#"{"width"?: pt, "height"?: pt, "x"?: pt, "y"?: pt, "page"?: n, "keepWrap"?: bool}  (x/y: the top-left on page `page` (0-based, default its page); keepWrap: a manual drag keeps the wrap mode — an inline object moves to the paragraph under the drop point and stays inline; without it, moving an inline object floats it with Square wrapping)"#)
             .when(has_movable),
         CommandSpec::new("arrange.nudge", "Nudge", "Layout › Arrange", |s, v| {
             let d = |k| p::f32(v, k).unwrap_or(0.0).clamp(-MAX_OFFSET, MAX_OFFSET);
@@ -391,6 +391,26 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"kind": string}"#)
         .when(has_shape),
+        CommandSpec::new("shape.adjust", "Adjust Shape", "Shape Format › Insert Shapes", |s, v| {
+            let adj = p::f32(v, "adj").ok_or_else(|| CmdError::Params("`adj` (0–0.5) is required".into()))?.clamp(0.0, 0.5);
+            let (_, obj) = selected(s).ok_or_else(|| CmdError::Disabled("no picture or shape selected".into()))?;
+            let InlineObject::Shape { kind, .. } = obj else {
+                return Err(CmdError::Failed("a picture has no corner radius to adjust".into()));
+            };
+            if !kind.uses_adj() {
+                return Err(CmdError::Failed(format!("{} has no corner radius to adjust", kind.display_name())));
+            }
+            with_obj(s, |o| {
+                if let InlineObject::Shape { extra, .. } = o {
+                    extra.adj = Some(adj);
+                }
+            })
+        })
+        .params(r#"{"adj": 0–0.5}  (the corner radius of a rounded or snipped rectangle, as a fraction of the shorter side; the yellow adjustment handle drags it)"#)
+        .when(has_shape),
+        CommandSpec::new("shape.editText", "Edit Text", "Shape Format › Text", edit_text)
+            .params(r#"{}  (give the selected shape a text story when it has none, and put the caret in it, so typing goes into the shape)"#)
+            .when(has_shape),
         CommandSpec::new("shape.textDirection", "Text Direction", "Shape Format › Text", |s, v| {
             let dir = p::str(v, "dir").unwrap_or("horz");
             let vert = match dir {
@@ -674,7 +694,7 @@ fn bounds(s: &mut Session, v: &Value) -> CmdResult {
         with_obj(s, |o| o.set_size(w, h))?;
     }
     let pos = match to {
-        Some((x, y)) => move_object(s, pos, p::u64(v, "page"), x, y, (w, h))?,
+        Some((x, y)) => move_object(s, pos, p::u64(v, "page"), x, y, (w, h), p::bool(v, "keepWrap").unwrap_or(false))?,
         None => pos,
     };
     s.sel = Selection { anchor: pos.clone(), focus: Pos { off: pos.off + wordcraft_doc::para::OBJ.len_utf8(), ..pos.clone() } };
@@ -683,12 +703,24 @@ fn bounds(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 /// Put the object at `pos` with its top-left at (x, y) on `page` (default: where it is), as a
-/// drag does in Word: it floats (an inline object gets Square wrapping) and anchors to the
-/// paragraph under its top edge, positioned relative to that paragraph's column and top. So the
-/// text it lands on flows around it, and it moves with that text. On a page where no paragraph
-/// starts, it anchors to the nearest line and is positioned on the page. Returns the object's
-/// position afterwards.
-fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w, h): (f32, f32)) -> Result<Pos, CmdError> {
+/// drag does: it anchors to the paragraph under its top edge, positioned relative to that
+/// paragraph's column and top. So the text it lands on flows around it, and it moves with that
+/// text. On a page where no paragraph starts, it anchors to the nearest line and is positioned
+/// on the page. Returns the object's position afterwards.
+///
+/// With `keep_wrap` (a manual drag), the move keeps the wrap mode: an inline object moves its
+/// character to the anchor paragraph and stays inline, so dragging never flips it to Square
+/// wrapping. Without it (a scripted move, grouping, ungrouping), an inline object floats with
+/// Square wrapping, as before.
+pub(crate) fn move_object(
+    s: &mut Session,
+    pos: Pos,
+    page: Option<u64>,
+    x: f32,
+    y: f32,
+    (w, h): (f32, f32),
+    keep_wrap: bool,
+) -> Result<Pos, CmdError> {
     use wordcraft_doc::para::Anchor;
     if pos.path.depth() > 0 || !movable_story(s, pos.story) {
         return Err(CmdError::Disabled("only objects in the body text, headers and footers can be moved".into()));
@@ -721,6 +753,11 @@ fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w,
         at
     };
     let (h_rel, v_rel) = if on_page { (Anchor::Page, Anchor::Page) } else { (Anchor::Column, Anchor::Paragraph) };
+    // A drag keeps the wrap mode: an inline object stays inline (its character already moved
+    // to the anchor paragraph above), so a manual move never flips it to Square wrapping.
+    if keep_wrap && s.doc.para_at(&at).and_then(|p| p.object_at(at.off)).and_then(|o| o.frame()).is_some_and(|(_, _, f)| f.wrap == Wrap::Inline) {
+        return Ok(at);
+    }
     edit_float(s, &at, |f| {
         if f.wrap == Wrap::Inline {
             f.wrap = Wrap::Square;
@@ -861,8 +898,34 @@ fn with_obj(s: &mut Session, f: impl Fn(&mut InlineObject)) -> CmdResult {
     Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
 }
 
+/// `shape.editText`: give the selected shape a text story (creating an empty one when it has
+/// none) and put the caret at the end of its text, so typing goes into the shape (Word: typing
+/// with a shape selected puts text in the shape). Lines, connectors, brackets, braces and arcs
+/// can't hold text.
+fn edit_text(s: &mut Session, _: &Value) -> CmdResult {
+    let (pos, obj) = selected(s).ok_or_else(|| CmdError::Disabled("no shape selected".into()))?;
+    let story = match &obj {
+        InlineObject::Shape { kind, story, .. } if !kind.is_open() => *story,
+        _ => return Err(CmdError::Disabled("that shape can't hold text".into())),
+    };
+    let id = match story {
+        Some(id) => id,
+        None => {
+            let id = s.doc.add_part(PartKind::TextBox, vec![para_block(Paragraph::with_text("", Default::default()))]);
+            edit_obj(s, &pos, |o| {
+                if let InlineObject::Shape { story: st, .. } = o {
+                    *st = Some(id);
+                }
+            })?;
+            id
+        }
+    };
+    s.sel = Selection::caret(s.doc.end_of(StoryRef::Part(id)));
+    sel_result(s)
+}
+
 /// Change the object at `pos`; returns it afterwards.
-fn edit_obj(s: &mut Session, pos: &Pos, f: impl Fn(&mut InlineObject)) -> Result<InlineObject, CmdError> {
+pub(crate) fn edit_obj(s: &mut Session, pos: &Pos, f: impl Fn(&mut InlineObject)) -> Result<InlineObject, CmdError> {
     let para = s.doc.para_mut(pos.story, &pos.path)?;
     let o = para.object_at_mut(pos.off).ok_or_else(|| CmdError::Failed("object vanished".into()))?;
     f(o);
@@ -871,7 +934,7 @@ fn edit_obj(s: &mut Session, pos: &Pos, f: impl Fn(&mut InlineObject)) -> Result
     Ok(o)
 }
 
-fn edit_float(s: &mut Session, pos: &Pos, f: impl Fn(&mut Float)) -> Result<InlineObject, CmdError> {
+pub(crate) fn edit_float(s: &mut Session, pos: &Pos, f: impl Fn(&mut Float)) -> Result<InlineObject, CmdError> {
     edit_obj(s, pos, |o| {
         if let Some(float) = o.float_mut() {
             f(float);
@@ -1235,7 +1298,7 @@ fn group(s: &mut Session, _: &Value) -> CmdResult {
     let at = s.doc.clamp(&first);
     s.doc.insert_object(&at, grouped, &wordcraft_doc::CharProps::default())?;
     s.touch();
-    let pos = move_object(s, at, Some(page as u64), x0, y0, (w, h))?;
+    let pos = move_object(s, at, Some(page as u64), x0, y0, (w, h), false)?;
     s.also_selected.clear();
     s.sel = Selection { anchor: pos.clone(), focus: Pos { off: pos.off + len, ..pos.clone() } };
     let o = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned();
@@ -1254,7 +1317,7 @@ fn ungroup(s: &mut Session, _: &Value) -> CmdResult {
             return Err(CmdError::Disabled("only groups in the body text, headers and footers can be ungrouped in line with text".into()));
         }
         let hit = s.layout().object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the object isn't laid out".into()))?;
-        move_object(s, pos, Some(hit.page as u64), hit.rect.x, hit.rect.y, (*w, *h))?
+        move_object(s, pos, Some(hit.page as u64), hit.rect.x, hit.rect.y, (*w, *h), false)?
     } else {
         unalign(s)?;
         pos
@@ -1388,20 +1451,23 @@ mod tests {
         s.run("arrange.bounds", &json!({"width": 160, "height": 90})).unwrap();
         let o = object_area(&mut s);
         assert_eq!((o.rect.w, o.rect.h, o.wrap), (160.0, 90.0, Wrap::Inline), "{insert}");
-        // Drag the body: it floats with Square wrap where it was dropped, still selected.
-        let r = s.run("arrange.bounds", &json!({"page": 0, "x": 250, "y": 300})).unwrap();
-        assert_eq!(r["object"]["float"]["wrap"], "square", "{insert}");
+        // Drag the body: a manual drag keeps its wrap (inline) and moves it to the paragraph
+        // under the drop point, still selected; the text around it is untouched.
+        let r = s.run("arrange.bounds", &json!({"page": 0, "x": 250, "y": 300, "keepWrap": true})).unwrap();
+        assert_eq!(r["object"]["float"]["wrap"], "inline", "{insert}");
         let o = object_area(&mut s);
-        assert_eq!((o.page, o.rect.x, o.rect.y, o.rect.w, o.rect.h), (0, 250.0, 300.0, 160.0, 90.0), "{insert}");
+        assert_eq!(o.wrap, Wrap::Inline, "{insert}");
         assert!(selected(&s).is_some());
-        // Arrow keys nudge it once it floats.
+        // Float it explicitly, then arrow keys nudge it by the nudge.
+        s.run("arrange.wrap", &json!({"wrap": "square"})).unwrap();
+        let before = object_area(&mut s).rect;
         s.run("arrange.nudge", &json!({"dx": 6, "dy": -2})).unwrap();
         let n = object_area(&mut s).rect;
-        assert!((n.x - 256.0).abs() < 0.01 && (n.y - 298.0).abs() < 0.01, "{insert}: {n:?}");
+        assert!((n.x - (before.x + 6.0)).abs() < 0.01 && (n.y - (before.y - 2.0)).abs() < 0.01, "{insert}: {n:?} vs {before:?}");
         // The text around it is untouched, and each change is one undo step.
         assert_eq!(s.doc.plain_text(StoryRef::Body).replace(wordcraft_doc::para::OBJ, ""), "Some text  more text");
         s.run("edit.undo", &json!({})).unwrap();
-        assert_eq!((object_area(&mut s).rect.x, object_area(&mut s).rect.y), (250.0, 300.0), "{insert}");
+        assert_eq!((object_area(&mut s).rect.x, object_area(&mut s).rect.y), (before.x, before.y), "{insert}");
     }
 
     #[test]
@@ -1415,6 +1481,39 @@ mod tests {
     fn pictures_can_be_clicked_resized_and_dragged() {
         let data = super::super::insert::base64_encode(&png(20, 10));
         click_resize_and_drag("insert.picture", json!({"data": data, "width": 100}));
+    }
+
+    /// Dragging an inline picture to another paragraph moves its character there and keeps it
+    /// inline: a manual move never changes the wrap mode.
+    #[test]
+    fn dragging_an_inline_picture_keeps_it_inline_in_the_target_paragraph() {
+        use wordcraft_layout::Placed;
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("text.insert", &json!({"text": "First"})).unwrap();
+        s.run("text.newParagraph", &json!({})).unwrap();
+        s.run("text.insert", &json!({"text": "Second"})).unwrap();
+        s.run("text.newParagraph", &json!({})).unwrap();
+        s.run("text.insert", &json!({"text": "Third"})).unwrap();
+        s.sel = Selection::caret(s.doc.start_of(StoryRef::Body));
+        let data = super::super::insert::base64_encode(&png(20, 10));
+        s.run("insert.picture", &json!({"data": data, "width": 100})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.frame().unwrap().2.wrap, Wrap::Inline);
+        // The second paragraph's first line, from the layout: the drop target.
+        let target_y = s.layout().pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Placed::Lines { path, y, .. } if path.last() == 1 => Some(*y),
+                _ => None,
+            })
+            .next()
+            .unwrap();
+        let r = s.run("arrange.bounds", &json!({"page": 0, "x": 100, "y": target_y + 2.0, "keepWrap": true})).unwrap();
+        assert_eq!(r["object"]["float"]["wrap"], "inline");
+        let (pos, obj) = selected(&s).unwrap();
+        assert_eq!(obj.frame().unwrap().2.wrap, Wrap::Inline);
+        assert_eq!(pos.path.last(), 1, "the picture moved to the second paragraph");
+        assert_eq!(s.doc.plain_text(StoryRef::Body).replace(wordcraft_doc::para::OBJ, ""), "First\nSecond\nThird");
     }
 
     #[test]
@@ -1527,6 +1626,34 @@ mod tests {
 
     fn near(a: [f32; 4], b: [f32; 4]) -> bool {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.5)
+    }
+
+    /// `shape.adjust` sets the corner radius (a fraction of the shorter side), clamps it to
+    /// [0, 0.5], and undoes in one step; a line refuses it.
+    #[test]
+    fn shape_adjust_sets_and_clamps_the_corner_radius() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.shape", &json!({"kind": "roundedRectangle", "width": 100, "height": 50})).unwrap();
+        s.run("select.objects", &json!({"index": 0})).unwrap();
+        let adj = |s: &Session| match selected(s).unwrap().1 {
+            InlineObject::Shape { extra, .. } => extra.adj,
+            _ => panic!("shape"),
+        };
+        assert_eq!(adj(&s), None, "no stored value until adjusted");
+        s.run("shape.adjust", &json!({"adj": 0.3})).unwrap();
+        assert_eq!(adj(&s), Some(0.3));
+        s.run("shape.adjust", &json!({"adj": 2.0})).unwrap();
+        assert_eq!(adj(&s), Some(0.5), "clamped to half the shorter side");
+        s.run("shape.adjust", &json!({"adj": -1.0})).unwrap();
+        assert_eq!(adj(&s), Some(0.0), "clamped to square corners");
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(adj(&s), Some(0.5));
+        // A line holds no corner radius: collapse first, so inserting it doesn't replace the
+        // rounded rectangle.
+        s.run("select.collapse", &json!({"end": true})).unwrap();
+        s.run("insert.shape", &json!({"kind": "line"})).unwrap();
+        s.run("select.objects", &json!({"index": 1})).unwrap();
+        assert!(s.run("shape.adjust", &json!({"adj": 0.3})).is_err());
     }
 
     /// Two floating shapes, Shift+clicked together and grouped: one object that moves as one with

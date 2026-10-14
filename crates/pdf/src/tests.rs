@@ -429,9 +429,9 @@ fn shapes_have_paths() {
         ShapeKind::Diamond,
         ShapeKind::Triangle,
     ] {
-        assert!(shape_path(k, &r).is_some(), "{k:?}");
+        assert!(shape_path(k, &r, wordcraft_doc::shape_geom::DEFAULT_ADJ).is_some(), "{k:?}");
     }
-    assert!(shape_path(ShapeKind::Ellipse, &Rect::new(0.0, 0.0, f32::NAN, 1.0)).is_none());
+    assert!(shape_path(ShapeKind::Ellipse, &Rect::new(0.0, 0.0, f32::NAN, 1.0), wordcraft_doc::shape_geom::DEFAULT_ADJ).is_none());
     assert_eq!(parse_iso("2024-02-03T04:05:06Z"), Some((2024, 2, 3, 4, 5, 6)));
     assert_eq!(parse_iso("garbage"), None);
     assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));

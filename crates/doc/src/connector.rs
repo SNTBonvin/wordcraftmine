@@ -34,6 +34,11 @@ pub struct ShapeExtra {
     pub arrow_start: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub arrow_end: bool,
+    /// The shape's adjustment (`a:avLst/a:gd[@name="adj"]`, as a fraction of the shorter
+    /// side): the corner radius of the round- and snip-corner rectangles. `None` = the
+    /// preset default; `Some` round-trips through docx and is set by `shape.adjust`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adj: Option<f32>,
 }
 
 fn is_zero(v: &u32) -> bool {
@@ -63,11 +68,36 @@ pub const MAX_SITE: u32 = 64;
 impl ShapeKind {
     /// A connector (straight, elbow or curved): a line that can be glued to shapes.
     pub fn is_connector(self) -> bool {
-        matches!(self, ShapeKind::StraightConnector | ShapeKind::ElbowConnector | ShapeKind::CurvedConnector)
+        matches!(
+            self,
+            ShapeKind::StraightConnector
+                | ShapeKind::ElbowConnector
+                | ShapeKind::CurvedConnector
+                | ShapeKind::BentConnector2
+                | ShapeKind::BentConnector4
+                | ShapeKind::BentConnector5
+                | ShapeKind::CurvedConnector2
+                | ShapeKind::CurvedConnector4
+                | ShapeKind::CurvedConnector5
+        )
     }
-    /// A line or connector: drawn as an open path, never filled.
+    /// A line, connector, bracket, brace or arc: drawn as an open path, never filled.
     pub fn is_open(self) -> bool {
-        self == ShapeKind::Line || self.is_connector()
+        self == ShapeKind::Line
+            || self == ShapeKind::LineInv
+            || self == ShapeKind::Arc
+            || matches!(
+                self,
+                ShapeKind::LeftBracket
+                    | ShapeKind::RightBracket
+                    | ShapeKind::LeftBrace
+                    | ShapeKind::RightBrace
+                    | ShapeKind::LeftBracePair
+                    | ShapeKind::RightBracePair
+                    | ShapeKind::BracketPair
+                    | ShapeKind::BracePair
+            )
+            || self.is_connector()
     }
 }
 
@@ -83,7 +113,17 @@ pub fn sites(kind: ShapeKind, w: f32, h: f32) -> Vec<(f32, f32)> {
             vec![(cx, 0.0), (cx - dx, cy - dy), (0.0, cy), (cx - dx, cy + dy), (cx, h), (cx + dx, cy + dy), (w, cy), (cx + dx, cy - dy)]
         }
         ShapeKind::Triangle => vec![(cx, 0.0), (cx / 2.0, cy), (0.0, h), (cx, h), (w, h), (cx + cx / 2.0, cy)],
-        ShapeKind::Line | ShapeKind::StraightConnector | ShapeKind::ElbowConnector | ShapeKind::CurvedConnector => vec![(0.0, 0.0), (w, h)],
+        ShapeKind::Line
+        | ShapeKind::LineInv
+        | ShapeKind::StraightConnector
+        | ShapeKind::ElbowConnector
+        | ShapeKind::CurvedConnector
+        | ShapeKind::BentConnector2
+        | ShapeKind::BentConnector4
+        | ShapeKind::BentConnector5
+        | ShapeKind::CurvedConnector2
+        | ShapeKind::CurvedConnector4
+        | ShapeKind::CurvedConnector5 => vec![(0.0, 0.0), (w, h)],
         _ => vec![(cx, 0.0), (0.0, cy), (cx, h), (w, cy)],
     }
 }
@@ -134,14 +174,40 @@ pub fn ends(x: f32, y: f32, w: f32, h: f32, flip_h: bool, flip_v: bool) -> ((f32
 
 /// The path of a connector `kind` in a `w` × `h` frame at the origin, from its top-left to its
 /// bottom-right corner (flips are the frame's turn): straight, an elbow through the middle (out
-/// horizontally, across, in horizontally), or an S-curve. `None` for other kinds.
+/// horizontally, across, in horizontally), or an S-curve. The numbered elbow/curved connectors
+/// have that many segments. `None` for other kinds.
 pub fn connector_segs(kind: ShapeKind, w: f32, h: f32) -> Option<Vec<PathSeg>> {
     let (w, h) = (wordcraft_geom::finite(w), wordcraft_geom::finite(h));
     let mx = w / 2.0;
+    let hx = h / 2.0;
     Some(match kind {
         ShapeKind::StraightConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(w, h)],
         ShapeKind::ElbowConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(mx, 0.0), PathSeg::Line(mx, h), PathSeg::Line(w, h)],
         ShapeKind::CurvedConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Cubic(mx, 0.0, mx, h, w, h)],
+        ShapeKind::BentConnector2 => vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(w, 0.0), PathSeg::Line(w, h)],
+        ShapeKind::BentConnector4 => {
+            vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(mx, 0.0), PathSeg::Line(mx, hx), PathSeg::Line(w, hx), PathSeg::Line(w, h)]
+        }
+        ShapeKind::BentConnector5 => vec![
+            PathSeg::Move(0.0, 0.0),
+            PathSeg::Line(w / 3.0, 0.0),
+            PathSeg::Line(w / 3.0, hx),
+            PathSeg::Line(2.0 * w / 3.0, hx),
+            PathSeg::Line(2.0 * w / 3.0, h),
+            PathSeg::Line(w, h),
+        ],
+        ShapeKind::CurvedConnector2 => vec![PathSeg::Move(0.0, 0.0), PathSeg::Cubic(w / 2.0, 0.0, w, hx, w, h)],
+        ShapeKind::CurvedConnector4 => vec![
+            PathSeg::Move(0.0, 0.0),
+            PathSeg::Cubic(w / 3.0, 0.0, w / 3.0, hx, 2.0 * w / 3.0, hx),
+            PathSeg::Cubic(2.0 * w / 3.0, hx, 2.0 * w / 3.0, h, w, h),
+        ],
+        ShapeKind::CurvedConnector5 => vec![
+            PathSeg::Move(0.0, 0.0),
+            PathSeg::Cubic(w / 4.0, 0.0, w / 4.0, h / 3.0, w / 2.0, h / 3.0),
+            PathSeg::Cubic(w / 2.0, h / 3.0, w / 2.0, 2.0 * h / 3.0, 3.0 * w / 4.0, 2.0 * h / 3.0),
+            PathSeg::Cubic(3.0 * w / 4.0, 2.0 * h / 3.0, 3.0 * w / 4.0, h, w, h),
+        ],
         _ => return None,
     })
 }
@@ -150,7 +216,14 @@ pub fn connector_segs(kind: ShapeKind, w: f32, h: f32) -> Option<Vec<PathSeg>> {
 /// leaves its start, in its unflipped `w` × `h` frame: where an arrowhead points.
 pub fn end_direction(kind: ShapeKind, w: f32, h: f32, at_end: bool) -> (f32, f32) {
     let (dx, dy) = match kind {
-        ShapeKind::ElbowConnector | ShapeKind::CurvedConnector => {
+        ShapeKind::ElbowConnector
+        | ShapeKind::CurvedConnector
+        | ShapeKind::BentConnector2
+        | ShapeKind::BentConnector4
+        | ShapeKind::BentConnector5
+        | ShapeKind::CurvedConnector2
+        | ShapeKind::CurvedConnector4
+        | ShapeKind::CurvedConnector5 => {
             if w.abs() > 0.01 || h.abs() < 0.01 {
                 (1.0, 0.0)
             } else {
