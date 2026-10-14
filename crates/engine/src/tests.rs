@@ -912,6 +912,61 @@ fn paste_special_lists_formats_and_pastes_text_without_formatting() {
 }
 
 #[test]
+fn pasted_rtf_tracked_changes_point_at_their_own_revisions() {
+    // Gap 19: RTF tracked changes come with revisions of their own; pasted into a document that
+    // already has revisions, they must not point at the document's (index 0 here is "Zed").
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    s.doc.revisions.push(wordcraft_doc::Revision::new(wordcraft_doc::RevisionKind::Delete, "Zed", ""));
+    run(&mut s, "caret.docEnd", json!({}));
+    let rtf = r"{\rtf1{\*\revtbl {Unknown;}{Alice;}}{\revised\revauth1 added}\par}";
+    run(&mut s, "edit.pasteSpecial", json!({"as": "rtf", "rtf": rtf}));
+    let pos = Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off: 2 };
+    let ins = s.doc.para_at(&pos).and_then(|p| p.props_of_char(2).ins);
+    let rev = ins.and_then(|i| s.doc.revisions.get(i as usize));
+    assert_eq!(rev.map(|r| (r.kind, r.author.as_str())), Some((wordcraft_doc::RevisionKind::Insert, "Alice")), "{:?}", s.doc.revisions);
+}
+
+/// Insertion and deletion revision kinds at body paragraph 0, offset `off`.
+fn rev_kinds_at(s: &Session, off: usize) -> (Option<wordcraft_doc::RevisionKind>, Option<wordcraft_doc::RevisionKind>) {
+    let pos = Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off };
+    let cp = s.doc.para_at(&pos).map(|p| p.props_of_char(off).clone()).unwrap_or_default();
+    let kind = |i: Option<u32>| i.and_then(|i| s.doc.revisions.get(i as usize)).map(|r| r.kind);
+    (kind(cp.ins), kind(cp.del))
+}
+
+const RTF_WITH_DELETION: &str = r"{\rtf1{\*\revtbl {Unknown;}{Bob;}}kept{\deleted\revauthdel1 gone}\par}";
+
+#[test]
+fn pasted_rtf_deletions_stay_deleted_under_track_changes() {
+    // Gap 19: with Track Changes on the paste is an insertion, and text deleted in the source is
+    // inserted-then-deleted (struck), never live text.
+    use wordcraft_doc::RevisionKind::{Delete, Insert};
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    run(&mut s, "edit.pasteSpecial", json!({"as": "rtf", "rtf": RTF_WITH_DELETION}));
+    assert_eq!(rev_kinds_at(&s, 1), (Some(Insert), None), "kept");
+    assert_eq!(rev_kinds_at(&s, 5), (Some(Insert), Some(Delete)), "gone");
+    run(&mut s, "review.acceptAll", json!({}));
+    assert_eq!(text(&s), "xkept");
+}
+
+#[test]
+fn paste_merge_formatting_keeps_rtf_deletions() {
+    use wordcraft_doc::RevisionKind::Delete;
+    let mut s = s();
+    run(&mut s, "document.setText", json!({"text": "x"}));
+    run(&mut s, "caret.docEnd", json!({}));
+    run(&mut s, "edit.pasteMerge", json!({"rtf": RTF_WITH_DELETION}));
+    assert_eq!(rev_kinds_at(&s, 1), (None, None), "kept");
+    assert_eq!(rev_kinds_at(&s, 5), (None, Some(Delete)), "gone");
+    run(&mut s, "review.acceptAll", json!({}));
+    assert_eq!(text(&s), "xkept");
+}
+
+#[test]
 fn paste_special_html_and_rtf_keep_bold() {
     let mut s = s();
     run(&mut s, "document.setText", json!({"text": "x"}));
@@ -5227,6 +5282,92 @@ fn insert_picture_takes_a_windows_metafile() {
     let err = s.run("insert.picture", &json!({"path": path.to_string_lossy()})).unwrap_err();
     assert!(err.to_string().contains("WMF, EMF"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Gap 19, review: text inserted by one author and deleted by another keeps both marks through
+/// an ODT save, so Reject All (undo the deletion, then the insertion) and Accept All both remove it.
+#[test]
+fn odt_inserted_then_deleted_text_round_trips() {
+    use std::io::Write;
+    let ns = r#"xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let info = |who: &str| format!("<office:change-info><dc:creator>{who}</dc:creator><dc:date>2024-03-01T10:00:00</dc:date></office:change-info>");
+    let content = format!(
+        r#"<office:document-content {ns}><office:body><office:text><text:tracked-changes><text:changed-region text:id="i1"><text:insertion>{}</text:insertion></text:changed-region><text:changed-region text:id="d1"><text:deletion>{}<text:p><text:change-start text:change-id="i1"/>gone<text:change-end text:change-id="i1"/></text:p></text:deletion></text:changed-region></text:tracked-changes><text:p>Keep <text:change text:change-id="d1"/>this.</text:p></office:text></office:body></office:document-content>"#,
+        info("Alice"),
+        info("Bob")
+    );
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let o = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, data) in [("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", content.as_str())] {
+        z.start_file(name, o).unwrap();
+        z.write_all(data.as_bytes()).unwrap();
+    }
+    let doc = crate::io::open_bytes("t.odt", &z.finish().unwrap().into_inner()).unwrap();
+    let doc = crate::io::open_bytes("t.odt", &wordcraft_formats::odt::export(&doc).unwrap()).unwrap();
+    for cmd in ["review.rejectAll", "review.acceptAll"] {
+        let mut s = Session::new(doc.clone());
+        run(&mut s, cmd, json!({}));
+        assert_eq!(text(&s), "Keep this.", "{cmd}");
+    }
+}
+
+/// Gap 19: an ODT's tracked insertion and multi-paragraph deletion come in as revisions that
+/// Reject All turns back into the original and Accept All into the edited text.
+#[test]
+fn odt_tracked_changes_accept_and_reject_all() {
+    use std::io::Write;
+    let ns = r#"xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let info = |who: &str| format!("<office:change-info><dc:creator>{who}</dc:creator><dc:date>2024-03-01T10:00:00</dc:date></office:change-info>");
+    let content = format!(
+        r#"<office:document-content {ns}><office:body><office:text><text:tracked-changes><text:changed-region text:id="i1"><text:insertion>{}</text:insertion></text:changed-region><text:changed-region text:id="d1"><text:deletion>{}<text:p>tail</text:p><text:p>head<text:s/></text:p></text:deletion></text:changed-region></text:tracked-changes><text:p>First <text:change text:change-id="d1"/>rest <text:change-start text:change-id="i1"/>added<text:change-end text:change-id="i1"/>.</text:p><text:p>End.</text:p></office:text></office:body></office:document-content>"#,
+        info("Alice"),
+        info("Bob")
+    );
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let o = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, data) in [("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", content.as_str())] {
+        z.start_file(name, o).unwrap();
+        z.write_all(data.as_bytes()).unwrap();
+    }
+    let bytes = z.finish().unwrap().into_inner();
+    let doc = crate::io::open_bytes("t.odt", &bytes).unwrap();
+
+    let mut sr = Session::new(doc.clone());
+    run(&mut sr, "review.rejectAll", json!({}));
+    assert_eq!(text(&sr), "First tail\nhead rest .\nEnd.");
+    assert!(sr.doc.revisions.is_empty() || run(&mut sr, "review.changes", json!({})).as_array().unwrap().is_empty());
+
+    let mut sa = Session::new(doc);
+    run(&mut sa, "review.acceptAll", json!({}));
+    assert_eq!(text(&sa), "First rest added.\nEnd.");
+    assert!(run(&mut sa, "review.changes", json!({})).as_array().unwrap().is_empty());
+}
+
+/// Gap 19, review 2: a paragraph break deleted inside an insertion range is not itself
+/// inserted, so Reject All keeps the two paragraphs (after an ODT save, too).
+#[test]
+fn odt_deleted_mark_inside_an_insertion_survives_reject_all() {
+    use std::io::Write;
+    let ns = r#"xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let info = |who: &str| format!("<office:change-info><dc:creator>{who}</dc:creator><dc:date>2024-03-01T10:00:00</dc:date></office:change-info>");
+    let content = format!(
+        r#"<office:document-content {ns}><office:body><office:text><text:tracked-changes><text:changed-region text:id="i1"><text:insertion>{}</text:insertion></text:changed-region><text:changed-region text:id="d1"><text:deletion>{}<text:p/><text:p/></text:deletion></text:changed-region></text:tracked-changes><text:p>One <text:change-start text:change-id="i1"/>A<text:change text:change-id="d1"/>C<text:change-end text:change-id="i1"/> two</text:p></office:text></office:body></office:document-content>"#,
+        info("Alice"),
+        info("Bob")
+    );
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let o = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, data) in [("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", content.as_str())] {
+        z.start_file(name, o).unwrap();
+        z.write_all(data.as_bytes()).unwrap();
+    }
+    let doc = crate::io::open_bytes("t.odt", &z.finish().unwrap().into_inner()).unwrap();
+    let saved = crate::io::open_bytes("t.odt", &wordcraft_formats::odt::export(&doc).unwrap()).unwrap();
+    for d in [doc, saved] {
+        let mut s = Session::new(d);
+        run(&mut s, "review.rejectAll", json!({}));
+        assert_eq!(text(&s), "One \n two");
+    }
 }
 
 #[test]
