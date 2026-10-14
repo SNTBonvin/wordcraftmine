@@ -2119,3 +2119,6 @@
 	Leave out the date and time of comments and tracked changes when saving	Jäta salvestamisel välja kommentaaride ja jälitatud muudatuste kuupäev ja kellaaeg
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Redigeeritav dokument säilitab nimed ja kuupäevad; need jäetakse välja ainult salvestatud failist.
 	Privacy Settings	Praegused privaatsussätted
+	Full Screen	Täisekraan
+	Full\nScreen	Täis-\nekraan
+	Use the browser's full screen (F11)	Kasutage brauseri täisekraani (F11)

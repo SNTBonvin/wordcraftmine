@@ -2484,3 +2484,6 @@ preview	Title	Пример
 	Leave out the date and time of comments and tracked changes when saving	Не сохранять дату и время примечаний и отслеживаемых изменений
 	The document you are editing keeps the names and dates; only the saved file leaves them out.	Редактируемый документ сохраняет имена и даты; их не будет только в сохранённом файле.
 	Privacy Settings	Текущие параметры конфиденциальности
+	Full Screen	Во весь экран
+	Full\nScreen	Во весь\nэкран
+	Use the browser's full screen (F11)	Используйте полноэкранный режим браузера (F11)
