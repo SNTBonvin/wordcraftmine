@@ -4475,9 +4475,9 @@ mod tests {
         assert!(h.state().canvas.focused);
         q.lock().unwrap().push(("pasted.png".into(), png_bytes([9, 9, 9, 255])));
         h.step();
-        assert_eq!(object_count(&mut h.state_mut()), 1);
+        assert_eq!(object_count(h.state_mut()), 1);
         h.step();
-        assert_eq!(object_count(&mut h.state_mut()), 1, "once");
+        assert_eq!(object_count(h.state_mut()), 1, "once");
     }
 
     /// A real text field with focus (the Find box) takes the input: the picture is dropped.
@@ -4494,7 +4494,7 @@ mod tests {
         assert!(!h.state().canvas.focused);
         q.lock().unwrap().push(("pasted.png".into(), png_bytes([9, 9, 9, 255])));
         h.step();
-        assert_eq!(object_count(&mut h.state_mut()), 0);
+        assert_eq!(object_count(h.state_mut()), 0);
         assert!(q.lock().unwrap().is_empty());
     }
 
