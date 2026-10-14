@@ -26,7 +26,7 @@ font can't match Word's metrics.
 | Default font metrics (Aptos, Calibri, Cambria…) | 🟡 | Carlito/Caladea/Liberation are metric-compatible for Calibri/Cambria/Arial/Times/Courier; **Aptos (Word's default since 2024) has no metric-compatible open substitute**, so new Word documents wrap differently ([typing-parity.md](typing-parity.md) Known gaps). Needs an owner decision (commission or license a metric-matched font) | 6–10 + owner |
 | Symbol fonts (Symbol, Wingdings, Wingdings 2/3, Webdings) without the proprietary font: each character, stored as U+F020–U+F0FF or a plain 8-bit code, is drawn as its Unicode equivalent from a face that has it; PDF text and copies read as those symbols | ✅ | `doc::symbol_fonts` tables (Adobe Symbol table and Unicode L2/12-368), `layout::tests::wingdings_text_draws_and_reads_as_its_unicode_symbols` (#776). Shapes come from Noto Sans Symbols / Symbols 2, DejaVu Sans or Segoe UI Symbol, so they differ from Word's; Wingdings 0xFF (not in Unicode) still has no symbol | — |
 | Indents in characters (`w:firstLineChars`, `w:leftChars`…), measured in the paragraph mark's font size | ✅ | #534, `layout::tests::character_indents_use_the_paragraph_mark_size`; spacing in lines (`w:beforeLines`/`w:afterLines`) uses the stored points (needs the document grid) | — |
-| Line spacing (single, 1.5, double, at least, exactly, multiple), spacing before/after, contextual spacing | 🟡 | Word puts multiple-spacing extra below the text and collapses spacing differently (#135, #108 open) | 3–5 |
+| Line spacing (single, 1.5, double, at least, exactly, multiple), spacing before/after, contextual spacing | 🟡 | List-label ascent overflow is unscaled by multiple spacing and uses the text descent for automatic/AtLeast spacing (synthetic Word probes below). Baseline leading and paragraph-gap overlap remain separate (#135, #108 open) | 3–5 |
 | Kerning only where Kerning for fonts asks for it (`w:kern`, at or above its size) | ✅ | Measured in Word for Windows: no `w:kern` or `w:kern="0"` is unkerned; WordCraft kerned every run, so its lines held more text than Word's. `layout::tests::kerning_follows_kerning_for_fonts_like_word` | — |
 | Automatic (HTML-style) paragraph spacing (`w:beforeAutospacing`, `w:afterAutospacing`) | ✅ | Measured in Word for Windows: 14 pt at any size, none at the top of the document or a cell or after a cell's last paragraph, the larger of two neighbouring spaces. `layout::tests::automatic_paragraph_spacing_like_word`, `…_drops_at_cell_edges` | — |
 | Widow/orphan control, keep with next, keep lines together, page break before | ✅ | `lib.rs` keep_next/keep_lines; a line holding only a page break stays at the bottom of a full page instead of leaving a blank page (#534) | — |
@@ -64,6 +64,34 @@ font can't match Word's metrics.
 | Fields: PAGE, NUMPAGES, SECTIONPAGES, TOC page numbers | ✅ | #52; totals in the body need a second pass once the page count is known (#451) | — |
 | Compatibility modes (Word 2003/2007/2010 layout for old files: `w:compat` options) | 🟡 | mode 15 behaviour; the ~60 legacy compat options are mostly ignored | 10–20 |
 | Page-by-page comparison harness against Word | ❌ | Run Word locally on our own synthetic documents, export PDF, compare line breaks; Word output stays under `plan/` (never committed) | 8–12 |
+
+## List-label line spacing
+
+Controlled original DOCX probes against Word for Mac 16.113.3 (26092714), macOS 26.6.2,
+compatibility mode 15, zero paragraph gaps, Roboto Regular 12 pt body text: a label's positive
+ascent overflow adds to the text line pitch without being multiplied by automatic spacing.
+Label descent does not enlarge automatic or AtLeast spacing. A label's ascent includes positive
+hhea leading. The original base split text leading across ascent/descent; current main assigns
+its full gap to ascent too, so labels now use that shared metric. The table records the original
+measurements, not a new native comparison of this rebase. These are
+observations of synthetic documents, not a claim about Word's internal implementation.
+
+| Label / spacing | Word baseline gap | Fixed WordCraft | Before fix |
+|---|---:|---:|---:|
+| Roboto 24 pt / single | 25.20 pt | 25.1953 pt | 28.125 pt |
+| Roboto 24 pt / 1.25 | 28.80 pt | 28.7109 pt | 35.1563 pt |
+| Roboto 24 pt / double | 39.36 pt | 39.2578 pt | 56.25 pt |
+| Apple Symbols 12 pt / AtLeast 12 pt | 13.92 pt | 14.0625 pt | 14.6338 pt |
+| Apple Symbols 24 pt / AtLeast 12 pt | 20.88 pt | 20.9297 pt | 24.0 pt |
+
+Actual font metrics and original-input provenance were checked locally; Word-derived exports
+remain uncommitted. Tolerance is 0.25 pt; this evidence covers Latin text with the tested symbol
+and decimal labels, automatic single/1.25/double spacing, AtLeast controls, Exactly 24 pt,
+wrapped paragraphs and save/reopen. Regression tests inject the independently measured metrics
+so CI does not require those installed fonts. Inline pictures retain their existing height floor.
+Picture bullets are not implemented, and the private Linux Symbol substitution report has not
+been reproduced. Absolute baseline-leading placement remains the separate #108 contribution.
+This narrows gap #4 without raising the overall readiness estimate.
 
 ## Performance
 
@@ -108,6 +136,7 @@ font can't match Word's metrics.
 | 2026-10-11 | trivial | Right-to-left tables and sections laid out mirrored (#362) |
 | 2026-10-10 | trivial | The document's own note separators and continuation notice are drawn (#352) |
 | 2026-10-11 | trivial | Newspaper columns balance before a continuous section break (#350) |
+| 2026-10-12 | minor | Measured synthetic list-label line height; automatic and AtLeast spacing keep text descent and unscaled label ascent overflow |
 | 2026-10-11 | trivial | Group and Ungroup keep turned members' orientation and placement (#441, #443); Size resizes a group (#442); the eraser hits turned ink where it is drawn (#445) |
 | 2026-10-10 | trivial | Long footnotes continue onto the next page with a continuation separator (#352) |
 | 2026-10-11 | trivial | `EQ \o` fields overstrike their arguments; enclosed characters draw their circle, square, triangle or diamond as vectors (#297) |
