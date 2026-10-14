@@ -1908,7 +1908,7 @@ fn section_marks_end_paragraphs() {
 }
 
 // #1380: Word 2000+ tables. Word writes each row as its cell marks plus a separate row-end
-// (TTP) mark, cell shading as 10-byte `Shd`s in `sprmTDefTableShd`/`sprmTCellShd` (the
+// (TTP) mark, cell shading as 10-byte `Shd`s in `sprmTDefTableShd`/`sprmTDefTableShdRaw` (the
 // `Shd80` palette copy in `sprmTDefTableShd80` is only a fallback), and a horizontally
 // merged row as a row with fewer, wider cells in its own `sprmTDefTable`.
 
@@ -2075,21 +2075,54 @@ fn hostile_table_shading_and_spans_are_safe() {
     }
     // A row that is only a row-end mark (no cell marks before it), with an out-of-range
     // merge and a SHD array, then a normal row.
+    // The second variant's sprmTDefTable is truncated to a single edge (itcMac 3), which
+    // must not turn the lone row-end mark into a row with no cells.
     let text = "\u{7}a\u{7}\u{7}tail\r";
     let ttp = |extra: Vec<u8>| [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01]), (0x6649, &[1, 0, 0, 0])]), extra].concat();
-    let spec = one_section(
-        text,
-        Vec::new(),
-        vec![
-            (0, 0, ttp([t_def_edges(&[0, 1440]), grpprl(&[(0x5624, &[0, 9])]), sprm_cb(0xD612, &long)].concat())),
-            (1, 0, grpprl(&[(0x2416, &[0x01]), (0x6649, &[1, 0, 0, 0])])),
-            (3, 0, ttp(t_def_edges(&[0, 1440]))),
-            (4, 0, Vec::new()),
-        ],
-    );
-    let doc = read(&struct_doc(&spec)).expect("opens");
-    let text = doc.plain_text(wordcraft_doc::StoryRef::Body);
-    assert!(text.contains('a') && text.contains("tail"), "{text:?}");
+    let one_edge = {
+        let mut v = (0xD608u16).to_le_bytes().to_vec();
+        v.extend_from_slice(&4u16.to_le_bytes()); // cb: itcMac + one edge, plus one
+        v.extend_from_slice(&[3, 0, 0]);
+        v
+    };
+    for lone in [[t_def_edges(&[0, 1440]), grpprl(&[(0x5624, &[0, 9])]), sprm_cb(0xD612, &long)].concat(), one_edge] {
+        let spec = one_section(
+            text,
+            Vec::new(),
+            vec![
+                (0, 0, ttp(lone)),
+                (1, 0, grpprl(&[(0x2416, &[0x01]), (0x6649, &[1, 0, 0, 0])])),
+                (3, 0, ttp(t_def_edges(&[0, 1440]))),
+                (4, 0, Vec::new()),
+            ],
+        );
+        let doc = read(&struct_doc(&spec)).expect("opens");
+        let text = doc.plain_text(wordcraft_doc::StoryRef::Body);
+        assert!(text.contains('a') && text.contains("tail"), "{text:?}");
+        for t in doc.body.iter().filter_map(|b| b.as_table()) {
+            assert!(t.rows.iter().all(|r| !r.cells.is_empty()), "no zero-cell rows");
+        }
+    }
+}
+
+#[test]
+fn nil_raw_shading_keeps_the_earlier_colour() {
+    // In sprmTDefTableShdRaw (and its 2nd/3rd forms) a nil Shd (ipat 0xFFFF) means "as the
+    // table style shades it", so it must not override sprmTDefTableShd; automatic clears.
+    let blue = shd_clear([0, 0, 0xFF], 1);
+    let red = shd_clear([0xFF, 0, 0], 1);
+    let nil = vec![0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0xFF, 0xFF];
+    let auto = vec![0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0];
+    let papx = [sprm_cb(0xD612, &[blue.clone(), blue.clone(), blue.clone()].concat()), sprm_cb(0xD670, &[nil.clone(), red, auto].concat())].concat();
+    let row = crate::table::decode(&papx);
+    assert_eq!(row.shading_of(0), Some(wordcraft_doc::Rgb(0, 0, 0xFF)), "nil keeps blue");
+    assert_eq!(row.shading_of(1), Some(wordcraft_doc::Rgb(0xFF, 0, 0)));
+    assert_eq!(row.shading_of(2), None, "automatic clears");
+    for (first, raw) in [(0xD616u16, 0xD671u16), (0xD60C, 0xD672)] {
+        let papx = [sprm_cb(first, &blue), sprm_cb(raw, &nil)].concat();
+        let cell = if first == 0xD616 { 22 } else { 44 };
+        assert_eq!(crate::table::decode(&papx).shading_of(cell), Some(wordcraft_doc::Rgb(0, 0, 0xFF)), "{raw:04X}");
+    }
 }
 
 #[test]

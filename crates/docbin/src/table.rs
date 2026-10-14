@@ -176,7 +176,13 @@ pub(crate) fn decode(papx: &[u8]) -> RowInfo {
                     _ => (0, 22),
                 };
                 let cells = prl.operand.get(1..).unwrap_or(&[]);
+                let raw = matches!(prl.op, T_DEF_TABLE_SHD_RAW | T_DEF_TABLE_SHD_RAW_2ND | T_DEF_TABLE_SHD_RAW_3RD);
                 for (i, b) in cells.as_chunks::<10>().0.iter().take(lim - first).enumerate() {
+                    // In the Raw arrays a nil Shd (ipat 0xFFFF) means "as the table style
+                    // shades it", so it leaves any earlier fill alone.
+                    if raw && b.get(8..10) == Some(&[0xFF, 0xFF]) {
+                        continue;
+                    }
                     r.shading.push(((first + i) as u8, shd_rgb(b)));
                 }
             }
@@ -369,6 +375,8 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
             // columns, still ends a real cell (rows without a TDefTable keep today's
             // shape: the count is unknowable, so the mark always flushes).
             let row_end_only = info.ttp && p.para.text.is_empty() && cell.is_empty() && !info.edges.is_empty() && cells.len() + 1 >= info.edges.len();
+            // ...but a row-end mark with no cells before it still makes a (one-cell) row.
+            let row_end_only = row_end_only && !cells.is_empty();
             if !p.para.text.is_empty() {
                 cell.push(para_block(p.para));
             }
