@@ -4482,7 +4482,7 @@ mod tests {
 
     /// A real text field with focus (the Find box) takes the input: the picture is dropped.
     #[test]
-    fn a_paste_with_the_find_box_focused_is_ignored() {
+    fn a_paste_with_the_find_dialog_open_is_ignored() {
         let mut a = app();
         let q: Inbox = Inbox::default();
         a.services.pasted = Some(q.clone());
@@ -4492,6 +4492,29 @@ mod tests {
         h.step();
         h.step();
         assert!(!h.state().canvas.focused);
+        q.lock().unwrap().push(("pasted.png".into(), png_bytes([9, 9, 9, 255])));
+        h.step();
+        assert_eq!(object_count(h.state_mut()), 0);
+        assert!(q.lock().unwrap().is_empty());
+    }
+
+    /// A text field outside any dialog (the Navigation pane's search) with focus takes the input:
+    /// the page is not focused, and the picture is dropped (#1349).
+    #[test]
+    fn a_paste_with_a_pane_text_field_focused_is_ignored() {
+        let mut a = app();
+        let q: Inbox = Inbox::default();
+        a.services.pasted = Some(q.clone());
+        a.run("view.navigationPane", json!({"value": true})).unwrap();
+        let mut h = paste_harness(a);
+        // Focus the search box for real (as Ctrl+F does), once the page has settled.
+        h.state_mut().canvas.want_focus = false;
+        h.state_mut().nav_search_focus = true;
+        h.step();
+        h.step();
+        let app = h.state();
+        assert!(app.dialog.is_none() && !app.ui.backstage, "no dialog, no Backstage");
+        assert!(!app.canvas.focused, "the search box has the focus, not the page");
         q.lock().unwrap().push(("pasted.png".into(), png_bytes([9, 9, 9, 255])));
         h.step();
         assert_eq!(object_count(h.state_mut()), 0);
