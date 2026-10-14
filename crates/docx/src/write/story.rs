@@ -1310,6 +1310,9 @@ fn sectpr_body(w: &mut W, s: &SectionProps) {
             let refs: Vec<(&str, &str)> = ca.iter().map(|(k, v)| (*k, v.as_str())).collect();
             w.empty("w:cols", &refs);
         }
+        if let Some(on) = s.form_prot {
+            w.empty("w:formProt", if on { &[] } else { &[("w:val", "0")] });
+        }
         match s.valign {
             wordcraft_doc::props::VAlign::Top => {}
             wordcraft_doc::props::VAlign::Center => w.val("w:vAlign", "center"),
