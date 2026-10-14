@@ -922,11 +922,11 @@ fn polish_covers_every_key_of_every_other_catalog() {
     use std::collections::HashSet;
     let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
     let polish = keys(lang("pl").0.source);
-    // Italian and Hungarian still carry "Style: APA", which the interface no longer shows;
-    // Hungarian and Bulgarian also name the citation styles, and Bulgarian has a few one-line
-    // pieces of gallery labels. Polish matches every other catalog, including the style names and
-    // equation gallery Russian translates.
-    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "it" | "hu" | "bg")) {
+    // Russian, Italian, Hungarian, Turkish and Bulgarian also translate the built-in
+    // style names and the equation gallery, which the others don't yet; Polish matches
+    // every other catalog. Arabic (ar) is excluded for the same reason: it also
+    // translates the built-in style names and the equation gallery.
+    for other in Lang::all().filter(|l| *l != Lang::EN && !matches!(l.code(), "pl" | "ru" | "it" | "hu" | "tr" | "bg" | "ar")) {
         let mut missing: Vec<String> = keys(other.0.source).difference(&polish).cloned().collect();
         missing.sort();
         assert!(missing.is_empty(), "pl lacks {}'s {missing:?}", other.code());
@@ -1132,6 +1132,125 @@ fn bundled_interface_fonts_cover_italian_letters() {
         for ch in "ÀàÈèÉéÌìÒòÙù".chars() {
             assert_ne!(face.glyph_for(ch), 0, "{family} {style} lacks {ch}");
         }
+    }
+    
+}
+#[test]
+fn arabic_locales_and_saved_preference_work_without_changing_the_document() {
+    let ar = lang("ar");
+    for tag in ["ar", "ar-SA", "ar-EG", "ar_SA.UTF-8", "AR", "ar-Latn-SA"] {
+        assert_eq!(lang_from_tag(tag), Some(ar), "{tag}");
+    }
+    assert_eq!(first_supported([UNSUPPORTED, "ar-EG", "en-US"]), Some(ar));
+    assert_eq!(normalize_pref("AR"), Some("ar"));
+    assert_eq!(ar.name(), "العربية");
+    assert_eq!(tr(ar, "Home"), "الصفحة الرئيسية");
+    assert_eq!(tr(ar, "Save"), "حفظ");
+    assert_eq!(tr(ar, "File"), "ملف");
+    assert_eq!(tr(ar, "Insert"), "إدراج");
+    assert_eq!(tr(ar, "Review"), "مراجعة");
+    assert_eq!(tr(ar, "unknown future label"), "unknown future label");
+    let mut app = crate::WordApp::new(
+        wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()),
+        Default::default(),
+    );
+    let before = serde_json::to_value(&app.session.doc).unwrap();
+    let result = app.run("ui.language", serde_json::json!({"value": "AR"})).unwrap();
+    assert_eq!(result["effective"], "ar");
+    assert_eq!(app.ui.language, "ar");
+    assert!(result["available"].as_array().unwrap().iter().any(|l| l["code"] == "ar" && l["name"] == "العربية"));
+    assert_eq!(serde_json::to_value(&app.session.doc).unwrap(), before);
+    let saved = serde_json::to_string(&app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(Lang::from_pref(&restored.language), ar);
+    assert!(app.run("ui.language", serde_json::json!({"value": "ar-unknown"})).is_err());
+    assert_eq!(app.ui.language, "ar", "invalid preferences must keep the saved language");
+    app.run("ui.language", serde_json::json!({"value": "auto"})).unwrap();
+    assert_eq!(app.ui.language, AUTO);
+   
+}
+
+#[test]
+fn arabic_covers_the_entire_existing_interface_catalog() {
+    use std::collections::HashSet;
+    let keys = |source| parse_entries(source).0.into_iter().map(|e| e.source).collect::<HashSet<_>>();
+    // كل مفاتيح الكتالوج الإنجليزي موجودة في العربي (الكتالوج الإنجليزي هو مرجع zh-hans).
+    assert!(keys(lang("zh-hans").0.source).is_subset(&keys(lang("ar").0.source)));
+    let (entries, errors) = parse_entries(lang("ar").0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(entries.len() > 700, "only {} entries", entries.len());
+    let ar = lang("ar");
+    // اختبار بعض النصوص الرئيسية.
+    for (source, expected) in [
+        ("Home", "الصفحة الرئيسية"),
+        ("Insert", "إدراج"),
+        ("Review", "مراجعة"),
+        ("View", "عرض"),
+        ("Design", "تصميم"),
+        ("Layout", "التخطيط"),
+        ("References", "المراجع"),
+        ("Mailings", "المراسلات"),
+        ("Developer", "المطور"),
+        ("Save", "حفظ"),
+        ("Copy", "نسخ"),
+        ("Paste", "لصق"),
+        ("Cut", "قص"),
+        ("Undo", "تراجع"),
+        ("Redo", "إعادة"),
+        ("Bold", "عريض"),
+        ("Italic", "مائل"),
+        ("Underline", "تسطير"),
+        ("WordCraft", "WordCraft"),
+        ("unknown future label", "unknown future label"),
+    ] {
+        assert_eq!(tr(ar, source), expected, "{source}");
+    }
+    // Placeholders تعمل بشكل صحيح.
+    assert_eq!(
+        fmt(tr(ar, "Exported {path}"), &[("path", "draft-{words}.docx")]),
+        "تم التصدير إلى draft-{words}.docx"
+    );
+    assert_eq!(
+        fmt(tr(ar, "Page {page} of {pages}"), &[("page", "3"), ("pages", "9")]),
+        "صفحة 3 من 9"
+    );
+    // Location و prefixed.
+    set_current(ar);
+    assert_eq!(location("Home › Font"), "الصفحة الرئيسية › الخط");
+    assert_eq!(prefixed("Undo", "Bold"), "تراجع عن عريض");
+    set_current(Lang::EN);
+}
+
+#[test]
+fn bundled_interface_fonts_cover_arabic_without_system_fallbacks() {
+    // اختبار الخطوط العربية عبر egui مباشرة (وليس FontDb) لأن Noto Sans Arabic
+    // غير مسجل في wordcraft_fonts::FontDb.
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::theme::font_definitions(false, false));
+    ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
+
+    let (entries, errors) = parse_entries(lang("ar").0.source);
+    assert!(errors.is_empty(), "{errors:?}");
+
+    // كل الأحرف العربية التي يحتاجها الكتالوج.
+    let chars: std::collections::BTreeSet<char> = entries
+        .iter()
+        .flat_map(|e| e.translation.chars())
+        // النطاق الأساسي للعربية + النطاق التكميلي (Presentation Forms).
+        .filter(|c| ('\u{0600}'..='\u{06FF}').contains(c) || ('\u{FB50}'..='\u{FEFF}').contains(c))
+        .collect();
+    assert!(chars.len() > 40, "{} Arabic characters", chars.len());
+
+    // يجب أن ترسمها خطوط الواجهة في كل الأوزان.
+    for font in [
+        crate::theme::regular(12.5),
+        crate::theme::medium(12.5),
+        crate::theme::semibold(12.5),
+    ] {
+        let missing: String = ctx.fonts_mut(|f| {
+            chars.iter().filter(|c| !f.has_glyph(&font, **c)).collect()
+        });
+        assert!(missing.is_empty(), "no glyph in {font:?} for {missing}");
     }
 }
 

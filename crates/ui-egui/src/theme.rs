@@ -441,15 +441,39 @@ pub fn font_definitions(prefer_hans: bool, system_cjk: bool) -> FontDefinitions 
     add(&mut fonts, "InterSemiBold", include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf"));
     add(&mut fonts, "SourceSans", include_bytes!("../../../assets/fonts/SourceSans3-Regular.ttf"));
     add(&mut fonts, "Mono", include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"));
+    // ⬇️⬇️⬇️ الإضافة الأولى: تحميل الخط العربي ⬇️⬇️⬇️
+    add(&mut fonts, "NotoArabic", include_bytes!("../../../assets/fonts/NotoSansArabic-Regular.ttf"));
+    // ⬆️⬆️⬆️ نهاية الإضافة الأولى ⬆️⬆️⬆️
+    
     if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
         prop.insert(0, "Inter".into());
         prop.push("SourceSans".into());
+          // ⬇️⬇️⬇️ الإضافة الثانية: الخط العربي في الخطوط النسبية ⬇️⬇️⬇️
+        prop.push("NotoArabic".into());
+        // ⬆️⬆️⬆️ نهاية الإضافة الثانية ⬆️⬆️⬆️
     }
     if let Some(m) = fonts.families.get_mut(&FontFamily::Monospace) {
         m.insert(0, "Mono".into());
+             // ⬇️⬇️⬇️ الإضافة الثالثة: الخط العربي في الخطوط أحادية المسافة ⬇️⬇️⬇️
+        m.push("NotoArabic".into());
+        // ⬆️⬆️⬆️ نهاية الإضافة الثالثة ⬆️⬆️⬆️
     }
-    fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
-    fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
+    
+    
+    
+       // ⬇️⬇️⬇️ الإضافة الرابعة: إضافة "NotoArabic" إلى قوائم medium و semibold ⬇️⬇️⬇️
+    fonts.families.insert(
+        FontFamily::Name("medium".into()),
+        vec!["InterMedium".into(), "Inter".into(), "SourceSans".into(), "NotoArabic".into()],
+    );
+    fonts.families.insert(
+        FontFamily::Name("semibold".into()),
+        vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into(), "NotoArabic".into()],
+    );
+    // ⬆️⬆️⬆️ نهاية الإضافة الرابعة ⬆️⬆️⬆️
+    
+    
+ 
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {

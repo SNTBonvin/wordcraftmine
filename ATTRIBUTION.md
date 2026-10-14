@@ -34,8 +34,12 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `assets/fonts/Inter-Regular.ttf` | Rasmus Andersson / The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) | Open-source typeface (Latin UI/document font, carried over from DesignCraft) |
 | `assets/fonts/Inter-SemiBold.ttf` | Rasmus Andersson / The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) | Open-source typeface (Latin UI/document font, carried over from DesignCraft) |
 | `assets/fonts/JetBrainsMono-Regular.ttf` | The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono | OFL-1.1 (`assets/fonts/OFL-JetBrainsMono.txt`) | Open-source typeface (Latin UI/document font, carried over from DesignCraft) |
+| `assets/fonts/NotoSansArabic-Regular.ttf` | The Noto Project Authors | https://fonts.google.com/specimen/Noto+Sans+Arabic | OFL-1.1 (`assets/fonts/OFL-NotoSansArabic.txt`) | Open-source typeface (Arabic UI font) |
+| `assets/fonts/NotoSansArabic-Medium.ttf` | The Noto Project Authors | https://fonts.google.com/specimen/Noto+Sans+Arabic | OFL-1.1 (`assets/fonts/OFL-NotoSansArabic.txt`) | Open-source typeface (Arabic UI font) |
+| `assets/fonts/NotoSansArabic-SemiBold.ttf` | The Noto Project Authors | https://fonts.google.com/specimen/Noto+Sans+Arabic | OFL-1.1 (`assets/fonts/OFL-NotoSansArabic.txt`) | Open-source typeface (Arabic UI font) |
 | `assets/fonts/OFL-Inter.txt` | (licence text) | upstream project | — |  |
 | `assets/fonts/OFL-JetBrainsMono.txt` | (licence text) | upstream project | — |  |
+| `assets/fonts/OFL-NotoSansArabic.txt` | (licence text) | upstream project | — |  |
 | `assets/fonts/OFL-SourceSans3.txt` | (licence text) | upstream project | — |  |
 | `assets/fonts/OFL-SourceSerif4.txt` | (licence text) | upstream project | — |  |
 | `assets/fonts/SourceSans3-Bold.ttf` | Paul D. Hunt / Frank Grießhammer, Adobe (released as open source) | https://github.com/adobe-fonts/source-sans · https://github.com/adobe-fonts/source-serif | OFL-1.1 (`assets/fonts/OFL-SourceSans3.txt`, `OFL-SourceSerif4.txt`) | Open-source typeface (Latin UI/document font, carried over from DesignCraft) |
@@ -75,3 +79,4 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `crates/ui-egui/src/i18n/bg.tsv` | Dimitar Klaturov (@bulgariamitko) with Claude Code | Original translation from the English interface labels in this repository; no other product localisation or other catalog used | MIT OR Apache-2.0 | Bulgarian interface catalog |
 | `crates/ui-egui/src/i18n/hu.tsv` | @Skaywalker | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Hungarian interface catalog |
 | `crates/ui-egui/src/i18n/fr.tsv` | @pechnikov2026-star | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | French interface catalog |
+| `crates/ui-egui/src/i18n/ar.tsv` | @hicbest | Original translation from the English interface labels in this repository; no other product localisation copied | MIT OR Apache-2.0 | Arabic interface catalog; not yet reviewed by a second native speaker |
