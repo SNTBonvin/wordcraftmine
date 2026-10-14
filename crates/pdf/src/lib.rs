@@ -328,6 +328,16 @@ fn visual_order(text: &str, glyphs: &[(u32, f32, f32)], clusters: &[std::ops::Ra
         .collect()
 }
 
+/// The y most of a run's glyphs share: its baseline, which raised or lowered marks leave.
+fn baseline(glyphs: &[(u32, f32, f32)]) -> Option<f32> {
+    let mut counts: HashMap<u32, usize> = HashMap::new();
+    for (_, _, y) in glyphs {
+        *counts.entry(y.to_bits()).or_insert(0) += 1;
+    }
+    // Ties go to the lower y bits, so the result doesn't depend on hash order.
+    counts.into_iter().max_by_key(|&(bits, n)| (n, std::cmp::Reverse(bits))).map(|(bits, _)| f32::from_bits(bits))
+}
+
 /// A chart's or diagram's alt text: its own, else what it is ("chart", "diagram").
 fn graphic_alt(alt: &str, kind: GraphicKind) -> &str {
     if alt.trim().is_empty() { kind.noun() } else { alt }
@@ -1251,8 +1261,8 @@ impl Exporter<'_> {
         let placed: Vec<(u32, f32, f32, std::ops::Range<usize>)> =
             order.iter().filter_map(|&i| Some((glyphs.get(i).copied()?, ranges.get(i).cloned()?))).map(|((g, x, y), r)| (g, x, y, r)).collect();
         let Some(&(_, x0, y0, _)) = placed.first() else { return };
-        // The run's baseline: its first glyph in reading order (a mark drawn first may sit higher).
-        let base = glyphs.first().map_or(y0, |g| g.2);
+        // The run's baseline: the y most of its glyphs share (marks sit higher or lower).
+        let base = baseline(glyphs).unwrap_or(y0);
         let kg: Vec<KrillaGlyph> = placed
             .iter()
             .enumerate()

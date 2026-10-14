@@ -907,11 +907,15 @@ fn internal_links_export_in_linear_time() {
 /// and a Latin one), then right-to-left words with a lam-alef ligature and with vowel marks.
 fn rtl_sample() -> Document {
     let mut d = Document::from_text("שלום עולם\nمرحبا بالعالم\nייפוי כח מס' 123 – Power of Attorney\nHello world\nالسلام مَرْحَبًا שָׁלוֹם");
-    let (a, b) = (wordcraft_doc::Pos::body(0, 0), wordcraft_doc::Pos::body(2, 0));
-    d.format_paragraphs(&a, &b, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
-    let a = wordcraft_doc::Pos::body(4, 0);
-    d.format_paragraphs(&a, &a, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
-    d.format_paragraphs(&a, &b, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
+    // Right to left: all but "Hello world".
+    for i in [0, 1, 2, 4] {
+        let at = wordcraft_doc::Pos::body(i, 0);
+        d.format_paragraphs(&at, &at, &|p: &mut wordcraft_doc::ParaProps| p.bidi = Some(true)).unwrap();
+    }
+    for (i, rtl) in [true, true, true, false, true].into_iter().enumerate() {
+        let Some(Block::Para(p)) = d.body.get(i).map(|b| &**b) else { panic!("paragraph {i}") };
+        assert_eq!(p.props.bidi == Some(true), rtl, "paragraph {i}");
+    }
     d
 }
 
