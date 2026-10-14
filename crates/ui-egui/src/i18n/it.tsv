@@ -2459,3 +2459,5 @@ preview	Title	Esempio
 	Automatic ({region})	Automatico ({region})
 	Search	Cerca
 	Title Bar	Barra del titolo
+	Waiting for the save to finish…	In attesa del termine del salvataggio…
+	Saving {name} was cancelled, so it is still open and nothing was lost.	Il salvataggio di {name} è stato annullato: il documento è ancora aperto e non è andato perso nulla.

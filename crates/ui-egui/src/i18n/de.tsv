@@ -2074,3 +2074,5 @@
 	Automatic ({region})	Automatisch ({region})
 	Search	Suchen
 	Title Bar	Titelleiste
+	Waiting for the save to finish…	Warten, bis das Speichern abgeschlossen ist…
+	Saving {name} was cancelled, so it is still open and nothing was lost.	Das Speichern von {name} wurde abgebrochen. Das Dokument ist weiterhin geöffnet und nichts ist verloren gegangen.

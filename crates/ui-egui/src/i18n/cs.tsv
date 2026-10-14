@@ -2080,3 +2080,5 @@
 	Automatic ({region})	Automaticky ({region})
 	Search	Hledat
 	Title Bar	Záhlaví okna
+	Waiting for the save to finish…	Čeká se na dokončení ukládání…
+	Saving {name} was cancelled, so it is still open and nothing was lost.	Ukládání {name} bylo zrušeno, dokument zůstává otevřený a nic se neztratilo.

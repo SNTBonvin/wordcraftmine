@@ -2474,3 +2474,5 @@ preview	Title	Пример
 	Level 7	Уровень 7
 	Level 8	Уровень 8
 	Level 9	Уровень 9
+	Waiting for the save to finish…	Ожидание завершения сохранения…
+	Saving {name} was cancelled, so it is still open and nothing was lost.	Сохранение {name} отменено. Документ по-прежнему открыт, ничего не потеряно.
