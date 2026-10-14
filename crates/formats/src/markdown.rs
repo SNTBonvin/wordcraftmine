@@ -1030,8 +1030,7 @@ pub(crate) fn escape(s: &str) -> String {
 
 /// Escape what would start a block at the beginning of a line.
 fn escape_line_start(s: String) -> String {
-    let s = s.trim_start().to_string();
-    let t = s.as_str();
+    let t = s.trim_start();
     let lead = s.len() - t.len();
     let needs = t.starts_with('#')
         || t.starts_with('>')
@@ -1418,5 +1417,13 @@ mod tests {
         let FBlock::Para(q) = &back.blocks[0] else { panic!() };
         assert_eq!(q.text(), "1. not a list *really*");
         assert!(q.list.is_none());
+    }
+
+    #[test]
+    fn escape_line_start_preserves_indentation() {
+        assert_eq!(escape_line_start("   indented text".to_string()), "   indented text");
+        assert_eq!(escape_line_start("   # not a heading".to_string()), "   \\# not a heading");
+        assert_eq!(escape_line_start("  1. not a list".to_string()), "  1\\. not a list");
+        assert_eq!(escape_line_start("  > quote".to_string()), "  \\> quote");
     }
 }
