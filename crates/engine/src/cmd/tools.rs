@@ -1308,8 +1308,10 @@ fn inspect_doc(s: &mut Session, v: &Value) -> CmdResult {
     Ok(json!({"found": report, "removed": remove, "residual": residual, "removedNotes": removed_notes}))
 }
 
-/// Most hidden pieces `file.inspect` lists (the count is always exact).
+/// Most hidden pieces (and removed notes) `file.inspect` lists (the count is always exact).
 const MAX_HIDDEN_LISTED: usize = 1000;
+/// Most characters of a removed note's text `file.inspect` echoes.
+const MAX_NOTE_TEXT: usize = 1000;
 
 /// A piece of hidden text: a byte range of a paragraph in a story. `whole`: the paragraph's mark
 /// is hidden too and so is all its text, so the paragraph itself goes.
@@ -1363,36 +1365,54 @@ fn remove_hidden(doc: &mut Document) -> Result<Vec<Value>, CmdError> {
         {
             continue;
         }
-        let text = doc.plain_text(StoryRef::Part(id)).replace('\u{FFFC}', "").trim().to_string();
-        out.push(json!({"kind": story_kind(doc, StoryRef::Part(id)), "part": id, "text": text}));
+        // Only the echo is capped; every such note goes.
+        if out.len() < MAX_HIDDEN_LISTED {
+            let text: String = doc.plain_text(StoryRef::Part(id)).replace('\u{FFFC}', "").trim().chars().take(MAX_NOTE_TEXT).collect();
+            out.push(json!({"kind": story_kind(doc, StoryRef::Part(id)), "part": id, "text": text}));
+        }
         doc.parts.remove(&id);
     }
     Ok(out)
 }
 
+/// Whether a whole hidden paragraph can go, mark and all. It stays when it is the last block of
+/// its story or cell (they end with a paragraph), carries a section break, holds content control
+/// markers (their partners may be elsewhere), or sits between two tables (they'd join on reopen).
+fn removable(doc: &Document, story: StoryRef, path: &wordcraft_doc::Path, p: &Paragraph) -> bool {
+    let i = path.last();
+    let Some(c) = doc.container(story, path) else { return false };
+    let is_table = |j: Option<usize>| j.and_then(|j| c.get(j)).is_some_and(|b| matches!(**b, Block::Table(_)));
+    i + 1 < c.len()
+        && p.section.is_none()
+        && !p.object_offsets().into_iter().any(|o| matches!(p.object_at(o), Some(InlineObject::ControlStart { .. } | InlineObject::ControlEnd)))
+        && !(is_table(i.checked_sub(1)) && is_table(i.checked_add(1)))
+}
+
+/// Whether `range` of `p` holds text or an object, not only zero-width markers.
+fn has_content(p: &Paragraph, range: &std::ops::Range<usize>) -> bool {
+    p.text
+        .get(range.clone())
+        .is_some_and(|t| t.char_indices().any(|(i, ch)| ch != '\u{FFFC}' || p.object_at(range.start + i).is_some_and(|o| !o.is_marker())))
+}
+
 /// Delete one hidden piece. Within a paragraph: straight in the paragraph, unless a content
 /// control marker is inside (then through `delete_range`, which keeps markers whose partner is
-/// outside). A whole hidden paragraph goes with its mark, unless it's the last block of its story
-/// or cell, holds a section break or zero-width markers: then it stays, emptied, its mark shown.
+/// outside). A whole hidden paragraph goes with its mark when [`removable`]; otherwise its text
+/// goes and it stays, empty, its mark still hidden: invisible and holding no text, so it isn't
+/// reported again.
 fn remove_piece(doc: &mut Document, h: &Hidden) -> Result<(), CmdError> {
     let Some(p) = doc.para(h.story, &h.path) else { return Ok(()) };
     let has_control = p
         .object_offsets()
         .into_iter()
         .any(|o| h.range.contains(&o) && matches!(p.object_at(o), Some(InlineObject::ControlStart { .. } | InlineObject::ControlEnd)));
-    let style = p.props.style.clone();
-    let mut mark = p.mark.clone();
-    if h.whole {
+    if h.whole && removable(doc, h.story, &h.path, p) {
         let i = h.path.last();
-        let last = doc.container(h.story, &h.path).is_none_or(|c| i + 1 >= c.len());
-        let markers = p.object_offsets().into_iter().any(|o| p.object_at(o).is_some_and(InlineObject::is_marker));
-        if !last && !markers && p.section.is_none() {
-            let blocks = doc.container_mut(h.story, &h.path)?;
-            if i < blocks.len() {
-                blocks.remove(i);
-            }
-            return Ok(());
+        let blocks = doc.container_mut(h.story, &h.path)?;
+        if i < blocks.len() {
+            blocks.remove(i);
         }
+        return Ok(());
     }
     if !h.range.is_empty() {
         if has_control {
@@ -1401,13 +1421,6 @@ fn remove_piece(doc: &mut Document, h: &Hidden) -> Result<(), CmdError> {
         } else {
             doc.para_mut(h.story, &h.path)?.delete(h.range.start, h.range.end)?;
         }
-    }
-    if h.whole {
-        mark.hidden = None;
-        if doc.styles.resolve_char(style.as_deref(), &mark).hidden {
-            mark.hidden = Some(false);
-        }
-        doc.para_mut(h.story, &h.path)?.mark.hidden = mark.hidden;
     }
     Ok(())
 }
@@ -1471,14 +1484,14 @@ fn hidden_text(doc: &Document) -> Vec<Hidden> {
                 }
             }
             if all_hidden && doc.styles.resolve_char(style, &p.mark).hidden {
-                out.push(Hidden { story, path: path.clone(), range: 0..p.len(), whole: true });
+                // An empty hidden paragraph that has to stay is invisible and holds no text.
+                if removable(doc, story, &path, p) || has_content(p, &(0..p.len())) {
+                    out.push(Hidden { story, path: path.clone(), range: 0..p.len(), whole: true });
+                }
                 continue;
             }
             for range in ranges {
-                let content = p.text.get(range.clone()).is_some_and(|t| {
-                    t.char_indices().any(|(i, ch)| ch != '\u{FFFC}' || p.object_at(range.start + i).is_some_and(|o| !o.is_marker()))
-                });
-                if content {
+                if has_content(p, &range) {
                     out.push(Hidden { story, path: path.clone(), range, whole: false });
                 }
             }

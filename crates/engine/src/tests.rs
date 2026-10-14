@@ -5251,3 +5251,25 @@ fn inspect_document_removes_thousands_of_hidden_pieces() {
     assert!(text(&s).contains("word1999  more"));
     assert!(t.elapsed() < std::time::Duration::from_secs(20), "{:?}", t.elapsed());
 }
+
+/// #1344: a hidden paragraph between two tables stays (emptied, its mark still hidden), or the
+/// tables would join into one when the file is reopened.
+#[test]
+fn inspect_document_keeps_a_hidden_paragraph_between_tables() {
+    use wordcraft_doc::{Block, Paragraph, para_block};
+    let mut s = s();
+    let table = || std::sync::Arc::new(Block::Table(wordcraft_doc::table::Table::new(1, 1, 100.0)));
+    let mut p = Paragraph::with_text("hide-between", hidden_props());
+    p.mark.hidden = Some(true);
+    s.doc.body = vec![table(), para_block(p), table(), para_block(Paragraph::with_text("keep-end", Default::default()))];
+    let out = run(&mut s, "file.inspect", json!({"remove": ["hidden"]}));
+    assert_eq!(out["residual"], json!([]), "{out}");
+    let kinds = |d: &wordcraft_doc::Document| d.body.iter().map(|b| matches!(**b, Block::Table(_))).collect::<Vec<_>>();
+    assert_eq!(kinds(&s.doc), [true, false, true, false]);
+    let kept = s.doc.para(StoryRef::Body, &wordcraft_doc::Path::top(1)).unwrap();
+    assert!(kept.is_empty() && kept.mark.hidden == Some(true), "emptied, mark still hidden: {kept:?}");
+    assert!(!s.doc.plain_text(StoryRef::Body).contains("hide-"));
+    assert_eq!(run(&mut s, "file.inspect", json!({}))["found"]["hiddenText"], false);
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    assert_eq!(kinds(&back).iter().filter(|t| **t).count(), 2, "the tables stay apart");
+}
